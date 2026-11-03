@@ -1626,7 +1626,11 @@ void TerminalPrivateProductSession::cancel_pending_on_region_change()
 {
     // A synchronous SOURCE-region signal during exact MONITOR retirement
     // must never re-enter cancel() and disturb the owner transaction.
-    if(monitorTransitioning_)return;
+    // This signal can be synchronous/reentrant from SOURCE UI. A device
+    // that already lost its monitor and is awaiting an explicit manual
+    // recovery must NOT silently retry Windows QAudioSink installation here.
+    // It also must not erase retained M17 PCM without a user decision.
+    if(monitorTransitioning_ ||returnRecovery_)return;
     if(pending_)static_cast<void>(cancel());
 }
 
