@@ -101,11 +101,15 @@ int main(){
         assert(zero&&zero.value()->width.diagnostic==Diagnostic::insufficient_content);
         assert(!zero.value()->width.used_all_scope_fallback);
       }
-      mask.push_back(0);
+      // Deliberately bad mask needs a NEW span after its vector storage grows.
+      // Reusing "gated" after mask.push_back would leave a dangling old span
+      // and the wrong (old) length: undefined behavior across MSVC/Linux.
+      auto mismatchedMask=mask;
+      mismatchedMask.push_back(0);
+      const ExternallyOwnedGateInputs badGate{true,mismatchedMask,false,{}};
       const auto bad=analyze_audio_buffer_scope_candidate(resource.view(),
-        core::FrameIndex{static_cast<std::int64_t>(origin)},*fc.value(),domain,gated);
+        core::FrameIndex{static_cast<std::int64_t>(origin)},*fc.value(),domain,badGate);
       assert(!bad&&bad.error()->code()==core::ErrorCode::InvalidState);
-      mask.pop_back();
       auto wrongDomain=analyze_audio_buffer_scope_candidate(resource.view(),
         core::FrameIndex{static_cast<std::int64_t>(origin)},*fc.value(),
         domain==audio::FrameDomainId::OUTPUT_RATE?
