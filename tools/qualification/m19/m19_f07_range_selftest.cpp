@@ -80,7 +80,7 @@ int main()
     const auto base=run([&]{
         std::vector<double> v(n,0.0);v[0]=1.0;return v;
     }());
-    require(base.full_scope_rms_dbfs);
+    require(base.full_scope_rms_dbfs.has_value());
     // This must be distinguishable from the naive sum of just 1.0.
     require(*front.full_scope_rms_dbfs >
             *base.full_scope_rms_dbfs+4e-15);
