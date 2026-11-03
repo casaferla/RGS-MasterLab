@@ -4,6 +4,8 @@
 // Frozen scope: integrated LUFS, full-scope RMS, sample peak, M16 TP, sample-peak crest.
 // This isolated prototype computes four metrics; TP stays unavailable until
 // the actual qualified M16 surface is bound. No extra live/windowed metrics.
+#include "m19_k_weighting_frozen_banks.hpp"
+
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -11,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace rgsml::analysis::internal::m19 {
@@ -34,6 +37,9 @@ struct BasicLevelPreproductionSnapshot {
     // NO M19 oversampler or surrogate. Bind only the canonical M16 result later.
     std::optional<double> true_peak_db_tp{};
     std::optional<double> sample_peak_crest_db{};
+    // PO-frozen asset provenance only, not a product-qualification assertion.
+    std::string_view k_weighting_bank_member_id{};
+    std::string_view k_weighting_bank_sha256{};
     LoudnessPreproductionState loudness_state{
         LoudnessPreproductionState::not_finalized};
 };
