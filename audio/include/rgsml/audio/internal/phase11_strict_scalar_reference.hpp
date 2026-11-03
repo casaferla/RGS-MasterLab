@@ -54,7 +54,8 @@ namespace phase11_detail {
     std::int64_t L,
     std::int64_t M,
     std::span<const std::uint64_t> kernelBits,
-    const std::function<bool()>& cancelled = {})
+    const std::function<bool()>& cancelled = {},
+    const std::function<void(std::size_t)>& progress = {})
 {
     using core::ErrorCode;
     const auto reject=[](ErrorCode code,const char* msg) {
@@ -86,6 +87,8 @@ namespace phase11_detail {
                 return reject(ErrorCode::InvalidState,
                               "Phase11 identity retired during PCM copy");
             output[i]=fullSource[static_cast<std::size_t>(absoluteOutputStart)+i];
+            if(progress &&((i+1)%8192==0 ||i+1==output.size()))
+                progress(i+1);
         }
         return core::Result<void>::success();
     }
@@ -131,6 +134,9 @@ namespace phase11_detail {
             return reject(ErrorCode::InvalidAudioSample,
                           "Nonfinite strict scalar output");
         output[i]=sum;
+        // Observer-only; never mutates strict-scalar FP operations or PCM.
+        if(progress &&((i+1)%8192==0 ||i+1==output.size()))
+            progress(i+1);
     }
     return core::Result<void>::success();
 }
