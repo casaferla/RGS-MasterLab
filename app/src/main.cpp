@@ -401,6 +401,17 @@ int main(int argc, char* argv[])
             return auditionSelector.restore_manual_processed_after_terminal(
                 std::move(manual),id,cue);
         });
+    // Before Return to Source can retire a valid MASTER monitoring sink,
+    // verify that the original immutable MANUAL PCM can be negotiated onto
+    // the CURRENT Windows device using the exact authenticated Playback FIR.
+    // This is a probe only: no QAudioSink start, no retargeting and no Stop.
+    privateProductSession.set_private_monitor_manual_restore_preflight(
+        [windowsPlayback](auto manual) -> rgsml::core::Status {
+            if(!manual)return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_SOURCE_OWNER_MISSING_AT_PREFLIGHT"});
+            return windowsPlayback->preflight_source_pcm(manual->view());
+        });
     // Exact monitor retirement precedes any SOURCE-region mutation.
     // Reject a competing region instead of silently overwriting user intent.
     privateProductSession.set_private_monitor_source_loop_reconciliation(
