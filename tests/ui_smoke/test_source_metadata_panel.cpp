@@ -1114,9 +1114,9 @@ Window {
             auto* actionRow=qobject_cast<QQuickItem*>(find_child_by_name(
                 host,QStringLiteral("m17ExplicitPreparationControls")));
             QVERIFY(actionRow);
-            auto* popupItem=qobject_cast<QQuickItem*>(popup);
-            QVERIFY(popupItem);
-            QVERIFY2(popupItem->mapToItem(host,QPointF{}).y()
+            // Qt Quick Controls Popup is a QQuickPopup QObject, NOT a
+            // QQuickItem. Its x/y are already in its parent Item coordinates.
+            QVERIFY2(popup->property("y").toDouble()
                 >= actionRow->mapToItem(host,QPointF{0,actionRow->height()}).y(),
                 "Rate & Time popup must not cover the toggle button.");
             auto* summary=find_child_by_name(host,
