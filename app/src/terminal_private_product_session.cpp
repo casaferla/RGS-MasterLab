@@ -798,8 +798,148 @@ core::Status TerminalPrivateProductSession::control_private_monitor(
     return core::Status::success();
 }
 
+core::Status
+TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
+{
+    // This is an explicit recovery, NOT a new MASTER render and NOT a
+    // second anonymous DEVICE realization. The original M17 PCM remains
+    // held by pending_/candidate stage until the SOURCE is genuinely back.
+    if(monitorTransitioning_ ||installedMonitor_ ||!returnRecovery_
+       ||!pending_ ||!manualRestore_ ||!transport_)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_NOT_AVAILABLE"));
+    const Pending predecessor=*pending_;
+    const ReturnRecovery recovery=*returnRecovery_;
+    if(predecessor.offlineNoSink ||!manual_ ||!prepared_ ||!manualId_
+       ||!sourceLoop_ ||!selected_
+       ||manual_()!=predecessor.manual
+       ||prepared_()!=predecessor.prepared
+       ||manualId_()!=std::optional{predecessor.manualId}
+       ||sourceLoop_()!=predecessor.loop
+       ||!selected_())
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_SOURCE_EPOCH_REVOKED"));
+    const auto empty=transport_->playback_snapshot();
+    if(!empty ||empty.value()->state!=core::PlaybackState::NO_SOURCE
+       ||empty.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||empty.value()->audibleRealization.realizationId
+       ||empty.value()->position!=core::FrameIndex{0}
+       ||empty.value()->duration ||empty.value()->loop)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_REFUSES_OCCUPIED_OR_ALIEN_DEVICE"));
+    if(manualRestorePreflight_) {
+        const auto preflight=[&]()->core::Status {
+            try {
+                return manualRestorePreflight_(predecessor.manual);
+            } catch(const std::bad_alloc&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "MONITOR_RETURN_RECOVERY_PREFLIGHT_OUT_OF_MEMORY"});
+            } catch(const std::exception&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_RECOVERY_PREFLIGHT_EXCEPTION"});
+            }
+        }();
+        if(!preflight)return preflight;
+    }
+    monitorTransitioning_=true;
+    const auto failedRecovery=[&](const core::Error& error)->core::Status {
+        monitorTransitioning_=false;
+        status_=QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
+        error_=QString::fromStdString(error.message());
+        emit changed();
+        return core::Status::failure(error);
+    };
+    const auto restored=[&]()->core::Status {
+        try {
+            return manualRestore_(predecessor.manual,predecessor.manualId,
+                recovery.sourceCue);
+        } catch(const std::bad_alloc&) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "MONITOR_RETURN_RECOVERY_SOURCE_OUT_OF_MEMORY"});
+        } catch(const std::exception&) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_RECOVERY_SOURCE_EXCEPTION"});
+        }
+    }();
+    if(!restored)return failedRecovery(*restored.error());
+    const auto checked=[&](std::optional<core::FrameRange> loop)->bool {
+        const auto proof=transport_->playback_snapshot();
+        return proof
+           &&proof.value()->state==core::PlaybackState::STOPPED
+           &&proof.value()->audibleRealization.phase
+               ==core::AudibleHandoffPhase::NEW
+           &&proof.value()->audibleRealization.realizationId
+               ==std::optional{predecessor.manualId}
+           &&proof.value()->duration
+               ==std::optional{predecessor.manual->view().frame_count()}
+           &&proof.value()->position==recovery.sourceCue
+           &&proof.value()->loop==loop;
+    };
+    if(!checked(predecessor.loop))
+        return failedRecovery(rejected(
+            "MONITOR_RETURN_RECOVERY_SOURCE_SINK_NOT_EXACT"));
+    if(recovery.reconciledSourceLoop) {
+        if(!sourceLoopReconcile_)return failedRecovery(rejected(
+            "MONITOR_RETURN_RECOVERY_LOOP_CALLBACK_MISSING"));
+        const auto committed=sourceLoopReconcile_(
+            *recovery.reconciledSourceLoop);
+        if(!committed)return failedRecovery(*committed.error());
+        if(!sourceLoop_||sourceLoop_()
+               !=recovery.reconciledSourceLoop
+           ||!checked(recovery.reconciledSourceLoop))
+            return failedRecovery(rejected(
+                "MONITOR_RETURN_RECOVERY_RECONCILED_LOOP_NOT_EXACT"));
+    }
+    if(recovery.priorTransport!=core::PlaybackState::STOPPED) {
+        transport_->playOrResume();
+        if(recovery.priorTransport==core::PlaybackState::PAUSED)
+            transport_->pause();
+        const auto final=transport_->playback_snapshot();
+        if(!final ||final.value()->state!=recovery.priorTransport
+           ||final.value()->audibleRealization.phase
+                !=core::AudibleHandoffPhase::NEW
+           ||final.value()->audibleRealization.realizationId
+                !=std::optional{predecessor.manualId}
+           ||final.value()->duration
+                !=std::optional{predecessor.manual->view().frame_count()}
+           ||final.value()->loop!=(recovery.reconciledSourceLoop
+                ?recovery.reconciledSourceLoop:predecessor.loop)) {
+            // Retry only if we can prove the device is later empty; a
+            // partially installed or foreign sink must never be cleared.
+            return failedRecovery(rejected(
+                "MONITOR_RETURN_RECOVERY_TRANSPORT_NOT_EXACT"));
+        }
+    }
+    monitorTransitioning_=false;
+    monitorRecoveryOriginal_.reset();
+    returnRecovery_.reset();
+    if(recovery.reconciledSourceLoop) {
+        pending_.reset();
+        approvedMonitor_.reset();
+        approvedMonitorMaster_.reset();
+        status_=QStringLiteral("IDLE");
+        renderer_->invalidate();
+    } else {
+        status_=predecessor.masterOnly
+            ?QStringLiteral("MASTER_READY_MONITOR_PENDING")
+            :QStringLiteral("READY_TO_INSTALL");
+    }
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
 core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
 {
+    // A monitored DEVICE was already proven retired, but a later Windows
+    // SOURCE installation failed. This branch never adopts a foreign sink.
+    if(returnRecovery_)
+        return retry_source_return_after_monitor_retirement();
     if(monitorTransitioning_||!installedMonitor_||!pending_
        ||!monitorOwned_||!monitorRetire_||!manualRestore_)
         return core::Status::failure(rejected(
@@ -1007,9 +1147,16 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     const auto restored=manualRestore_(
         predecessor.manual,predecessor.manualId,sourceCue);
     if(!restored){
+        // The monitor is already retired. Do not destroy the still-valid
+        // immutable MASTER because a hotplug/rate/Qt sink install failed.
+        // No SOURCE audio is asserted and the only future action is an
+        // exact, fresh endpoint preflight followed by guarded retry.
+        returnRecovery_=ReturnRecovery{
+            sourceCue,priorMonitorState,reconciledSourceLoop};
         monitorTransitioning_=false;
-        renderer_->invalidate();
-        failed(*restored.error());
+        status_=QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
+        error_=QString::fromStdString(restored.error()->message());
+        emit changed();
         return restored;
     }
     const auto after=transport_->playback_snapshot();
@@ -1092,6 +1239,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     }
     monitorTransitioning_=false;
     monitorRecoveryOriginal_.reset();
+    returnRecovery_.reset();
     if(reconciledSourceLoop) {
         // This SOURCE loop differs from the captured M17 render epoch.
         // Revoke the private MASTER ticket: new audition requires new render.
