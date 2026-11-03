@@ -76,6 +76,9 @@ public:
     [[nodiscard]] QVariantList actual_prepare_times() const;
     [[nodiscard]] QVariantList host_total_ranges() const;
     [[nodiscard]] QVariantList prepare_time_rows() const;
+    // Typed, >=3 accepted whole-Prepare host range. UI only, no admission.
+    [[nodiscard]] std::optional<std::pair<std::int64_t,std::int64_t>>
+        predicted_whole_prepare_us(std::int64_t target_rate_hz) const;
     using CeilingProvider=std::function<double()>;
     void set_active_ceiling_provider(CeilingProvider provider) {
         activeCeilingProvider_=std::move(provider);
