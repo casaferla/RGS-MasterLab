@@ -45,6 +45,20 @@ struct DeviceFormat final {
     bool pairedPcm16Supported,
     int explicitAlternativeHz=0);
 
+// SOURCE/PROCESSED device negotiation across all six authenticated playback
+// FIR frequencies. The caller MUST probe every listed exact Qt sink format on
+// the current endpoint; this pure selector does not install audio, resample,
+// change the MASTER, or promote any M16 LIVE certificate.
+struct ObservedSixRateDeviceFormat final {
+    int sampleRateHz;
+    bool ieeeFloat32Supported;
+    bool pcm16Supported;
+};
+[[nodiscard]] core::Result<DeviceFormat> select_source_device_format_six_rate(
+    const audio::AudioFormat& sourceFormat,
+    int devicePreferredRateHz,
+    const std::array<ObservedSixRateDeviceFormat,6>& observed);
+
 // Future monitoring-only route: derive a device PCM rate from an observed
 // *preferred* Windows format, never change the M17/M18 MASTER rate. This is
 // capability selection, NOT the PCM resampler, playback install or proof of
