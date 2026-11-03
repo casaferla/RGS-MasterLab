@@ -6,6 +6,7 @@ on:
       - experimental/m20-tonal-stereo-20261103
     paths:
       - 'analysis/src/internal/m20_*.hpp'
+      - 'ui/qml/M20BasicTonalStereoPreview.qml'
       - 'tools/qualification/m20/**'
       - 'docs/architecture/M20_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261103.md'
       - '.github/workflows/m20-preproduction.yml'
@@ -91,6 +92,17 @@ jobs:
           for opts in "-O0 -g" "-O2"; do
             g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include -Iaudio/include -Icore/include tools/qualification/m20/m20_m19_phase6_port_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m20-phase6-port"
             "$RUNNER_TEMP/m20-phase6-port"
+          done
+      - name: M20 static QML scope/non-activation contract
+        shell: bash
+        run: python3 tools/qualification/m20/test_m20_preview_contract.py
+      - name: M20 genuine read-only C++ view coordinates and availability · Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include -Iaudio/include -Icore/include tools/qualification/m20/m20_presentation_selftest.cpp -o "$RUNNER_TEMP/m20-presentation"
+            "$RUNNER_TEMP/m20-presentation"
           done
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
@@ -194,6 +206,21 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_PHASE6_PORT_TEST_FAILED_$mode" }
           }
           Write-Output M20_PHASE6_PORT_WINDOWS_PREPRODUCTION_PASS_NOT_GATE_G
+      - name: M20 static QML scope/non-activation contract
+        shell: pwsh
+        run: python tools/qualification/m20/test_m20_preview_contract.py
+      - name: M20 genuine read-only C++ view coordinates and availability · Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-presentation-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include /Iaudio/include /Icore/include tools/qualification/m20/m20_presentation_selftest.cpp "/Fe:$env:RUNNER_TEMP/m20-presentation-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 40; throw "M20_PRESENTER_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-presentation-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_PRESENTER_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_PRESENTER_WINDOWS_PREPRODUCTION_PASS_NOT_GATE_G
       - name: Preserve ONLY bounded Windows failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
@@ -201,3 +228,60 @@ jobs:
           name: M20-Windows-bounded-diagnostic
           path: ${{ runner.temp }}/m20-audioscope-bounded.txt
           if-no-files-found: ignore
+
+  qt-preview-linux:
+    name: M20 isolated real Qt6 QML preview · Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt 6.8.3 without changing main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -O "$RUNNER_TEMP/m20qt"
+      - name: Compile and instantiate actual isolated QtQuick component
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          set -euo pipefail
+          cmake -S tools/qualification/m20/qt_preview -B "$RUNNER_TEMP/m20-qt-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/m20qt/6.8.3/gcc_64"
+          cmake --build "$RUNNER_TEMP/m20-qt-build" --parallel 3
+          "$RUNNER_TEMP/m20-qt-build/m20_qt_preview_smoke"
+          echo M20_QT_LINUX_ISOLATED_PREVIEW_PASS_NOT_FQ
+  qt-preview-windows:
+    name: M20 isolated real Qt6 QML preview · Windows
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Qt 6.8.3 without changing main build
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw "M20_QT_WIN_PIP_INSTALL_FAILED" }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:RUNNER_TEMP/m20qt"
+          if ($LASTEXITCODE -ne 0) { throw "M20_QT_WIN_INSTALL_FAILED" }
+      - name: Compile and instantiate actual isolated QtQuick component
+        shell: pwsh
+        run: |
+          & cmake -S tools/qualification/m20/qt_preview -B "$env:RUNNER_TEMP/m20-qt-build" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$env:RUNNER_TEMP/m20qt/6.8.3/msvc2022_64"
+          if ($LASTEXITCODE -ne 0) { throw "M20_QT_WIN_CONFIGURE_FAILED" }
+          & cmake --build "$env:RUNNER_TEMP/m20-qt-build" --parallel 3
+          if ($LASTEXITCODE -ne 0) { throw "M20_QT_WIN_BUILD_FAILED" }
+          $env:PATH = "$env:RUNNER_TEMP/m20qt/6.8.3/msvc2022_64/bin;$env:PATH"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:QT_QUICK_BACKEND = "software"
+          & "$env:RUNNER_TEMP/m20-qt-build/m20_qt_preview_smoke.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M20_QT_WIN_QML_SMOKE_FAILED" }
+          Write-Output M20_QT_WINDOWS_ISOLATED_PREVIEW_PASS_NOT_FQ
