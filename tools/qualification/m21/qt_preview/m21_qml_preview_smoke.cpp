@@ -8,6 +8,10 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QImage>
+#include <QFont>
+#include <QFontDatabase>
+#include <QRawFont>
+#include <QSet>
 #include <QString>
 #include <iostream>
 #include <memory>
@@ -24,6 +28,19 @@ static Snapshot make(Column column,double lufs) {
 }
 int main(int argc,char** argv){
   QGuiApplication app(argc,argv);
+  // Headless Windows Qt defaults may substitute every glyph with a square.
+  // Force a system-native font with an ACTUAL registered glyph atlas.
+  const auto families=QFontDatabase::families();
+  check(families.contains(QStringLiteral("Arial")),
+        "M21_WINDOWS_FONT_ARIAL_NOT_REGISTERED");
+  QFont actualFont(QStringLiteral("Arial"));
+  actualFont.setPointSize(10);
+  app.setFont(actualFont);
+  const auto rawFont=QRawFont::fromFont(actualFont);
+  check(rawFont.isValid(),"M21_FONT_RAW_INVALID");
+  const auto glyphs=rawFont.glyphIndexesForString(QStringLiteral("MASTER 123"));
+  for(const auto glyph:glyphs)
+    check(glyph!=0,"M21_FONT_MISSING_ASCII_GLYPHS");
   QQmlEngine engine;
   QQmlComponent component(&engine,QUrl::fromLocalFile(QString::fromUtf8(M21_QML_SOURCE)));
   if(!component.isReady()) {
@@ -118,6 +135,15 @@ int main(int argc,char** argv){
     check(!capture.isNull(),"M21_SCREENSHOT_GRAB_NULL");
     check(capture.width()>=1000 && capture.height()>=700,
           "M21_SCREENSHOT_WRONG_SIZE");
+    // Font-atlas sanity: a rendered 1100x765 screenshot with only a handful
+    // of RGB colors was a genuine CI failure: every text glyph was a box.
+    // Sample actual pixels, not just QML labels or test harness strings.
+    QSet<QRgb> distinctPixels;
+    for(int yy=0;yy<capture.height();yy+=2)
+      for(int xx=0;xx<capture.width();xx+=2)
+        distinctPixels.insert(capture.pixel(xx,yy));
+    check(distinctPixels.size()>=30,
+          "M21_SCREENSHOT_FONT_ATLAS_BOX_GLYPHS_OR_BLANK_UI");
     check(capture.save(screenshotPath,"PNG"),"M21_SCREENSHOT_PNG_WRITE_FAILED");
     std::cout<<"M21_REAL_QT_RENDERED_SCREENSHOT_PRIVATE_FIXTURE_PNG_SAVED\n";
   }
