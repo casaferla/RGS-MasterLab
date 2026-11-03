@@ -3321,6 +3321,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     const auto wrongOwner=product.return_private_monitor_to_manual();
     QVERIFY(!wrongOwner);
     QCOMPARE(wrongOwner.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(QString::fromStdString(wrongOwner.error()->message())
+        .contains(QStringLiteral("MONITOR_RETURN_REALIZATION_MISMATCH")));
     QCOMPARE(sourceRestoreProbes,std::size_t{6});
     QCOMPARE(monitorRetires,std::size_t{1});
     QCOMPARE(manualRestores,std::size_t{3});
