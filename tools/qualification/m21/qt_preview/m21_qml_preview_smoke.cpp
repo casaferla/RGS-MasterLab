@@ -3,6 +3,12 @@
 #include <QGuiApplication>
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QQuickView>
+#include <QQuickItem>
+#include <QEventLoop>
+#include <QTimer>
+#include <QImage>
+#include <QString>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -67,6 +73,54 @@ int main(int argc,char** argv){
        ==QStringLiteral("+2.00 dB"),"M21_QML_CPP_TONAL_DELTA");
   check(spectrum->property("text").toString().contains("MISSING"),
         "M21_QML_SPECTRUM_MISSING_NOT_ZERO");
+  // GENUINE Qt-rendered screenshot only when the runner provides a path.
+  // All visualized numbers are explicit PRIVATE DEMONSTRATION fixtures.
+  const QString screenshotPath=qEnvironmentVariable("M21_SCREENSHOT_PATH");
+  if(!screenshotPath.isEmpty()){
+    auto demoP=p;auto demoG=g;auto demoX=x;
+    for(auto* item:{&demoP,&demoG,&demoX}){
+      item->metrics[1]={-18.8,Quality::present,{}};
+      item->metrics[2]={-1.7,Quality::present,{}};
+      item->metrics[3]={{},Quality::missing,"M16 authoritative result not bound"};
+      item->metrics[4]={17.1,Quality::present,{}};
+      item->metrics[5]={1.04,Quality::present,{}};
+      item->metrics[6]={0.18,Quality::present,{}};
+      item->metrics[7]={0.64,Quality::present,{}};
+      item->metrics[8]={0.92,Quality::present,{}};
+    }
+    demoP.metrics[1].unrounded=-20.2;
+    demoG.metrics[1].unrounded=-14.9;
+    demoG.metrics[2].unrounded=-0.9;
+    demoX.metrics[1].unrounded=-15.7;
+    demoX.metrics[2].unrounded=-1.1;
+    demoP.average_spectrum={{100.,{1e-6,Quality::present,{}}}};
+    demoG.average_spectrum={{100.,{2e-6,Quality::present,{}}}};
+    demoX.average_spectrum={{100.,{1.5e-6,Quality::present,{}}}};
+    for(std::uint32_t id:{5U,6U,7U,8U}){
+      demoP.tonal_profile.push_back({id,true,{-4.0,Quality::present,{}}});
+      demoG.tonal_profile.push_back({id,true,{-1.1,Quality::present,{}}});
+      demoX.tonal_profile.push_back({id,true,{-2.3,Quality::present,{}}});
+    }
+    const auto demo=to_qt_preview(make_presentation(compose({demoP,demoG,demoX})));
+    QQuickView screenshotView;
+    screenshotView.setResizeMode(QQuickView::SizeRootObjectToView);
+    screenshotView.setSource(QUrl::fromLocalFile(QString::fromUtf8(M21_QML_SOURCE)));
+    check(screenshotView.status()==QQuickView::Ready,"M21_SCREENSHOT_QML_NOT_READY");
+    screenshotView.resize(1100,765);
+    check(screenshotView.rootObject()!=nullptr,"M21_SCREENSHOT_ROOT_ABSENT");
+    check(screenshotView.rootObject()->setProperty("presentation",demo),
+          "M21_SCREENSHOT_BINDING_FAILED");
+    screenshotView.show();
+    QEventLoop loop;
+    QTimer::singleShot(350,&loop,&QEventLoop::quit);
+    loop.exec();
+    const auto capture=screenshotView.grabWindow();
+    check(!capture.isNull(),"M21_SCREENSHOT_GRAB_NULL");
+    check(capture.width()>=1000 && capture.height()>=700,
+          "M21_SCREENSHOT_WRONG_SIZE");
+    check(capture.save(screenshotPath,"PNG"),"M21_SCREENSHOT_PNG_WRITE_FAILED");
+    std::cout<<"M21_REAL_QT_RENDERED_SCREENSHOT_PRIVATE_FIXTURE_PNG_SAVED\n";
+  }
   auto rows=displayed.value("rows").toList();
   check(rows.size()==9,"M21_QML_NINE_METRICS");
   check(rows[0].toMap().value("preparedDelta").toString()==QStringLiteral("+5.00 LU"),
