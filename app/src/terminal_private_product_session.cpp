@@ -6,6 +6,7 @@
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
+#include <exception>
 #include <limits>
 #include <new>
 #include <utility>
@@ -958,7 +959,19 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     // This is NOT a guarantee against a later Windows hotplug; the old
     // strict post-restore owner/loop proof remains mandatory.
     if(manualRestorePreflight_) {
-        const auto preflight=manualRestorePreflight_(predecessor.manual);
+        const auto preflight=[&]()->core::Status {
+            try {
+                return manualRestorePreflight_(predecessor.manual);
+            } catch(const std::bad_alloc&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "MONITOR_RETURN_SOURCE_PREFLIGHT_OUT_OF_MEMORY"});
+            } catch(const std::exception&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_SOURCE_PREFLIGHT_EXCEPTION"});
+            }
+        }();
         if(!preflight)return preflight;
     }
     const auto owned=monitorOwned_(candidate);
