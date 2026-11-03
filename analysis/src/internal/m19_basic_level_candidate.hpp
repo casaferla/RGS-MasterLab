@@ -38,6 +38,59 @@ struct BasicLevelPreproductionSnapshot {
         LoudnessPreproductionState::not_finalized};
 };
 
+// Private gate evidence for independent numerical adversaries. All comparisons
+// are STRICT in power domain; this avoids near-equality reclassification from
+// the rounded -0.691 + log10(q) -> subtraction path.
+struct GatedBlockCandidateEvidence {
+    std::optional<double> integrated_lufs{};
+    std::size_t absolute_count{0};
+    std::size_t final_count{0};
+};
+
+[[nodiscard]] inline std::optional<GatedBlockCandidateEvidence>
+gate_complete_400ms_block_powers(std::span<const double> powers)
+{
+    GatedBlockCandidateEvidence evidence;
+    const double absolutePower = std::pow(10.0, (-70.0 + 0.691) / 10.0);
+    double sumA = 0.0;
+    for (double q : powers) {
+        if (!std::isfinite(q) || q < 0.0) {
+            return std::nullopt;
+        }
+        if (q > absolutePower) {
+            sumA += q;
+            ++evidence.absolute_count;
+        }
+    }
+    if (evidence.absolute_count == 0U) {
+        return evidence;
+    }
+    if (!std::isfinite(sumA)) {
+        return std::nullopt;
+    }
+    // ITU one-pass relative gate = -10 LU relative to the original
+    // absolute-gated mean POWER, never mean of dB nor iterative gates.
+    const double relativePower = (sumA /
+        static_cast<double>(evidence.absolute_count)) / 10.0;
+    double sumR = 0.0;
+    for (double q : powers) {
+        if (q > absolutePower && q > relativePower) {
+            sumR += q;
+            ++evidence.final_count;
+        }
+    }
+    if (evidence.final_count == 0U || !std::isfinite(sumR)) {
+        return std::nullopt;
+    }
+    const double loudness = -0.691 + 10.0 *
+        std::log10(sumR / static_cast<double>(evidence.final_count));
+    if (!std::isfinite(loudness)) {
+        return std::nullopt;
+    }
+    evidence.integrated_lufs = loudness;
+    return evidence;
+}
+
 class BasicLevelPreproduction final {
 public:
     BasicLevelPreproduction(std::uint32_t sampleRateHz,
@@ -62,7 +115,7 @@ public:
     // AnalysisScope. Chunk boundaries never reset the K filter or energy grid.
     // Whole-chunk validation prevents any partial state mutation on invalid PCM.
     [[nodiscard]] bool push(std::span<const double> channel0,
-                            std::span<const double> channel1 = {}) noexcept
+                            std::span<const double> channel1 = {})
     {
         if (!valid_ || finished_ || channel0.empty()
             || (channel_count_ == 1U && !channel1.empty())
@@ -166,43 +219,16 @@ public:
         } else if (block_powers_.empty()) {
             out.loudness_state = LoudnessPreproductionState::insufficient_duration;
         } else {
-            // The -70 absolute gate and -10 LU relative gate are both STRICT >.
-            // Original 400-ms powers are retained; relative gating is not iterative.
-            double sumA = 0.0;
-            std::uint64_t countA = 0U;
-            for (double q : block_powers_) {
-                if (q > 0.0 && -0.691 + 10.0 * std::log10(q) > -70.0) {
-                    sumA += q;
-                    ++countA;
-                }
+            const auto gated = gate_complete_400ms_block_powers(block_powers_);
+            if (!gated) {
+                return std::nullopt;
             }
-            if (countA == 0U) {
+            if (gated->integrated_lufs) {
+                out.integrated_lufs = gated->integrated_lufs;
+                out.loudness_state = LoudnessPreproductionState::available;
+            } else {
                 out.loudness_state =
                     LoudnessPreproductionState::no_absolute_gated_blocks;
-            } else {
-                const double threshold = -0.691
-                    + 10.0 * std::log10(sumA / static_cast<double>(countA)) - 10.0;
-                double sumR = 0.0;
-                std::uint64_t countR = 0U;
-                for (double q : block_powers_) {
-                    if (q > 0.0) {
-                        const double loudness = -0.691 + 10.0 * std::log10(q);
-                        if (loudness > -70.0 && loudness > threshold) {
-                            sumR += q;
-                            ++countR;
-                        }
-                    }
-                }
-                if (countR == 0U || !std::isfinite(sumR)) {
-                    return std::nullopt;
-                }
-                const double integrated = -0.691
-                    + 10.0 * std::log10(sumR / static_cast<double>(countR));
-                if (!std::isfinite(integrated)) {
-                    return std::nullopt;
-                }
-                out.integrated_lufs = integrated;
-                out.loudness_state = LoudnessPreproductionState::available;
             }
         }
         return out;
