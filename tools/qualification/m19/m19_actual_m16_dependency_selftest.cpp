@@ -74,9 +74,9 @@ int main()
     // regional subview, preserving M16's currently frozen call boundary.
     const std::vector<double> dc(19200U,1.0);
     auto pcm=makeBuffer(48000,ChannelLayout::MONO_C,12345,dc);
-    require(pcm);
+    require(pcm.has_value());
     const auto m16=measure_true_peak_full_resource(*pcm.value());
-    require(m16);
+    require(m16.has_value());
     require(m16.value()->qualification_status() ==
             TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
     require(m16.value()->sample_rate_hz()==48000);
@@ -89,7 +89,7 @@ int main()
     require(m16.value()->filter_asset_sha256()==std::string_view{
             "D1DF3373D3C5A82A3E4CFE3576BDDF97E153F3281FF9287554E024FA6CB0D316"});
     auto channel=pcm.value()->view().channel(0);
-    require(channel);
+    require(channel.has_value());
     BasicLevelPreproduction m19(48000U,1U,12345U,19200U);
     require(m19.push(*channel.value()));
     const auto snapshot=m19.finalize();
@@ -109,9 +109,9 @@ int main()
     const std::vector<double> right{-0.5,-2.0,0.125,0.75};
     for (std::int64_t rate : {44100,48000,88200,96000,176400,192000}) {
         auto stereo=makeBuffer(rate,ChannelLayout::STEREO_LR,0,left,right);
-        require(stereo);
+        require(stereo.has_value());
         const auto peak=measure_true_peak_full_resource(*stereo.value());
-        require(peak);
+        require(peak.has_value());
         require(peak.value()->sample_rate_hz()==rate);
         require(peak.value()->channel_count()==2U);
         require(peak.value()->global_db_tp().has_value());
@@ -123,7 +123,7 @@ int main()
     auto bad=left;
     bad[2]=(std::numeric_limits<double>::quiet_NaN)();
     auto invalid=makeBuffer(48000,ChannelLayout::MONO_C,0,bad);
-    require(invalid);
+    require(invalid.has_value());
     const auto failed=measure_true_peak_full_resource(*invalid.value());
     require(!failed);
     require(failed.error()->code()==rgsml::core::ErrorCode::InvalidAudioSample);
