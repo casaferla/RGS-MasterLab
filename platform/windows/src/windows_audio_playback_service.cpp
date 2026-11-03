@@ -529,6 +529,16 @@ struct OutputCandidate final {
         }
         rateAdapter.emplace(std::move(*adapter.value()));
     }
+    // Protect the entire six-rate FORMAT+FIR admission from a Windows
+    // default-device hotplug. A stale endpoint cannot silently inherit a
+    // newly selected SOURCE rate or produce audio on a different device.
+    const auto currentOutput=QMediaDevices::defaultAudioOutput();
+    if(currentOutput.isNull() ||currentOutput.mode()!=QAudioDevice::Output
+       ||currentOutput.id()!=defaultOutput.id()
+       ||currentOutput.preferredFormat().sampleRate()!=preferred
+       ||!currentOutput.isFormatSupported(qtFormat))
+        return failure<OutputCandidate>(core::ErrorCode::InvalidState,
+            "SOURCE_DEVICE_ENDPOINT_CHANGED_DURING_ADMISSION");
     try {
         return core::Result<OutputCandidate>::success(OutputCandidate{
             std::make_unique<QtPlaybackOutput>(defaultOutput, qtFormat),
