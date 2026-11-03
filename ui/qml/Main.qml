@@ -969,25 +969,65 @@ ApplicationWindow {
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
                 spacing: 12
-                Image {
-                    id: headerAppIcon
-                    objectName: "headerAppIcon"
+                // Compact horizontal brand lockup, derived from the approved
+                // large RGS badge (without its decorative cyan background waves).
+                Item {
+                    objectName: "headerBrandIconFrame"
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
-                    // Use a native-sized icon per display scaling; old art stays.
-                    source: Screen.devicePixelRatio >= 2
-                        ? "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_96x96.png"
-                        : Screen.devicePixelRatio >= 1.25
-                            ? "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_64x64.png"
-                            : "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_40x40.png"
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    mipmap: true
+                    Image {
+                        id: headerAppIcon
+                        objectName: "headerAppIcon"
+                        anchors.fill: parent
+                        // Keep the existing high-DPI native icon resources.
+                        source: Screen.devicePixelRatio >= 2
+                            ? "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_96x96.png"
+                            : Screen.devicePixelRatio >= 1.25
+                                ? "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_64x64.png"
+                                : "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_40x40.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                        mipmap: true
+                    }
+                    Rectangle {
+                        objectName: "headerBrandIconBorder"
+                        anchors.fill: parent
+                        radius: 9
+                        color: "transparent"
+                        border.width: 1
+                        border.color: "#30CFEA"
+                        opacity: 0.8
+                    }
                 }
                 Column {
-                    Layout.alignment: Qt.AlignVCenter; spacing: 0
-                    Label { text: "RGS MasterLab"; color: root.textPrimary; font.family: "Segoe UI"; font.pixelSize: 18; font.weight: Font.DemiBold }
-                    Label { text: "Reference Guided Sound"; color: root.textSecondary; font.family: "Segoe UI"; font.pixelSize: 12 }
+                    id: headerBrandLockup
+                    objectName: "headerBrandLockup"
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: Math.max(brandTitle.implicitWidth,
+                                                    brandSubtitle.implicitWidth)
+                    spacing: 1
+                    Label {
+                        id: brandTitle
+                        text: "RGS MasterLab"
+                        color: root.textPrimary
+                        font.family: "Segoe UI"
+                        font.pixelSize: 18
+                        font.weight: Font.DemiBold
+                    }
+                    Rectangle {
+                        objectName: "headerBrandGoldDivider"
+                        width: headerBrandLockup.width
+                        height: 2
+                        radius: 1
+                        color: "#F0B73B"
+                    }
+                    Label {
+                        id: brandSubtitle
+                        text: "Reference Guided Sound"
+                        color: "#A8D7F4"
+                        font.family: "Segoe UI"
+                        font.pixelSize: 12
+                    }
                 }
 
                 MenuBar {
