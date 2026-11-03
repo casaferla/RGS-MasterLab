@@ -3297,7 +3297,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // Never auto-clear the foreign sink. The test environment alone
     // emulates its removal before the next explicitly requested Return.
     QVERIFY(device->clear());
-    QVERIFY(monitorUi.returnManual()); // the sole recovery UI operation
+    // The ACTUAL UI button/menu calls cancel(), not returnManual()!
+    // Verify the user-visible path performs a genuine explicit retry.
+    QVERIFY(monitorUi.cancel());
     QCOMPARE(sourceRestoreProbes,std::size_t{7});
     QCOMPARE(monitorRetires,std::size_t{1});
     QCOMPARE(manualRestores,std::size_t{4});
