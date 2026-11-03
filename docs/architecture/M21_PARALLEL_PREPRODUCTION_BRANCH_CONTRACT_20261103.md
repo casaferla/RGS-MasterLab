@@ -128,3 +128,25 @@ adversarial tests require strict generation changes when recomputing
 Gold and Prepared, and reject duplicate, stale, NaN, false-zero or
 malformed spectrum submissions. No changes to shared scheduling,
 real UI, GUI registration, producer DTOs, M17/M18/M19/M20, or main.
+
+
+## Private macro-lot #6 — readable Qt presentation of scope/stale and tonal states
+Actual isolated Qt6.8.3 QML preview now shows per-column PREPARED, GOLD and
+PROCESSED Full Track/Region scope and CURRENT/STALE labels, rather than
+only an undifferentiated comparison header. The read-only bridge exports the
+genuine C++-prepared band IDs and Gold-relative tonal delta/status strings;
+a clipped list shows only independently certified band values. Band ID is
+explicitly NOT advertised as a frequency label. The same bridge exports the
+number of canonical average-spectrum points per column OR a truthful missing/
+stale state; it does not synthesize a curve or pretend to have an unavailable
+spectrum. No QML math, playback, Level Match, Reference Match, DSP suggestion,
+Re-analyze action or source mutation. This preview is NOT GUI Design Authority
+approval, not full Spectrum comparison release or Windows Gate M.
+
+Genuine QtQuick Windows/Linux CI smoke now inspects all three scope labels,
+independent Gold Region, C++-backed +2 dB tonal Gold-minus-Prepared fixture,
+missing spectrum, Gold stale propagation, tonal withdrawal, and empty display.
+Mock values are used ONLY for private smoke testing. The user-facing final
+component must eventually be bound to the real qualified canonical
+FeatureDefinitionRegistry, source-realization identity and accepted GUI shell
+after predecessors are integrated and qualified.
