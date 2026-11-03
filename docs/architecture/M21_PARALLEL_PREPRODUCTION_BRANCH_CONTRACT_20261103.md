@@ -81,3 +81,28 @@ application activation or official Gate S, even when private test fixtures
 supply typed producer evidence. The UI preview's first lot uses deterministic
 presentation fixtures; this lane proves reuse of actual M19/M20 numerical
 candidate types, not real validated SOURCE/GOLD/PROCESSED artifact ownership.
+
+
+## Private macro-lot #4 — actual M20 topology plus independent canonical-shape evidence
+M21 Gold-relative tonal delta now requires the SAME producer-certified
+comparison-pair support identity across Current and Gold; a sample-rate or
+audition timeline coincidence is not a valid proof.
+
+Private C++ import accepts the ACTUAL M20 NormalizedProfileCandidate, exact
+1/12 or substituted 1/3 grid/index/band support, positive canonical
+normalized fractions and externally supplied, unrounded canonical shapeDb
+per band. Input profiles require a real M20 commonComparisonBandwidth
+representation. ShapeDb is deliberately NOT derived from M20 band fractions,
+nor from UI coordinates, nor from inferred dB scaling. Noneligible and
+out-of-common bands reject claimed numeric shape; missing/low-support bands
+remain nonnumeric. Conflicting/duplicate/misordered band IDs, wrong resource,
+missing producer shape authority, absent common support, non-finite values and
+unsupported resolution fail closed transactionally.
+
+Windows MSVC and Linux GCC Debug/Release run the ACTUAL M20 FFT/Hann/PSD and
+normalized profiles at all six sample rates, including independent 44.1-kHz
+Gold vs other-rate PREPARED profiles. Private fixture shapeDb numbers validate
+signs and status only and DO NOT establish canonical shape authority or
+official M21 Gate S. No production UI/Main.qml, Qt registration, M19/M20 math,
+M17/FIR, export, main branch or prerequisite PR changed. Official S and Windows
+M remain blocked, as do predecessor M17→CI reset→M18→M19→M20 gates.
