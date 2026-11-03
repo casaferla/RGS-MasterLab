@@ -485,8 +485,14 @@ Rectangle {
                 text: "Rate & Time"
                 minimumControlWidth: 106
                 accentColor: root.activeFamilyAccent
-                onClicked: rateTimePopup.open()
-                Accessible.name: "Open master rate, memory and estimated processing time"
+                selected: rateTimePopup.opened
+                selectedFamilyAccent: true
+                onClicked: {
+                    if (rateTimePopup.opened) rateTimePopup.close()
+                    else rateTimePopup.open()
+                }
+                Accessible.name: rateTimePopup.opened
+                    ? "Close master rate and time panel" : "Open master rate and time panel"
                 ToolTip.text: "Select a project MASTER rate and review memory; time estimates require local calibration."
                 ToolTip.visible: hovered && rateDwell.ready
                 ToolTip.delay: 0
@@ -919,7 +925,10 @@ Rectangle {
                                     ? forecast.details
                                     : "Complete future Prepare ETA N/A."
                                 Layout.preferredWidth: 62
-                                text: forecast && forecast.label ? forecast.label : "N/A"
+                                text: forecast && forecast.label
+                                    ? (forecast.kind === "historical_actual"
+                                        ? "Last " + forecast.label.replace(/^ACT /, "")
+                                        : forecast.label) : "N/A"
                                 elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
                                 ToolTip.text: interactionHint

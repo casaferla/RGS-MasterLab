@@ -10,7 +10,7 @@ Canvas {
     // Real, same-hue phosphor glow follows the silhouette, not a second LED.
     // Default/unconfigured icons and non-chain controls remain unlit.
     property bool glowEnabled: false
-    readonly property real glowBlur: glowEnabled ? 5.0 : 0.0
+    readonly property real glowBlur: glowEnabled ? 6.5 : 0.0
 
     implicitWidth: 18
     implicitHeight: 18

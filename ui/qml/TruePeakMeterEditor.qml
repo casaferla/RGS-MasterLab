@@ -275,6 +275,7 @@ Item {
                             Layout.maximumHeight: root.height < 420 ? 42 : 54
                             spacing: 2
                             ProgressBar {
+                                id: m17PrepareProgress
                                 objectName: "m17PreparationProgressBar"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 14
@@ -289,6 +290,47 @@ Item {
                                     && root.limiterViewModel.audioStatus.startsWith("Preparing")
                                         ? 1.0 : 0.28
                                 Accessible.name: "Offline limiter preparation progress"
+                                // Dynamics copper, the same rounded geometry as Studio controls.
+                                background: Rectangle {
+                                    radius: 5
+                                    color: "#0B1A29"
+                                    border.width: 1
+                                    border.color: "#6F564A"
+                                }
+                                contentItem: Item {
+                                    clip: true
+                                    Rectangle {
+                                        visible: !m17PrepareProgress.indeterminate
+                                        width: parent.width * m17PrepareProgress.visualPosition
+                                        height: parent.height
+                                        radius: 4
+                                        color: "#C4774A"
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            height: 2
+                                            radius: 1
+                                            color: "#EDB48D"
+                                            opacity: 0.8
+                                        }
+                                    }
+                                    Rectangle {
+                                        id: m17BusyBar
+                                        visible: m17PrepareProgress.indeterminate
+                                        height: parent.height
+                                        width: Math.max(22, parent.width * 0.30)
+                                        radius: 4
+                                        color: "#C4774A"
+                                        NumberAnimation on x {
+                                            from: -m17BusyBar.width
+                                            to: m17PrepareProgress.width
+                                            duration: 1250
+                                            loops: Animation.Infinite
+                                            running: m17PrepareProgress.indeterminate
+                                        }
+                                    }
+                                }
                             }
                             Text {
                                 objectName: "m17PreparationProgressLabel"

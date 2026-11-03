@@ -524,13 +524,26 @@ ApplicationWindow {
             Rectangle {
                 id: waveformRuler
                 objectName: "waveformRuler"
+                clip: true // timestamps stay inside the Source waveform panel
                 anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 1
                 height: 20; color: "#0A151D"
                 RowLayout {
                     anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
                     Label { text: "SOURCE WAVEFORM"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     Item { Layout.fillWidth: true }
-                    Label { visible: sourceWaveform.canNavigate; text: sourceWaveform.viewportStartText + "    " + sourceWaveform.viewportEndText; color: "#647682"; font.family: "Consolas"; font.pixelSize: 10 }
+                    Label {
+                        objectName: "sourceWaveformVisibleClock"
+                        visible: sourceWaveform.canNavigate
+                        Layout.maximumWidth: Math.max(0, waveformRuler.width - 130)
+                        elide: Text.ElideRight
+                        text: sourceWaveform.viewportStartText.slice(0,8)
+                            + " · " + sourceWaveform.viewportEndText.slice(0,8)
+                        color: "#647682"; font.family: "Consolas"; font.pixelSize: 9
+                        HoverHandler { id: waveformClockHover }
+                        ToolTip.text: sourceWaveform.viewportStartText
+                            + " — " + sourceWaveform.viewportEndText
+                        ToolTip.visible: waveformClockHover.hovered
+                    }
                 }
             }
             WaveformItem {
@@ -539,11 +552,22 @@ ApplicationWindow {
                 anchors.left: parent.left; anchors.right: parent.right; anchors.top: waveformRuler.bottom; anchors.bottom: parent.bottom
                 anchors.leftMargin: 12; anchors.rightMargin: 12; anchors.topMargin: 6; anchors.bottomMargin: 6
                 presentation: sourceWaveform
-                positionFrames: auditionSelector.sourcePlayheadVisible ? playbackTransport.positionFrames : 0
-                durationFrames: playbackTransport.durationFrames
+                positionFrames: root.monitorExclusive
+                    && root.appTerminalMonitorViewModel
+                    && root.appTerminalMonitorViewModel.masterDurationFrames > 0
+                    && sourceWaveform.sourceFrameCount > 0
+                    ? Math.min(sourceWaveform.sourceFrameCount,
+                        Math.floor(root.appTerminalMonitorViewModel.masterPositionFrames
+                            * sourceWaveform.sourceFrameCount
+                            / root.appTerminalMonitorViewModel.masterDurationFrames))
+                    : auditionSelector.sourcePlayheadVisible
+                        ? playbackTransport.positionFrames : 0
+                durationFrames: root.monitorExclusive
+                    ? sourceWaveform.sourceFrameCount : playbackTransport.durationFrames
                 waveformColor: root.accent
                 zeroLineColor: "#29414F"
-                playheadColor: auditionSelector.sourcePlayheadVisible ? root.warning : "transparent"
+                playheadColor: root.monitorExclusive || auditionSelector.sourcePlayheadVisible
+                    ? root.warning : "transparent"
                 overrangeColor: root.error
                 regionColor: "#2A87A95C"
                 regionHandleColor: "#E6EEF0"
@@ -767,9 +791,8 @@ ApplicationWindow {
                     Label { text: "START"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     SegmentedTimeEditor {
                         id: auditionStartEditor; objectName: "auditionRegionStartEditor"; objectPrefix: "auditionRegionStart"; endpointName: root.monitorExclusive ? "Master Region start" : "Audition Region start"
-                        enabled: root.monitorExclusive
-                            ? !!root.appTerminalMonitorViewModel && root.appTerminalMonitorViewModel.monitorControllable
-                            : auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                        enabled: !root.monitorExclusive
+                            && auditionRegion.controlsEnabled && auditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionStartFrames : 0)
                         hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.startHours
                         minutesText: root.monitorExclusive ? masterParts[1] : auditionRegion.startMinutes
@@ -791,9 +814,8 @@ ApplicationWindow {
                     Label { text: "END"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     SegmentedTimeEditor {
                         id: auditionEndEditor; objectName: "auditionRegionEndEditor"; objectPrefix: "auditionRegionEnd"; endpointName: root.monitorExclusive ? "Master Region end exclusive" : "Audition Region end exclusive"
-                        enabled: root.monitorExclusive
-                            ? !!root.appTerminalMonitorViewModel && root.appTerminalMonitorViewModel.monitorControllable
-                            : auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                        enabled: !root.monitorExclusive
+                            && auditionRegion.controlsEnabled && auditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionEndFrames : 0)
                         hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.endHours
                         minutesText: root.monitorExclusive ? masterParts[1] : auditionRegion.endMinutes
@@ -815,20 +837,14 @@ ApplicationWindow {
                 StudioToggle {
                     id: loopRegionCheckBox; objectName: "auditionRegionLoopCheckBox"
                     text: "Loop Region"
-                    checked: root.monitorExclusive && root.appTerminalMonitorViewModel
-                        ? root.appTerminalMonitorViewModel.masterLoopEnabled
-                        : auditionRegion.loopEnabled
-                    enabled: root.monitorExclusive
-                        ? !!root.appTerminalMonitorViewModel && root.appTerminalMonitorViewModel.monitorControllable
-                        : auditionRegion.canLoop || auditionRegion.loopEnabled
+                    checked: !root.monitorExclusive && auditionRegion.loopEnabled
+                    enabled: !root.monitorExclusive
+                        && (auditionRegion.canLoop || auditionRegion.loopEnabled)
                     KeyNavigation.backtab: fitRegionButton
                     KeyNavigation.tab: clearRegionButton
                     onClicked: {
-                        if (root.monitorExclusive) {
-                            const vm=root.appTerminalMonitorViewModel
-                            if(vm) vm.setMasterLoop(vm.masterRegionStartFrames,
-                                vm.masterRegionEndFrames,checked)
-                        } else auditionRegion.requestLoopEnabled(checked)
+                        if (!root.monitorExclusive)
+                            auditionRegion.requestLoopEnabled(checked)
                     }
                     Accessible.name: root.monitorExclusive ? "Loop Master Region" : "Loop Audition Region"
                 }
@@ -836,14 +852,12 @@ ApplicationWindow {
                 StudioButton {
                     id: clearRegionButton; objectName: "auditionRegionClearButton"
                     text: "Clear Region"; iconKind: "clear-region"; minimumControlWidth: 80
-                    enabled: root.monitorExclusive
-                        ? !!root.appTerminalMonitorViewModel && root.appTerminalMonitorViewModel.monitorControllable
-                        : auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                    enabled: !root.monitorExclusive
+                        && auditionRegion.controlsEnabled && auditionRegion.hasRegion
                     KeyNavigation.backtab: loopRegionCheckBox
                     KeyNavigation.tab: sourceOpenButton
                     onClicked: {
-                        if(root.monitorExclusive)root.appTerminalMonitorViewModel.clearMasterRegion()
-                        else auditionRegion.requestClearRegion()
+                        if(!root.monitorExclusive)auditionRegion.requestClearRegion()
                     }
                     Accessible.name: root.monitorExclusive ? "Clear Master Region" : "Clear Audition Region"
                 }
@@ -1071,29 +1085,19 @@ ApplicationWindow {
                         StudioMenuItem { text: "Listen to Master"
                             enabled: root.canListenMaster
                             onTriggered: root.listenToPreparedMaster() }
-                        StudioMenuItem { text: "Return MANUAL"
+                        StudioMenuItem { text: "Return to Source"
                             enabled: root.monitorExclusive
                             onTriggered: if (root.appTerminalMonitorViewModel)
                                 root.appTerminalMonitorViewModel.cancel() }
                         MenuSeparator { }
                         StudioMenuItem {
-                            text: (root.monitorExclusive
-                                && root.appTerminalMonitorViewModel
-                                ? root.appTerminalMonitorViewModel.masterLoopEnabled
-                                : auditionRegion.loopEnabled)
+                            text: !root.monitorExclusive && auditionRegion.loopEnabled
                                 ? "Disable Loop Region" : "Enable Loop Region"
-                            enabled: root.monitorExclusive
-                                ? !!root.appTerminalMonitorViewModel
-                                    && root.appTerminalMonitorViewModel.monitorControllable
-                                : (auditionRegion.canLoop || auditionRegion.loopEnabled)
+                            enabled: !root.monitorExclusive
+                                && (auditionRegion.canLoop || auditionRegion.loopEnabled)
                             onTriggered: {
-                                if (root.monitorExclusive) {
-                                    const vm=root.appTerminalMonitorViewModel
-                                    if (vm) vm.setMasterLoop(vm.masterRegionStartFrames,
-                                        vm.masterRegionEndFrames,!vm.masterLoopEnabled)
-                                } else {
+                                if (!root.monitorExclusive)
                                     auditionRegion.requestLoopEnabled(!auditionRegion.loopEnabled)
-                                }
                             }
                         }
                     }
