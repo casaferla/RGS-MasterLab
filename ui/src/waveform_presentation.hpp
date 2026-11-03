@@ -114,6 +114,9 @@ public:
         std::int64_t physicalWidth);
 
     Q_INVOKABLE void requestRetry();
+    // Read-only viewport mapper for SOURCE-shaped MASTER seek gestures.
+    // Does not invoke the SOURCE seek handler or mutate SOURCE/Loop state.
+    Q_INVOKABLE qint64 sourceFrameAtVisibleFraction(double fraction) const;
     Q_INVOKABLE void zoomIn();
     Q_INVOKABLE void zoomOut();
     Q_INVOKABLE void setZoomPosition(double position);

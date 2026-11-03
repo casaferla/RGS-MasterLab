@@ -138,6 +138,10 @@ private:
     std::atomic_bool asyncWorkerRunning_{false};
     std::shared_ptr<std::atomic_bool> asyncCancellation_;
     TerminalPrivateProductSession::MonitoringMasterCapture pendingMaster_;
+    // Reuse only an exact verified MASTER/device PCM pair. No M17 rerender,
+    // and the current Windows endpoint/RAM admission still runs each time.
+    TerminalPrivateProductSession::MonitoringMasterCapture cachedMaster_;
+    std::shared_ptr<const audio::MonitoringPcmCandidate> cachedDevicePcm_;
     AsyncProbe asyncProbe_;
     AsyncRecheck asyncRecheck_;
     std::jthread monitorWorker_;

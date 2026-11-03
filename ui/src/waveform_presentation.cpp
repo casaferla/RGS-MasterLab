@@ -169,6 +169,15 @@ core::FrameIndex WaveformPresentation::physical_seek_frame(
     return viewport_->seek_frame(physicalBoundary, physicalWidth);
 }
 
+qint64 WaveformPresentation::sourceFrameAtVisibleFraction(double fraction) const
+{
+    if(!ready() || !can_navigate() || !std::isfinite(fraction))return -1;
+    constexpr std::int64_t width=1000000;
+    const auto pixel=static_cast<std::int64_t>(
+        std::llround(std::clamp(fraction,0.0,1.0)*width));
+    return physical_seek_frame(pixel,width).value();
+}
+
 std::int64_t WaveformPresentation::physical_pixel_boundary(
     std::int64_t sourceFrameBoundary,
     std::int64_t physicalWidth) const noexcept

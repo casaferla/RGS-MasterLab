@@ -580,6 +580,31 @@ ApplicationWindow {
                 Accessible.name: sourceWaveform.channelCount === 2 ? "Source waveform, separate left and right lanes" : "Source waveform, mono lane"
                 Accessible.description: "Click to seek, drag to pan, Shift drag to create an Audition Region"
             }
+            // MASTER sees the same waveform timeline, but click-to-seek
+            // addresses only the anonymous DEVICE monitor's MASTER frames.
+            // No SOURCE region drag or SOURCE sink seek is permitted.
+            MouseArea {
+                objectName: "masterWaveformSeek"
+                anchors.fill: waveformOverview
+                visible: root.monitorExclusive && waveformOverview.visible
+                    && !!root.appTerminalMonitorViewModel
+                    && root.appTerminalMonitorViewModel.monitorControllable
+                enabled: visible
+                acceptedButtons: Qt.LeftButton
+                cursorShape: Qt.PointingHandCursor
+                onClicked: function(mouse) {
+                    const vm=root.appTerminalMonitorViewModel
+                    const total=sourceWaveform.sourceFrameCount
+                    if (!vm || total <= 0 || vm.masterDurationFrames <= 0
+                        || width <= 0) return
+                    const sourceFrame=sourceWaveform.sourceFrameAtVisibleFraction(
+                        mouse.x / width)
+                    if (sourceFrame < 0) return
+                    const masterFrame=Math.min(vm.masterDurationFrames,
+                        Math.floor(sourceFrame * vm.masterDurationFrames / total))
+                    vm.seekMaster(masterFrame)
+                }
+            }
             Rectangle {
                 visible: waveformOverview.visible && sourceWaveform.channelCount === 2
                 anchors.left: waveformOverview.left; anchors.right: waveformOverview.right; anchors.verticalCenter: waveformOverview.verticalCenter

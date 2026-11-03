@@ -126,6 +126,27 @@ void TerminalProductActivationCoordinator::begin_activation()
     }
     readyToPreview_=false;
     view_->clearVerificationTrim();
+    // M17 belongs to PROCESSED. A normal PREPARED audition is a UI
+    // selection, not a DSP failure: select current accepted PROCESSED
+    // before capturing the exact MANUAL owner. Do not fabricate it.
+    if(selector_->active_target()==AuditionTarget::PREPARED) {
+        if(!selector_->processed_available()) {
+            view_->clearAudioError();
+            view_->setAudioStatus(QStringLiteral(
+                "SELECT PROCESSED · No valid processed audio"));
+            return;
+        }
+        transitioning_=true; // suppress recursive selector-change callbacks
+        const auto selected=selector_->switch_to(AuditionTarget::PROCESSED);
+        transitioning_=false;
+        if(!selected) {
+            view_->reportAudioError(QStringLiteral(
+                "Unable to select PROCESSED: %1")
+                .arg(QString::fromStdString(selected.error()->message())));
+            view_->setAudioStatus(QStringLiteral("SELECT PROCESSED"));
+            return;
+        }
+    }
     auto captured=selector_->capture_terminal_activation_intent();
     if(!captured) {
         // Preserve the precise, SOURCE-owned capture refusal. A failed

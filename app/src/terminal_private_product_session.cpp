@@ -414,12 +414,9 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
             before.value()->position,hz,n);
         if(!cue)return core::Status::failure(*cue.error());
         masterCue=*cue.value();
-        if(predecessor.loop) {
-            auto region=mapped.value()->source_loop_to_master(
-                *predecessor.loop,hz,n);
-            if(!region)return core::Status::failure(*region.error());
-            masterLoop=*region.value();
-        }
+        // A SOURCE Loop is preserved solely for the eventual MANUAL
+        // return. Master audition deliberately does NOT inherit Loop:
+        // full-program listening and seek are the only monitor controls.
     }
     const bool requiresTransport=(sourceClock
         &&(state!=core::PlaybackState::STOPPED
@@ -932,6 +929,14 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
               ||sourceCue>=reconciledSourceLoop->end()))
             sourceCue=reconciledSourceLoop->begin();
     }
+    // The original SOURCE loop may restart playback at its beginning
+    // when a returned MASTER cue lies outside its half-open interval.
+    // Normalize BEFORE the strict MANUAL restoration proof rather than
+    // blaming the genuinely restored sink for a legal loop clamp.
+    if(predecessor.loop
+       &&(sourceCue<predecessor.loop->begin()
+          ||sourceCue>=predecessor.loop->end()))
+        sourceCue=predecessor.loop->begin();
     const auto owned=monitorOwned_(candidate);
     if(!owned)return core::Status::failure(*owned.error());
     if(!*owned.value())

@@ -60,6 +60,13 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
             abort_async_conversion();
         lastCanInstall_=can_install();
         lastCanPrepareOffline_=can_prepare_offline();
+        // A new Source/MASTER revision invalidates cached DEVICE bytes.
+        // A valid returned READY retains them across A/B listening.
+        if(!monitor_exclusive() && cachedMaster_
+           &&session_->capture_monitor_master_for_conversion()!=cachedMaster_) {
+            cachedMaster_.reset();
+            cachedDevicePcm_.reset();
+        }
         if(monitor_controllable()) {
             if(!observationTimer_.isActive())observationTimer_.start();
         } else {
@@ -307,6 +314,29 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
         if(!plan)return report(core::Status::failure(*plan.error()));
         if(session_->capture_monitor_master_for_conversion()!=stage)
             return report(reject("MONITOR_ASYNC_MASTER_REVOKED_DURING_PREFLIGHT"));
+        if(cachedMaster_==stage &&cachedDevicePcm_
+           &&cachedDevicePcm_->device_rate==plan.value()->device_rate
+           &&cachedDevicePcm_->windows_prepared_endpoint_id
+               ==plan.value()->opaque_endpoint_id) {
+            const auto valid=audio::validate_monitoring_pcm_candidate(
+                *cachedDevicePcm_);
+            if(valid) {
+                // Preflight is fresh, not inherited from the first playback.
+                const auto checked=asyncRecheck_(
+                    *plan.value(),master,explicitlyAllowCaution);
+                if(!checked)return report(checked);
+                const auto admitted=session_->admit_converted_monitor_owner(
+                    stage,cachedDevicePcm_);
+                if(!admitted)return report(admitted);
+                const auto installed=session_->install_private_monitor_stopped(
+                    cachedDevicePcm_);
+                if(!report(installed))return false;
+                refresh();
+                return true;
+            }
+        }
+        cachedMaster_.reset();
+        cachedDevicePcm_.reset();
         if(monitorWorker_.joinable())monitorWorker_.join();
         const auto token=std::make_shared<std::atomic_bool>(false);
         const auto job=++monitorSerial_;
@@ -395,6 +425,10 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
                 const auto installed=session_->install_private_monitor_stopped(
                     *outcome->value());
                 if(!report(installed))return;
+                // Store bytes only AFTER the fully admitted exact-owner
+                // publication. A return keeps this finite, revocable cache.
+                cachedMaster_=stage;
+                cachedDevicePcm_=*outcome->value();
                 refresh();
             },Qt::QueuedConnection);
         });
