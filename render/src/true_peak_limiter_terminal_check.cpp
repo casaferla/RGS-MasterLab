@@ -90,7 +90,12 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     if(stage_timings && stage_timings->progress)
         stage_timings->progress({TerminalRenderProgressPhase::M16_PRIMARY});
     const auto m16_started=std::chrono::steady_clock::now();
-    auto measured=analysis::measure_true_peak_full_resource(pcm);
+    auto measured=analysis::measure_true_peak_full_resource(
+        pcm,[stage_timings](std::int64_t done,std::int64_t total) {
+            if(stage_timings && stage_timings->progress)
+                stage_timings->progress(
+                    {TerminalRenderProgressPhase::M16_PRIMARY,done,total});
+        });
     if(stage_timings)
         stage_timings->m16_primary_us=std::chrono::duration_cast<
             std::chrono::microseconds>(
@@ -181,7 +186,13 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     if(stage_timings && stage_timings->progress)
         stage_timings->progress({TerminalRenderProgressPhase::M16_SECONDARY});
     const auto recheck_started=std::chrono::steady_clock::now();
-    const auto remeasured=analysis::measure_true_peak_full_resource(*staging.value());
+    const auto remeasured=analysis::measure_true_peak_full_resource(
+        *staging.value(),
+        [stage_timings](std::int64_t done,std::int64_t total) {
+            if(stage_timings && stage_timings->progress)
+                stage_timings->progress(
+                    {TerminalRenderProgressPhase::M16_SECONDARY,done,total});
+        });
     if(stage_timings)
         stage_timings->m16_secondary_us=std::chrono::duration_cast<
             std::chrono::microseconds>(
