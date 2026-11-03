@@ -23,7 +23,10 @@ enum class LoudnessPreproductionState {
     available,
     insufficient_duration,
     no_absolute_gated_blocks,
-    unsupported_k_weighting_rate
+    unsupported_k_weighting_rate,
+    // Private preproduction diagnostic only: a finite source can have valid
+    // RMS/Peak/Crest while physical K-weighting overflows binary64.
+    k_numerically_undefined
 };
 
 struct BasicLevelPreproductionSnapshot {
@@ -244,20 +247,25 @@ public:
                     }
                     rms_normalized_squares_ = next;
                 }
-                const double shelf = filters_[channel].shelf.push(x);
-                const double y = filters_[channel].highpass.push(shelf);
-                if (!std::isfinite(y) || !std::isfinite(y * y)) {
-                    valid_ = false;
-                    return false;
-                }
-                quarter_energy_sum_[channel] += y * y;
-                if (!std::isfinite(quarter_energy_sum_[channel])) {
-                    valid_ = false;
-                    return false;
+                if (k_weighting_numerically_valid_) {
+                    const double shelf = filters_[channel].shelf.push(x);
+                    const double y = filters_[channel].highpass.push(shelf);
+                    const double square = y * y;
+                    if (!std::isfinite(y) || !std::isfinite(square)) {
+                        // Only LUFS depends on K. Finite PCM can still
+                        // produce valid Sample Peak/RMS/Crest; never
+                        // invalidate unrelated full-scope measurements.
+                        k_weighting_numerically_valid_ = false;
+                    } else {
+                        quarter_energy_sum_[channel] += square;
+                        if (!std::isfinite(quarter_energy_sum_[channel])) {
+                            k_weighting_numerically_valid_ = false;
+                        }
+                    }
                 }
             }
             ++consumed_;
-            if (consumed_ % quarter_frames_ == 0U) {
+            if (k_weighting_numerically_valid_ && consumed_ % quarter_frames_ == 0U) {
                 const std::size_t bucket = static_cast<std::size_t>(
                     quarters_completed_ % 4U);
                 for (std::uint32_t channel = 0; channel < channel_count_; ++channel) {
@@ -274,10 +282,10 @@ public:
                         }
                     }
                     if (!std::isfinite(q) || q < 0.0) {
-                        valid_ = false;
-                        return false;
+                        k_weighting_numerically_valid_ = false;
+                    } else {
+                        block_powers_.push_back(q);
                     }
-                    block_powers_.push_back(q);
                 }
             }
         }
@@ -316,12 +324,15 @@ public:
         if (bank == nullptr) return std::nullopt;
         out.k_weighting_bank_member_id = bank->member_id;
         out.k_weighting_bank_sha256 = bank->canonical_le_sha256;
-        if (block_powers_.empty()) {
+        if (!k_weighting_numerically_valid_) {
+            out.loudness_state = LoudnessPreproductionState::k_numerically_undefined;
+        } else if (block_powers_.empty()) {
             out.loudness_state = LoudnessPreproductionState::insufficient_duration;
         } else {
             const auto gated = gate_complete_400ms_block_powers(block_powers_);
             if (!gated) {
-                return std::nullopt;
+                out.loudness_state = LoudnessPreproductionState::k_numerically_undefined;
+                return out;
             }
             if (gated->integrated_lufs) {
                 out.integrated_lufs = gated->integrated_lufs;
@@ -360,6 +371,7 @@ private:
     std::uint32_t quarter_frames_{0};
     bool valid_{false};
     bool finished_{false};
+    bool k_weighting_numerically_valid_{true};
     double peak_magnitude_{0.0};
     double rms_normalized_squares_{0.0};
     double rms_normalized_compensation_{0.0};
