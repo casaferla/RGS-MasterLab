@@ -2419,9 +2419,24 @@ void PlaybackSampleRateAdapterTest::monitoringBorrowsMasterWithoutSourceAlias()
         auto expected=audio::materialize_full_resource_output_rate_candidate(
             source.value()->view(),rate(deviceHz),frame_count(17));
         QVERIFY(expected);
+        std::int64_t previous=0;
+        std::int64_t progressTotal=0;
+        int progressCalls=0;
         auto direct=audio::materialize_output_master_monitoring_rate_candidate(
-            master.value()->view(),rate(deviceHz),frame_count(17));
+            master.value()->view(),rate(deviceHz),frame_count(17),{},
+            [&](std::int64_t completed,std::int64_t total) {
+                QVERIFY(completed>=previous);
+                QVERIFY(total>=completed);
+                QVERIFY(total>0);
+                if(progressTotal)QCOMPARE(total,progressTotal);
+                progressTotal=total;
+                previous=completed;
+                ++progressCalls;
+            });
         QVERIFY(direct);
+        QVERIFY(progressCalls>=2);
+        QCOMPARE(previous,progressTotal);
+        QCOMPARE(progressTotal,direct.value()->pcm.view().frame_count().value());
         QCOMPARE(channel_bits(direct.value()->pcm,0),
             channel_bits(expected.value()->pcm,0));
         QCOMPARE(channel_bits(direct.value()->pcm,1),

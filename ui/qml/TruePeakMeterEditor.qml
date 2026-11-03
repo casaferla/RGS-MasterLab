@@ -19,11 +19,14 @@ Item {
     property bool limiterSonicControlsEnabled: false
     property var limiterGrProvider: null
     property var limiterViewModel: null
+    property var monitorViewModel: null
+    readonly property bool devicePreparing: root.showLimiterGrHistory
+        && root.monitorViewModel && root.monitorViewModel.monitorPreparing
     // The lower bay is a single stable slot: offline PREPARATION occupies
     // it until a terminal result exists, then the authentic GR history
     // replaces it without changing any M16/M17 meter coordinates.
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
-        && (!root.limiterViewModel
+        && (root.devicePreparing || !root.limiterViewModel
             || !(root.limiterViewModel.audioStatus.startsWith("READY")
                  || root.limiterViewModel.audioStatus.startsWith("ACTIVE")
                  || root.limiterViewModel.audioStatus.startsWith("NON-CONFORMING")))
@@ -234,7 +237,8 @@ Item {
                             Layout.fillWidth: true
                             Text {
                                 objectName: "m17GrHistoryHeading"
-                                text: root.limiterPreparationVisible ? "PREPARATION" : "GR HISTORY"
+                                text: root.devicePreparing ? "PREPARING PLAYBACK"
+                                    : root.limiterPreparationVisible ? "PREPARATION" : "GR HISTORY"
                                 color: "#B3C9D9"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -243,7 +247,8 @@ Item {
                             Item { Layout.fillWidth: true }
                             Text {
                                 objectName: "m17GrProvenanceStatus"
-                                text: root.limiterPreparationVisible
+                                text: root.devicePreparing ? "MASTER → DEVICE"
+                                    : root.limiterPreparationVisible
                                     ? root.limiterBypassed ? "BYPASS · NOT RUNNING"
                                       : root.limiterViewModel
                                         && root.limiterViewModel.audioStatus.startsWith("Preparing")
@@ -281,15 +286,21 @@ Item {
                                 Layout.preferredHeight: 14
                                 from: 0
                                 to: 1
-                                value: root.limiterViewModel
-                                    ? root.limiterViewModel.preparationFraction : 0
-                                indeterminate: root.limiterViewModel
-                                    && root.limiterViewModel.audioStatus.startsWith("Preparing")
-                                    && !root.limiterViewModel.preparationDeterminate
-                                opacity: root.limiterViewModel
-                                    && root.limiterViewModel.audioStatus.startsWith("Preparing")
+                                value: root.devicePreparing
+                                    ? root.monitorViewModel.devicePreparationFraction
+                                    : root.limiterViewModel
+                                        ? root.limiterViewModel.preparationFraction : 0
+                                indeterminate: root.devicePreparing
+                                    ? !root.monitorViewModel.devicePreparationDeterminate
+                                    : root.limiterViewModel
+                                        && root.limiterViewModel.audioStatus.startsWith("Preparing")
+                                        && !root.limiterViewModel.preparationDeterminate
+                                opacity: root.devicePreparing || (root.limiterViewModel
+                                    && root.limiterViewModel.audioStatus.startsWith("Preparing"))
                                         ? 1.0 : 0.28
-                                Accessible.name: "Offline limiter preparation progress"
+                                Accessible.name: root.devicePreparing
+                                    ? "Master to playback device conversion progress"
+                                    : "Offline limiter preparation progress"
                                 // Dynamics copper, the same rounded geometry as Studio controls.
                                 background: Rectangle {
                                     radius: 5
@@ -336,6 +347,17 @@ Item {
                                 objectName: "m17PreparationProgressLabel"
                                 Layout.fillWidth: true
                                 text: {
+                                    if(root.devicePreparing) {
+                                        const v=root.monitorViewModel
+                                        const rate=hz => (hz/1000).toFixed(1)
+                                            .replace(".0","") + " kHz"
+                                        const pair=rate(v.masterRateHz) + " → "
+                                            + rate(v.pendingDeviceRateHz)
+                                        const pct=v.devicePreparationDeterminate
+                                            ? " · " + Math.floor(v.devicePreparationFraction*100) + "%"
+                                            : ""
+                                        return pair + pct + " · " + v.devicePreparationEta
+                                    }
                                     const v=root.limiterViewModel
                                     if (!v) return "PREPARATION UNAVAILABLE"
                                     if (!v.audioStatus.startsWith("Preparing"))

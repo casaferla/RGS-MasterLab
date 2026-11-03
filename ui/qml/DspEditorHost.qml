@@ -586,6 +586,7 @@ Rectangle {
             limiterModule: root.isLimiterEditor ? root.activeModule : null
             monitorLocked: root.monitorExclusive
             limiterViewModel: root.isLimiterEditor ? root.terminalLimiterViewModel : null
+            monitorViewModel: root.terminalMonitorViewModel
             limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
                 ? root.limiterGrProvider : null
             measurementProvider: root.truePeakCurrentStatic

@@ -12,6 +12,7 @@ Item {
     property bool showLocalValidation: true
     property var limiterGrProvider: null
     property var limiterViewModel: null
+    property var monitorViewModel: null
     property bool monitorLocked: false
     property var measurementProvider: null
     property var liveProvider: null
@@ -41,6 +42,7 @@ Item {
         limiterBypassed: root.bypassed
         limiterGrProvider: root.limiterGrProvider
         limiterViewModel: root.limiterViewModel
+        monitorViewModel: root.monitorViewModel
         limiterSonicControlsEnabled: root.sonicControlsEnabled
         useFamilyAccent: true
         familyAccent: root.familyAccent

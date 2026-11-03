@@ -2090,6 +2090,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     const auto beforeAsyncRender=renderer.render_invocation_count();
     QVERIFY(monitorUi.installMonitor(false));
     QVERIFY(monitorUi.monitor_preparing());
+    QVERIFY(monitorUi.property("monitorPreparing").toBool());
+    QCOMPARE(monitorUi.device_preparation_fraction(),0.0);
+    QVERIFY(!monitorUi.device_preparation_eta().isEmpty());
     // The original SOURCE transport remains interactive during a whole-song
     // DEVICE FIR worker: PLAY and STOP only change transport, not M17
     // immutable PCM or the device-owner ticket. These are synchronous UI
@@ -2103,6 +2106,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!monitorUi.monitor_installed());
     QTRY_VERIFY_WITH_TIMEOUT(monitorUi.monitor_installed(),12000);
     QVERIFY(!monitorUi.monitor_preparing());
+    QCOMPARE(monitorUi.device_preparation_fraction(),0.0);
+    QVERIFY(!monitorUi.device_preparation_determinate());
     QCOMPARE(asyncPreflights,std::size_t{1});
     QCOMPARE(asyncRechecks,std::size_t{1});
     QVERIFY(monitorSinkOwner);
