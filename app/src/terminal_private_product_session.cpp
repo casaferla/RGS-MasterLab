@@ -1190,8 +1190,29 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
            !=std::optional{predecessor.manual->view().frame_count()}
        ||after.value()->position!=sourceCue
        ||after.value()->loop!=predecessor.loop) {
-        return preserveReturnFailure(rejected(
-            "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
+        // Diagnose the exact failed predicate without logging PCM, file
+        // paths, channel samples or realisation IDs. This never weakens
+        // the strict proof and retains the immutable MASTER for recovery.
+        const char* category=!after
+            ?"MONITOR_RETURN_SNAPSHOT_UNAVAILABLE"
+            :after.value()->state!=core::PlaybackState::STOPPED
+                ?"MONITOR_RETURN_NOT_STOPPED"
+            :after.value()->audibleRealization.phase
+                !=core::AudibleHandoffPhase::NEW
+                ?"MONITOR_RETURN_PHASE_MISMATCH"
+            :after.value()->audibleRealization.realizationId
+                !=std::optional{predecessor.manualId}
+                ?"MONITOR_RETURN_REALIZATION_MISMATCH"
+            :after.value()->duration
+                !=std::optional{predecessor.manual->view().frame_count()}
+                ?"MONITOR_RETURN_DURATION_MISMATCH"
+            :after.value()->position!=sourceCue
+                ?"MONITOR_RETURN_POSITION_MISMATCH"
+                :"MONITOR_RETURN_LOOP_MISMATCH";
+        return preserveReturnFailure(core::Error{
+            core::ErrorCode::InvalidState,
+            std::string("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT:")+category,
+            {{"category",category}}});
     }
     if(reconciledSourceLoop) {
         // The callback must act on the restored original MANUAL, never on
