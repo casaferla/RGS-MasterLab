@@ -150,3 +150,15 @@ Mock values are used ONLY for private smoke testing. The user-facing final
 component must eventually be bound to the real qualified canonical
 FeatureDefinitionRegistry, source-realization identity and accepted GUI shell
 after predecessors are integrated and qualified.
+
+
+## Private macro-lot #7 — actual Windows Qt screenshot evidence
+Windows Qt6.8.3 CI now instantiates a real second QQuickView for this isolated
+QML, with explicit DEMO DATA fixtures, captures Qt's genuine rendered window
+via QQuickView::grabWindow(), and uploads a PNG with 14-day artifact retention.
+The smoke fails closed if the image is absent, undersized or cannot be encoded.
+This is an actual CI-produced image of the private M21 UI candidate, **NOT** a
+screenshot of the main product nor proof of a valid producer/official M21 M gate.
+M20 also has its own unintegrated Qt6 preview and thus M21 is NOT the first
+post-M17 milestone with stand-alone Windows Qt graphics. Neither M20 nor M21
+currently activates the main Windows product UI without the predecessor holds.
