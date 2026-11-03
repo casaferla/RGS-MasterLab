@@ -184,6 +184,7 @@ void TerminalProductActivationCoordinator::begin_activation()
     srcPhaseObserved_=false;
     m16PhaseObserved_=false;
     observedCoreMs_=0;
+    lastObservedM16Phase_=render::TerminalRenderProgressPhase::IDLE;
     renderElapsed_.start();
     renderHeartbeat_.start();
     // Keep current MANUAL audio and its playhead running during offline M17
@@ -255,30 +256,26 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
     const auto progress=session_->render_progress();
     using Phase=render::TerminalRenderProgressPhase;
     const auto elapsed=renderElapsed_.elapsed();
-    const auto seconds=elapsed/1000;
     const auto fmt=[](std::int64_t ms) {
         const auto s=std::max<std::int64_t>(0,(ms+999)/1000);
         return QStringLiteral("%1m %2s")
             .arg(s/60).arg(s%60,2,10,QLatin1Char('0'));
     };
-    const auto observedFraction=[&]() -> double {
-        if(progress.total_frames<=0||progress.processed_frames<=0
-           ||progress.processed_frames>progress.total_frames)return 0.0;
-        return static_cast<double>(progress.processed_frames)
-            /static_cast<double>(progress.total_frames);
-    };
-    // Only current-stage frames are measured. The provisional remaining
-    // whole-Prepare range deliberately carries broad future-stage margins.
-    const auto boundMs=[](long double ms) -> std::int64_t {
+    const auto fractionKnown=progress.total_frames>0
+        &&progress.processed_frames>=0
+        &&progress.processed_frames<=progress.total_frames;
+    const double f=fractionKnown
+        ?static_cast<double>(progress.processed_frames)
+            /static_cast<double>(progress.total_frames):0.0;
+    const auto bounded=[](long double ms) -> std::int64_t {
         if(!std::isfinite(ms)||ms<=0)return 0;
         return static_cast<std::int64_t>(
             std::min(ms,86'400'000.0L));
     };
-    QString stage=QStringLiteral("QUEUED");
+    QString stage=QStringLiteral("Queued");
     double fraction=0.0;
     bool determinate=false;
-    std::optional<std::pair<std::int64_t,std::int64_t>> indicative;
-    const auto f=observedFraction();
+    std::optional<std::pair<std::int64_t,std::int64_t>> remaining;
     switch(progress.phase) {
     case Phase::SRC: {
         stage=QStringLiteral("Final SRC");
@@ -286,103 +283,126 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
             srcPhaseObserved_=true;
             srcPhaseElapsed_.start();
         }
-        if(f>0) {
-            determinate=true;
+        if(fractionKnown) {
             fraction=std::min(0.99,f);
+            determinate=true;
         }
-        if(f>=0.04 &&srcPhaseElapsed_.elapsed()>=2500) {
-            const auto srcSpent=static_cast<long double>(
+        if(f>=0.025 &&srcPhaseElapsed_.elapsed()>=2000) {
+            const auto spent=static_cast<long double>(
                 srcPhaseElapsed_.elapsed());
-            const auto srcLeft=srcSpent*(1.0L-f)/f;
-            // Genuine local M17+M16 CPU calibration is preferred, but
-            // never treated as the full wall-clock duration. When missing,
-            // use a wide first-run guide, not a false precise ETA.
-            const auto dspLow=activeDspEtaUs_
-                ?activeDspEtaUs_->first/1000.0L*0.6L
-                :srcSpent*0.4L;
-            const auto dspHigh=activeDspEtaUs_
-                ?activeDspEtaUs_->second/1000.0L*3.0L
-                :srcSpent*5.0L+120'000.0L;
-            indicative=std::pair<std::int64_t,std::int64_t>{
-                boundMs(srcLeft*0.8L+dspLow),
-                boundMs(srcLeft*1.5L+dspHigh+30'000.0L)};
+            const auto left=spent*(1.0L-f)/f;
+            // M17 and M16 have not yet been timed in this pass. A
+            // calibrated on-host probe is preferable, but never a
+            // certified whole-Prepare duration.
+            const auto low=activeDspEtaUs_
+                ?activeDspEtaUs_->first/1000.0L*0.7L
+                :spent*0.3L;
+            const auto high=activeDspEtaUs_
+                ?activeDspEtaUs_->second/1000.0L*2.2L
+                :spent*3.0L+50'000.0L;
+            remaining=std::pair<std::int64_t,std::int64_t>{
+                bounded(left*0.85L+low),
+                bounded(left*1.2L+high)};
         }
         break;
     }
     case Phase::M17_CORE: {
-        stage=QStringLiteral("M17 DSP · processed frames");
+        stage=QStringLiteral("M17 DSP");
         if(!corePhaseObserved_) {
             corePhaseObserved_=true;
             corePhaseElapsed_.start();
         }
-        if(f>0) {
-            determinate=true;
+        if(fractionKnown) {
             fraction=std::min(0.99,f);
+            determinate=true;
         }
-        if(f>=0.025 &&corePhaseElapsed_.elapsed()>=2500) {
+        if(f>=0.025 &&corePhaseElapsed_.elapsed()>=2000) {
             const auto spent=static_cast<long double>(
                 corePhaseElapsed_.elapsed());
-            const auto projectedCore=spent/f;
-            const auto coreLeft=projectedCore-spent;
-            // M16 can still require a SECOND full-resource verification.
-            const auto m16Low=std::max(5'000.0L,projectedCore*0.2L);
-            auto m16High=std::max(30'000.0L,projectedCore*2.5L);
-            if(activeDspEtaUs_)
-                m16High=std::max(m16High,
-                    activeDspEtaUs_->second/1000.0L*2.5L-spent);
-            indicative=std::pair<std::int64_t,std::int64_t>{
-                boundMs(coreLeft*0.7L+m16Low),
-                boundMs(coreLeft*1.5L+m16High+30'000.0L)};
+            const auto projected=spent/f;
+            const auto left=std::max(0.0L,projected-spent);
+            // Forecast ONE primary M16 pass. If a verification trim
+            // triggers a second pass, revise the remaining time as
+            // requested instead of reserving fictitious minutes.
+            const auto verifier=projected*0.45L;
+            const auto uncertainty=0.65L*(1.0L-f)+0.20L;
+            const auto mid=left+verifier+4'000.0L;
+            const auto spread=left*uncertainty
+                +verifier*(0.60L+0.35L*(1.0L-f))+5'000.0L;
+            remaining=std::pair<std::int64_t,std::int64_t>{
+                bounded(std::max(0.0L,mid-spread)),
+                bounded(mid+spread)};
         }
         break;
     }
     case Phase::M16_PRIMARY:
-    case Phase::VERIFICATION_TRIM:
     case Phase::M16_SECONDARY: {
         stage=progress.phase==Phase::M16_PRIMARY
-            ?QStringLiteral("M16 primary True Peak verification")
-            :progress.phase==Phase::VERIFICATION_TRIM
-                ?QStringLiteral("Verification Trim")
-                :QStringLiteral("M16 secondary True Peak verification");
-        if(!m16PhaseObserved_) {
-            m16PhaseObserved_=true;
+            ?QStringLiteral("M16 primary TP verification")
+            :QStringLiteral("M16 final TP verification");
+        if(progress.phase!=lastObservedM16Phase_) {
+            lastObservedM16Phase_=progress.phase;
             m16PhaseElapsed_.start();
-            observedCoreMs_=corePhaseObserved_
-                ?corePhaseElapsed_.elapsed():0;
+            m16PhaseObserved_=true;
+            if(progress.phase==Phase::M16_PRIMARY)
+                observedCoreMs_=corePhaseObserved_
+                    ?corePhaseElapsed_.elapsed():0;
         }
-        if(observedCoreMs_>0) {
-            const auto spent=m16PhaseElapsed_.elapsed();
-            const auto low=std::max<std::int64_t>(
-                0,observedCoreMs_/4-spent);
-            const auto high=std::max<std::int64_t>(
-                20'000,observedCoreMs_*3-spent+30'000);
-            indicative=std::pair<std::int64_t,std::int64_t>{low,high};
+        if(fractionKnown) {
+            fraction=std::min(0.99,f);
+            determinate=true;
+        }
+        if(f>=0.025 &&m16PhaseElapsed_.elapsed()>=2000) {
+            const auto spent=static_cast<long double>(
+                m16PhaseElapsed_.elapsed());
+            const auto left=spent*(1.0L-f)/f;
+            // The observer now measures M16's actual processed input
+            // frames across all channels. Uncertainty converges as the
+            // percentage rises; it may increase on SECONDARY verification.
+            const auto mid=left+3'000.0L;
+            const auto spread=std::max(2'000.0L,
+                left*(0.50L*(1.0L-f)+0.12L)+2'000.0L);
+            remaining=std::pair<std::int64_t,std::int64_t>{
+                bounded(std::max(0.0L,mid-spread)),
+                bounded(mid+spread)};
         }
         break;
     }
+    case Phase::VERIFICATION_TRIM:
+        stage=QStringLiteral("Verification trim");
+        // Await the SECOND M16 progress denominator; never reuse an
+        // already-completed primary meter as if it were still running.
+        break;
     case Phase::FINISHING:
-        stage=QStringLiteral("Checking publication ownership");
-        indicative=std::pair<std::int64_t,std::int64_t>{0,20'000};
+        stage=QStringLiteral("Finishing");
+        remaining=std::pair<std::int64_t,std::int64_t>{0,8'000};
         break;
     case Phase::IDLE:break;
     }
     QString eta=QStringLiteral("Elapsed %1").arg(fmt(elapsed));
-    if(activeWholeEtaUs_ &&elapsed<activeWholeEtaUs_->second/1000) {
-        const auto lo=std::max<std::int64_t>(
+    if(remaining) {
+        const auto low=remaining->first;
+        const auto high=std::max(low,remaining->second);
+        const auto centre=low+(high-low)/2;
+        eta+=QStringLiteral(" · ETA ~%1 (%2–%3)")
+            .arg(fmt(centre),fmt(low),fmt(high));
+    } else if(activeWholeEtaUs_&&elapsed<activeWholeEtaUs_->second/1000
+        &&progress.phase!=Phase::VERIFICATION_TRIM) {
+        const auto low=std::max<std::int64_t>(
             0,activeWholeEtaUs_->first/1000-elapsed);
-        const auto hi=std::max<std::int64_t>(
-            lo,activeWholeEtaUs_->second/1000-elapsed);
-        eta+=QStringLiteral(" · Remaining ~%1–%2")
-            .arg(fmt(lo),fmt(hi));
-    } else if(indicative) {
-        eta+=QStringLiteral(" · Total left (approx.) ~%1–%2")
-            .arg(fmt(indicative->first),fmt(indicative->second));
+        const auto high=std::max<std::int64_t>(
+            low,activeWholeEtaUs_->second/1000-elapsed);
+        eta+=QStringLiteral(" · ETA ~%1–%2")
+            .arg(fmt(low),fmt(high));
     } else {
-        eta+=QStringLiteral(" · Estimating total time");
+        eta+=QStringLiteral(" · Estimating");
     }
-    // The bar's percentage represents the current SRC/M17 stage ONLY.
+    // Stage percentages are factual; the range describes estimated
+    // remaining time for the entire active Prepare. Neither can alter
+    // DSP arithmetic, PCM, ceiling verification or ownership gates.
     view_->setPreparationProgress(stage,fraction,determinate,eta);
-    view_->setAudioStatus(QStringLiteral("Preparing · %1s").arg(seconds));
+    view_->setAudioStatus(
+        QStringLiteral("Preparing · %1s").arg(elapsed/1000));
 }
 
 void TerminalProductActivationCoordinator::commit_ready_output(bool nonconforming)
