@@ -1,0 +1,78 @@
+# M19-only quick preproduction checks. No Qt, M17/M18, FIR, MPFR, FQ.
+name: M19 Independent Preproduction CI
+
+on:
+  push:
+    branches:
+      - experimental/m19-basic-level-20261103
+    paths:
+      - 'analysis/src/internal/m19_*.hpp'
+      - 'tools/qualification/m19/**'
+      - 'docs/architecture/M19_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261103.md'
+      - '.github/workflows/m19-preproduction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m19-preproduction-only
+  cancel-in-progress: false
+
+jobs:
+  linux-m19:
+    name: M19 only · Linux GCC C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independent Python frozen mathematics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m19/test_m19_independent_reference.py
+      - name: C++20 strict-fp source-scope candidate · Linux Debug and Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -I analysis/src tools/qualification/m19/m19_portable_selftest.cpp -o "$RUNNER_TEMP/m19-level-selftest"
+            "$RUNNER_TEMP/m19-level-selftest"
+          done
+          echo M19_LINUX_NATIVE_PREPRODUCTION_PASS_NOT_GATE_G
+
+  windows-m19:
+    name: M19 only · Windows MSVC C++20 Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Independent Python frozen mathematics · Windows
+        shell: pwsh
+        run: |
+          python tools/qualification/m19/test_m19_independent_reference.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_INDEPENDENT_REFERENCE_FAILED" }
+      - name: C++20 strict-fp source-scope candidate · Windows Debug and Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-$mode-msvc.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src tools/qualification/m19/m19_portable_selftest.cpp "/Fe:$env:RUNNER_TEMP/m19-level-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 70
+              throw "M19_WINDOWS_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-level-$mode.exe"
+            if ($LASTEXITCODE -ne 0) {
+              throw "M19_WINDOWS_SELFTEST_FAILED_$mode"
+            }
+          }
+          Write-Output M19_WINDOWS_NATIVE_PREPRODUCTION_PASS_NOT_GATE_G
