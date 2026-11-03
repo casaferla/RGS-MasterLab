@@ -155,6 +155,22 @@ jobs:
               "$RUNNER_TEMP/m18-m16-delivered-evidence.txt"
           done
 
+      - name: Seven pathological PCM24 audio WAVs and independent harmonic audit · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -ffp-contract=off -fno-fast-math \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_audio_pathology_fixtures.cpp \
+              core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-pathology"
+            "$RUNNER_TEMP/m18-pathology"
+            python3 tools/qualification/m18/test_m18_audio_pathology.py \
+              "$RUNNER_TEMP/m18-pathology"
+          done
+
   windows-m18:
     name: M18 only · Windows MSVC C++20 Debug + Release
     runs-on: windows-2022
@@ -391,6 +407,34 @@ jobs:
             }
           }
 
+      - name: Seven pathological PCM24 audio WAVs and independent harmonic audit · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-pathology-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-pathology-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus /fp:strict `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_audio_pathology_fixtures.cpp `
+              core/src/sha256.cpp `
+              "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 75
+              throw "M18_PATHOLOGY_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 40
+              throw "M18_PATHOLOGY_NATIVE_FAILED_$mode"
+            }
+            python tools/qualification/m18/test_m18_audio_pathology.py $exe >> $report 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_PATHOLOGY_INDEPENDENT_FAILED_$mode"
+            }
+          }
+
       - name: Upload bounded Windows M18 errors only
         if: failure()
         uses: actions/upload-artifact@v4
@@ -406,5 +450,6 @@ jobs:
             ${{ runner.temp }}/m18-offline-windows-bounded.txt
             ${{ runner.temp }}/m18-lowlevel-windows-bounded.txt
             ${{ runner.temp }}/m18-m16-delivered-windows-bounded.txt
+            ${{ runner.temp }}/m18-pathology-windows-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
