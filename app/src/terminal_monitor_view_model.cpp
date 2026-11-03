@@ -178,6 +178,9 @@ QString TerminalMonitorViewModel::status_text() const
         return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
     if(status==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
         return QStringLiteral("AUDITION RECOVERY REQUIRED · OWNER CHECK");
+    if(status==QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"))
+        return QStringLiteral(
+            "SOURCE DEVICE RECOVERY REQUIRED · MASTER PCM RETAINED");
     if(status.startsWith(QStringLiteral("MONITOR_PRIVATE_"))) {
         return session_->monitor_returns_to_empty_source()
             ?QStringLiteral("DEVICE AUDITION · NO MANUAL SINK · RETURN CLEARS DEVICE")
@@ -192,7 +195,10 @@ bool TerminalMonitorViewModel::monitor_exclusive() const noexcept
 }
 bool TerminalMonitorViewModel::monitor_installed() const noexcept
 {
-    return session_->status().startsWith(QStringLiteral("MONITOR_PRIVATE_"));
+    const auto status=session_->status();
+    return status.startsWith(QStringLiteral("MONITOR_PRIVATE_"))
+        &&status!=QStringLiteral(
+            "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
 }
 bool TerminalMonitorViewModel::monitor_controllable() const noexcept
 {
@@ -518,7 +524,9 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
 }
 bool TerminalMonitorViewModel::returnManual()
 {
-    if(!monitor_installed())
+    const bool retry=session_->status()
+        ==QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
+    if(!monitor_installed()&&!retry)
         return report(reject("MONITOR_RETURN_EXACT_DEVICE_OWNER_REQUIRED"));
     const auto result=session_->return_private_monitor_to_manual();
     if(!result)return report(result);
