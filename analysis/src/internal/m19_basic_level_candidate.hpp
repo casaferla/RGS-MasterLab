@@ -244,27 +244,25 @@ public:
                     }
                     rms_normalized_squares_ = next;
                 }
-                if (sample_rate_hz_ == 48000U) {
-                    const double shelf = filters_[channel].shelf.push(x);
-                    const double y = filters_[channel].highpass.push(shelf);
-                    if (!std::isfinite(y) || !std::isfinite(y * y)) {
-                        valid_ = false;
-                        return false;
-                    }
-                    quarter_energy_sum_[channel] += y * y;
-                    if (!std::isfinite(quarter_energy_sum_[channel])) {
-                        valid_ = false;
-                        return false;
-                    }
+                const double shelf = filters_[channel].shelf.push(x);
+                const double y = filters_[channel].highpass.push(shelf);
+                if (!std::isfinite(y) || !std::isfinite(y * y)) {
+                    valid_ = false;
+                    return false;
+                }
+                quarter_energy_sum_[channel] += y * y;
+                if (!std::isfinite(quarter_energy_sum_[channel])) {
+                    valid_ = false;
+                    return false;
                 }
             }
             ++consumed_;
-            if (sample_rate_hz_ == 48000U && consumed_ % kQuarterFrames == 0U) {
+            if (consumed_ % quarter_frames_ == 0U) {
                 const std::size_t bucket = static_cast<std::size_t>(
                     quarters_completed_ % 4U);
                 for (std::uint32_t channel = 0; channel < channel_count_; ++channel) {
                     quarter_mean_squares_[channel][bucket] =
-                        quarter_energy_sum_[channel] / static_cast<double>(kQuarterFrames);
+                        quarter_energy_sum_[channel] / static_cast<double>(quarter_frames_);
                     quarter_energy_sum_[channel] = 0.0;
                 }
                 ++quarters_completed_;
