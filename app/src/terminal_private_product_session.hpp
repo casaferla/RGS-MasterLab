@@ -127,6 +127,14 @@ public:
     using ManualRestore=std::function<core::Status(
         std::shared_ptr<const render::RenderResult>,
         core::RealizationId,core::FrameIndex)>;
+    // Optional product-supplied Windows admission before retiring the
+    // owned MASTER device. The callback MUST NOT install or stop a sink.
+    // A rejection leaves the currently playing monitor fully owned.
+    using ManualRestorePreflight=std::function<core::Status(
+        std::shared_ptr<const render::RenderResult>)>;
+    void set_private_monitor_manual_restore_preflight(
+        ManualRestorePreflight preflight)
+    { manualRestorePreflight_=std::move(preflight); }
     void set_private_monitor_transport(
         MonitoringInstall install,MonitoringOwnership owned,
         MonitoringRetire retire,ManualRestore restore)
@@ -314,6 +322,7 @@ private:
     MonitoringOwnership monitorOwned_;
     MonitoringRetire monitorRetire_;
     ManualRestore manualRestore_;
+    ManualRestorePreflight manualRestorePreflight_;
     SourceLoopReconciliation sourceLoopReconcile_;
     MonitorControl monitorControl_;
     MonitorDisplay monitorDisplay_;
