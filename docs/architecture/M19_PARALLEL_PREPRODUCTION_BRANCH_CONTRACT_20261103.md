@@ -45,3 +45,22 @@ Do not mistake a green 2-minute preproduction CI for a qualified Qt/Windows buil
 - Fixed independent C++ and Python fixtures check q=[19,1] equality/exclusion, nextafter(1,+inf) inclusion, absolute power-gate equality/nextafter, silence, negative/nonfinite block power, and sum overflow. This is numerical regression evidence only, not accepted F07 range/QTP or canonical production gate.
 - Removing a misleading noexcept from the potentially growing streaming vector is a private exception-safety correction, not a new memory/performance claim. Actual production will require bounded memory and audit-qualified whole-track numerical accumulation.
 - Continue to leave M16 TP absent; do NOT replace it with limiter detector or a new M19 FIR.
+
+## M19 parallel macro-lot #3 — authoritative scope-grid and real public M16 seam (2026-11-03)
+
+This is **preproduction only**; changes are local to M19 staging until one CAS promotion and independent CI.
+
+### Reconciled facts, without feature invention
+- Live M18-base source `analysis/include/rgsml/analysis/true_peak_measurement.hpp` already exposes the **public** `TruePeakMeasurement` and `measure_true_peak_full_resource(const audio::AudioBuffer&)`. The public type has exact algorithm/version/policy/SHA metadata, per-channel and global TP, silence and a categorical `TruePeakQualificationStatus` with `SUPPORTED_UNQUALIFIED` as its current default. This supersedes the earlier discovery summary that only an internal callable M16 seam existed.
+- Public M16 is **full-owning-resource only** and explicitly `SUPPORTED_UNQUALIFIED` until its formal Gate G. It does **not** expose a qualified arbitrary regional/subview measurement. M19 therefore **does not populate its True Peak field** from those provisional values. Binding, same-realization evidence, canonical status and project scope policy remain a later cross-module qualification gate.
+- No changes whatsoever to M16 original source, coefficients, API, DSP, M17, M18 or production.
+
+### Coherent code and independent evidence
+- `analysis/src/internal/m19_scope_grid_candidate.hpp`: private pure rational geometry for frozen 400-ms blocks and independently rounded absolute-from-scope 100-ms starts, with integer ties-even, checked overflow and no cumulative rounded steps. No additional K-weighting rates are claimed qualified.
+- `tools/qualification/m19/m19_scope_grid_selftest.cpp` and `test_m19_scope_grid_reference.py`: six authorized time geometries, all exact support boundaries, true nonzero logical-scope origins, 44,105-Hz diagnostic counterexample against accumulated 4,410-frame hops, duration equality, integer ties-even and overflow.
+- `tools/qualification/m19/m19_actual_m16_dependency_selftest.cpp` links **the actual unchanged public M16 implementation** with its existing audio/core sources in a separate compiler lane; it creates canonical owning mono/stereo PCM, exercises M16 six-rate metadata/TP results and invalid audio, confirms **SUPPORTED_UNQUALIFIED**, tests M19 as an independent same-resource *whole-scope* nonzero-origin calculation, and confirms M19 does not invent a TP output. It is an API/invariant proof, not a qualified M19/M16 adapter or UI.
+- `.github/workflows/m19-preproduction.yml` now runs the old independent level reference and strict gating C++ lanes **plus** the above geometry and real-M16 lanes on Linux GCC and Windows MSVC, Debug and Release, without Qt/deploy/FQ and without triggering M17/M18 workflows.
+
+### Do not overstate
+- Prior independent mathematical M19 re-signoff remains `PASS_WITH_REQUIRED_CORRECTIONS`. Gate G/ U, QTP, all-rate K banks, Phase-6 FeatureDefinitionRegistry, truly qualified actual M16 full-scope identity, and official ITU/EBU product fixtures remain pending.
+- A dual-green **M19-only** CI is stronger preproduction evidence than the previous mock pure math, but **not** a product Gate G or release. The hard M17 physical qualification → CI reset → M18 integration & qualification → M19 separate U/G/PO approval remains unchanged.
