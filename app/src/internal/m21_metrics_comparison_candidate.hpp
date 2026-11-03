@@ -74,6 +74,8 @@ struct Snapshot {
     Lifecycle lifecycle{Lifecycle::missing};
     std::array<Cell,9> metrics{};
     std::uint8_t profile_denominator{}; // exactly 12 or substitute 3; 0 if absent
+    // Pair-scoped proof is supplied by a future authoritative producer, not UI.
+    std::string common_comparison_support_id{};
     std::vector<TonalBand> tonal_profile{};
     std::vector<SpectrumPoint> average_spectrum{};
 };
@@ -110,6 +112,9 @@ inline Cell tonal_delta(const Snapshot* current, const Snapshot* gold,
     if(!current || !gold) return state_cell(Lifecycle::missing);
     if(current->lifecycle!=Lifecycle::current) return state_cell(current->lifecycle);
     if(gold->lifecycle!=Lifecycle::current) return state_cell(gold->lifecycle);
+    if(current->common_comparison_support_id.empty() ||
+       current->common_comparison_support_id!=gold->common_comparison_support_id)
+        return {{},Quality::incompatible,"No shared canonical common-band proof"};
     if(current->profile_denominator!=gold->profile_denominator ||
        (current->profile_denominator!=12 && current->profile_denominator!=3))
         return {{},Quality::incompatible,"Incompatible tonal resolution"};

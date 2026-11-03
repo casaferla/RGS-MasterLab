@@ -16,6 +16,7 @@ static Snapshot make(Column c,double loud,std::uint32_t fs){
   for(std::size_t i=5;i<9;++i)
     s.metrics[i]={{},Quality::not_applicable,"mono"};
   s.profile_denominator=12;
+  s.common_comparison_support_id="PRIVATE-M21-COMMON-CASE";
   s.tonal_profile={{10,true,{-8.,Quality::present,{}}},
                    {11,false,{{},Quality::missing,"unsupported"}}};
   s.average_spectrum={{101.,{1.e-8,Quality::present,{}}}};

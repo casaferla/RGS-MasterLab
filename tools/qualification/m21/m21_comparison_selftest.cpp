@@ -25,6 +25,7 @@ static Snapshot snap(Column c,std::uint64_t gen,double lufs,std::uint32_t fs) {
     s.metrics[7]={{},Quality::not_applicable,"Mono"};
     s.metrics[8]={{},Quality::not_applicable,"Mono"};
     s.profile_denominator=12;
+    s.common_comparison_support_id="PRIVATE-M21-COMMON-CASE";
     s.tonal_profile={{100,true,{3.123456,Quality::present,{}}},
                      {101,false,{{},Quality::missing,"No common support"}}};
     s.average_spectrum={{100.,{1.e-6,Quality::present,{}}}};
@@ -86,6 +87,10 @@ int main(){
         assert(td.quality==Quality::missing && !td.unrounded);
         auto qg=gg;qg.tonal_profile[0].normalized_shape_db.unrounded=4.5;
         assert(*tonal_delta(&p,&qg,100).unrounded>1.3);
+        qg.common_comparison_support_id="DIFFERENT-CERTIFICATION";
+        td=tonal_delta(&p,&qg,100);
+        assert(td.quality==Quality::incompatible && !td.unrounded);
+        qg.common_comparison_support_id=gg.common_comparison_support_id;
         qg.profile_denominator=3;
         td=tonal_delta(&p,&qg,100);
         assert(td.quality==Quality::incompatible && !td.unrounded);
