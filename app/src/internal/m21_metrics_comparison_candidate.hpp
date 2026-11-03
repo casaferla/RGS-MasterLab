@@ -148,6 +148,13 @@ struct Comparison {
 inline Comparison compose(const std::array<std::optional<Snapshot>,3>& snapshots) {
     Comparison c{};
     c.columns=snapshots;
+    // Three COLUMN IDENTITIES are not interchangeable. Caller-indexed slots
+    // must not relabel a RAW/Gold/Processed producer. Fail closed even when
+    // private tests supply valid-looking numbers in the wrong semantic slot.
+    for(std::size_t i=0;i<c.columns.size();++i)
+        if(c.columns[i] &&
+           static_cast<std::size_t>(c.columns[i]->column)!=i)
+            c.columns[i]->lifecycle=Lifecycle::invalid;
     const Snapshot* p=c.columns[0] ? &*c.columns[0]:nullptr;
     const Snapshot* g=c.columns[1] ? &*c.columns[1]:nullptr;
     const Snapshot* x=c.columns[2] ? &*c.columns[2]:nullptr;
