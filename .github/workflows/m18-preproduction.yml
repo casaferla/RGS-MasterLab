@@ -37,6 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/qualification/m18/test_m18_independent_reference.py
+          python3 tools/qualification/m18/test_m18_wav_reference.py
       - name: Compile and run independent M18 oracle · Debug
         shell: bash
         run: |
