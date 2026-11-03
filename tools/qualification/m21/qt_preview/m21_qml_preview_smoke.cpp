@@ -28,19 +28,24 @@ static Snapshot make(Column column,double lufs) {
 }
 int main(int argc,char** argv){
   QGuiApplication app(argc,argv);
-  // Headless Windows Qt defaults may substitute every glyph with a square.
-  // Force a system-native font with an ACTUAL registered glyph atlas.
-  const auto families=QFontDatabase::families();
-  check(families.contains(QStringLiteral("Arial")),
-        "M21_WINDOWS_FONT_ARIAL_NOT_REGISTERED");
-  QFont actualFont(QStringLiteral("Arial"));
-  actualFont.setPointSize(10);
-  app.setFont(actualFont);
-  const auto rawFont=QRawFont::fromFont(actualFont);
-  check(rawFont.isValid(),"M21_FONT_RAW_INVALID");
-  const auto glyphs=rawFont.glyphIndexesForString(QStringLiteral("MASTER 123"));
-  for(const auto glyph:glyphs)
-    check(glyph!=0,"M21_FONT_MISSING_ASCII_GLYPHS");
+  // Font atlas guard is only for the actual Windows screenshot lane.
+  // Linux offscreen Qt does not require Microsoft's Arial to test QML.
+  if(!qEnvironmentVariable("M21_SCREENSHOT_PATH").isEmpty()){
+    const auto families=QFontDatabase::families();
+    const QString family=families.contains(QStringLiteral("Arial")) ?
+       QStringLiteral("Arial") :
+       families.contains(QStringLiteral("Segoe UI")) ?
+       QStringLiteral("Segoe UI") : QString{};
+    check(!family.isEmpty(),"M21_WINDOWS_FONT_FAMILY_NOT_REGISTERED");
+    QFont actualFont(family);
+    actualFont.setPointSize(10);
+    app.setFont(actualFont);
+    const auto rawFont=QRawFont::fromFont(actualFont);
+    check(rawFont.isValid(),"M21_FONT_RAW_INVALID");
+    const auto glyphs=rawFont.glyphIndexesForString(QStringLiteral("MASTER 123"));
+    for(const auto glyph:glyphs)
+      check(glyph!=0,"M21_FONT_MISSING_ASCII_GLYPHS");
+  }
   QQmlEngine engine;
   QQmlComponent component(&engine,QUrl::fromLocalFile(QString::fromUtf8(M21_QML_SOURCE)));
   if(!component.isReady()) {
