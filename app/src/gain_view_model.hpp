@@ -17,6 +17,7 @@ class GainViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(double gainDb READ gain_db NOTIFY changed)
     Q_PROPERTY(QString gainDbText READ gain_db_text NOTIFY changed)
+    Q_PROPERTY(QString draftGainDbText READ draft_gain_db_text NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
     Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
@@ -37,6 +38,7 @@ public:
 
     [[nodiscard]] double gain_db() const noexcept;
     [[nodiscard]] QString gain_db_text() const;
+    [[nodiscard]] QString draft_gain_db_text() const;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] bool can_undo() const noexcept;
     [[nodiscard]] bool can_redo() const noexcept;

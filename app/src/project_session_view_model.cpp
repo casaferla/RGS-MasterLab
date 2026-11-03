@@ -7,6 +7,7 @@
 #include "gold_selection_view_model.hpp"
 #include "mastering_chain_state.hpp"
 #include "mastering_preview_controller.hpp"
+#include "master_output_rate_state.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 
@@ -16,6 +17,7 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include <rgsml/project/project_repository.hpp>
+#include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
 #include <QUuid>
@@ -106,7 +108,7 @@ namespace {
         doc.analyses.canonical_utf8() != "[]" || doc.plans.canonical_utf8() != "[]" ||
         doc.referenceMatch.canonical_utf8() != "{}" ||
         doc.masteringDNA.canonical_utf8() != "{}" ||
-        doc.output.canonical_utf8() != "{}" ||
+        !project::MasterOutputRatePreference::only_known_fields(doc.output) ||
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
         doc.history.canonical_utf8() != "[]" ||
         doc.extensions.canonical_utf8() != "{}" ||
@@ -178,10 +180,11 @@ struct MasteringChainCandidate final {
             {{"stage", chain.stage}, {"segment", chain.segment}}});
     }
 
-    if (chain.modules.size() != 2U && chain.modules.size() != 3U) {
+    if (chain.modules.size() != 2U && chain.modules.size() != 3U
+        && chain.modules.size() != 4U) {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Supported mastering chain must contain 2 or 3 modules",
+            "Supported mastering chain must contain 2, 3, or 4 modules",
             {{"moduleCount", std::to_string(chain.modules.size())}}});
     }
 
@@ -300,7 +303,7 @@ struct MasteringChainCandidate final {
         if (m2.typeId != "rgsml.dsp.compressor") {
             return core::Result<MasteringChainCandidate>::failure(core::Error{
                 core::ErrorCode::InvalidArgument,
-                "Module 2 of 3-module mastering chain must be rgsml.dsp.compressor",
+                "Module 2 of 3/4-module mastering chain must be rgsml.dsp.compressor",
                 {{"typeId", m2.typeId}}});
         }
         auto v2 = validate_module_metadata(m2, "rgsml.dsp.compressor");
@@ -335,11 +338,52 @@ struct MasteringChainCandidate final {
     auto compInst = dsp::ModuleInstance::create(std::move(compSpec));
     if (!compInst) return core::Result<MasteringChainCandidate>::failure(*compInst.error());
 
+    std::vector<dsp::ModuleInstance> restoredModules{
+        *gainInst.value(), *eqInst.value(), *compInst.value()};
+    std::optional<dsp::ModuleInstanceId> stereoMsId;
+    std::optional<dsp::StereoMsParameters> decodedStereoMs;
+    if (chain.modules.size() == 4U) {
+        // A four-node document is supported ONLY with an exact typed
+        // fourth Stereo/M-S node. Never silently drop or default its fields.
+        const auto& ms = chain.modules[3];
+        if (ms.typeId != "rgsml.dsp.stereo-ms") {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module 3 must be rgsml.dsp.stereo-ms",
+                {{"typeId", ms.typeId}}});
+        }
+        const auto metadata = validate_module_metadata(ms, "rgsml.dsp.stereo-ms");
+        if (!metadata) return core::Result<MasteringChainCandidate>::failure(
+            *metadata.error());
+        auto decoded = dsp::decode_stereo_ms_parameters_json(
+            ms.parameters.canonical_utf8());
+        if (!decoded) return core::Result<MasteringChainCandidate>::failure(
+            *decoded.error());
+        stereoMsId = *dsp::ModuleInstanceId::from_uuid(ms.instanceId).value();
+        decodedStereoMs = *decoded.value();
+        dsp::ModuleInstanceSpec msSpec{
+            .instance_id = *stereoMsId,
+            .module_type_id = ms.typeId,
+            .enabled = ms.enabled,
+            .user_bypass = ms.userBypass,
+            .controller_suspended = ms.controllerSuspended,
+            .domain_suspended = ms.domainSuspended,
+            .provenance = dsp::ModuleProvenance::MANUAL,
+            .owner = dsp::ModuleOwner::USER,
+            .link_state = dsp::ModuleLinkState::UNLINKED,
+            .semantic_node_id = std::nullopt,
+            .parameter_state = dsp::ModuleParameterState{}
+        };
+        auto msInstance = dsp::ModuleInstance::create(std::move(msSpec));
+        if (!msInstance) return core::Result<MasteringChainCandidate>::failure(
+            *msInstance.error());
+        restoredModules.push_back(std::move(*msInstance.value()));
+    }
+
     auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
     auto chainRes = dsp::ProcessingChain::restore(*regPtr,
         {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL},
-        chain.revision,
-        { *gainInst.value(), *eqInst.value(), *compInst.value() });
+        chain.revision, std::move(restoredModules));
     if (!chainRes) return core::Result<MasteringChainCandidate>::failure(*chainRes.error());
 
     auto stateRes = MasteringChainState::restore(std::move(regPtr),
@@ -350,7 +394,9 @@ struct MasteringChainCandidate final {
         eqInstanceId,
         *decodedEq.value(),
         compInstanceId,
-        decodedComp);
+        decodedComp,
+        std::move(stereoMsId),
+        std::move(decodedStereoMs));
     if (!stateRes) return core::Result<MasteringChainCandidate>::failure(*stateRes.error());
 
     return core::Result<MasteringChainCandidate>::success(
@@ -631,12 +677,51 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         if (!m2) return core::Result<project::ProjectSnapshot>::failure(*m2.error());
         masteringChain.modules.push_back(std::move(*m2.value()));
 
+        // Only an explicitly opted-in fourth M/S module is serialized.
+        // Preserve all six canonical parameters and the instance's bypass
+        // and structural flags; historical 3-node projects remain 3-node.
+        if (masteringChainState_->stereo_ms_instance_id()) {
+            const auto& params = masteringChainState_->stereo_ms_parameters();
+            if (!params) {
+                return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "Stereo/M-S instance exists without typed parameters"});
+            }
+            auto m3 = serialize_module("rgsml.dsp.stereo-ms",
+                "rgsml.dsp.stereo-ms.parameters/1.0.0",
+                masteringChainState_->stereo_ms_instance(),
+                dsp::encode_stereo_ms_parameters_json(*params));
+            if (!m3) return core::Result<project::ProjectSnapshot>::failure(
+                *m3.error());
+            masteringChain.modules.push_back(std::move(*m3.value()));
+        } else if (masteringChainState_->stereo_ms_parameters()) {
+            return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "Stereo/M-S parameters exist without a module instance"});
+        }
+
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
             [chainId](const project::Chain& c) { return c.chainId == chainId; });
         if (chainIt == doc.chains.end()) {
             doc.chains.push_back(std::move(masteringChain));
         } else {
             *chainIt = std::move(masteringChain);
+        }
+    }
+    // Persistent Project/Render preference. Preserve independently unknown
+    // output keys; do not convert current playback DEVICE into master rate.
+    if (masterOutputRateState_) {
+        if (masterOutputRateState_->has_supported_master_rate()) {
+            auto updated = project::MasterOutputRatePreference::with_target(
+                doc.output, masterOutputRateState_->master_rate_hz());
+            if (!updated)
+                return core::Result<project::ProjectSnapshot>::failure(*updated.error());
+            doc.output = std::move(*updated.value());
+        } else {
+            auto persisted = project::MasterOutputRatePreference::read(doc.output);
+            if (!persisted || persisted.value()->has_value())
+                return core::Result<project::ProjectSnapshot>::failure(
+                    invalid("output.targetMasterOutputRateHz/source"));
         }
     }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
@@ -651,10 +736,18 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     auto opened = project::ProjectRepository::open(std::move(*reader.value()));
     if (!opened) { publish_error(*opened.error()); return; }
     const auto& doc = opened.value()->document();
+    // Fail-closed preflight before transport/Source/chain mutation.
+    auto rate = project::MasterOutputRatePreference::read(doc.output);
+    if (!rate) { publish_error(*rate.error()); return; }
     auto sourceRef = external_reference(doc, doc.sourceResourceId);
     if (!sourceRef) { publish_error(*sourceRef.error()); return; }
     auto sourceCandidate = probe(*sourceRef.value());
     if (!sourceCandidate) { publish_error(*sourceCandidate.error()); return; }
+    if (rate.value()->has_value() &&
+        !MasterOutputRateState::supported(
+            sourceCandidate.value()->wav_info().audio_format().sample_rate().value())) {
+        publish_error(invalid("output.targetMasterOutputRateHz/source")); return;
+    }
     std::optional<audio::SourceResource> goldCandidate;
     std::optional<core::Uuid> goldResourceId;
     if (doc.references.activeReferenceId) {
@@ -705,6 +798,18 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
 
     source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    if (masterOutputRateState_) {
+        // The production SOURCE callback reset the authority on commit.
+        // Standalone ProjectSession clients may have no such callback.
+        if (masterOutputRateState_->source_rate_hz() != source_->sample_rate_hz())
+            masterOutputRateState_->source_committed(source_->sample_rate_hz());
+        if (rate.value()->has_value()) {
+            const bool accepted = masterOutputRateState_->choose_master_rate(
+                rate.value()->value());
+            Q_ASSERT(accepted);
+            Q_UNUSED(accepted);
+        }
+    }
     if (goldCandidate) {
         auto accepted = gold_->adopt_probed_gold(std::move(*goldCandidate));
         if (!accepted) {

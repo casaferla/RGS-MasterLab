@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
 #include <rgsml/core/resource_reference.hpp>
+#include "terminal_source_transport_port.hpp"
 
 #include <QObject>
 #include <QString>
@@ -31,9 +32,13 @@ class PlaybackTransportViewModel final : public QObject {
 
 public:
     using PcmPrepareHandler = std::function<core::Status(
-        audio::AudioBufferView, std::shared_ptr<const void>)>;
+        audio::AudioBufferView,
+        std::shared_ptr<const void>,
+        std::optional<core::RealizationId>)>;
     using PcmHandoffHandler = std::function<core::Status(
-        audio::AudioBufferView, std::shared_ptr<const void>)>;
+        audio::AudioBufferView,
+        std::shared_ptr<const void>,
+        std::optional<core::RealizationId>)>;
 
     explicit PlaybackTransportViewModel(
         std::unique_ptr<core::IAudioPlaybackService> service,
@@ -62,13 +67,27 @@ public:
         qint64 sampleRateHz);
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status stop_and_clear();
     [[nodiscard]] core::Status seek_target_frame(core::FrameIndex position);
     void set_source_derived_active(bool active) noexcept;
+    // Private M17 exact-output source-control binding; no product UI activation.
+    [[nodiscard]] core::Status bind_private_terminal_source_controls(
+        TerminalSourceTransportPort& gate);
+    // Remove an EXPIRED gate only when the old terminal sink is already
+    // NO_SOURCE. An alien audible successor must never be silently converted
+    // into a manual SOURCE session, or cleared by a later handoff.
+    [[nodiscard]] core::Status detach_private_terminal_source_controls(
+        const TerminalSourceTransportPort& expected);
+    using SourceDisplaySnapshot = TerminalSourceTransportPort::DisplaySnapshot;
+    // UI-only: NOT an M16 sink-consumption or RealizationId certificate.
+    [[nodiscard]] core::Result<SourceDisplaySnapshot>
+    source_display_snapshot() const;
     [[nodiscard]] core::Status seek_source_frame(core::FrameIndex position);
     [[nodiscard]] core::Status set_loop_source_range(
         std::optional<core::FrameRange> loop);
@@ -90,6 +109,8 @@ private:
     PcmPrepareHandler pcmPrepareHandler_;
     PcmHandoffHandler pcmHandoffHandler_;
     bool sourceDerivedActive_{true};
+    TerminalSourceTransportPort* terminalGate_{nullptr};
+    std::weak_ptr<const void> terminalLease_;
     QTimer refreshTimer_;
     core::PlaybackState state_{core::PlaybackState::NO_SOURCE};
     qint64 positionFrames_{0};

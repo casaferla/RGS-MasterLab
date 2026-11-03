@@ -760,6 +760,25 @@ void EqViewModel::setDraftShelfSlope(double shelfSlopeVal)
     setDraftShelfSlopeText(QString::number(shelfSlopeVal));
 }
 
+void EqViewModel::setDraftFieldValue(const QString& fieldName, double value)
+{
+    if (!std::isfinite(value)) return;
+    if (fieldName == QStringLiteral("frequency")) {
+        setDraftFrequency(value);
+    } else if (fieldName == QStringLiteral("gain") && gain_applicable()) {
+        setDraftGain(value);
+    } else if (fieldName == QStringLiteral("q") && q_applicable()) {
+        setDraftQ(value);
+    } else if (fieldName == QStringLiteral("shelfSlope") && shelf_slope_applicable()) {
+        setDraftShelfSlope(value);
+    }
+}
+
+double EqViewModel::maximum_frequency_hz() const noexcept
+{
+    return max_frequency_hz();
+}
+
 void EqViewModel::setDraftFrequencyText(const QString& text)
 {
     draftBand_.frequency_text = text;

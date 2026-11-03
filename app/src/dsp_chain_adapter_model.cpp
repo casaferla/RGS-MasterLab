@@ -10,11 +10,21 @@ DspChainAdapterModel::DspChainAdapterModel(
     CompressorViewModel* compressorViewModel,
     MasteringChainState* chainState,
     QString workflowContext,
-    QObject* parent)
+    QObject* parent,
+    StereoMsViewModel* stereoMsViewModel,
+    bool includeTruePeakAnalysis,
+    TerminalLimiterState* terminalLimiterState,
+    TerminalLimiterViewModel* terminalLimiterViewModel,
+    QObject* terminalMonitorViewModel)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
     , compressorViewModel_(compressorViewModel)
+    , stereoMsViewModel_(stereoMsViewModel)
+    , includeTruePeakAnalysis_(includeTruePeakAnalysis)
+    , terminalLimiterState_(terminalLimiterState)
+    , terminalLimiterViewModel_(terminalLimiterViewModel)
+    , terminalMonitorViewModel_(terminalMonitorViewModel)
     , chainState_(chainState)
     , workflowContext_(std::move(workflowContext))
 {
@@ -40,6 +50,13 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                 auto compAdapter = std::make_unique<CompressorModuleAdapter>(compressorViewModel_, chainState_, workflowContext_);
                 connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(compAdapter));
+            } else if (typeId == "rgsml.dsp.stereo-ms" && stereoMsViewModel_ != nullptr) {
+                // Authority-driven enumeration: never promote a 3-node project.
+                auto adapter = std::make_unique<StereoMsModuleAdapter>(
+                    stereoMsViewModel_, chainState_, workflowContext_);
+                connect(adapter.get(), &DspModuleAdapter::changed,
+                        this, &DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(adapter));
             }
         }
     } else {
@@ -55,6 +72,39 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         auto compAdapter = std::make_unique<CompressorModuleAdapter>(compressorViewModel_, chainState_, workflowContext_);
         connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(compAdapter));
+    }
+
+    // Analysis-only presentation entry, never a ProcessingChain instance.
+    // Opt-in keeps legacy project/standalone tests and DSP topology unchanged.
+    if (includeTruePeakAnalysis_) {
+        auto analysis = std::make_unique<TruePeakAnalysisModuleAdapter>(workflowContext_);
+        connect(analysis.get(), &DspModuleAdapter::changed,
+                this, &DspChainAdapterModel::changed);
+        moduleAdapters_.push_back(std::move(analysis));
+    }
+
+    // Terminal instance is separate from the MANUAL mastering chain.
+    if (terminalLimiterState_ && terminalLimiterViewModel_
+        && terminalLimiterState_->chain().context().stage == dsp::ProcessingStage::MASTER
+        && terminalLimiterState_->chain().context().segment == dsp::ChainSegment::TERMINAL
+        && terminalLimiterState_->chain().instances().size() == 1
+        && terminalLimiterState_->chain().instances()[0].module_type_id()
+            == "rgsml.dsp.true-peak-limiter") {
+        auto limiter=std::make_unique<TruePeakLimiterModuleAdapter>(
+            terminalLimiterState_,terminalLimiterViewModel_,workflowContext_);
+        connect(limiter.get(),&DspModuleAdapter::changed,this,
+                &DspChainAdapterModel::changed);
+        moduleAdapters_.push_back(std::move(limiter));
+    }
+
+    // The utility comes after M17 in the VISUAL chain only.
+    // No ModuleRegistry/ProcessingChain insert and no audio transform.
+    if (terminalMonitorViewModel_) {
+        auto monitor=std::make_unique<MonitorServiceModuleAdapter>(
+            terminalMonitorViewModel_,workflowContext_);
+        connect(monitor.get(),&DspModuleAdapter::changed,
+                this,&DspChainAdapterModel::changed);
+        moduleAdapters_.push_back(std::move(monitor));
     }
 
     // Authoritative selection reconciliation following rehydration
@@ -162,6 +212,9 @@ void DspChainAdapterModel::refreshFromAuthority()
     if (compressorViewModel_ != nullptr) {
         compressorViewModel_->refreshFromAuthority();
     }
+    if (stereoMsViewModel_ != nullptr) {
+        stereoMsViewModel_->refreshFromAuthority();
+    }
     rebuild_adapters_from_authority();
     emit changed();
 }
@@ -176,6 +229,9 @@ void DspChainAdapterModel::resetForNewSource()
     }
     if (compressorViewModel_ != nullptr) {
         compressorViewModel_->resetForNewSource();
+    }
+    if (stereoMsViewModel_ != nullptr) {
+        stereoMsViewModel_->resetForNewSource();
     }
     emit changed();
 }

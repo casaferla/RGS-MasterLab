@@ -7,6 +7,10 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_module.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_module.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/true_peak_limiter_module.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <algorithm>
 #include <array>
@@ -26,6 +30,8 @@ using rgsml::core::Result;
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
+constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
+constexpr auto kLimiterTypeId = "rgsml.dsp.true-peak-limiter";
 
 class GainFactory final : public IModuleFactory {
 public:
@@ -113,6 +119,61 @@ public:
         return Result<std::unique_ptr<IModule>>::success(std::move(result));
     }
 
+private:
+    ModuleDescriptor descriptor_;
+};
+
+class StereoMsFactory final : public IModuleFactory {
+public:
+    explicit StereoMsFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor))
+    {
+    }
+
+    [[nodiscard]] std::string_view module_type_id() const noexcept override
+    {
+        return descriptor_.type_id();
+    }
+
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
+    {
+        auto params = StereoMsParameters::create_default();
+        if (!params) {
+            return Result<std::unique_ptr<IModule>>::failure(*params.error());
+        }
+        auto module = StereoMsModule::create(descriptor_, *params.value());
+        if (!module) {
+            return Result<std::unique_ptr<IModule>>::failure(*module.error());
+        }
+        std::unique_ptr<IModule> result = std::move(*module.value());
+        return Result<std::unique_ptr<IModule>>::success(std::move(result));
+    }
+
+private:
+    ModuleDescriptor descriptor_;
+};
+
+// This factory produces only a real IModule with the single authorized
+// Ceiling parameter. Its default is used ONLY by the zero-argument overload.
+class TruePeakLimiterFactory final : public IModuleFactory {
+public:
+    explicit TruePeakLimiterFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor)) {}
+    [[nodiscard]] std::string_view module_type_id() const noexcept override
+    {
+        return descriptor_.type_id();
+    }
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
+    {
+        auto parameters = TruePeakLimiterParameters::create_default();
+        if (!parameters)
+            return Result<std::unique_ptr<IModule>>::failure(*parameters.error());
+        auto module = TruePeakLimiterModule::create(descriptor_,*parameters.value());
+        if (!module)
+            return Result<std::unique_ptr<IModule>>::failure(*module.error());
+        std::unique_ptr<IModule> result=std::move(*module.value());
+        return Result<std::unique_ptr<IModule>>::success(std::move(result));
+    }
 private:
     ModuleDescriptor descriptor_;
 };
@@ -254,7 +315,12 @@ private:
         {MANUAL, DNA_LINKED, REF_LINKED},
         true,
         INLINE_CHAIN,
-        std::nullopt));
+        std::nullopt,
+        {},
+        false,
+        false,
+        "1.0.0",
+        "rgsml.dsp.stereo-ms.parameters/1.0.0"));
     specs.push_back(make_spec(
         "rgsml.dsp.true-peak-limiter",
         {DYNAMICS, OUTPUT},
@@ -265,7 +331,9 @@ private:
         FINAL_TRUE_PEAK_LIMITER,
         {},
         false,
-        true));
+        true,
+        "1.0.0",
+        "rgsml.dsp.true-peak-limiter.parameters/1.0.0"));
     specs.push_back(make_spec(
         "rgsml.dsp.dither",
         {OUTPUT},
@@ -447,6 +515,10 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
             factory = std::make_shared<ParametricEqFactory>(canonical_descriptor);
         } else if (canonical_descriptor.type_id() == kCompressorTypeId) {
             factory = std::make_shared<CompressorFactory>(canonical_descriptor);
+        } else if (canonical_descriptor.type_id() == kStereoMsTypeId) {
+            factory = std::make_shared<StereoMsFactory>(canonical_descriptor);
+        } else if (canonical_descriptor.type_id() == kLimiterTypeId) {
+            factory = std::make_shared<TruePeakLimiterFactory>(canonical_descriptor);
         }
         registrations.push_back(ModuleRegistration{
             std::move(canonical_descriptor),
@@ -624,6 +696,38 @@ ModuleRegistry::create_module(
                     "Compressor module requires CompressorParameters payload."));
             }
             auto module = CompressorModule::create(iterator->descriptor, *comp_params);
+            if (!module) {
+                return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            }
+            std::unique_ptr<IModule> result = std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(result));
+        }
+
+        if (type_id == kStereoMsTypeId) {
+            const auto* ms_params = std::get_if<StereoMsParameters>(&payload);
+            if (ms_params == nullptr) {
+                return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                    ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "Stereo/M-S module requires StereoMsParameters payload."));
+            }
+            auto module = StereoMsModule::create(iterator->descriptor, *ms_params);
+            if (!module) {
+                return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            }
+            std::unique_ptr<IModule> result = std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(result));
+        }
+
+        if (type_id == kLimiterTypeId) {
+            const auto* limiter_params = std::get_if<TruePeakLimiterParameters>(&payload);
+            if (limiter_params == nullptr) {
+                return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                    ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "True Peak Limiter requires TruePeakLimiterParameters payload."));
+            }
+            auto module = TruePeakLimiterModule::create(iterator->descriptor, *limiter_params);
             if (!module) {
                 return Result<std::unique_ptr<IModule>>::failure(*module.error());
             }

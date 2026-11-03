@@ -9,9 +9,9 @@ Button {
     property bool compact: false
     property color accentColor: "#00C8FF"
 
-    readonly property int resolvedControlSize: compact ? (primary ? 40 : 32) : (primary ? 68 : 44)
-    readonly property int resolvedIconSize: compact ? (primary ? 20 : 16) : (primary ? 28 : 18)
-    readonly property int focusHaloExtra: compact ? 4 : (primary ? 12 : 6)
+    readonly property int resolvedControlSize: compact ? (primary ? 36 : 28) : (primary ? 56 : 44)
+    readonly property int resolvedIconSize: compact ? (primary ? 18 : 14) : (primary ? 24 : 18)
+    readonly property int focusHaloExtra: compact ? 4 : (primary ? 10 : 6)
 
     implicitWidth: resolvedControlSize
     implicitHeight: resolvedControlSize
@@ -33,7 +33,7 @@ Button {
     background: Item {
         Rectangle {
             anchors.centerIn: parent
-            width: parent.width + control.focusHaloExtra + (control.primary ? 4 : 2)
+            width: parent.width + control.focusHaloExtra
             height: width
             radius: width / 2
             color: "transparent"

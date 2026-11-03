@@ -1,6 +1,8 @@
 #pragma once
 
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/audio_playback_service.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -8,6 +10,7 @@
 #include <QObject>
 #include <QString>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -52,6 +55,47 @@ public:
     [[nodiscard]] core::FrameIndex gold_cue() const noexcept;
     [[nodiscard]] std::shared_ptr<const render::RenderResult> prepared_realization_snapshot() const noexcept;
     [[nodiscard]] std::shared_ptr<const render::RenderResult> processed_realization_snapshot() const noexcept;
+    // Identity of the last ACCEPTED, published Processed RenderResult.
+    // Not necessarily audible; PlaybackSnapshot is the independent authority.
+    [[nodiscard]] std::optional<core::RealizationId>
+    processed_realization_id() const noexcept;
+
+    // A user-requested, non-audible selection bound to the current SOURCE
+    // epoch and accepted complete PREPARED/PROCESSED owners. It never writes
+    // activeTarget_, allocates a DEVICE identity or certifies M16 LIVE.
+    [[nodiscard]] core::Status authorize_offline_processed_for_final_master();
+    [[nodiscard]] bool offline_processed_selected_for_final_master() const;
+    // SOURCE/OWNER provenance only. This deliberately does NOT imply that
+    // the DEVICE is empty, owned, audible, or suitable for an install.
+    // A separate endpoint guard remains mandatory before any audio action.
+    [[nodiscard]] bool offline_processed_provenance_current() const;
+
+    // Capture the one exact SOURCE/PROCESSED handoff intent BEFORE stopping
+    // playback for M17. A preflight is not an activation or permission to
+    // publish terminal output; post-stop and post-install guards still apply.
+    struct TerminalActivationIntent final {
+        std::shared_ptr<const render::RenderResult> manualOwner;
+        core::RealizationId manualId;
+        core::FrameIndex sourceCue;
+        std::optional<core::FrameRange> sourceLoop;
+        core::PlaybackState previousPlaybackState;
+        std::uint64_t seekSerial;
+        std::uint64_t traversalSerial;
+        std::uint64_t loopWrapCount;
+    };
+    [[nodiscard]] core::Result<TerminalActivationIntent>
+    capture_terminal_activation_intent() const;
+
+    // Allocate a distinct, monotonic M17 terminal identity from the SAME
+    // sequence as the accepted manual PROCESSED realizations. This reserves
+    // an ID only: it does not publish PCM, change audition targets, or grant
+    // M16 LIVE authority. Caller must additionally present a valid accepted
+    // TerminalCandidateGate owner to the separate private session gate.
+    [[nodiscard]] core::Result<core::RealizationId>
+    reserve_private_terminal_realization_id(
+        std::shared_ptr<const render::RenderResult> prepared_owner,
+        std::shared_ptr<const render::RenderResult> manual_owner,
+        std::optional<core::RealizationId> manual_id);
 
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
@@ -67,6 +111,17 @@ public:
     [[nodiscard]] core::Status clear_gold();
     [[nodiscard]] core::Status switch_to(AuditionTarget target);
 
+    // Strict future M17 BYPASS/rollback seam. Call ONLY after retiring the
+    // exact private terminal owner; restore the ORIGINAL, immutable manual
+    // PROCESSED PCM without allocating a new identity, invoking DSP, changing
+    // the selected target, or copying OUTPUT_RATE samples to SOURCE_RATE.
+    // The caller must supply the pre-revocation source playhead and verify
+    // successful playback restoration before claiming audible BYPASS.
+    [[nodiscard]] core::Status restore_manual_processed_after_terminal(
+        std::shared_ptr<const render::RenderResult> expectedManual,
+        core::RealizationId expectedManualId,
+        core::FrameIndex sourceCue);
+
     Q_INVOKABLE void selectPrepared();
     Q_INVOKABLE void selectProcessed();
     Q_INVOKABLE void selectGold();
@@ -78,7 +133,8 @@ private:
     [[nodiscard]] core::Status store_active_cue();
     [[nodiscard]] core::Status prepare_realization(
         const render::RenderResult& realization,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status materialize_prepared(
         const core::ResourceReference& source);
     void fail_closed(const core::Error& error);
@@ -89,10 +145,22 @@ private:
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
     std::shared_ptr<const render::RenderResult> processed_;
+    std::optional<core::RealizationId> processedRealizationId_;
+    // Shared MANUAL + TERMINAL monotonic namespace. Never reset at Source switch.
+    std::uint64_t nextRealizationIdValue_{1};
     std::optional<core::ResourceReference> gold_;
     std::optional<core::SampleRate> goldRate_;
     std::optional<core::FrameCount> goldFrames_;
     std::optional<AuditionTarget> activeTarget_;
+    struct OfflineProcessedAuthority {
+        std::uint64_t sourceEpoch;
+        std::shared_ptr<const render::RenderResult> prepared;
+        std::shared_ptr<const render::RenderResult> processed;
+        core::RealizationId manualId;
+        std::optional<core::FrameRange> loop;
+    };
+    std::uint64_t sourceEpoch_{0};
+    std::optional<OfflineProcessedAuthority> offlineProcessedAuthority_;
     core::FrameIndex sourceDerivedCue_{0};
     core::FrameIndex goldCue_{0};
     QString statusText_;

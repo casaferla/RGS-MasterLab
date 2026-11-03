@@ -23,6 +23,8 @@ using rgsml::core::Result;
 constexpr auto kGainSchemaId = "rgsml.dsp.gain.parameters/1.0.0";
 constexpr auto kEqSchemaId = "rgsml.dsp.parametric-eq.parameters/1.0.0";
 constexpr auto kCompressorSchemaId = "rgsml.dsp.compressor.parameters/1.0.0";
+constexpr auto kStereoMsSchemaId = "rgsml.dsp.stereo-ms.parameters/1.0.0";
+constexpr auto kTruePeakLimiterSchemaId = "rgsml.dsp.true-peak-limiter.parameters/1.0.0";
 
 [[nodiscard]] Error codec_error(ErrorCode code, std::string category, std::string message)
 {
@@ -477,6 +479,119 @@ Result<CompressorParameters> decode_compressor_parameters_json(std::string_view 
         j["makeupGainDb"].get<double>());
 }
 
+Result<std::string> encode_stereo_ms_parameters_json(const StereoMsParameters& params)
+{
+    json j;
+    j["midGainDb"] = params.mid_gain_db();
+    j["sideGainDb"] = params.side_gain_db();
+    j["sideMuted"] = params.side_muted();
+    switch (params.mono_bass_mode()) {
+    case MonoBassMode::OFF: j["monoBassMode"] = "OFF"; break;
+    case MonoBassMode::LR12: j["monoBassMode"] = "LR12"; break;
+    case MonoBassMode::LR24: j["monoBassMode"] = "LR24"; break;
+    }
+    j["monoBassCutoffHz"] = params.mono_bass_cutoff_hz();
+    j["lowBandWidthPercent"] = params.low_band_width_percent();
+    return Result<std::string>::success(j.dump());
+}
+
+Result<StereoMsParameters> decode_stereo_ms_parameters_json(std::string_view json_text)
+{
+    json j = json::parse(json_text, nullptr, false);
+    if (j.is_discarded()) {
+        return Result<StereoMsParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_JSON_SYNTAX",
+            "Failed to parse Stereo/M-S parameter JSON."));
+    }
+    if (!j.is_object()) {
+        return Result<StereoMsParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_JSON_STRUCTURE",
+            "Stereo/M-S parameter JSON root must be an object."));
+    }
+    if (j.size() != 6U
+        || !j.contains("midGainDb") || !j.contains("sideGainDb")
+        || !j.contains("sideMuted") || !j.contains("monoBassMode")
+        || !j.contains("monoBassCutoffHz") || !j.contains("lowBandWidthPercent")) {
+        return Result<StereoMsParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "STRICT_SCHEMA_VIOLATION",
+            "Stereo/M-S JSON must have exactly six canonical fields."));
+    }
+    if (!j["midGainDb"].is_number() || !j["sideGainDb"].is_number()
+        || !j["sideMuted"].is_boolean() || !j["monoBassMode"].is_string()
+        || !j["monoBassCutoffHz"].is_number()
+        || !j["lowBandWidthPercent"].is_number()) {
+        return Result<StereoMsParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_PARAMETER_TYPE",
+            "Stereo/M-S JSON field types do not match the schema."));
+    }
+
+    const auto mode = j["monoBassMode"].get<std::string_view>();
+    MonoBassMode parsed_mode;
+    if (mode == "OFF") {
+        parsed_mode = MonoBassMode::OFF;
+    } else if (mode == "LR12") {
+        parsed_mode = MonoBassMode::LR12;
+    } else if (mode == "LR24") {
+        parsed_mode = MonoBassMode::LR24;
+    } else {
+        return Result<StereoMsParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_STEREO_MS_MODE",
+            "Mono Bass mode is not a canonical enum token."));
+    }
+    return StereoMsParameters::create(
+        j["midGainDb"].get<double>(),
+        j["sideGainDb"].get<double>(),
+        j["sideMuted"].get<bool>(),
+        parsed_mode,
+        j["monoBassCutoffHz"].get<double>(),
+        j["lowBandWidthPercent"].get<double>());
+}
+
+
+Result<std::string> encode_true_peak_limiter_parameters_json(
+    const TruePeakLimiterParameters& params)
+{
+    json j = json::object();
+    j["ceilingDbTp"] = params.ceiling_db_tp();
+    return Result<std::string>::success(j.dump());
+}
+
+Result<TruePeakLimiterParameters> decode_true_peak_limiter_parameters_json(
+    std::string_view json_text)
+{
+    // A regular JSON object map silently collapses duplicate keys.
+    // Count parser KEY events before the object is materialized, so even
+    // {"ceilingDbTp":-6,"ceilingDbTp":-1} is categorically rejected.
+    std::size_t seen_keys = 0;
+    const auto count_keys = [&seen_keys](
+        int, json::parse_event_t event, json&) -> bool {
+        if (event == json::parse_event_t::key) {
+            ++seen_keys;
+        }
+        return true;
+    };
+    json j = json::parse(
+        json_text.begin(), json_text.end(), count_keys, false);
+    if (j.is_discarded()) {
+        return Result<TruePeakLimiterParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_JSON_SYNTAX",
+            "Failed to parse True Peak Limiter parameter JSON."));
+    }
+    if (!j.is_object() || j.size() != 1U || seen_keys != 1U
+        || !j.contains("ceilingDbTp")) {
+        return Result<TruePeakLimiterParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "STRICT_SCHEMA_VIOLATION",
+            "True Peak Limiter JSON must contain exactly one unique ceilingDbTp key."));
+    }
+    const auto& value = j["ceilingDbTp"];
+    if (!value.is_number()) {
+        return Result<TruePeakLimiterParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_PARAMETER_TYPE",
+            "ceilingDbTp must be a finite JSON number, not text or boolean."));
+    }
+    return TruePeakLimiterParameters::create(value.get<double>());
+}
+
 Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& payload)
 {
     return std::visit(
@@ -488,6 +603,10 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
                 return encode_parametric_eq_parameters_json(params);
             } else if constexpr (std::is_same_v<T, CompressorParameters>) {
                 return encode_compressor_parameters_json(params);
+            } else if constexpr (std::is_same_v<T, StereoMsParameters>) {
+                return encode_stereo_ms_parameters_json(params);
+            } else if constexpr (std::is_same_v<T, TruePeakLimiterParameters>) {
+                return encode_true_peak_limiter_parameters_json(params);
             }
         },
         payload);
@@ -517,6 +636,24 @@ Result<ModuleParameterPayload> decode_module_parameters_json(
             return Result<ModuleParameterPayload>::failure(*comp_res.error());
         }
         return Result<ModuleParameterPayload>::success(ModuleParameterPayload{std::move(*comp_res.value())});
+    }
+
+    if (schema_id == kStereoMsSchemaId) {
+        auto ms_res = decode_stereo_ms_parameters_json(json_text);
+        if (!ms_res) {
+            return Result<ModuleParameterPayload>::failure(*ms_res.error());
+        }
+        return Result<ModuleParameterPayload>::success(
+            ModuleParameterPayload{std::move(*ms_res.value())});
+    }
+
+    if (schema_id == kTruePeakLimiterSchemaId) {
+        auto limiter = decode_true_peak_limiter_parameters_json(json_text);
+        if (!limiter) {
+            return Result<ModuleParameterPayload>::failure(*limiter.error());
+        }
+        return Result<ModuleParameterPayload>::success(
+            ModuleParameterPayload{std::move(*limiter.value())});
     }
 
     return Result<ModuleParameterPayload>::failure(codec_error(

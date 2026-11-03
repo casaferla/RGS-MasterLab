@@ -6,6 +6,7 @@ Rectangle {
     id: root
     property var viewModel: null
     property var spectrumViewModel: null
+    property bool showLocalValidation: true
 
     implicitWidth: 992
     implicitHeight: 612
@@ -23,6 +24,10 @@ Rectangle {
         "#4F7CFF", // 5 Cobalt Blue
         "#F5F8FC"  // 6 Neutral White
     ]
+    readonly property color selectedBandHue: bandColors[
+        root.viewModel ? Math.max(0, Math.min(5, root.viewModel.selectedIndex)) : 0]
+    readonly property bool whiteSelectedBand:
+        root.viewModel && root.viewModel.selectedIndex === 5
 
     function getFilterAbbrev(token) {
         if (token === "BELL") return "BELL"
@@ -36,7 +41,10 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
+        // Never steal from the graph's 102px canonical minimum.
+        // Validation errors transiently overlay its bottom 16px rather
+        // than reserving a permanently empty footer.
+        spacing: 2
 
         // Unified toolbar: fixed control scale at every supported width.
         RowLayout {
@@ -63,7 +71,12 @@ Rectangle {
                 onClicked: if (root.viewModel) root.viewModel.resetToFlat()
                 Accessible.name: "Reset EQ to Flat"
                 ToolTip.text: "Reset all EQ parameters to Flat baseline"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell1
+                    anchors.fill: parent
+                }
             }
 
             StudioButton {
@@ -73,6 +86,10 @@ Rectangle {
                 tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
                 accentColor: "#A989F2"
                 minimumControlWidth: 72
+                // FIX-UI-001: reserve identical geometry for OFF/ON text metrics.
+                Layout.minimumWidth: 92
+                Layout.preferredWidth: 92
+                Layout.maximumWidth: 92
                 enabled: root.viewModel !== null && root.viewModel !== undefined
                 onClicked: {
                     if (root.viewModel) {
@@ -81,7 +98,12 @@ Rectangle {
                 }
                 Accessible.name: "Toggle Overall combined response curve"
                 ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell2
+                    anchors.fill: parent
+                }
             }
 
             StudioButton {
@@ -91,6 +113,10 @@ Rectangle {
                 tone: root.spectrumViewModel && root.spectrumViewModel.spectrumEnabled ? "primary" : "secondary"
                 accentColor: "#3A7BD5"
                 minimumControlWidth: 80
+                // FIX-UI-001: reserve identical geometry for OFF/ON text metrics.
+                Layout.minimumWidth: 100
+                Layout.preferredWidth: 100
+                Layout.maximumWidth: 100
                 enabled: root.spectrumViewModel !== null && root.spectrumViewModel !== undefined
                 onClicked: {
                     if (root.spectrumViewModel) {
@@ -99,7 +125,12 @@ Rectangle {
                 }
                 Accessible.name: "Toggle Live Spectrum display"
                 ToolTip.text: "Show or hide the real-time Live Spectrum overlay"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell3.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell3
+                    anchors.fill: parent
+                }
             }
 
             Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
@@ -113,7 +144,12 @@ Rectangle {
                 onClicked: if (root.viewModel) root.viewModel.addBand()
                 Accessible.name: "Add Band"
                 ToolTip.text: "Add a new EQ band"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell4.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell4
+                    anchors.fill: parent
+                }
             }
 
             StudioButton {
@@ -125,15 +161,21 @@ Rectangle {
                 onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                 Accessible.name: "Remove Band"
                 ToolTip.text: "Remove the selected EQ band"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell5.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell5
+                    anchors.fill: parent
+                }
             }
         }
 
-        // Band Selector Strip (40 lp)
+        // Band Selector Strip (36 lp): buttons keep their original 32px
+        // implicit height, with 2px vertical breathing room on each side.
         Rectangle {
             objectName: "eqBandStripRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 40
+            Layout.preferredHeight: 36
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -171,7 +213,12 @@ Rectangle {
 
                         Accessible.name: "Band " + (index + 1) + " " + filterType.replace("_", " ") + (isEnabledBand ? "" : " (disabled)")
                         ToolTip.text: "Select Band " + (index + 1) + " (" + filterType.replace("_", " ") + ", " + routingType + ")"
-                        ToolTip.visible: hovered
+                        ToolTip.visible: (hovered) && stationaryTooltipDwell6.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: stationaryTooltipDwell6
+                            anchors.fill: parent
+                        }
                     }
                 }
 
@@ -190,13 +237,63 @@ Rectangle {
             Layout.minimumHeight: 102
             viewModel: root.viewModel
             spectrumViewModel: root.spectrumViewModel
+
+            // A validation problem becomes a nonpersistent overlay at the
+            // graph's lower edge; no extra height is consumed in the root.
+            Rectangle {
+                objectName: "eqStatusRegion"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 16
+                z: 40
+                visible: root.showLocalValidation && messageText.text.length > 0
+                color: "#E012243F"
+                radius: 3
+    
+                Text {
+                    id: messageText
+                    objectName: "validationMessageText"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: {
+                        if (!root.viewModel) return ""
+                        if (root.viewModel.validationMessage.length > 0) return root.viewModel.validationMessage
+                        if (root.viewModel.previewStatus === "ERROR") return root.viewModel.previewError
+                        return ""
+                    }
+                    color: "#F27683"
+                    font.family: "Segoe UI"
+                    font.pixelSize: 12
+                    visible: text.length > 0
+                    elide: Text.ElideRight
+    
+                    ToolTip.text: text
+                    ToolTip.visible: (messageMouseArea.containsMouse && text.length > 0) && stationaryTooltipDwell7.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell7
+                        anchors.fill: parent
+                    }
+    
+                    Accessible.name: text
+                    Accessible.description: text
+    
+                    MouseArea {
+                        id: messageMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+                }
+            }
         }
 
-        // Selected-Band Inspector Panel (128 lp Fixed)
+        // Selected-Band Inspector: extended down for compact slider tier,
+        // retaining the existing 164px numeric fields and graph elasticity.
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 136
+            Layout.preferredHeight: 160
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -255,7 +352,12 @@ Rectangle {
                                     onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
                                     Accessible.name: "Filter type " + modelData.label
                                     ToolTip.text: "Set filter type to " + modelData.label
-                                    ToolTip.visible: hovered
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell8.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell8
+                                        anchors.fill: parent
+                                    }
                                 }
                             }
                         }
@@ -302,7 +404,12 @@ Rectangle {
                                     onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
                                     Accessible.name: "Routing " + modelData.label
                                     ToolTip.text: "Set channel routing to " + modelData.label
-                                    ToolTip.visible: hovered
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell9.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell9
+                                        anchors.fill: parent
+                                    }
                                 }
                             }
                         }
@@ -335,57 +442,120 @@ Rectangle {
 
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#1C3A59" }
 
-                    // Numeric Fields Tier (50 lp)
+                    // Editable numeric boxes plus their third input mode:
+                    // a common secondary track with a selected-band ring.
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 58
+                        Layout.preferredHeight: 78
                         spacing: 12
 
-                        StudioNumericField {
-                            objectName: "frequencyField"
+                        StudioNumericSliderPair {
+                            objectName: "eqFrequencyControl"
+                            fieldObjectName: "frequencyField"
+                            sliderObjectName: "eqFrequencySlider"
                             compact: false
+                            sliderCompact: true
                             labelText: "FREQUENCY"
                             unitText: "Hz"
                             fieldName: "frequency"
                             rawText: root.viewModel ? root.viewModel.frequencyText : "1000"
+                            value: root.viewModel ? root.viewModel.frequency : 1000.0
                             viewModel: root.viewModel
-                            interactionHint: "Drag the EQ point left/right to adjust\nEnter to apply • Esc to cancel"
+                            from: 20.0
+                            to: root.viewModel ? root.viewModel.maximumFrequencyHz : 20000.0
+                            stepSize: 1.0
+                            logarithmic: true
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Drag the EQ point left/right or use slider to adjust\nEnter to apply • Esc to cancel"
+                            sliderAccessibleName: "FREQUENCY selected-band adjustment"
                         }
 
-                        StudioNumericField {
-                            objectName: "gainField"
+                        StudioNumericSliderPair {
+                            objectName: "eqGainControl"
+                            fieldObjectName: "gainField"
+                            sliderObjectName: "eqGainSlider"
                             compact: false
-                            visible: root.viewModel ? root.viewModel.gainApplicable : true
+                            sliderCompact: true
                             labelText: "GAIN"
                             unitText: "dB"
                             fieldName: "gain"
                             rawText: root.viewModel ? root.viewModel.gainText : "0"
+                            value: root.viewModel ? root.viewModel.gain : 0.0
                             viewModel: root.viewModel
-                            interactionHint: "Drag the EQ point up/down to adjust\nEnter to apply • Esc to cancel"
+                            visible: root.viewModel ? root.viewModel.gainApplicable : true
+                            from: -18.0
+                            to: 18.0
+                            stepSize: 0.1
+                            logarithmic: false
+                            fillFromOrigin: true
+                            positionFillOrigin: 0.0
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Drag the EQ point up/down or use slider to adjust\nEnter to apply • Esc to cancel"
+                            sliderAccessibleName: "GAIN selected-band adjustment"
                         }
 
-                        StudioNumericField {
-                            objectName: "qField"
+                        StudioNumericSliderPair {
+                            objectName: "eqQControl"
+                            fieldObjectName: "qField"
+                            sliderObjectName: "eqQSlider"
                             compact: false
-                            visible: root.viewModel ? root.viewModel.qApplicable : true
+                            sliderCompact: true
                             labelText: "Q"
                             unitText: ""
                             fieldName: "q"
                             rawText: root.viewModel ? root.viewModel.qText : "0.707"
+                            value: root.viewModel ? root.viewModel.q : 0.707
                             viewModel: root.viewModel
-                            interactionHint: "Mouse wheel over the EQ point to adjust\nShift + wheel for fine adjustment"
+                            visible: root.viewModel ? root.viewModel.qApplicable : true
+                            from: 0.10
+                            to: 12.0
+                            stepSize: 0.01
+                            logarithmic: true
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Mouse wheel over the EQ point or use slider to adjust\nShift + wheel for fine adjustment"
+                            sliderAccessibleName: "Q selected-band adjustment"
                         }
 
-                        StudioNumericField {
-                            objectName: "shelfSlopeField"
+                        StudioNumericSliderPair {
+                            objectName: "eqShelfSlopeControl"
+                            fieldObjectName: "shelfSlopeField"
+                            sliderObjectName: "eqShelfSlopeSlider"
                             compact: false
-                            visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
+                            sliderCompact: true
                             labelText: "SHELF SLOPE"
                             unitText: ""
                             fieldName: "shelfSlope"
                             rawText: root.viewModel ? root.viewModel.shelfSlopeText : "1"
+                            value: root.viewModel ? root.viewModel.shelfSlope : 1.0
                             viewModel: root.viewModel
-                            interactionHint: "Mouse wheel over the EQ point to adjust\nShift + wheel for fine adjustment"
+                            visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
+                            from: 0.10
+                            to: 1.0
+                            stepSize: 0.01
+                            logarithmic: false
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Mouse wheel over the EQ point or use slider to adjust\nShift + wheel for fine adjustment"
+                            sliderAccessibleName: "SHELF SLOPE selected-band adjustment"
                         }
 
                         // HP/LP Slope DB/OCT: one fixed visual scale at every width.
@@ -430,7 +600,12 @@ Rectangle {
                                             }
                                             Accessible.name: "Slope " + modelData + " dB per octave"
                                             ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                            ToolTip.visible: hovered
+                                            ToolTip.visible: (hovered) && stationaryTooltipDwell10.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: stationaryTooltipDwell10
+                                                anchors.fill: parent
+                                            }
                                         }
                                     }
                                 }
@@ -455,7 +630,12 @@ Rectangle {
                                             }
                                             Accessible.name: "Slope " + modelData + " dB per octave"
                                             ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                            ToolTip.visible: hovered
+                                            ToolTip.visible: (hovered) && stationaryTooltipDwell11.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: stationaryTooltipDwell11
+                                                anchors.fill: parent
+                                            }
                                         }
                                     }
                                 }
@@ -470,42 +650,6 @@ Rectangle {
             }
         }
 
-        // Validation & Preview Error Strip (24 lp)
-        Rectangle {
-            objectName: "eqStatusRegion"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 24
-            color: "transparent"
 
-            Text {
-                id: messageText
-                objectName: "validationMessageText"
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: {
-                    if (!root.viewModel) return ""
-                    if (root.viewModel.validationMessage.length > 0) return root.viewModel.validationMessage
-                    if (root.viewModel.previewStatus === "ERROR") return root.viewModel.previewError
-                    return ""
-                }
-                color: "#F27683"
-                font.family: "Segoe UI"
-                font.pixelSize: 12
-                visible: text.length > 0
-                elide: Text.ElideRight
-
-                ToolTip.text: text
-                ToolTip.visible: messageMouseArea.containsMouse && text.length > 0
-
-                Accessible.name: text
-                Accessible.description: text
-
-                MouseArea {
-                    id: messageMouseArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                }
-            }
-        }
     }
 }

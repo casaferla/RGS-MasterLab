@@ -4,6 +4,7 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 
 #include <algorithm>
 #include <string>
@@ -15,6 +16,7 @@ namespace {
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
+constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 
 [[nodiscard]] rgsml::core::Error request_error(
     rgsml::core::ErrorCode code,
@@ -27,7 +29,8 @@ constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 [[nodiscard]] bool is_supported_parameterized_builtin(std::string_view type_id) noexcept
 {
-    return type_id == kGainTypeId || type_id == kEqTypeId || type_id == kCompressorTypeId;
+    return type_id == kGainTypeId || type_id == kEqTypeId
+        || type_id == kCompressorTypeId || type_id == kStereoMsTypeId;
 }
 
 }  // namespace
@@ -37,7 +40,9 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
     rgsml::core::FrameRange render_window,
     const rgsml::dsp::ProcessingChain& chain,
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
-    rgsml::core::FrameCount maximum_block_frames)
+    rgsml::core::FrameCount maximum_block_frames,
+    std::optional<std::size_t> max_telemetry_bytes,
+    std::optional<rgsml::core::RealizationId> realization_id)
 {
     if (source.timebase().frame_domain_id()
         != rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE) {
@@ -115,6 +120,13 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
                     "MODULE_PARAMETER_PAYLOAD_MISMATCH",
                     "A Compressor binding contained a non-Compressor payload."));
             }
+        } else if (type_id == kStereoMsTypeId) {
+            if (!std::holds_alternative<rgsml::dsp::StereoMsParameters>(binding.parameters)) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "A Stereo/M-S binding contained a non-StereoMsParameters payload."));
+            }
         }
     }
 
@@ -137,6 +149,12 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
     }
 
     try {
+        std::optional<std::size_t> effective_telemetry_bytes;
+        if (max_telemetry_bytes.has_value()) {
+            constexpr std::size_t kAbsoluteMaxMemoryBytes = 128U * 1024U * 1024U;
+            effective_telemetry_bytes = std::min(*max_telemetry_bytes, kAbsoluteMaxMemoryBytes);
+        }
+
         return rgsml::core::Result<RenderRequest>::success(RenderRequest{
             source,
             render_window,
@@ -145,7 +163,9 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
             std::vector<rgsml::dsp::ModuleInstance>{
                 chain.instances().begin(), chain.instances().end()},
             std::move(bindings),
-            maximum_block_frames});
+            maximum_block_frames,
+            effective_telemetry_bytes,
+            realization_id});
     } catch (...) {
         return rgsml::core::Result<RenderRequest>::failure(request_error(
             rgsml::core::ErrorCode::IoFailure,
@@ -161,7 +181,9 @@ RenderRequest::RenderRequest(
     std::uint64_t chain_revision,
     std::vector<rgsml::dsp::ModuleInstance> chain_instances,
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
-    rgsml::core::FrameCount maximum_block_frames) noexcept
+    rgsml::core::FrameCount maximum_block_frames,
+    std::optional<std::size_t> max_telemetry_bytes,
+    std::optional<rgsml::core::RealizationId> realization_id) noexcept
     : source_(source)
     , render_window_(render_window)
     , chain_context_(chain_context)
@@ -169,6 +191,8 @@ RenderRequest::RenderRequest(
     , chain_instances_(std::move(chain_instances))
     , bindings_(std::move(bindings))
     , maximum_block_frames_(maximum_block_frames)
+    , max_telemetry_bytes_(max_telemetry_bytes)
+    , realization_id_(realization_id)
 {
 }
 
@@ -192,5 +216,13 @@ rgsml::core::FrameCount RenderRequest::maximum_block_frames() const noexcept
     return maximum_block_frames_;
 }
 RenderMode RenderRequest::mode() const noexcept { return RenderMode::PREVIEW; }
+std::optional<std::size_t> RenderRequest::max_telemetry_bytes() const noexcept
+{
+    return max_telemetry_bytes_;
+}
+std::optional<rgsml::core::RealizationId> RenderRequest::realization_id() const noexcept
+{
+    return realization_id_;
+}
 
 }  // namespace rgsml::render
