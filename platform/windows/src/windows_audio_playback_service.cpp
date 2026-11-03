@@ -484,12 +484,22 @@ struct OutputCandidate final {
         observed[i]={hz,defaultOutput.isFormatSupported(floatFormat),
                         defaultOutput.isFormatSupported(pcm16Format)};
     }
-    // Every possible sink candidate was freshly probed on the SAME actual
-    // default endpoint; this pure selector never changes the MASTER clock.
-    // A missing/tampered Playback FIR fails BEFORE constructing an output
-    // or touching the current PlaybackEngine sink.
-    auto selected=internal::select_source_device_format_six_rate(
-        sourceFormat,preferred,observed);
+    // Existing exact-rate playback for a non-six-rate SOURCE must not
+    // regress: no unsupported FIR/SRC is implied. Only conversions use the
+    // six-rate authenticated catalog. Every candidate is observed on the
+    // current real endpoint, never guessed from the advertised preference.
+    const auto sixSource=std::find(sixRates.begin(),sixRates.end(),sourceRate)
+        !=sixRates.end();
+    const auto exactFloat=make_format(
+        sourceFormat,sourceRate,QAudioFormat::Float);
+    const auto exactPcm16=make_format(
+        sourceFormat,sourceRate,QAudioFormat::Int16);
+    core::Result<internal::DeviceFormat> selected=sixSource
+        ?internal::select_source_device_format_six_rate(
+            sourceFormat,preferred,observed)
+        :internal::select_device_format(
+            sourceFormat,defaultOutput.isFormatSupported(exactFloat),
+            defaultOutput.isFormatSupported(exactPcm16),false,false);
     if(!selected) {
         std::string detail=std::string(selected.error()->message())
             +" SOURCE="+std::to_string(sourceRate)
