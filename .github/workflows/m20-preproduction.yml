@@ -1,0 +1,69 @@
+# Only M20 private preproduction. No M20 merge, production package, Qt, FQ, FIR, M17/M18/M19 gate.
+name: M20 Independent Preproduction CI
+on:
+  push:
+    branches:
+      - experimental/m20-tonal-stereo-20261103
+    paths:
+      - 'analysis/src/internal/m20_*.hpp'
+      - 'tools/qualification/m20/**'
+      - 'docs/architecture/M20_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261103.md'
+      - '.github/workflows/m20-preproduction.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m20-preproduction-only
+  cancel-in-progress: false
+jobs:
+  linux-m20:
+    name: M20 only · Linux GCC C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independent Python rational/Decimal oracle
+        shell: bash
+        run: python3 tools/qualification/m20/test_m20_independent_reference.py
+      - name: Private C++20 tonal/stereo and REAL shared FFT/Hann/PSD · both modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src tools/qualification/m20/m20_portable_selftest.cpp -o "$RUNNER_TEMP/m20-portable"
+            "$RUNNER_TEMP/m20-portable"
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include tools/qualification/m20/m20_actual_spectral_reuse_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m20-real"
+            "$RUNNER_TEMP/m20-real"
+          done
+          echo M20_LINUX_PREPRODUCTION_PASS_NOT_U_OR_G
+  windows-m20:
+    name: M20 only · Windows 2022 MSVC Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Independent Python rational/Decimal oracle
+        shell: pwsh
+        run: python tools/qualification/m20/test_m20_independent_reference.py
+      - name: Private C++20 tonal/stereo and REAL shared FFT/Hann/PSD · both modes
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-native-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src tools/qualification/m20/m20_portable_selftest.cpp "/Fe:$env:RUNNER_TEMP/m20-native-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw "M20_PRIVATE_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-native-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_PRIVATE_TEST_FAILED_$mode" }
+            $log = "$env:RUNNER_TEMP/m20-real-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include tools/qualification/m20/m20_actual_spectral_reuse_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp "/Fe:$env:RUNNER_TEMP/m20-real-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw "M20_REAL_FFT_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-real-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_REAL_FFT_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_WINDOWS_PREPRODUCTION_PASS_NOT_U_OR_G
