@@ -6,11 +6,16 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string_view>
 
 namespace rgsml::analysis {
+
+// Optional passive observer, independent of numerical qualification.
+using TruePeakResourceProgress =
+    std::function<void(std::int64_t completed, std::int64_t total)>;
 
 // Product Gate G remains OPEN. A supported numeric reading from this API
 // is not proof of official ITU/EBU / six-rate release qualification.
@@ -53,7 +58,8 @@ public:
 
 private:
     friend core::Result<TruePeakMeasurement>
-    measure_true_peak_full_resource(const audio::AudioBuffer& resource);
+    measure_true_peak_full_resource(const audio::AudioBuffer& resource,
+                                    const TruePeakResourceProgress& progress);
     TruePeakMeasurement() = default;
 
     std::int64_t sample_rate_hz_{0};
@@ -73,6 +79,7 @@ private:
 // Complete owning AudioBuffer only. Returns categorical errors, not a fake
 // UNSUPPORTED result with numeric values, on invalid Fs/layout/PCM/empty.
 [[nodiscard]] core::Result<TruePeakMeasurement>
-measure_true_peak_full_resource(const audio::AudioBuffer& resource);
+measure_true_peak_full_resource(const audio::AudioBuffer& resource,
+                                const TruePeakResourceProgress& progress = {});
 
 }  // namespace rgsml::analysis
