@@ -47,46 +47,111 @@ struct GatedBlockCandidateEvidence {
     std::size_t final_count{0};
 };
 
+// Strict positive block-energy mean with a compensated direct path and a
+// separately recomputed peak-scaled path ONLY when the sum would overflow.
+// The mean of finite nonnegative q cannot exceed max(q), even when sum(q)
+// does not fit in binary64. Do not label an otherwise representable LUFS as
+// numerically undefined just because a naive accumulator overflowed.
+//
+// The fallback never changes the comparator direction, introduces an epsilon,
+// or changes the frozen power-domain -70/-10 one-pass gates. A fully audited
+// QTP/range policy is still required before production integration.
+struct PositivePowerMeanCandidate final {
+    double mean{0.0};
+    std::size_t count{0};
+};
+
+template <typename Selected>
+[[nodiscard]] inline std::optional<PositivePowerMeanCandidate>
+positive_block_power_mean(std::span<const double> powers, Selected&& selected)
+{
+    PositivePowerMeanCandidate result;
+    double sum = 0.0;
+    double correction = 0.0;
+    double peak = 0.0;
+    bool needs_scaled_fallback = false;
+    for (const double q : powers) {
+        if (!selected(q)) continue;
+        ++result.count;
+        if (q > peak) peak = q;
+        if (needs_scaled_fallback) continue;
+        const double next = sum + q;
+        if (!std::isfinite(next)) {
+            needs_scaled_fallback = true;
+            continue;
+        }
+        // Neumaier adds small block powers without depending on input
+        // permutation as strongly as an ordinary sequential sum.
+        if (sum >= q) {
+            correction += (sum - next) + q;
+        } else {
+            correction += (q - next) + sum;
+        }
+        sum = next;
+        if (!std::isfinite(correction)) needs_scaled_fallback = true;
+    }
+    if (result.count == 0U) return result;
+    if (!(peak > 0.0) || !std::isfinite(peak)) return std::nullopt;
+
+    if (!needs_scaled_fallback && std::isfinite(sum + correction)) {
+        result.mean = (sum + correction) /
+            static_cast<double>(result.count);
+    } else {
+        // Every summand is now <=1, so the sum is bounded by count,
+        // independent of the original power magnitudes. Re-evaluate from
+        // complete input, rather than mixing pre-overflow partial state.
+        double scaledSum = 0.0;
+        double scaledCorrection = 0.0;
+        for (const double q : powers) {
+            if (!selected(q)) continue;
+            const double term = q / peak;
+            const double next = scaledSum + term;
+            if (scaledSum >= term) {
+                scaledCorrection += (scaledSum - next) + term;
+            } else {
+                scaledCorrection += (term - next) + scaledSum;
+            }
+            scaledSum = next;
+        }
+        const double normalizedMean =
+            (scaledSum + scaledCorrection) /
+            static_cast<double>(result.count);
+        result.mean = peak * normalizedMean;
+    }
+    if (!(result.mean > 0.0) || !std::isfinite(result.mean)) {
+        return std::nullopt;
+    }
+    return result;
+}
+
 [[nodiscard]] inline std::optional<GatedBlockCandidateEvidence>
 gate_complete_400ms_block_powers(std::span<const double> powers)
 {
     GatedBlockCandidateEvidence evidence;
     const double absolutePower = std::pow(10.0, (-70.0 + 0.691) / 10.0);
-    double sumA = 0.0;
-    for (double q : powers) {
-        if (!std::isfinite(q) || q < 0.0) {
-            return std::nullopt;
-        }
-        if (q > absolutePower) {
-            sumA += q;
-            ++evidence.absolute_count;
-        }
+    for (const double q : powers) {
+        if (!std::isfinite(q) || q < 0.0) return std::nullopt;
     }
-    if (evidence.absolute_count == 0U) {
-        return evidence;
-    }
-    if (!std::isfinite(sumA)) {
-        return std::nullopt;
-    }
-    // ITU one-pass relative gate = -10 LU relative to the original
-    // absolute-gated mean POWER, never mean of dB nor iterative gates.
-    const double relativePower = (sumA /
-        static_cast<double>(evidence.absolute_count)) / 10.0;
-    double sumR = 0.0;
-    for (double q : powers) {
-        if (q > absolutePower && q > relativePower) {
-            sumR += q;
-            ++evidence.final_count;
-        }
-    }
-    if (evidence.final_count == 0U || !std::isfinite(sumR)) {
-        return std::nullopt;
-    }
-    const double loudness = -0.691 + 10.0 *
-        std::log10(sumR / static_cast<double>(evidence.final_count));
-    if (!std::isfinite(loudness)) {
-        return std::nullopt;
-    }
+
+    const auto absolute = positive_block_power_mean(powers,
+        [absolutePower](double q) { return q > absolutePower; });
+    if (!absolute) return std::nullopt;
+    evidence.absolute_count = absolute->count;
+    if (absolute->count == 0U) return evidence;
+
+    // The original absolute-gated mean is the ONLY input to the one-pass
+    // relative threshold. Strict comparisons use linear power, not a
+    // rounded LUFS display, a floating epsilon, or an iterative gate.
+    const double relativePower = absolute->mean / 10.0;
+    const auto retained = positive_block_power_mean(powers,
+        [absolutePower,relativePower](double q) {
+            return q > absolutePower && q > relativePower;
+        });
+    if (!retained || retained->count == 0U) return std::nullopt;
+    evidence.final_count = retained->count;
+    const double loudness =
+        -0.691 + 10.0 * std::log10(retained->mean);
+    if (!std::isfinite(loudness)) return std::nullopt;
     evidence.integrated_lufs = loudness;
     return evidence;
 }
