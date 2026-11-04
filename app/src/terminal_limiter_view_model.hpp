@@ -27,6 +27,7 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(QString nonconformingExcessText READ nonconforming_excess_text NOTIFY changed)
     Q_PROPERTY(bool nonconformingDirectPreviewAvailable READ nonconforming_direct_preview_available NOTIFY changed)
     Q_PROPERTY(bool nonconformingDevicePreviewAvailable READ nonconforming_device_preview_available NOTIFY changed)
+    Q_PROPERTY(bool nonconformingDevicePreparing READ nonconforming_device_preparing NOTIFY changed)
     Q_PROPERTY(QString preparationStage READ preparation_stage NOTIFY changed)
     Q_PROPERTY(double preparationFraction READ preparation_fraction NOTIFY changed)
     Q_PROPERTY(bool preparationDeterminate READ preparation_determinate NOTIFY changed)
@@ -53,6 +54,8 @@ public:
     [[nodiscard]] QString nonconforming_excess_text() const {return nonconformingExcessText_;}
     [[nodiscard]] bool nonconforming_direct_preview_available() const noexcept {return nonconformingDirectPreviewAvailable_;}
     [[nodiscard]] bool nonconforming_device_preview_available() const noexcept {return nonconformingDevicePreviewAvailable_;}
+    [[nodiscard]] bool nonconforming_device_preparing() const noexcept
+    {return nonconformingDevicePreparing_;}
     [[nodiscard]] QString preparation_stage() const {return preparationStage_;}
     [[nodiscard]] double preparation_fraction() const noexcept {return preparationFraction_;}
     [[nodiscard]] bool preparation_determinate() const noexcept {return preparationDeterminate_;}
@@ -89,6 +92,9 @@ public:
     // Separate explicit cross-rate DEVICE SRC availability. The existing
     // direct-rate permission is never silently treated as cross-rate.
     void setNonconformingDevicePreviewAvailable(bool available);
+    // The CANCEL affordance is independently driven by an actual DEVICE
+    // SRC worker transaction, never by textual audio status.
+    void setNonconformingDevicePreparing(bool preparing);
     // Only the coordinator may supply independently M16-remeasured,
     // exact-owner final-check evidence; the UI never derives trim from Ceiling.
     void setVerifiedTrimObservation(double gain,bool used,double before,double after);
@@ -126,6 +132,7 @@ private:
     QString nonconformingExcessText_;
     bool nonconformingDirectPreviewAvailable_{false};
     bool nonconformingDevicePreviewAvailable_{false};
+    bool nonconformingDevicePreparing_{false};
     QString preparationStage_;
     double preparationFraction_{0.0};
     bool preparationDeterminate_{false};
