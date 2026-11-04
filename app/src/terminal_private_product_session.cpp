@@ -1894,33 +1894,67 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         sourceCue=core::FrameIndex{0};
     // A failed Windows SOURCE/PROCESSED rate admission must not first
     // retire the exact MASTER monitor and leave the user with NO_SOURCE.
-    // The callback probes endpoint formats and pinned FIR only, without
-    // touching the running monitor or changing any SOURCE/MASTER revision.
-    // This is NOT a guarantee against a later Windows hotplug; the old
-    // strict post-restore owner/loop proof remains mandatory.
-    if(manualRestorePreflight_) {
-        const auto preflight=[&]()->core::Status {
-            try {
-                return manualRestorePreflight_(predecessor.manual);
-            } catch(const std::bad_alloc&) {
-                return core::Status::failure(core::Error{
-                    core::ErrorCode::IoFailure,
-                    "MONITOR_RETURN_SOURCE_PREFLIGHT_OUT_OF_MEMORY"});
-            } catch(const std::exception&) {
-                return core::Status::failure(core::Error{
-                    core::ErrorCode::InvalidState,
-                    "MONITOR_RETURN_SOURCE_PREFLIGHT_EXCEPTION"});
-            }
-        }();
-        if(!preflight)return preflight;
+    // Reserve the transaction BEFORE the Windows/Qt preflight callback:
+    // that callback may dispatch nested events or change SOURCE selection.
+    // A second Return/Cancel must never retire our sink reentrantly.
+    monitorTransitioning_=true;
+    const preflight=[&]()->core::Status {
+        if(!manualRestorePreflight_)return core::Status::success();
+        try {
+            return manualRestorePreflight_(predecessor.manual);
+        } catch(const std::bad_alloc&) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "MONITOR_RETURN_SOURCE_PREFLIGHT_OUT_OF_MEMORY"});
+        } catch(const std::exception&) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_SOURCE_PREFLIGHT_EXCEPTION"});
+        } catch(...) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_SOURCE_PREFLIGHT_UNKNOWN_EXCEPTION"});
+        }
+    }();
+    if(!preflight) {
+        monitorTransitioning_=false;
+        return preflight;
     }
-    const auto owned=monitorOwned_(candidate);
-    if(!owned)return core::Status::failure(*owned.error());
-    if(!*owned.value())
+    // A preflight made for an old SOURCE epoch must never cause the
+    // currently audible monitor to be retired.
+    if(!selected_||!selected_()||!manual_||!manualId_||!sourceLoop_
+       ||manual_()!=predecessor.manual
+       ||manualId_()!=std::optional{predecessor.manualId}
+       ||sourceLoop_()!=predecessor.loop) {
+        monitorTransitioning_=false;
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_MANUAL_EPOCH_CHANGED_DURING_PREFLIGHT"));
+    }
+    const auto owned=[&]()->core::Result<bool> {
+        try {
+            return monitorOwned_(candidate);
+        } catch(const std::bad_alloc&) {
+            return core::Result<bool>::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "MONITOR_RETURN_DEVICE_OWNER_QUERY_OUT_OF_MEMORY"});
+        } catch(const std::exception&) {
+            return core::Result<bool>::failure(rejected(
+                "MONITOR_RETURN_DEVICE_OWNER_QUERY_EXCEPTION"));
+        } catch(...) {
+            return core::Result<bool>::failure(rejected(
+                "MONITOR_RETURN_DEVICE_OWNER_QUERY_UNKNOWN_EXCEPTION"));
+        }
+    }();
+    if(!owned) {
+        monitorTransitioning_=false;
+        return core::Status::failure(*owned.error());
+    }
+    if(!*owned.value()) {
+        monitorTransitioning_=false;
         return core::Status::failure(rejected(
             "MONITOR_RETURN_REFUSES_ALIEN_DEVICE_OWNER"));
-    monitorTransitioning_=true;
-    // The worker thread ATOMICALLY rechecks owner identity before clear.
+    }
+    // The worker independently rechecks exact ownership before clearing.
     const auto retired=monitorRetire_(candidate);
     if(!retired){monitorTransitioning_=false;return retired;}
     installedMonitor_.reset();

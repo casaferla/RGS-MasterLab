@@ -4119,9 +4119,22 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t sourceRestoreProbes=0;
     bool sourceRestoreSupported=false;
     bool sourceRestoreThrows=false;
+    bool reenterReturnOnPreflight=false;
+    bool nestedReturnCorrectlyBlocked=false;
+    bool invalidateSelectionOnPreflight=false;
     product.set_private_monitor_manual_restore_preflight(
         [&](auto original)->core::Status {
             ++sourceRestoreProbes;
+            if(reenterReturnOnPreflight) {
+                reenterReturnOnPreflight=false;
+                const auto nested=product.return_private_monitor_to_manual();
+                nestedReturnCorrectlyBlocked=!nested
+                    &&nested.error()->code()==core::ErrorCode::InvalidState;
+            }
+            if(invalidateSelectionOnPreflight) {
+                invalidateSelectionOnPreflight=false;
+                productAudibleSelectionAccepted=false;
+            }
             if(sourceRestoreThrows)throw std::bad_alloc{};
             if(original!=selector.processed_realization_snapshot())
                 return core::Status::failure(core::Error{
@@ -4133,9 +4146,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                     "TEST_SOURCE_DEVICE_FORMAT_NOT_SUPPORTED"});
             return core::Status::success();
         });
+    reenterReturnOnPreflight=true;
     const auto retryable=product.return_private_monitor_to_manual();
     QVERIFY(!retryable);
     QCOMPARE(retryable.error()->code(),core::ErrorCode::UnsupportedOperation);
+    QVERIFY(nestedReturnCorrectlyBlocked);
     QCOMPARE(sourceRestoreProbes,std::size_t{1});
     QCOMPARE(monitorRetires,std::size_t{0});
     QCOMPARE(manualRestores,std::size_t{0});
@@ -4324,6 +4339,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // A strict postcondition must compare against ZERO, not the old EOF.
     QVERIFY(device->stop());
     QVERIFY(product.install_private_monitor_stopped(privateMonitor));
+    // Windows/Qt preflight can allow nested SOURCE revision changes. Stop
+    // BEFORE monitor retirement, never after losing the device.
+    invalidateSelectionOnPreflight=true;
+    const auto stalePreflightReturn=product.return_private_monitor_to_manual();
+    QVERIFY(!stalePreflightReturn);
+    QCOMPARE(stalePreflightReturn.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(monitorRetires,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{6});
+    QCOMPARE(deviceMonitor,privateMonitor);
+    QCOMPARE(product.status(),
+             QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    productAudibleSelectionAccepted=true;
     QVERIFY(device->duration.has_value());
     device->position=core::FrameIndex{device->duration->value()};
     const auto eofMonitor=product.private_monitor_master_snapshot();
