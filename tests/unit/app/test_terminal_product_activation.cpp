@@ -798,7 +798,8 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         double db,double ceiling,double measuredPeak,
         render::M17NonconformingReason reason,
         analysis::TruePeakQualificationStatus qualification,
-        std::optional<core::SampleRate> stageRate=std::nullopt)
+        std::optional<core::SampleRate> stageRate=std::nullopt,
+        bool forgeMissingSourceSrcProof=false)
         ->std::shared_ptr<const Staged> {
         const auto finalHz=stageRate.value_or(*sourceRate.value());
         auto targetFormat=audio::AudioFormat::create(
@@ -844,8 +845,8 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
             manual,std::move(fakeMiss),*instance.value(),
             limiter.value()->chain().revision(),finalHz,
             *frames.value(),manual->chain_revision(),
-            finalHz!=*sourceRate.value(),
-            finalHz!=*sourceRate.value()
+            finalHz!=*sourceRate.value() && !forgeMissingSourceSrcProof,
+            finalHz!=*sourceRate.value() && !forgeMissingSourceSrcProof
                 ?std::string_view{"SYNTHETIC_TEST_ONLY_NOT_REAL_ORIGINAL_FIR"}
                 :std::string_view{}};
         return std::make_shared<const Staged>(
@@ -1112,6 +1113,28 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QCOMPARE(device->immutable_master_frames.value(),expectedMasterFrames);
         QCOMPARE(stage->rendered.programme_frames,pcm.frame_count());
         QCOMPARE(stage->rendered.used_candidate_src,hz!=192000);
+        if(hz==48000) {
+            // The former fake six-rate suite passed a cross-rate stage
+            // with used_candidate_src=false and no Q0 provenance, because
+            // it incorrectly assigned equal SOURCE/MASTER frame counts.
+            // Admission must now reject that forged crossrate witness.
+            const auto forged=makeSyntheticStage(
+                -7.0,expectedCeiling,0.51,guarded,nominal,
+                *masterRate.value(),true);
+            QVERIFY(forged);
+            const auto forgedPcm=forged->rendered.terminal.terminal
+                .compensated_pcm.view();
+            auto forgedConversion=audio::materialize_monitoring_pcm_candidate(
+                forgedPcm,*deviceRate.value(),*block.value());
+            QVERIFY(forgedConversion);
+            forgedConversion.value()->windows_prepared_endpoint_id
+                =freshEndpoint.id;
+            const auto forgedDevice=std::make_shared<
+                const audio::MonitoringPcmCandidate>(
+                    std::move(*forgedConversion.value()));
+            QVERIFY(!admit_measured_device_audition_ticket(
+                forged,forged,forgedDevice,true,freshEndpoint));
+        }
 
         // Exercise all SIX rate-accurate SOURCE -> MASTER -> DEVICE
         // transport plans against the real rational frame-domain contract,
