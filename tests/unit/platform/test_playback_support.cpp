@@ -2157,7 +2157,8 @@ void PlaybackSupportTest::pauseResumeBackendErrorsInvalidateAudibleClock()
         QVERIFY(!unsafeSnapshot);
         QCOMPARE(unsafeSnapshot.error()->code(),core::ErrorCode::IoFailure);
         const auto coverage=engine.c2_processed_coverage_probe();
-        QCOMPARE(coverage.reason,C2CoverageProbeReason::NOT_MONITORED);
+        QCOMPARE(coverage.reason,
+            platform::windows::internal::C2CoverageProbeReason::NOT_MONITORED);
         QVERIFY(!engine.play());
         QVERIFY(engine.stop());
         const auto stopped=engine.snapshot();
