@@ -526,6 +526,22 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    // Cross-rate measured NON-CONFORMING preview uses the same Windows
+    // endpoint/RAM evidence as verified Master Audition, but NOT its
+    // verified master transport ticket. Caution is denied unless a separate
+    // future GUI consent action explicitly authorizes that RAM policy.
+    terminalProductActivation.set_measured_device_async(
+        [windowsPlayback,monitorMemoryDecision](
+            rgsml::audio::AudioBufferView measuredMaster) {
+            return windowsPlayback->probe_monitoring_async_device(
+                measuredMaster,monitorMemoryDecision(false));
+        },
+        [windowsPlayback,monitorMemoryDecision](
+            const rgsml::platform::windows::MonitoringAsyncDevicePlan& plan,
+            rgsml::audio::AudioBufferView measuredMaster) {
+            return windowsPlayback->recheck_monitoring_async_device(
+                plan,measuredMaster,monitorMemoryDecision(false));
+        });
     terminalMonitorViewModel.set_installed_m17_handoff(
         [&terminalProductActivation] {
             return terminalProductActivation.can_handoff_installed_to_monitor();
