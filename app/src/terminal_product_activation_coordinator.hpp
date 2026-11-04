@@ -109,6 +109,7 @@ private:
     QElapsedTimer corePhaseElapsed_;
     QElapsedTimer srcPhaseElapsed_;
     QElapsedTimer m16PhaseElapsed_;
+    QElapsedTimer verificationTrimElapsed_;
     bool corePhaseObserved_{false};
     bool srcPhaseObserved_{false};
     bool m16PhaseObserved_{false};
