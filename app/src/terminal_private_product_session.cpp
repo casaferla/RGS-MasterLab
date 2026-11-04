@@ -6,6 +6,7 @@
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
+#include <algorithm>
 #include <exception>
 #include <limits>
 #include <new>
