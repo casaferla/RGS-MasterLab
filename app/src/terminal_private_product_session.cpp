@@ -832,6 +832,10 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
            ||manualId_()!=std::optional{pending_->manualId}
            ||sourceLoop_()!=plan.source_loop)
             return deny("M17_MEASURED_DEVICE_RETURN_SOURCE_EPOCH_CHANGED");
+        // A synchronous Windows format preflight can pump a nested Qt
+        // event loop. Reserve this exact lease BEFORE invoking external
+        // callbacks, so an interleaved Return/Cancel cannot run twice.
+        monitorTransitioning_=true;
         if(manualRestorePreflight_) {
             const auto preflight=[&]()->core::Status {
                 try {
@@ -842,9 +846,11 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
                     return deny("M17_MEASURED_RETURN_PREFLIGHT_EXCEPTION");
                 }
             }();
-            if(!preflight)return preflight; // Retain audible monitor.
+            if(!preflight) {
+                monitorTransitioning_=false;
+                return preflight; // Retain exact audible monitor.
+            }
         }
-        monitorTransitioning_=true;
         const auto retired=[&]()->core::Status {
             try {
                 return monitorRetire_(installedMonitor_);
@@ -924,6 +930,10 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
        ||manualId_()!=std::optional{pending_->manualId}
        ||sourceLoop_()!=plan.source_loop)
         return deny("M17_MEASURED_RETURN_MANUAL_EPOCH_REVOKED");
+    // Explicit SOURCE recovery owns the lease during Windows format
+    // probing, even if an underlying Qt callback dispatches nested events.
+    // The attempt is retryable, but never reentrant.
+    monitorTransitioning_=true;
     // We may be retrying after Windows lost the prior anonymous DEVICE,
     // after a failed MANUAL re-open, or after a long device hotplug. Reprobe
     // the real physical MANUAL rate/format at EACH explicit recovery attempt.
@@ -939,21 +949,27 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
                 return deny("M17_MEASURED_RETURN_RETRY_PREFLIGHT_EXCEPTION");
             }
         }();
-        if(!preflight)return preflight; // Preserve SOURCE retry ticket.
+        if(!preflight) {
+            monitorTransitioning_=false;
+            return preflight; // Preserve SOURCE retry ticket.
+        }
     }
     // The preflight is non-mutating, but Windows may hotplug or an app
     // callback may install an unrelated sink while it is running. Verify
     // the DEVICE is STILL empty immediately before the first SOURCE write.
     const auto freshEmpty=transport_->playback_snapshot();
     if(!freshEmpty
-       ||!measured_empty_sink_snapshot_proven(*freshEmpty.value()))
+       ||!measured_empty_sink_snapshot_proven(*freshEmpty.value())) {
+        monitorTransitioning_=false;
         return deny("M17_MEASURED_RETURN_RETRY_DEVICE_NOT_EMPTY_AFTER_PREFLIGHT");
+    }
     if(!manual_||!manualId_||!sourceLoop_||!selected_
        ||!selected_()||manual_()!=pending_->manual
        ||manualId_()!=std::optional{pending_->manualId}
-       ||sourceLoop_()!=plan.source_loop)
+       ||sourceLoop_()!=plan.source_loop) {
+        monitorTransitioning_=false;
         return deny("M17_MEASURED_RETURN_RETRY_MANUAL_REVOKED_DURING_PREFLIGHT");
-    monitorTransitioning_=true;
+    }
     const auto restored=[&]()->core::Status {
         try {
             return manualRestore_(
