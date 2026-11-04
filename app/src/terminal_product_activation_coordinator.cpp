@@ -64,6 +64,7 @@ void TerminalProductActivationCoordinator::cancel_measured_crossrate_audition()
         measuredCancel_->store(true,std::memory_order_release);
     ++measuredSerial_;
     measuredPreparing_=false;
+    view_->setNonconformingDevicePreparing(false);
     pendingMeasured_.reset();
     measuredProgressTimer_.stop();
     measuredCompletedFrames_.store(0,std::memory_order_release);
@@ -374,6 +375,7 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
     measuredCancel_=token;
     pendingMeasured_=captured;
     measuredPreparing_=true;
+    view_->setNonconformingDevicePreparing(true);
     measuredCompletedFrames_.store(0,std::memory_order_release);
     measuredTotalFrames_.store(0,std::memory_order_release);
     measuredProgressTimer_.start();
@@ -434,6 +436,7 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
                     return;
                 }
                 measuredPreparing_=false;
+                view_->setNonconformingDevicePreparing(false);
                 pendingMeasured_.reset();
                 measuredProgressTimer_.stop();
                 view_->clearPreparationProgress();
