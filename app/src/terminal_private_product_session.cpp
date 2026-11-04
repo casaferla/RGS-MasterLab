@@ -747,11 +747,25 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
            ||sourceLoop_()!=plan.source_loop)
             return deny("M17_MEASURED_DEVICE_RETURN_SOURCE_EPOCH_CHANGED");
         if(manualRestorePreflight_) {
-            const auto preflight=manualRestorePreflight_(pending_->manual);
+            const auto preflight=[&]()->core::Status {
+                try {
+                    return manualRestorePreflight_(pending_->manual);
+                } catch(const std::bad_alloc&) {
+                    return deny("M17_MEASURED_RETURN_PREFLIGHT_OUT_OF_MEMORY");
+                } catch(const std::exception&) {
+                    return deny("M17_MEASURED_RETURN_PREFLIGHT_EXCEPTION");
+                }
+            }();
             if(!preflight)return preflight; // Retain audible monitor.
         }
         monitorTransitioning_=true;
-        const auto retired=monitorRetire_(installedMonitor_);
+        const auto retired=[&]()->core::Status {
+            try {
+                return monitorRetire_(installedMonitor_);
+            } catch(const std::exception&) {
+                return deny("M17_MEASURED_RETURN_RETIRE_THROWN");
+            }
+        }();
         if(!retired) {
             status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
             monitorTransitioning_=false;
@@ -829,8 +843,16 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
        ||sourceLoop_()!=plan.source_loop)
         return deny("M17_MEASURED_RETURN_MANUAL_EPOCH_REVOKED");
     monitorTransitioning_=true;
-    const auto restored=manualRestore_(
-        pending_->manual,pending_->manualId,measuredReturnCue_);
+    const auto restored=[&]()->core::Status {
+        try {
+            return manualRestore_(
+                pending_->manual,pending_->manualId,measuredReturnCue_);
+        } catch(const std::bad_alloc&) {
+            return deny("M17_MEASURED_RETURN_SOURCE_OUT_OF_MEMORY");
+        } catch(const std::exception&) {
+            return deny("M17_MEASURED_RETURN_SOURCE_REINSTALL_EXCEPTION");
+        }
+    }();
     if(!restored) {
         monitorTransitioning_=false;
         return restored; // Retry token remains; no alien sink mutation.
