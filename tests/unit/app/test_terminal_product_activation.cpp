@@ -874,6 +874,70 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     QCOMPARE(ticket.value()->measured_master()->rendered.output_rate,
              *sourceRate.value());
     QVERIFY(!ticket.value()->audition_device_pcm()->windows_prepared_endpoint_id.empty());
+    // CI #1005: source-cue, transport and half-open SOURCE loop projection
+    // into a distinct anonymous DEVICE PCM. Current fixture has equal
+    // SOURCE and measured MASTER clocks (192k) with a 48k endpoint.
+    // No fake M16 VERIFIED result and no QAudioSink are published here.
+    const auto sourceRegion=core::FrameRange::create(
+        core::FrameIndex{64},core::FrameIndex{192});
+    QVERIFY(sourceRegion);
+    core::PlaybackSnapshot manualSnapshot{};
+    manualSnapshot.state=core::PlaybackState::PLAYING;
+    manualSnapshot.position=core::FrameIndex{128};
+    manualSnapshot.duration=*frames.value();
+    manualSnapshot.loop=*sourceRegion.value();
+    manualSnapshot.audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{9001}};
+    const auto planned=ticket.value()->plan_handoff(
+        captured,manualSnapshot,*sourceRegion.value(),freshEndpoint,true);
+    QVERIFY2(planned,planned?"":planned.error()->message().c_str());
+    QCOMPARE(planned.value()->manual_owner,core::RealizationId{9001});
+    QCOMPARE(planned.value()->source_state,core::PlaybackState::PLAYING);
+    QCOMPARE(planned.value()->source_cue,core::FrameIndex{128});
+    QCOMPARE(planned.value()->master_cue,core::FrameIndex{128});
+    QCOMPARE(planned.value()->device_cue,core::FrameIndex{32});
+    QCOMPARE(planned.value()->source_loop,std::optional{*sourceRegion.value()});
+    QCOMPARE(planned.value()->master_loop,std::optional{*sourceRegion.value()});
+    const auto expectedDeviceRegion=core::FrameRange::create(
+        core::FrameIndex{16},core::FrameIndex{48});
+    QVERIFY(expectedDeviceRegion);
+    QCOMPARE(planned.value()->device_loop,
+             std::optional{*expectedDeviceRegion.value()});
+    QCOMPARE(planned.value()->source_rate,*sourceRate.value());
+    QCOMPARE(planned.value()->master_rate,*sourceRate.value());
+    QCOMPARE(planned.value()->device_rate,*deviceRate.value());
+    // No consent, revoked measured stage, replaced endpoint, stale MANUAL,
+    // changed loop/seek or unowned transport may be silently accepted.
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,manualSnapshot,*sourceRegion.value(),freshEndpoint,false));
+    QVERIFY(!ticket.value()->plan_handoff(
+        {},manualSnapshot,*sourceRegion.value(),freshEndpoint,true));
+    const app::MeasuredDeviceEndpointObservation swappedDevice{
+        "fixture-endpoint-B",*deviceRate.value()};
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,manualSnapshot,*sourceRegion.value(),swappedDevice,true));
+    auto staleManual=manualSnapshot;
+    staleManual.audibleRealization.realizationId=core::RealizationId{9002};
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,staleManual,*sourceRegion.value(),freshEndpoint,true));
+    auto staleLoop=manualSnapshot;
+    staleLoop.loop.reset();
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,staleLoop,*sourceRegion.value(),freshEndpoint,true));
+    auto stalePosition=manualSnapshot;
+    stalePosition.position=core::FrameIndex{514};
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,stalePosition,*sourceRegion.value(),freshEndpoint,true));
+    auto unowned=manualSnapshot;
+    unowned.state=core::PlaybackState::NO_SOURCE;
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,unowned,*sourceRegion.value(),freshEndpoint,true));
+    auto wrongDuration=manualSnapshot;
+    wrongDuration.duration=*shortCount.value();
+    QVERIFY(!ticket.value()->plan_handoff(
+        captured,wrongDuration,*sourceRegion.value(),freshEndpoint,true));
+    qInfo().noquote()
+        <<"M17_NONCONFORMING_SOURCE_MASTER_DEVICE_HANDOFF_PLAN=PASS";
     // Adversarial metadata: a geometrically valid converted PCM alone
     // must never let a forged TP/Ceiling record enter even an UNQUALIFIED
     // audition ticket. These regressions are intentionally far stricter

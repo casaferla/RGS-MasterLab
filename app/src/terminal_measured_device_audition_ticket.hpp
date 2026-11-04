@@ -2,6 +2,7 @@
 
 #include "terminal_candidate_gate.hpp"
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 
@@ -18,6 +19,24 @@ namespace rgsml::app {
 struct MeasuredDeviceEndpointObservation final {
     std::string id;
     core::SampleRate rate;
+};
+
+// A pure, immutable SOURCE->MEASURED MASTER->DEVICE handoff projection.
+// These coordinates never give a real Windows sink, LIVE meter, verified
+// ceiling or export permission. The original SOURCE transport is retained
+// so any later conditional return can be proven against its owner.
+struct MeasuredDeviceTransportPlan final {
+    core::RealizationId manual_owner;
+    core::PlaybackState source_state;
+    core::FrameIndex source_cue;
+    std::optional<core::FrameRange> source_loop;
+    core::FrameIndex master_cue;
+    std::optional<core::FrameRange> master_loop;
+    core::FrameIndex device_cue;
+    std::optional<core::FrameRange> device_loop;
+    core::SampleRate source_rate;
+    core::SampleRate master_rate;
+    core::SampleRate device_rate;
 };
 
 // M17 CI PREPRODUCTION ONLY: a strongly typed audition candidate that cannot
@@ -41,6 +60,18 @@ public:
         std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
             currentMeasured,
         core::RealizationId currentManualId,
+        const MeasuredDeviceEndpointObservation& latestEndpoint,
+        bool explicitUserRequest) const;
+
+    // The caller must use an exact MANUAL owner-thread transport snapshot
+    // and revalidate it again immediately before any Windows sink mutation.
+    // All output-rate projections are rational and fail closed on duration,
+    // SOURCE loop, device identity or stale measured-MASTER ownership.
+    [[nodiscard]] core::Result<MeasuredDeviceTransportPlan> plan_handoff(
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            currentMeasured,
+        const core::PlaybackSnapshot& sourcePlayback,
+        std::optional<core::FrameRange> currentSourceLoop,
         const MeasuredDeviceEndpointObservation& latestEndpoint,
         bool explicitUserRequest) const;
 
@@ -191,6 +222,68 @@ inline core::Status MeasuredDeviceAuditionTicket::recheck_preinstall(
     const auto valid=audio::validate_monitoring_pcm_candidate(*devicePcm_);
     if(!valid)return valid;
     return core::Status::success();
+}
+
+inline core::Result<MeasuredDeviceTransportPlan>
+MeasuredDeviceAuditionTicket::plan_handoff(
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+        currentMeasured,
+    const core::PlaybackSnapshot& sourcePlayback,
+    std::optional<core::FrameRange> currentSourceLoop,
+    const MeasuredDeviceEndpointObservation& latestEndpoint,
+    bool explicitUserRequest) const
+{
+    using Result=core::Result<MeasuredDeviceTransportPlan>;
+    const auto rejected=[](const char* reason)->Result {
+        return Result::failure(core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    const auto current=recheck_preinstall(
+        currentMeasured,originalManualId_,latestEndpoint,explicitUserRequest);
+    if(!current)return Result::failure(*current.error());
+    if(!currentMeasured->rendered.manual_owner)
+        return rejected("M17_MEASURED_HANDOFF_MANUAL_OWNER_MISSING");
+    const auto source=currentMeasured->rendered.manual_owner->view();
+    const auto sourceCount=source.frame_count();
+    const auto actualState=sourcePlayback.state;
+    if(source.absolute_start_frame()!=core::FrameIndex{0}
+       ||(actualState!=core::PlaybackState::STOPPED
+           &&actualState!=core::PlaybackState::PLAYING
+           &&actualState!=core::PlaybackState::PAUSED)
+       ||sourcePlayback.audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||sourcePlayback.audibleRealization.realizationId
+            !=std::optional{originalManualId_}
+       ||!sourcePlayback.duration
+       ||*sourcePlayback.duration!=sourceCount
+       ||sourcePlayback.loop!=currentSourceLoop
+       ||sourcePlayback.position.value()<0
+       ||sourcePlayback.position.value()>sourceCount.value())
+        return rejected("M17_MEASURED_HANDOFF_SOURCE_SNAPSHOT_STALE");
+    const auto map=audio::MonitoringFrameMap::create(*devicePcm_);
+    if(!map)return Result::failure(*map.error());
+    const auto sourceRate=source.format().sample_rate();
+    const auto masterCue=map.value()->source_to_master(
+        sourcePlayback.position,sourceRate,sourceCount);
+    if(!masterCue)return Result::failure(*masterCue.error());
+    const auto deviceCue=map.value()->master_to_device(*masterCue.value());
+    if(!deviceCue)return Result::failure(*deviceCue.error());
+    std::optional<core::FrameRange> masterLoop;
+    std::optional<core::FrameRange> deviceLoop;
+    if(currentSourceLoop) {
+        const auto m=map.value()->source_loop_to_master(
+            *currentSourceLoop,sourceRate,sourceCount);
+        if(!m)return Result::failure(*m.error());
+        const auto d=map.value()->master_loop_to_device(*m.value());
+        if(!d)return Result::failure(*d.error());
+        masterLoop=*m.value();
+        deviceLoop=*d.value();
+    }
+    return Result::success({
+        originalManualId_,actualState,sourcePlayback.position,
+        currentSourceLoop,*masterCue.value(),masterLoop,
+        *deviceCue.value(),deviceLoop,sourceRate,
+        map.value()->master_rate(),map.value()->device_rate()
+    });
 }
 
 // This named helper is retained for unit test readability; construction
