@@ -267,15 +267,29 @@ public:
     {
         const auto currentDefault = QMediaDevices::defaultAudioOutput();
         if (currentDefault.isNull()
-            || currentDefault.mode() != QAudioDevice::Output
-            || !currentDefault.isFormatSupported(format_)) {
-            return status_failure(
-                core::ErrorCode::UnsupportedOperation,
-                "The current default output no longer supports the prepared format.");
+            || currentDefault.mode() != QAudioDevice::Output) {
+            return status_failure(core::ErrorCode::UnsupportedOperation,
+                "AUDIO_DEVICE_DISAPPEARED_BEFORE_START");
         }
         if(!monitor_endpoint_matches(currentDefault))
             return status_failure(core::ErrorCode::UnsupportedOperation,
                 "MONITOR_ENDPOINT_CHANGED_BEFORE_START: regenerate device PCM.");
+        // All OUTPUT candidates (ordinary SOURCE, terminal and private
+        // monitor) must use the exact physical endpoint observed at
+        // construction, not merely any later default with matching Hz.
+        // A hotplug between PCM/FIR admission and Qt's actual start()
+        // otherwise silently migrates SOURCE audio to a different device.
+        const auto expectedId=device_.id();
+        const auto currentId=currentDefault.id();
+        if(!internal::monitoring_endpoint_is_current(
+              opaque_device_id(expectedId),
+              device_.preferredFormat().sampleRate(),
+              opaque_device_id(currentId),
+              currentDefault.preferredFormat().sampleRate(),
+              currentDefault.isFormatSupported(format_))) {
+            return status_failure(core::ErrorCode::UnsupportedOperation,
+                "AUDIO_DEVICE_ENDPOINT_CHANGED_BEFORE_START: new prepare required");
+        }
         device_ = currentDefault;
         try {
             sink_ = std::make_unique<QAudioSink>(device_, format_);
