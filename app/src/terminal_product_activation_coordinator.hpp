@@ -116,6 +116,7 @@ private:
     render::TerminalRenderProgressPhase lastObservedM16Phase_{
         render::TerminalRenderProgressPhase::IDLE};
     QTimer renderHeartbeat_;
+    QTimer measuredProgressTimer_;
     MeasuredProbe measuredProbe_;
     MeasuredRecheck measuredRecheck_;
     std::jthread measuredWorker_;
