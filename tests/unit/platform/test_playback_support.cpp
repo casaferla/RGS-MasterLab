@@ -258,6 +258,7 @@ private slots:
     void monitoringDeviceRateSwitchIsIsolatedAndFailsClosed();
     void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
+    void deviceEncodingAllSixRatesMonoStereoAndFormats();
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
     void adaptedTimelineUsesAbsoluteRateMapping();
@@ -1842,6 +1843,76 @@ void PlaybackSupportTest::floatAndPcm16GoldenConversion()
             std::bit_cast<std::int16_t>(read_u16(*pcmBytes.value(), index * 2U)),
             expectedPcm[index]);
     }
+}
+
+void PlaybackSupportTest::deviceEncodingAllSixRatesMonoStereoAndFormats()
+{
+    // PCM boundaries are rate-agnostic, but the actual DEVICE pipeline
+    // must be valid at every one of the six permitted Windows sample
+    // clocks for mono and stereo, with either FLOAT32 or PCM16 fallback.
+    constexpr std::array<int,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::array<std::array<double,4>,2> samples{{
+        {{-1.0,-0.5,0.5,1.0}},
+        {{1.0,0.5,-0.5,-1.0}},
+    }};
+    constexpr std::array<std::array<std::int16_t,4>,2> signed16{{
+        {{-32768,-16384,16384,32767}},
+        {{32767,16384,-16384,-32768}},
+    }};
+    std::size_t verifiedFormats=0;
+    for(const auto layout:{audio::ChannelLayout::MONO_C,
+                           audio::ChannelLayout::STEREO_LR}) {
+        const auto channels=layout==audio::ChannelLayout::MONO_C
+            ?std::size_t{1}:std::size_t{2};
+        for(const int sampleRate:rates) {
+            auto owner=make_buffer(sampleRate,layout,4);
+            std::vector<std::uint64_t> original;
+            for(std::size_t ch=0;ch<channels;++ch) {
+                auto lane=owner.mutable_view().channel(ch);
+                QVERIFY(lane);
+                for(std::size_t frame=0;frame<4;++frame) {
+                    (*lane.value())[frame]=samples[ch][frame];
+                    original.push_back(
+                        std::bit_cast<std::uint64_t>((*lane.value())[frame]));
+                }
+            }
+            const auto floating=platform::windows::internal::encode_device_block(
+                owner.view(),DeviceSampleFormat::IEEE_F32);
+            QVERIFY2(floating,floating?"":floating.error()->message().c_str());
+            const auto pcm=platform::windows::internal::encode_device_block(
+                owner.view(),DeviceSampleFormat::PCM_S16);
+            QVERIFY2(pcm,pcm?"":pcm.error()->message().c_str());
+            QCOMPARE(floating.value()->size(),4U*channels*sizeof(float));
+            QCOMPARE(pcm.value()->size(),4U*channels*sizeof(std::int16_t));
+            for(std::size_t frame=0;frame<4;++frame) {
+                for(std::size_t ch=0;ch<channels;++ch) {
+                    const std::size_t pos=frame*channels+ch;
+                    const std::size_t floatByte=pos*sizeof(float);
+                    const auto bits=static_cast<std::uint32_t>(
+                        read_u16(*floating.value(),floatByte))
+                        |(static_cast<std::uint32_t>(read_u16(
+                            *floating.value(),floatByte+2U))<<16U);
+                    QCOMPARE(bits,std::bit_cast<std::uint32_t>(
+                        static_cast<float>(samples[ch][frame])));
+                    QCOMPARE(read_i16(*pcm.value(),
+                        pos*sizeof(std::int16_t)),signed16[ch][frame]);
+                }
+            }
+            // Neither sample encoding may modify any SOURCE/MASTER PCM.
+            std::size_t count=0;
+            for(std::size_t ch=0;ch<channels;++ch) {
+                const auto lane=owner.view().channel(ch);
+                QVERIFY(lane);
+                for(const double value:*lane.value())
+                    QCOMPARE(std::bit_cast<std::uint64_t>(value),
+                        original[count++]);
+            }
+            verifiedFormats+=2;
+        }
+    }
+    QCOMPARE(verifiedFormats,std::size_t{24});
+    qInfo("M17_DEVICE_ENCODING=24_SIX_RATE_MONO_STEREO_F32_PCM16");
 }
 
 void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
