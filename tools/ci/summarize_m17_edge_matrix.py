@@ -12,6 +12,9 @@ FAIL = re.compile(r"FAIL!|\bTest Failed\b|\*\*\*Failed",re.IGNORECASE)
 RATE_GRID = re.compile(
     r"M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM"
 )
+COMPOSED_GRID = re.compile(
+    r"M17_RATE_MATRIX_FULL_COMPOSED_CHAIN=216_SOURCE_MASTER_DEVICE_PCM"
+)
 
 
 def collect(log: str, sha: str, direct_qtest: str = "",
@@ -63,6 +66,15 @@ def collect(log: str, sha: str, direct_qtest: str = "",
     )
     result.append("RATE_GRID_36_MASTER_36_WAV_36_DEVICE="+(
         "CONFIRMED" if status=="PASS" and direct_pass
+        else "NOT_CONFIRMED"
+    ))
+    # An individual PASS on each submatrix is not a proof of the composed
+    # 6 x 6 x 6 graph. The same direct QtTest must finish every one of the
+    # 216 actual source->master->device PCM paths and emit one positive
+    # post-assertion marker. An old successful 36-only run fails this gate.
+    full_grid_pass=direct_pass and len(COMPOSED_GRID.findall(direct_qtest))==1
+    result.append("RATE_GRID_216_COMPOSED_CHAINS="+(
+        "CONFIRMED" if status=="PASS" and full_grid_pass
         else "NOT_CONFIRMED"
     ))
     result.append("DIRECT_GRID_TEST="+(
