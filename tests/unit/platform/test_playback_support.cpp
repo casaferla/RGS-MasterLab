@@ -2144,14 +2144,24 @@ void PlaybackSupportTest::stopRefusalNeverPublishesAudiblePlaybackState()
     // Play (which first stops the old sink) and an explicit Stop request.
     // Also test a DEVICE that refuses TWO successive retire attempts,
     // including the safety retry. Neither may publish usable M16 LIVE.
-    for(const bool restart : {false,true}) {
-        for(const int stopRefusals : {1,2}) {
+    std::size_t cases=0;
+    // Exact device stop/recovery behavior must not depend on source clock
+    // or 16-bit versus Float32 output. This is a 6 x 2 x 2 x 2 matrix.
+    for(const std::uint32_t rateHz:std::array<std::uint32_t,6>{
+            44100,48000,88200,96000,176400,192000}) {
+      for(const auto deviceFormat:std::array<DeviceSampleFormat,2>{
+              DeviceSampleFormat::PCM_S16,DeviceSampleFormat::IEEE_F32}) {
+        for(const bool restart : {false,true}) {
+          for(const int stopRefusals : {1,2}) {
             PlaybackEngine engine;
-            auto output=std::make_unique<FakeOutput>(4096U,4U);
+            const std::size_t bytesPerFrame=deviceFormat
+                ==DeviceSampleFormat::IEEE_F32?8U:4U;
+            auto output=std::make_unique<FakeOutput>(8192U,bytesPerFrame);
             auto* sink=output.get();
             QVERIFY(engine.install_candidate(
-                open_pcm16_stereo(indexed_stereo_codes(1024)),
-                std::move(output),DeviceSampleFormat::PCM_S16));
+                open_pcm16_stereo(indexed_stereo_codes(1024),
+                    std::make_shared<ReaderControl>(),rateHz),
+                std::move(output),deviceFormat));
             QVERIFY(engine.play());
             QCOMPARE(sink->state(),OutputState::ACTIVE);
             const auto originalStartCalls=sink->startCalls;
@@ -2193,8 +2203,12 @@ void PlaybackSupportTest::stopRefusalNeverPublishesAudiblePlaybackState()
                 core::PlaybackState::PLAYING);
             QCOMPARE(sink->startCalls,originalStartCalls+1);
             QVERIFY(engine.stop());
+            ++cases;
+          }
         }
+      }
     }
+    QCOMPARE(cases,std::size_t{48});
 }
 
 void PlaybackSupportTest::pauseResumeBackendErrorsInvalidateAudibleClock()
