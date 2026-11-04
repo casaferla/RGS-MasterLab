@@ -2081,19 +2081,48 @@ Window {
         if(!inside(etaRect)||!inside(barRect)
             ||barRect.bottom()>etaRect.top()+0.5)
             return false;
-        const auto painted=liveEta->property("paintedHeight");
-        return !painted.isValid()
-            ||painted.toDouble()<=etaItem->height()+0.5;
+        const auto paintedHeight=liveEta->property("paintedHeight");
+        const auto paintedWidth=liveEta->property("paintedWidth");
+        return (!paintedHeight.isValid()
+                ||paintedHeight.toDouble()<=etaItem->height()+0.5)
+            &&(!paintedWidth.isValid()
+                ||paintedWidth.toDouble()<=etaItem->width()+0.5);
+    };
+    // A bounded diagnostic, not a full QtTest log: if any DPI/height
+    // fails, show the actual geometries and text state at ONE test case.
+    const auto etaGeometry=[&] {
+        const QRectF er{etaItem->mapToItem(prepItem,QPointF{}),
+            etaItem->size()};
+        const QRectF br{barItem->mapToItem(prepItem,QPointF{}),
+            barItem->size()};
+        return QStringLiteral(
+            "prep=%1x%2 eta=(%3,%4 %5x%6) bar=(%7,%8 %9x%10) "
+            "painted=%11x%12 lines=%13 visible=%14/%15 "
+            "truncated=%16 elide=%17")
+            .arg(prepItem->width()).arg(prepItem->height())
+            .arg(er.x()).arg(er.y()).arg(er.width()).arg(er.height())
+            .arg(br.x()).arg(br.y()).arg(br.width()).arg(br.height())
+            .arg(liveEta->property("paintedWidth").toDouble())
+            .arg(liveEta->property("paintedHeight").toDouble())
+            .arg(liveEta->property("lineCount").toInt())
+            .arg(prepItem->isVisible()).arg(etaItem->isVisible())
+            .arg(liveEta->property("truncated").toBool())
+            .arg(liveEta->property("elide").toInt());
     };
     // Minimum Main host, FHD, and 4K-scale logical editor sizes.
     for(const QSize size:{QSize{680,338},QSize{710,548},
                          QSize{960,540},QSize{1200,760}}) {
         m17->setWidth(size.width());
         m17->setHeight(size.height());
+        // QtQuick Layouts need the next polish/render pass after resizing;
+        // an immediate processEvents() can sample mixed old/new geometry.
+        // Other M16/M17 parity tests already wait 130ms for this reason.
+        QTest::qWait(130);
+        QCoreApplication::processEvents();
         QVERIFY2(etaEntirelyVisible(),
             qPrintable(QStringLiteral("M17 full ETA visible without tooltip at ")
                 +QString::number(size.width())+"x"
-                +QString::number(size.height())));
+                +QString::number(size.height())+"; "+etaGeometry()));
         QVERIFY(liveEta->property("lineCount").toInt()>=4);
     }
 
@@ -2133,8 +2162,11 @@ Window {
                          QSize{960,540},QSize{1200,760}}) {
         m17->setWidth(size.width());
         m17->setHeight(size.height());
+        QTest::qWait(130);
+        QCoreApplication::processEvents();
         QVERIFY2(etaEntirelyVisible(),
-            "Trim phase ETA cannot clip, overlap or require hover");
+            qPrintable(QStringLiteral("Trim phase ETA cannot clip, overlap or require hover; ")
+                +etaGeometry()));
     }
     expectSlot("READY · PREVIEW AVAILABLE",false);
     expectSlot("MONITOR · PRIVATE PCM (NOT LIVE)",false);
