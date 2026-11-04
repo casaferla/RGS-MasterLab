@@ -3132,9 +3132,13 @@ void PlaybackSampleRateAdapterTest::long192kTo48kStereoDeviceStreamingThroughput
     qInfo("DEVICE_SRC_192_TO_48_STEREO one_second_elapsed_ms=%lld",
           static_cast<long long>(elapsed.elapsed()));
 #if defined(NDEBUG)
-    // Production Release must decode faster than the device consumes.
-    QVERIFY2(elapsed.elapsed() < 1500,
-             "192->48 stereo device SRC sustained CPU throughput is insufficient.");
+    // One second of audio must never require 1.5 seconds of production:
+    // the old 1500-ms threshold could PASS a guaranteed underrun. Demand
+    // at least 10% effective decode headroom in this isolated Release
+    // benchmark. Hardware clocks/scheduling still require physical checks.
+    QVERIFY2(elapsed.elapsed() < 900,
+             "192->48 stereo device SRC missed 10% real-time CPU headroom; "
+             "possible crackle/underrun even with a prefetched queue.");
 #endif
 }
 
