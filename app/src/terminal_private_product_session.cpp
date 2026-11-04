@@ -593,11 +593,25 @@ TerminalPrivateProductSession::measured_device_snapshot() const
         return deny("M17_MEASURED_DEVICE_DISPLAY_EXACT_OWNER_REQUIRED");
     if(installedMonitor_!=installedMeasuredTicket_->audition_device_pcm())
         return deny("M17_MEASURED_DEVICE_DISPLAY_PCM_CHANGED");
-    const auto owned=monitorOwned_(installedMonitor_);
+    const auto owned=[&]()->core::Result<bool> {
+        try {
+            return monitorOwned_(installedMonitor_);
+        } catch(const std::exception&) {
+            return core::Result<bool>::failure(rejected(
+                "M17_MEASURED_DEVICE_DISPLAY_OWNER_EXCEPTION"));
+        }
+    }();
     if(!owned)return Result::failure(*owned.error());
     if(!*owned.value())
         return deny("M17_MEASURED_DEVICE_DISPLAY_FOREIGN_DEVICE");
-    const auto display=monitorDisplay_(installedMonitor_);
+    const auto display=[&]()->Result {
+        try {
+            return monitorDisplay_(installedMonitor_);
+        } catch(const std::exception&) {
+            return Result::failure(rejected(
+                "M17_MEASURED_DEVICE_DISPLAY_WINDOWS_EXCEPTION"));
+        }
+    }();
     if(!display)return display;
     if(display.value()->master_rate!=installedMonitor_->immutable_master_rate
        ||display.value()->device_rate!=installedMonitor_->device_rate
@@ -712,8 +726,19 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
     if(!measuredSourceRecovery_) {
         if(!installedMonitor_||!monitorDisplay_)
             return deny("M17_MEASURED_DEVICE_RETURN_MONITOR_MISSING");
-        const auto owned=monitorOwned_(installedMonitor_);
-        if(!owned)return core::Status::failure(*owned.error());
+        const auto owned=[&]()->core::Result<bool> {
+            try {
+                return monitorOwned_(installedMonitor_);
+            } catch(const std::exception&) {
+                return core::Result<bool>::failure(rejected(
+                    "M17_MEASURED_DEVICE_RETURN_OWNER_PROBE_EXCEPTION"));
+            }
+        }();
+        if(!owned) {
+            status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+            emit changed();
+            return core::Status::failure(*owned.error());
+        }
         if(!*owned.value()) {
             const auto now=transport_->playback_snapshot();
             if(!now)return core::Status::failure(*now.error());
@@ -761,8 +786,21 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
         core::FrameIndex cue=original.position;
         core::PlaybackState resume=original.state;
         if(status_!=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED")) {
-            const auto displayed=monitorDisplay_(installedMonitor_);
-            if(!displayed)return core::Status::failure(*displayed.error());
+            const auto displayed=[&]()
+                ->core::Result<audio::MonitoringMasterDisplaySnapshot> {
+                try {
+                    return monitorDisplay_(installedMonitor_);
+                } catch(const std::exception&) {
+                    return core::Result<audio::MonitoringMasterDisplaySnapshot>::
+                        failure(rejected(
+                            "M17_MEASURED_DEVICE_RETURN_DISPLAY_EXCEPTION"));
+                }
+            }();
+            if(!displayed) {
+                status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+                emit changed();
+                return core::Status::failure(*displayed.error());
+            }
             resume=displayed.value()->state;
             const auto m=displayed.value()->master_display_position.value();
             const auto masterHz=plan.master_rate.value();
