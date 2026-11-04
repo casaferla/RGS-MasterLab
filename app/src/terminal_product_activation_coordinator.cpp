@@ -355,7 +355,6 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
     view_->setNonconformingDevicePreviewAvailable(false);
     view_->setAudioStatus(QStringLiteral(
         "NON-CONFORMING · PREPARING SEPARATE DEVICE PCM"));
-    emit view_->changed();
     try {
         using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
         using Result=core::Result<Owned>;
