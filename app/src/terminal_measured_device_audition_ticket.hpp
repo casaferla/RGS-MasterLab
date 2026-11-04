@@ -22,6 +22,21 @@ struct MeasuredDeviceEndpointObservation final {
     core::SampleRate rate;
 };
 
+// Pure metadata predicate, not a physical Windows-device availability
+// certificate. Before re-opening MANUAL after retiring an anonymous M17
+// audition, this is one REQUIRED condition in addition to Qt owner/source
+// identity, Windows format preflight and conditional install-time checks.
+[[nodiscard]] inline bool measured_empty_sink_snapshot_proven(
+    const core::PlaybackSnapshot& snapshot) noexcept
+{
+    return snapshot.state==core::PlaybackState::NO_SOURCE
+        &&snapshot.position==core::FrameIndex{0}
+        &&snapshot.audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!snapshot.audibleRealization.realizationId
+        &&!snapshot.duration &&!snapshot.loop;
+}
+
 // A pure, immutable SOURCE->MEASURED MASTER->DEVICE handoff projection.
 // These coordinates never give a real Windows sink, LIVE meter, verified
 // ceiling or export permission. The original SOURCE transport is retained
