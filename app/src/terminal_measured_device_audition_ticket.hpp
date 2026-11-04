@@ -41,6 +41,35 @@ struct MeasuredDeviceEndpointObservation final {
 // These coordinates never give a real Windows sink, LIVE meter, verified
 // ceiling or export permission. The original SOURCE transport is retained
 // so any later conditional return can be proven against its owner.
+// The actual MANUAL restore selector maps a SOURCE EOF cue back to the
+// beginning, not to a non-audible cursor past the track. Original SOURCE
+// loop boundaries take precedence; never create a new loop or extend N.
+[[nodiscard]] inline core::Result<core::FrameIndex>
+canonical_measured_source_return_cue(
+    core::FrameIndex proposed,core::FrameCount originalFrames,
+    std::optional<core::FrameRange> originalLoop)
+{
+    using Result=core::Result<core::FrameIndex>;
+    const auto fail=[](const char* reason)->Result {
+        return Result::failure(core::Error{
+            core::ErrorCode::InvalidArgument,reason});
+    };
+    if(originalFrames.value()<=0||proposed.value()<0
+       ||proposed.value()>originalFrames.value())
+        return fail("M17_MEASURED_RETURN_INVALID_SOURCE_CUE");
+    if(originalLoop) {
+        if(originalLoop->begin().value()<0
+           ||originalLoop->begin()>=originalLoop->end()
+           ||originalLoop->end().value()>originalFrames.value())
+            return fail("M17_MEASURED_RETURN_INVALID_SOURCE_LOOP");
+        if(proposed<originalLoop->begin()||proposed>=originalLoop->end())
+            return Result::success(originalLoop->begin());
+    }
+    return Result::success(
+        proposed.value()==originalFrames.value()
+            ?core::FrameIndex{0}:proposed);
+}
+
 struct MeasuredDeviceTransportPlan final {
     core::RealizationId manual_owner;
     core::PlaybackState source_state;
