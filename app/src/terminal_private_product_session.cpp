@@ -936,6 +936,11 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
     if(!freshEmpty
        ||!measured_empty_sink_snapshot_proven(*freshEmpty.value()))
         return deny("M17_MEASURED_RETURN_RETRY_DEVICE_NOT_EMPTY_AFTER_PREFLIGHT");
+    if(!manual_||!manualId_||!sourceLoop_||!selected_
+       ||!selected_()||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=plan.source_loop)
+        return deny("M17_MEASURED_RETURN_RETRY_MANUAL_REVOKED_DURING_PREFLIGHT");
     monitorTransitioning_=true;
     const auto restored=[&]()->core::Status {
         try {
