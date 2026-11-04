@@ -9,6 +9,14 @@ on:
       - 'tools/qualification/m22/**'
       - 'docs/architecture/M22_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261104.md'
       - '.github/workflows/m22-preproduction.yml'
+  pull_request:
+    branches:
+      - experimental/m21-metrics-delta-20261103
+    paths:
+      - 'render/src/internal/m22_*.hpp'
+      - 'tools/qualification/m22/**'
+      - 'docs/architecture/M22_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261104.md'
+      - '.github/workflows/m22-preproduction.yml'
   workflow_dispatch:
 permissions:
   contents: read
