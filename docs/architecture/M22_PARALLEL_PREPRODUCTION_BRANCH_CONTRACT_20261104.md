@@ -66,3 +66,13 @@ PREPARED/PROCESSED ownership and actual M19-M21 analyzer delivery,
 live product asynchronous job generations, UI Design Authority.
 Qualified predecessor implementations may alter DTO/API shapes; reconcile
 then, never create a shadow production engine.
+
+## Private macro-lot #2 — ACTUAL M18 terminal codec, not invented DSP
+C++ selftest includes the real existing `audio/src/internal/m18_terminal_sample_codec.hpp`
+under M18 preproduction without changing any upstream code. Six sample rates, mono/stereo,
+PCM24/Float32, Full and multiple start/middle/end Preview crops. EXACT byte identity
+under chunk sizes 1/57/73/4096 using absolute output-frame address; deliberately
+local-reseeded PCM24 mismatch is asserted. Real M18 preflight rejects PCM24 overload
+and Float32 nonfinite input without modifying sentinel output. Double samples supplied
+are deterministic *test fixtures*, NOT a real rendered M17 master. Therefore this
+is a useful terminal seam proof only: no real DSP chain, physical listening, or I/G/L.
