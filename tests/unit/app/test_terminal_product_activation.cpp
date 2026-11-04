@@ -1158,6 +1158,27 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
                  std::optional{*expectedMasterLoop.value()});
         QCOMPARE(plan.value()->device_loop,
                  std::optional{*expectedDeviceLoop.value()});
+        // The inverse MASTER loop projection must accept the same
+        // rounding-correct programme duration and never invent a SOURCE
+        // frame outside the real MANUAL owner. Different sample grids
+        // cannot promise bit-identical loop boundaries after round trips.
+        const auto backToSource=rational.value()->master_loop_to_source(
+            *expectedMasterLoop.value(),*sourceRate.value(),*frames.value());
+        QVERIFY2(backToSource,backToSource?""
+            :backToSource.error()->message().c_str());
+        QVERIFY(backToSource.value()->begin()>=core::FrameIndex{0});
+        QVERIFY(backToSource.value()->end()
+            <=core::FrameIndex{frames.value()->value()});
+        QVERIFY(backToSource.value()->begin()<backToSource.value()->end());
+        if(hz==192000)
+            QCOMPARE(*backToSource.value(),*sourceLoop.value());
+        const auto wrongSourceCount=core::FrameCount::create(700);
+        QVERIFY(wrongSourceCount);
+        QVERIFY(!rational.value()->source_to_master(
+            core::FrameIndex{0},*sourceRate.value(),*wrongSourceCount.value()));
+        QVERIFY(!rational.value()->master_loop_to_source(
+            *expectedMasterLoop.value(),*sourceRate.value(),
+            *wrongSourceCount.value()));
         auto advanced=transport;
         advanced.position=core::FrameIndex{132};
         const auto rebased=perRateTicket.value()->rebase_handoff(
