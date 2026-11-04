@@ -985,6 +985,33 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     // Pure NO_SOURCE proof is intentionally stricter than an empty
     // RealizationId alone: a stale position, loop or duration means the
     // previous DEVICE owner has not been authoritatively retired.
+    // Actual SOURCE selector normalizes EOF to the beginning. Without
+    // this measured Return canonicalization the Windows SOURCE sink is
+    // correctly restored at frame zero, but an old postcheck demanded N,
+    // producing a false RECOVERY_REQUIRED after real track completion.
+    const auto sourceEof=app::canonical_measured_source_return_cue(
+        core::FrameIndex{frames.value()->value()},*frames.value(),std::nullopt);
+    QVERIFY(sourceEof);
+    QCOMPARE(*sourceEof.value(),core::FrameIndex{0});
+    const auto middle=app::canonical_measured_source_return_cue(
+        core::FrameIndex{128},*frames.value(),std::nullopt);
+    QVERIFY(middle);
+    QCOMPARE(*middle.value(),core::FrameIndex{128});
+    const auto selectedLoop=core::FrameRange::create(
+        core::FrameIndex{64},core::FrameIndex{192});
+    QVERIFY(selectedLoop);
+    const auto loopEnd=app::canonical_measured_source_return_cue(
+        core::FrameIndex{192},*frames.value(),*selectedLoop.value());
+    QVERIFY(loopEnd);
+    QCOMPARE(*loopEnd.value(),core::FrameIndex{64});
+    const auto loopInside=app::canonical_measured_source_return_cue(
+        core::FrameIndex{128},*frames.value(),*selectedLoop.value());
+    QVERIFY(loopInside);
+    QCOMPARE(*loopInside.value(),core::FrameIndex{128});
+    const auto outside=app::canonical_measured_source_return_cue(
+        core::FrameIndex{frames.value()->value()+1},
+        *frames.value(),std::nullopt);
+    QVERIFY(!outside);
     core::PlaybackSnapshot emptyDevice{};
     emptyDevice.state=core::PlaybackState::NO_SOURCE;
     emptyDevice.position=core::FrameIndex{0};
