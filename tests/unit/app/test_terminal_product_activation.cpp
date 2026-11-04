@@ -1113,6 +1113,77 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QCOMPARE(stage->rendered.programme_frames,pcm.frame_count());
         QCOMPARE(stage->rendered.used_candidate_src,hz!=192000);
 
+        // Exercise all SIX rate-accurate SOURCE -> MASTER -> DEVICE
+        // transport plans against the real rational frame-domain contract,
+        // not just six independent PCM admission/conversion witnesses.
+        // Same manual realization and SOURCE Loop must survive every rate.
+        const auto sourceLoop=core::FrameRange::create(
+            core::FrameIndex{64},core::FrameIndex{384});
+        QVERIFY(sourceLoop);
+        core::PlaybackSnapshot transport{};
+        transport.state=core::PlaybackState::PLAYING;
+        transport.position=core::FrameIndex{128};
+        transport.duration=*frames.value();
+        transport.loop=*sourceLoop.value();
+        transport.audibleRealization={
+            core::AudibleHandoffPhase::NEW,core::RealizationId{9001}};
+        const auto plan=perRateTicket.value()->plan_handoff(
+            stage,transport,*sourceLoop.value(),freshEndpoint,true);
+        QVERIFY2(plan,plan?"":plan.error()->message().c_str());
+        QCOMPARE(plan.value()->manual_owner,core::RealizationId{9001});
+        QCOMPARE(plan.value()->source_rate,*sourceRate.value());
+        QCOMPARE(plan.value()->master_rate,*masterRate.value());
+        QCOMPARE(plan.value()->device_rate,*deviceRate.value());
+        QCOMPARE(plan.value()->source_cue,core::FrameIndex{128});
+        QCOMPARE(plan.value()->source_loop,std::optional{*sourceLoop.value()});
+        QVERIFY(plan.value()->master_loop);
+        QVERIFY(plan.value()->device_loop);
+        const auto rational=audio::MonitoringFrameMap::create(*device);
+        QVERIFY(rational);
+        const auto mappedMaster=rational.value()->source_to_master(
+            core::FrameIndex{128},*sourceRate.value(),*frames.value());
+        QVERIFY(mappedMaster);
+        const auto mappedDevice=rational.value()->master_to_device(
+            *mappedMaster.value());
+        QVERIFY(mappedDevice);
+        QCOMPARE(plan.value()->master_cue,*mappedMaster.value());
+        QCOMPARE(plan.value()->device_cue,*mappedDevice.value());
+        const auto expectedMasterLoop=rational.value()->source_loop_to_master(
+            *sourceLoop.value(),*sourceRate.value(),*frames.value());
+        QVERIFY(expectedMasterLoop);
+        const auto expectedDeviceLoop=rational.value()->master_loop_to_device(
+            *expectedMasterLoop.value());
+        QVERIFY(expectedDeviceLoop);
+        QCOMPARE(plan.value()->master_loop,
+                 std::optional{*expectedMasterLoop.value()});
+        QCOMPARE(plan.value()->device_loop,
+                 std::optional{*expectedDeviceLoop.value()});
+        auto advanced=transport;
+        advanced.position=core::FrameIndex{132};
+        const auto rebased=perRateTicket.value()->rebase_handoff(
+            *plan.value(),stage,advanced,*sourceLoop.value(),
+            freshEndpoint,true);
+        QVERIFY(rebased);
+        QCOMPARE(rebased.value()->source_cue,core::FrameIndex{132});
+        auto seekChanged=advanced;
+        seekChanged.seekSerial+=1;
+        QVERIFY(!perRateTicket.value()->rebase_handoff(
+            *plan.value(),stage,seekChanged,*sourceLoop.value(),
+            freshEndpoint,true));
+        auto loopWrap=advanced;
+        loopWrap.loopWrapCount+=1;
+        QVERIFY(!perRateTicket.value()->rebase_handoff(
+            *plan.value(),stage,loopWrap,*sourceLoop.value(),
+            freshEndpoint,true));
+        auto paused=transport;
+        paused.state=core::PlaybackState::PAUSED;
+        QVERIFY(perRateTicket.value()->plan_handoff(
+            stage,paused,*sourceLoop.value(),freshEndpoint,true));
+        auto stopped=transport;
+        stopped.state=core::PlaybackState::STOPPED;
+        QVERIFY(perRateTicket.value()->plan_handoff(
+            stage,stopped,*sourceLoop.value(),freshEndpoint,true));
+
         QCOMPARE(device->device_src_applied,hz!=48000);
         // A fresh owner-thread check must accept only the SAME measured
         // stage, MANUAL realization, DEVICE rate and physical endpoint.
