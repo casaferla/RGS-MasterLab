@@ -1053,6 +1053,11 @@ core::Status PlaybackEngine::play_internal(bool isNewTraversal)
     }
     auto stopped = output_->stop();
     if (!stopped) {
+        // A failing Windows STOP may leave the physical sink ACTIVE or
+        // suspended. A subsequent Play must not inherit the old audible
+        // clock or issue a new DEVICE start. Attempt one protective
+        // retirement, then retain a sticky fault until explicit reset.
+        record_runtime_error(*stopped.error());
         return stopped;
     }
     // Playback is no longer audible after stop() succeeds. A later
@@ -1130,6 +1135,10 @@ core::Status PlaybackEngine::stop()
     }
     auto stopped = output_->stop();
     if (!stopped) {
+        // Never show an apparently playable/paused DEVICE after the Qt
+        // backend refuses to stop. No claim that the DAC has retired is
+        // possible: snapshot remains an error until explicit recovery.
+        record_runtime_error(*stopped.error());
         return stopped;
     }
     output_->clear_queue();
