@@ -262,6 +262,27 @@ public:
         const MeasuredDeviceTransportPlan& prior,
         const MeasuredDeviceEndpointObservation& latestEndpoint,
         bool explicitUserRequest) const;
+    // Distinct measured NON-CONFORMING DEVICE transport. This reuses the
+    // anonymous Windows monitor sink without minting an M17 RealizationId,
+    // M16 VERIFIED/LIVE authority, GR history or exportable MASTER.
+    // The installing caller must independently re-probe Windows endpoint
+    // ID+rate on the owning Qt thread after asynchronous SRC.
+    [[nodiscard]] core::Status install_measured_device_audition(
+        const MeasuredDeviceAuditionTicket& ticket,
+        const MeasuredDeviceEndpointObservation& currentEndpoint,
+        bool explicitUserRequest);
+    // Exact-owned conditional DEVICE retirement before MANUAL restoration.
+    // If restore fails after retirement, an explicit retry keeps the
+    // original MANUAL cue/state and never touches another device owner.
+    [[nodiscard]] core::Status return_measured_device_audition();
+    [[nodiscard]] core::Status control_measured_device_audition(
+        platform::windows::MonitoringTransportRequest command);
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    measured_device_snapshot() const;
+    [[nodiscard]] bool measured_device_active() const noexcept {
+        return installedMeasuredTicket_.has_value()
+            ||measuredSourceRecovery_;
+    }
     // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
     // input. A valid region edit during deferred Prepare / READY may adopt
     // its new SOURCE loop mapping without invalidating the immutable PCM,
@@ -275,6 +296,7 @@ public:
     // terminal SOURCE audio owned by the ordinary Qt M17 conductor.
     [[nodiscard]] bool monitoring_transaction_active() const noexcept {
         return monitorTransitioning_ || static_cast<bool>(installedMonitor_)
+            || measured_device_active()
             || static_cast<bool>(returnRecovery_)
             || (pending_.has_value() && pending_->masterOnly);
     }
@@ -372,6 +394,14 @@ private:
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
         approvedMonitorMaster_;
     MonitoringOwner installedMonitor_;
+    // The same anonymous Windows PCM may be owned by either VERIFIED
+    // monitor or measured NON-CONFORMING audition, never both.
+    std::optional<MeasuredDeviceAuditionTicket> installedMeasuredTicket_;
+    std::optional<MeasuredDeviceTransportPlan> installedMeasuredPlan_;
+    std::optional<core::PlaybackSnapshot> measuredOriginalManual_;
+    bool measuredSourceRecovery_{false};
+    core::FrameIndex measuredReturnCue_{0};
+    core::PlaybackState measuredReturnState_{core::PlaybackState::STOPPED};
     // Exact pre-install MANUAL transport for recovering a partially seeded
     // DEVICE sink, never the anonymous monitor's incomplete cue/state.
     std::optional<core::PlaybackSnapshot> monitorRecoveryOriginal_;
