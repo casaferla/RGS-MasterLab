@@ -876,9 +876,10 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
         }
     }();
     if(!restored)return failedRecovery(*restored.error());
-    const auto checked=[&](std::optional<core::FrameRange> loop)->bool {
+    const auto verifyExactStoppedManual=
+        [&](std::optional<core::FrameRange> loop)->core::Status {
         const auto proof=transport_->playback_snapshot();
-        return proof
+        const bool exact=proof
            &&proof.value()->state==core::PlaybackState::STOPPED
            &&proof.value()->audibleRealization.phase
                ==core::AudibleHandoffPhase::NEW
@@ -888,10 +889,33 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
                ==std::optional{predecessor.manual->view().frame_count()}
            &&proof.value()->position==recovery.sourceCue
            &&proof.value()->loop==loop;
+        if(exact)return core::Status::success();
+        // Diagnostic must be just as precise on RETRY as on the initial
+        // handoff. No PCM/user paths/realization IDs are logged, and the
+        // strict proof is never bypassed to obtain a green test.
+        const char* category=!proof
+            ?"MONITOR_RETURN_SNAPSHOT_UNAVAILABLE"
+            :proof.value()->state!=core::PlaybackState::STOPPED
+                ?"MONITOR_RETURN_NOT_STOPPED"
+            :proof.value()->audibleRealization.phase
+                !=core::AudibleHandoffPhase::NEW
+                ?"MONITOR_RETURN_PHASE_MISMATCH"
+            :proof.value()->audibleRealization.realizationId
+                !=std::optional{predecessor.manualId}
+                ?"MONITOR_RETURN_REALIZATION_MISMATCH"
+            :proof.value()->duration
+                !=std::optional{predecessor.manual->view().frame_count()}
+                ?"MONITOR_RETURN_DURATION_MISMATCH"
+            :proof.value()->position!=recovery.sourceCue
+                ?"MONITOR_RETURN_POSITION_MISMATCH"
+                :"MONITOR_RETURN_LOOP_MISMATCH";
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            std::string("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT:")+category,
+            {{"category",category}}});
     };
-    if(!checked(predecessor.loop))
-        return failedRecovery(rejected(
-            "MONITOR_RETURN_RECOVERY_SOURCE_SINK_NOT_EXACT"));
+    const auto originalProof=verifyExactStoppedManual(predecessor.loop);
+    if(!originalProof)return failedRecovery(*originalProof.error());
     if(recovery.reconciledSourceLoop) {
         if(!sourceLoopReconcile_)return failedRecovery(rejected(
             "MONITOR_RETURN_RECOVERY_LOOP_CALLBACK_MISSING"));
@@ -899,10 +923,12 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
             *recovery.reconciledSourceLoop);
         if(!committed)return failedRecovery(*committed.error());
         if(!sourceLoop_||sourceLoop_()
-               !=recovery.reconciledSourceLoop
-           ||!checked(recovery.reconciledSourceLoop))
+               !=recovery.reconciledSourceLoop)
             return failedRecovery(rejected(
                 "MONITOR_RETURN_RECOVERY_RECONCILED_LOOP_NOT_EXACT"));
+        const auto loopProof=verifyExactStoppedManual(
+            recovery.reconciledSourceLoop);
+        if(!loopProof)return failedRecovery(*loopProof.error());
     }
     if(recovery.priorTransport!=core::PlaybackState::STOPPED) {
         transport_->playOrResume();
