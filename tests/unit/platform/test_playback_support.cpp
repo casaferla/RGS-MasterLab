@@ -109,6 +109,12 @@ public:
     [[nodiscard]] core::Result<std::size_t> enqueue(
         std::span<const std::byte> bytes) override
     {
+        if (failNextEnqueue) {
+            failNextEnqueue = false;
+            return core::Result<std::size_t>::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "TEST_WINDOWS_PREFILL_QUEUE_REFUSED_AFTER_STOP"});
+        }
         if (injectedError_) {
             return core::Result<std::size_t>::failure(*injectedError_);
         }
@@ -221,6 +227,7 @@ public:
     }
 
     bool failNextStart{false};
+    bool failNextEnqueue{false};
     int startCalls{0};
     int suspendCalls{0};
     int resumeCalls{0};
@@ -2035,6 +2042,31 @@ void PlaybackSupportTest::playbackRestartFailureNeverReportsPhantomPlaying()
         QCOMPARE(sink->startCalls,3);
         QVERIFY(engine.stop());
     }
+
+    // The same safety property applies when the source decoder or the
+    // destination byte queue refuses PREFILL before QAudioSink::start().
+    // The old active sink has already been stopped successfully.
+    PlaybackEngine prefillEngine;
+    auto prefillOutput=std::make_unique<FakeOutput>(4096U,4U);
+    auto* prefillSink=prefillOutput.get();
+    QVERIFY(prefillEngine.install_candidate(
+        open_pcm16_stereo(indexed_stereo_codes(1024)),
+        std::move(prefillOutput),DeviceSampleFormat::PCM_S16));
+    QVERIFY(prefillEngine.play());
+    prefillSink->failNextEnqueue=true;
+    const auto prefillRefused=prefillEngine.play();
+    QVERIFY(!prefillRefused);
+    QCOMPARE(prefillRefused.error()->code(),core::ErrorCode::IoFailure);
+    const auto prefillAfter=prefillEngine.snapshot();
+    QVERIFY(prefillAfter);
+    QCOMPARE(prefillAfter.value()->state,core::PlaybackState::STOPPED);
+    QCOMPARE(prefillSink->state(),OutputState::STOPPED);
+    QCOMPARE(prefillSink->queued_bytes(),std::size_t{0});
+    QCOMPARE(prefillSink->startCalls,1);
+    QVERIFY(prefillEngine.play());
+    QCOMPARE(prefillEngine.snapshot().value()->state,
+        core::PlaybackState::PLAYING);
+    QCOMPARE(prefillSink->startCalls,2);
 }
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
