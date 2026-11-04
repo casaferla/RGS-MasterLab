@@ -479,6 +479,50 @@ private slots:
     QVERIFY(!host.observe(stale)); // measured stages exceed whole wall
     host.clear();
     QVERIFY(!predict(132300,44100,44100,2,-1.0,20,30));
+
+    // PO convergence acceptance: future whole-Prepare ETA starts broad
+    // after three genuine accepted runs, narrows when nine more matched
+    // runs agree, and widens again if a *real* slow Prepare occurs.
+    // Device clock and synthetic DSP CPU probe are never input evidence.
+    AcceptedPrepareHostTimingHistory convergence;
+    auto consistent=x;
+    consistent.wall_us=1'800'000;
+    consistent.queue_us=100'000;
+    consistent.master_hz=44100;
+    consistent.src_us=-1;
+    for(std::uint64_t serial=1;serial<=3;++serial) {
+        consistent.invocation=serial;
+        QVERIFY(convergence.observe(consistent));
+    }
+    const auto beginning=convergence.predict(
+        44100,132300,2,44100,-1.0,20,30);
+    QVERIFY(beginning);
+    QCOMPARE(beginning->matched_observations,std::size_t{3});
+    const auto initialWidth=beginning->high_us-beginning->low_us;
+    for(std::uint64_t serial=4;serial<=12;++serial) {
+        consistent.invocation=serial;
+        QVERIFY(convergence.observe(consistent));
+    }
+    const auto refined=convergence.predict(
+        44100,132300,2,44100,-1.0,20,30);
+    QVERIFY(refined);
+    QCOMPARE(refined->matched_observations,std::size_t{12});
+    QVERIFY(refined->low_us>beginning->low_us);
+    QVERIFY(refined->high_us<beginning->high_us);
+    QVERIFY(refined->high_us-refined->low_us<initialWidth);
+    QVERIFY(refined->low_us<=1'900'000);
+    QVERIFY(refined->high_us>=1'900'000);
+    consistent.invocation=13;
+    consistent.wall_us=6'000'000; // genuine slow render, not invented data
+    QVERIFY(convergence.observe(consistent));
+    const auto slow=convergence.predict(
+        44100,132300,2,44100,-1.0,20,30);
+    QVERIFY(slow);
+    QCOMPARE(slow->matched_observations,std::size_t{13});
+    QVERIFY(slow->high_us>refined->high_us);
+    QVERIFY(slow->high_us>=6'100'000);
+    QVERIFY(!convergence.predict(
+        44100,132300,2,44100,-1.0,21,30));
  }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;
