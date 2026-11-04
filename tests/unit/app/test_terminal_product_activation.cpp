@@ -933,11 +933,11 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         conversion.value()->windows_prepared_endpoint_id=freshEndpoint.id;
         auto device=std::make_shared<const audio::MonitoringPcmCandidate>(
             std::move(*conversion.value()));
-        const auto ticket=admit_measured_device_audition_ticket(
+        const auto perRateTicket=admit_measured_device_audition_ticket(
             stage,stage,device,true,freshEndpoint);
-        QVERIFY(ticket);
-        QCOMPARE(ticket.value()->measured_master(),stage);
-        QCOMPARE(ticket.value()->audition_device_pcm(),device);
+        QVERIFY(perRateTicket);
+        QCOMPARE(perRateTicket.value()->measured_master(),stage);
+        QCOMPARE(perRateTicket.value()->audition_device_pcm(),device);
         QCOMPARE(device->device_rate,*deviceRate.value());
         QCOMPARE(device->immutable_master_rate,*masterRate.value());
         QCOMPARE(device->device_src_applied,hz!=48000);
