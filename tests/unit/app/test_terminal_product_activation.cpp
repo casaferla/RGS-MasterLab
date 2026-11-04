@@ -3563,6 +3563,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.control_private_monitor(
         Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
     std::size_t sourceLoopCommits=0;
+    bool injectLoopCommitFailure=true;
     QVERIFY(!product.return_private_monitor_to_manual());
     QCOMPARE(sourceLoopCommits,std::size_t{0});
     QCOMPARE(deviceMonitor,*freshMonitor.value());
@@ -3576,19 +3577,48 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "TEST_SOURCE_LOOP_BEFORE_EXACT_RETIREMENT"});
+            // The monitor is ALREADY retired, the original SOURCE has
+            // been installed, but a later source-region commit refuses.
+            // M17 must preserve MASTER without forcing a second Windows
+            // PCM install or sacrificing the true original MANUAL sink.
+            if(injectLoopCommitFailure) {
+                injectLoopCommitFailure=false;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "TEST_SOURCE_LOOP_COMMIT_FAILED_AFTER_SOURCE_RESTORE"});
+            }
             selectedSourceLoop=projected;
             // Synchronous Qt AuditionRegion changed listener while
             // monitorTransitioning_ is still active (never recurse cancel).
             product.cancel_pending_on_region_change();
+            const auto duringReturn=product.status();
             if(!product.monitoring_transaction_active()
-               ||product.status()!=QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"))
+               ||(duringReturn!=QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED")
+                   &&duringReturn!=QStringLiteral(
+                       "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED")))
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "TEST_REENTRANT_REGION_EVENT_CANCELLED_MONITOR"});
             return transport.set_loop_source_range(projected);
         });
-    QVERIFY(monitorUi.returnManual());
+    const auto firstLoopReturn=monitorUi.returnManual();
+    QVERIFY(!firstLoopReturn);
     QCOMPARE(sourceLoopCommits,std::size_t{1});
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QVERIFY(!deviceMonitor);
+    QVERIFY(candidates.staged());
+    const auto preexistingManualInstalls=manualRestores;
+    const auto preexistingMonitorRetires=monitorRetires;
+    // The real UI Return button invokes cancel(). No duplicate MONITOR
+    // retirement or SOURCE reinstall is allowed when the intended MANUAL
+    // is ALREADY present with exact owner, original Loop and cue.
+    QVERIFY(monitorUi.cancel());
+    QCOMPARE(manualRestores,preexistingManualInstalls);
+    QCOMPARE(monitorRetires,preexistingMonitorRetires);
+    QCOMPARE(sourceLoopCommits,std::size_t{2});
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
