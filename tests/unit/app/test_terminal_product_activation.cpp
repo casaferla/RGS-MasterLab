@@ -1130,6 +1130,22 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     const auto forbidden=product.admit_measured_device_conversion(
         {},{},true);
     QVERIFY(!forbidden);
+    // A worker may compute FIR from captured immutable PCM, but it may
+    // never observe or modify QObject session state. Admission must be
+    // performed again on the owning Qt thread after conversion finishes.
+    bool workerCaptureDenied=false;
+    bool workerAdmissionDenied=false;
+    std::thread foreignOwner([&] {
+        workerCaptureDenied=
+            !product.capture_measured_master_for_device_conversion();
+        const auto wrongThread=product.admit_measured_device_conversion(
+            {},{},true);
+        workerAdmissionDenied=!wrongThread
+            &&wrongThread.error()->code()==core::ErrorCode::InvalidState;
+    });
+    foreignOwner.join();
+    QVERIFY(workerCaptureDenied);
+    QVERIFY(workerAdmissionDenied);
     // P0 bridge returns ONLY the exact currently verified MASTER at the
     // selected PROJECT rate. DEVICE must not implicitly retarget it.
     const auto firstRenderCount=renderer.render_invocation_count();
