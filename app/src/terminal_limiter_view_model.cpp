@@ -170,7 +170,8 @@ void TerminalLimiterViewModel::requestPrepare()
 void TerminalLimiterViewModel::cancelPreparation()
 {
     if(state_ && !state_->bypassed()
-        && audioStatus_.startsWith(QStringLiteral("Preparing")))
+        && (audioStatus_.startsWith(QStringLiteral("Preparing"))
+            ||nonconformingDevicePreparing_))
         emit cancelRequested();
 }
 
@@ -332,6 +333,14 @@ void TerminalLimiterViewModel::setNonconformingDevicePreviewAvailable(bool avail
         &&audioStatus_.startsWith(QStringLiteral("NON-CONFORMING"));
     if(nonconformingDevicePreviewAvailable_==next)return;
     nonconformingDevicePreviewAvailable_=next;
+    emit changed();
+}
+
+void TerminalLimiterViewModel::setNonconformingDevicePreparing(bool preparing)
+{
+    if(nonconformingDevicePreparing_==preparing)return;
+    nonconformingDevicePreparing_=preparing;
+    if(preparing)nonconformingDevicePreviewAvailable_=false;
     emit changed();
 }
 
