@@ -66,6 +66,14 @@ jobs:
             g++ -std=c++20 $opt -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Irender/src/internal -Iaudio/src -Icore/include tools/qualification/m22/m22_real_m18_wav_export_selftest.cpp core/src/sha256.cpp -o "$RUNNER_TEMP/m22-disk"
             "$RUNNER_TEMP/m22-disk"
           done
+      - name: Genuine M17 checked/nonconforming variant · fail-closed M22 admission · GCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opt in '-O0 -g' '-O2'; do
+            g++ -std=c++20 $opt -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Irender/src/internal -Irender/include -Idsp/include -Iaudio/include -Ianalysis/include -Icore/include tools/qualification/m22/m22_m17_admission_selftest.cpp -o "$RUNNER_TEMP/m22-m17"
+            "$RUNNER_TEMP/m22-m17"
+          done
   windows-m22:
     name: M22 private · Windows 2022 MSVC Debug + Release
     runs-on: windows-2022
@@ -131,4 +139,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 70; throw "M22_M18_DISK_COMPILE_FAILED_$mode" }
             & "$env:RUNNER_TEMP/m22-disk-$mode.exe"
             if ($LASTEXITCODE -ne 0) { throw "M22_M18_DISK_TEST_FAILED_$mode" }
+          }
+      - name: Genuine M17 checked/nonconforming variant · fail-closed M22 admission · MSVC
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug", "Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m22-m17-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Irender/src/internal /Irender/include /Idsp/include /Iaudio/include /Ianalysis/include /Icore/include tools/qualification/m22/m22_m17_admission_selftest.cpp "/Fe:$env:RUNNER_TEMP/m22-m17-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 70; throw "M22_M17_ADMISSION_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m22-m17-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M22_M17_ADMISSION_TEST_FAILED_$mode" }
           }

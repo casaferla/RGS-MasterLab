@@ -144,3 +144,23 @@ realization. This is an isolated M18 integration seam rehearsal; existing M18
 source or canonical transaction code is UNCHANGED. Official I+G+L,
 physical listening, M17 genuine full-programme verification and
 M09 canonical export integration remain strictly BLOCKED.
+
+## Private macro-lot #6 — M17 REAL typed outcome and nonconforming quarantine
+A PRIVATE read-only adapter references the actual current
+rgsml::render::TruePeakLimiterMeasuredOutcome variant,
+TruePeakLimiterCheckedCandidate and
+TruePeakLimiterMeasuredNonconformingCandidate. It categorically rejects
+the measured NONCONFORMING outcome (which requires its own explicit
+PO consent before any audition/export, NOT automatic M22 publication).
+It checks the full OUTPUT_RATE resource origin 0, whole programme frame
+count and SAME-RATE sample clock against frozen M22, expected terminal
+bypass, valid supported full-resource M16 evidence when active, and
+canonical inactive-bypass with NO false M16/GR. The external prerequisite
+gates (M17 physical+formal, CI audit/reset, M18–M21 qualified/merged,
+and verified exact resource owner) all default false. Nothing opens them
+on green private CI. Supported-unqualified M16 stays correctly labeled
+and is NOT promoted to QUALIFIED merely by a private test.
+Separate synthetic scalar witness tests exercise rejection branches;
+actual M17 C++ variant is compiled as the input type, but M17 full-DSP
+render/verified owning resource and export publication are NOT executed.
+No device audition, no auto-consent, no true production gate.
