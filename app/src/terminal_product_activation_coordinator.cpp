@@ -639,8 +639,13 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
             0,activeWholeEtaUs_->first/1000-elapsed);
         const auto high=std::max<std::int64_t>(
             low,activeWholeEtaUs_->second/1000-elapsed);
+        // The historical band also gets a visible CENTRAL estimate,
+        // matching the live first-Prepare presentation contract. This is
+        // the midpoint of an observed range, not a new calibration.
+        const auto centre=low+(high-low)/2;
         eta+=QStringLiteral(
-            " · Historical remaining ~%1–%2").arg(fmt(low),fmt(high));
+            " · Historical remaining ~%1 (%2–%3)")
+            .arg(fmt(centre),fmt(low),fmt(high));
     } else {
         eta+=QStringLiteral(" · Measuring current phase");
     }

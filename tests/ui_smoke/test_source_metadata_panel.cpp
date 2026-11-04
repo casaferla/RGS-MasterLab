@@ -2045,6 +2045,16 @@ Window {
     QVERIFY(textAt().contains(QStringLiteral("Provisional remaining")));
     QVERIFY(textAt().contains(QStringLiteral("1m 15s–3m 45s")));
     QVERIFY(!liveProgress->property("indeterminate").toBool());
+    // A prior authenticated range is also displayed with a permanently
+    // visible central value and both bounds, never a tooltip or elision.
+    QVERIFY(statusVm->setProperty("preparationEta",QStringLiteral(
+        "Elapsed 0m 03s · Historical remaining ~2m 05s (1m 20s–2m 50s)")));
+    QCoreApplication::processEvents();
+    QVERIFY(textAt().contains(QStringLiteral("Historical remaining ~2m 05s")));
+    QVERIFY(textAt().contains(QStringLiteral("Interval 1m 20s–2m 50s")));
+    QVERIFY(statusVm->setProperty("preparationEta",QStringLiteral(
+        "Elapsed 0m 03s · Provisional remaining ~2m 00s (1m 15s–3m 45s)")));
+    QCoreApplication::processEvents();
     // PO: an ETA hidden behind a tooltip is not acceptable. Test the
     // actual rendered multiline Text, not merely its accessible string.
     auto* etaItem=qobject_cast<QQuickItem*>(liveEta);
