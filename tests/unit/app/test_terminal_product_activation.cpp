@@ -118,6 +118,7 @@ private slots:
     void audibleOnBypassRestoresExactManualSourceAndLoop();
     void finalMasterAt192kNeverBecomesDeviceRate48k();
     void sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix();
+    void sustainedCrossrateMasterDevice48kWithoutSecondRender();
     void privateMaster192kOn48kDeviceRemainsUninstalled();
     void staleM17TerminalJobCancelsWithoutPublishingPcm();
     void nonconformingPreviewRequiresSeparateExplicitConsent();
@@ -504,6 +505,148 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QCOMPARE(unsafe.count(),1); // No audition from Bypass.
 }
 
+
+// Pre-FQ sustained-medium fixture: the 432-route table above proves short
+// real PCM paths, NOT multi-block handoff, processing at realistic frame
+// counts, or physical Windows playback. Use bounded 1–3 second source
+// programmes at three representative clocks, including two real crossrates.
+// The immutable verified MASTER must survive DEVICE SRC bit-for-bit.
+// No synthetic fake M16 verification, no device-rate re-render, no DAC claim.
+void TerminalActivationIntegrationTest::
+sustainedCrossrateMasterDevice48kWithoutSecondRender()
+{
+    struct Case {
+        std::int64_t sourceHz;
+        std::int64_t masterHz;
+        std::int64_t frames;
+    };
+    constexpr std::array<Case,3> scenarios{{
+        {48000,48000,3*48000},
+        {44100,192000,2*44100},
+        {192000,48000,192000}
+    }};
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto block=core::FrameCount::create(4096);
+    const auto deviceRate=core::SampleRate::create(48000);
+    const auto uuid=core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000008037");
+    QVERIFY(registry&&block&&deviceRate&&uuid);
+    const auto instance=dsp::ModuleInstanceId::from_uuid(*uuid.value());
+    QVERIFY(instance);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto bindings=limiter.value()->execution_bindings();
+    std::size_t genuineMasters=0;
+    std::size_t deviceCandidates=0;
+    for(const auto& scenario:scenarios) {
+        const auto sourceRate=core::SampleRate::create(scenario.sourceHz);
+        const auto masterRate=core::SampleRate::create(scenario.masterHz);
+        const auto frames=core::FrameCount::create(scenario.frames);
+        QVERIFY(sourceRate&&masterRate&&frames);
+        const auto fmt=audio::AudioFormat::create(
+            *sourceRate.value(),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(fmt);
+        auto input=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},*frames.value());
+        QVERIFY(input);
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto samples=input.value()->mutable_view().channel(ch);
+            QVERIFY(samples);
+            for(std::size_t i=0;i<samples.value()->size();++i) {
+                // Every 4,096-frame boundary and BOTH physical ends have
+                // nonzero content, with intermittent transients and silence.
+                const double x=(i==0||i+1==samples.value()->size()
+                    ||i%4096==0)?0.32:(i%173<37?0.0:0.045);
+                (*samples.value())[i]=ch==0?x:-0.8*x;
+            }
+        }
+        auto chain=dsp::ProcessingChain::create(
+            *registry.value(),{dsp::ProcessingStage::MASTER,
+                               dsp::ChainSegment::MANUAL});
+        QVERIFY(chain);
+        const auto request=render::RenderRequest::create(
+            input.value()->view(),input.value()->view().absolute_range(),
+            *chain.value(),{},*block.value());
+        QVERIFY(request);
+        auto manualResult=render::render_preview(
+            *request.value(),*registry.value());
+        QVERIFY2(manualResult,manualResult?""
+            :manualResult.error()->message().c_str());
+        auto manual=std::make_shared<const render::RenderResult>(
+            std::move(*manualResult.value()));
+        const auto verified=render::
+            render_true_peak_limiter_owned_final_master_candidate(
+                manual,*chain.value(),*frames.value(),
+                manual->chain_revision(),*masterRate.value(),
+                limiter.value()->chain(),bindings,*registry.value(),
+                *block.value());
+        QVERIFY2(verified,verified?""
+            :verified.error()->message().c_str());
+        QVERIFY(render::validate_final_master_encoding_rate(
+            *verified.value(),*masterRate.value()));
+        const auto master=verified.value()->output.terminal.checked.terminal
+            .compensated_pcm.view();
+        QCOMPARE(master.format().sample_rate(),*masterRate.value());
+        QCOMPARE(verified.value()->output.used_candidate_src,
+            scenario.sourceHz!=scenario.masterHz);
+        const auto expectedMasterFrames=
+            (scenario.frames/scenario.sourceHz)*scenario.masterHz
+            +((scenario.frames%scenario.sourceHz)*scenario.masterHz
+               +scenario.sourceHz-1)/scenario.sourceHz;
+        QCOMPARE(master.frame_count().value(),expectedMasterFrames);
+        std::uint64_t before=UINT64_C(0xCBF29CE484222325);
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto samples=master.channel(ch);
+            QVERIFY(samples);
+            for(const double value:*samples.value()) {
+                QVERIFY(std::isfinite(value));
+                before^=std::bit_cast<std::uint64_t>(value);
+                before*=UINT64_C(0x100000001B3);
+            }
+        }
+        ++genuineMasters;
+        const auto monitor=audio::materialize_monitoring_pcm_candidate(
+            master,*deviceRate.value(),*block.value(),
+            [](const audio::MonitoringPcmResourceProjection&)
+                ->core::Status {return core::Status::success();});
+        QVERIFY2(monitor,monitor?"":monitor.error()->message().c_str());
+        QVERIFY(audio::validate_monitoring_pcm_candidate(*monitor.value()));
+        QCOMPARE(monitor.value()->immutable_master_rate,*masterRate.value());
+        QCOMPARE(monitor.value()->device_rate,*deviceRate.value());
+        const auto devicePcm=monitor.value()->device_pcm.view();
+        QCOMPARE(devicePcm.format().sample_rate(),*deviceRate.value());
+        QCOMPARE(devicePcm.frame_count().value(),scenario.frames
+            *(48000LL)/scenario.sourceHz);
+        // A second render would have to replace this verified MASTER;
+        // the whole immutable PCM remains bit-exactly unchanged.
+        std::uint64_t after=UINT64_C(0xCBF29CE484222325);
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto samples=master.channel(ch);
+            QVERIFY(samples);
+            for(const double value:*samples.value()) {
+                after^=std::bit_cast<std::uint64_t>(value);
+                after*=UINT64_C(0x100000001B3);
+            }
+        }
+        QCOMPARE(after,before);
+        const auto timeline=audio::MonitoringFrameMap::create(
+            *monitor.value());
+        QVERIFY(timeline);
+        const auto position=timeline.value()->source_to_master(
+            core::FrameIndex{scenario.frames/2},
+            *sourceRate.value(),*frames.value());
+        QVERIFY(position);
+        QVERIFY(timeline.value()->master_to_device(*position.value()));
+        ++deviceCandidates;
+    }
+    QCOMPARE(genuineMasters,std::size_t{3});
+    QCOMPARE(deviceCandidates,std::size_t{3});
+    qInfo().noquote()
+        <<"M17_EDGE_CASE=SUSTAINED_REAL_PCM_3_PATHS_MASTER_DEVICE48_PRESERVED";
+}
 
 void TerminalActivationIntegrationTest::
 sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
