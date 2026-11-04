@@ -437,7 +437,12 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
     };
     const auto installed=monitorInstall_(device);
     const auto ownership=monitorOwned_(device);
-    if(!installed ||!ownership||!*ownership.value()) {
+    // A failed owner probe is NOT proof that Windows left MANUAL intact:
+    // retain a return-only lease until the same worker can be re-queried.
+    if(!ownership)
+        return retainOwnedRecovery(
+            "M17_MEASURED_DEVICE_INSTALL_OWNERSHIP_UNKNOWN");
+    if(!installed ||!*ownership.value()) {
         if(ownership&&*ownership.value())
             return retainOwnedRecovery(
                 "M17_MEASURED_DEVICE_INSTALL_FAILED_WITH_OWNED_SINK");
@@ -478,7 +483,13 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
        ||now.value()->duration
             !=std::optional{device->device_pcm.view().frame_count()}
        ||!pending_||pending_->manual!=ticket.measured_master()->rendered.manual_owner
-       ||pending_->manualId!=ticket.original_manual_realization_id())
+       ||pending_->manualId!=ticket.original_manual_realization_id()
+       ||!manual_||manual_()!=pending_->manual
+       ||!manualId_||manualId_()!=std::optional{pending_->manualId}
+       ||!selected_||!selected_()
+       ||!sourceLoop_||sourceLoop_()!=pending_->loop
+       ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")
+       ||candidates_->staged_measured()!=ticket.measured_master())
         return retainOwnedRecovery(
             "M17_MEASURED_DEVICE_INSTALL_POSTCHECK_REQUIRES_RECOVERY");
     using Action=platform::windows::MonitoringTransportAction;
@@ -607,8 +618,50 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
             return deny("M17_MEASURED_DEVICE_RETURN_MONITOR_MISSING");
         const auto owned=monitorOwned_(installedMonitor_);
         if(!owned)return core::Status::failure(*owned.error());
-        if(!*owned.value())
-            return deny("M17_MEASURED_DEVICE_RETURN_FOREIGN_OWNER_UNTOUCHED");
+        if(!*owned.value()) {
+            const auto now=transport_->playback_snapshot();
+            if(!now)return core::Status::failure(*now.error());
+            const bool originalStillOwned=
+                now.value()->audibleRealization.phase
+                    ==core::AudibleHandoffPhase::NEW
+                &&now.value()->audibleRealization.realizationId
+                    ==std::optional{pending_->manualId}
+                &&now.value()->duration
+                    ==std::optional{pending_->manual->view().frame_count()}
+                &&now.value()->loop==plan.source_loop
+                &&(now.value()->state==core::PlaybackState::STOPPED
+                    ||now.value()->state==core::PlaybackState::PAUSED
+                    ||now.value()->state==core::PlaybackState::PLAYING);
+            // If the attempted install never displaced the exact MANUAL,
+            // clear only our own failed ticket. No SOURCE reinstallation.
+            if(originalStillOwned) {
+                installedMonitor_.reset();
+                installedMeasuredTicket_.reset();
+                installedMeasuredPlan_.reset();
+                measuredOriginalManual_.reset();
+                measuredSourceRecovery_=false;
+                status_=QStringLiteral("MEASURED_NONCONFORMING_READY");
+                error_.clear();
+                emit changed();
+                return core::Status::success();
+            }
+            const bool empty=now.value()->state==core::PlaybackState::NO_SOURCE
+                &&now.value()->audibleRealization.phase
+                    ==core::AudibleHandoffPhase::UNAVAILABLE
+                &&!now.value()->audibleRealization.realizationId
+                &&!now.value()->duration &&!now.value()->loop;
+            if(!empty)
+                return deny("M17_MEASURED_DEVICE_RETURN_FOREIGN_OWNER_UNTOUCHED");
+            // A hotplug may already have removed the exact anonymous sink.
+            // Only a proven NO_SOURCE endpoint can enter SOURCE-only retry.
+            installedMonitor_.reset();
+            measuredSourceRecovery_=true;
+            measuredReturnCue_=original.position;
+            measuredReturnState_=original.state;
+            status_=QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED");
+            emit changed();
+            return return_measured_device_audition();
+        }
         core::FrameIndex cue=original.position;
         core::PlaybackState resume=original.state;
         if(status_!=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED")) {
@@ -661,7 +714,55 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
     // The exact DEVICE lease has been retired; never overwrite a successor
     // sink or synthesize a MANUAL realization when a Windows install fails.
     const auto empty=transport_->playback_snapshot();
-    if(!empty||empty.value()->state!=core::PlaybackState::NO_SOURCE
+    if(!empty)return core::Status::failure(*empty.error());
+    // Windows may have installed the exact original MANUAL but returned an
+    // error before the transport-state proof. A retry must FINISH that
+    // same owner, not attempt a second QAudioSink replacement or overwrite
+    // another user's playback device.
+    const bool exactReopenedManual=
+        empty.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::NEW
+        &&empty.value()->audibleRealization.realizationId
+            ==std::optional{pending_->manualId}
+        &&empty.value()->duration
+            ==std::optional{pending_->manual->view().frame_count()}
+        &&empty.value()->loop==plan.source_loop
+        &&(empty.value()->state==core::PlaybackState::STOPPED
+            ||empty.value()->state==measuredReturnState_)
+        &&(empty.value()->state==core::PlaybackState::PLAYING
+            ||empty.value()->position==measuredReturnCue_);
+    if(measuredSourceRecovery_&&exactReopenedManual) {
+        if(!manual_||!manualId_||!sourceLoop_||!selected_
+           ||!selected_()||manual_()!=pending_->manual
+           ||manualId_()!=std::optional{pending_->manualId}
+           ||sourceLoop_()!=plan.source_loop)
+            return deny("M17_MEASURED_RETURN_ALREADY_RESTORED_SOURCE_REVOKED");
+        if(empty.value()->state==core::PlaybackState::STOPPED
+           &&measuredReturnState_!=core::PlaybackState::STOPPED) {
+            transport_->playOrResume();
+            if(measuredReturnState_==core::PlaybackState::PAUSED)
+                transport_->pause();
+        }
+        const auto final=transport_->playback_snapshot();
+        if(!final||final.value()->state!=measuredReturnState_
+           ||final.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||final.value()->audibleRealization.realizationId
+               !=std::optional{pending_->manualId}
+           ||final.value()->duration
+               !=std::optional{pending_->manual->view().frame_count()}
+           ||final.value()->loop!=plan.source_loop)
+            return deny("M17_MEASURED_RETURN_ALREADY_RESTORED_TRANSPORT_UNPROVEN");
+        installedMeasuredTicket_.reset();
+        installedMeasuredPlan_.reset();
+        measuredOriginalManual_.reset();
+        measuredSourceRecovery_=false;
+        status_=QStringLiteral("MEASURED_NONCONFORMING_READY");
+        error_.clear();
+        emit changed();
+        return core::Status::success();
+    }
+    if(empty.value()->state!=core::PlaybackState::NO_SOURCE
        ||empty.value()->audibleRealization.phase
             !=core::AudibleHandoffPhase::UNAVAILABLE
        ||empty.value()->audibleRealization.realizationId
