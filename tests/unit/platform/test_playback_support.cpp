@@ -915,6 +915,25 @@ void PlaybackSupportTest::sourceSixRateDeviceMatrixRequiresProbedFormats()
                     QCOMPARE(output.value()->sampleFormat,
                         floatAvailable?DeviceSampleFormat::IEEE_F32
                                       :DeviceSampleFormat::PCM_S16);
+                    // Windows may swap default endpoints AFTER SRC
+                    // selection and BEFORE QAudioSink::start()/resume().
+                    // The start-time witness must revalidate BOTH the
+                    // endpoint ID and preferred rate, not just a format
+                    // match which a different speaker might also accept.
+                    using platform::windows::internal::
+                        monitoring_endpoint_is_current;
+                    constexpr std::string_view expectedEndpoint{"speaker-A"};
+                    constexpr std::string_view swappedEndpoint{"speaker-B"};
+                    const int otherPreferred=sinkHz==48000?44100:48000;
+                    QVERIFY(monitoring_endpoint_is_current(
+                        expectedEndpoint,sinkHz,expectedEndpoint,sinkHz,true));
+                    QVERIFY(!monitoring_endpoint_is_current(
+                        expectedEndpoint,sinkHz,swappedEndpoint,sinkHz,true));
+                    QVERIFY(!monitoring_endpoint_is_current(
+                        expectedEndpoint,sinkHz,expectedEndpoint,
+                        otherPreferred,true));
+                    QVERIFY(!monitoring_endpoint_is_current(
+                        expectedEndpoint,sinkHz,expectedEndpoint,sinkHz,false));
                     ++cases;
                 }
             }
