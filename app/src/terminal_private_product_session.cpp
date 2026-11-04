@@ -468,12 +468,7 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
         // when the endpoint is provably empty, not when it is foreign.
         const auto observed=transport_->playback_snapshot();
         if(observed
-           &&observed.value()->state==core::PlaybackState::NO_SOURCE
-           &&observed.value()->audibleRealization.phase
-               ==core::AudibleHandoffPhase::UNAVAILABLE
-           &&!observed.value()->audibleRealization.realizationId
-           &&!observed.value()->duration
-           &&!observed.value()->loop) {
+           &&measured_empty_sink_snapshot_proven(*observed.value())) {
             installedMeasuredTicket_=ticket;
             installedMeasuredPlan_=*actual.value();
             measuredOriginalManual_=*original.value();
@@ -770,11 +765,7 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
                 emit changed();
                 return core::Status::success();
             }
-            const bool empty=now.value()->state==core::PlaybackState::NO_SOURCE
-                &&now.value()->audibleRealization.phase
-                    ==core::AudibleHandoffPhase::UNAVAILABLE
-                &&!now.value()->audibleRealization.realizationId
-                &&!now.value()->duration &&!now.value()->loop;
+            const bool empty=measured_empty_sink_snapshot_proven(*now.value());
             if(!empty)
                 return deny("M17_MEASURED_DEVICE_RETURN_FOREIGN_OWNER_UNTOUCHED");
             // A hotplug may already have removed the exact anonymous sink.
@@ -914,11 +905,7 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
         emit changed();
         return core::Status::success();
     }
-    if(empty.value()->state!=core::PlaybackState::NO_SOURCE
-       ||empty.value()->audibleRealization.phase
-            !=core::AudibleHandoffPhase::UNAVAILABLE
-       ||empty.value()->audibleRealization.realizationId
-       ||empty.value()->duration||empty.value()->loop)
+    if(!measured_empty_sink_snapshot_proven(*empty.value()))
         return deny("M17_MEASURED_RETURN_EMPTY_SINK_PROOF_REQUIRED");
     if(!manual_||!manualId_||!sourceLoop_||!selected_
        ||!selected_()||manual_()!=pending_->manual
@@ -947,12 +934,7 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
     // the DEVICE is STILL empty immediately before the first SOURCE write.
     const auto freshEmpty=transport_->playback_snapshot();
     if(!freshEmpty
-       ||freshEmpty.value()->state!=core::PlaybackState::NO_SOURCE
-       ||freshEmpty.value()->audibleRealization.phase
-            !=core::AudibleHandoffPhase::UNAVAILABLE
-       ||freshEmpty.value()->audibleRealization.realizationId
-       ||freshEmpty.value()->duration||freshEmpty.value()->loop
-       ||freshEmpty.value()->position!=core::FrameIndex{0})
+       ||!measured_empty_sink_snapshot_proven(*freshEmpty.value()))
         return deny("M17_MEASURED_RETURN_RETRY_DEVICE_NOT_EMPTY_AFTER_PREFLIGHT");
     monitorTransitioning_=true;
     const auto restored=[&]()->core::Status {
