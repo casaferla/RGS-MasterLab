@@ -539,7 +539,18 @@ bool TerminalMonitorViewModel::returnManual()
         const auto restored=session_->return_measured_device_audition();
         if(!report(restored))return false;
         monitorRequested_=false;
-        refresh();
+        // Return proves the anonymous DEVICE retired. Never leave stale
+        // MASTER/DEVICE clocks or a Loop-enabled control visible after
+        // the product has restored the original MANUAL transport.
+        position_=0;
+        duration_=0;
+        deviceRateHz_=0;
+        masterRegionStart_=0;
+        masterRegionEnd_=0;
+        masterLoopEnabled_=false;
+        masterRegionInitialized_=false;
+        transportState_=QStringLiteral("UNAVAILABLE");
+        emit changed();
         return true; // Keep measured M17 PCM until an explicit Cancel.
     }
     const bool retry=session_->status()
