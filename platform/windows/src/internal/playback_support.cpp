@@ -1020,6 +1020,11 @@ core::Status PlaybackEngine::play()
         && output_ && output_->state() == OutputState::SUSPENDED) {
         auto resumed = output_->resume();
         if (!resumed) {
+            // A Qt sink may already have changed state before reporting
+            // its backend error. Keeping PAUSED while a DEVICE has stopped
+            // or partially resumed would publish a false transport state.
+            // Stop, revoke pending bytes and require explicit recovery.
+            record_runtime_error(*resumed.error());
             return resumed;
         }
         state_ = core::PlaybackState::PLAYING;
@@ -1095,6 +1100,9 @@ core::Status PlaybackEngine::pause()
     update_position();
     auto suspended = output_->suspend();
     if (!suspended) {
+        // Failure can occur AFTER Qt has altered the physical sink state.
+        // No ghost PLAYING / M16 LIVE attribution is permitted.
+        record_runtime_error(*suspended.error());
         return suspended;
     }
     state_ = core::PlaybackState::PAUSED;
