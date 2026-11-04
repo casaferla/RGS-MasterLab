@@ -944,26 +944,26 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QCOMPARE(device->device_src_applied,hz!=48000);
         // A fresh owner-thread check must accept only the SAME measured
         // stage, MANUAL realization, DEVICE rate and physical endpoint.
-        QVERIFY(ticket.value()->recheck_preinstall(
+        QVERIFY(perRateTicket.value()->recheck_preinstall(
             stage,core::RealizationId{9001},freshEndpoint,true));
-        QVERIFY(!ticket.value()->recheck_preinstall(
+        QVERIFY(!perRateTicket.value()->recheck_preinstall(
             stage,core::RealizationId{9001},freshEndpoint,false));
-        QVERIFY(!ticket.value()->recheck_preinstall(
+        QVERIFY(!perRateTicket.value()->recheck_preinstall(
             {},core::RealizationId{9001},freshEndpoint,true));
-        QVERIFY(!ticket.value()->recheck_preinstall(
+        QVERIFY(!perRateTicket.value()->recheck_preinstall(
             stage,core::RealizationId{9002},freshEndpoint,true));
         // Same physical rate but a different endpoint is still stale.
         const app::MeasuredDeviceEndpointObservation hotplug{
             "fixture-endpoint-B",*deviceRate.value()};
         QVERIFY(!admit_measured_device_audition_ticket(
             stage,stage,device,true,hotplug));
-        QVERIFY(!ticket.value()->recheck_preinstall(
+        QVERIFY(!perRateTicket.value()->recheck_preinstall(
             stage,core::RealizationId{9001},hotplug,true));
         const app::MeasuredDeviceEndpointObservation rateChanged{
             freshEndpoint.id,*sourceRate.value()};
         QVERIFY(!admit_measured_device_audition_ticket(
             stage,stage,device,true,rateChanged));
-        QVERIFY(!ticket.value()->recheck_preinstall(
+        QVERIFY(!perRateTicket.value()->recheck_preinstall(
             stage,core::RealizationId{9001},rateChanged,true));
         QVERIFY(!admit_measured_device_audition_ticket(
             stage,stage,device,false,freshEndpoint));
