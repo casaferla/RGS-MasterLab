@@ -940,16 +940,31 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QCOMPARE(perRateTicket.value()->audition_device_pcm(),device);
         QCOMPARE(device->device_rate,*deviceRate.value());
         QCOMPARE(device->immutable_master_rate,*masterRate.value());
+
         QCOMPARE(device->device_src_applied,hz!=48000);
+        // A fresh owner-thread check must accept only the SAME measured
+        // stage, MANUAL realization, DEVICE rate and physical endpoint.
+        QVERIFY(ticket.value()->recheck_preinstall(
+            stage,core::RealizationId{9001},freshEndpoint,true));
+        QVERIFY(!ticket.value()->recheck_preinstall(
+            stage,core::RealizationId{9001},freshEndpoint,false));
+        QVERIFY(!ticket.value()->recheck_preinstall(
+            {},core::RealizationId{9001},freshEndpoint,true));
+        QVERIFY(!ticket.value()->recheck_preinstall(
+            stage,core::RealizationId{9002},freshEndpoint,true));
         // Same physical rate but a different endpoint is still stale.
         const app::MeasuredDeviceEndpointObservation hotplug{
             "fixture-endpoint-B",*deviceRate.value()};
         QVERIFY(!admit_measured_device_audition_ticket(
             stage,stage,device,true,hotplug));
+        QVERIFY(!ticket.value()->recheck_preinstall(
+            stage,core::RealizationId{9001},hotplug,true));
         const app::MeasuredDeviceEndpointObservation rateChanged{
             freshEndpoint.id,*sourceRate.value()};
         QVERIFY(!admit_measured_device_audition_ticket(
             stage,stage,device,true,rateChanged));
+        QVERIFY(!ticket.value()->recheck_preinstall(
+            stage,core::RealizationId{9001},rateChanged,true));
         QVERIFY(!admit_measured_device_audition_ticket(
             stage,stage,device,false,freshEndpoint));
         std::vector<std::uint64_t> afterBits;
@@ -1195,10 +1210,14 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // Strongly typed unqualified admission must reject even a genuine
     // VERIFIED M17 MASTER: this code cannot borrow LIVE/GR authority.
     QVERIFY(!product.capture_measured_master_for_device_conversion());
+    const app::MeasuredDeviceEndpointObservation neverAdmit{
+        "fixture-endpoint-A",*deviceRate.value()};
     const auto forbidden=product.admit_measured_device_conversion(
-        {},{},true,app::MeasuredDeviceEndpointObservation{
-            "fixture-endpoint-A",*deviceRate.value()});
+        {},{},true,neverAdmit);
     QVERIFY(!forbidden);
+    // The pre-install boundary itself cannot be borrowed by a VERIFIED
+    // MASTER (nor can it create a measured candidate from empty input).
+    // Negative test only: there is no measured nonconforming ticket here.
     // A worker may compute FIR from captured immutable PCM, but it may
     // never observe or modify QObject session state. Admission must be
     // performed again on the owning Qt thread after conversion finishes.

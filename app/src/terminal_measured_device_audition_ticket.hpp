@@ -33,6 +33,17 @@ public:
     [[nodiscard]] core::RealizationId original_manual_realization_id()
         const noexcept { return originalManualId_; }
 
+    // Pre-install check is NON-AUTHORIZING: caller must also verify the
+    // MANUAL Windows sink and Qt owner epoch before retiring any DEVICE.
+    // This prevents a long background conversion from replaying a stale
+    // measured master, hotplugged endpoint, or withdrawn user consent.
+    [[nodiscard]] core::Status recheck_preinstall(
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            currentMeasured,
+        core::RealizationId currentManualId,
+        const MeasuredDeviceEndpointObservation& latestEndpoint,
+        bool explicitUserRequest) const;
+
     [[nodiscard]] static core::Result<MeasuredDeviceAuditionTicket> admit(
         std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
             captured,
@@ -147,6 +158,39 @@ MeasuredDeviceAuditionTicket::admit(
     return Result::success(MeasuredDeviceAuditionTicket{
         std::move(captured),std::move(converted),
         current->original_manual_realization_id});
+}
+
+
+inline core::Status MeasuredDeviceAuditionTicket::recheck_preinstall(
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+        currentMeasured,
+    core::RealizationId currentManualId,
+    const MeasuredDeviceEndpointObservation& latestEndpoint,
+    bool explicitUserRequest) const
+{
+    const auto refused=[](const char* reason)->core::Status {
+        return core::Status::failure(
+            core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    if(!explicitUserRequest)
+        return refused("M17_MEASURED_DEVICE_PREINSTALL_CONSENT_REVOKED");
+    if(!measuredMaster_ ||measuredMaster_!=currentMeasured)
+        return refused("M17_MEASURED_DEVICE_PREINSTALL_STAGE_REVOKED");
+    if(currentManualId.value==0
+       ||currentManualId!=originalManualId_
+       ||currentMeasured->original_manual_realization_id!=currentManualId)
+        return refused("M17_MEASURED_DEVICE_PREINSTALL_MANUAL_REVOKED");
+    if(!devicePcm_)
+        return refused("M17_MEASURED_DEVICE_PREINSTALL_PCM_MISSING");
+    if(latestEndpoint.id.empty()
+       ||latestEndpoint.id!=devicePcm_->windows_prepared_endpoint_id
+       ||latestEndpoint.rate!=devicePcm_->device_rate)
+        return refused("M17_MEASURED_DEVICE_PREINSTALL_ENDPOINT_REVOKED");
+    // The detached PCM and its format must remain an exact independently
+    // converted AUDIO owner; this does not assert true-peak conformity.
+    const auto valid=audio::validate_monitoring_pcm_candidate(*devicePcm_);
+    if(!valid)return valid;
+    return core::Status::success();
 }
 
 // This named helper is retained for unit test readability; construction

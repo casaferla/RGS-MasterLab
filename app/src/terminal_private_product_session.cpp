@@ -294,6 +294,42 @@ TerminalPrivateProductSession::admit_measured_device_conversion(
         explicitUserRequest,freshEndpoint);
 }
 
+core::Status TerminalPrivateProductSession::recheck_measured_device_preinstall(
+    const MeasuredDeviceAuditionTicket& ticket,
+    const MeasuredDeviceEndpointObservation& latestEndpoint,
+    bool explicitUserRequest) const
+{
+    const auto refused=[](const char* message)->core::Status {
+        return core::Status::failure(rejected(message));
+    };
+    if(QThread::currentThread()!=thread())
+        return refused("M17_MEASURED_PREINSTALL_REQUIRES_QT_OWNER_THREAD");
+    if(monitorTransitioning_||installedMonitor_||returnRecovery_||privateId_
+       ||!pending_||!manual_||!manualId_)
+        return refused("M17_MEASURED_PREINSTALL_EXCLUSIVE_OWNER_REQUIRED");
+    const auto measured=measured_candidate();
+    if(!measured)
+        return refused("M17_MEASURED_PREINSTALL_STAGE_NOT_CURRENT");
+    const auto before=transport_->playback_snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    const auto state=before.value()->state;
+    if((state!=core::PlaybackState::STOPPED
+        &&state!=core::PlaybackState::PLAYING
+        &&state!=core::PlaybackState::PAUSED)
+       ||before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||before.value()->audibleRealization.realizationId
+            !=std::optional{pending_->manualId}
+       ||before.value()->duration
+            !=std::optional{pending_->manual->view().frame_count()}
+       ||before.value()->loop!=pending_->loop
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId})
+        return refused("M17_MEASURED_PREINSTALL_MANUAL_TRANSPORT_CHANGED");
+    return ticket.recheck_preinstall(
+        measured,pending_->manualId,latestEndpoint,explicitUserRequest);
+}
+
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
 TerminalPrivateProductSession::materialize_private_final_master_monitoring(
     const MonitoringMaterializer& materializer)

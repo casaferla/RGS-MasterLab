@@ -243,6 +243,12 @@ public:
         std::shared_ptr<const audio::MonitoringPcmCandidate> device,
         bool explicitUserRequest,
         const MeasuredDeviceEndpointObservation& freshEndpoint) const;
+    // Guard the later physical Windows install using the SAME typed ticket.
+    // No sink mutation, Play, verified identity or gain-reduction witness.
+    [[nodiscard]] core::Status recheck_measured_device_preinstall(
+        const MeasuredDeviceAuditionTicket& ticket,
+        const MeasuredDeviceEndpointObservation& latestEndpoint,
+        bool explicitUserRequest) const;
     // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
     // input. A valid region edit during deferred Prepare / READY may adopt
     // its new SOURCE loop mapping without invalidating the immutable PCM,
