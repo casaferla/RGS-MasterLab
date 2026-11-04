@@ -2045,6 +2045,47 @@ Window {
     QVERIFY(textAt().contains(QStringLiteral("Provisional remaining")));
     QVERIFY(textAt().contains(QStringLiteral("1m 15s–3m 45s")));
     QVERIFY(!liveProgress->property("indeterminate").toBool());
+    // PO: an ETA hidden behind a tooltip is not acceptable. Test the
+    // actual rendered multiline Text, not merely its accessible string.
+    auto* etaItem=qobject_cast<QQuickItem*>(liveEta);
+    auto* barItem=qobject_cast<QQuickItem*>(liveProgress);
+    auto* prepItem=qobject_cast<QQuickItem*>(prepPlot);
+    QVERIFY(etaItem&&barItem&&prepItem);
+    const etaEntirelyVisible=[&]()->bool {
+        QCoreApplication::processEvents();
+        if(!prepItem->isVisible()||!etaItem->isVisible())
+            return false;
+        if(liveEta->property("truncated").toBool())
+            return false;
+        if(liveEta->property("elide").toInt()!=int(Qt::ElideNone))
+            return false;
+        const QRectF etaRect{etaItem->mapToItem(prepItem,QPointF{}),
+            etaItem->size()};
+        const QRectF barRect{barItem->mapToItem(prepItem,QPointF{}),
+            barItem->size()};
+        const auto inside=[prepItem](const QRectF& r) {
+            return !r.isEmpty() && r.x()>=-0.5 && r.y()>=-0.5
+                && r.right()<=prepItem->width()+0.5
+                && r.bottom()<=prepItem->height()+0.5;
+        };
+        if(!inside(etaRect)||!inside(barRect)
+            ||barRect.bottom()>etaRect.top()+0.5)
+            return false;
+        const auto painted=liveEta->property("paintedHeight");
+        return !painted.isValid()
+            ||painted.toDouble()<=etaItem->height()+0.5;
+    };
+    // Minimum Main host, FHD, and 4K-scale logical editor sizes.
+    for(const QSize size:{QSize{680,338},QSize{710,548},
+                         QSize{960,540},QSize{1200,760}}) {
+        m17->setWidth(size.width());
+        m17->setHeight(size.height());
+        QVERIFY2(etaEntirelyVisible(),
+            qPrintable(QStringLiteral("M17 full ETA visible without tooltip at ")
+                +QString::number(size.width())+"x"
+                +QString::number(size.height())));
+        QVERIFY(liveEta->property("lineCount").toInt()>=4);
+    }
 
     QVERIFY(statusVm->setProperty("preparationStage",
         QStringLiteral("M17 DSP")));
@@ -2074,10 +2115,17 @@ Window {
     QVERIFY(textAt().contains(QStringLiteral("Verification trim")));
     QVERIFY(textAt().contains(QStringLiteral("0m 00s–3m 40s")));
     QVERIFY(liveEta->property("visible").toBool());
-    // The complete dynamic interval remains exposed to accessibility and
-    // a dwell tooltip if narrow meter geometry elides the visible label.
+    // All four phase/elapsed/central/interval lines remain directly
+    // readable during the trim phase as well; no hover is needed.
     QVERIFY(liveEta->property("text").toString().contains(
         QStringLiteral("Provisional remaining")));
+    for(const QSize size:{QSize{680,338},QSize{710,548},
+                         QSize{960,540},QSize{1200,760}}) {
+        m17->setWidth(size.width());
+        m17->setHeight(size.height());
+        QVERIFY2(etaEntirelyVisible(),
+            "Trim phase ETA cannot clip, overlap or require hover");
+    }
     expectSlot("READY · PREVIEW AVAILABLE",false);
     expectSlot("MONITOR · PRIVATE PCM (NOT LIVE)",false);
     expectSlot("ERROR · BYPASS",false);

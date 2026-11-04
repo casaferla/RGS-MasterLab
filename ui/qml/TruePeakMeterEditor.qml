@@ -278,9 +278,16 @@ Item {
                             objectName: "m17PreparationInGrRegion"
                             visible: root.limiterPreparationVisible
                             Layout.fillWidth: true
-                            Layout.minimumHeight: root.height < 420 ? 42 : 54
-                            Layout.preferredHeight: root.height < 420 ? 42 : 54
-                            Layout.maximumHeight: root.height < 420 ? 42 : 54
+                            // Reserve real vertical space for phase, elapsed,
+                            // central ETA and BOTH interval endpoints. Do not
+                            // trade visible information for a hover tooltip.
+                            // At the compact host this stays inside the
+                            // dynamically reserved GR/Ceiling lower band.
+                            readonly property int readableHeight:
+                                Math.max(76, Math.min(98, root.leftLowerVisualHeight - 18))
+                            Layout.minimumHeight: readableHeight
+                            Layout.preferredHeight: readableHeight
+                            Layout.maximumHeight: readableHeight
                             spacing: 2
                             ProgressBar {
                                 id: m17PrepareProgress
@@ -347,48 +354,56 @@ Item {
                                 }
                             }
                             Text {
+                                id: m17PreparationProgressText
                                 objectName: "m17PreparationProgressLabel"
                                 Layout.fillWidth: true
+                                // The backend owns all timings. QML only lays
+                                // out the exact observed phase / elapsed /
+                                // central estimate / interval on separate
+                                // visible lines, including the FIRST Prepare.
                                 text: {
-                                    if(root.devicePreparing) {
-                                        const v=root.monitorViewModel
-                                        const rate=hz => (hz/1000).toFixed(1)
-                                            .replace(".0","") + " kHz"
-                                        const pair=rate(v.masterRateHz) + " → "
+                                    if (root.devicePreparing) {
+                                        const v = root.monitorViewModel
+                                        const rate = hz => (hz / 1000).toFixed(1)
+                                            .replace(".0", "") + " kHz"
+                                        const pair = rate(v.masterRateHz) + " → "
                                             + rate(v.pendingDeviceRateHz)
-                                        const pct=v.devicePreparationDeterminate
-                                            ? " · " + Math.floor(v.devicePreparationFraction*100) + "%"
-                                            : ""
-                                        return pair + pct + " · " + v.devicePreparationEta
+                                        const pct = v.devicePreparationDeterminate
+                                            ? " · " + Math.floor(v.devicePreparationFraction * 100) + "%"
+                                            : " · measuring"
+                                        return pair + pct
+                                            + (v.devicePreparationEta.length
+                                               ? "\\n" + v.devicePreparationEta : "")
                                     }
-                                    const v=root.limiterViewModel
+                                    const v = root.limiterViewModel
                                     if (!v) return "PREPARATION UNAVAILABLE"
                                     if (!v.audioStatus.startsWith("Preparing"))
                                         return v.audioStatus
-                                    const pct=v.preparationDeterminate
-                                        ? " · " + Math.floor(v.preparationFraction*100) + "%"
+                                    const pct = v.preparationDeterminate
+                                        ? " · " + Math.floor(v.preparationFraction * 100) + "%"
                                         : " · measuring"
+                                    let eta = v.preparationEta
+                                    // A presentation split, never fabricated
+                                    // progress: 'Elapsed ... · Remaining ...'
+                                    // becomes separate permanently visible
+                                    // lines. Preserve the backend interval.
+                                    eta = eta.replace(" · ", "\\n")
+                                    const intervalAt = eta.lastIndexOf(" (")
+                                    if (intervalAt >= 0 && eta.endsWith(")"))
+                                        eta = eta.slice(0, intervalAt)
+                                            + "\\nInterval "
+                                            + eta.slice(intervalAt + 2, -1)
                                     return v.preparationStage + pct
-                                        + (v.preparationEta.length ? " · " + v.preparationEta : "")
+                                        + (eta.length ? "\\n" + eta : "")
                                 }
                                 color: "#A1B5C9"
                                 font.family: "Segoe UI"
-                                font.pixelSize: 10
-                                elide: Text.ElideRight
-                                // Narrow/4K-scaled lower meter bays can
-                                // truncate the entire live central ETA
-                                // interval. Keep the full text obtainable
-                                // without changing panel height or layout.
+                                font.pixelSize: root.height < 420 ? 9 : 10
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideNone
+                                Layout.minimumHeight: implicitHeight
+                                Layout.preferredHeight: implicitHeight
                                 Accessible.name: text
-                                HoverHandler { id: m17PrepareEtaHover }
-                                ToolTip.text: text
-                                ToolTip.visible: m17PrepareEtaHover.hovered
-                                    && m17PrepareEtaDwell.ready
-                                ToolTip.delay: 0
-                                StudioTooltipDwell {
-                                    id: m17PrepareEtaDwell
-                                    anchors.fill: parent
-                                }
                             }
                         }
                         TruePeakGrHistoryGraph {
