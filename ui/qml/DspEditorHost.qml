@@ -480,13 +480,17 @@ Rectangle {
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
-                    && root.terminalLimiterViewModel.nonconformingDirectPreviewAvailable
+                    && (root.terminalLimiterViewModel.nonconformingDirectPreviewAvailable
+                        || root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable)
                 onClicked: root.terminalLimiterViewModel.previewNonconforming()
                 Accessible.name: "Explicit preview of measured Ceiling-nonconforming audio"
                 ToolTip.text: !root.terminalLimiterViewModel
-                    || !root.terminalLimiterViewModel.nonconformingDirectPreviewAvailable
-                    ? "The measured PCM is retained but its MASTER frequency is not the Windows DEVICE frequency. Direct Preview Anyway is unavailable; choose a compatible MASTER rate and Prepare again."
-                    : "Measured result exceeds requested Ceiling. Preview is unverified, only on your explicit choice."
+                    || (!root.terminalLimiterViewModel.nonconformingDirectPreviewAvailable
+                        && !root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable)
+                    ? "Device audition is unavailable until the measured PCM has an exact, current Windows playback endpoint."
+                    : root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable
+                        ? "Explicit NON-CONFORMING preview: prepare a separate DEVICE-rate FIR PCM asynchronously. MASTER stays unchanged; LIVE meter is not certified."
+                        : "Measured result exceeds requested Ceiling. Direct preview is unverified and requires your explicit choice."
                 ToolTip.visible: hovered && m17NonconformingDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
