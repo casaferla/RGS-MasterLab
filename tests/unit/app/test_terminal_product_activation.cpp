@@ -982,6 +982,31 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     const auto sourceRegion=core::FrameRange::create(
         core::FrameIndex{64},core::FrameIndex{192});
     QVERIFY(sourceRegion);
+    // Pure NO_SOURCE proof is intentionally stricter than an empty
+    // RealizationId alone: a stale position, loop or duration means the
+    // previous DEVICE owner has not been authoritatively retired.
+    core::PlaybackSnapshot emptyDevice{};
+    emptyDevice.state=core::PlaybackState::NO_SOURCE;
+    emptyDevice.position=core::FrameIndex{0};
+    emptyDevice.audibleRealization={
+        core::AudibleHandoffPhase::UNAVAILABLE,std::nullopt};
+    QVERIFY(app::measured_empty_sink_snapshot_proven(emptyDevice));
+    auto staleCursor=emptyDevice;
+    staleCursor.position=core::FrameIndex{1};
+    QVERIFY(!app::measured_empty_sink_snapshot_proven(staleCursor));
+    auto leftoverDuration=emptyDevice;
+    leftoverDuration.duration=*frames.value();
+    QVERIFY(!app::measured_empty_sink_snapshot_proven(leftoverDuration));
+    auto leftoverLoop=emptyDevice;
+    leftoverLoop.loop=*sourceRegion.value();
+    QVERIFY(!app::measured_empty_sink_snapshot_proven(leftoverLoop));
+    auto alienIdentity=emptyDevice;
+    alienIdentity.audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{9001}};
+    QVERIFY(!app::measured_empty_sink_snapshot_proven(alienIdentity));
+    auto stillPaused=emptyDevice;
+    stillPaused.state=core::PlaybackState::PAUSED;
+    QVERIFY(!app::measured_empty_sink_snapshot_proven(stillPaused));
     core::PlaybackSnapshot manualSnapshot{};
     manualSnapshot.state=core::PlaybackState::PLAYING;
     manualSnapshot.position=core::FrameIndex{128};
