@@ -1898,6 +1898,12 @@ Window {
         id: vm
         objectName: "m17TestLimiterVm"
         property string audioStatus: "NEEDS PREPARATION"
+        // The live first-run ETA has its own scalar, progressive contract.
+        // These are presentation fixtures, not real DSP or saved history.
+        property string preparationStage: "Final SRC"
+        property real preparationFraction: 0.05
+        property bool preparationDeterminate: true
+        property string preparationEta: "Elapsed 0m 03s · Provisional remaining ~2m 00s (1m 15s–3m 45s)"
         property string validationField: fixture.validationMessage.length>0 ? "ceilingDbTp" : ""
         property string validationMessage: fixture.validationMessage
         property real ceilingDbTp: -1
@@ -2026,6 +2032,52 @@ Window {
     };
     expectSlot("NEEDS PREPARATION",false);
     expectSlot("Preparing audio",true);
+    auto* liveEta=find_child_by_name(
+        m17,QStringLiteral("m17PreparationProgressLabel"));
+    auto* liveProgress=find_child_by_name(
+        m17,QStringLiteral("m17PreparationProgressBar"));
+    QVERIFY(liveEta&&liveProgress);
+    const auto textAt=[liveEta] {
+        return liveEta->property("text").toString();
+    };
+    QVERIFY(textAt().contains(QStringLiteral("Final SRC")));
+    QVERIFY(textAt().contains(QStringLiteral("5%")));
+    QVERIFY(textAt().contains(QStringLiteral("Provisional remaining")));
+    QVERIFY(textAt().contains(QStringLiteral("1m 15s–3m 45s")));
+    QVERIFY(!liveProgress->property("indeterminate").toBool());
+
+    QVERIFY(statusVm->setProperty("preparationStage",
+        QStringLiteral("M17 DSP")));
+    QVERIFY(statusVm->setProperty("preparationFraction",0.9));
+    QVERIFY(statusVm->setProperty("preparationEta",QStringLiteral(
+        "Elapsed 1m 42s · Provisional remaining ~0m 50s (0m 22s–1m 18s)")));
+    QCoreApplication::processEvents();
+    QVERIFY(textAt().contains(QStringLiteral("M17 DSP · 90%")));
+    QVERIFY(textAt().contains(QStringLiteral("0m 22s–1m 18s")));
+
+    QVERIFY(statusVm->setProperty("preparationStage",
+        QStringLiteral("M16 primary TP verification")));
+    QVERIFY(statusVm->setProperty("preparationDeterminate",false));
+    QVERIFY(statusVm->setProperty("preparationEta",QStringLiteral(
+        "Elapsed 2m 25s · Provisional remaining ~0m 28s (0m 06s–0m 50s)")));
+    QCoreApplication::processEvents();
+    QVERIFY(liveProgress->property("indeterminate").toBool());
+    QVERIFY(textAt().contains(QStringLiteral("M16 primary TP verification")));
+    QVERIFY(textAt().contains(QStringLiteral("measuring")));
+    QVERIFY(textAt().contains(QStringLiteral("0m 06s–0m 50s")));
+
+    QVERIFY(statusVm->setProperty("preparationStage",
+        QStringLiteral("Verification trim")));
+    QVERIFY(statusVm->setProperty("preparationEta",QStringLiteral(
+        "Elapsed 3m 01s · Provisional remaining ~1m 50s (0m 00s–3m 40s)")));
+    QCoreApplication::processEvents();
+    QVERIFY(textAt().contains(QStringLiteral("Verification trim")));
+    QVERIFY(textAt().contains(QStringLiteral("0m 00s–3m 40s")));
+    QVERIFY(liveEta->property("visible").toBool());
+    // The complete dynamic interval remains exposed to accessibility and
+    // a dwell tooltip if narrow meter geometry elides the visible label.
+    QVERIFY(liveEta->property("text").toString().contains(
+        QStringLiteral("Provisional remaining")));
     expectSlot("READY · PREVIEW AVAILABLE",false);
     expectSlot("MONITOR · PRIVATE PCM (NOT LIVE)",false);
     expectSlot("ERROR · BYPASS",false);
