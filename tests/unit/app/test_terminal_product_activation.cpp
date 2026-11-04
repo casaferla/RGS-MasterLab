@@ -539,6 +539,41 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
                     finalHz!=deviceHz);
                 QCOMPARE(monitor.value()->device_pcm.view().format().sample_rate(),
                          *deviceRate.value());
+                // Real complete M17 Final SRC (not a synthetic measured
+                // stage) must admit SOURCE->MASTER->DEVICE playhead and
+                // half-open Loop mapping for ALL 216 stereo rate triplets.
+                const auto timeline=audio::MonitoringFrameMap::create(
+                    *monitor.value());
+                QVERIFY(timeline);
+                const auto sourceCue=timeline.value()->source_to_master(
+                    core::FrameIndex{32},*sourceRate.value(),*frames.value());
+                QVERIFY2(sourceCue,sourceCue?""
+                    :sourceCue.error()->message().c_str());
+                const auto deviceCue=timeline.value()->master_to_device(
+                    *sourceCue.value());
+                QVERIFY(deviceCue);
+                const auto sourceRegion=core::FrameRange::create(
+                    core::FrameIndex{8},core::FrameIndex{48});
+                QVERIFY(sourceRegion);
+                const auto masterRegion=timeline.value()->source_loop_to_master(
+                    *sourceRegion.value(),*sourceRate.value(),*frames.value());
+                QVERIFY(masterRegion);
+                const auto deviceRegion=timeline.value()->master_loop_to_device(
+                    *masterRegion.value());
+                QVERIFY(deviceRegion);
+                const auto entireMasterRegion=core::FrameRange::create(
+                    core::FrameIndex{0},
+                    core::FrameIndex{master.frame_count().value()});
+                QVERIFY(entireMasterRegion);
+                const auto entireSourceReturn=
+                    timeline.value()->master_loop_to_source(
+                        *entireMasterRegion.value(),
+                        *sourceRate.value(),*frames.value());
+                QVERIFY(entireSourceReturn);
+                QCOMPARE(entireSourceReturn.value()->begin(),
+                         core::FrameIndex{0});
+                QCOMPARE(entireSourceReturn.value()->end(),
+                         core::FrameIndex{frames.value()->value()});
                 const auto masterFrames=master.frame_count().value();
                 const auto expectedDeviceFrames=
                     (masterFrames/finalHz)*deviceHz
@@ -649,6 +684,34 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
                 QCOMPARE(monitor.value()->device_rate,*deviceRate.value());
                 QCOMPARE(monitor.value()->device_src_applied,
                     masterHz!=deviceHz);
+                // Apply the same SOURCE/MANUAL half-open loop and cue
+                // contracts to all 216 MONO rate triplets. There is no
+                // stereo-only assumption in MonitoringFrameMap.
+                const auto timeline=audio::MonitoringFrameMap::create(
+                    *monitor.value());
+                QVERIFY(timeline);
+                const auto masterCue=timeline.value()->source_to_master(
+                    core::FrameIndex{32},*sourceRate.value(),*frames.value());
+                QVERIFY(masterCue);
+                QVERIFY(timeline.value()->master_to_device(*masterCue.value()));
+                const auto sourceRegion=core::FrameRange::create(
+                    core::FrameIndex{8},core::FrameIndex{48});
+                QVERIFY(sourceRegion);
+                const auto masterRegion=timeline.value()->source_loop_to_master(
+                    *sourceRegion.value(),*sourceRate.value(),*frames.value());
+                QVERIFY(masterRegion);
+                QVERIFY(timeline.value()->master_loop_to_device(
+                    *masterRegion.value()));
+                const auto fullMaster=core::FrameRange::create(
+                    core::FrameIndex{0},
+                    core::FrameIndex{master.frame_count().value()});
+                QVERIFY(fullMaster);
+                const auto sourceReturn=timeline.value()->master_loop_to_source(
+                    *fullMaster.value(),*sourceRate.value(),*frames.value());
+                QVERIFY(sourceReturn);
+                QCOMPARE(sourceReturn.value()->begin(),core::FrameIndex{0});
+                QCOMPARE(sourceReturn.value()->end(),
+                         core::FrameIndex{frames.value()->value()});
                 const auto devicePcm=monitor.value()->device_pcm.view();
                 QCOMPARE(devicePcm.format().sample_rate(),*deviceRate.value());
                 QCOMPARE(devicePcm.format().channel_layout(),
