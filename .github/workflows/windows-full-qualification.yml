@@ -386,6 +386,50 @@ jobs:
             throw "FQ_DEPLOY_FAILED_EXIT_$code"
           }
           Write-Host 'FQ_STAGED_DEPLOY_SMOKE_PASS'
+      # An authentic complete app must refuse a cold EXE-local missing FIR
+      # even if a developer environment variable points at a valid private
+      # source folder. Temporarily move ONE staged asset, restore it in a
+      # finally block and reverify the pristine 16-file release bank.
+      - name: Cold deploy negative — no private FIR fallback on missing Q0
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $root = Join-Path $stage 'bin/resources/fir'
+          $original = Join-Path $root 'RGSMSR1_L1_M2.bin'
+          $hold = "$original.fq-negative-hold"
+          if (-not (Test-Path -LiteralPath $original) -or
+              (Test-Path -LiteralPath $hold)) {
+            throw 'FQ_NEGATIVE_REQUIRES_PRISTINE_ORIGINAL_Q0'
+          }
+          # A correct build must ignore this developer override in deploy
+          # smoke mode; without the EXE-local original, fail closed.
+          $env:RGSML_FINAL_SRC_Q0_PRIVATE_DIR = Join-Path $env:GITHUB_WORKSPACE 'resources/fir'
+          try {
+            Move-Item -LiteralPath $original -Destination $hold
+            $out = Join-Path $env:RUNNER_TEMP 'fq-missing-q0.stdout.txt'
+            $err = Join-Path $env:RUNNER_TEMP 'fq-missing-q0.stderr.txt'
+            $probe = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+            if ($probe.ExitCode -eq 0) {
+              throw 'FQ_MISSING_Q0_EXE_FALSIFIED_STANDALONE_SUCCESS'
+            }
+            $message = Get-Content -LiteralPath $err -Raw
+            if (-not $message.Contains('FQ_DEPLOY_EXE_LOCAL_14_Q0_FIR_UNAVAILABLE')) {
+              throw 'FQ_MISSING_Q0_FAILED_FOR_UNEXPECTED_REASON'
+            }
+            Write-Host 'FQ_MISSING_Q0_EXE_LOCAL_FAIL_CLOSED_PASS'
+          } finally {
+            Remove-Item Env:RGSML_FINAL_SRC_Q0_PRIVATE_DIR -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $hold) {
+              Move-Item -LiteralPath $hold -Destination $original
+            }
+          }
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$root"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'FQ_PACKAGE_NOT_PRISTINE_AFTER_NEGATIVE_TEST'
+          }
+
       - name: Cache statistics and cold/warm evidence classification
         if: always()
         shell: pwsh
