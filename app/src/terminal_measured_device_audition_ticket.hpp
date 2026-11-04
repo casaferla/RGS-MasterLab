@@ -178,17 +178,38 @@ MeasuredDeviceAuditionTicket::admit(
        ||measured.measurement_status
            !=analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED)
         return refuse("M17_MEASURED_DEVICE_NO_AUTHENTIC_CEILING_MISS");
+    const auto source=captured->rendered.manual_owner->view();
+    const auto sourceRate=source.format().sample_rate();
+    const auto masterRate=original.format().sample_rate();
+    // programme_frames refers to the original SOURCE, not the M17
+    // OUTPUT_RATE timeline. Comparing those two frame counts wrongly
+    // rejects every genuine SOURCE->different-MASTER conversion.
     if(original.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
        ||original.absolute_start_frame().value()!=0
        ||original.frame_count().value()<=0
-       ||original.format().sample_rate()!=captured->rendered.output_rate
-       ||original.frame_count()!=captured->rendered.programme_frames
+       ||masterRate!=captured->rendered.output_rate
+       ||source.absolute_start_frame().value()!=0
+       ||source.frame_count()!=captured->rendered.programme_frames
+       ||source.format().channel_layout()!=original.format().channel_layout()
+       ||captured->rendered.used_candidate_src!=(sourceRate!=masterRate)
+       ||(captured->rendered.used_candidate_src
+           &&captured->rendered.src_kernel_sha256.empty())
        ||measured.terminal.bypassed
        ||measured.terminal.applied_gain_frames.size()
            !=static_cast<std::size_t>(original.frame_count().value()))
         return refuse("M17_MEASURED_DEVICE_MASTER_PROVENANCE_INVALID");
     const auto checked=audio::validate_monitoring_pcm_candidate(*converted);
     if(!checked)return Result::failure(*checked.error());
+    // Use the existing checked rational mapping contract to prove that
+    // SOURCE and M17 MASTER span the SAME duration to within one SOURCE
+    // frame. No rounding, sample-rate substitution, or false same-rate
+    // shortcut is permitted at this audition-only admission boundary.
+    const auto map=audio::MonitoringFrameMap::create(*converted);
+    if(!map)return Result::failure(*map.error());
+    const auto sourceOrigin=map.value()->source_to_master(
+        core::FrameIndex{0},sourceRate,captured->rendered.programme_frames);
+    if(!sourceOrigin ||*sourceOrigin.value()!=core::FrameIndex{0})
+        return refuse("M17_MEASURED_DEVICE_SOURCE_MASTER_DURATION_MISMATCH");
     if(converted->immutable_master_rate!=original.format().sample_rate()
        ||converted->immutable_master_frames!=original.frame_count()
        ||converted->device_pcm.view().format().channel_layout()
