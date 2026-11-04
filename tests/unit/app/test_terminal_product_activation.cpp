@@ -908,6 +908,24 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     QVERIFY(expectedDeviceRegion);
     QCOMPARE(planned.value()->device_loop,
              std::optional{*expectedDeviceRegion.value()});
+    // Exact rational seek contract: at 192 kHz MASTER -> 48 kHz DEVICE,
+    // request MASTER frame 1 maps to DEVICE frame 1, but DEVICE->MASTER
+    // display projects back to frame 4. Post-install transport checks
+    // must compare DEVICE frames, never a false +/-1 MASTER tolerance.
+    const auto seekMap=audio::MonitoringFrameMap::create(*deviceOwned);
+    QVERIFY(seekMap);
+    for(const auto masterIndex:std::array<std::int64_t,4>{1,2,3,4}) {
+        const auto expectedDevice=seekMap.value()->master_to_device(
+            core::FrameIndex{masterIndex});
+        QVERIFY(expectedDevice);
+        QCOMPARE(expectedDevice.value()->value(),std::int64_t{1});
+        const auto reportedMaster=seekMap.value()->device_to_master_cursor(
+            *expectedDevice.value());
+        QVERIFY(reportedMaster);
+        QCOMPARE(reportedMaster.value()->value(),std::int64_t{4});
+    }
+    qInfo().noquote()
+        <<"M17_MEASURED_SEEK_COMPARE_DEVICE_NOT_MASTER_FRAMES=PASS";
     // Each plan is tied to SOURCE seek and loop-wrap epochs. Natural
     // forward playback is not itself a new epoch and must rebase its cue.
     auto advanced=manualSnapshot;
