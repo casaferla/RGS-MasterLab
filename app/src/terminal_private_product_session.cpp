@@ -42,6 +42,14 @@ bool TerminalPrivateProductSession::current_selection_for_pending() const
 }
 
 void TerminalPrivateProductSession::failed(const core::Error& error) {
+    if(installedMeasuredTicket_ ||measuredSourceRecovery_) {
+        status_=measuredSourceRecovery_
+            ?QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED")
+            :QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        error_=QString::fromStdString(error.message());
+        emit changed();
+        return;
+    }
     // Destructive hard failures must never leave an apparently usable
     // post-retire recovery token referring to revoked PCM.
     returnRecovery_.reset();
@@ -60,6 +68,13 @@ void TerminalPrivateProductSession::failed(const core::Error& error) {
     emit changed();
 }
 void TerminalPrivateProductSession::stale() {
+    if(installedMeasuredTicket_ ||measuredSourceRecovery_) {
+        status_=measuredSourceRecovery_
+            ?QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED")
+            :QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        emit changed();
+        return;
+    }
     returnRecovery_.reset();
     approvedMonitor_.reset();
     approvedMonitorMaster_.reset();
@@ -365,6 +380,338 @@ TerminalPrivateProductSession::rebase_measured_device_handoff(
     return ticket.rebase_handoff(
         prior,measured_candidate(),*snapshot.value(),sourceLoop_(),
         latestEndpoint,explicitUserRequest);
+}
+
+
+core::Status TerminalPrivateProductSession::install_measured_device_audition(
+    const MeasuredDeviceAuditionTicket& ticket,
+    const MeasuredDeviceEndpointObservation& currentEndpoint,
+    bool explicitUserRequest)
+{
+    const auto deny=[](const char* why)->core::Status {
+        return core::Status::failure(rejected(why));
+    };
+    if(QThread::currentThread()!=thread())
+        return deny("M17_MEASURED_DEVICE_INSTALL_REQUIRES_QT_OWNER");
+    if(monitorTransitioning_||installedMonitor_||installedMeasuredTicket_
+       ||measuredSourceRecovery_||returnRecovery_||privateId_
+       ||!pending_||!pending_->deferred
+       ||status_!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       ||!monitorInstall_||!monitorOwned_||!monitorRetire_
+       ||!monitorControl_||!monitorDisplay_||!manualRestore_)
+        return deny("M17_MEASURED_DEVICE_INSTALL_EXCLUSIVE_PORTS_REQUIRED");
+    const auto plan=plan_measured_device_handoff(
+        ticket,currentEndpoint,explicitUserRequest);
+    if(!plan)return core::Status::failure(*plan.error());
+    // Source transport can advance while the expensive DEVICE SRC worker
+    // runs. Reobserve it before any sink mutation; a Seek/Loop transition
+    // that raced the plan must not silently inherit old DEVICE coordinates.
+    const auto actual=rebase_measured_device_handoff(
+        ticket,*plan.value(),currentEndpoint,explicitUserRequest);
+    if(!actual)return core::Status::failure(*actual.error());
+    const auto original=transport_->playback_snapshot();
+    if(!original)return core::Status::failure(*original.error());
+    if(original.value()->seekSerial!=actual.value()->source_seek_serial
+       ||original.value()->loopWrapCount!=actual.value()->source_loop_wrap_count
+       ||original.value()->state!=actual.value()->source_state
+       ||original.value()->position!=actual.value()->source_cue
+       ||original.value()->loop!=actual.value()->source_loop
+       ||original.value()->audibleRealization.realizationId
+           !=std::optional{actual.value()->manual_owner})
+        return deny("M17_MEASURED_DEVICE_INSTALL_SOURCE_EPOCH_RACED");
+    const auto device=ticket.audition_device_pcm();
+    if(!device)return deny("M17_MEASURED_DEVICE_INSTALL_PCM_MISSING");
+    monitorTransitioning_=true;
+    // Keep a return-only ticket if Windows replaced MANUAL but then
+    // refused Prepare, or if a post-install exact-owner proof fails.
+    const auto retainOwnedRecovery=[&](const char* message)->core::Status {
+        installedMonitor_=device;
+        installedMeasuredTicket_=ticket;
+        installedMeasuredPlan_=*actual.value();
+        measuredOriginalManual_=*original.value();
+        status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        monitorTransitioning_=false;
+        emit changed();
+        return deny(message);
+    };
+    const auto installed=monitorInstall_(device);
+    const auto ownership=monitorOwned_(device);
+    if(!installed ||!ownership||!*ownership.value()) {
+        if(ownership&&*ownership.value())
+            return retainOwnedRecovery(
+                "M17_MEASURED_DEVICE_INSTALL_FAILED_WITH_OWNED_SINK");
+        // Do not clear or retire any alien/successor PCM. A failed Qt
+        // Prepare may have already removed MANUAL: retain recovery only
+        // when the endpoint is provably empty, not when it is foreign.
+        const auto observed=transport_->playback_snapshot();
+        if(observed
+           &&observed.value()->state==core::PlaybackState::NO_SOURCE
+           &&observed.value()->audibleRealization.phase
+               ==core::AudibleHandoffPhase::UNAVAILABLE
+           &&!observed.value()->audibleRealization.realizationId
+           &&!observed.value()->duration
+           &&!observed.value()->loop) {
+            installedMeasuredTicket_=ticket;
+            installedMeasuredPlan_=*actual.value();
+            measuredOriginalManual_=*original.value();
+            measuredSourceRecovery_=true;
+            measuredReturnCue_=original.value()->position;
+            measuredReturnState_=original.value()->state;
+            status_=QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED");
+            monitorTransitioning_=false;
+            emit changed();
+            return installed?deny(
+                "M17_MEASURED_DEVICE_INSTALL_DID_NOT_OWN_DEVICE")
+                :installed;
+        }
+        monitorTransitioning_=false;
+        return installed?deny(
+            "M17_MEASURED_DEVICE_INSTALL_REFUSES_FOREIGN_OWNER")
+            :installed;
+    }
+    const auto now=transport_->playback_snapshot();
+    if(!now ||now.value()->state!=core::PlaybackState::STOPPED
+       ||now.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||now.value()->audibleRealization.realizationId
+       ||now.value()->duration
+            !=std::optional{device->device_pcm.view().frame_count()}
+       ||!pending_||pending_->manual!=ticket.measured_master()->rendered.manual_owner
+       ||pending_->manualId!=ticket.original_manual_realization_id())
+        return retainOwnedRecovery(
+            "M17_MEASURED_DEVICE_INSTALL_POSTCHECK_REQUIRES_RECOVERY");
+    using Action=platform::windows::MonitoringTransportAction;
+    core::Status seeded=core::Status::success();
+    if(actual.value()->master_loop)
+        seeded=monitorControl_(device,{
+            Action::SET_MASTER_LOOP,core::FrameIndex{0},
+            actual.value()->master_loop});
+    if(seeded&&actual.value()->master_cue!=core::FrameIndex{0})
+        seeded=monitorControl_(device,{
+            Action::SEEK_MASTER,actual.value()->master_cue,std::nullopt});
+    if(seeded&&actual.value()->source_state!=core::PlaybackState::STOPPED)
+        seeded=monitorControl_(device,{Action::PLAY});
+    if(seeded&&actual.value()->source_state==core::PlaybackState::PAUSED)
+        seeded=monitorControl_(device,{Action::PAUSE});
+    if(!seeded)
+        return retainOwnedRecovery(
+            "M17_MEASURED_DEVICE_INSTALL_TRANSPORT_SEED_FAILED");
+    const auto displayed=monitorDisplay_(device);
+    if(!displayed
+       ||displayed.value()->state!=actual.value()->source_state
+       ||displayed.value()->master_rate!=device->immutable_master_rate
+       ||displayed.value()->device_rate!=device->device_rate
+       ||displayed.value()->master_duration!=device->immutable_master_frames
+       ||displayed.value()->device_duration
+            !=device->device_pcm.view().frame_count()
+       ||displayed.value()->requested_master_loop!=actual.value()->master_loop)
+        return retainOwnedRecovery(
+            "M17_MEASURED_DEVICE_INSTALL_TRANSPORT_POSTCHECK_FAILED");
+    installedMonitor_=device;
+    installedMeasuredTicket_=ticket;
+    installedMeasuredPlan_=*actual.value();
+    measuredOriginalManual_=*original.value();
+    status_=actual.value()->source_state==core::PlaybackState::PLAYING
+        ?QStringLiteral("MEASURED_DEVICE_PLAYING")
+        :actual.value()->source_state==core::PlaybackState::PAUSED
+            ?QStringLiteral("MEASURED_DEVICE_PAUSED")
+            :QStringLiteral("MEASURED_DEVICE_INSTALLED_STOPPED");
+    error_.clear();
+    monitorTransitioning_=false;
+    emit changed();
+    return core::Status::success();
+}
+
+core::Result<audio::MonitoringMasterDisplaySnapshot>
+TerminalPrivateProductSession::measured_device_snapshot() const
+{
+    using Result=core::Result<audio::MonitoringMasterDisplaySnapshot>;
+    const auto deny=[](const char* message)->Result {
+        return Result::failure(rejected(message));
+    };
+    if(QThread::currentThread()!=thread()||monitorTransitioning_
+       ||!installedMeasuredTicket_||!installedMonitor_||!monitorOwned_
+       ||!monitorDisplay_||!installedMeasuredPlan_
+       ||status_==QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED"))
+        return deny("M17_MEASURED_DEVICE_DISPLAY_EXACT_OWNER_REQUIRED");
+    if(installedMonitor_!=installedMeasuredTicket_->audition_device_pcm())
+        return deny("M17_MEASURED_DEVICE_DISPLAY_PCM_CHANGED");
+    const auto owned=monitorOwned_(installedMonitor_);
+    if(!owned)return Result::failure(*owned.error());
+    if(!*owned.value())
+        return deny("M17_MEASURED_DEVICE_DISPLAY_FOREIGN_DEVICE");
+    const auto display=monitorDisplay_(installedMonitor_);
+    if(!display)return display;
+    if(display.value()->master_rate!=installedMonitor_->immutable_master_rate
+       ||display.value()->device_rate!=installedMonitor_->device_rate
+       ||display.value()->master_duration!=installedMonitor_->immutable_master_frames
+       ||display.value()->device_duration
+            !=installedMonitor_->device_pcm.view().frame_count())
+        return deny("M17_MEASURED_DEVICE_DISPLAY_TIMELINE_MISMATCH");
+    return display;
+}
+
+core::Status TerminalPrivateProductSession::control_measured_device_audition(
+    platform::windows::MonitoringTransportRequest request)
+{
+    const auto deny=[](const char* reason)->core::Status {
+        return core::Status::failure(rejected(reason));
+    };
+    const auto before=measured_device_snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    if(!monitorControl_)return deny("M17_MEASURED_DEVICE_CONTROL_PORT_MISSING");
+    const auto owner=installedMonitor_;
+    monitorTransitioning_=true;
+    const auto applied=monitorControl_(owner,request);
+    monitorTransitioning_=false;
+    if(!applied)return applied;
+    if(installedMonitor_!=owner)
+        return deny("M17_MEASURED_DEVICE_CONTROL_LOST_EXACT_OWNER");
+    const auto after=measured_device_snapshot();
+    if(!after)return core::Status::failure(*after.error());
+    using Action=platform::windows::MonitoringTransportAction;
+    if((request.action==Action::PLAY
+            &&after.value()->state!=core::PlaybackState::PLAYING)
+       ||(request.action==Action::PAUSE
+            &&after.value()->state!=core::PlaybackState::PAUSED)
+       ||(request.action==Action::STOP
+            &&(after.value()->state!=core::PlaybackState::STOPPED
+                ||after.value()->device_position!=core::FrameIndex{0}))
+       ||(request.action==Action::SET_MASTER_LOOP
+            &&after.value()->requested_master_loop!=request.master_loop))
+        return deny("M17_MEASURED_DEVICE_CONTROL_POSTCHECK_FAILED");
+    status_=after.value()->state==core::PlaybackState::PLAYING
+        ?QStringLiteral("MEASURED_DEVICE_PLAYING")
+        :after.value()->state==core::PlaybackState::PAUSED
+            ?QStringLiteral("MEASURED_DEVICE_PAUSED")
+            :QStringLiteral("MEASURED_DEVICE_INSTALLED_STOPPED");
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::return_measured_device_audition()
+{
+    const auto deny=[](const char* reason)->core::Status {
+        return core::Status::failure(rejected(reason));
+    };
+    if(QThread::currentThread()!=thread()||monitorTransitioning_
+       ||!installedMeasuredTicket_||!installedMeasuredPlan_
+       ||!measuredOriginalManual_||!pending_
+       ||!monitorRetire_||!monitorOwned_||!manualRestore_)
+        return deny("M17_MEASURED_DEVICE_RETURN_REQUIRES_EXACT_OWNER");
+    const auto plan=*installedMeasuredPlan_;
+    const auto original=*measuredOriginalManual_;
+    if(!measuredSourceRecovery_) {
+        if(!installedMonitor_||!monitorDisplay_)
+            return deny("M17_MEASURED_DEVICE_RETURN_MONITOR_MISSING");
+        const auto owned=monitorOwned_(installedMonitor_);
+        if(!owned)return core::Status::failure(*owned.error());
+        if(!*owned.value())
+            return deny("M17_MEASURED_DEVICE_RETURN_FOREIGN_OWNER_UNTOUCHED");
+        core::FrameIndex cue=original.position;
+        core::PlaybackState resume=original.state;
+        if(status_!=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED")) {
+            const auto displayed=monitorDisplay_(installedMonitor_);
+            if(!displayed)return core::Status::failure(*displayed.error());
+            resume=displayed.value()->state;
+            const auto m=displayed.value()->master_display_position.value();
+            const auto masterHz=plan.master_rate.value();
+            const auto sourceHz=plan.source_rate.value();
+            if(m<0||masterHz<=0||sourceHz<=0
+               ||m>installedMonitor_->immutable_master_frames.value())
+                return deny("M17_MEASURED_DEVICE_RETURN_MASTER_CUE_INVALID");
+            const auto q=m/masterHz;
+            const auto rem=m%masterHz;
+            if(q>(std::numeric_limits<std::int64_t>::max()
+                    -(rem*sourceHz)/masterHz)/sourceHz)
+                return deny("M17_MEASURED_DEVICE_RETURN_CUE_OVERFLOW");
+            cue=core::FrameIndex{std::min<std::int64_t>(
+                q*sourceHz+(rem*sourceHz)/masterHz,
+                pending_->manual->view().frame_count().value())};
+        }
+        if(plan.source_loop
+           &&(cue<plan.source_loop->begin()||cue>=plan.source_loop->end()))
+            cue=plan.source_loop->begin();
+        if(!manual_||!manualId_||!sourceLoop_||!selected_
+           ||!selected_()||manual_()!=pending_->manual
+           ||manualId_()!=std::optional{pending_->manualId}
+           ||sourceLoop_()!=plan.source_loop)
+            return deny("M17_MEASURED_DEVICE_RETURN_SOURCE_EPOCH_CHANGED");
+        if(manualRestorePreflight_) {
+            const auto preflight=manualRestorePreflight_(pending_->manual);
+            if(!preflight)return preflight; // Retain audible monitor.
+        }
+        monitorTransitioning_=true;
+        const auto retired=monitorRetire_(installedMonitor_);
+        if(!retired) {
+            status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+            monitorTransitioning_=false;
+            emit changed();
+            return retired;
+        }
+        installedMonitor_.reset();
+        measuredSourceRecovery_=true;
+        measuredReturnCue_=cue;
+        measuredReturnState_=resume;
+        status_=QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED");
+        monitorTransitioning_=false;
+        emit changed();
+    }
+    // The exact DEVICE lease has been retired; never overwrite a successor
+    // sink or synthesize a MANUAL realization when a Windows install fails.
+    const auto empty=transport_->playback_snapshot();
+    if(!empty||empty.value()->state!=core::PlaybackState::NO_SOURCE
+       ||empty.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||empty.value()->audibleRealization.realizationId
+       ||empty.value()->duration||empty.value()->loop)
+        return deny("M17_MEASURED_RETURN_EMPTY_SINK_PROOF_REQUIRED");
+    if(!manual_||!manualId_||!sourceLoop_||!selected_
+       ||!selected_()||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=plan.source_loop)
+        return deny("M17_MEASURED_RETURN_MANUAL_EPOCH_REVOKED");
+    monitorTransitioning_=true;
+    const auto restored=manualRestore_(
+        pending_->manual,pending_->manualId,measuredReturnCue_);
+    if(!restored) {
+        monitorTransitioning_=false;
+        return restored; // Retry token remains; no alien sink mutation.
+    }
+    const auto stopped=transport_->playback_snapshot();
+    if(!stopped||stopped.value()->state!=core::PlaybackState::STOPPED
+       ||stopped.value()->position!=measuredReturnCue_
+       ||stopped.value()->duration
+            !=std::optional{pending_->manual->view().frame_count()}
+       ||stopped.value()->loop!=plan.source_loop
+       ||stopped.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||stopped.value()->audibleRealization.realizationId
+            !=std::optional{pending_->manualId}) {
+        monitorTransitioning_=false;
+        return deny("M17_MEASURED_RETURN_MANUAL_REINSTALL_UNPROVEN");
+    }
+    if(measuredReturnState_!=core::PlaybackState::STOPPED) {
+        transport_->playOrResume();
+        if(measuredReturnState_==core::PlaybackState::PAUSED)
+            transport_->pause();
+    }
+    const auto after=transport_->playback_snapshot();
+    if(!after||after.value()->state!=measuredReturnState_
+       ||after.value()->audibleRealization.realizationId
+            !=std::optional{pending_->manualId}) {
+        monitorTransitioning_=false;
+        return deny("M17_MEASURED_RETURN_MANUAL_TRANSPORT_UNPROVEN");
+    }
+    installedMeasuredTicket_.reset();
+    installedMeasuredPlan_.reset();
+    measuredOriginalManual_.reset();
+    measuredSourceRecovery_=false;
+    status_=QStringLiteral("MEASURED_NONCONFORMING_READY");
+    error_.clear();
+    monitorTransitioning_=false;
+    emit changed();
+    return core::Status::success();
 }
 
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
@@ -1736,6 +2083,10 @@ core::Status TerminalPrivateProductSession::resume_comparison()
 
 core::Status TerminalPrivateProductSession::cancel()
 {
+    if(installedMeasuredTicket_ ||measuredSourceRecovery_) {
+        const auto returned=return_measured_device_audition();
+        if(!returned)return returned;
+    }
     // Generic Cancel must not secretly retry a physical Windows install.
     // Retain the M17 MASTER while a dedicated explicit Return is required.
     if(returnRecovery_)
@@ -1801,6 +2152,9 @@ void TerminalPrivateProductSession::cancel_pending_on_region_change()
 
 void TerminalPrivateProductSession::on_renderer_changed()
 {
+    // A measured anonymous Windows DEVICE lease is a separate owned
+    // transaction. Renderer notifications cannot revoke its return token.
+    if(installedMeasuredTicket_||measuredSourceRecovery_)return;
     if(!pending_)return;
     const QString state=renderer_->status();
     if(state==QStringLiteral("ERROR")) {
