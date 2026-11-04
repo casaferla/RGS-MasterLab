@@ -1076,8 +1076,20 @@ core::Status PlaybackEngine::play_internal(bool isNewTraversal)
     }
     auto started = output_->start();
     if (!started) {
+        // Some backends may start consuming the queued PCM and THEN
+        // return an error. Explicitly retire even a partially activated
+        // sink before reporting STOPPED; clearing the byte queue alone
+        // is not evidence that Windows is no longer playing.
+        const auto retired=output_->stop();
         output_->clear_queue();
         reset_queue_state(position_.value());
+        if (!retired) {
+            // A DEVICE which also refuses stop cannot be treated as
+            // safely retryable. Require an explicit hard reset; the
+            // original immutable PCM remains retained by the session.
+            record_runtime_error(*retired.error());
+            return retired;
+        }
         return started;
     }
     playbackStartOutputFrame_ = source_to_output_frame(position_.value());
