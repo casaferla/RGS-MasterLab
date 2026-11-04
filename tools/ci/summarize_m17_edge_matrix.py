@@ -15,6 +15,9 @@ RATE_GRID = re.compile(
 COMPOSED_GRID = re.compile(
     r"M17_RATE_MATRIX_FULL_COMPOSED_CHAIN=216_SOURCE_MASTER_DEVICE_PCM"
 )
+MONO_GRID = re.compile(
+    r"M17_RATE_MATRIX_MONO=216_SOURCE_MASTER_DEVICE_PCM"
+)
 
 
 def collect(log: str, sha: str, direct_qtest: str = "",
@@ -75,6 +78,14 @@ def collect(log: str, sha: str, direct_qtest: str = "",
     full_grid_pass=direct_pass and len(COMPOSED_GRID.findall(direct_qtest))==1
     result.append("RATE_GRID_216_COMPOSED_CHAINS="+(
         "CONFIRMED" if status=="PASS" and full_grid_pass
+        else "NOT_CONFIRMED"
+    ))
+    # Both channel topologies must actually complete their own 216
+    # SOURCE->MASTER->DEVICE routes before claiming 432 product paths.
+    # Keep the old stereo counter independent for accurate reporting.
+    both_layouts_pass=full_grid_pass and len(MONO_GRID.findall(direct_qtest))==1
+    result.append("RATE_GRID_432_MONO_STEREO="+(
+        "CONFIRMED" if status=="PASS" and both_layouts_pass
         else "NOT_CONFIRMED"
     ))
     result.append("DIRECT_GRID_TEST="+(
