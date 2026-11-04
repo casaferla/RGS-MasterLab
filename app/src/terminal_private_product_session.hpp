@@ -274,6 +274,10 @@ public:
            ||evidence->rendered.manual_owner!=manual_()
            ||evidence->original_manual_realization_id
                !=manualId_().value_or(core::RealizationId{0})
+           // A measured stage with a different MASTER output clock may
+           // still have apparently valid frame geometry; it must never
+           // borrow the current user-selected M17 rendering authority.
+           ||evidence->rendered.output_rate!=pending_->outputRate
            ||sourceLoop_()!=pending_->loop)
             return {};
         return evidence;
