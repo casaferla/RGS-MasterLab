@@ -2,6 +2,7 @@
 #include "playback_transport_view_model.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_measured_device_audition_ticket.hpp"
+#include "m17_prepare_live_eta_policy.hpp"
 #include "terminal_playback_frame_map.hpp"
 #include "internal/terminal_src_frame_map_provenance.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -124,8 +125,108 @@ private slots:
     void rejectedCeilingCannotAlterAuthority();
     void unchangedCeilingLeavesRevisionAndConsentUntouched();
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
+    void firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory();
 };
 
+
+// First-run ETA contract: no completed Prepare, optional history, device
+// calibration, audio asset, fake M16 frame denominator or extra M17 render
+// is required. These are PROVISIONAL WHOLE-Prepare remaining time bounds.
+void TerminalActivationIntegrationTest::
+firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory()
+{
+    using Phase=app::M17PrepareLivePhase;
+    using Evidence=app::M17PrepareLiveEvidence;
+    const auto forecast=[](Evidence x) {
+        return app::m17_provisional_live_remaining(x);
+    };
+    const auto width=[](const app::M17PrepareLiveRemaining& x) {
+        return x.high_ms-x.low_ms;
+    };
+    Evidence src{};
+    src.phase=Phase::FINAL_SRC;
+    src.phase_fraction_known=false;
+    src.phase_elapsed_ms=3'000;
+    QVERIFY(!forecast(src)); // no fabricated ETA with no measured progress
+    src.phase_fraction_known=true;
+    src.phase_fraction=0.05;
+    const auto srcEarly=forecast(src);
+    QVERIFY(srcEarly);
+    QVERIFY(srcEarly->high_ms>srcEarly->low_ms);
+    // Same observed SRC throughput as the fraction increases from 5 to
+    // 90 percent: the unknown future stages remain broad, but the total
+    // range contracts without EVER consulting three earlier Prepares.
+    src.phase_fraction=0.90;
+    src.phase_elapsed_ms=54'000;
+    const auto srcLate=forecast(src);
+    QVERIFY(srcLate);
+    QVERIFY(width(*srcLate)<width(*srcEarly));
+
+    Evidence corePhase{};
+    corePhase.phase=Phase::M17_CORE;
+    corePhase.phase_fraction_known=true;
+    corePhase.phase_fraction=0.05;
+    corePhase.phase_elapsed_ms=4'000;
+    const auto coreEarly=forecast(corePhase);
+    QVERIFY(coreEarly);
+    corePhase.phase_fraction=0.90;
+    corePhase.phase_elapsed_ms=72'000;
+    const auto coreLate=forecast(corePhase);
+    QVERIFY(coreLate);
+    QVERIFY(width(*coreLate)<width(*coreEarly));
+    QVERIFY(coreLate->high_ms<srcLate->high_ms);
+
+    Evidence m16{};
+    m16.phase=Phase::M16_PRIMARY;
+    m16.phase_fraction_known=false; // M16 has no legitimate frame counter
+    m16.phase_elapsed_ms=10'000;
+    QVERIFY(!forecast(m16)); // cannot conjure prior CORE measurement
+    m16.observed_m17_ms=80'000; // actual elapsed M17, NOT calibration
+    const auto m16Early=forecast(m16);
+    QVERIFY(m16Early);
+    m16.phase_elapsed_ms=33'000;
+    const auto m16Late=forecast(m16);
+    QVERIFY(m16Late);
+    QVERIFY(width(*m16Late)<width(*m16Early));
+    m16.phase_elapsed_ms=90'000; // genuine unexpected slow verification
+    const auto m16Overrun=forecast(m16);
+    QVERIFY(m16Overrun);
+    QVERIFY(m16Overrun->high_ms>m16Late->high_ms);
+
+    Evidence trim{};
+    trim.phase=Phase::VERIFICATION_TRIM;
+    trim.phase_elapsed_ms=3'000;
+    QVERIFY(!forecast(trim)); // no measured PRIMARY: still unknown
+    trim.observed_primary_m16_ms=25'000;
+    const auto trimEarly=forecast(trim);
+    QVERIFY(trimEarly);
+    QVERIFY(trimEarly->low_ms==0);
+    QVERIFY(trimEarly->high_ms>=50'000);
+    trim.phase_elapsed_ms=40'000;
+    const auto trimOverrun=forecast(trim);
+    QVERIFY(trimOverrun);
+    QVERIFY(trimOverrun->high_ms>trimEarly->high_ms);
+
+    Evidence secondary{};
+    secondary.phase=Phase::M16_SECONDARY;
+    secondary.observed_primary_m16_ms=25'000;
+    secondary.phase_elapsed_ms=10'000;
+    const auto secondEarly=forecast(secondary);
+    QVERIFY(secondEarly);
+    secondary.phase_elapsed_ms=22'000;
+    const auto secondLate=forecast(secondary);
+    QVERIFY(secondLate);
+    QVERIFY(width(*secondLate)<width(*secondEarly));
+
+    Evidence done{};
+    done.phase=Phase::FINISHING;
+    const auto finishing=forecast(done);
+    QVERIFY(finishing);
+    QCOMPARE(finishing->low_ms,std::int64_t{0});
+    QCOMPARE(finishing->high_ms,std::int64_t{8'000});
+    // The stage ETA is an observational scalar; it cannot change a
+    // SOURCE, MASTER, Q0 kernel, M16 measurement or DSP authorization.
+}
 
 // FQ90 physical regression: a real original-Q0 SOURCE->MASTER result must
 // be previewable even though the historic/provisional DEVICE SRC uses a
