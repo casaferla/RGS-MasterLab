@@ -992,8 +992,9 @@ jobs:
         run: |
           python tools/ci/test_summarize_m17_edge_matrix.py
           if ($LASTEXITCODE -ne 0) { throw 'M17_EDGE_MATRIX_FILTER_SELFTEST_FAILED' }
-          # Replay the finite 6x6x6 (216) composed PCM matrix QtTest
-          # function; not an acoustic Windows DAC/hardware qualification.
+          # Replay the finite 6x6x6 mono PLUS 6x6x6 stereo PCM
+          # topology (432 independently computed routes).
+          # This is NOT an acoustic Windows DAC/hardware qualification.
           # Its raw local output is never uploaded and never requested from
           # GitHub Actions. Exit code and one positive post-assertion marker
           # are summarized into the bounded 4-KiB artifact.
@@ -1019,6 +1020,9 @@ jobs:
           }
           if ($bounded -notmatch 'RATE_GRID_216_COMPOSED_CHAINS=CONFIRMED') {
             throw 'M17_RATE_GRID_216_COMPOSED_CHAINS_NOT_PROVEN'
+          }
+          if ($bounded -notmatch 'RATE_GRID_432_MONO_STEREO=CONFIRMED') {
+            throw 'M17_RATE_GRID_432_MONO_AND_STEREO_NOT_PROVEN'
           }
 
       - name: Attach bounded M17 adversarial matrix report
