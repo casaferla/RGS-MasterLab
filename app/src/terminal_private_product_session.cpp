@@ -1884,6 +1884,14 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
        &&(sourceCue<predecessor.loop->begin()
           ||sourceCue>=predecessor.loop->end()))
         sourceCue=predecessor.loop->begin();
+    // The actual MANUAL selector canonicalizes exact SOURCE EOF to
+    // programme begin. Compare the SAME canonical cue in our subsequent
+    // post-retirement sink proof; otherwise a valid physical return at EOF
+    // becomes a false RECOVERY_REQUIRED with retained MASTER.
+    if(!predecessor.loop
+       &&sourceCue==core::FrameIndex{
+           predecessor.manual->view().frame_count().value()})
+        sourceCue=core::FrameIndex{0};
     // A failed Windows SOURCE/PROCESSED rate admission must not first
     // retire the exact MASTER monitor and leave the user with NO_SOURCE.
     // The callback probes endpoint formats and pinned FIR only, without

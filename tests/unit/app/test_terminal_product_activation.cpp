@@ -4319,6 +4319,27 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QCOMPARE(sinkInstalls,std::size_t{0});
     QVERIFY(!product.private_id());
+    // #73: natural end-of-programme is legal for the anonymous monitor.
+    // The real MANUAL restore canonicalizes SOURCE EOF to frame zero.
+    // A strict postcondition must compare against ZERO, not the old EOF.
+    QVERIFY(device->stop());
+    QVERIFY(product.install_private_monitor_stopped(privateMonitor));
+    QVERIFY(device->duration.has_value());
+    device->position=core::FrameIndex{device->duration->value()};
+    const auto eofMonitor=product.private_monitor_master_snapshot();
+    QVERIFY(eofMonitor);
+    QCOMPARE(eofMonitor.value()->master_display_position,
+             core::FrameIndex{
+                 privateMonitor->immutable_master_frames.value()});
+    QVERIFY(product.return_private_monitor_to_manual());
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->position,core::FrameIndex{0});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
+    QCOMPARE(monitorRetires,std::size_t{4});
+    QCOMPARE(manualRestores,std::size_t{7});
+    QVERIFY(candidates.staged());
+    QCOMPARE(sinkInstalls,std::size_t{0});
     // Leave the original stopped MANUAL state for the existing
     // cancellation-inside-conversion oracle following this test.
     QVERIFY(device->stop());
