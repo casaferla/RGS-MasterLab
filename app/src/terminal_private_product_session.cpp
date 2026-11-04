@@ -925,6 +925,35 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
        ||manualId_()!=std::optional{pending_->manualId}
        ||sourceLoop_()!=plan.source_loop)
         return deny("M17_MEASURED_RETURN_MANUAL_EPOCH_REVOKED");
+    // We may be retrying after Windows lost the prior anonymous DEVICE,
+    // after a failed MANUAL re-open, or after a long device hotplug. Reprobe
+    // the real physical MANUAL rate/format at EACH explicit recovery attempt.
+    // A past preflight done before monitor retirement cannot authorize the
+    // new SOURCE installation indefinitely.
+    if(manualRestorePreflight_) {
+        const auto preflight=[&]()->core::Status {
+            try {
+                return manualRestorePreflight_(pending_->manual);
+            } catch(const std::bad_alloc&) {
+                return deny("M17_MEASURED_RETURN_RETRY_PREFLIGHT_OUT_OF_MEMORY");
+            } catch(const std::exception&) {
+                return deny("M17_MEASURED_RETURN_RETRY_PREFLIGHT_EXCEPTION");
+            }
+        }();
+        if(!preflight)return preflight; // Preserve SOURCE retry ticket.
+    }
+    // The preflight is non-mutating, but Windows may hotplug or an app
+    // callback may install an unrelated sink while it is running. Verify
+    // the DEVICE is STILL empty immediately before the first SOURCE write.
+    const auto freshEmpty=transport_->playback_snapshot();
+    if(!freshEmpty
+       ||freshEmpty.value()->state!=core::PlaybackState::NO_SOURCE
+       ||freshEmpty.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||freshEmpty.value()->audibleRealization.realizationId
+       ||freshEmpty.value()->duration||freshEmpty.value()->loop
+       ||freshEmpty.value()->position!=core::FrameIndex{0})
+        return deny("M17_MEASURED_RETURN_RETRY_DEVICE_NOT_EMPTY_AFTER_PREFLIGHT");
     monitorTransitioning_=true;
     const auto restored=[&]()->core::Status {
         try {
