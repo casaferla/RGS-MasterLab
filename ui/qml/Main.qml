@@ -435,29 +435,6 @@ ApplicationWindow {
         background: Rectangle { color: menuItem.highlighted && menuItem.enabled ? "#173043" : "transparent" }
     }
 
-    // Reuse the PO's EXISTING frozen 14-original-Q0 directory across
-    // separately extracted FQ binaries. This is a folder selector, never a
-    // private ZIP extractor or a permission to bundle the 14 binary taps.
-    FolderDialog {
-        id: originalFirFolderDialog
-        objectName: "existingOriginalQ0FirFolderDialog"
-        title: "Select existing verified 14-Q0 FIR folder"
-        onAccepted: {
-            if (!root.appPrivateFirLibrary) return
-            root.appPrivateFirLibrary.remember_existing_original_q0_folder(
-                selectedFolder)
-            originalFirResultDialog.open()
-        }
-    }
-    MessageDialog {
-        id: originalFirResultDialog
-        objectName: "existingOriginalQ0FirResultDialog"
-        title: "Original Q0 FIR library"
-        text: root.appPrivateFirLibrary
-            ? root.appPrivateFirLibrary.originalQ0Status
-            : "The private original FIR library is unavailable."
-        buttons: MessageDialog.Ok
-    }
     FileDialog {
         id: sourceDialog
         objectName: "sourceFileDialog"
@@ -1076,14 +1053,15 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                         MenuSeparator { }
                         StudioMenuItem {
-                            objectName: "menuUseExistingOriginalQ0Firs"
-                            // Recovery-only legacy tool, not an option in a
-                            // complete 16-FIR standard public FQ artifact.
+                            objectName: "menuQ0ResourcesIncomplete"
+                            // All 16 immutable FIR files must be deployed
+                            // beside the EXE. Missing/corrupt assets require
+                            // repair of the installation, not user-selected
+                            // folders or accidental developer overrides.
                             visible: root.appPrivateFirLibrary
                                 && !root.appPrivateFirLibrary.originalQ0Ready
-                            text: "Use existing Q0 FIR folder…"
-                            enabled: visible && !root.monitorExclusive
-                            onTriggered: originalFirFolderDialog.open()
+                            text: "Q0 FIR resources missing — reinstall app"
+                            enabled: false
                         }
                     }
                     Menu {
