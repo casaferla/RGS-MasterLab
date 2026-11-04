@@ -1279,31 +1279,31 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QVERIFY(!rational.value()->master_loop_to_source(
             *expectedMasterLoop.value(),*sourceRate.value(),
             *wrongSourceCount.value()));
-        auto advanced=transport;
-        advanced.position=core::FrameIndex{132};
+        auto rateAdvanced=transport;
+        rateAdvanced.position=core::FrameIndex{132};
         const auto rebased=perRateTicket.value()->rebase_handoff(
-            *plan.value(),stage,advanced,*sourceLoop.value(),
+            *plan.value(),stage,rateAdvanced,*sourceLoop.value(),
             freshEndpoint,true);
         QVERIFY(rebased);
         QCOMPARE(rebased.value()->source_cue,core::FrameIndex{132});
-        auto seekChanged=advanced;
+        auto seekChanged=rateAdvanced;
         seekChanged.seekSerial+=1;
         QVERIFY(!perRateTicket.value()->rebase_handoff(
             *plan.value(),stage,seekChanged,*sourceLoop.value(),
             freshEndpoint,true));
-        auto loopWrap=advanced;
+        auto loopWrap=rateAdvanced;
         loopWrap.loopWrapCount+=1;
         QVERIFY(!perRateTicket.value()->rebase_handoff(
             *plan.value(),stage,loopWrap,*sourceLoop.value(),
             freshEndpoint,true));
-        auto paused=transport;
-        paused.state=core::PlaybackState::PAUSED;
+        auto ratePaused=transport;
+        ratePaused.state=core::PlaybackState::PAUSED;
         QVERIFY(perRateTicket.value()->plan_handoff(
-            stage,paused,*sourceLoop.value(),freshEndpoint,true));
-        auto stopped=transport;
-        stopped.state=core::PlaybackState::STOPPED;
+            stage,ratePaused,*sourceLoop.value(),freshEndpoint,true));
+        auto rateStopped=transport;
+        rateStopped.state=core::PlaybackState::STOPPED;
         QVERIFY(perRateTicket.value()->plan_handoff(
-            stage,stopped,*sourceLoop.value(),freshEndpoint,true));
+            stage,rateStopped,*sourceLoop.value(),freshEndpoint,true));
 
         QCOMPARE(device->device_src_applied,hz!=48000);
         // A fresh owner-thread check must accept only the SAME measured
