@@ -36,6 +36,7 @@
 #include <cstddef>
 #include <span>
 #include <string>
+#include <optional>
 #include <utility>
 #include <cstdint>
 #include <cmath>
@@ -782,10 +783,15 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     const auto makeSyntheticStage=[&](
         double db,double ceiling,double measuredPeak,
         render::M17NonconformingReason reason,
-        analysis::TruePeakQualificationStatus qualification)
+        analysis::TruePeakQualificationStatus qualification,
+        std::optional<core::SampleRate> stageRate=std::nullopt)
         ->std::shared_ptr<const Staged> {
+        const auto finalHz=stageRate.value_or(*sourceRate.value());
+        auto targetFormat=audio::AudioFormat::create(
+            finalHz,pcm.format().channel_layout());
+        if(!targetFormat)return {};
         auto original=audio::AudioBuffer::create(
-            pcm.format(),audio::FrameDomainId::OUTPUT_RATE,
+            *targetFormat.value(),audio::FrameDomainId::OUTPUT_RATE,
             core::FrameIndex{0},pcm.frame_count());
         if(!original)return {};
         for(std::size_t ch=0;ch<pcm.format().channel_count();++ch) {
@@ -803,7 +809,7 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
             qualification};
         render::TruePeakLimiterOwnedMeasuredNonconformingCandidate fakeOwned{
             manual,std::move(fakeMiss),*instance.value(),
-            limiter.value()->chain().revision(),*sourceRate.value(),
+            limiter.value()->chain().revision(),finalHz,
             *frames.value(),manual->chain_revision(),false,{}};
         return std::make_shared<const Staged>(
             Staged{std::move(fakeOwned),core::RealizationId{9001},manual});
@@ -825,12 +831,14 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     auto unfinished=std::make_shared<const audio::MonitoringPcmCandidate>(
         std::move(*converted.value()));
     using app::admit_measured_device_audition_ticket;
+    const app::MeasuredDeviceEndpointObservation freshEndpoint{
+        "fixture-endpoint-A",*deviceRate.value()};
     QVERIFY(!admit_measured_device_audition_ticket(
-        captured,captured,unfinished,false));
+        captured,captured,unfinished,false,freshEndpoint));
     QVERIFY(!admit_measured_device_audition_ticket(
-        captured,{},unfinished,true));
+        captured,{},unfinished,true,freshEndpoint));
     QVERIFY(!admit_measured_device_audition_ticket(
-        captured,captured,unfinished,true)); // missing endpoint witness
+        captured,captured,unfinished,true,freshEndpoint)); // missing endpoint witness
     const auto shortCount=core::FrameCount::create(1);
     const auto deviceFmt=audio::AudioFormat::create(
         *deviceRate.value(),audio::ChannelLayout::STEREO_LR);
@@ -845,7 +853,7 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
             *deviceRate.value(),*frames.value(),true,"fixture-endpoint-A"});
     // A device buffer with a false rate/frame count cannot be admitted.
     QVERIFY(!admit_measured_device_audition_ticket(
-        captured,captured,invalidDevice,true));
+        captured,captured,invalidDevice,true,freshEndpoint));
     // A second properly typed real conversion is cheap (513 frames) and
     // carries only an opaque simulated endpoint ID, never LIVE authority.
     auto second=audio::materialize_monitoring_pcm_candidate(
@@ -855,7 +863,7 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     auto deviceOwned=std::make_shared<const audio::MonitoringPcmCandidate>(
         std::move(*second.value()));
     const auto ticket=admit_measured_device_audition_ticket(
-        captured,captured,deviceOwned,true);
+        captured,captured,deviceOwned,true,freshEndpoint);
     QVERIFY(ticket);
     QCOMPARE(ticket.value()->measured_master(),captured);
     QCOMPARE(ticket.value()->audition_device_pcm(),deviceOwned);
@@ -874,29 +882,89 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         -7.0,0.44,0.51,guarded,nominal);
     QVERIFY(invalidCeiling);
     QVERIFY(!admit_measured_device_audition_ticket(
-        invalidCeiling,invalidCeiling,deviceOwned,true));
+        invalidCeiling,invalidCeiling,deviceOwned,true,freshEndpoint));
     const auto invalidQualification=makeSyntheticStage(
         -7.0,expectedCeiling,0.51,guarded,
         analysis::TruePeakQualificationStatus::QUALIFIED);
     QVERIFY(invalidQualification);
     QVERIFY(!admit_measured_device_audition_ticket(
-        invalidQualification,invalidQualification,deviceOwned,true));
+        invalidQualification,invalidQualification,deviceOwned,true,freshEndpoint));
     const auto invalidReason=makeSyntheticStage(
         -7.0,expectedCeiling,0.51,
         static_cast<render::M17NonconformingReason>(255),nominal);
     QVERIFY(invalidReason);
     QVERIFY(!admit_measured_device_audition_ticket(
-        invalidReason,invalidReason,deviceOwned,true));
+        invalidReason,invalidReason,deviceOwned,true,freshEndpoint));
     const auto invalidRange=makeSyntheticStage(
         -12.0001,expectedCeiling,0.51,guarded,nominal);
     QVERIFY(invalidRange);
     QVERIFY(!admit_measured_device_audition_ticket(
-        invalidRange,invalidRange,deviceOwned,true));
+        invalidRange,invalidRange,deviceOwned,true,freshEndpoint));
     const auto noMiss=makeSyntheticStage(
         -7.0,expectedCeiling,expectedCeiling,guarded,nominal);
     QVERIFY(noMiss);
     QVERIFY(!admit_measured_device_audition_ticket(
-        noMiss,noMiss,deviceOwned,true));
+        noMiss,noMiss,deviceOwned,true,freshEndpoint));
+
+    // SOURCE/M17 rate remains unchanged. A *synthetic* measured TP miss is
+    // retimed OFFLINE into separate 48-kHz DEVICE PCM for every MASTER rate.
+    // This is neither true M16 measurement nor a physical Windows audition.
+    std::size_t measuredCases=0;
+    for(const auto hz : {44100,48000,88200,96000,176400,192000}) {
+        const auto masterRate=core::SampleRate::create(hz);
+        QVERIFY(masterRate);
+        const auto stage=makeSyntheticStage(
+            -7.0,expectedCeiling,0.51,guarded,nominal,*masterRate.value());
+        QVERIFY(stage);
+        const auto immutable=stage->rendered.terminal.terminal
+            .compensated_pcm.view();
+        QCOMPARE(immutable.format().sample_rate(),*masterRate.value());
+        std::vector<std::uint64_t> originalBits;
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto lane=immutable.channel(ch);
+            QVERIFY(lane);
+            for(const double value:*lane.value())
+                originalBits.push_back(std::bit_cast<std::uint64_t>(value));
+        }
+        auto conversion=audio::materialize_monitoring_pcm_candidate(
+            immutable,*deviceRate.value(),*block.value());
+        QVERIFY2(conversion,conversion?""
+            :conversion.error()->message().c_str());
+        conversion.value()->windows_prepared_endpoint_id=freshEndpoint.id;
+        auto device=std::make_shared<const audio::MonitoringPcmCandidate>(
+            std::move(*conversion.value()));
+        const auto ticket=admit_measured_device_audition_ticket(
+            stage,stage,device,true,freshEndpoint);
+        QVERIFY(ticket);
+        QCOMPARE(ticket.value()->measured_master(),stage);
+        QCOMPARE(ticket.value()->audition_device_pcm(),device);
+        QCOMPARE(device->device_rate,*deviceRate.value());
+        QCOMPARE(device->immutable_master_rate,*masterRate.value());
+        QCOMPARE(device->device_src_applied,hz!=48000);
+        // Same physical rate but a different endpoint is still stale.
+        const app::MeasuredDeviceEndpointObservation hotplug{
+            "fixture-endpoint-B",*deviceRate.value()};
+        QVERIFY(!admit_measured_device_audition_ticket(
+            stage,stage,device,true,hotplug));
+        const app::MeasuredDeviceEndpointObservation rateChanged{
+            freshEndpoint.id,*sourceRate.value()};
+        QVERIFY(!admit_measured_device_audition_ticket(
+            stage,stage,device,true,rateChanged));
+        QVERIFY(!admit_measured_device_audition_ticket(
+            stage,stage,device,false,freshEndpoint));
+        std::vector<std::uint64_t> afterBits;
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto lane=immutable.channel(ch);
+            QVERIFY(lane);
+            for(const double value:*lane.value())
+                afterBits.push_back(std::bit_cast<std::uint64_t>(value));
+        }
+        QCOMPARE(afterBits,originalBits);
+        ++measuredCases;
+    }
+    QCOMPARE(measuredCases,std::size_t{6});
+    qInfo().noquote()
+        <<"M17_MEASURED_NONCONFORMING_6_TO_48K_OFFLINE_ADMISSION=6";
 }
 
 void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()
@@ -1128,7 +1196,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // VERIFIED M17 MASTER: this code cannot borrow LIVE/GR authority.
     QVERIFY(!product.capture_measured_master_for_device_conversion());
     const auto forbidden=product.admit_measured_device_conversion(
-        {},{},true);
+        {},{},true,app::MeasuredDeviceEndpointObservation{
+            "fixture-endpoint-A",*deviceRate.value()});
     QVERIFY(!forbidden);
     // A worker may compute FIR from captured immutable PCM, but it may
     // never observe or modify QObject session state. Admission must be
@@ -1139,7 +1208,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         workerCaptureDenied=
             !product.capture_measured_master_for_device_conversion();
         const auto wrongThread=product.admit_measured_device_conversion(
-            {},{},true);
+            {},{},true,app::MeasuredDeviceEndpointObservation{
+            "fixture-endpoint-A",*deviceRate.value()});
         workerAdmissionDenied=!wrongThread
             &&wrongThread.error()->code()==core::ErrorCode::InvalidState;
     });

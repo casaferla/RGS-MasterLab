@@ -232,6 +232,7 @@ public:
     // An offline worker may convert captured immutable PCM, but must never
     // access QObject state. Revalidate the measured stage on the owner
     // thread after the conversion, before any future transport action.
+    // Explicit fresh endpoint identity and rate must also be re-probed.
     using MeasuredMasterCapture=
         std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>;
     [[nodiscard]] MeasuredMasterCapture
@@ -240,7 +241,8 @@ public:
     admit_measured_device_conversion(
         MeasuredMasterCapture captured,
         std::shared_ptr<const audio::MonitoringPcmCandidate> device,
-        bool explicitUserRequest) const;
+        bool explicitUserRequest,
+        const MeasuredDeviceEndpointObservation& freshEndpoint) const;
     // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
     // input. A valid region edit during deferred Prepare / READY may adopt
     // its new SOURCE loop mapping without invalidating the immutable PCM,

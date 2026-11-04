@@ -13,6 +13,13 @@
 
 namespace rgsml::app {
 
+// Fresh independent Windows endpoint identity. Must be probed again on the
+// Qt owner thread AFTER offline SRC; a shared rate never proves same device.
+struct MeasuredDeviceEndpointObservation final {
+    std::string id;
+    core::SampleRate rate;
+};
+
 // M17 CI PREPRODUCTION ONLY: a strongly typed audition candidate that cannot
 // be mistaken for StagedCandidate / M16-verified MASTER. The device-rate PCM
 // is a DIFFERENT anonymous allocation. This type grants no SOURCE identity,
@@ -32,7 +39,8 @@ public:
         std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
             current,
         std::shared_ptr<const audio::MonitoringPcmCandidate> converted,
-        bool explicitUserRequest);
+        bool explicitUserRequest,
+    const MeasuredDeviceEndpointObservation& freshEndpoint);
 private:
     // No public aggregate or default constructor: only the explicit,
     // owner-checked admission may construct an audition candidate.
@@ -61,7 +69,8 @@ MeasuredDeviceAuditionTicket::admit(
     std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
         current,
     std::shared_ptr<const audio::MonitoringPcmCandidate> converted,
-    bool explicitUserRequest)
+    bool explicitUserRequest,
+    const MeasuredDeviceEndpointObservation& freshEndpoint)
 {
     using Result=core::Result<MeasuredDeviceAuditionTicket>;
     const auto refuse=[](const char* reason)->Result {
@@ -127,6 +136,12 @@ MeasuredDeviceAuditionTicket::admit(
         return refuse("M17_MEASURED_DEVICE_RATE_OR_GEOMETRY_MISMATCH");
     if(converted->windows_prepared_endpoint_id.empty())
         return refuse("M17_MEASURED_DEVICE_ENDPOINT_TICKET_MISSING");
+    // A Windows hotplug may replace the physical endpoint at the same rate.
+    // The caller must provide a SECOND independently observed device ticket.
+    if(freshEndpoint.id.empty()
+       ||freshEndpoint.id!=converted->windows_prepared_endpoint_id
+       ||freshEndpoint.rate!=converted->device_rate)
+        return refuse("M17_MEASURED_DEVICE_ENDPOINT_REVOKED");
     // Admission is just a retained pair; no untrusted device rate can
     // replace the immutable master or its *original* measured TP evidence.
     return Result::success(MeasuredDeviceAuditionTicket{
@@ -143,11 +158,12 @@ admit_measured_device_audition_ticket(
     std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
         current,
     std::shared_ptr<const audio::MonitoringPcmCandidate> converted,
-    bool explicitUserRequest)
+    bool explicitUserRequest,
+    const MeasuredDeviceEndpointObservation& freshEndpoint)
 {
     return MeasuredDeviceAuditionTicket::admit(
         std::move(captured),std::move(current),std::move(converted),
-        explicitUserRequest);
+        explicitUserRequest,freshEndpoint);
 }
 
 } // namespace rgsml::app

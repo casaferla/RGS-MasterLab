@@ -280,7 +280,8 @@ core::Result<MeasuredDeviceAuditionTicket>
 TerminalPrivateProductSession::admit_measured_device_conversion(
     MeasuredMasterCapture captured,
     std::shared_ptr<const audio::MonitoringPcmCandidate> device,
-    bool explicitUserRequest) const
+    bool explicitUserRequest,
+    const MeasuredDeviceEndpointObservation& freshEndpoint) const
 {
     if(QThread::currentThread()!=thread())
         return core::Result<MeasuredDeviceAuditionTicket>::failure(
@@ -290,7 +291,7 @@ TerminalPrivateProductSession::admit_measured_device_conversion(
     // Master Audition, M16 LIVE, export or sink authority is minted here.
     return admit_measured_device_audition_ticket(
         std::move(captured),measured_candidate(),std::move(device),
-        explicitUserRequest);
+        explicitUserRequest,freshEndpoint);
 }
 
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
