@@ -145,6 +145,12 @@ public:
         }
         state_ = OutputState::ACTIVE;
         processedFrames_ = 0;
+        if (failNextStartAfterActivation) {
+            failNextStartAfterActivation=false;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "TEST_QT_START_FAILED_AFTER_BACKEND_ACTIVE"});
+        }
         return core::Status::success();
     }
 
@@ -241,6 +247,7 @@ public:
     }
 
     bool failNextStart{false};
+    bool failNextStartAfterActivation{false};
     bool failNextEnqueue{false};
     bool failNextSuspend{false};
     bool failNextResume{false};
@@ -294,6 +301,7 @@ private slots:
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
     void playbackRestartFailureNeverReportsPhantomPlaying();
+    void partialDeviceStartFailureNeverLeavesAudioActive();
     void pauseResumeBackendErrorsInvalidateAudibleClock();
     void adaptedTimelineUsesAbsoluteRateMapping();
     void terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed();
@@ -2084,6 +2092,39 @@ void PlaybackSupportTest::playbackRestartFailureNeverReportsPhantomPlaying()
     QCOMPARE(prefillEngine.snapshot().value()->state,
         core::PlaybackState::PLAYING);
     QCOMPARE(prefillSink->startCalls,2);
+}
+
+void PlaybackSupportTest::partialDeviceStartFailureNeverLeavesAudioActive()
+{
+    // Windows may accept the first queued bytes and fail the backend
+    // before start() returns. The engine must STOP that partial sink:
+    // returning an error or clearing the producer ring is not enough.
+    for(const bool oldAlreadyPlaying : {false,true}) {
+        PlaybackEngine engine;
+        auto output=std::make_unique<FakeOutput>(4096U,4U);
+        auto* sink=output.get();
+        QVERIFY(engine.install_candidate(
+            open_pcm16_stereo(indexed_stereo_codes(1024)),
+            std::move(output),DeviceSampleFormat::PCM_S16));
+        if(oldAlreadyPlaying)QVERIFY(engine.play());
+        const auto startsBefore=sink->startCalls;
+        const auto stopsBefore=sink->stopCalls;
+        sink->failNextStartAfterActivation=true;
+        const auto refused=engine.play();
+        QVERIFY(!refused);
+        QCOMPARE(refused.error()->code(),core::ErrorCode::IoFailure);
+        QCOMPARE(sink->startCalls,startsBefore+1);
+        QVERIFY(sink->stopCalls>=stopsBefore+2);
+        QCOMPARE(sink->state(),OutputState::STOPPED);
+        QCOMPARE(sink->queued_bytes(),std::size_t{0});
+        const auto safe=engine.snapshot();
+        QVERIFY(safe);
+        QCOMPARE(safe.value()->state,core::PlaybackState::STOPPED);
+        QVERIFY(engine.play());
+        QCOMPARE(engine.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        QVERIFY(engine.stop());
+    }
 }
 
 void PlaybackSupportTest::pauseResumeBackendErrorsInvalidateAudibleClock()
