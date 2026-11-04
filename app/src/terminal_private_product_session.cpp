@@ -473,7 +473,14 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
             installedMeasuredPlan_=*actual.value();
             measuredOriginalManual_=*original.value();
             measuredSourceRecovery_=true;
-            measuredReturnCue_=original.value()->position;
+            const auto recoveryCue=canonical_measured_source_return_cue(
+                original.value()->position,
+                pending_->manual->view().frame_count(),pending_->loop);
+            if(!recoveryCue) {
+                monitorTransitioning_=false;
+                return core::Status::failure(*recoveryCue.error());
+            }
+            measuredReturnCue_=*recoveryCue.value();
             measuredReturnState_=original.value()->state;
             status_=QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED");
             monitorTransitioning_=false;
@@ -772,7 +779,11 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
             // Only a proven NO_SOURCE endpoint can enter SOURCE-only retry.
             installedMonitor_.reset();
             measuredSourceRecovery_=true;
-            measuredReturnCue_=original.position;
+            const auto recoveryCue=canonical_measured_source_return_cue(
+                original.position,pending_->manual->view().frame_count(),
+                plan.source_loop);
+            if(!recoveryCue)return core::Status::failure(*recoveryCue.error());
+            measuredReturnCue_=*recoveryCue.value();
             measuredReturnState_=original.state;
             status_=QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED");
             emit changed();
@@ -812,9 +823,10 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
                 q*sourceHz+(rem*sourceHz)/masterHz,
                 pending_->manual->view().frame_count().value())};
         }
-        if(plan.source_loop
-           &&(cue<plan.source_loop->begin()||cue>=plan.source_loop->end()))
-            cue=plan.source_loop->begin();
+        const auto normalized=canonical_measured_source_return_cue(
+            cue,pending_->manual->view().frame_count(),plan.source_loop);
+        if(!normalized)return core::Status::failure(*normalized.error());
+        cue=*normalized.value();
         if(!manual_||!manualId_||!sourceLoop_||!selected_
            ||!selected_()||manual_()!=pending_->manual
            ||manualId_()!=std::optional{pending_->manualId}
