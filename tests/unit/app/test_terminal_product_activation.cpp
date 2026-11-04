@@ -550,11 +550,119 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
     QCOMPARE(wavPairs,std::size_t{36});
     QCOMPARE(devicePairs,std::size_t{216});
     QCOMPARE(equalSourceMasterDevicePairs,std::size_t{36});
+
+    // MONO is a separate full product pipeline, not a mere playback
+    // DeviceFormat capability bit. Genuine M17 output-rate render and
+    // standalone listening PCM are exercised for another 6x6x6=216 paths.
+    // Reuse no stereo buffer or cached terminal stage in this loop.
+    std::size_t monoMasterPairs=0;
+    std::size_t monoDevicePairs=0;
+    for(const auto sourceHz:rates) {
+        const auto sourceRate=core::SampleRate::create(sourceHz);
+        QVERIFY(sourceRate);
+        const auto monoFormat=audio::AudioFormat::create(
+            *sourceRate.value(),audio::ChannelLayout::MONO_C);
+        QVERIFY(monoFormat);
+        auto monoSource=audio::AudioBuffer::create(
+            *monoFormat.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},*frames.value());
+        QVERIFY(monoSource);
+        auto samples=monoSource.value()->mutable_view().channel(0);
+        QVERIFY(samples);
+        for(std::size_t i=0;i<samples.value()->size();++i)
+            (*samples.value())[i]=(i%13==0?-0.061:0.031);
+        auto monoChain=dsp::ProcessingChain::create(
+            *registry.value(),{dsp::ProcessingStage::MASTER,
+                               dsp::ChainSegment::MANUAL});
+        QVERIFY(monoChain);
+        auto monoRequest=render::RenderRequest::create(
+            monoSource.value()->view(),
+            monoSource.value()->view().absolute_range(),
+            *monoChain.value(),{},*block.value());
+        QVERIFY(monoRequest);
+        auto monoRendered=render::render_preview(
+            *monoRequest.value(),*registry.value());
+        QVERIFY(monoRendered);
+        auto monoManual=std::make_shared<const render::RenderResult>(
+            std::move(*monoRendered.value()));
+        for(const auto masterHz:rates) {
+            const auto masterRate=core::SampleRate::create(masterHz);
+            QVERIFY(masterRate);
+            auto final=render::render_true_peak_limiter_owned_final_master_candidate(
+                monoManual,*monoChain.value(),*frames.value(),
+                monoManual->chain_revision(),*masterRate.value(),
+                limiter.value()->chain(),bindings,*registry.value(),
+                *block.value());
+            QVERIFY2(final,final?"":final.error()->message().c_str());
+            QVERIFY(render::validate_final_master_encoding_rate(
+                *final.value(),*masterRate.value()));
+            const auto master=final.value()->output.terminal.checked.terminal
+                .compensated_pcm.view();
+            QCOMPARE(master.format().sample_rate(),*masterRate.value());
+            QCOMPARE(master.format().channel_layout(),
+                audio::ChannelLayout::MONO_C);
+            QCOMPARE(master.timebase().frame_domain_id(),
+                audio::FrameDomainId::OUTPUT_RATE);
+            QCOMPARE(master.absolute_start_frame(),core::FrameIndex{0});
+            QCOMPARE(final.value()->output.used_candidate_src,
+                sourceHz!=masterHz);
+            const auto original=master.channel(0);
+            QVERIFY(original);
+            std::vector<std::uint64_t> before;
+            before.reserve(original.value()->size());
+            for(const double v:*original.value()) {
+                QVERIFY(std::isfinite(v));
+                before.push_back(std::bit_cast<std::uint64_t>(v));
+            }
+            ++monoMasterPairs;
+            for(const auto deviceHz:rates) {
+                const auto deviceRate=core::SampleRate::create(deviceHz);
+                QVERIFY(deviceRate);
+                auto monitor=audio::materialize_monitoring_pcm_candidate(
+                    master,*deviceRate.value(),*block.value(),
+                    [](const audio::MonitoringPcmResourceProjection&)
+                        ->core::Status {
+                        return core::Status::success();
+                    });
+                QVERIFY2(monitor,monitor?"":monitor.error()->message().c_str());
+                QVERIFY(audio::validate_monitoring_pcm_candidate(*monitor.value()));
+                QCOMPARE(monitor.value()->immutable_master_rate,
+                    *masterRate.value());
+                QCOMPARE(monitor.value()->immutable_master_frames,
+                    master.frame_count());
+                QCOMPARE(monitor.value()->device_rate,*deviceRate.value());
+                QCOMPARE(monitor.value()->device_src_applied,
+                    masterHz!=deviceHz);
+                const auto devicePcm=monitor.value()->device_pcm.view();
+                QCOMPARE(devicePcm.format().sample_rate(),*deviceRate.value());
+                QCOMPARE(devicePcm.format().channel_layout(),
+                    audio::ChannelLayout::MONO_C);
+                const auto masterCount=master.frame_count().value();
+                const auto expectedDeviceCount=
+                    (masterCount/masterHz)*deviceHz
+                    +((masterCount%masterHz)*deviceHz+masterHz-1)/masterHz;
+                QCOMPARE(devicePcm.frame_count().value(),expectedDeviceCount);
+                const auto emitted=devicePcm.channel(0);
+                QVERIFY(emitted);
+                for(const double v:*emitted.value())QVERIFY(std::isfinite(v));
+                const auto unchanged=master.channel(0);
+                QVERIFY(unchanged);
+                QCOMPARE(unchanged.value()->size(),before.size());
+                for(std::size_t i=0;i<before.size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        (*unchanged.value())[i]),before[i]);
+                ++monoDevicePairs;
+            }
+        }
+    }
+    QCOMPARE(monoMasterPairs,std::size_t{36});
+    QCOMPARE(monoDevicePairs,std::size_t{216});
     // Retain the historical CI attestation for the 36 legacy equal
     // SOURCE/MASTER pair subset; assert its count independently above.
     qInfo().noquote()<<"M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM";
     qInfo().noquote()<<"M17_RATE_MATRIX_FULL_COMPOSED_CHAIN=216_SOURCE_MASTER_DEVICE_PCM";
-    qInfo().noquote()<<"M17_EDGE_CASE=RATE_GRID_216_TRIPLES_MASTER_WAV_DEVICE";
+    qInfo().noquote()<<"M17_RATE_MATRIX_MONO=216_SOURCE_MASTER_DEVICE_PCM";
+    qInfo().noquote()<<"M17_EDGE_CASE=RATE_GRID_432_TRIPLES_MONO_STEREO_MASTER_DEVICE";
 }
 
 void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
