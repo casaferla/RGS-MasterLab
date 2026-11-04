@@ -291,7 +291,10 @@ int main(int argc, char* argv[])
             privateTerminalRenderer.remember_existing_original_q0_folder(
                 QUrl::fromLocalFile(QCoreApplication::applicationDirPath()
                     +QStringLiteral("/resources/fir")));
-        } else {
+        } else if(!deploySmoke) {
+            // A cold deployed-FQ smoke MUST prove the EXE-local original
+            // 14-Q0 bank. A stale private path from QSettings must never
+            // make an incomplete public package look standalone.
             QSettings preferences{QSettings::IniFormat,QSettings::UserScope,
                 QStringLiteral("RGS MasterLab"),QStringLiteral("RGS MasterLab")};
             const auto previous=preferences.value(
@@ -319,6 +322,13 @@ int main(int argc, char* argv[])
         &rgsml::app::TerminalPrivateRenderController::originalQ0FamilyChanged,
         &masterOutputRate,publishFirAvailability);
     publishFirAvailability();
+    if(deploySmoke&&!privateTerminalRenderer.full_original_q0_family_ready()) {
+        // The official installed ZIP/EXE, not a developer's profile or
+        // manual folder dialog, must authenticate all 14 original Q0 FIRs.
+        std::fprintf(stderr,
+            "FQ_DEPLOY_EXE_LOCAL_14_Q0_FIR_UNAVAILABLE\n");
+        return EXIT_FAILURE;
+    }
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
         [&auditionSelector] {
