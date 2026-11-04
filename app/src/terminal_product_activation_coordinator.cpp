@@ -2,6 +2,12 @@
 #include <rgsml/core/error.hpp>
 #include <algorithm>
 #include <cmath>
+#include <QMetaObject>
+#include <QThread>
+#include <rgsml/audio/playback_sample_rate_adapter.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <new>
+#include <exception>
 
 namespace rgsml::app {
 TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
@@ -28,9 +34,40 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::external_context_changed);
     // Render latency is observational. This timer never asserts that M17
     // owns the sink or shortens any protected FP/verification deadline.
+    measuredProgressTimer_.setInterval(300);
+    connect(&measuredProgressTimer_,&QTimer::timeout,this,[this] {
+        if(!measuredPreparing_)return;
+        const auto total=measuredTotalFrames_.load(std::memory_order_acquire);
+        const auto done=measuredCompletedFrames_.load(std::memory_order_acquire);
+        view_->setPreparationProgress(
+            QStringLiteral("Converting measured MASTER for DEVICE"),
+            total>0?std::clamp(static_cast<double>(done)/total,0.0,1.0):0.0,
+            total>0);
+    });
     renderHeartbeat_.setInterval(1000);
     connect(&renderHeartbeat_,&QTimer::timeout,
             this,&TerminalProductActivationCoordinator::update_render_elapsed);
+}
+
+TerminalProductActivationCoordinator::~TerminalProductActivationCoordinator()
+{
+    cancel_measured_crossrate_audition();
+    if(measuredWorker_.joinable()) {
+        measuredWorker_.request_stop();
+        measuredWorker_.join();
+    }
+}
+
+void TerminalProductActivationCoordinator::cancel_measured_crossrate_audition()
+{
+    if(measuredCancel_)
+        measuredCancel_->store(true,std::memory_order_release);
+    ++measuredSerial_;
+    measuredPreparing_=false;
+    pendingMeasured_.reset();
+    measuredProgressTimer_.stop();
+    measuredCompletedFrames_.store(0,std::memory_order_release);
+    measuredTotalFrames_.store(0,std::memory_order_release);
 }
 
 void TerminalProductActivationCoordinator::set_master_rate_state(
@@ -44,6 +81,7 @@ void TerminalProductActivationCoordinator::set_master_rate_state(
 
 void TerminalProductActivationCoordinator::master_rate_changed()
 {
+    if(measuredPreparing_)cancel_measured_crossrate_audition();
     if(transitioning_)return;
     view_->clearVerificationTrim();
     if(session_->monitoring_transaction_active()) {
@@ -78,6 +116,7 @@ void TerminalProductActivationCoordinator::resume_previous_state()
 
 void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
 {
+    if(measuredPreparing_)cancel_measured_crossrate_audition();
     if(transitioning_)return;
     view_->clearVerificationTrim();
     renderHeartbeat_.stop();
@@ -220,6 +259,13 @@ void TerminalProductActivationCoordinator::prepare_requested()
 
 void TerminalProductActivationCoordinator::cancel_requested()
 {
+    if(measuredPreparing_) {
+        cancel_measured_crossrate_audition();
+        view_->setAudioStatus(QStringLiteral(
+            "NON-CONFORMING · DEVICE CONVERSION CANCELLED"));
+        view_->clearPreparationProgress();
+        return;
+    }
     if(transitioning_)return;
     if(intent_)deactivate(false);
     else if(!state_->bypassed()) {
@@ -245,22 +291,180 @@ void TerminalProductActivationCoordinator::preview_nonconforming_requested()
     if(!intent_ || state_->bypassed()
        ||session_->status()!=QStringLiteral("MEASURED_NONCONFORMING_READY"))
         return;
-    // Unlike a verified MASTER, measured NON-CONFORMING PCM is not
-    // authorized for the independent monitoring SRC. A 48k Windows
-    // endpoint cannot consume direct 88.2k terminal PCM. Reject the
-    // audition BEFORE stopping MANUAL playback or touching the accepted
-    // measured render; never turn this recoverable refusal into ERROR/BYPASS.
-    if(!session_->current_measured_matches_device_for_preview()) {
-        view_->reportAudioError(QStringLiteral(
-            "Preview Anyway unavailable: the measured MASTER rate does not "
-            "match the current Windows DEVICE rate. The non-conforming PCM "
-            "is retained. Select a DEVICE-compatible MASTER rate in "
-            "Rate & Time and Prepare again; no automatic rate conversion "
-            "is authorized for non-conforming audio."));
+    // Direct-rate preview preserves the original, independent legacy
+    // publication path. Cross-rate preview MUST instead use a distinct,
+    // anonymous Windows DEVICE PCM and never claim M16 VERIFIED/LIVE.
+    if(session_->current_measured_matches_device_for_preview()) {
+        view_->clearAudioError();
+        commit_ready_output(true);
         return;
     }
+    begin_measured_crossrate_audition();
+}
+
+
+void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
+{
+    const auto report=[this](const core::Error& error) {
+        view_->reportAudioError(QString::fromStdString(error.message()));
+    };
+    if(QThread::currentThread()!=thread()||transitioning_
+       ||!intent_||state_->bypassed()
+       ||session_->monitoring_transaction_active()
+       ||session_->status()!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       ||!measuredProbe_||!measuredRecheck_) {
+        view_->reportAudioError(QStringLiteral(
+            "M17_NONCONFORMING_DEVICE_PREVIEW_EXPLICIT_PORTS_UNAVAILABLE"));
+        return;
+    }
+    if(measuredPreparing_
+       ||measuredWorkerRunning_.load(std::memory_order_acquire)) {
+        view_->reportAudioError(QStringLiteral(
+            "M17_NONCONFORMING_DEVICE_PREVIEW_PREVIOUS_WORKER_ACTIVE"));
+        return;
+    }
+    const auto captured=session_->capture_measured_master_for_device_conversion();
+    if(!captured) {
+        view_->reportAudioError(QStringLiteral(
+            "M17_NONCONFORMING_DEVICE_PREVIEW_MEASURED_MASTER_STALE"));
+        return;
+    }
+    const auto immutable=captured->rendered.terminal.terminal
+        .compensated_pcm.view();
+    const auto planned=measuredProbe_(immutable);
+    if(!planned) {report(*planned.error());return;}
+    if(planned.value()->opaque_endpoint_id.empty()
+       ||session_->capture_measured_master_for_device_conversion()!=captured) {
+        view_->reportAudioError(QStringLiteral(
+            "M17_NONCONFORMING_DEVICE_PREVIEW_ENDPOINT_OR_STAGE_REVOKED"));
+        return;
+    }
+    const auto block=core::FrameCount::create(
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
+    if(!block) {report(*block.error());return;}
+    if(measuredWorker_.joinable())measuredWorker_.join();
+    const auto token=std::make_shared<std::atomic_bool>(false);
+    const auto job=++measuredSerial_;
+    measuredCancel_=token;
+    pendingMeasured_=captured;
+    measuredPreparing_=true;
+    measuredCompletedFrames_.store(0,std::memory_order_release);
+    measuredTotalFrames_.store(0,std::memory_order_release);
+    measuredProgressTimer_.start();
     view_->clearAudioError();
-    commit_ready_output(true);
+    view_->setNonconformingDevicePreviewAvailable(false);
+    view_->setAudioStatus(QStringLiteral(
+        "NON-CONFORMING · PREPARING SEPARATE DEVICE PCM"));
+    emit view_->changed();
+    try {
+        using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+        using Result=core::Result<Owned>;
+        auto outcome=std::make_shared<Result>(Result::failure(
+            core::Error{core::ErrorCode::IoFailure,
+                "M17_NONCONFORMING_DEVICE_SRC_ALLOCATION_FAILED"}));
+        measuredWorkerRunning_.store(true,std::memory_order_release);
+        measuredWorker_=std::jthread(
+            [this,captured,plan=*planned.value(),block=*block.value(),
+             token,job,outcome](std::stop_token stop) {
+            using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            using Result=core::Result<Owned>;
+            *outcome=([&]()->Result {
+                try {
+                    const auto master=captured->rendered.terminal.terminal
+                        .compensated_pcm.view();
+                    auto rendered=audio::materialize_monitoring_pcm_candidate(
+                        master,plan.device_rate,block,{},
+                        [stop,token] {
+                            return stop.stop_requested()
+                                ||token->load(std::memory_order_acquire);
+                        },
+                        [this](std::int64_t done,std::int64_t total) {
+                            measuredTotalFrames_.store(
+                                total,std::memory_order_release);
+                            measuredCompletedFrames_.store(
+                                done,std::memory_order_release);
+                        });
+                    if(!rendered)return Result::failure(*rendered.error());
+                    auto device=std::move(*rendered.value());
+                    device.windows_prepared_endpoint_id=plan.opaque_endpoint_id;
+                    return Result::success(
+                        std::make_shared<const audio::MonitoringPcmCandidate>(
+                            std::move(device)));
+                } catch(const std::bad_alloc&) {
+                    return Result::failure(core::Error{
+                        core::ErrorCode::IoFailure,
+                        "M17_NONCONFORMING_DEVICE_PCM_OUT_OF_MEMORY"});
+                } catch(const std::exception&) {
+                    return Result::failure(core::Error{
+                        core::ErrorCode::InvalidState,
+                        "M17_NONCONFORMING_DEVICE_SRC_WORKER_EXCEPTION"});
+                }
+            }());
+            measuredWorkerRunning_.store(false,std::memory_order_release);
+            QMetaObject::invokeMethod(this,
+                [this,captured,plan,token,job,outcome] {
+                if(job!=measuredSerial_||!measuredPreparing_
+                   ||token->load(std::memory_order_acquire))return;
+                measuredPreparing_=false;
+                pendingMeasured_.reset();
+                measuredProgressTimer_.stop();
+                view_->clearPreparationProgress();
+                if(!*outcome) {
+                    view_->reportAudioError(
+                        QString::fromStdString(outcome->error()->message()));
+                    view_->setAudioStatus(QStringLiteral(
+                        "NON-CONFORMING · DEVICE CONVERSION REFUSED"));
+                    return;
+                }
+                if(!intent_||state_->bypassed()
+                   ||session_->status()!=QStringLiteral(
+                       "MEASURED_NONCONFORMING_READY")
+                   ||session_->capture_measured_master_for_device_conversion()
+                        !=captured) {
+                    view_->reportAudioError(QStringLiteral(
+                        "M17_NONCONFORMING_SOURCE_REVOKED_BEFORE_DEVICE"));
+                    return;
+                }
+                const auto master=captured->rendered.terminal.terminal
+                    .compensated_pcm.view();
+                const auto checked=measuredRecheck_(plan,master);
+                if(!checked) {
+                    view_->reportAudioError(
+                        QString::fromStdString(checked.error()->message()));
+                    return;
+                }
+                const MeasuredDeviceEndpointObservation latest{
+                    plan.opaque_endpoint_id,plan.device_rate};
+                const auto admitted=session_->admit_measured_device_conversion(
+                    captured,*outcome->value(),true,latest);
+                if(!admitted) {
+                    view_->reportAudioError(
+                        QString::fromStdString(admitted.error()->message()));
+                    return;
+                }
+                const auto installed=session_->install_measured_device_audition(
+                    *admitted.value(),latest,true);
+                if(!installed) {
+                    view_->reportAudioError(
+                        QString::fromStdString(installed.error()->message()));
+                    // A partial Windows install may own an exact recovery
+                    // ticket; NEVER cancel it or replace a successor sink.
+                    return;
+                }
+                readyToPreview_=false;
+                view_->clearAudioError();
+                view_->setAudioStatus(QStringLiteral(
+                    "ACTIVE · NON-CONFORMING AUDITION"));
+                // The shared Master Audition UI now owns Play/Pause/Stop,
+                // seek and explicit Return; no terminal RealizationId exists.
+            },Qt::QueuedConnection);
+        });
+    } catch(const std::exception&) {
+        measuredWorkerRunning_.store(false,std::memory_order_release);
+        cancel_measured_crossrate_audition();
+        view_->reportAudioError(QStringLiteral(
+            "M17_NONCONFORMING_DEVICE_WORKER_START_REFUSED"));
+    }
 }
 
 void TerminalProductActivationCoordinator::update_render_elapsed()
@@ -685,6 +889,7 @@ void TerminalProductActivationCoordinator::restore_ready_after_monitor_return()
 
 void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
 {
+    if(measuredPreparing_)cancel_measured_crossrate_audition();
     if(transitioning_)return;
     view_->clearVerificationTrim();
     renderHeartbeat_.stop();
@@ -748,6 +953,7 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
 
 void TerminalProductActivationCoordinator::limiter_accepted()
 {
+    if(measuredPreparing_)cancel_measured_crossrate_audition();
     if(transitioning_)return;
     const bool changedCeiling=state_->parameter_revision()!=lastParameterRevision_;
     lastParameterRevision_=state_->parameter_revision();
@@ -855,6 +1061,10 @@ void TerminalProductActivationCoordinator::loop_context_changed()
 
 void TerminalProductActivationCoordinator::private_session_changed()
 {
+    if(measuredPreparing_
+       &&session_->capture_measured_master_for_device_conversion()
+            !=pendingMeasured_)
+        cancel_measured_crossrate_audition();
     // A successfully installed Master Audition owns DEVICE exclusively.
     // Explicitly retire the stale Preview Prepared button presentation,
     // but retain the exact M17 MASTER and original intent for its return.
@@ -926,6 +1136,12 @@ void TerminalProductActivationCoordinator::private_session_changed()
         // is still rejected by preview_nonconforming_requested() at click.
         view_->setNonconformingDirectPreviewAvailable(
             session_->current_measured_matches_device_for_preview());
+        view_->setNonconformingDevicePreviewAvailable(
+            static_cast<bool>(measuredProbe_&&measuredRecheck_)
+            && !measuredPreparing_
+            && !measuredWorkerRunning_.load(std::memory_order_acquire)
+            && static_cast<bool>(
+                session_->capture_measured_master_for_device_conversion()));
     } else if(status==QStringLiteral("PRIVATE_INSTALLED")) {
         finish_activation();
     } else if(status==QStringLiteral("STALE")
@@ -960,6 +1176,10 @@ void TerminalProductActivationCoordinator::source_committed_successfully()
 
 void TerminalProductActivationCoordinator::external_context_changed()
 {
+    if(measuredPreparing_
+       &&session_->capture_measured_master_for_device_conversion()
+            !=pendingMeasured_)
+        cancel_measured_crossrate_audition();
     // Selector signals during MANUAL restoration cannot re-enter bypass.
     if(session_->monitoring_transaction_active())return;
     if(transitioning_)return;
