@@ -526,11 +526,16 @@ sustainedCrossrateMasterDevice48kWithoutSecondRender()
         {192000,48000,192000}
     }};
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
-    const auto block=core::FrameCount::create(4096);
+    // DEVICE SRC has a strict maximum of 1,024 frames per emission
+    // block. The sustained test must honor the SAME production contract;
+    // longer PROGRAMMES are exercised by many legal output blocks.
+    const auto block=core::FrameCount::create(1024);
     const auto deviceRate=core::SampleRate::create(48000);
     const auto uuid=core::Uuid::parse(
         "7f000000-0000-4000-8000-000000008037");
     QVERIFY(registry&&block&&deviceRate&&uuid);
+    QCOMPARE(block.value()->value(),
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
     const auto instance=dsp::ModuleInstanceId::from_uuid(*uuid.value());
     QVERIFY(instance);
     auto limiter=app::TerminalLimiterState::create_default(
