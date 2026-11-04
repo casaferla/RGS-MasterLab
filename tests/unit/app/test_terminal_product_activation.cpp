@@ -924,6 +924,11 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     QVERIFY(!ticket.value()->rebase_handoff(
         *planned.value(),captured,seeked,*sourceRegion.value(),
         freshEndpoint,true));
+    auto restarted=advanced;
+    restarted.traversalSerial=1;
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,restarted,*sourceRegion.value(),
+        freshEndpoint,true));
     auto wrapped=advanced;
     wrapped.loopWrapCount=1;
     QVERIFY(!ticket.value()->rebase_handoff(
