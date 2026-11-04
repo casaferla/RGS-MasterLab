@@ -39,7 +39,7 @@ static std::vector<std::int64_t> input() {
 static std::int64_t global_terminal_witness(
     const std::vector<std::int64_t>& v,std::uint64_t seen_end) {
     std::int64_t peak=0;
-    for(std::uint64_t i=0;i<seen_end;++i)peak=std::max(peak,std::llabs(v[static_cast<std::size_t>(i)]));
+    for(std::uint64_t i=0;i<seen_end;++i)peak=std::max<std::int64_t>(peak,std::llabs(v[static_cast<std::size_t>(i)]));
     return peak;
 }
 static std::vector<std::int64_t> run(
