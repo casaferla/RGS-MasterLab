@@ -99,6 +99,51 @@ class All16FirsPackagingTest(unittest.TestCase):
             self.assertEqual(result["playback"],2)
             self.assertEqual(len(list(output.glob("*.bin"))),16)
 
+    def test_installed_manifest_and_binary_forged_together_must_fail(self):
+        # A ZIP attacker can edit BOTH a FIR payload and its local manifest,
+        # so checking only manifest-vs-payload hashes is not sufficient.
+        # Release verification must also bind every installed file to the
+        # independently reviewed SHA pins in the source-controlled C++.
+        import hashlib
+        from verify_installed_16_firs import verify, trusted_fir_inventory
+        source = REPO / "resources" / "fir"
+        trusted = trusted_fir_inventory(REPO)
+        self.assertEqual(len(trusted), 16)
+        for changed_name in (
+            ORIGINALS[0], "playback_src_kernel_44100_48000.bin"
+        ):
+            with self.subTest(forged=changed_name), tempfile.TemporaryDirectory() as d:
+                output = Path(d) / "resources" / "fir"
+                export(REPO, output, require_originals=True, originals_dir=source)
+                self.assertEqual(verify(output)["files"], 16)
+                payload = output / changed_name
+                before = bytearray(payload.read_bytes())
+                self.assertEqual(hashlib.sha256(before).hexdigest(),
+                                 trusted[changed_name])
+                before[-1] ^= 1
+                payload.write_bytes(before)
+                forged_sha = hashlib.sha256(before).hexdigest()
+                self.assertNotEqual(forged_sha, trusted[changed_name])
+                manifest_path = output / "fir_manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                for entry in manifest["assets"]:
+                    if entry["file"] == changed_name:
+                        entry["sha256"] = forged_sha
+                if changed_name.startswith("RGSMSR1_L"):
+                    for entry in manifest["finalSrc"]["kernels"]:
+                        if entry["file"] == changed_name:
+                            entry["sha256"] = forged_sha
+                else:
+                    for entry in manifest["playback"]:
+                        if entry["file"] == changed_name:
+                            entry["sha256"] = forged_sha
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                # Old manifest-only validator would report SUCCESS.
+                # The independent trusted SHA must make this impossible.
+                with self.assertRaisesRegex(ValueError,
+                        "FQ_FIR_MANIFEST_DISAGREES_WITH_SOURCE_PIN"):
+                    verify(output)
+
     def test_direct_original_tamper_is_rejected(self):
         import shutil
         source=REPO/"resources"/"fir"
