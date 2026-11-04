@@ -804,27 +804,50 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         auto targetFormat=audio::AudioFormat::create(
             finalHz,pcm.format().channel_layout());
         if(!targetFormat)return {};
+        // Synthetic TEST-ONLY geometry follows the actual rational
+        // SOURCE->MASTER duration contract, unlike prior equal-frame
+        // fixtures that concealed invalid cross-rate admission.
+        const auto sourceN=pcm.frame_count().value();
+        const auto sourceHz=sourceRate.value()->value();
+        const auto masterHz=finalHz.value();
+        const auto masterN=(sourceN*masterHz+sourceHz-1)/sourceHz;
+        const auto targetCount=core::FrameCount::create(masterN);
+        if(!targetCount)return {};
         auto original=audio::AudioBuffer::create(
             *targetFormat.value(),audio::FrameDomainId::OUTPUT_RATE,
-            core::FrameIndex{0},pcm.frame_count());
+            core::FrameIndex{0},*targetCount.value());
         if(!original)return {};
         for(std::size_t ch=0;ch<pcm.format().channel_count();++ch) {
-            auto from=pcm.channel(ch);
+            const auto from=pcm.channel(ch);
             auto to=original.value()->mutable_view().channel(ch);
             if(!from||!to)return {};
-            for(std::size_t k=0;k<from.value()->size();++k)
-                (*to.value())[k]=(*from.value())[k];
+            for(std::size_t k=0;k<to.value()->size();++k) {
+                const auto sourceIndex=std::min<std::size_t>(
+                    from.value()->size()-1,k*static_cast<std::size_t>(sourceHz)
+                        /static_cast<std::size_t>(masterHz));
+                (*to.value())[k]=(*from.value())[sourceIndex];
+            }
         }
+        std::vector<dsp::TruePeakLimiterAppliedGainFrame> syntheticGain;
+        syntheticGain.reserve(static_cast<std::size_t>(masterN));
+        for(std::int64_t k=0;k<masterN;++k)
+            syntheticGain.push_back(
+                checked.terminal.applied_gain_frames[std::min<std::size_t>(
+                    checked.terminal.applied_gain_frames.size()-1,
+                    static_cast<std::size_t>(k*sourceHz/masterHz))]);
         render::TruePeakLimiterTerminalCandidate taggedPcm{
-            std::move(*original.value()),
-            checked.terminal.applied_gain_frames,0,false};
+            std::move(*original.value()),std::move(syntheticGain),0,false};
         render::TruePeakLimiterMeasuredNonconformingCandidate fakeMiss{
             std::move(taggedPcm),db,ceiling,measuredPeak,reason,
             qualification};
         render::TruePeakLimiterOwnedMeasuredNonconformingCandidate fakeOwned{
             manual,std::move(fakeMiss),*instance.value(),
             limiter.value()->chain().revision(),finalHz,
-            *frames.value(),manual->chain_revision(),false,{}};
+            *frames.value(),manual->chain_revision(),
+            finalHz!=*sourceRate.value(),
+            finalHz!=*sourceRate.value()
+                ?std::string_view{"SYNTHETIC_TEST_ONLY_NOT_REAL_ORIGINAL_FIR"}
+                :std::string_view{}};
         return std::make_shared<const Staged>(
             Staged{std::move(fakeOwned),core::RealizationId{9001},manual});
     };
@@ -1082,6 +1105,13 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QCOMPARE(perRateTicket.value()->audition_device_pcm(),device);
         QCOMPARE(device->device_rate,*deviceRate.value());
         QCOMPARE(device->immutable_master_rate,*masterRate.value());
+        const auto expectedMasterFrames=(
+            pcm.frame_count().value()*hz+sourceRate.value()->value()-1)
+                /sourceRate.value()->value();
+        QCOMPARE(immutable.frame_count().value(),expectedMasterFrames);
+        QCOMPARE(device->immutable_master_frames.value(),expectedMasterFrames);
+        QCOMPARE(stage->rendered.programme_frames,pcm.frame_count());
+        QCOMPARE(stage->rendered.used_candidate_src,hz!=192000);
 
         QCOMPARE(device->device_src_applied,hz!=48000);
         // A fresh owner-thread check must accept only the SAME measured
