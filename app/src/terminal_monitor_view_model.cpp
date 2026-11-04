@@ -174,6 +174,12 @@ QString TerminalMonitorViewModel::status_text() const
        &&installedHandoffEligible_&&installedHandoffEligible_())
         return QStringLiteral(
             "M17 PREVIEW ACTIVE · MASTER LISTENING REUSES PCM");
+    if(status==QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED"))
+        return QStringLiteral("NON-CONFORMING · RETRY MANUAL DEVICE RETURN");
+    if(status==QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED"))
+        return QStringLiteral("NON-CONFORMING · DEVICE RECOVERY / RETURN ONLY");
+    if(status.startsWith(QStringLiteral("MEASURED_DEVICE_")))
+        return QStringLiteral("NON-CONFORMING · ANONYMOUS DEVICE AUDITION (NOT M16 LIVE)");
     if(status==QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE"))
         return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
     if(status==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
@@ -196,9 +202,11 @@ bool TerminalMonitorViewModel::monitor_exclusive() const noexcept
 bool TerminalMonitorViewModel::monitor_installed() const noexcept
 {
     const auto status=session_->status();
-    return status.startsWith(QStringLiteral("MONITOR_PRIVATE_"))
+    return (status.startsWith(QStringLiteral("MONITOR_PRIVATE_"))
         &&status!=QStringLiteral(
-            "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
+            "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"))
+        ||(session_->measured_device_active()
+            &&status!=QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED"));
 }
 bool TerminalMonitorViewModel::monitor_controllable() const noexcept
 {
@@ -208,7 +216,10 @@ bool TerminalMonitorViewModel::monitor_controllable() const noexcept
     const auto current=session_->status();
     return current==QStringLiteral("MONITOR_PRIVATE_PLAYING")
         ||current==QStringLiteral("MONITOR_PRIVATE_PAUSED")
-        ||current==QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
+        ||current==QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED")
+        ||current==QStringLiteral("MEASURED_DEVICE_PLAYING")
+        ||current==QStringLiteral("MEASURED_DEVICE_PAUSED")
+        ||current==QStringLiteral("MEASURED_DEVICE_INSTALLED_STOPPED");
 }
 bool TerminalMonitorViewModel::can_prepare() const noexcept
 {
@@ -524,6 +535,13 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
 }
 bool TerminalMonitorViewModel::returnManual()
 {
+    if(session_->measured_device_active()) {
+        const auto restored=session_->return_measured_device_audition();
+        if(!report(restored))return false;
+        monitorRequested_=false;
+        refresh();
+        return true; // Keep measured M17 PCM until an explicit Cancel.
+    }
     const bool retry=session_->status()
         ==QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
     if(!monitor_installed()&&!retry)
@@ -559,7 +577,8 @@ bool TerminalMonitorViewModel::cancel()
     // cancel(). After the monitor has ALREADY been retired, this must
     // dispatch the ONLY explicit recovery command, not generic session
     // Cancel (which correctly refuses any implicit device installation).
-    if(session_->status()
+    if(session_->measured_device_active()
+       ||session_->status()
            ==QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"))
         return returnManual();
     if(monitorPreparing_) {
@@ -589,9 +608,12 @@ bool TerminalMonitorViewModel::control(
 {
     if(!monitor_installed())
         return report(reject("MONITOR_CONTROL_REQUIRES_EXACT_DEVICE_OWNER"));
-    if(session_->status()==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
+    if(session_->status()==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED")
+       ||session_->status()==QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED"))
         return report(reject("MONITOR_RECOVERY_ONLY_RETURN_ALLOWED"));
-    const auto result=session_->control_private_monitor(request);
+    const auto result=session_->measured_device_active()
+        ?session_->control_measured_device_audition(request)
+        :session_->control_private_monitor(request);
     if(!report(result))return false;
     refresh();
     return true;
@@ -667,7 +689,9 @@ bool TerminalMonitorViewModel::clearMasterRegion()
 void TerminalMonitorViewModel::refresh()
 {
     if(!monitor_installed())return;
-    const auto observed=session_->private_monitor_master_snapshot();
+    const auto observed=session_->measured_device_active()
+        ?session_->measured_device_snapshot()
+        :session_->private_monitor_master_snapshot();
     if(!observed) {
         // A lost/alien owner must not leave apparently live MASTER position
         // or endpoint readouts from the preceding, valid device epoch.
