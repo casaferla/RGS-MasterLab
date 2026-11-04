@@ -128,6 +128,15 @@ public:
     [[nodiscard]] core::Status start() override
     {
         ++startCalls;
+        if (failNextStart) {
+            failNextStart = false;
+            // Exactly models a Windows sink that refuses to START after
+            // the old output has been positively stopped and its queue
+            // discarded. There is no running backend or active clock.
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "TEST_WINDOWS_START_REFUSED_AFTER_SUCCESSFUL_STOP"});
+        }
         state_ = OutputState::ACTIVE;
         processedFrames_ = 0;
         return core::Status::success();
@@ -211,6 +220,7 @@ public:
         return maximumObserved_;
     }
 
+    bool failNextStart{false};
     int startCalls{0};
     int suspendCalls{0};
     int resumeCalls{0};
@@ -260,6 +270,7 @@ private slots:
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
+    void playbackRestartFailureNeverReportsPhantomPlaying();
     void adaptedTimelineUsesAbsoluteRateMapping();
     void terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed();
     void c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs();
@@ -1976,6 +1987,54 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
     QVERIFY(!engine.snapshot().value()->loop);
     QVERIFY(engine.clear());
     QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::NO_SOURCE);
+}
+
+void PlaybackSupportTest::playbackRestartFailureNeverReportsPhantomPlaying()
+{
+    // A retry of Play while already PLAYING first retires the old
+    // QAudioSink. If the new sink refuses to start, the renderer must
+    // NEVER publish PLAYING against a physically stopped output.
+    for (const auto startPaused : {false, true}) {
+        PlaybackEngine engine;
+        auto output=std::make_unique<FakeOutput>(4096U,4U);
+        auto* sink=output.get();
+        QVERIFY(engine.install_candidate(
+            open_pcm16_stereo(indexed_stereo_codes(1024)),
+            std::move(output),DeviceSampleFormat::PCM_S16));
+        QVERIFY(engine.play());
+        const auto initial=engine.snapshot();
+        QVERIFY(initial);
+        QCOMPARE(initial.value()->state,core::PlaybackState::PLAYING);
+        QCOMPARE(initial.value()->traversalSerial,std::uint64_t{1});
+        if(startPaused) {
+            QVERIFY(engine.pause());
+            QCOMPARE(engine.snapshot().value()->state,
+                core::PlaybackState::PAUSED);
+            // Force the fallback stop/start branch of play(), as Qt can
+            // move the underlying device out of SuspendedState on loss.
+            sink->clear_injected_error();
+            QCOMPARE(sink->state(),OutputState::STOPPED);
+        }
+        sink->failNextStart=true;
+        const auto rejected=engine.play();
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error()->code(),core::ErrorCode::IoFailure);
+        const auto after=engine.snapshot();
+        QVERIFY(after);
+        QCOMPARE(after.value()->state,core::PlaybackState::STOPPED);
+        QCOMPARE(sink->state(),OutputState::STOPPED);
+        QCOMPARE(sink->queued_bytes(),std::size_t{0});
+        QCOMPARE(after.value()->traversalSerial,std::uint64_t{1});
+        // Failures must be recoverable without SOURCE reimport, a new
+        // M17 Prepare or any fabricated RealizationId/seek history.
+        QVERIFY(engine.play());
+        const auto recovered=engine.snapshot();
+        QVERIFY(recovered);
+        QCOMPARE(recovered.value()->state,core::PlaybackState::PLAYING);
+        QCOMPARE(recovered.value()->traversalSerial,std::uint64_t{2});
+        QCOMPARE(sink->startCalls,3);
+        QVERIFY(engine.stop());
+    }
 }
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
