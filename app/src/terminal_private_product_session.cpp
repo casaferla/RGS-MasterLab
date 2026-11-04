@@ -502,9 +502,9 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
         seeded=monitorControl_(device,{
             Action::SEEK_MASTER,actual.value()->master_cue,std::nullopt});
     if(seeded&&actual.value()->source_state!=core::PlaybackState::STOPPED)
-        seeded=monitorControl_(device,{Action::PLAY});
+        seeded=monitorControl_(device,{Action::PLAY,core::FrameIndex{0},std::nullopt});
     if(seeded&&actual.value()->source_state==core::PlaybackState::PAUSED)
-        seeded=monitorControl_(device,{Action::PAUSE});
+        seeded=monitorControl_(device,{Action::PAUSE,core::FrameIndex{0},std::nullopt});
     if(!seeded)
         return retainOwnedRecovery(
             "M17_MEASURED_DEVICE_INSTALL_TRANSPORT_SEED_FAILED");
