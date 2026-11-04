@@ -824,20 +824,52 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
        ||manual_()!=predecessor.manual
        ||prepared_()!=predecessor.prepared
        ||manualId_()!=std::optional{predecessor.manualId}
-       ||sourceLoop_()!=predecessor.loop
        ||!selected_())
         return core::Status::failure(rejected(
             "MONITOR_RETURN_RECOVERY_SOURCE_EPOCH_REVOKED"));
-    const auto empty=transport_->playback_snapshot();
-    if(!empty ||empty.value()->state!=core::PlaybackState::NO_SOURCE
-       ||empty.value()->audibleRealization.phase
-           !=core::AudibleHandoffPhase::UNAVAILABLE
-       ||empty.value()->audibleRealization.realizationId
-       ||empty.value()->position!=core::FrameIndex{0}
-       ||empty.value()->duration ||empty.value()->loop)
+    const auto currentLoop=sourceLoop_();
+    const bool originalLoopCurrent=currentLoop==predecessor.loop;
+    const bool committedLoopCurrent=recovery.reconciledSourceLoop
+        &&currentLoop==recovery.reconciledSourceLoop;
+    if(!originalLoopCurrent&&!committedLoopCurrent)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_SOURCE_LOOP_EPOCH_REVOKED"));
+
+    const auto observed=transport_->playback_snapshot();
+    if(!observed)return core::Status::failure(*observed.error());
+    const auto originalSinkHasLoop=[&](
+        std::optional<core::FrameRange> expectedLoop)->bool {
+        return observed.value()->state==core::PlaybackState::STOPPED
+            &&observed.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::NEW
+            &&observed.value()->audibleRealization.realizationId
+                ==std::optional{predecessor.manualId}
+            &&observed.value()->duration
+                ==std::optional{predecessor.manual->view().frame_count()}
+            &&observed.value()->position==recovery.sourceCue
+            &&observed.value()->loop==expectedLoop;
+    };
+    const bool vacant=observed.value()->state==core::PlaybackState::NO_SOURCE
+        &&observed.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!observed.value()->audibleRealization.realizationId
+        &&observed.value()->position==core::FrameIndex{0}
+        &&!observed.value()->duration &&!observed.value()->loop;
+    const bool restoredOriginal=originalLoopCurrent
+        &&originalSinkHasLoop(predecessor.loop);
+    const bool restoredAndReconciled=committedLoopCurrent
+        &&originalSinkHasLoop(recovery.reconciledSourceLoop);
+    if(!vacant&&!restoredOriginal&&!restoredAndReconciled)
         return core::Status::failure(rejected(
             "MONITOR_RETURN_RECOVERY_REFUSES_OCCUPIED_OR_ALIEN_DEVICE"));
-    if(manualRestorePreflight_) {
+    if(vacant&&!originalLoopCurrent)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_CANNOT_REINSTALL_CHANGED_LOOP"));
+    // A failed SOURCE-loop commit may leave exactly the ORIGINAL MANUAL
+    // stopped/owned. A retry must recognize that state and NOT discard or
+    // re-open the correct physical PCM. An already-completed precise loop
+    // reconciliation can likewise be finalized without a second callback.
+    if(vacant && manualRestorePreflight_) {
         const auto preflight=[&]()->core::Status {
             try {
                 return manualRestorePreflight_(predecessor.manual);
@@ -861,21 +893,23 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
         emit changed();
         return core::Status::failure(error);
     };
-    const auto restored=[&]()->core::Status {
-        try {
-            return manualRestore_(predecessor.manual,predecessor.manualId,
-                recovery.sourceCue);
-        } catch(const std::bad_alloc&) {
-            return core::Status::failure(core::Error{
-                core::ErrorCode::IoFailure,
-                "MONITOR_RETURN_RECOVERY_SOURCE_OUT_OF_MEMORY"});
-        } catch(const std::exception&) {
-            return core::Status::failure(core::Error{
-                core::ErrorCode::InvalidState,
-                "MONITOR_RETURN_RECOVERY_SOURCE_EXCEPTION"});
-        }
-    }();
-    if(!restored)return failedRecovery(*restored.error());
+    if(vacant) {
+        const auto restored=[&]()->core::Status {
+            try {
+                return manualRestore_(predecessor.manual,predecessor.manualId,
+                    recovery.sourceCue);
+            } catch(const std::bad_alloc&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "MONITOR_RETURN_RECOVERY_SOURCE_OUT_OF_MEMORY"});
+            } catch(const std::exception&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_RECOVERY_SOURCE_EXCEPTION"});
+            }
+        }();
+        if(!restored)return failedRecovery(*restored.error());
+    }
     const auto verifyExactStoppedManual=
         [&](std::optional<core::FrameRange> loop)->core::Status {
         const auto proof=transport_->playback_snapshot();
@@ -914,13 +948,26 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
             std::string("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT:")+category,
             {{"category",category}}});
     };
-    const auto originalProof=verifyExactStoppedManual(predecessor.loop);
+    const auto originalProof=verifyExactStoppedManual(
+        restoredAndReconciled
+            ?recovery.reconciledSourceLoop:predecessor.loop);
     if(!originalProof)return failedRecovery(*originalProof.error());
-    if(recovery.reconciledSourceLoop) {
+    if(recovery.reconciledSourceLoop &&!restoredAndReconciled) {
         if(!sourceLoopReconcile_)return failedRecovery(rejected(
             "MONITOR_RETURN_RECOVERY_LOOP_CALLBACK_MISSING"));
-        const auto committed=sourceLoopReconcile_(
-            *recovery.reconciledSourceLoop);
+        const auto committed=[&]()->core::Status {
+            try {
+                return sourceLoopReconcile_(*recovery.reconciledSourceLoop);
+            } catch(const std::bad_alloc&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "MONITOR_RETURN_RECOVERY_LOOP_OUT_OF_MEMORY"});
+            } catch(const std::exception&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_RECOVERY_LOOP_EXCEPTION"});
+            }
+        }();
         if(!committed)return failedRecovery(*committed.error());
         if(!sourceLoop_||sourceLoop_()
                !=recovery.reconciledSourceLoop)
