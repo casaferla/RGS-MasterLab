@@ -743,7 +743,11 @@ core::Status TerminalPrivateProductSession::return_measured_device_audition()
             const auto now=transport_->playback_snapshot();
             if(!now)return core::Status::failure(*now.error());
             const bool originalStillOwned=
-                now.value()->audibleRealization.phase
+                manual_&&manualId_&&sourceLoop_&&selected_
+                &&selected_()&&manual_()==pending_->manual
+                &&manualId_()==std::optional{pending_->manualId}
+                &&sourceLoop_()==plan.source_loop
+                &&now.value()->audibleRealization.phase
                     ==core::AudibleHandoffPhase::NEW
                 &&now.value()->audibleRealization.realizationId
                     ==std::optional{pending_->manualId}
