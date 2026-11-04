@@ -1244,6 +1244,53 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
                  std::optional{*expectedMasterLoop.value()});
         QCOMPARE(plan.value()->device_loop,
                  std::optional{*expectedDeviceLoop.value()});
+        // Fake anonymous Windows DEVICE worker snapshot. It must report
+        // exactly one DEVICE-domain timebase and MUST NOT acquire M16 LIVE
+        // or a verified audible RealizationId. The immutable measured
+        // MASTER remains separate across all six physical-rate candidates.
+        core::PlaybackSnapshot fakeDevice{};
+        fakeDevice.state=core::PlaybackState::STOPPED;
+        fakeDevice.position=plan.value()->device_cue;
+        fakeDevice.duration=device->device_pcm.view().frame_count();
+        fakeDevice.loop=plan.value()->device_loop;
+        fakeDevice.audibleRealization={
+            core::AudibleHandoffPhase::UNAVAILABLE,std::nullopt};
+        for(const auto state: {
+            core::PlaybackState::STOPPED,
+            core::PlaybackState::PLAYING,
+            core::PlaybackState::PAUSED}) {
+            fakeDevice.state=state;
+            const auto displayed=rational.value()->project_display_snapshot(
+                fakeDevice,plan.value()->master_loop);
+            QVERIFY(displayed);
+            QCOMPARE(displayed.value()->state,state);
+            QCOMPARE(displayed.value()->device_position,plan.value()->device_cue);
+            QCOMPARE(displayed.value()->master_duration,
+                     device->immutable_master_frames);
+            QCOMPARE(displayed.value()->device_duration,
+                     device->device_pcm.view().frame_count());
+            QCOMPARE(displayed.value()->master_rate,*masterRate.value());
+            QCOMPARE(displayed.value()->device_rate,*deviceRate.value());
+            QCOMPARE(displayed.value()->requested_master_loop,
+                     plan.value()->master_loop);
+        }
+        auto foreignDevice=fakeDevice;
+        foreignDevice.audibleRealization={
+            core::AudibleHandoffPhase::NEW,core::RealizationId{9999}};
+        QVERIFY(!rational.value()->project_display_snapshot(
+            foreignDevice,plan.value()->master_loop));
+        auto changedDeviceLoop=fakeDevice;
+        changedDeviceLoop.loop.reset();
+        QVERIFY(!rational.value()->project_display_snapshot(
+            changedDeviceLoop,plan.value()->master_loop));
+        auto changedDeviceDuration=fakeDevice;
+        changedDeviceDuration.duration=*shortCount.value();
+        QVERIFY(!rational.value()->project_display_snapshot(
+            changedDeviceDuration,plan.value()->master_loop));
+        auto stoppedNoSource=fakeDevice;
+        stoppedNoSource.state=core::PlaybackState::NO_SOURCE;
+        QVERIFY(!rational.value()->project_display_snapshot(
+            stoppedNoSource,plan.value()->master_loop));
         // The inverse MASTER loop projection must accept the same
         // rounding-correct programme duration and never invent a SOURCE
         // frame outside the real MANUAL owner. Different sample grids
