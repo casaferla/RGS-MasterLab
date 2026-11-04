@@ -115,6 +115,87 @@ class All16FirsPackagingTest(unittest.TestCase):
             self.assertEqual(result["playback"],2)
             self.assertEqual(len(list(output.glob("*.bin"))),16)
 
+    def test_incremental_upgrade_reauthenticates_old_install_offline(self):
+        # Focused pre-FQ: a reused flat 16-FIR build/install directory can
+        # contain an older corrupted coefficient and manifest. Re-export
+        # must repair BOTH from frozen local sources, without network or
+        # a historical developer folder. This is not a Windows installer
+        # or hardware certificate.
+        from unittest.mock import patch
+        import hashlib
+        from verify_installed_16_firs import verify, trusted_fir_inventory
+        source=REPO/"resources"/"fir"
+        pins=trusted_fir_inventory(REPO)
+        with tempfile.TemporaryDirectory() as d:
+            output=Path(d)/"old install"/"bin"/"resources"/"fir"
+            export(REPO,output,require_originals=True,originals_dir=source)
+            self.assertEqual(verify(output)["files"],16)
+            for name in (ORIGINALS[0],
+                         "playback_src_kernel_44100_48000.bin"):
+                payload=output/name
+                changed=bytearray(payload.read_bytes())
+                changed[-1]^=1
+                payload.write_bytes(changed)
+                self.assertNotEqual(
+                    hashlib.sha256(payload.read_bytes()).hexdigest(),
+                    pins[name])
+            manifest=output/"fir_manifest.json"
+            manifest.write_text('{"complete16FilePackage":true}',
+                                encoding="utf-8")
+            with self.assertRaises(ValueError):
+                verify(output)
+            # Intercept common network entrypoints; this build resource
+            # path must operate from the authenticated checkout alone.
+            with (patch("socket.create_connection",
+                        side_effect=AssertionError("NETWORK_NOT_PERMITTED")),
+                  patch("urllib.request.urlopen",
+                        side_effect=AssertionError("NETWORK_NOT_PERMITTED"))):
+                export(REPO,output,require_originals=True,
+                       originals_dir=source)
+            self.assertEqual(verify(output)["files"],16)
+            for name in (ORIGINALS[0],
+                         "playback_src_kernel_44100_48000.bin"):
+                self.assertEqual(hashlib.sha256(
+                    (output/name).read_bytes()).hexdigest(),pins[name])
+
+    def test_failed_incremental_upgrade_revokes_old_complete_manifest(self):
+        # A failed attempt to reuse an old source tree may leave binary
+        # payloads behind, but MUST NOT leave an old completeness certificate.
+        # There must be no false standalone package success after refusal.
+        from verify_installed_16_firs import verify
+        source=REPO/"resources"/"fir"
+        with tempfile.TemporaryDirectory() as d:
+            output=Path(d)/"resources"/"fir"
+            export(REPO,output,require_originals=True,originals_dir=source)
+            self.assertEqual(verify(output)["files"],16)
+            with self.assertRaisesRegex(ValueError,
+                                        "Original FIR source directory invalid"):
+                export(REPO,output,require_originals=True,
+                       originals_dir=Path(d)/"missing-old-Q0-bank")
+            self.assertFalse((output/"fir_manifest.json").exists())
+            with self.assertRaisesRegex(ValueError,
+                                        "FQ_FIR_AUTHENTIC_MANIFEST_MISSING"):
+                verify(output)
+            export(REPO,output,require_originals=True,originals_dir=source)
+            self.assertEqual(verify(output)["files"],16)
+
+    def test_unrecognized_legacy_payload_cannot_be_silently_adopted(self):
+        # Upgrades must never trust a file merely because it was already
+        # installed. An extra old FIR makes the release inventory unclean
+        # until an explicit installer/repair action removes it.
+        from verify_installed_16_firs import verify
+        source=REPO/"resources"/"fir"
+        with tempfile.TemporaryDirectory() as d:
+            output=Path(d)/"resources"/"fir"
+            export(REPO,output,require_originals=True,originals_dir=source)
+            extra=output/"legacy-experimental-src.bin"
+            extra.write_bytes(b"unsupported old rate converter")
+            with self.assertRaisesRegex(
+                    ValueError,"FQ_FIR_FLAT_DIRECTORY_HAS_MISSING_OR_EXTRA_ASSETS"):
+                verify(output)
+            extra.unlink()
+            self.assertEqual(verify(output)["files"],16)
+
     def test_installed_manifest_and_binary_forged_together_must_fail(self):
         # A ZIP attacker can edit BOTH a FIR payload and its local manifest,
         # so checking only manifest-vs-payload hashes is not sufficient.
