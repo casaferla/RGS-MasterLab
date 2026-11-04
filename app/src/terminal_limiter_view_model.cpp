@@ -305,10 +305,15 @@ void TerminalLimiterViewModel::setAudioStatus(const QString& value)
     // old GUI device-admission hint enabled. Backend permission remains the
     // fresh, independent click-time check.
     const bool retainHint=value.startsWith(QStringLiteral("NON-CONFORMING"));
-    const bool resetHint=!retainHint &&nonconformingDirectPreviewAvailable_;
+    const bool resetHint=!retainHint
+        &&(nonconformingDirectPreviewAvailable_
+            ||nonconformingDevicePreviewAvailable_);
     if(audioStatus_==value &&!resetHint)return;
     audioStatus_=value;
-    if(resetHint)nonconformingDirectPreviewAvailable_=false;
+    if(resetHint) {
+        nonconformingDirectPreviewAvailable_=false;
+        nonconformingDevicePreviewAvailable_=false;
+    }
     emit changed();
 }
 
@@ -318,6 +323,15 @@ void TerminalLimiterViewModel::setNonconformingDirectPreviewAvailable(bool avail
         &&audioStatus_.startsWith(QStringLiteral("NON-CONFORMING"));
     if(nonconformingDirectPreviewAvailable_==next)return;
     nonconformingDirectPreviewAvailable_=next;
+    emit changed();
+}
+
+void TerminalLimiterViewModel::setNonconformingDevicePreviewAvailable(bool available)
+{
+    const bool next=available
+        &&audioStatus_.startsWith(QStringLiteral("NON-CONFORMING"));
+    if(nonconformingDevicePreviewAvailable_==next)return;
+    nonconformingDevicePreviewAvailable_=next;
     emit changed();
 }
 
