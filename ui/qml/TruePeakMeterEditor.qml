@@ -373,7 +373,7 @@ Item {
                                             : " · measuring"
                                         return pair + pct
                                             + (v.devicePreparationEta.length
-                                               ? "\\n" + v.devicePreparationEta : "")
+                                               ? "\n" + v.devicePreparationEta : "")
                                     }
                                     const v = root.limiterViewModel
                                     if (!v) return "PREPARATION UNAVAILABLE"
@@ -387,14 +387,14 @@ Item {
                                     // progress: 'Elapsed ... · Remaining ...'
                                     // becomes separate permanently visible
                                     // lines. Preserve the backend interval.
-                                    eta = eta.replace(" · ", "\\n")
+                                    eta = eta.replace(" · ", "\n")
                                     const intervalAt = eta.lastIndexOf(" (")
                                     if (intervalAt >= 0 && eta.endsWith(")"))
                                         eta = eta.slice(0, intervalAt)
-                                            + "\\nInterval "
+                                            + "\nInterval "
                                             + eta.slice(intervalAt + 2, -1)
                                     return v.preparationStage + pct
-                                        + (eta.length ? "\\n" + eta : "")
+                                        + (eta.length ? "\n" + eta : "")
                                 }
                                 color: "#A1B5C9"
                                 font.family: "Segoe UI"
