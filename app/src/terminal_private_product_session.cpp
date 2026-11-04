@@ -1898,7 +1898,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     // that callback may dispatch nested events or change SOURCE selection.
     // A second Return/Cancel must never retire our sink reentrantly.
     monitorTransitioning_=true;
-    const preflight=[&]()->core::Status {
+    const auto preflight=[&]()->core::Status {
         if(!manualRestorePreflight_)return core::Status::success();
         try {
             return manualRestorePreflight_(predecessor.manual);
