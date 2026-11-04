@@ -151,6 +151,13 @@ public:
     [[nodiscard]] core::Status suspend() override
     {
         ++suspendCalls;
+        if(failNextSuspend) {
+            failNextSuspend=false;
+            state_=OutputState::ERROR;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "TEST_DEVICE_SUSPEND_BACKEND_REFUSED"});
+        }
         state_ = OutputState::SUSPENDED;
         return core::Status::success();
     }
@@ -158,6 +165,13 @@ public:
     [[nodiscard]] core::Status resume() override
     {
         ++resumeCalls;
+        if(failNextResume) {
+            failNextResume=false;
+            state_=OutputState::ERROR;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "TEST_DEVICE_RESUME_BACKEND_REFUSED"});
+        }
         state_ = OutputState::ACTIVE;
         return core::Status::success();
     }
@@ -228,6 +242,8 @@ public:
 
     bool failNextStart{false};
     bool failNextEnqueue{false};
+    bool failNextSuspend{false};
+    bool failNextResume{false};
     int startCalls{0};
     int suspendCalls{0};
     int resumeCalls{0};
@@ -278,6 +294,7 @@ private slots:
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
     void playbackRestartFailureNeverReportsPhantomPlaying();
+    void pauseResumeBackendErrorsInvalidateAudibleClock();
     void adaptedTimelineUsesAbsoluteRateMapping();
     void terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed();
     void c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs();
@@ -2067,6 +2084,49 @@ void PlaybackSupportTest::playbackRestartFailureNeverReportsPhantomPlaying()
     QCOMPARE(prefillEngine.snapshot().value()->state,
         core::PlaybackState::PLAYING);
     QCOMPARE(prefillSink->startCalls,2);
+}
+
+void PlaybackSupportTest::pauseResumeBackendErrorsInvalidateAudibleClock()
+{
+    // A real Qt backend may mutate its sink state and THEN report a
+    // failure from suspend()/resume(). The product must not advertise
+    // a plausible PLAYING/PAUSED M16 LIVE state after such a fault.
+    for(const bool onResume : {false,true}) {
+        PlaybackEngine engine;
+        auto output=std::make_unique<FakeOutput>(4096U,4U);
+        auto* sink=output.get();
+        QVERIFY(engine.install_candidate(
+            open_pcm16_stereo(indexed_stereo_codes(1024)),
+            std::move(output),DeviceSampleFormat::PCM_S16));
+        QVERIFY(engine.play());
+        if(onResume) {
+            QVERIFY(engine.pause());
+            sink->failNextResume=true;
+        } else {
+            sink->failNextSuspend=true;
+        }
+        const auto refused=onResume?engine.play():engine.pause();
+        QVERIFY(!refused);
+        QCOMPARE(refused.error()->code(),core::ErrorCode::IoFailure);
+        QCOMPARE(sink->state(),OutputState::STOPPED);
+        QCOMPARE(sink->queued_bytes(),std::size_t{0});
+        // RuntimeError is sticky until a user-authorized Stop; even
+        // a second Play click cannot revive an unproved backend owner.
+        const auto unsafeSnapshot=engine.snapshot();
+        QVERIFY(!unsafeSnapshot);
+        QCOMPARE(unsafeSnapshot.error()->code(),core::ErrorCode::IoFailure);
+        const auto coverage=engine.c2_processed_coverage_probe();
+        QCOMPARE(coverage.reason,C2CoverageProbeReason::NOT_MONITORED);
+        QVERIFY(!engine.play());
+        QVERIFY(engine.stop());
+        const auto stopped=engine.snapshot();
+        QVERIFY(stopped);
+        QCOMPARE(stopped.value()->state,core::PlaybackState::STOPPED);
+        QVERIFY(engine.play());
+        QCOMPARE(engine.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        QVERIFY(engine.stop());
+    }
 }
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
