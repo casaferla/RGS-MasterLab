@@ -1172,6 +1172,20 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         QVERIFY(backToSource.value()->begin()<backToSource.value()->end());
         if(hz==192000)
             QCOMPARE(*backToSource.value(),*sourceLoop.value());
+        // Full-range Loop must survive the original SOURCE endpoint even
+        // when the final rounded MASTER frame projects *past* the raw
+        // SOURCE end at 192->48 (129 MASTER frames project to 516 SOURCE,
+        // but the true original end is SOURCE frame 513).
+        const auto fullMasterRegion=core::FrameRange::create(
+            core::FrameIndex{0},
+            core::FrameIndex{device->immutable_master_frames.value()});
+        QVERIFY(fullMasterRegion);
+        const auto fullSourceReturn=rational.value()->master_loop_to_source(
+            *fullMasterRegion.value(),*sourceRate.value(),*frames.value());
+        QVERIFY(fullSourceReturn);
+        QCOMPARE(fullSourceReturn.value()->begin(),core::FrameIndex{0});
+        QCOMPARE(fullSourceReturn.value()->end(),
+                 core::FrameIndex{frames.value()->value()});
         const auto wrongSourceCount=core::FrameCount::create(700);
         QVERIFY(wrongSourceCount);
         QVERIFY(!rational.value()->source_to_master(
