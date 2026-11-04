@@ -12,6 +12,12 @@
 #include <cstdint>
 #include <functional>
 #include <utility>
+#include <thread>
+#include <atomic>
+#include <memory>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 namespace rgsml::app {
 // Audio truth coordinator for the first M17 product ON/BYPASS transition.
@@ -24,6 +30,7 @@ public:
         TerminalLimiterState&,TerminalLimiterViewModel&,
         AuditionSourceSelector&,PlaybackTransportViewModel&,
         TerminalPrivateProductSession&,QObject* parent=nullptr);
+    ~TerminalProductActivationCoordinator() override;
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
     // Explicit user handoff from an already installed M17 Preview Prepared
     // to Master Audition. Retires the exact M17 DEVICE owner, restores
@@ -52,6 +59,17 @@ public:
     // its PREPARED owner accepted. Clear an obsolete M17 audio error only
     // when no private DEVICE/MASTER transaction is still owned.
     void source_committed_successfully();
+    // Windows-only DEVICE preflight, always on this Qt owner thread. Only
+    // immutable MASTER PCM and scalar endpoint metadata enter the FIR worker.
+    using MeasuredAsyncPlan=platform::windows::MonitoringAsyncDevicePlan;
+    using MeasuredProbe=std::function<core::Result<MeasuredAsyncPlan>(
+        audio::AudioBufferView)>;
+    using MeasuredRecheck=std::function<core::Status(
+        const MeasuredAsyncPlan&,audio::AudioBufferView)>;
+    void set_measured_device_async(MeasuredProbe probe,MeasuredRecheck recheck) {
+        measuredProbe_=std::move(probe);
+        measuredRecheck_=std::move(recheck);
+    }
 private:
     void limiter_accepted();
     void master_rate_changed();
@@ -62,6 +80,8 @@ private:
     void cancel_requested();
     void preview_requested();
     void preview_nonconforming_requested();
+    void begin_measured_crossrate_audition();
+    void cancel_measured_crossrate_audition();
     void deactivate(bool keepActiveIntent);
     void finish_activation(bool nonconforming=false);
     void commit_ready_output(bool nonconforming=false);
@@ -96,6 +116,16 @@ private:
     render::TerminalRenderProgressPhase lastObservedM16Phase_{
         render::TerminalRenderProgressPhase::IDLE};
     QTimer renderHeartbeat_;
+    MeasuredProbe measuredProbe_;
+    MeasuredRecheck measuredRecheck_;
+    std::jthread measuredWorker_;
+    std::shared_ptr<std::atomic_bool> measuredCancel_;
+    std::atomic_bool measuredWorkerRunning_{false};
+    std::atomic<std::int64_t> measuredCompletedFrames_{0};
+    std::atomic<std::int64_t> measuredTotalFrames_{0};
+    std::uint64_t measuredSerial_{0};
+    bool measuredPreparing_{false};
+    TerminalPrivateProductSession::MeasuredMasterCapture pendingMeasured_;
     HostTotalEtaProvider hostTotalEtaProvider_;
     HostTotalEtaProvider provisionalDspEtaProvider_;
     std::optional<std::pair<std::int64_t,std::int64_t>> activeWholeEtaUs_;
