@@ -3998,6 +3998,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* missingQ0=root->findChild<QObject*>(
         QStringLiteral("menuQ0ResourcesIncomplete"));
     QVERIFY(missingQ0);
+    QCOMPARE(missingQ0->property("text").toString(),
+        QStringLiteral("Q0 FIR resources missing — reinstall app"));
     QVERIFY(!missingQ0->property("enabled").toBool());
     QVERIFY(!root->findChild<QObject*>(
         QStringLiteral("menuUseExistingOriginalQ0Firs")));
