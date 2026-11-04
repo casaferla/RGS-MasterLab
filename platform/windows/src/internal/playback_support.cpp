@@ -1020,6 +1020,11 @@ core::Status PlaybackEngine::play()
         && output_ && output_->state() == OutputState::SUSPENDED) {
         auto resumed = output_->resume();
         if (!resumed) {
+            // A Qt sink may already have changed state before reporting
+            // its backend error. Keeping PAUSED while a DEVICE has stopped
+            // or partially resumed would publish a false transport state.
+            // Stop, revoke pending bytes and require explicit recovery.
+            record_runtime_error(*resumed.error());
             return resumed;
         }
         state_ = core::PlaybackState::PLAYING;
@@ -1071,8 +1076,20 @@ core::Status PlaybackEngine::play_internal(bool isNewTraversal)
     }
     auto started = output_->start();
     if (!started) {
+        // Some backends may start consuming the queued PCM and THEN
+        // return an error. Explicitly retire even a partially activated
+        // sink before reporting STOPPED; clearing the byte queue alone
+        // is not evidence that Windows is no longer playing.
+        const auto retired=output_->stop();
         output_->clear_queue();
         reset_queue_state(position_.value());
+        if (!retired) {
+            // A DEVICE which also refuses stop cannot be treated as
+            // safely retryable. Require an explicit hard reset; the
+            // original immutable PCM remains retained by the session.
+            record_runtime_error(*retired.error());
+            return retired;
+        }
         return started;
     }
     playbackStartOutputFrame_ = source_to_output_frame(position_.value());
@@ -1095,6 +1112,9 @@ core::Status PlaybackEngine::pause()
     update_position();
     auto suspended = output_->suspend();
     if (!suspended) {
+        // Failure can occur AFTER Qt has altered the physical sink state.
+        // No ghost PLAYING / M16 LIVE attribution is permitted.
+        record_runtime_error(*suspended.error());
         return suspended;
     }
     state_ = core::PlaybackState::PAUSED;
