@@ -606,11 +606,26 @@ core::Status TerminalPrivateProductSession::control_measured_device_audition(
     if(!monitorControl_)return deny("M17_MEASURED_DEVICE_CONTROL_PORT_MISSING");
     const auto owner=installedMonitor_;
     monitorTransitioning_=true;
-    const auto applied=monitorControl_(owner,request);
+    const auto applied=[&]()->core::Status {
+        try {
+            return monitorControl_(owner,request);
+        } catch(const std::bad_alloc&) {
+            return deny("M17_MEASURED_DEVICE_CONTROL_OUT_OF_MEMORY");
+        } catch(const std::exception&) {
+            return deny("M17_MEASURED_DEVICE_CONTROL_WINDOWS_EXCEPTION");
+        }
+    }();
     monitorTransitioning_=false;
-    if(!applied)return applied;
-    if(installedMonitor_!=owner)
-        return deny("M17_MEASURED_DEVICE_CONTROL_LOST_EXACT_OWNER");
+    if(!applied||installedMonitor_!=owner) {
+        // A Windows transport callback can partially mutate its sink before
+        // it reports a refusal. Never keep PLAY/PAUSE buttons advertised as
+        // authoritative after that uncertainty; preserve the exact DEVICE
+        // owner for conditional Return and non-destructive recovery.
+        status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        emit changed();
+        return applied?deny("M17_MEASURED_DEVICE_CONTROL_LOST_EXACT_OWNER")
+            :applied;
+    }
     const auto after=measured_device_snapshot();
     if(!after) {
         status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
@@ -624,7 +639,11 @@ core::Status TerminalPrivateProductSession::control_measured_device_audition(
     // Compare exact DEVICE coordinates, not a fabricated +/-1 MASTER
     // sample tolerance that would reject legitimate cross-rate seeks.
     const auto mapping=audio::MonitoringFrameMap::create(*owner);
-    if(!mapping)return core::Status::failure(*mapping.error());
+    if(!mapping) {
+        status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        emit changed();
+        return core::Status::failure(*mapping.error());
+    }
     const auto expectedSeek=request.action==Action::SEEK_MASTER
         ?mapping.value()->master_to_device(request.master_frame)
         :core::Result<core::FrameIndex>::success(core::FrameIndex{0});
