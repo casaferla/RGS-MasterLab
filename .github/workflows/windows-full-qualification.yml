@@ -430,6 +430,51 @@ jobs:
             throw 'FQ_PACKAGE_NOT_PRISTINE_AFTER_NEGATIVE_TEST'
           }
 
+      # A SHA-pinned original with only ONE payload bit altered must fail
+      # the real deployed EXE's standalone resource admission, not merely
+      # the external source-tree Python verifier. Restore and re-pin all 16.
+      - name: Cold deploy negative — reject one-bit corrupt original FIR
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $root = Join-Path $stage 'bin/resources/fir'
+          $original = Join-Path $root 'RGSMSR1_L1_M2.bin'
+          $backup = Join-Path $env:RUNNER_TEMP 'rgsml-fq-q0-bitflip-backup.bin'
+          if (-not (Test-Path -LiteralPath $original) -or
+              (Test-Path -LiteralPath $backup)) {
+            throw 'FQ_BITFLIP_REQUIRES_PRISTINE_ORIGINAL_Q0'
+          }
+          Copy-Item -LiteralPath $original -Destination $backup
+          try {
+            $bytes = [System.IO.File]::ReadAllBytes($original)
+            if ($bytes.Length -lt 32) { throw 'FQ_Q0_BITFLIP_INPUT_TOO_SHORT' }
+            # Mutate a real coefficient payload byte, not the file header,
+            # then leave the installed manifest untouched (strict SHA test).
+            $last = $bytes.Length - 1
+            $bytes[$last] = [byte]($bytes[$last] -bxor 1)
+            [System.IO.File]::WriteAllBytes($original, $bytes)
+            $out = Join-Path $env:RUNNER_TEMP 'fq-corrupt-q0.stdout.txt'
+            $err = Join-Path $env:RUNNER_TEMP 'fq-corrupt-q0.stderr.txt'
+            $probe = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+            if ($probe.ExitCode -eq 0) {
+              throw 'FQ_CORRUPT_Q0_EXE_FALSIFIED_STANDALONE_SUCCESS'
+            }
+            $message = Get-Content -LiteralPath $err -Raw
+            if (-not $message.Contains('FQ_DEPLOY_EXE_LOCAL_14_Q0_FIR_UNAVAILABLE')) {
+              throw 'FQ_CORRUPT_Q0_FAILED_FOR_UNEXPECTED_REASON'
+            }
+            Write-Host 'FQ_CORRUPT_Q0_SINGLE_BIT_FAIL_CLOSED_PASS'
+          } finally {
+            Copy-Item -LiteralPath $backup -Destination $original -Force
+            Remove-Item -LiteralPath $backup -ErrorAction SilentlyContinue
+          }
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$root"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'FQ_PACKAGE_NOT_PRISTINE_AFTER_BITFLIP_NEGATIVE'
+          }
+
       # Confirm the deployed application actually resolves its executable-
       # relative FIR and Qt resources when moved to a real non-ASCII path.
       # No network, installed developer profile or manual FIR selection.
