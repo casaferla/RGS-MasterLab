@@ -2105,8 +2105,8 @@ Window {
             .arg(liveEta->property("paintedWidth").toDouble())
             .arg(liveEta->property("paintedHeight").toDouble())
             .arg(liveEta->property("lineCount").toInt())
-            .arg(prepItem->isVisible()).arg(etaItem->isVisible())
-            .arg(liveEta->property("truncated").toBool())
+            .arg(int(prepItem->isVisible())).arg(int(etaItem->isVisible()))
+            .arg(int(liveEta->property("truncated").toBool()))
             .arg(liveEta->property("elide").toInt());
     };
     // Minimum Main host, FHD, and 4K-scale logical editor sizes.
