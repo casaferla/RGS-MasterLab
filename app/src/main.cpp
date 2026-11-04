@@ -273,7 +273,10 @@ int main(int argc, char* argv[])
     // to a new folder thus needs neither a new ZIP extraction nor Python.
     // Every startup independently verifies all immutable SHA/shape pins.
     const auto originalFirRoot=qgetenv("RGSML_FINAL_SRC_Q0_PRIVATE_DIR");
-    if(!originalFirRoot.isEmpty()) {
+    // FQ cold-deploy mode never allows a developer/CI environment override
+    // to disguise missing installed FIR resources. Only the application-
+    // relative authenticated bank is authoritative in that mode.
+    if(!deploySmoke && !originalFirRoot.isEmpty()) {
 #ifdef _WIN32
         privateTerminalRenderer.set_original_q0_fir_root(
             std::filesystem::path{
