@@ -144,6 +144,25 @@ class All16FirsPackagingTest(unittest.TestCase):
                         "FQ_FIR_MANIFEST_DISAGREES_WITH_SOURCE_PIN"):
                     verify(output)
 
+    def test_unicode_and_moved_flat_package_keep_original_sha(self):
+        # Pure file-deployment proof, not a Windows Qt/PCM16 acoustic test.
+        # Exact 16-file bundles must not depend on an absolute build folder,
+        # ASCII-only install path or a user-installed historical Q0 directory.
+        import shutil
+        from verify_installed_16_firs import verify
+        source=REPO/"resources"/"fir"
+        with tempfile.TemporaryDirectory() as d:
+            original=Path(d)/"installazione àΩ 中 con spazi"/"bin"/"resources"/"fir"
+            export(REPO,original,require_originals=True,originals_dir=source)
+            self.assertEqual(verify(original)["files"],16)
+            relocated=Path(d)/"moved release folder"/"bin"/"resources"/"fir"
+            relocated.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copytree(original,relocated)
+            self.assertEqual(verify(relocated)["files"],16)
+            self.assertEqual(
+                {p.name for p in original.glob("*.bin")},
+                {p.name for p in relocated.glob("*.bin")})
+
     def test_direct_original_tamper_is_rejected(self):
         import shutil
         source=REPO/"resources"/"fir"
