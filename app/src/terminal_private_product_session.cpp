@@ -510,22 +510,44 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
         return retainOwnedRecovery(
             "M17_MEASURED_DEVICE_INSTALL_POSTCHECK_REQUIRES_RECOVERY");
     using Action=platform::windows::MonitoringTransportAction;
-    core::Status seeded=core::Status::success();
-    if(actual.value()->master_loop)
-        seeded=monitorControl_(device,{
-            Action::SET_MASTER_LOOP,core::FrameIndex{0},
-            actual.value()->master_loop});
-    if(seeded&&actual.value()->master_cue!=core::FrameIndex{0})
-        seeded=monitorControl_(device,{
-            Action::SEEK_MASTER,actual.value()->master_cue,std::nullopt});
-    if(seeded&&actual.value()->source_state!=core::PlaybackState::STOPPED)
-        seeded=monitorControl_(device,{Action::PLAY,core::FrameIndex{0},std::nullopt});
-    if(seeded&&actual.value()->source_state==core::PlaybackState::PAUSED)
-        seeded=monitorControl_(device,{Action::PAUSE,core::FrameIndex{0},std::nullopt});
+    const auto seeded=[&]()->core::Status {
+        try {
+            core::Status result=core::Status::success();
+            if(actual.value()->master_loop)
+                result=monitorControl_(device,{
+                    Action::SET_MASTER_LOOP,core::FrameIndex{0},
+                    actual.value()->master_loop});
+            if(result&&actual.value()->master_cue!=core::FrameIndex{0})
+                result=monitorControl_(device,{
+                    Action::SEEK_MASTER,actual.value()->master_cue,std::nullopt});
+            if(result&&actual.value()->source_state!=core::PlaybackState::STOPPED)
+                result=monitorControl_(device,{
+                    Action::PLAY,core::FrameIndex{0},std::nullopt});
+            if(result&&actual.value()->source_state==core::PlaybackState::PAUSED)
+                result=monitorControl_(device,{
+                    Action::PAUSE,core::FrameIndex{0},std::nullopt});
+            return result;
+        } catch(const std::bad_alloc&) {
+            return deny("M17_MEASURED_DEVICE_SEED_OUT_OF_MEMORY");
+        } catch(const std::exception&) {
+            return deny("M17_MEASURED_DEVICE_SEED_WINDOWS_EXCEPTION");
+        }
+    }();
     if(!seeded)
         return retainOwnedRecovery(
             "M17_MEASURED_DEVICE_INSTALL_TRANSPORT_SEED_FAILED");
-    const auto displayed=monitorDisplay_(device);
+    const auto displayed=[&]()
+        ->core::Result<audio::MonitoringMasterDisplaySnapshot> {
+        try {
+            return monitorDisplay_(device);
+        } catch(const std::bad_alloc&) {
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::
+                failure(rejected("M17_MEASURED_DEVICE_SEED_DISPLAY_OUT_OF_MEMORY"));
+        } catch(const std::exception&) {
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::
+                failure(rejected("M17_MEASURED_DEVICE_SEED_DISPLAY_EXCEPTION"));
+        }
+    }();
     if(!displayed
        ||displayed.value()->state!=actual.value()->source_state
        ||displayed.value()->master_rate!=device->immutable_master_rate
