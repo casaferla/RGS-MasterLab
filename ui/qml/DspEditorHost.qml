@@ -70,7 +70,8 @@ Rectangle {
     property var masterRateState: null
     property var memoryAdvisor: null
     readonly property bool m17Preparing: root.terminalLimiterViewModel
-        && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+        && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+            || root.terminalLimiterViewModel.nonconformingDevicePreparing)
     function rateLabel(hz) {
         if (!hz || hz <= 0) return "—"
         return (hz / 1000).toFixed(1).replace(".0", "") + " kHz"
@@ -467,7 +468,8 @@ Rectangle {
                 minimumControlWidth: 86
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
-                    && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+                    && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+                        || root.terminalLimiterViewModel.nonconformingDevicePreparing)
                 onClicked: root.terminalLimiterViewModel.cancelPreparation()
                 Accessible.name: "Cancel offline limiter preparation"
             }
