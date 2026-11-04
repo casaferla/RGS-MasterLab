@@ -47,6 +47,8 @@ int main() {
         REQUIRE(plan->stages()[5].stage == Stage::OUTPUT_REPRESENTATION);
         REQUIRE(plan->total_active_latency_frames() == 384);
         REQUIRE(plan->logical_output_frames() == 480000);
+        REQUIRE(plan->required_terminal_processing_end_frame() == 480000);
+        REQUIRE(plan->terminal_requires_true_source_eos());
         REQUIRE(plan->absolute_dither_first_frame() == 0);
         REQUIRE(plan->state_origin_policy() == StateOrigin::REPLAY_FROM_CANONICAL_ZERO);
         // Frozen snapshot must survive mutable editor settings being overwritten.
@@ -66,6 +68,7 @@ int main() {
         REQUIRE(p->logical_output_first_frame() == 105001);
         REQUIRE(p->absolute_dither_first_frame() == 105001);
         REQUIRE(p->replay_input_first_frame() == 0);
+        REQUIRE(p->required_terminal_processing_end_frame() == 480000);
         REQUIRE(p->stages() == plan->stages());
         REQUIRE(p->total_active_latency_frames() == plan->total_active_latency_frames());
 
@@ -89,6 +92,14 @@ int main() {
         REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::INVALID_WINDOW);
         bad = baseline(); bad.mode = Mode::PREVIEW; bad.window = {480000, 480001};
         REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::INVALID_WINDOW);
+        bad = baseline(); bad.state = static_cast<State>(255);
+        REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::INVALID_STATE);
+        bad = baseline(); bad.mode = static_cast<Mode>(255);
+        REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::INVALID_WINDOW);
+        bad = baseline(); bad.stored_order[0].kind = static_cast<InlineKind>(255);
+        REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::INVALID_NODE);
+        bad = baseline(); bad.format = static_cast<Format>(255);
+        REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::INVALID_DITHER_POLICY);
         bad = baseline(); bad.stored_order[1].instance_id = "eq";
         REQUIRE(!ResolvedRenderRequest::freeze(bad, err) && err == Failure::DUPLICATE_INSTANCE);
         bad = baseline(); bad.source_identity.clear();

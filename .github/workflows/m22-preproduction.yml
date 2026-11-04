@@ -9,14 +9,6 @@ on:
       - 'tools/qualification/m22/**'
       - 'docs/architecture/M22_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261104.md'
       - '.github/workflows/m22-preproduction.yml'
-  pull_request:
-    branches:
-      - experimental/m21-metrics-delta-20261103
-    paths:
-      - 'render/src/internal/m22_*.hpp'
-      - 'tools/qualification/m22/**'
-      - 'docs/architecture/M22_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261104.md'
-      - '.github/workflows/m22-preproduction.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -50,6 +42,14 @@ jobs:
           for opt in '-O0 -g' '-O2'; do
             g++ -std=c++20 $opt -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Irender/src/internal -Iaudio/src/internal tools/qualification/m22/m22_real_m18_terminal_crop_selftest.cpp -o "$RUNNER_TEMP/m22-m18"
             "$RUNNER_TEMP/m22-m18"
+          done
+      - name: Stateful history + true programme EOS adversarial oracle · GCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opt in '-O0 -g' '-O2'; do
+            g++ -std=c++20 $opt -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Irender/src/internal tools/qualification/m22/m22_state_history_oracle_selftest.cpp -o "$RUNNER_TEMP/m22-state"
+            "$RUNNER_TEMP/m22-state"
           done
   windows-m22:
     name: M22 private · Windows 2022 MSVC Debug + Release
@@ -85,4 +85,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 60; throw "M22_M18_BUILD_FAILED_$mode" }
             & "$env:RUNNER_TEMP/m22-m18-$mode.exe"
             if ($LASTEXITCODE -ne 0) { throw "M22_M18_TEST_FAILED_$mode" }
+          }
+      - name: Stateful history + true programme EOS adversarial oracle · MSVC
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug", "Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m22-state-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Irender/src/internal tools/qualification/m22/m22_state_history_oracle_selftest.cpp "/Fe:$env:RUNNER_TEMP/m22-state-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 60; throw "M22_STATE_BUILD_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m22-state-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M22_STATE_TEST_FAILED_$mode" }
           }

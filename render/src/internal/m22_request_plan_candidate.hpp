@@ -17,7 +17,7 @@ enum class Mode : std::uint8_t { FULL, PREVIEW };
 enum class Format : std::uint8_t { PCM24, FLOAT32 };
 enum class InlineKind : std::uint8_t { GAIN, PARAMETRIC_EQ, COMPRESSOR, STEREO_MS };
 enum class Failure : std::uint8_t {
-    NONE, MISSING_PROVENANCE, INVALID_CLOCK, INVALID_CHANNELS,
+    NONE, INVALID_STATE, MISSING_PROVENANCE, INVALID_CLOCK, INVALID_CHANNELS,
     INVALID_WINDOW, INVALID_NODE, DUPLICATE_INSTANCE, INVALID_TERMINAL,
     INVALID_DITHER_POLICY, LATENCY_OVERFLOW
 };
@@ -69,6 +69,11 @@ inline bool supported_clock(std::uint32_t rate) noexcept {
 }
 inline bool nonempty(const std::string& s) noexcept { return !s.empty(); }
 inline Failure validate(const Intent& in) {
+    if (in.state != State::PROCESSED) return Failure::INVALID_STATE;
+    if (in.mode != Mode::FULL && in.mode != Mode::PREVIEW)
+        return Failure::INVALID_WINDOW;
+    if (in.format != Format::PCM24 && in.format != Format::FLOAT32)
+        return Failure::INVALID_DITHER_POLICY;
     if (!nonempty(in.source_identity) || !nonempty(in.source_revision)
         || !nonempty(in.prepared_identity) || !nonempty(in.prepared_revision)
         || !nonempty(in.chain_identity) || !nonempty(in.execution_policy_signature))
@@ -78,7 +83,9 @@ inline Failure validate(const Intent& in) {
         return Failure::INVALID_CLOCK;
     if (in.channels != 1 && in.channels != 2)
         return Failure::INVALID_CHANNELS;
-    if (in.source_frames == 0 || in.window.first >= in.window.end
+    if (in.source_frames == 0
+        || in.source_frames > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())
+        || in.window.first >= in.window.end
         || in.window.end > in.source_frames
         || (in.mode == Mode::FULL && (in.window.first != 0 || in.window.end != in.source_frames)))
         return Failure::INVALID_WINDOW;
@@ -89,6 +96,13 @@ inline Failure validate(const Intent& in) {
         return Failure::INVALID_DITHER_POLICY;
     std::unordered_set<std::string> ids;
     for (const auto& node : in.stored_order) {
+        switch (node.kind) {
+            case InlineKind::GAIN:
+            case InlineKind::PARAMETRIC_EQ:
+            case InlineKind::COMPRESSOR:
+            case InlineKind::STEREO_MS: break;
+            default: return Failure::INVALID_NODE;
+        }
         if (!nonempty(node.instance_id) || !nonempty(node.algorithm_signature)
             || !nonempty(node.parameter_signature))
             return Failure::INVALID_NODE;
@@ -151,6 +165,10 @@ public:
             return std::nullopt;
         }
         total_latency += in.terminal_limiter_latency_frames;
+        if (in.source_frames > std::numeric_limits<std::uint64_t>::max() - total_latency) {
+            error = Failure::LATENCY_OVERFLOW;
+            return std::nullopt;
+        }
         stages.push_back({Stage::TRUE_PEAK_TERMINAL, in.terminal_limiter_signature, false,
                           in.terminal_limiter_latency_frames});
         stages.push_back({Stage::OUTPUT_REPRESENTATION,
@@ -175,6 +193,13 @@ public:
         return StateOrigin::REPLAY_FROM_CANONICAL_ZERO;
     }
     std::uint64_t replay_input_first_frame() const noexcept { return 0; }
+    // M17 final M16 verification/global trim is computed from the COMPLETE output-rate
+    // programme. A region-only terminal run is NOT an acceptable exact preview.
+    // Either reuse the same full-programme verified artifact or process to true EOS.
+    std::uint64_t required_terminal_processing_end_frame() const noexcept {
+        return request_.intent().source_frames;
+    }
+    bool terminal_requires_true_source_eos() const noexcept { return true; }
     // M18 Philox MUST be addressed by absolute output frame, never preview-local zero.
     std::uint64_t absolute_dither_first_frame() const noexcept { return logical_output_first_frame(); }
 private:

@@ -49,7 +49,7 @@ static std::vector<std::uint8_t> encode(
     CHECK(resolved && failure==Failure::NONE);
     auto plan=RenderExecutionPlan::preflight(*resolved,failure);
     CHECK(plan && failure==Failure::NONE);
-    const std::size_t channels=in.channels;
+    const std::uint32_t channels=in.channels;
     const std::size_t bytesPerSample=in.format==Format::PCM24 ? 3U:4U;
     const auto frames=static_cast<std::size_t>(plan->logical_output_frames());
     std::vector<std::uint8_t> out(frames*channels*bytesPerSample,0xCA);

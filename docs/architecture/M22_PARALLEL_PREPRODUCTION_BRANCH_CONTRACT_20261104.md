@@ -83,3 +83,26 @@ in the GitHub Actions API at check time. A bounded sequential content-API
 checkpoint on the same isolated PR branch is used to register the new
 workflow's push event; staging is then fast-forwarded to the identical HEAD.
 Until an actual Actions run reports completion, CI remains NOT VERIFIED.
+
+## Private macro-lot #3 — exact state-origin / full-terminal history authority
+CI #41881925854 initial result: Linux native Debug+Release PASS; Windows
+request/plan and scope PASS, but M18 test step RED due MSVC /WX C4267
+(implicit size_t -> uint32_t, two call sites). Fixed by explicitly using
+uint32_t channel count in the M18 real terminal fixture. No DSP mathematics
+was changed. The failed CI remains historical evidence, not retrospectively green.
+
+New native adversarial *artificial history oracle* rejects both an invalid
+region-local state reset and an invalid Preview-local programme terminal
+verification boundary; full-source terminal dependency and actual EOS are
+mandatory to maintain M17 final global M16 verification/trim equivalence.
+It compares start/middle/end Preview against Full crop under multiple legal
+chunk partitions. It is expressly **not real EQ/Compressor/Stereo/M17 DSP**.
+Preflight plan now carries required_terminal_processing_end_frame() equal to
+the source length: a Preview must reuse a matching verified complete M17
+artifact or evaluate the complete programme; stop-at-region-end cannot
+silently be treated as equivalent. This remains a high-risk real M17
+integration seam pending full source/owner binding.
+
+MSVC warning fixed; workflow returned to single push-trigger (PR trigger
+experiment was temporary and unnecessary once the delayed initial push CI
+became visible). Every new CI is evidence for the exact tested SHA ONLY.
