@@ -413,6 +413,8 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
     const auto original=transport_->playback_snapshot();
     if(!original)return core::Status::failure(*original.error());
     if(original.value()->seekSerial!=actual.value()->source_seek_serial
+       ||original.value()->traversalSerial
+            !=actual.value()->source_traversal_serial
        ||original.value()->loopWrapCount!=actual.value()->source_loop_wrap_count
        ||original.value()->state!=actual.value()->source_state
        ||original.value()->position!=actual.value()->source_cue
@@ -579,7 +581,16 @@ TerminalPrivateProductSession::measured_device_snapshot() const
        ||display.value()->device_rate!=installedMonitor_->device_rate
        ||display.value()->master_duration!=installedMonitor_->immutable_master_frames
        ||display.value()->device_duration
-            !=installedMonitor_->device_pcm.view().frame_count())
+            !=installedMonitor_->device_pcm.view().frame_count()
+       ||display.value()->master_display_position.value()<0
+       ||display.value()->master_display_position.value()
+            >display.value()->master_duration.value()
+       ||display.value()->device_position.value()<0
+       ||display.value()->device_position.value()
+            >display.value()->device_duration.value()
+       ||(display.value()->state!=core::PlaybackState::STOPPED
+           &&display.value()->state!=core::PlaybackState::PAUSED
+           &&display.value()->state!=core::PlaybackState::PLAYING))
         return deny("M17_MEASURED_DEVICE_DISPLAY_TIMELINE_MISMATCH");
     return display;
 }
@@ -601,8 +612,22 @@ core::Status TerminalPrivateProductSession::control_measured_device_audition(
     if(installedMonitor_!=owner)
         return deny("M17_MEASURED_DEVICE_CONTROL_LOST_EXACT_OWNER");
     const auto after=measured_device_snapshot();
-    if(!after)return core::Status::failure(*after.error());
+    if(!after) {
+        status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        emit changed();
+        return core::Status::failure(*after.error());
+    }
     using Action=platform::windows::MonitoringTransportAction;
+    // Rational SOURCE/MASTER/DEVICE frame conversion deliberately rounds
+    // UP. A 192-kHz MASTER seek at frame 1 onto 48 kHz DEVICE targets
+    // DEVICE frame 1, whose displayed MASTER cursor is 4 rather than 1.
+    // Compare exact DEVICE coordinates, not a fabricated +/-1 MASTER
+    // sample tolerance that would reject legitimate cross-rate seeks.
+    const auto mapping=audio::MonitoringFrameMap::create(*owner);
+    if(!mapping)return core::Status::failure(*mapping.error());
+    const auto expectedSeek=request.action==Action::SEEK_MASTER
+        ?mapping.value()->master_to_device(request.master_frame)
+        :core::Result<core::FrameIndex>::success(core::FrameIndex{0});
     if((request.action==Action::PLAY
             &&after.value()->state!=core::PlaybackState::PLAYING)
        ||(request.action==Action::PAUSE
@@ -611,10 +636,8 @@ core::Status TerminalPrivateProductSession::control_measured_device_audition(
             &&(after.value()->state!=core::PlaybackState::STOPPED
                 ||after.value()->device_position!=core::FrameIndex{0}))
        ||(request.action==Action::SEEK_MASTER
-            &&(after.value()->master_display_position.value()
-                  <request.master_frame.value()
-                ||after.value()->master_display_position.value()
-                  -request.master_frame.value()>1))
+            &&(!expectedSeek
+                ||after.value()->device_position!=*expectedSeek.value()))
        ||(request.action==Action::SET_MASTER_LOOP
             &&after.value()->requested_master_loop!=request.master_loop)) {
         // A Windows control may have mutated the physical sink before
