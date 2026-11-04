@@ -249,6 +249,19 @@ public:
         const MeasuredDeviceAuditionTicket& ticket,
         const MeasuredDeviceEndpointObservation& latestEndpoint,
         bool explicitUserRequest) const;
+    // Producer-side, Qt-owning-thread, exact-MANUAL snapshot admission for
+    // measured NON-CONFORMING transport. No playback or sink mutation.
+    [[nodiscard]] core::Result<MeasuredDeviceTransportPlan>
+    plan_measured_device_handoff(
+        const MeasuredDeviceAuditionTicket& ticket,
+        const MeasuredDeviceEndpointObservation& latestEndpoint,
+        bool explicitUserRequest) const;
+    [[nodiscard]] core::Result<MeasuredDeviceTransportPlan>
+    rebase_measured_device_handoff(
+        const MeasuredDeviceAuditionTicket& ticket,
+        const MeasuredDeviceTransportPlan& prior,
+        const MeasuredDeviceEndpointObservation& latestEndpoint,
+        bool explicitUserRequest) const;
     // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
     // input. A valid region edit during deferred Prepare / READY may adopt
     // its new SOURCE loop mapping without invalidating the immutable PCM,

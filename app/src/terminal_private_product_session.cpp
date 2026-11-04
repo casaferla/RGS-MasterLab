@@ -330,6 +330,43 @@ core::Status TerminalPrivateProductSession::recheck_measured_device_preinstall(
         measured,pending_->manualId,latestEndpoint,explicitUserRequest);
 }
 
+core::Result<MeasuredDeviceTransportPlan>
+TerminalPrivateProductSession::plan_measured_device_handoff(
+    const MeasuredDeviceAuditionTicket& ticket,
+    const MeasuredDeviceEndpointObservation& latestEndpoint,
+    bool explicitUserRequest) const
+{
+    const auto checked=recheck_measured_device_preinstall(
+        ticket,latestEndpoint,explicitUserRequest);
+    if(!checked)
+        return core::Result<MeasuredDeviceTransportPlan>::failure(*checked.error());
+    const auto snapshot=transport_->playback_snapshot();
+    if(!snapshot)
+        return core::Result<MeasuredDeviceTransportPlan>::failure(*snapshot.error());
+    return ticket.plan_handoff(
+        measured_candidate(),*snapshot.value(),sourceLoop_(),
+        latestEndpoint,explicitUserRequest);
+}
+
+core::Result<MeasuredDeviceTransportPlan>
+TerminalPrivateProductSession::rebase_measured_device_handoff(
+    const MeasuredDeviceAuditionTicket& ticket,
+    const MeasuredDeviceTransportPlan& prior,
+    const MeasuredDeviceEndpointObservation& latestEndpoint,
+    bool explicitUserRequest) const
+{
+    const auto checked=recheck_measured_device_preinstall(
+        ticket,latestEndpoint,explicitUserRequest);
+    if(!checked)
+        return core::Result<MeasuredDeviceTransportPlan>::failure(*checked.error());
+    const auto snapshot=transport_->playback_snapshot();
+    if(!snapshot)
+        return core::Result<MeasuredDeviceTransportPlan>::failure(*snapshot.error());
+    return ticket.rebase_handoff(
+        prior,measured_candidate(),*snapshot.value(),sourceLoop_(),
+        latestEndpoint,explicitUserRequest);
+}
+
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
 TerminalPrivateProductSession::materialize_private_final_master_monitoring(
     const MonitoringMaterializer& materializer)

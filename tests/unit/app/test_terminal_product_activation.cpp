@@ -903,6 +903,47 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     QVERIFY(expectedDeviceRegion);
     QCOMPARE(planned.value()->device_loop,
              std::optional{*expectedDeviceRegion.value()});
+    // Each plan is tied to SOURCE seek and loop-wrap epochs. Natural
+    // forward playback is not itself a new epoch and must rebase its cue.
+    auto advanced=manualSnapshot;
+    advanced.position=core::FrameIndex{132};
+    const auto freshPlan=ticket.value()->rebase_handoff(
+        *planned.value(),captured,advanced,*sourceRegion.value(),
+        freshEndpoint,true);
+    QVERIFY(freshPlan);
+    QCOMPARE(freshPlan.value()->source_cue,core::FrameIndex{132});
+    QCOMPARE(freshPlan.value()->master_cue,core::FrameIndex{132});
+    QCOMPARE(freshPlan.value()->device_cue,core::FrameIndex{33});
+    auto seeked=advanced;
+    seeked.seekSerial=1;
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,seeked,*sourceRegion.value(),
+        freshEndpoint,true));
+    auto wrapped=advanced;
+    wrapped.loopWrapCount=1;
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,wrapped,*sourceRegion.value(),
+        freshEndpoint,true));
+    auto paused=advanced;
+    paused.state=core::PlaybackState::PAUSED;
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,paused,*sourceRegion.value(),
+        freshEndpoint,true));
+    auto rewound=manualSnapshot;
+    rewound.position=core::FrameIndex{127};
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,rewound,*sourceRegion.value(),
+        freshEndpoint,true));
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,advanced,*sourceRegion.value(),
+        freshEndpoint,false));
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),{},advanced,*sourceRegion.value(),
+        freshEndpoint,true));
+    QVERIFY(!ticket.value()->rebase_handoff(
+        *planned.value(),captured,advanced,std::nullopt,
+        freshEndpoint,true));
+
     QCOMPARE(planned.value()->source_rate,*sourceRate.value());
     QCOMPARE(planned.value()->master_rate,*sourceRate.value());
     QCOMPARE(planned.value()->device_rate,*deviceRate.value());

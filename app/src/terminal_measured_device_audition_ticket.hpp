@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -37,6 +38,9 @@ struct MeasuredDeviceTransportPlan final {
     core::SampleRate source_rate;
     core::SampleRate master_rate;
     core::SampleRate device_rate;
+    // SOURCE transition epochs, never an audible device-clock certificate.
+    std::uint64_t source_seek_serial{0};
+    std::uint64_t source_loop_wrap_count{0};
 };
 
 // M17 CI PREPRODUCTION ONLY: a strongly typed audition candidate that cannot
@@ -71,6 +75,19 @@ public:
         std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
             currentMeasured,
         const core::PlaybackSnapshot& sourcePlayback,
+        std::optional<core::FrameRange> currentSourceLoop,
+        const MeasuredDeviceEndpointObservation& latestEndpoint,
+        bool explicitUserRequest) const;
+
+    // Re-observe SOURCE directly before physical handoff. Ordinary forward
+    // playback without a seek may advance the cue; recompute its mapping.
+    // A new seek, loop wrap, Play/Pause/Stop, owner or endpoint requires
+    // a new user-controlled audition transaction instead of a stale install.
+    [[nodiscard]] core::Result<MeasuredDeviceTransportPlan> rebase_handoff(
+        const MeasuredDeviceTransportPlan& prior,
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            currentMeasured,
+        const core::PlaybackSnapshot& currentSource,
         std::optional<core::FrameRange> currentSourceLoop,
         const MeasuredDeviceEndpointObservation& latestEndpoint,
         bool explicitUserRequest) const;
@@ -282,8 +299,52 @@ MeasuredDeviceAuditionTicket::plan_handoff(
         originalManualId_,actualState,sourcePlayback.position,
         currentSourceLoop,*masterCue.value(),masterLoop,
         *deviceCue.value(),deviceLoop,sourceRate,
-        map.value()->master_rate(),map.value()->device_rate()
+        map.value()->master_rate(),map.value()->device_rate(),
+        sourcePlayback.seekSerial,sourcePlayback.loopWrapCount
     });
+}
+
+inline core::Result<MeasuredDeviceTransportPlan>
+MeasuredDeviceAuditionTicket::rebase_handoff(
+    const MeasuredDeviceTransportPlan& prior,
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+        currentMeasured,
+    const core::PlaybackSnapshot& currentSource,
+    std::optional<core::FrameRange> currentSourceLoop,
+    const MeasuredDeviceEndpointObservation& latestEndpoint,
+    bool explicitUserRequest) const
+{
+    using Result=core::Result<MeasuredDeviceTransportPlan>;
+    const auto fail=[](const char* why)->Result {
+        return Result::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if(prior.manual_owner!=originalManualId_
+       ||!devicePcm_
+       ||prior.master_rate!=devicePcm_->immutable_master_rate
+       ||prior.device_rate!=devicePcm_->device_rate
+       ||prior.source_state!=currentSource.state
+       ||prior.source_loop!=currentSourceLoop
+       ||prior.source_seek_serial!=currentSource.seekSerial
+       ||prior.source_loop_wrap_count!=currentSource.loopWrapCount)
+        return fail("M17_MEASURED_HANDOFF_TRANSPORT_EPOCH_REVOKED");
+    // PLAY advances naturally without a seek. Other states must be frozen
+    // until a new explicit request; backward travel without a Loop wrap is
+    // never a valid continuous playing clock.
+    const auto next=currentSource.position.value();
+    const auto old=prior.source_cue.value();
+    if((prior.source_state==core::PlaybackState::PLAYING &&next<old)
+       ||(prior.source_state!=core::PlaybackState::PLAYING &&next!=old))
+        return fail("M17_MEASURED_HANDOFF_CUE_DISCONTINUITY");
+    const auto fresh=plan_handoff(
+        std::move(currentMeasured),currentSource,currentSourceLoop,
+        latestEndpoint,explicitUserRequest);
+    if(!fresh)return fresh;
+    if(fresh.value()->manual_owner!=prior.manual_owner
+       ||fresh.value()->source_rate!=prior.source_rate
+       ||fresh.value()->master_rate!=prior.master_rate
+       ||fresh.value()->device_rate!=prior.device_rate)
+        return fail("M17_MEASURED_HANDOFF_RATE_OR_SOURCE_CHANGED");
+    return fresh;
 }
 
 // This named helper is retained for unit test readability; construction
