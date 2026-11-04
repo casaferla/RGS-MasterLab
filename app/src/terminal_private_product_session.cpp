@@ -266,6 +266,33 @@ bool TerminalPrivateProductSession::current_measured_matches_device_for_preview(
         &&measured_candidate()==stage;
 }
 
+TerminalPrivateProductSession::MeasuredMasterCapture
+TerminalPrivateProductSession::
+capture_measured_master_for_device_conversion() const
+{
+    // Offline FIR workers have no access to QObjects or mutable owner
+    // state. Capture must happen on this session's Qt owner thread.
+    if(QThread::currentThread()!=thread())return {};
+    return measured_candidate();
+}
+
+core::Result<MeasuredDeviceAuditionTicket>
+TerminalPrivateProductSession::admit_measured_device_conversion(
+    MeasuredMasterCapture captured,
+    std::shared_ptr<const audio::MonitoringPcmCandidate> device,
+    bool explicitUserRequest) const
+{
+    if(QThread::currentThread()!=thread())
+        return core::Result<MeasuredDeviceAuditionTicket>::failure(
+            core::Error{core::ErrorCode::InvalidState,
+                "M17_MEASURED_DEVICE_ADMISSION_WRONG_THREAD"});
+    // Re-read the exact live measured stage AFTER conversion. No verified
+    // Master Audition, M16 LIVE, export or sink authority is minted here.
+    return admit_measured_device_audition_ticket(
+        std::move(captured),measured_candidate(),std::move(device),
+        explicitUserRequest);
+}
+
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
 TerminalPrivateProductSession::materialize_private_final_master_monitoring(
     const MonitoringMaterializer& materializer)
