@@ -2051,7 +2051,7 @@ Window {
     auto* barItem=qobject_cast<QQuickItem*>(liveProgress);
     auto* prepItem=qobject_cast<QQuickItem*>(prepPlot);
     QVERIFY(etaItem&&barItem&&prepItem);
-    const etaEntirelyVisible=[&]()->bool {
+    const auto etaEntirelyVisible=[&]()->bool {
         QCoreApplication::processEvents();
         if(!prepItem->isVisible()||!etaItem->isVisible())
             return false;
