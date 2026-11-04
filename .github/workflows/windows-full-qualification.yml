@@ -503,6 +503,36 @@ jobs:
           }
           Write-Host 'FQ_UNICODE_MOVED_EXE_LOCAL_16_FIR_QT_SMOKE_PASS'
 
+      # The deployed EXE must READ its pinned FIR assets and must never
+      # try to rewrite the bank or manifest when the install is read-only.
+      # This is a cold deployment property, not a Windows developer-profile
+      # override. Restore file attributes even if the assertion fails.
+      - name: Cold deploy with read-only authenticated FIR assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $root = Join-Path $stage 'bin/resources/fir'
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$root"
+          if ($LASTEXITCODE -ne 0) { throw 'FQ_READONLY_PRISTINE_FIRS_REQUIRED' }
+          $files = @(Get-ChildItem -LiteralPath $root -File)
+          if ($files.Count -ne 17) { throw 'FQ_READONLY_EXPECTED_16_FIR_AND_MANIFEST' }
+          try {
+            foreach ($file in $files) { $file.IsReadOnly = $true }
+            $out = Join-Path $env:RUNNER_TEMP 'fq-readonly-fir.stdout.txt'
+            $err = Join-Path $env:RUNNER_TEMP 'fq-readonly-fir.stderr.txt'
+            $probe = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+            if ($probe.ExitCode -ne 0) {
+              throw "FQ_READONLY_FIR_EXE_FAILED_$($probe.ExitCode)"
+            }
+            Write-Host 'FQ_READONLY_EXE_LOCAL_16_FIR_PASS'
+          } finally {
+            foreach ($file in $files) { $file.IsReadOnly = $false }
+          }
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$root"
+          if ($LASTEXITCODE -ne 0) { throw 'FQ_READONLY_RESTORE_FIR_SHA_MISMATCH' }
+
       - name: Cache statistics and cold/warm evidence classification
         if: always()
         shell: pwsh
