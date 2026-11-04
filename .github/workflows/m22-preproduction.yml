@@ -1,0 +1,61 @@
+# M22 private only; does NOT qualify M22, activate product code or authorize merge.
+name: M22 Independent Preproduction CI
+on:
+  push:
+    branches:
+      - experimental/m22-full-manual-chain-20261104
+    paths:
+      - 'render/src/internal/m22_*.hpp'
+      - 'tools/qualification/m22/**'
+      - 'docs/architecture/M22_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261104.md'
+      - '.github/workflows/m22-preproduction.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m22-private-preproduction-only
+  cancel-in-progress: false
+jobs:
+  linux-m22:
+    name: M22 private · Linux GCC C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Scope guard
+        run: python3 tools/qualification/m22/test_m22_scope_guard.py
+      - name: Immutable intent, ordered plan, frame origin, fail-closed · GCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opt in '-O0 -g' '-O2'; do
+            g++ -std=c++20 $opt -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Irender/src/internal tools/qualification/m22/m22_request_plan_selftest.cpp -o "$RUNNER_TEMP/m22-plan"
+            "$RUNNER_TEMP/m22-plan"
+          done
+  windows-m22:
+    name: M22 private · Windows 2022 MSVC Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Scope guard
+        shell: pwsh
+        run: python tools/qualification/m22/test_m22_scope_guard.py
+      - name: Immutable intent, ordered plan, frame origin, fail-closed · MSVC
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug", "Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m22-plan-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Irender/src/internal tools/qualification/m22/m22_request_plan_selftest.cpp "/Fe:$env:RUNNER_TEMP/m22-plan-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 60; throw "M22_PLAN_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m22-plan-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M22_PLAN_TEST_FAILED_$mode" }
+          }
