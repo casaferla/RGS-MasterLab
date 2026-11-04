@@ -116,12 +116,19 @@ public:
            ||sourceFrame.value()<0||sourceFrame.value()>sourceFrames.value())
             return invalid<core::FrameIndex>(
                 "MONITOR_FRAME_MAP_INVALID_SOURCE_CURSOR");
-        const auto expected=ceil_ratio(masterFrames_.value(),
-            masterRate_.value(),sourceRate.value());
+        // Compare programme durations in the MASTER frame domain, the
+        // domain in which Final SRC has rounded the frame count. Inverting
+        // rounded MASTER frames back to SOURCE can differ by several SOURCE
+        // frames when downsampling 192 kHz -> 48 kHz (513 -> 129 -> 516).
+        // The old +/-1 SOURCE-frame tolerance incorrectly rejected a valid
+        // master. Require exact checked rational duration within at most
+        // one MASTER frame; no fractional DSP samples are manufactured.
+        const auto expected=ceil_ratio(sourceFrames.value(),
+            sourceRate.value(),masterRate_.value());
         if(!expected)return core::Result<core::FrameIndex>::failure(
             *expected.error());
         const auto projected=*expected.value();
-        const auto actual=sourceFrames.value();
+        const auto actual=masterFrames_.value();
         if((projected<actual && actual-projected>1)
            ||(projected>actual && projected-actual>1))
             return invalid<core::FrameIndex>(
@@ -178,15 +185,18 @@ public:
            ||region.begin()>=region.end())
             return invalid<core::FrameRange>(
                 "MONITOR_FRAME_MAP_INVALID_SOURCE_LOOP_INPUT");
-        // Programme durations must agree within one SOURCE frame.
-        // Do not allow an unrelated SOURCE to inherit a MASTER loop.
-        const auto expected=ceil_ratio(masterFrames_.value(),
-                                       masterRate_.value(),
-                                       sourceRate.value());
+        // Preserve exactly the same MASTER-domain SRC duration check used
+        // by SOURCE->MASTER cursor projection. An inverse-rate SOURCE
+        // frame tolerance is invalid after quantization and wrongly rejects
+        // legitimate 6-rate downsampling. Still require the original
+        // programme to agree within one genuine MASTER frame.
+        const auto expected=ceil_ratio(sourceFrames.value(),
+                                       sourceRate.value(),
+                                       masterRate_.value());
         if(!expected)
             return invalid<core::FrameRange>(
                 "MONITOR_FRAME_MAP_SOURCE_DURATION_OVERFLOW");
-        const auto actual=sourceFrames.value();
+        const auto actual=masterFrames_.value();
         const auto projected=*expected.value();
         if((projected<actual && actual-projected>1)
            ||(projected>actual && projected-actual>1))
@@ -199,7 +209,7 @@ public:
                                    masterRate_.value(),
                                    sourceRate.value());
         if(!first||!last||*first.value()>=*last.value()
-           ||*last.value()>actual)
+           ||*last.value()>sourceFrames.value())
             return invalid<core::FrameRange>(
                 "MONITOR_FRAME_MAP_SOURCE_LOOP_COLLAPSED_OR_OUT_OF_RANGE");
         return core::FrameRange::create(core::FrameIndex{*first.value()},
