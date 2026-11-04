@@ -325,13 +325,15 @@ public:
                 "The Windows audio sink is not active.");
         }
         sink_->suspend();
+        if(const auto backendError=error())
+            return core::Status::failure(*backendError);
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status resume() override
     {
-        if(monitorLock_ && !monitor_endpoint_matches(
-            QMediaDevices::defaultAudioOutput()))
+        const auto currentDefault=QMediaDevices::defaultAudioOutput();
+        if(monitorLock_ && !monitor_endpoint_matches(currentDefault))
             return status_failure(core::ErrorCode::UnsupportedOperation,
                 "MONITOR_ENDPOINT_CHANGED_BEFORE_RESUME: regenerate device PCM.");
         if (!sink_ || sink_->state() != QtAudio::SuspendedState) {
@@ -339,7 +341,21 @@ public:
                 core::ErrorCode::InvalidState,
                 "The Windows audio sink is not suspended.");
         }
+        const auto expectedId=device_.id();
+        const auto currentId=currentDefault.id();
+        if(currentDefault.isNull()
+           ||currentDefault.mode()!=QAudioDevice::Output
+           ||!internal::monitoring_endpoint_is_current(
+                opaque_device_id(expectedId),
+                device_.preferredFormat().sampleRate(),
+                opaque_device_id(currentId),
+                currentDefault.preferredFormat().sampleRate(),
+                currentDefault.isFormatSupported(format_)))
+            return status_failure(core::ErrorCode::UnsupportedOperation,
+                "AUDIO_DEVICE_ENDPOINT_CHANGED_BEFORE_RESUME");
         sink_->resume();
+        if(const auto backendError=error())
+            return core::Status::failure(*backendError);
         return core::Status::success();
     }
 
