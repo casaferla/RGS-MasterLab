@@ -3992,14 +3992,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("projectOpenFileDialog")));
     QVERIFY(root->findChild<QObject*>(
         QStringLiteral("projectSaveFileDialog")));
-    // The private Q0 bank is never in public FQ/Qt smoke fixtures. The
-    // optional Edit menu path must exist without assuming a real private
-    // original-14 pack or prompting the user during startup.
-    QVERIFY(root->findChild<QObject*>(
+    // A complete public package has the 14 original Q0 binaries beside
+    // the EXE. If broken, Edit may show a disabled "reinstall" warning,
+    // NEVER a private folder picker that masks the missing release assets.
+    auto* missingQ0=root->findChild<QObject*>(
+        QStringLiteral("menuQ0ResourcesIncomplete"));
+    QVERIFY(missingQ0);
+    QVERIFY(!missingQ0->property("enabled").toBool());
+    QVERIFY(!root->findChild<QObject*>(
         QStringLiteral("menuUseExistingOriginalQ0Firs")));
-    QVERIFY(root->findChild<QObject*>(
+    QVERIFY(!root->findChild<QObject*>(
         QStringLiteral("existingOriginalQ0FirFolderDialog")));
-    QVERIFY(root->findChild<QObject*>(
+    QVERIFY(!root->findChild<QObject*>(
         QStringLiteral("existingOriginalQ0FirResultDialog")));
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
