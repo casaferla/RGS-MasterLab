@@ -1,4 +1,5 @@
 #include "terminal_product_activation_coordinator.hpp"
+#include "m17_prepare_live_eta_policy.hpp"
 #include <rgsml/core/error.hpp>
 #include <algorithm>
 #include <cmath>
@@ -529,23 +530,20 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
         return QStringLiteral("%1m %2s")
             .arg(s/60).arg(s%60,2,10,QLatin1Char('0'));
     };
-    const auto fractionKnown=progress.total_frames>0
+    const bool fractionKnown=progress.total_frames>0
         &&progress.processed_frames>=0
         &&progress.processed_frames<=progress.total_frames;
     const double f=fractionKnown
         ?static_cast<double>(progress.processed_frames)
             /static_cast<double>(progress.total_frames):0.0;
-    const auto bounded=[](long double ms) -> std::int64_t {
-        if(!std::isfinite(ms)||ms<=0)return 0;
-        return static_cast<std::int64_t>(
-            std::min(ms,86'400'000.0L));
-    };
     QString stage=QStringLiteral("Queued");
     double fraction=0.0;
     bool determinate=false;
-    std::optional<std::pair<std::int64_t,std::int64_t>> remaining;
+    std::optional<M17PrepareLivePhase> livePhase;
+    std::int64_t livePhaseMs=0;
+
     switch(progress.phase) {
-    case Phase::SRC: {
+    case Phase::SRC:
         stage=QStringLiteral("Final SRC");
         if(!srcPhaseObserved_) {
             srcPhaseObserved_=true;
@@ -555,26 +553,10 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
             fraction=std::min(0.99,f);
             determinate=true;
         }
-        if(f>=0.025 &&srcPhaseElapsed_.elapsed()>=2000) {
-            const auto spent=static_cast<long double>(
-                srcPhaseElapsed_.elapsed());
-            const auto left=spent*(1.0L-f)/f;
-            // M17 and M16 have not yet been timed in this pass. A
-            // calibrated on-host probe is preferable, but never a
-            // certified whole-Prepare duration.
-            const auto low=activeDspEtaUs_
-                ?activeDspEtaUs_->first/1000.0L*0.7L
-                :spent*0.3L;
-            const auto high=activeDspEtaUs_
-                ?activeDspEtaUs_->second/1000.0L*2.2L
-                :spent*3.0L+50'000.0L;
-            remaining=std::pair<std::int64_t,std::int64_t>{
-                bounded(left*0.85L+low),
-                bounded(left*1.2L+high)};
-        }
+        livePhase=M17PrepareLivePhase::FINAL_SRC;
+        livePhaseMs=srcPhaseElapsed_.elapsed();
         break;
-    }
-    case Phase::M17_CORE: {
+    case Phase::M17_CORE:
         stage=QStringLiteral("M17 DSP");
         if(!corePhaseObserved_) {
             corePhaseObserved_=true;
@@ -584,27 +566,11 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
             fraction=std::min(0.99,f);
             determinate=true;
         }
-        if(f>=0.025 &&corePhaseElapsed_.elapsed()>=2000) {
-            const auto spent=static_cast<long double>(
-                corePhaseElapsed_.elapsed());
-            const auto projected=spent/f;
-            const auto left=std::max(0.0L,projected-spent);
-            // Forecast ONE primary M16 pass. If a verification trim
-            // triggers a second pass, revise the remaining time as
-            // requested instead of reserving fictitious minutes.
-            const auto verifier=projected*0.45L;
-            const auto uncertainty=0.65L*(1.0L-f)+0.20L;
-            const auto mid=left+verifier+4'000.0L;
-            const auto spread=left*uncertainty
-                +verifier*(0.60L+0.35L*(1.0L-f))+5'000.0L;
-            remaining=std::pair<std::int64_t,std::int64_t>{
-                bounded(std::max(0.0L,mid-spread)),
-                bounded(mid+spread)};
-        }
+        livePhase=M17PrepareLivePhase::M17_CORE;
+        livePhaseMs=corePhaseElapsed_.elapsed();
         break;
-    }
     case Phase::M16_PRIMARY:
-    case Phase::M16_SECONDARY: {
+    case Phase::M16_SECONDARY:
         stage=progress.phase==Phase::M16_PRIMARY
             ?QStringLiteral("M16 primary TP verification")
             :QStringLiteral("M16 final TP verification");
@@ -619,65 +585,69 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
                 observedCoreMs_=corePhaseObserved_
                     ?corePhaseElapsed_.elapsed():0;
         }
-        // Gate G protects M16's production measurement source. It has
-        // NO progress observer and must not be modified for cosmetics.
-        // Forecast time here is explicitly provisional, not a fake
-        // measured M16 percentage. The indeterminate bar stays honest.
-        const auto spent=static_cast<long double>(
-            m16PhaseElapsed_.elapsed());
-        const auto nominal=progress.phase==Phase::M16_SECONDARY
-            &&observedPrimaryM16Ms_>0
-                ?static_cast<long double>(observedPrimaryM16Ms_)
-                :observedCoreMs_>0
-                    ?std::max(15'000.0L,
-                        static_cast<long double>(observedCoreMs_)*0.48L)
-                    :30'000.0L;
-        // Close toward a central estimate as elapsed time approaches
-        // the nominal cost; if it overruns, extend the expectation
-        // rather than freezing the clock at zero.
-        const auto projected=std::max(nominal,spent*1.22L);
-        const auto left=std::max(0.0L,projected-spent);
-        const auto mid=left+3'000.0L;
-        const auto spread=std::max(2'000.0L,
-            left*(0.36L*(1.0L-std::min(1.0L,spent/projected))
-                +0.12L)+2'000.0L);
-        remaining=std::pair<std::int64_t,std::int64_t>{
-            bounded(std::max(0.0L,mid-spread)),
-            bounded(mid+spread)};
+        // M16 has no trusted frame progress denominator. Do not manufacture
+        // a percentage. Use only elapsed phase time and prior measured
+        // M17/primary M16 duration in a provisional whole-Prepare envelope.
+        livePhase=progress.phase==Phase::M16_PRIMARY
+            ?M17PrepareLivePhase::M16_PRIMARY
+            :M17PrepareLivePhase::M16_SECONDARY;
+        livePhaseMs=m16PhaseElapsed_.elapsed();
         break;
-    }
     case Phase::VERIFICATION_TRIM:
         stage=QStringLiteral("Verification trim");
-        // Await the SECOND M16 progress denominator; never reuse an
-        // already-completed primary meter as if it were still running.
+        if(lastObservedM16Phase_!=Phase::VERIFICATION_TRIM) {
+            // A real verification trim can require an extra M16 pass.
+            // Snapshot the just-finished PRIMARY before replacing its
+            // elapsed timer; this is observation, not another Prepare.
+            if(lastObservedM16Phase_==Phase::M16_PRIMARY
+               &&m16PhaseElapsed_.isValid())
+                observedPrimaryM16Ms_=m16PhaseElapsed_.elapsed();
+            lastObservedM16Phase_=Phase::VERIFICATION_TRIM;
+            verificationTrimElapsed_.start();
+        }
+        livePhase=M17PrepareLivePhase::VERIFICATION_TRIM;
+        livePhaseMs=verificationTrimElapsed_.elapsed();
         break;
     case Phase::FINISHING:
         stage=QStringLiteral("Finishing");
-        remaining=std::pair<std::int64_t,std::int64_t>{0,8'000};
+        livePhase=M17PrepareLivePhase::FINISHING;
         break;
     case Phase::IDLE:break;
     }
+
+    // FIRST run is fully eligible: current progress and stage transitions
+    // form the provisional ETA immediately when they provide evidence.
+    // Previous accepted Prepares (3+ samples) are OPTIONAL context only,
+    // never a gate for this calculation and never another calibration.
+    const auto remaining=livePhase
+        ?m17_provisional_live_remaining(M17PrepareLiveEvidence{
+            *livePhase,livePhaseMs,f,fractionKnown,
+            observedCoreMs_,observedPrimaryM16Ms_,activeDspEtaUs_})
+        :std::nullopt;
     QString eta=QStringLiteral("Elapsed %1").arg(fmt(elapsed));
     if(remaining) {
-        const auto low=remaining->first;
-        const auto high=std::max(low,remaining->second);
+        const auto low=remaining->low_ms;
+        const auto high=std::max(low,remaining->high_ms);
         const auto centre=low+(high-low)/2;
-        eta+=QStringLiteral(" · ETA ~%1 (%2–%3)")
+        eta+=QStringLiteral(
+            " · Provisional remaining ~%1 (%2–%3)")
             .arg(fmt(centre),fmt(low),fmt(high));
-    } else if(activeWholeEtaUs_&&elapsed<activeWholeEtaUs_->second/1000
-        &&progress.phase!=Phase::VERIFICATION_TRIM) {
+    } else if(activeWholeEtaUs_
+              &&elapsed<activeWholeEtaUs_->second/1000
+              &&progress.phase!=Phase::VERIFICATION_TRIM) {
         const auto low=std::max<std::int64_t>(
             0,activeWholeEtaUs_->first/1000-elapsed);
         const auto high=std::max<std::int64_t>(
             low,activeWholeEtaUs_->second/1000-elapsed);
-        eta+=QStringLiteral(" · ETA ~%1–%2")
-            .arg(fmt(low),fmt(high));
+        eta+=QStringLiteral(
+            " · Historical remaining ~%1–%2").arg(fmt(low),fmt(high));
     } else {
-        eta+=QStringLiteral(" · Estimating");
+        eta+=QStringLiteral(" · Measuring current phase");
     }
-    // Stage percentages are factual; the range describes estimated
-    // remaining time for the entire active Prepare. Neither can alter
-    // DSP arithmetic, PCM, ceiling verification or ownership gates.
+    // Progress fraction is CURRENT STAGE only. The remaining-time range
+    // refers to the entire ongoing Prepare, and may legitimately WIDEN
+    // if an actual trim/overrun reveals more work than previously observed.
+    // It never changes the output PCM, Ceiling, DSP, Q0 or LIVE authority.
     view_->setPreparationProgress(stage,fraction,determinate,eta);
     view_->setAudioStatus(
         QStringLiteral("Preparing · %1s").arg(elapsed/1000));
