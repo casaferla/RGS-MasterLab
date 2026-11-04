@@ -185,6 +185,14 @@ public:
     [[nodiscard]] core::Status stop() override
     {
         ++stopCalls;
+        if(refusedStopCalls>0) {
+            --refusedStopCalls;
+            // Simulate a Windows backend that refuses STOP while still
+            // ACTIVE: no controller may claim the device was retired.
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "TEST_WINDOWS_STOP_REFUSED_DEVICE_STILL_ACTIVE"});
+        }
         state_ = OutputState::STOPPED;
         queue_.clear();
         processedFrames_ = 0;
@@ -251,6 +259,7 @@ public:
     bool failNextEnqueue{false};
     bool failNextSuspend{false};
     bool failNextResume{false};
+    int refusedStopCalls{0};
     int startCalls{0};
     int suspendCalls{0};
     int resumeCalls{0};
@@ -302,6 +311,7 @@ private slots:
     void stateMachineAndBoundedPump();
     void playbackRestartFailureNeverReportsPhantomPlaying();
     void partialDeviceStartFailureNeverLeavesAudioActive();
+    void stopRefusalNeverPublishesAudiblePlaybackState();
     void pauseResumeBackendErrorsInvalidateAudibleClock();
     void adaptedTimelineUsesAbsoluteRateMapping();
     void terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed();
@@ -2124,6 +2134,66 @@ void PlaybackSupportTest::partialDeviceStartFailureNeverLeavesAudioActive()
         QCOMPARE(engine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
         QVERIFY(engine.stop());
+    }
+}
+
+void PlaybackSupportTest::stopRefusalNeverPublishesAudiblePlaybackState()
+{
+    // A Qt backend can refuse to STOP even though the controller has
+    // already decided to retire the old audible clock. Test both a new
+    // Play (which first stops the old sink) and an explicit Stop request.
+    // Also test a DEVICE that refuses TWO successive retire attempts,
+    // including the safety retry. Neither may publish usable M16 LIVE.
+    for(const bool restart : {false,true}) {
+        for(const int stopRefusals : {1,2}) {
+            PlaybackEngine engine;
+            auto output=std::make_unique<FakeOutput>(4096U,4U);
+            auto* sink=output.get();
+            QVERIFY(engine.install_candidate(
+                open_pcm16_stereo(indexed_stereo_codes(1024)),
+                std::move(output),DeviceSampleFormat::PCM_S16));
+            QVERIFY(engine.play());
+            QCOMPARE(sink->state(),OutputState::ACTIVE);
+            const auto originalStartCalls=sink->startCalls;
+            const auto stopCallsBefore=sink->stopCalls;
+            sink->refusedStopCalls=stopRefusals;
+            const auto rejected=restart?engine.play():engine.stop();
+            QVERIFY(!rejected);
+            QCOMPARE(rejected.error()->code(),core::ErrorCode::IoFailure);
+            QVERIFY(sink->stopCalls>=stopCallsBefore+2);
+            QCOMPARE(sink->refusedStopCalls,0);
+            if(stopRefusals==1) {
+                QCOMPARE(sink->state(),OutputState::STOPPED);
+            } else {
+                // Physical sink remains ACTIVE; even a later UI refresh
+                // must not claim Play/PAUSED or a certified audible clock.
+                QCOMPARE(sink->state(),OutputState::ACTIVE);
+            }
+            QCOMPARE(sink->queued_bytes(),std::size_t{0});
+            const auto unsafe=engine.snapshot();
+            QVERIFY(!unsafe);
+            QCOMPARE(unsafe.error()->code(),core::ErrorCode::IoFailure);
+            const auto forbidden=engine.play();
+            QVERIFY(!forbidden);
+            QCOMPARE(forbidden.error()->code(),core::ErrorCode::IoFailure);
+            QCOMPARE(sink->startCalls,originalStartCalls);
+            const auto coverage=engine.c2_processed_coverage_probe();
+            QCOMPARE(coverage.reason,
+                platform::windows::internal::
+                    C2CoverageProbeReason::NOT_MONITORED);
+            // After a new user-authorized Stop succeeds, the SOURCE is
+            // still intact and another Play is allowed with a new clock.
+            QVERIFY(engine.stop());
+            QCOMPARE(sink->state(),OutputState::STOPPED);
+            const auto reset=engine.snapshot();
+            QVERIFY(reset);
+            QCOMPARE(reset.value()->state,core::PlaybackState::STOPPED);
+            QVERIFY(engine.play());
+            QCOMPARE(engine.snapshot().value()->state,
+                core::PlaybackState::PLAYING);
+            QCOMPARE(sink->startCalls,originalStartCalls+1);
+            QVERIFY(engine.stop());
+        }
     }
 }
 
