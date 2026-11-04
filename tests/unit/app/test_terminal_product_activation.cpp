@@ -350,6 +350,10 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QVERIFY(!vm.nonconforming_direct_preview_available());
     vm.setNonconformingDirectPreviewAvailable(true);
     QVERIFY(vm.nonconforming_direct_preview_available());
+    // Direct and DEVICE-rate SRC permissions must never be conflated.
+    QVERIFY(!vm.nonconforming_device_preview_available());
+    vm.setNonconformingDevicePreviewAvailable(true);
+    QVERIFY(vm.nonconforming_device_preview_available());
     const double ceiling=std::pow(10.0,-12.0/20.0);
     const double over=ceiling*std::pow(10.0,0.24/20.0);
     vm.setNonconformingObservation(over,ceiling,-12.0);
@@ -379,6 +383,7 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QCOMPARE(unsafe.count(),1); // Explicit action only.
     vm.setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
     QVERIFY(!vm.nonconforming_direct_preview_available());
+    QVERIFY(!vm.nonconforming_device_preview_available());
     vm.cancelPreparation();
     QCOMPARE(cancelled.count(),0); // READY is not cancellable.
     vm.setAudioStatus(QStringLiteral("Preparing audio"));
@@ -1315,6 +1320,13 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // Strongly typed unqualified admission must reject even a genuine
     // VERIFIED M17 MASTER: this code cannot borrow LIVE/GR authority.
     QVERIFY(!product.capture_measured_master_for_device_conversion());
+    // M16-VERIFIED MASTER must NEVER acquire a measured anonymous sink
+    // merely because both use the Windows monitoring adapter.
+    QVERIFY(!product.measured_device_active());
+    QVERIFY(!product.measured_device_snapshot());
+    QVERIFY(!product.return_measured_device_audition());
+    QVERIFY(!product.control_measured_device_audition({
+        platform::windows::MonitoringTransportAction::PLAY}));
     const app::MeasuredDeviceEndpointObservation neverAdmit{
         "fixture-endpoint-A",*deviceRate.value()};
     const auto forbidden=product.admit_measured_device_conversion(
