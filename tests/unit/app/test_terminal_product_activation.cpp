@@ -377,6 +377,15 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QVERIFY(cancelled.isValid());
     vm.cancelPreparation();
     QCOMPARE(cancelled.count(),0); // A retained PCM is not Preparing.
+    vm.setNonconformingDevicePreparing(true);
+    QVERIFY(vm.nonconforming_device_preparing());
+    QVERIFY(!vm.nonconforming_device_preview_available());
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),1); // Explicitly running DEVICE FIR is cancelable.
+    vm.setNonconformingDevicePreparing(false);
+    QVERIFY(!vm.nonconforming_device_preparing());
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),1); // Ending DEVICE job revokes its Cancel.
     vm.previewPrepared();
     QCOMPARE(verified.count(),0); // Not a verified READY candidate.
     vm.previewNonconforming();
@@ -385,10 +394,10 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QVERIFY(!vm.nonconforming_direct_preview_available());
     QVERIFY(!vm.nonconforming_device_preview_available());
     vm.cancelPreparation();
-    QCOMPARE(cancelled.count(),0); // READY is not cancellable.
+    QCOMPARE(cancelled.count(),1); // READY is not cancellable.
     vm.setAudioStatus(QStringLiteral("Preparing audio"));
     vm.cancelPreparation();
-    QCOMPARE(cancelled.count(),1); // Only active preparation can cancel.
+    QCOMPARE(cancelled.count(),2); // Ordinary full M17 Prepare is distinct.
     QVERIFY(state.value()->set_user_bypass(true));
     vm.previewNonconforming();
     QCOMPARE(unsafe.count(),1); // No audition from Bypass.
