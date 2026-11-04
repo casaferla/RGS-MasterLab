@@ -121,3 +121,10 @@ active-node latency. There is no accepted canonical parameter serializer or
 runtime requirement source bound here. Compiler integration only (Windows MSVC
 and Linux GCC Debug/Release syntax); NO actual production render, DSP or
 true end-to-end I/G/L. This is preproduction-only.
+
+## Lot #4 private CI target checkpoint
+The typed canonical API bridge is compile-only, so its Linux/Windows strict
+compiler screen requires the exact lot #4 SHA, not inherited M22 lot #3 green.
+A dedicated scoped push to this Draft PR head explicitly records the current
+handoff. If a CI run does not appear, the CI status remains UNVERIFIED; no
+manual I+G+L or upstream integration gate is inferred.
