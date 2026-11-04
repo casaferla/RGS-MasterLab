@@ -370,7 +370,15 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
         audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
     if(!block) {report(*block.error());return;}
     if(measuredWorker_.joinable())measuredWorker_.join();
-    const auto token=std::make_shared<std::atomic_bool>(false);
+    std::shared_ptr<std::atomic_bool> token;
+    try {
+        token=std::make_shared<std::atomic_bool>(false);
+    } catch(const std::bad_alloc&) {
+        view_->reportAudioError(QStringLiteral(
+            "M17_NONCONFORMING_DEVICE_CANCEL_TOKEN_OUT_OF_MEMORY"));
+        refresh_measured_crossrate_action();
+        return;
+    }
     const auto job=++measuredSerial_;
     measuredCancel_=token;
     pendingMeasured_=captured;
@@ -425,6 +433,10 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
                     return Result::failure(core::Error{
                         core::ErrorCode::InvalidState,
                         "M17_NONCONFORMING_DEVICE_SRC_WORKER_EXCEPTION"});
+                } catch(...) {
+                    return Result::failure(core::Error{
+                        core::ErrorCode::InvalidState,
+                        "M17_NONCONFORMING_DEVICE_SRC_UNKNOWN_EXCEPTION"});
                 }
             }());
             measuredWorkerRunning_.store(false,std::memory_order_release);
@@ -495,8 +507,10 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
     } catch(const std::exception&) {
         measuredWorkerRunning_.store(false,std::memory_order_release);
         cancel_measured_crossrate_audition();
+        view_->clearPreparationProgress();
         view_->reportAudioError(QStringLiteral(
             "M17_NONCONFORMING_DEVICE_WORKER_START_REFUSED"));
+        refresh_measured_crossrate_action();
     }
 }
 
