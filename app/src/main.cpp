@@ -267,11 +267,11 @@ int main(int argc, char* argv[])
         [&masteringChainState] {return masteringChainState.chain();}};
 
     // Original 14-Q0 FIRs are private and never embedded in PUBLIC FQ.
-    // Explicit local test override keeps highest priority. Otherwise first
-    // verify the current executable's flat FIR root, then the previously
-    // registered, user-local PATH to an EXISTING verified bank. An FQ unpacked
-    // to a new folder thus needs neither a new ZIP extraction nor Python.
-    // Every startup independently verifies all immutable SHA/shape pins.
+    // Standalone product reads its own EXE-relative immutable 16-FIR bank.
+    // An explicit developer-only environment variable remains available for
+    // native isolation tests, never for official FQ deploy smoke. No saved
+    // user-profile directory can silently repair an incomplete installation.
+    // Every startup independently verifies the frozen SHA/shape pins.
     const auto originalFirRoot=qgetenv("RGSML_FINAL_SRC_Q0_PRIVATE_DIR");
     // FQ cold-deploy mode never allows a developer/CI environment override
     // to disguise missing installed FIR resources. Only the application-
@@ -286,32 +286,11 @@ int main(int argc, char* argv[])
             std::filesystem::path{originalFirRoot.constData()});
 #endif
     } else {
-        const auto installed=appAssetRoot/"resources"/"fir";
-        privateTerminalRenderer.set_original_q0_fir_root(installed);
-        if(privateTerminalRenderer.full_original_q0_family_ready()) {
-            // Automatically remember a successfully verified app-local bank
-            // so it survives a later FQ build extracted elsewhere.
-            privateTerminalRenderer.remember_existing_original_q0_folder(
-                QUrl::fromLocalFile(QCoreApplication::applicationDirPath()
-                    +QStringLiteral("/resources/fir")));
-        } else if(!deploySmoke) {
-            // A cold deployed-FQ smoke MUST prove the EXE-local original
-            // 14-Q0 bank. A stale private path from QSettings must never
-            // make an incomplete public package look standalone.
-            QSettings preferences{QSettings::IniFormat,QSettings::UserScope,
-                QStringLiteral("RGS MasterLab"),QStringLiteral("RGS MasterLab")};
-            const auto previous=preferences.value(
-                QStringLiteral("privateQ0/originalDirectory")).toString();
-            if(!previous.isEmpty()) {
-#ifdef _WIN32
-                privateTerminalRenderer.set_original_q0_fir_root(
-                    std::filesystem::path{previous.toStdWString()});
-#else
-                privateTerminalRenderer.set_original_q0_fir_root(
-                    std::filesystem::path{previous.toStdString()});
-#endif
-            }
-        }
+        // A copied/moved Windows installer locates the same authenticated
+        // bank beside THAT executable. Missing assets remain a truthful,
+        // recoverable unavailable state (reinstall), never a profile rescue.
+        privateTerminalRenderer.set_original_q0_fir_root(
+            appAssetRoot/"resources"/"fir");
     }
     // One source-pinned authority shared by M17, all 6 Fs choices and
     // RAM/timing advice. A newly selected existing folder becomes effective
