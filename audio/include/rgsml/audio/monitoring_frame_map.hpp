@@ -205,9 +205,14 @@ public:
         const auto first=ceil_ratio(region.begin().value(),
                                     masterRate_.value(),
                                     sourceRate.value());
-        const auto last=ceil_ratio(region.end().value(),
-                                   masterRate_.value(),
-                                   sourceRate.value());
+        // A rounded MASTER terminal frame may project several SOURCE
+        // frames beyond the true original ending. The exact full-resource
+        // half-open end always maps to the real last SOURCE boundary, just
+        // as source_to_master() already snaps the original terminal cue.
+        const auto last=region.end()==core::FrameIndex{masterFrames_.value()}
+            ?core::Result<std::int64_t>::success(sourceFrames.value())
+            :ceil_ratio(region.end().value(),masterRate_.value(),
+                        sourceRate.value());
         if(!first||!last||*first.value()>=*last.value()
            ||*last.value()>sourceFrames.value())
             return invalid<core::FrameRange>(
