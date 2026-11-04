@@ -3824,6 +3824,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t manualRestores=0;
     int injectedManualRestoreFailure=0;
     int injectedManualRestoreException=0;
+    int injectedManualRestoreUnknownException=0;
     int injectedManualRestoreWrongOwner=0;
     std::optional<core::FrameRange> monitorMasterLoop;
     int injectedMonitorInstallFailure=0;
@@ -3884,6 +3885,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             if(injectedManualRestoreException>0) {
                 --injectedManualRestoreException;
                 throw std::bad_alloc{};
+            }
+            if(injectedManualRestoreUnknownException>0) {
+                --injectedManualRestoreUnknownException;
+                throw 73; // Non-std Windows/Qt boundary exception, not success.
             }
             if(injectedManualRestoreFailure>0) {
                 --injectedManualRestoreFailure;
@@ -4122,6 +4127,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     bool reenterReturnOnPreflight=false;
     bool nestedReturnCorrectlyBlocked=false;
     bool invalidateSelectionOnPreflight=false;
+    bool occupyDeviceDuringRecoveryPreflight=false;
     product.set_private_monitor_manual_restore_preflight(
         [&](auto original)->core::Status {
             ++sourceRestoreProbes;
@@ -4136,6 +4142,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 productAudibleSelectionAccepted=false;
             }
             if(sourceRestoreThrows)throw std::bad_alloc{};
+            if(occupyDeviceDuringRecoveryPreflight) {
+                occupyDeviceDuringRecoveryPreflight=false;
+                device->state=core::PlaybackState::STOPPED;
+                device->duration=*frames.value();
+                device->audibleRealization={
+                    core::AudibleHandoffPhase::NEW,
+                    core::RealizationId{0xBAAD}};
+            }
             if(original!=selector.processed_realization_snapshot())
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
@@ -4237,12 +4251,51 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(candidates.staged());
     sourceRestoreSupported=true;
     injectedManualRestoreException=1;
+    nestedReturnCorrectlyBlocked=false;
+    reenterReturnOnPreflight=true;
     const auto throwingRetry=product.return_private_monitor_to_manual();
     QVERIFY(!throwingRetry);
     QCOMPARE(throwingRetry.error()->code(),core::ErrorCode::IoFailure);
+    QVERIFY(nestedReturnCorrectlyBlocked);
     QCOMPARE(sourceRestoreProbes,std::size_t{5});
     QCOMPARE(manualRestores,std::size_t{2});
     QCOMPARE(monitorRetires,std::size_t{1});
+    QVERIFY(candidates.staged());
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    // #73: a nested Qt event changed SOURCE during the Windows retry probe.
+    // No second manual install may consume the now-stale captured owner.
+    invalidateSelectionOnPreflight=true;
+    const auto changedDuringRetry=product.return_private_monitor_to_manual();
+    QVERIFY(!changedDuringRetry);
+    QCOMPARE(changedDuringRetry.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(sourceRestoreProbes,std::size_t{6});
+    QCOMPARE(manualRestores,std::size_t{2});
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    QVERIFY(candidates.staged());
+    productAudibleSelectionAccepted=true;
+    // A foreign DEVICE sink installed *during* preflight is distinct from
+    // initial NO_SOURCE. The explicit retry must not silently overwrite it.
+    occupyDeviceDuringRecoveryPreflight=true;
+    const auto occupiedDuringRetry=product.return_private_monitor_to_manual();
+    QVERIFY(!occupiedDuringRetry);
+    QCOMPARE(occupiedDuringRetry.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(sourceRestoreProbes,std::size_t{7});
+    QCOMPARE(manualRestores,std::size_t{2});
+    QCOMPARE(device->audibleRealization.realizationId,
+        std::optional{core::RealizationId{0xBAAD}});
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    QVERIFY(device->clear()); // Simulate separate OS cleanup of the alien.
+    // Catch even a non-standard exception AFTER retiring the monitored
+    // sink: retain immutable MASTER for a later explicit retry.
+    injectedManualRestoreUnknownException=1;
+    const auto unknownExceptionRetry=product.return_private_monitor_to_manual();
+    QVERIFY(!unknownExceptionRetry);
+    QCOMPARE(unknownExceptionRetry.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(sourceRestoreProbes,std::size_t{8});
+    QCOMPARE(manualRestores,std::size_t{3});
     QVERIFY(candidates.staged());
     QCOMPARE(product.status(),
         QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
@@ -4252,9 +4305,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(wrongOwner.error()->code(),core::ErrorCode::InvalidState);
     QVERIFY(QString::fromStdString(wrongOwner.error()->message())
         .contains(QStringLiteral("MONITOR_RETURN_REALIZATION_MISMATCH")));
-    QCOMPARE(sourceRestoreProbes,std::size_t{6});
+    QCOMPARE(sourceRestoreProbes,std::size_t{9});
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{4});
     QCOMPARE(device->audibleRealization.realizationId,
         std::optional{core::RealizationId{0xDEAD}});
     QCOMPARE(product.status(),
@@ -4266,9 +4319,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // The ACTUAL UI button/menu calls cancel(), not returnManual()!
     // Verify the user-visible path performs a genuine explicit retry.
     QVERIFY(monitorUi.cancel());
-    QCOMPARE(sourceRestoreProbes,std::size_t{7});
+    QCOMPARE(sourceRestoreProbes,std::size_t{10});
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{4});
+    QCOMPARE(manualRestores,std::size_t{5});
     QCOMPARE(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QVERIFY(!deviceMonitor);
@@ -4300,7 +4353,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!loopRefused);
     QCOMPARE(deviceMonitor,privateMonitor);
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{4});
+    QCOMPARE(manualRestores,std::size_t{5});
     QVERIFY(product.control_private_monitor(
         Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},std::nullopt}));
     QVERIFY(product.control_private_monitor(
@@ -4314,7 +4367,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(monitorRetires,std::size_t{2});
-    QCOMPARE(manualRestores,std::size_t{5});
+    QCOMPARE(manualRestores,std::size_t{6});
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     // A PLAYING monitor must yield a PLAYING original MANUAL (never a
     // freshly issued M17 identity). It may advance after resume, so
@@ -4330,7 +4383,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(device->position,core::FrameIndex{1024});
     QCOMPARE(monitorRetires,std::size_t{3});
-    QCOMPARE(manualRestores,std::size_t{6});
+    QCOMPARE(manualRestores,std::size_t{7});
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QCOMPARE(sinkInstalls,std::size_t{0});
     QVERIFY(!product.private_id());
@@ -4346,7 +4399,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!stalePreflightReturn);
     QCOMPARE(stalePreflightReturn.error()->code(),core::ErrorCode::InvalidState);
     QCOMPARE(monitorRetires,std::size_t{3});
-    QCOMPARE(manualRestores,std::size_t{6});
+    QCOMPARE(manualRestores,std::size_t{7});
     QCOMPARE(deviceMonitor,privateMonitor);
     QCOMPARE(product.status(),
              QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
@@ -4364,7 +4417,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QCOMPARE(monitorRetires,std::size_t{4});
-    QCOMPARE(manualRestores,std::size_t{7});
+    QCOMPARE(manualRestores,std::size_t{8});
     QVERIFY(candidates.staged());
     QCOMPARE(sinkInstalls,std::size_t{0});
     // Leave the original stopped MANUAL state for the existing
