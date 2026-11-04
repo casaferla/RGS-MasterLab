@@ -63,3 +63,11 @@ These new commits are on isolated no-PR/no-CI `staging/m17-ci1008-followon-anony
 
 - Native six-rate fake DEVICE snapshots exercise STOPPED, PLAYING and PAUSED with MASTER/DEVICE cue, half-open Loop, duration and rate; reject alien playback RealizationId, wrong DEVICE duration, changed Loop epoch and NO_SOURCE. This cannot certify physical Windows sound, but makes the typed anonymous DEVICE transport state testable independent of hardware.
 - Linux #1009 **PASS** did not cover this later no-CI code or the Windows compiler fix. The next Focused candidate must compile and execute both Windows and Linux on the exact new SHA before PO considers cold FQ.
+
+## Post-#1010 next NO-CI Return/reprobe macro-lot
+
+- [Focused CI #1010](https://github.com/casaferla/RGS-MasterLab/actions/runs/41851315427) runs on immutable Draft PR #78 head `0585abbc25fb34c34445c81fca2fe880a4afa9e1`. At this writing both Windows+Linux jobs were running; no PASS asserted.
+- The approved single-writer no-PR development branch `staging/m17-post-ci1010-measured-source-return-reprobe-no-ci-20261104` contains a **separate, unqualified subsequent macro-lot**, not part of #1010: on every explicit SOURCE-only Return retry after retiring/loss of the anonymous measured DEVICE, independently re-probe native Windows SOURCE PCM format and RAM, then re-read the exact empty/ownerless DEVICE snapshot immediately before reinstall. Do not allow a successor sink appearing during preflight to be overwritten.
+- Shared `measured_empty_sink_snapshot_proven` performs strict NO_SOURCE, zero cue, no duration/Loop, UNAVAILABLE audible phase and empty RealizationId validation; product code now uses the same helper at all measured-device empty-owner decision points. Pure native tests independently reject stale cue, duration, Loop, active/paused sink and foreign owner while accepting only exact empty metadata.
+- This predicate is **not** physical Windows endpoint proof. A call to the real worker preflight and manual-source identity guard is still mandatory; error retains a re-try ticket and never supplies M16 VERIFIED/LIVE evidence.
+- Do NOT promote until #1010 terminal and the coherent correction lot is ready; keep #76/#73/#75 and original 48-kHz PCM16 physical acceptance OPEN.
