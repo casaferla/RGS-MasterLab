@@ -375,6 +375,20 @@ Item {
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
                                 elide: Text.ElideRight
+                                // Narrow/4K-scaled lower meter bays can
+                                // truncate the entire live central ETA
+                                // interval. Keep the full text obtainable
+                                // without changing panel height or layout.
+                                Accessible.name: text
+                                HoverHandler { id: m17PrepareEtaHover }
+                                ToolTip.text: text
+                                ToolTip.visible: m17PrepareEtaHover.hovered
+                                    && m17PrepareEtaDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: m17PrepareEtaDwell
+                                    anchors.fill: parent
+                                }
                             }
                         }
                         TruePeakGrHistoryGraph {
