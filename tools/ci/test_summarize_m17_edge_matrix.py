@@ -32,12 +32,23 @@ direct=(
     "PASS   : TerminalActivationIntegrationTest::sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()\n"
     "QINFO  : M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM\n"
     "QINFO  : M17_RATE_MATRIX_FULL_COMPOSED_CHAIN=216_SOURCE_MASTER_DEVICE_PCM\n"
+    "QINFO  : M17_RATE_MATRIX_MONO=216_SOURCE_MASTER_DEVICE_PCM\n"
     "Totals: 1 passed, 0 failed\n"
 )
 assert "RATE_GRID_36_MASTER_36_WAV_36_DEVICE=CONFIRMED" in module.collect(
     passed,SHA,direct,0)
 assert "RATE_GRID_216_COMPOSED_CHAINS=CONFIRMED" in module.collect(
     passed,SHA,direct,0)
+assert "RATE_GRID_432_MONO_STEREO=CONFIRMED" in module.collect(
+    passed,SHA,direct,0)
+assert "RATE_GRID_432_MONO_STEREO=NOT_CONFIRMED" in module.collect(
+    passed,SHA,direct.replace(
+        "QINFO  : M17_RATE_MATRIX_MONO=216_SOURCE_MASTER_DEVICE_PCM\n",
+        ""),0)
+assert "RATE_GRID_432_MONO_STEREO=NOT_CONFIRMED" in module.collect(
+    passed,SHA,direct.replace(
+        "M17_RATE_MATRIX_MONO=216_SOURCE_MASTER_DEVICE_PCM",
+        "M17_RATE_MATRIX_MONO=215_SOURCE_MASTER_DEVICE_PCM"),0)
 assert "RATE_GRID_216_COMPOSED_CHAINS=NOT_CONFIRMED" in module.collect(
     passed,SHA,direct.replace(
         "QINFO  : M17_RATE_MATRIX_FULL_COMPOSED_CHAIN=216_SOURCE_MASTER_DEVICE_PCM\n",
