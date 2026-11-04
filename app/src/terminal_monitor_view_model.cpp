@@ -177,7 +177,7 @@ QString TerminalMonitorViewModel::status_text() const
     if(status==QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED"))
         return QStringLiteral("NON-CONFORMING · RETRY MANUAL DEVICE RETURN");
     if(status==QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED"))
-        return QStringLiteral("NON-CONFORMING · DEVICE RECOVERY / RETURN ONLY");
+        return QStringLiteral("NON-CONFORMING · DEVICE RECOVERY REQUIRED · RETURN ONLY");
     if(status.startsWith(QStringLiteral("MEASURED_DEVICE_")))
         return QStringLiteral("NON-CONFORMING · ANONYMOUS DEVICE AUDITION (NOT M16 LIVE)");
     if(status==QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE"))
