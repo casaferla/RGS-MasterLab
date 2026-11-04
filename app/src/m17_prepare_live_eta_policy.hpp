@@ -60,6 +60,7 @@ m17_provisional_live_remaining(const M17PrepareLiveEvidence& x) noexcept
     case M17PrepareLivePhase::FINAL_SRC: {
         if(!fractionValid||f<0.025L||spent<2000)return std::nullopt;
         const auto left=spent*(1.0L-f)/f;
+        const auto projectedSrc=spent/f;
         // Remaining future M17+M16 is unmeasured on a first pass.
         // No fake precision: wide, explicit provisional bounds.
         const bool calibrated=x.provisional_dsp_us
@@ -68,10 +69,10 @@ m17_provisional_live_remaining(const M17PrepareLiveEvidence& x) noexcept
                 >=x.provisional_dsp_us->first;
         const auto low=calibrated
             ?x.provisional_dsp_us->first/1000.0L*0.7L
-            :spent*0.3L;
+            :projectedSrc*0.15L;
         const auto high=calibrated
             ?x.provisional_dsp_us->second/1000.0L*2.2L
-            :spent*3.0L+50'000.0L;
+            :projectedSrc*2.5L+50'000.0L;
         return band(left*0.85L+low,left*1.2L+high);
     }
     case M17PrepareLivePhase::M17_CORE: {
