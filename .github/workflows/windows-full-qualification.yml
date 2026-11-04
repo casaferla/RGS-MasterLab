@@ -430,6 +430,34 @@ jobs:
             throw 'FQ_PACKAGE_NOT_PRISTINE_AFTER_NEGATIVE_TEST'
           }
 
+      # Confirm the deployed application actually resolves its executable-
+      # relative FIR and Qt resources when moved to a real non-ASCII path.
+      # No network, installed developer profile or manual FIR selection.
+      - name: Cold deployed EXE moved to Unicode path still authenticates Q0
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $moved = Join-Path $env:RUNNER_TEMP 'RGS MasterLab trasferito à Ω 中文'
+          New-Item -Path $moved -ItemType Directory -Force | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $moved -Recurse -Force
+          $exe = Join-Path $moved 'bin/RGSMasterLab.exe'
+          $fir = Join-Path $moved 'bin/resources/fir'
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$fir"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'FQ_UNICODE_MOVED_16_FIR_PACKAGE_FAILED'
+          }
+          $out = Join-Path $env:RUNNER_TEMP 'fq-relocated-unicode.stdout.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'fq-relocated-unicode.stderr.txt'
+          $probe = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          if ($probe.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $err) {
+              Get-Content -LiteralPath $err | Select-Object -Last 80
+            }
+            throw "FQ_UNICODE_MOVED_EXE_FAILED_$($probe.ExitCode)"
+          }
+          Write-Host 'FQ_UNICODE_MOVED_EXE_LOCAL_16_FIR_QT_SMOKE_PASS'
+
       - name: Cache statistics and cold/warm evidence classification
         if: always()
         shell: pwsh
