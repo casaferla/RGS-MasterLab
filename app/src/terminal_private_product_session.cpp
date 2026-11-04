@@ -435,8 +435,23 @@ core::Status TerminalPrivateProductSession::install_measured_device_audition(
         emit changed();
         return deny(message);
     };
-    const auto installed=monitorInstall_(device);
-    const auto ownership=monitorOwned_(device);
+    const auto installed=[&]()->core::Status {
+        try {
+            return monitorInstall_(device);
+        } catch(const std::bad_alloc&) {
+            return deny("M17_MEASURED_DEVICE_INSTALL_WINDOWS_OUT_OF_MEMORY");
+        } catch(const std::exception&) {
+            return deny("M17_MEASURED_DEVICE_INSTALL_WINDOWS_EXCEPTION");
+        }
+    }();
+    const auto ownership=[&]()->core::Result<bool> {
+        try {
+            return monitorOwned_(device);
+        } catch(const std::exception&) {
+            return core::Result<bool>::failure(rejected(
+                "M17_MEASURED_DEVICE_INSTALL_OWNER_PROBE_EXCEPTION"));
+        }
+    }();
     // A failed owner probe is NOT proof that Windows left MANUAL intact:
     // retain a return-only lease until the same worker can be re-queried.
     if(!ownership)
@@ -543,7 +558,13 @@ TerminalPrivateProductSession::measured_device_snapshot() const
     };
     if(QThread::currentThread()!=thread()||monitorTransitioning_
        ||!installedMeasuredTicket_||!installedMonitor_||!monitorOwned_
-       ||!monitorDisplay_||!installedMeasuredPlan_
+       ||!monitorDisplay_||!installedMeasuredPlan_||!pending_
+       ||!selected_||!selected_()||!manual_||!manualId_
+       ||!sourceLoop_||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop
+       ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")
+       ||candidates_->staged_measured()!=installedMeasuredTicket_->measured_master()
        ||status_==QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED"))
         return deny("M17_MEASURED_DEVICE_DISPLAY_EXACT_OWNER_REQUIRED");
     if(installedMonitor_!=installedMeasuredTicket_->audition_device_pcm())
@@ -589,9 +610,20 @@ core::Status TerminalPrivateProductSession::control_measured_device_audition(
        ||(request.action==Action::STOP
             &&(after.value()->state!=core::PlaybackState::STOPPED
                 ||after.value()->device_position!=core::FrameIndex{0}))
+       ||(request.action==Action::SEEK_MASTER
+            &&(after.value()->master_display_position.value()
+                  <request.master_frame.value()
+                ||after.value()->master_display_position.value()
+                  -request.master_frame.value()>1))
        ||(request.action==Action::SET_MASTER_LOOP
-            &&after.value()->requested_master_loop!=request.master_loop))
+            &&after.value()->requested_master_loop!=request.master_loop)) {
+        // A Windows control may have mutated the physical sink before
+        // reporting a failure. Never keep active transport permissions
+        // after postcondition loss; offer only exact-owner Return.
+        status_=QStringLiteral("MEASURED_DEVICE_RECOVERY_REQUIRED");
+        emit changed();
         return deny("M17_MEASURED_DEVICE_CONTROL_POSTCHECK_FAILED");
+    }
     status_=after.value()->state==core::PlaybackState::PLAYING
         ?QStringLiteral("MEASURED_DEVICE_PLAYING")
         :after.value()->state==core::PlaybackState::PAUSED
