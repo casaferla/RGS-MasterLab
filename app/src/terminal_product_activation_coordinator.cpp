@@ -70,6 +70,28 @@ void TerminalProductActivationCoordinator::cancel_measured_crossrate_audition()
     measuredTotalFrames_.store(0,std::memory_order_release);
 }
 
+void TerminalProductActivationCoordinator::refresh_measured_crossrate_action()
+{
+    if(measuredPreparing_
+       ||measuredWorkerRunning_.load(std::memory_order_acquire)
+       ||!intent_||state_->bypassed()
+       ||session_->monitoring_transaction_active()
+       ||session_->status()!=QStringLiteral("MEASURED_NONCONFORMING_READY"))
+        return;
+    const auto stage=session_->capture_measured_master_for_device_conversion();
+    if(!stage||stage->rendered.manual_owner!=intent_->manualOwner
+       ||stage->original_manual_realization_id!=intent_->manualId)return;
+    // A failed/cancelled DEVICE FIR must never strand a retained measured
+    // M17 MASTER behind a disabled button. Each next explicit user click
+    // still receives a fresh Windows physical endpoint/RAM preflight.
+    view_->setAudioStatus(QStringLiteral(
+        "NON-CONFORMING · MEASURED PCM RETAINED"));
+    view_->setNonconformingDirectPreviewAvailable(
+        session_->current_measured_matches_device_for_preview());
+    view_->setNonconformingDevicePreviewAvailable(
+        static_cast<bool>(measuredProbe_&&measuredRecheck_));
+}
+
 void TerminalProductActivationCoordinator::set_master_rate_state(
     MasterOutputRateState& masterState)
 {
@@ -85,7 +107,9 @@ void TerminalProductActivationCoordinator::master_rate_changed()
     if(transitioning_)return;
     view_->clearVerificationTrim();
     if(session_->monitoring_transaction_active()) {
-        view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        view_->setAudioStatus(session_->measured_device_active()
+            ?QStringLiteral("ACTIVE · NON-CONFORMING AUDITION")
+            :QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
         return;
     }
     // A changed (even A->B->A) Project rate is a NEW render epoch.
@@ -158,7 +182,9 @@ void TerminalProductActivationCoordinator::begin_activation()
 {
     if(transitioning_||intent_||state_->bypassed())return;
     if(session_->monitoring_transaction_active()) {
-        view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        view_->setAudioStatus(session_->measured_device_active()
+            ?QStringLiteral("ACTIVE · NON-CONFORMING AUDITION")
+            :QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
         return;
     }
     if(manualPreviewInProgress_) {
@@ -403,7 +429,10 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
             QMetaObject::invokeMethod(this,
                 [this,captured,plan,token,job,outcome] {
                 if(job!=measuredSerial_||!measuredPreparing_
-                   ||token->load(std::memory_order_acquire))return;
+                   ||token->load(std::memory_order_acquire)) {
+                    refresh_measured_crossrate_action();
+                    return;
+                }
                 measuredPreparing_=false;
                 pendingMeasured_.reset();
                 measuredProgressTimer_.stop();
@@ -411,8 +440,7 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
                 if(!*outcome) {
                     view_->reportAudioError(
                         QString::fromStdString(outcome->error()->message()));
-                    view_->setAudioStatus(QStringLiteral(
-                        "NON-CONFORMING · DEVICE CONVERSION REFUSED"));
+                    refresh_measured_crossrate_action();
                     return;
                 }
                 if(!intent_||state_->bypassed()
@@ -430,6 +458,7 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
                 if(!checked) {
                     view_->reportAudioError(
                         QString::fromStdString(checked.error()->message()));
+                    refresh_measured_crossrate_action();
                     return;
                 }
                 const MeasuredDeviceEndpointObservation latest{
@@ -439,6 +468,7 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
                 if(!admitted) {
                     view_->reportAudioError(
                         QString::fromStdString(admitted.error()->message()));
+                    refresh_measured_crossrate_action();
                     return;
                 }
                 const auto installed=session_->install_measured_device_audition(
@@ -448,6 +478,7 @@ void TerminalProductActivationCoordinator::begin_measured_crossrate_audition()
                         QString::fromStdString(installed.error()->message()));
                     // A partial Windows install may own an exact recovery
                     // ticket; NEVER cancel it or replace a successor sink.
+                    refresh_measured_crossrate_action();
                     return;
                 }
                 readyToPreview_=false;
@@ -958,7 +989,9 @@ void TerminalProductActivationCoordinator::limiter_accepted()
     lastParameterRevision_=state_->parameter_revision();
     // Never route ordinary ON/BYPASS into the separate exact MONITOR lease.
     if(session_->monitoring_transaction_active()) {
-        view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        view_->setAudioStatus(session_->measured_device_active()
+            ?QStringLiteral("ACTIVE · NON-CONFORMING AUDITION")
+            :QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
         return;
     }
     if(changedCeiling) {
@@ -1073,11 +1106,24 @@ void TerminalProductActivationCoordinator::private_session_changed()
         // A SOURCE recovery ticket is NOT an installed or audible
         // monitor. A generic "MONITOR" label would lie about Windows
         // output and hide why the only legal action is an explicit retry.
-        view_->setAudioStatus(session_->status()==QStringLiteral(
-            "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED")
-            ? QStringLiteral(
-                "DEVICE UNAVAILABLE · MASTER RETAINED · RETRY SOURCE")
-            : QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        const auto active=session_->status();
+        if(session_->measured_device_active()) {
+            const bool recovery=active==QStringLiteral(
+                "MEASURED_DEVICE_RECOVERY_REQUIRED");
+            const bool sourceRetry=active==QStringLiteral(
+                "MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED");
+            view_->setAudioStatus(sourceRetry
+                ?QStringLiteral("NON-CONFORMING · RETRY SOURCE RETURN")
+                :recovery
+                    ?QStringLiteral("NON-CONFORMING · DEVICE RECOVERY REQUIRED")
+                    :QStringLiteral("ACTIVE · NON-CONFORMING AUDITION"));
+        } else {
+            view_->setAudioStatus(active==QStringLiteral(
+                "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED")
+                ?QStringLiteral(
+                    "DEVICE UNAVAILABLE · MASTER RETAINED · RETRY SOURCE")
+                :QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        }
         return;
     }
     if(transitioning_||!intent_)return;
