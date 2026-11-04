@@ -76,3 +76,10 @@ local-reseeded PCM24 mismatch is asserted. Real M18 preflight rejects PCM24 over
 and Float32 nonfinite input without modifying sentinel output. Double samples supplied
 are deterministic *test fixtures*, NOT a real rendered M17 master. Therefore this
 is a useful terminal seam proof only: no real DSP chain, physical listening, or I/G/L.
+
+## 2026-11-04 CI launch observation
+Initial Git-data ref publication of macro-lots #1/#2 did not expose an M22 run
+in the GitHub Actions API at check time. A bounded sequential content-API
+checkpoint on the same isolated PR branch is used to register the new
+workflow's push event; staging is then fast-forwarded to the identical HEAD.
+Until an actual Actions run reports completion, CI remains NOT VERIFIED.
