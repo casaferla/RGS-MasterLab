@@ -106,3 +106,18 @@ integration seam pending full source/owner binding.
 MSVC warning fixed; workflow returned to single push-trigger (PR trigger
 experiment was temporary and unnecessary once the delayed initial push CI
 became visible). Every new CI is evidence for the exact tested SHA ONLY.
+
+## Private macro-lot #4 — actual canonical typed ProcessingChain bridge, compile-only
+Uses *real* existing dsp::ProcessingChain / ModuleInstance / ModuleRegistry /
+ModuleExecutionBinding / typed ParameterPayload / ModuleDescriptor definitions,
+without converting params to rounded UI display strings or guessing their
+sonic signatures. Rejects unknown or terminal inline types, wrong MASTER/MANUAL
+stage/segment, provenance/linkage mismatch, descriptor/factory or binding
+absence/duplication, wrong parameter variant and missing/duplicate externally
+frozen parameter fingerprint evidence; preserves actual stored order, instance
+UUID, user bypass and distinct enabled/controller/domain suspension flags.
+Requires an EXTERNALLY supplied verified parameter fingerprint and effective
+active-node latency. There is no accepted canonical parameter serializer or
+runtime requirement source bound here. Compiler integration only (Windows MSVC
+and Linux GCC Debug/Release syntax); NO actual production render, DSP or
+true end-to-end I/G/L. This is preproduction-only.

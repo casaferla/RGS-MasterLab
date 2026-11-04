@@ -35,6 +35,10 @@ struct InlineSnapshot final {
     std::string parameter_signature;
     bool user_bypassed{false};
     std::uint64_t active_latency_frames{0};
+    // Source-backed lifecycle flags are distinct from the *user* bypass.
+    bool enabled{true};
+    bool controller_suspended{false};
+    bool domain_suspended{false};
     friend bool operator==(const InlineSnapshot&, const InlineSnapshot&) = default;
 };
 struct Intent final {
@@ -151,13 +155,15 @@ public:
         std::uint64_t total_latency = 0;
         const auto& in = request.intent();
         for (const auto& node : in.stored_order) {
-            const auto effective = node.user_bypassed ? 0 : node.active_latency_frames;
+            const bool identity = node.user_bypassed || !node.enabled
+                || node.controller_suspended || node.domain_suspended;
+            const auto effective = identity ? 0 : node.active_latency_frames;
             if (effective > std::numeric_limits<std::uint64_t>::max() - total_latency) {
                 error = Failure::LATENCY_OVERFLOW;
                 return std::nullopt;
             }
             total_latency += effective;
-            stages.push_back({Stage::INLINE, node.instance_id, node.user_bypassed, effective});
+            stages.push_back({Stage::INLINE, node.instance_id, identity, effective});
         }
         if (in.terminal_limiter_latency_frames >
             std::numeric_limits<std::uint64_t>::max() - total_latency) {
