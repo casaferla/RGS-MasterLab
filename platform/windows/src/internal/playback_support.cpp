@@ -1050,6 +1050,12 @@ core::Status PlaybackEngine::play_internal(bool isNewTraversal)
     if (!stopped) {
         return stopped;
     }
+    // Playback is no longer audible after stop() succeeds. A later
+    // prefill/decode/QAudioSink::start() failure must not leave the engine
+    // in its previous PLAYING/PAUSED state, with a phantom audible clock.
+    // An already queued future handoff has also been discarded by stop.
+    state_ = core::PlaybackState::STOPPED;
+    pendingHandoff_.reset();
     output_->clear_queue();
     reset_queue_state(position_.value());
     auto filled = prefill();
