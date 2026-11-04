@@ -164,3 +164,19 @@ Separate synthetic scalar witness tests exercise rejection branches;
 actual M17 C++ variant is compiled as the input type, but M17 full-DSP
 render/verified owning resource and export publication are NOT executed.
 No device audition, no auto-consent, no true production gate.
+
+## Private macro-lot #7 — actual M18 file publication rejected on stale M22 epoch
+Private mutex-protected one-writer-epoch candidate captures the exact frozen
+M22 request/plan and externally verified M17 full owner identity; rejects
+any changed Source/PREPARED revision, manual chain revision/parameter, ceiling,
+format, window or owner, and superseded epochs. Audition-only loop/Level Match
+is not part of frozen sound identity and does not spuriously invalidate.
+A REAL existing M18OfflineExportStopSignal cancellation adapter guards the
+M18 transactional writer; a private provider invalidates M22 on the SECOND
+real stream chunk: result must be CANCELLED, no WAV published and no M18
+private staging remnants. New epoch can publish, old ticket stays stale.
+Both PCM24 and Float32 tested. These supplied source/provider identities are
+synthetic and NOT the actual production realization. Future ownership
+binding, transaction commit-side atomic final epoch check, and schedule
+coordination with M17 remain OPEN; a preflight or stop check is not proof
+against every commit-time race. No production scheduler is installed.
