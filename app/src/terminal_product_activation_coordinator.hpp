@@ -82,6 +82,7 @@ private:
     void preview_nonconforming_requested();
     void begin_measured_crossrate_audition();
     void cancel_measured_crossrate_audition();
+    void refresh_measured_crossrate_action();
     void deactivate(bool keepActiveIntent);
     void finish_activation(bool nonconforming=false);
     void commit_ready_output(bool nonconforming=false);
