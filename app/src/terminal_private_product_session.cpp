@@ -1591,6 +1591,10 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
        ||empty.value()->duration ||empty.value()->loop)
         return core::Status::failure(rejected(
             "MONITOR_RETURN_RECOVERY_REFUSES_OCCUPIED_OR_ALIEN_DEVICE"));
+    // Reserve the explicit retry BEFORE Windows/Qt SOURCE preflight. It
+    // may dispatch nested Qt events, change the selection, or populate an
+    // alien sink. A second Return must NEVER run a competing restore.
+    monitorTransitioning_=true;
     if(manualRestorePreflight_) {
         const auto preflight=[&]()->core::Status {
             try {
@@ -1603,11 +1607,45 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "MONITOR_RETURN_RECOVERY_PREFLIGHT_EXCEPTION"});
+            } catch(...) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_RECOVERY_PREFLIGHT_UNKNOWN_EXCEPTION"});
             }
         }();
-        if(!preflight)return preflight;
+        if(!preflight) {
+            monitorTransitioning_=false;
+            return preflight;
+        }
     }
-    monitorTransitioning_=true;
+    // Never consume the earlier NO_SOURCE observation after nested events:
+    // physical DEVICE vacancy and the exact SOURCE/M17 epoch must BOTH
+    // remain current immediately before attempting a new MANUAL install.
+    if(!returnRecovery_||!candidates_
+       ||candidates_->staged()!=recovery.capturedVerifiedMaster
+       ||!selected_||!selected_()||!manual_||!prepared_
+       ||!manualId_||!sourceLoop_
+       ||manual_()!=predecessor.manual
+       ||prepared_()!=predecessor.prepared
+       ||manualId_()!=std::optional{predecessor.manualId}
+       ||sourceLoop_()!=predecessor.loop) {
+        monitorTransitioning_=false;
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_SOURCE_EPOCH_CHANGED_DURING_PREFLIGHT"));
+    }
+    const auto vacantAfterPreflight=transport_->playback_snapshot();
+    if(!vacantAfterPreflight
+       ||vacantAfterPreflight.value()->state!=core::PlaybackState::NO_SOURCE
+       ||vacantAfterPreflight.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||vacantAfterPreflight.value()->audibleRealization.realizationId
+       ||vacantAfterPreflight.value()->position!=core::FrameIndex{0}
+       ||vacantAfterPreflight.value()->duration
+       ||vacantAfterPreflight.value()->loop) {
+        monitorTransitioning_=false;
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_DEVICE_OCCUPIED_DURING_PREFLIGHT"));
+    }
     const auto failedRecovery=[&](const core::Error& error)->core::Status {
         monitorTransitioning_=false;
         status_=QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
@@ -1627,6 +1665,10 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "MONITOR_RETURN_RECOVERY_SOURCE_EXCEPTION"});
+        } catch(...) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_RECOVERY_SOURCE_UNKNOWN_EXCEPTION"});
         }
     }();
     if(!restored)return failedRecovery(*restored.error());
@@ -1673,8 +1715,23 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
     if(recovery.reconciledSourceLoop) {
         if(!sourceLoopReconcile_)return failedRecovery(rejected(
             "MONITOR_RETURN_RECOVERY_LOOP_CALLBACK_MISSING"));
-        const auto committed=sourceLoopReconcile_(
-            *recovery.reconciledSourceLoop);
+        const auto committed=[&]()->core::Status {
+            try {
+                return sourceLoopReconcile_(*recovery.reconciledSourceLoop);
+            } catch(const std::bad_alloc&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "MONITOR_RETURN_RECOVERY_LOOP_OUT_OF_MEMORY"});
+            } catch(const std::exception&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_RECOVERY_LOOP_EXCEPTION"});
+            } catch(...) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_RECOVERY_LOOP_UNKNOWN_EXCEPTION"});
+            }
+        }();
         if(!committed)return failedRecovery(*committed.error());
         if(!sourceLoop_||sourceLoop_()
                !=recovery.reconciledSourceLoop)
@@ -1998,6 +2055,10 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "MONITOR_RETURN_SOURCE_INSTALL_EXCEPTION_AFTER_RETIRE"});
+        } catch(...) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_SOURCE_INSTALL_UNKNOWN_EXCEPTION_AFTER_RETIRE"});
         }
     }();
     if(!restored)
@@ -2050,6 +2111,10 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "MONITOR_RETURN_LOOP_RECONCILE_EXCEPTION"});
+            } catch(...) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_LOOP_RECONCILE_UNKNOWN_EXCEPTION"});
             }
         }();
         if(!committed)
