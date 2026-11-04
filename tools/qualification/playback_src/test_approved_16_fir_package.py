@@ -207,6 +207,41 @@ class All16FirsPackagingTest(unittest.TestCase):
             self.assertIn("INSTALLED_UNIFIED_FIR_BINARY_SHA_MISMATCH",
                           rejected.stdout+rejected.stderr)
 
+    def test_cmake_gate_rejects_coordinated_manifest_and_binary_tamper(self):
+        # Independently exercise the *existing CMake FQ install guard*,
+        # not only the strengthened Python verifier: a coordinated manifest
+        # and coefficient mutation must still fail the frozen C++ pin.
+        import hashlib
+        import subprocess
+        source=REPO/"resources"/"fir"
+        gate=REPO/"tests"/"cmake"/"verify_installed_fir_assets.cmake"
+        with tempfile.TemporaryDirectory() as d:
+            output=Path(d)/"resources"/"fir"
+            export(REPO,output,require_originals=True,originals_dir=source)
+            command=["cmake",f"-D_fir_root={output}","-P",str(gate)]
+            ok=subprocess.run(command,capture_output=True,text=True,
+                              encoding="utf-8",errors="replace")
+            self.assertEqual(ok.returncode,0,ok.stdout+"\n"+ok.stderr)
+            name=ORIGINALS[0]
+            binary=bytearray((output/name).read_bytes())
+            binary[-1]^=1
+            (output/name).write_bytes(binary)
+            new_digest=hashlib.sha256(binary).hexdigest()
+            manifest_path=output/"fir_manifest.json"
+            manifest=json.loads(manifest_path.read_text(encoding="utf-8"))
+            for entry in manifest["assets"]:
+                if entry["file"]==name:
+                    entry["sha256"]=new_digest
+            for entry in manifest["finalSrc"]["kernels"]:
+                if entry["file"]==name:
+                    entry["sha256"]=new_digest
+            manifest_path.write_text(json.dumps(manifest),encoding="utf-8")
+            failed=subprocess.run(command,capture_output=True,text=True,
+                                  encoding="utf-8",errors="replace")
+            self.assertNotEqual(failed.returncode,0)
+            self.assertIn("INSTALLED_UNIFIED_FIR_FROZEN_Q0_PIN_CHANGED",
+                          failed.stdout+failed.stderr)
+
     def test_real_original_archive_if_staged_by_fq_or_developer(self):
         # The real original archive has an exact immutable SHA and is on
         # ContentBox; normal public Focused CI doesn't yet contain it. Once
