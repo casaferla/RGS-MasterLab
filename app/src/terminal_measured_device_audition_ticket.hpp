@@ -40,6 +40,7 @@ struct MeasuredDeviceTransportPlan final {
     core::SampleRate device_rate;
     // SOURCE transition epochs, never an audible device-clock certificate.
     std::uint64_t source_seek_serial{0};
+    std::uint64_t source_traversal_serial{0};
     std::uint64_t source_loop_wrap_count{0};
 };
 
@@ -300,7 +301,8 @@ MeasuredDeviceAuditionTicket::plan_handoff(
         currentSourceLoop,*masterCue.value(),masterLoop,
         *deviceCue.value(),deviceLoop,sourceRate,
         map.value()->master_rate(),map.value()->device_rate(),
-        sourcePlayback.seekSerial,sourcePlayback.loopWrapCount
+        sourcePlayback.seekSerial,sourcePlayback.traversalSerial,
+        sourcePlayback.loopWrapCount
     });
 }
 
@@ -325,6 +327,7 @@ MeasuredDeviceAuditionTicket::rebase_handoff(
        ||prior.source_state!=currentSource.state
        ||prior.source_loop!=currentSourceLoop
        ||prior.source_seek_serial!=currentSource.seekSerial
+       ||prior.source_traversal_serial!=currentSource.traversalSerial
        ||prior.source_loop_wrap_count!=currentSource.loopWrapCount)
         return fail("M17_MEASURED_HANDOFF_TRANSPORT_EPOCH_REVOKED");
     // PLAY advances naturally without a seek. Other states must be frozen
