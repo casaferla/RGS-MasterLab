@@ -37,7 +37,7 @@ m17_provisional_live_remaining(const M17PrepareLiveEvidence& x) noexcept
 {
     if(x.phase_elapsed_ms<0)return std::nullopt;
     constexpr long double maxMs=86'400'000.0L;
-    const auto bounded=[](long double ms)->std::int64_t {
+    const auto bounded=[maxMs](long double ms)->std::int64_t {
         if(!std::isfinite(ms)||ms<=0)return 0;
         return static_cast<std::int64_t>(
             std::min(ms,maxMs));
