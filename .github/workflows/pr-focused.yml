@@ -992,7 +992,8 @@ jobs:
         run: |
           python tools/ci/test_summarize_m17_edge_matrix.py
           if ($LASTEXITCODE -ne 0) { throw 'M17_EDGE_MATRIX_FILTER_SELFTEST_FAILED' }
-          # Directly replay ONLY the finite 36x36 matrix QtTest function.
+          # Replay the finite 6x6x6 (216) composed PCM matrix QtTest
+          # function; not an acoustic Windows DAC/hardware qualification.
           # Its raw local output is never uploaded and never requested from
           # GitHub Actions. Exit code and one positive post-assertion marker
           # are summarized into the bounded 4-KiB artifact.
@@ -1015,6 +1016,9 @@ jobs:
           $bounded = Get-Content "$env:RUNNER_TEMP/rgsml-m17-edge-matrix.txt" -Raw -ErrorAction SilentlyContinue
           if ($bounded -notmatch 'RATE_GRID_36_MASTER_36_WAV_36_DEVICE=CONFIRMED') {
             throw 'M17_RATE_GRID_36X36_POSITIVE_PROOF_MISSING'
+          }
+          if ($bounded -notmatch 'RATE_GRID_216_COMPOSED_CHAINS=CONFIRMED') {
+            throw 'M17_RATE_GRID_216_COMPOSED_CHAINS_NOT_PROVEN'
           }
 
       - name: Attach bounded M17 adversarial matrix report
