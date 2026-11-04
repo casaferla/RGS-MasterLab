@@ -79,6 +79,8 @@ class All16FirsPackagingTest(unittest.TestCase):
         self.assertIn("Q0 FIR resources missing",qml)
         self.assertIn("FQ_DEPLOY_EXE_LOCAL_14_Q0_FIR_UNAVAILABLE",main)
         self.assertIn("if(!deploySmoke && !originalFirRoot.isEmpty())",main)
+        self.assertNotIn("privateQ0/originalDirectory",main)
+        self.assertIn('appAssetRoot/"resources"/"fir"',main)
 
     def test_official_fq_refuses_absent_originals(self):
         with tempfile.TemporaryDirectory() as d:
