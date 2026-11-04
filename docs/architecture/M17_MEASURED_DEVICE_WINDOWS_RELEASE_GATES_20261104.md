@@ -30,3 +30,13 @@ Status: **OPEN, unqualified preproduction** · Product Owner-controlled.
 ## Mandatory sequencing
 
 Do not merge PR #78 or PR #77 to `main`, do not close [M17 blocker #76](https://github.com/casaferla/RGS-MasterLab/issues/76), #73 or #75 on a Focused green alone. Product Owner alone dispatches cold Windows FQ and approves physical acceptance. After M17 acceptance perform mandatory structural CI reset/audit **before M18**. No Android and no other milestones integrated in this workstream.
+
+## Corrective no-CI candidate updates (post #1007 initial candidate)
+
+- Linux strict C++ aggregate initializer error corrected for PLAY/PAUSE requests (full `MonitoringTransportRequest` initialization); no full run logs fetched.
+- Fresh SOURCE `seekSerial`, `traversalSerial`, `loopWrapCount`, plus true DEVICE-frame exact SEEK postcondition (192-kHz MASTER frame 1 projects to DEVICE frame 1 and round-trips to displayed MASTER frame 4 at 48 kHz). Added pure rational regression.
+- Measured Windows audio lease now catches preflight/owner/retire/restore exceptions, preserves an exact-owner recovery ticket, recognizes a partially reopened genuine MANUAL, never clears foreign/successor sinks, and requires explicit Return when postconditions fail.
+- **Critical cancellation UI corrected:** the old Cancel button and `cancelPreparation()` only recognized the full-resource `Preparing` label. The async measured DEVICE FIR now has its own read-only `nonconformingDevicePreparing` state, enables the shared Cancel affordance, leaves the honest NON-CONFORMING label intact, and revokes the Cancel signal when the worker exits. Qt native regression distinguishes full-M17 and anonymous DEVICE cancellation.
+- Main close protection now recognizes measured-device `RECOVERY REQUIRED`; once true MANUAL return succeeds, Main clears abandoned DEVICE time, rate and Loop metadata.
+
+Do not attribute any of these post-#1007 corrections to the original #1007 CI. Promote only when Windows #1007 is **terminal** and the correction lot has been consolidated; then run one dual-OS Focused test on an exact new SHA. The actual physical Windows playback gate remains OPEN.
