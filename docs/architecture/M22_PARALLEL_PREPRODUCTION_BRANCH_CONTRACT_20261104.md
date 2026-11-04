@@ -128,3 +128,19 @@ compiler screen requires the exact lot #4 SHA, not inherited M22 lot #3 green.
 A dedicated scoped push to this Draft PR head explicitly records the current
 handoff. If a CI run does not appear, the CI status remains UNVERIFIED; no
 manual I+G+L or upstream integration gate is inferred.
+
+## Private macro-lot #5 — M22 plan to REAL M18 transactional WAV exporter
+Candidate binds only the immutable M22 metadata to existing M18WavSpec,
+absolute output-frame offset, and m18_export_offline_candidate. No new
+codec/dither/WAV writer or transaction mechanism. CI executes actual private
+M18 disk publication and readback across 6 sample rates x mono/stereo x
+PCM24/Float32, Full and middle-region Preview on actual WAV files. Compare
+Preview payload EXACTLY with Full WAV payload crop and independent bounded
+M18 output oracle; test seed=0 Float32, immutable double input, collision
+no-overwrite, and no published file/private staging on bad provider or
+PCM24 overload. Test input is SYNTHETIC binary64 data from an externally
+supplied M18MasterFrameProvider, NOT an authenticated PREPARED/M17 PROCESSED
+realization. This is an isolated M18 integration seam rehearsal; existing M18
+source or canonical transaction code is UNCHANGED. Official I+G+L,
+physical listening, M17 genuine full-programme verification and
+M09 canonical export integration remain strictly BLOCKED.
