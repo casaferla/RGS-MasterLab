@@ -66,6 +66,20 @@ class All16FirsPackagingTest(unittest.TestCase):
         self.assertNotIn("EXISTING_44K_48K_FIR",policy)
         self.assertIn("PINNED_FIR_PENDING_PRODUCT_FQ",policy)
 
+    def test_public_q0_ui_cannot_request_manual_fir_folder(self):
+        # The distributed product must never ask a nontechnical user to
+        # locate a historical private bank. It either has the authentic
+        # EXE-local 16-file package or truthfully requires reinstall.
+        qml=(REPO/"ui"/"qml"/"Main.qml").read_text(encoding="utf-8")
+        main=(REPO/"app"/"src"/"main.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("menuUseExistingOriginalQ0Firs",qml)
+        self.assertNotIn("existingOriginalQ0FirFolderDialog",qml)
+        self.assertNotIn("Use existing Q0 FIR folder",qml)
+        self.assertIn("menuQ0ResourcesIncomplete",qml)
+        self.assertIn("Q0 FIR resources missing",qml)
+        self.assertIn("FQ_DEPLOY_EXE_LOCAL_14_Q0_FIR_UNAVAILABLE",main)
+        self.assertIn("if(!deploySmoke && !originalFirRoot.isEmpty())",main)
+
     def test_official_fq_refuses_absent_originals(self):
         with tempfile.TemporaryDirectory() as d:
             output=Path(d)/"resources"/"fir"
