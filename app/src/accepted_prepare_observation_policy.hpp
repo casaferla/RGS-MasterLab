@@ -1,6 +1,7 @@
 #pragma once
 #include "final_src_candidate_policy.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -169,8 +170,12 @@ public:
            ||!m17_final_src_candidate_admissible(
                source_hz,master_hz,authenticated_full_original_q0_pack))
             return std::nullopt;
-        long double low=std::numeric_limits<long double>::infinity();
-        long double high=0;
+        // At most 48 previously accepted scalar durations, allocated on
+        // the stack: this noexcept predictor never requests RAM or starts
+        // M17. Keep the actual observation envelope even around outliers.
+        std::array<long double,48> projectedValues{};
+        long double observedLow=std::numeric_limits<long double>::infinity();
+        long double observedHigh=0;
         std::size_t count=0;
         for(const auto& x:observed_) {
             if(x.source_hz!=source_hz ||x.master_hz!=master_hz
@@ -190,16 +195,31 @@ public:
             const auto projected=static_cast<long double>(x.queue_us)
                 +static_cast<long double>(x.wall_us)*scale;
             if(!std::isfinite(projected)||projected<=0)continue;
-            low=std::min(low,projected);
-            high=std::max(high,projected);
-            ++count;
+            if(count>=projectedValues.size())return std::nullopt;
+            projectedValues[count++]=projected;
+            observedLow=std::min(observedLow,projected);
+            observedHigh=std::max(observedHigh,projected);
         }
         if(count<3)return std::nullopt;
-        // Expanded diagnostic band, not a statistical confidence interval.
-        // Queue and all measured/unknown render stages are INCLUDED because
-        // the inputs are complete accepted whole-Prepare wall observations.
-        low=std::max(1.0L,std::floor(low/2.0L));
-        high=std::ceil(high*2.0L);
+        std::sort(projectedValues.begin(),
+                  projectedValues.begin()+static_cast<std::ptrdiff_t>(count));
+        const auto median=count%2
+            ?projectedValues[count/2]
+            :(projectedValues[count/2-1]+projectedValues[count/2])/2.0L;
+        // Explicitly progressive, conservative heuristic, NOT a
+        // statistical confidence interval or a real-time SLA. After three
+        // matching accepted Prepares allow ~0.5–2x median. Stable evidence
+        // progressively narrows the band toward ~0.8–1.25x by 48 samples.
+        // New slow/fast observations can always widen it again: the entire
+        // observed envelope remains inside the forecast at every count.
+        // This uses only genuine WHOLE Prepare times incl. queue + Final SRC,
+        // never the synthetic M17/M16 micro-benchmark or DEVICE rate.
+        const auto uncertainty=std::max(0.25L,
+            std::sqrt(3.0L/static_cast<long double>(count)));
+        auto low=std::max(1.0L,std::floor(std::min(
+            observedLow,median/(1.0L+uncertainty))));
+        auto high=std::ceil(std::max(
+            observedHigh,median*(1.0L+uncertainty)));
         constexpr auto maximum=static_cast<long double>(
             std::numeric_limits<std::int64_t>::max());
         if(!std::isfinite(low)||!std::isfinite(high)
