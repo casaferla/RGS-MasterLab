@@ -23,6 +23,7 @@ Rectangle {
     property var terminalPostLimiterTruePeak: null
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
+    property var terminalProductActivation: null
     property var masterListeningHandler: null
     property var masterRateState: null
     property var memoryAdvisor: null
@@ -58,6 +59,7 @@ Rectangle {
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
             terminalLimiterViewModel: root.terminalLimiterViewModel
             terminalMonitorViewModel: root.terminalMonitorViewModel
+            terminalProductActivation: root.terminalProductActivation
             masterListeningHandler: root.masterListeningHandler
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
@@ -112,6 +114,7 @@ Rectangle {
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
             terminalLimiterViewModel: root.terminalLimiterViewModel
         terminalMonitorViewModel: root.terminalMonitorViewModel
+        terminalProductActivation: root.terminalProductActivation
         masterListeningHandler: root.masterListeningHandler
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor
