@@ -490,6 +490,10 @@ int main(int argc, char* argv[])
                     return windowsPlayback->consumed_output_prefix(generation);
                 });
         }};
+    terminalPrivateGrViewModel.set_offline_observation(
+        [&privateProductSession] {
+            return privateProductSession.capture_offline_gr_for_display();
+        });
     rgsml::app::TerminalPostLimiterTruePeakCoordinator terminalPostMeter{
         [&privateProductSession,windowsPlayback] {
             return rgsml::app::observe_private_terminal_consumed_output(
@@ -510,6 +514,10 @@ int main(int argc, char* argv[])
         &rgsml::app::TerminalPrivateProductSession::changed,
         &terminalPrivateGrViewModel,
         &rgsml::app::TerminalPrivateGrViewModel::invalidate);
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &terminalPrivateGrViewModel,
+        &rgsml::app::TerminalPrivateGrViewModel::refresh);
     // The only product ON/BYPASS conductor. The adapter calls the typed
     // ViewModel; its accepted-state signal now drives exact-source,
     // reversible, output-owned device installation (no modal rate prompt).
