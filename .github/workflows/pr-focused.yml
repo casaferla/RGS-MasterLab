@@ -84,7 +84,8 @@ jobs:
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
       # No new product/runtime dependency or Windows build stage.
       - name: Install independent SRC numerical screening (Linux)
-        run: python -m pip install --disable-pip-version-check --only-binary=:all: -r tools/ci/requirements-src-numerical.txt
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: -r tools/ci/requirements-src-numerical.txt
 
       # Complete PRIVATE 14/36 asset ZIPs are never installed on routine
       # public PR CI. This tests atomic fail-closed control flow and
