@@ -2130,6 +2130,32 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QVERIFY(coordinator.device_active());
+    // The physical FQ #96 showed direct M17 audible playback with no
+    // Return to Source affordance. Test the explicit exact-owner action,
+    // not a BYPASS proxy or MONITOR cancel.
+    QVERIFY(coordinator.direct_return_available());
+    QCOMPARE(device->audibleRealization.phase,
+             core::AudibleHandoffPhase::NEW);
+    QVERIFY(device->audibleRealization.realizationId!=originalId);
+    const auto preReturnRenderCount=renderer.render_invocation_count();
+    const auto exactPrivateMaster=candidates.staged();
+    QVERIFY(coordinator.returnToSource());
+    QVERIFY(!coordinator.direct_return_available());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(candidates.staged(),exactPrivateMaster);
+    QCOMPARE(renderer.render_invocation_count(),preReturnRenderCount);
+    QVERIFY(!coordinator.returnToSource()); // No direct lease left.
+    QVERIFY(!limiter.value()->bypassed()); // Return is not a bypass flip.
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.direct_return_available());
+    QCOMPARE(renderer.render_invocation_count(),preReturnRenderCount);
     // INSTALLED -> Master Audition requires explicit exact-owner retirement.
     // The user starts audition directly, not a second whole-resource Prepare.
     // This fixture intentionally lacks DEVICE-monitor preflight: the
