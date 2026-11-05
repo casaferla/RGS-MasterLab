@@ -899,6 +899,11 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("terminalMonitorViewModel"),
         &terminalMonitorViewModel);
+    // The exact direct M17 DEVICE owner is distinct from anonymous
+    // Master Audition. Only its coordinator may restore original SOURCE.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalProductActivation"),
+        &terminalProductActivation);
     engine.rootContext()->setContextProperty(
         QStringLiteral("terminalPrivateGrViewModel"),
         &terminalPrivateGrViewModel);
