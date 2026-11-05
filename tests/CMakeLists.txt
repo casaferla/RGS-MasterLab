@@ -1976,6 +1976,26 @@ set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
     LABELS "audio;m18;preproduction;dither;philox"
 )
 
+# M18 delivered decoded-WAV True Peak: same M16 frozen FIR, 11 EOS.
+# New wrapper is explicitly SUPPORTED_UNQUALIFIED until Gate G/FQ.
+qt_add_executable(rgsml_m18_delivered_true_peak_candidate_tests
+    unit/analysis/test_m18_delivered_true_peak_candidate.cpp
+)
+target_include_directories(rgsml_m18_delivered_true_peak_candidate_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_m18_delivered_true_peak_candidate_tests
+    PRIVATE rgsml_analysis rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_delivered_true_peak_candidate_tests)
+add_test(NAME rgsml_m18_delivered_true_peak_candidate_tests
+    COMMAND rgsml_m18_delivered_true_peak_candidate_tests
+)
+set_tests_properties(rgsml_m18_delivered_true_peak_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;m18;decoded_delivery;true_peak;nonqualifying"
+)
+
 # M18 bounded real WAV readback: canonical WavWriter -> WavReader
 # -> exact decoded POST-QUANT comparison; no platform publisher.
 qt_add_executable(rgsml_m18_decoded_wav_candidate_tests
