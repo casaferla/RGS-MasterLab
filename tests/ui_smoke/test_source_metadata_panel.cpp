@@ -2071,6 +2071,61 @@ Window {
         QCOMPARE(grPlot->property("timelineScope").toString(),
             QStringLiteral("SOURCE"));
     }
+    // CI #1041 passed behavioral properties but the standard snapshot
+    // captured the BYPASS editor. Here genuinely paint the new graph at two
+    // playhead positions, retain bounded SYNTHETIC evidence (not a physical
+    // M17/Windows consumed-audio certificate), and prove the yellow cursor
+    // actually moved on the raster rather than only updating a QML property.
+    auto* grItem=qobject_cast<QQuickItem*>(grPlot);
+    QVERIFY(grItem && grItem->width()>68 && grItem->height()>=40);
+    const auto syntheticGrSnapshot=[&](double fraction,
+        const QString& name)->QImage {
+        if (!fixture->setProperty("grFraction",fraction)) return {};
+        QTest::qWait(130);
+        QCoreApplication::processEvents();
+        const auto grab=grItem->grabToImage();
+        if (!grab) return {};
+        QSignalSpy ready{grab.data(),&QQuickItemGrabResult::ready};
+        if (ready.empty() && !ready.wait(15000)) return {};
+        const auto image=grab->image();
+        const auto dir=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (!image.isNull()&&!dir.isEmpty()) {
+            if (!QDir{}.mkpath(dir)
+                ||!image.save(QDir{dir}.filePath(name),"PNG"))
+                return {};
+        }
+        return image;
+    };
+    const auto imageQuarter=syntheticGrSnapshot(0.25,
+        QStringLiteral("m17_gr_history_SYNTHETIC_cursor25.png"));
+    const auto imageThreeQuarter=syntheticGrSnapshot(0.75,
+        QStringLiteral("m17_gr_history_SYNTHETIC_cursor75.png"));
+    QVERIFY(!imageQuarter.isNull()&&!imageThreeQuarter.isNull());
+    QCOMPARE(imageQuarter.size(),imageThreeQuarter.size());
+    QVERIFY2(imageQuarter!=imageThreeQuarter,
+        "M17 OFFLINE GR cursor property moved but Canvas pixels did not");
+    const auto cursorX=[&](const QImage& image)->double {
+        const double scale=double(image.width())/grItem->width();
+        const int y=std::clamp(int(std::round(4*scale)),0,image.height()-1);
+        int left=-1,right=-1;
+        for(int x=0;x<image.width();++x) {
+            const auto c=image.pixelColor(x,y);
+            if(c.red()>=215 && c.green()>=145
+                && c.green()<=218 && c.blue()<=105) {
+                if(left<0)left=x;
+                right=x;
+            }
+        }
+        return left<0 ? -1 : 0.5*(left+right)/scale;
+    };
+    const auto expectedX=[&](double fraction)->double {
+        return 6.0+(grItem->width()-40.0)*fraction;
+    };
+    QVERIFY2(std::abs(cursorX(imageQuarter)-expectedX(0.25))<=5.0,
+        "M17 rendered 25 percent cursor is not waveform-timeline aligned");
+    QVERIFY2(std::abs(cursorX(imageThreeQuarter)-expectedX(0.75))<=5.0,
+        "M17 rendered 75 percent cursor is not waveform-timeline aligned");
+
     // Missing position/invalid scope never creates a false clock.
     QVERIFY(fixture->setProperty("grFraction",-1.0));
     QCoreApplication::processEvents();
