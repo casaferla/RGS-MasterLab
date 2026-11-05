@@ -27,7 +27,6 @@ Rectangle {
     property var masterListeningHandler: null
     property var masterRateState: null
     property var memoryAdvisor: null
-    property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
     property real m17GrTimelineFraction: -1
     property string m17GrTimelineScope: ""
@@ -65,7 +64,6 @@ Rectangle {
             masterListeningHandler: root.masterListeningHandler
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
-            limiterGrProvider: root.limiterGrProvider
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
             m17GrTimelineFraction: root.m17GrTimelineFraction
             m17GrTimelineScope: root.m17GrTimelineScope
@@ -122,7 +120,6 @@ Rectangle {
         masterListeningHandler: root.masterListeningHandler
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor
-            limiterGrProvider: root.limiterGrProvider
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
             m17GrTimelineFraction: root.m17GrTimelineFraction
             m17GrTimelineScope: root.m17GrTimelineScope
