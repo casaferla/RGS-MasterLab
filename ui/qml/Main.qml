@@ -54,6 +54,8 @@ ApplicationWindow {
         ? terminalLimiterViewModel : null
     readonly property var appTerminalMonitorViewModel: typeof terminalMonitorViewModel !== "undefined"
         ? terminalMonitorViewModel : null
+    readonly property var appTerminalProductActivation: typeof terminalProductActivation !== "undefined"
+        ? terminalProductActivation : null
     readonly property var appMasterRateState: typeof masterOutputRateState !== "undefined"
         ? masterOutputRateState : null
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
@@ -69,6 +71,22 @@ ApplicationWindow {
     readonly property bool canListenMaster: !root.monitorExclusive
         && !!root.appTerminalMonitorViewModel
         && root.appTerminalMonitorViewModel.canInstall
+    readonly property bool directM17ReturnAvailable: !root.monitorExclusive
+        && !!root.appTerminalProductActivation
+        && root.appTerminalProductActivation.directReturnAvailable
+    readonly property bool m17ReturnAvailable: root.monitorExclusive
+        || root.directM17ReturnAvailable
+    function returnFromM17Audition() {
+        // The monitor owns anonymous MASTER->DEVICE PCM. Direct M17
+        // (including measured NON-CONFORMING Preview Anyway) owns a
+        // separate terminal RealizationId and must never be retired via
+        // the anonymous monitor's generic cancel path.
+        if (root.monitorExclusive && root.appTerminalMonitorViewModel)
+            return root.appTerminalMonitorViewModel.cancel()
+        if (root.directM17ReturnAvailable && root.appTerminalProductActivation)
+            return root.appTerminalProductActivation.returnToSource()
+        return false
+    }
     readonly property bool masterTransportPlaying: root.monitorExclusive
         && !!root.appTerminalMonitorViewModel
         && root.appTerminalMonitorViewModel.transportState === "PLAYING"
@@ -903,6 +921,7 @@ ApplicationWindow {
             // same-named child property here creates a QML binding loop.
             terminalLimiterViewModel: root.appTerminalLimiterViewModel
             terminalMonitorViewModel: root.appTerminalMonitorViewModel
+            terminalProductActivation: root.appTerminalProductActivation
             masterListeningHandler: function() { return root.listenToPreparedMaster() }
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
@@ -1142,9 +1161,8 @@ ApplicationWindow {
                             enabled: root.canListenMaster
                             onTriggered: root.listenToPreparedMaster() }
                         StudioMenuItem { text: "Return to Source"
-                            enabled: root.monitorExclusive
-                            onTriggered: if (root.appTerminalMonitorViewModel)
-                                root.appTerminalMonitorViewModel.cancel() }
+                            enabled: root.m17ReturnAvailable
+                            onTriggered: root.returnFromM17Audition() }
                         MenuSeparator { }
                         StudioMenuItem {
                             text: !root.monitorExclusive && auditionRegion.loopEnabled
