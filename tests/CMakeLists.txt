@@ -250,6 +250,32 @@ qt_add_executable(rgsml_export_checksum_tests
     unit/platform/test_export_checksums.cpp
 )
 
+# M18 PREPRODUCTION Windows candidate evidence gate: real WAV decode,
+# exact PCM24/Float32 quantized match, canonical decoded SHA and frozen
+# M16 full-programme True Peak, WITHOUT any filesystem commit.
+if(WIN32)
+    qt_add_executable(rgsml_m18_windows_candidate_delivery_tests
+        integration/platform/test_m18_candidate_delivery_validation.cpp
+    )
+    target_include_directories(rgsml_m18_windows_candidate_delivery_tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/platform/windows/src
+            ${CMAKE_SOURCE_DIR}/audio/src/internal
+            ${CMAKE_SOURCE_DIR}/tests/unit/audio
+    )
+    target_link_libraries(rgsml_m18_windows_candidate_delivery_tests
+        PRIVATE rgsml_platform rgsml_audio rgsml_analysis Qt6::Core Qt6::Test
+    )
+    rgsml_apply_project_warnings(rgsml_m18_windows_candidate_delivery_tests)
+    add_test(NAME rgsml_m18_windows_candidate_delivery_tests
+        COMMAND rgsml_m18_windows_candidate_delivery_tests
+    )
+    set_tests_properties(rgsml_m18_windows_candidate_delivery_tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "m18;windows;delivered_wav;true_peak;preproduction"
+    )
+endif()
+
 qt_add_executable(rgsml_transactional_audio_export_tests
     integration/platform/test_transactional_audio_exporter.cpp
 )
