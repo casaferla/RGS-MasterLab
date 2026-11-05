@@ -51,6 +51,10 @@ Rectangle {
             ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
+    property var terminalProductActivation: null
+    readonly property bool directReturnAvailable: !root.monitorExclusive
+        && !!root.terminalProductActivation
+        && root.terminalProductActivation.directReturnAvailable
     // Main owns any RAM-caution consent dialog. The editor is a consumer,
     // not a second private-MASTER authority.
     property var masterListeningHandler: null
@@ -60,10 +64,11 @@ Rectangle {
         && !root.terminalMonitorViewModel.monitorPreparing
         && !root.terminalMonitorViewModel.monitorCancelling
     readonly property bool monitorReturnVisible: root.isLimiterEditor
-        && !!root.terminalMonitorViewModel
-        && (root.terminalMonitorViewModel.monitorExclusive
-            || root.terminalMonitorViewModel.monitorPreparing
-            || root.terminalMonitorViewModel.monitorCancelling)
+        && ((!!root.terminalMonitorViewModel
+            && (root.terminalMonitorViewModel.monitorExclusive
+                || root.terminalMonitorViewModel.monitorPreparing
+                || root.terminalMonitorViewModel.monitorCancelling))
+            || root.directReturnAvailable)
     readonly property bool masterActionsVisible:
         root.canListenPreparedMaster || root.monitorReturnVisible
     // Real Project authority. Selection does not certify Final SRC/M17 PCM.
@@ -584,8 +589,14 @@ Rectangle {
                 enabled: visible && root.terminalMonitorViewModel
                     && !root.terminalMonitorViewModel.monitorCancelling
                 onClicked: {
-                    if (root.terminalMonitorViewModel)
+                    if (root.terminalMonitorViewModel
+                        && (root.terminalMonitorViewModel.monitorExclusive
+                            || root.terminalMonitorViewModel.monitorPreparing
+                            || root.terminalMonitorViewModel.monitorCancelling))
                         root.terminalMonitorViewModel.cancel()
+                    else if (root.directReturnAvailable
+                             && root.terminalProductActivation)
+                        root.terminalProductActivation.returnToSource()
                 }
                 Accessible.name: text
             }
