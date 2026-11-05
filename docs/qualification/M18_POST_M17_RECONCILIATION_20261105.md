@@ -1,0 +1,35 @@
+# M18 — reconciliation checkpoint after accepted M17 and CI reset (5 November 2026)
+
+**Status: isolated NO-CI staging only. NOT a product integration, NOT qualified, NOT merge-authorized.**
+
+## Verified starting point
+- Accepted `main` after PO-approved #83 reset: `304f593c89e7079aefa31727055b0880243245e4`.
+- Frozen prior M18 independent preproduction: PR #63, commit `345890bdea2c45f80e6256793b51ce2c2523f55a`, branch `experimental/m18-dither-20261102`. Its PR base is the old M17 `995e3f976f752d148847821bd33b56ce656bfbb8` and must NOT be merged directly.
+- Git compare before import: 60 source-side commits / 281 current-main-side commits, divergent from old M17; do not rewrite or force-push PR #63.
+- New single-writer branch: `staging/m18-post-m17-reconciliation-no-ci-20261105`, derived from accepted `main`, without PR and without intentional CI events.
+
+## This controlled transplant
+- Reuse the **original Git blobs**, unchanged byte-for-byte, for 37 M18-only preproduction sources/tests/reference docs: 8 `audio/src/internal/m18_*.hpp` internal headers, `tools/qualification/m18` native/Python independent oracles, three historical documentation files, and the corrected QtTest `tests/unit/audio/test_m18_counter_dither_philox.cpp`.
+- Reconcile the one shared file `tests/CMakeLists.txt` against **current** main, inserting only the isolated M18 Philox/TPDF QtTest target before the existing global FIR CTest environment loop. Never replace the current M17 CMake with the old snapshot.
+- Do **not** transplant the three old M18 GitHub Actions workflows yet; they target the obsolete `experimental/m18-dither-20261102` branch and risk redundant/incorrect CI. They remain retrievable unchanged on PR #63, to be adapted once the product integration batch is coherent.
+- No M17 product source, Qt/QML, limiter, master audition, DEVICE, Final SRC, canonical WAV writer, output JSON schema or Windows publishing behavior is changed by this transplant.
+- An earlier isolated M18 CI PASS is evidence of *preproduction code* only. It does not qualify the newly reconciled CMake/product baseline, Windows FQ, formal Gate G or delivered audio.
+
+## Mandatory application integration on THIS staging (not yet implemented)
+1. **Immutable output PCM ownership.** Connect the accepted M17 final Master binary64 read-only frame owner to `M18MasterFrameProvider::read_exact`. Validate absolute-frame addressing, mono/stereo, 44.1/48/88.2/96/176.4/192 kHz and lifetime/epoch. Never read DEVICE monitoring samples or regenerate M17 independently.
+2. **Output contract and persistence.** Adopt the final PCM24/Float32 selection and exact 64-bit dither seed under canonical project/output schema, with unknown-field preservation and no ambient FP dependence. No Float32 dither, no dither-off control for PCM24 v1, no noise shaping.
+3. **Single authoritative writer.** Adapt the existing Windows `TransactionalAudioExporter`, `WavWriter`, error and cancellation policy; the isolated `m18_transactional_file.hpp` remains a test prototype, not a competing production publisher. Real no-overwrite, crash/ACL/path and multi-GiB RF64 tests still required.
+4. **Delivered-PCM evidence.** Compute SHA/readback and independently decode the *published* PCM24/F32 file, invoke canonical M16 true-peak measurement, report precise ceiling outcomes; no undisclosed trim or post-dither SRC.
+5. **Product qualification.** Expand current Windows/Linux focused regression coverage for M18; independently execute mathematical and exact-byte oracles, proposed 87-statistics evidence (adopt Gate G thresholds explicitly before claiming pass), actual Windows cold FQ, six rates/mono/stereo/PCM24/F32/RF64, physical listening and PO acceptance.
+
+## No-CI / no-merge discipline
+- Make large coherent batches on this no-PR staging, validate syntax and ownership before one PR promotion/CI. Never push micro-fixes to an active PR, never allow hidden auto-merge, never fetch complete GitHub Actions logs.
+- Before future promotion compare exact HEAD SHA and main ancestry, check that `main` has not moved, obtain one Windows+Linux green candidate and separate FQ/PO acceptance where required.
+- M19–M22 PRs stay Draft and blocked by the sequential integration/qualification chain. No changes to their branches in this lot.
+- Neither the existing M17 FQ #97 nor the CI reset #1035 certifies M18.
+
+## Source references
+- https://github.com/casaferla/RGS-MasterLab/pull/63
+- https://github.com/casaferla/RGS-MasterLab/pull/83
+- https://github.com/casaferla/RGS-MasterLab/actions/runs/42095370616
+- `docs/architecture/M18_INTEGRATION_SEAM_CHECKLIST_20261103.md` retained from old M18 as historical boundary analysis; this checkpoint supersedes its outdated M17 blocking status.
