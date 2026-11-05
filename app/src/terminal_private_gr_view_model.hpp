@@ -21,6 +21,9 @@ class TerminalPrivateGrViewModel final : public QObject {
     Q_PROPERTY(bool verified READ verified NOTIFY changed)
     Q_PROPERTY(QVariantList verifiedSeries READ verified_series NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(bool offlineAvailable READ offline_available NOTIFY changed)
+    Q_PROPERTY(QVariantList offlineSeries READ offline_series NOTIFY changed)
+    Q_PROPERTY(QString offlineStatus READ offline_status NOTIFY changed)
 public:
     using Observation =
         std::function<core::Result<TerminalPrivateGrSeries>()>;
@@ -38,6 +41,14 @@ public:
     [[nodiscard]] bool verified() const noexcept { return verified_; }
     [[nodiscard]] QVariantList verified_series() const { return series_; }
     [[nodiscard]] QString status() const { return status_; }
+    using OfflineObservation=std::function<
+        TerminalPrivateProductSession::OfflineGrCapture()>;
+    void set_offline_observation(OfflineObservation observe)
+    { observeOffline_=std::move(observe); }
+    [[nodiscard]] bool offline_available() const noexcept
+    {return !offlineSeries_.isEmpty();}
+    [[nodiscard]] QVariantList offline_series() const {return offlineSeries_;}
+    [[nodiscard]] QString offline_status() const {return offlineStatus_;}
 
 public slots:
     void refresh();
@@ -59,6 +70,8 @@ private:
     // previously VERIFIED trace can bridge to the next verified same-owner
     // traversal. Explicit product invalidation discards it permanently.
     void suspend_unverified();
+    void refresh_offline();
+    void clear_offline();
     struct EvidenceKey final {
         std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner;
         core::RealizationId realizationId;
@@ -68,6 +81,13 @@ private:
     };
     Observation observe_;
     EvidenceObservation observeEvidence_;
+    OfflineObservation observeOffline_;
+    std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+        offlineVerifiedOwner_;
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+        offlineMeasuredOwner_;
+    QVariantList offlineSeries_;
+    QString offlineStatus_{QStringLiteral("NOT PREPARED · NO GR DATA")};
     std::optional<EvidenceKey> lastEvidence_;
     bool verified_{false};
     QVariantList series_;
