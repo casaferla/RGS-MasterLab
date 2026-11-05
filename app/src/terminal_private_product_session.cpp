@@ -2208,6 +2208,86 @@ core::Status TerminalPrivateProductSession::request_private_for_device(bool defe
     return request_private(*rate.value(),deferred);
 }
 
+TerminalPrivateProductSession::OfflineGrCapture
+TerminalPrivateProductSession::capture_offline_gr_for_display() const
+{
+    // GR is a read-only sample of an ALREADY completed exact-owner MASTER.
+    // No Windows device consumption, playback permission or Ceiling
+    // qualification is inferred from an offline gain curve.
+    if(QThread::currentThread()!=thread()||monitorTransitioning_
+       ||returnRecovery_||measuredSourceRecovery_)
+        return {};
+    if(status_==QStringLiteral("READY_TO_INSTALL")
+       ||status_==QStringLiteral("COMPARISON_VERIFIED")
+       ||status_==QStringLiteral("MASTER_READY_MONITOR_PENDING")) {
+        const auto master=current_verified_private_master();
+        return master?OfflineGrCapture{master,{}}:OfflineGrCapture{};
+    }
+    if(status_==QStringLiteral("PRIVATE_INSTALLED")) {
+        const auto installed=private_installed_output_identity();
+        return installed
+            ?OfflineGrCapture{installed.value()->owner,{}}
+            :OfflineGrCapture{};
+    }
+    if(status_==QStringLiteral("MONITOR_PRIVATE_PLAYING")
+       ||status_==QStringLiteral("MONITOR_PRIVATE_PAUSED")
+       ||status_==QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED")) {
+        // The monitor is an ANONYMOUS DEVICE owner. The GR source remains
+        // the exact immutable verified MASTER whose PCM was borrowed.
+        const auto owned=private_monitor_master_snapshot();
+        if(owned &&approvedMonitorMaster_&&pending_
+           &&candidates_->staged()==approvedMonitorMaster_
+           &&renderer_->status()==QStringLiteral("READY_PRIVATE"))
+            return {approvedMonitorMaster_,{}};
+        return {};
+    }
+    if(status_==QStringLiteral("MEASURED_NONCONFORMING_READY")) {
+        const auto measured=measured_candidate();
+        return measured?OfflineGrCapture{{},measured}:OfflineGrCapture{};
+    }
+    if(status_==QStringLiteral("COMPARISON_NONCONFORMING")
+       &&comparison_owners_current()) {
+        const auto measured=comparisonMeasured_;
+        if(measured&&pending_&&current_selection_for_pending()
+           &&candidates_->staged_measured()==measured)
+            return {{},measured};
+        return {};
+    }
+    if(status_==QStringLiteral("NONCONFORMING_INSTALLED")) {
+        // Native direct nonconforming audition has a real separate M17
+        // realization, but NO verified Ceiling or consumed-LIVE proof.
+        const auto stage=candidates_->staged_measured();
+        if(!stage||!privateId_||!selected_||!selected_()
+           ||!prepared_||!manual_||!manualId_
+           ||stage->prepared_owner!=prepared_()
+           ||stage->rendered.manual_owner!=manual_()
+           ||stage->original_manual_realization_id
+                !=manualId_().value_or(core::RealizationId{0}))
+            return {};
+        const auto audible=transport_->playback_snapshot();
+        if(!audible||audible.value()->state==core::PlaybackState::NO_SOURCE
+           ||audible.value()->audibleRealization.phase
+                !=core::AudibleHandoffPhase::NEW
+           ||audible.value()->audibleRealization.realizationId
+                !=std::optional{*privateId_}
+           ||audible.value()->duration!=std::optional{
+                stage->rendered.terminal.terminal.compensated_pcm
+                    .view().frame_count()})
+            return {};
+        return {{},stage};
+    }
+    if(status_==QStringLiteral("MEASURED_DEVICE_PLAYING")
+       ||status_==QStringLiteral("MEASURED_DEVICE_PAUSED")
+       ||status_==QStringLiteral("MEASURED_DEVICE_INSTALLED_STOPPED")) {
+        // Crossrate nonconforming device can show only OFFLINE measured
+        // gain; it never creates an M16-verified output RealizationId.
+        if(!installedMeasuredTicket_
+           ||!measured_device_snapshot())return {};
+        return {{},installedMeasuredTicket_->measured_master()};
+    }
+    return {};
+}
+
 core::Result<TerminalPrivateProductSession::InstalledOutputIdentity>
 TerminalPrivateProductSession::private_installed_output_identity() const
 {
