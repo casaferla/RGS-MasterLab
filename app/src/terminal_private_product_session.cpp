@@ -1,4 +1,5 @@
 #include "terminal_private_product_session.hpp"
+#include "internal/m18_owned_master_frame_provider.hpp"
 #include <QThread>
 #include "final_src_candidate_policy.hpp"
 #include <rgsml/core/error.hpp>
@@ -2431,6 +2432,24 @@ TerminalPrivateProductSession::borrow_verified_m17_master_for_device(
            &&playback.value()->state!=core::PlaybackState::PAUSED))
         return {};
     return stage;
+}
+
+std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
+TerminalPrivateProductSession::capture_m18_verified_master_for_read(
+    core::SampleRate selectedMasterRate) const
+{
+    // Qt-owning-thread check: worker cannot read live QObject selection.
+    // This returns a lifetime-pinned Master, not current export permission.
+    if (QThread::currentThread()!=thread())return {};
+    const auto stage=current_verified_private_master();
+    if (!stage ||stage->rendered.output_rate!=selectedMasterRate
+        ||!stage->rendered.terminal.checked.final_check)
+        return {};
+    // Aliasing shared ownership pins the exact M17 PCM without replay.
+    const auto* pcm=&stage->rendered.terminal.checked.terminal.compensated_pcm;
+    const std::shared_ptr<const audio::AudioBuffer> immutable(stage,pcm);
+    return audio::internal::M18OwnedMasterFrameProvider::capture(
+        immutable,selectedMasterRate);
 }
 
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>

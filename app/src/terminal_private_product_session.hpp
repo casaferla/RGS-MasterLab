@@ -16,6 +16,8 @@ namespace rgsml::audio {
 struct MonitoringPcmCandidate;
 struct MonitoringPcmPreallocationAdvice;
 }
+namespace rgsml::audio::internal { class M18OwnedMasterFrameProvider; }
+
 namespace rgsml::app {
 
 // Product-owned but PRIVATE orchestration: render -> accepted output candidate
@@ -196,6 +198,10 @@ public:
     // independently guard later DEVICE allocation/transport.
     [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
     borrow_verified_m17_master_for_device(core::SampleRate selectedMasterRate) const;
+    // Private, nonpublishing M18 read lease of current M16-verified MASTER.
+    // Session and output identity must be rechecked before any file commit.
+    [[nodiscard]] std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
+    capture_m18_verified_master_for_read(core::SampleRate selectedMasterRate) const;
     // SECOND P0 PRIVATE BRIDGE: derive DEVICE PCM from the very same
     // verified M17 owner, with exact rate/owner recheck after a potentially
     // long SRC. This never installs a sink, runs another M17/M16 Prepare,

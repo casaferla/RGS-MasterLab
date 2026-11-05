@@ -1963,6 +1963,25 @@ set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
     LABELS "audio;m18;preproduction;dither;philox"
 )
 
+# M18 exact binary64 Master-owner bridge: real AudioBuffer, no publisher.
+qt_add_executable(rgsml_m18_master_owner_bridge_tests
+    unit/audio/test_m18_owned_master_frame_provider.cpp
+)
+target_include_directories(rgsml_m18_master_owner_bridge_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_master_owner_bridge_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_master_owner_bridge_tests)
+add_test(NAME rgsml_m18_master_owner_bridge_tests
+    COMMAND rgsml_m18_master_owner_bridge_tests
+)
+set_tests_properties(rgsml_m18_master_owner_bridge_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;owner_bridge;preproduction"
+)
+
 # External playback FIR assets must be available to every existing native
 # SRC/Windows/Qt test, not only the newly introduced negative tests.
 # CTest injects this explicit build directory; no end-user environment setup.

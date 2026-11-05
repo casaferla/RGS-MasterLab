@@ -33,3 +33,11 @@
 - https://github.com/casaferla/RGS-MasterLab/pull/83
 - https://github.com/casaferla/RGS-MasterLab/actions/runs/42095370616
 - `docs/architecture/M18_INTEGRATION_SEAM_CHECKLIST_20261103.md` retained from old M18 as historical boundary analysis; this checkpoint supersedes its outdated M17 blocking status.
+
+
+## Macro-lot 2 — nonpublishing M17 PCM -> M18 frame reader
+- New audio/src/internal/m18_owned_master_frame_provider.hpp holds the exact immutable binary64 AudioBuffer, implements M18MasterFrameProvider::read_exact, validates six supported rates, OUTPUT_RATE domain, zero frame origin, mono/stereo, whole resource and per-request range/layout; copies sample bits without floating-point arithmetic, rejects invalid requests before writing any output.
+- TerminalPrivateProductSession now has a PRIVATE capture_m18_verified_master_for_read(selectedMasterRate) method. It checks current_verified_private_master() on the QObject owner thread, exact project MASTER rate and existing M16 final check, and alias-retains the SAME M17 compensated_pcm owner. No fresh M17 limiter, SOURCE resampling, DEVICE PCM or UI/export activation.
+- Registered rgsml_m18_master_owner_bridge_tests QtTest, exercising six rates x two layouts, signed zero/subnormal bit-exactness, 4096 chunk crossing, owner lifetime, invalid SOURCE/frame-origin/rate/empty inputs and no partial writes on rejection.
+- Safety caveat: a retained PCM buffer does not prove current selection after the session changes. A future file commit must independently revalidate live session/epoch/format, canonical Windows transactional publishing and decoded post-delivery M16 True Peak; the M18 preproduction filesystem publisher cannot be silently activated.
+- State: on isolated no-PR staging only, UNCOMPILED/UNQUALIFIED on this newer base; no main merge, no M18 WAV UI, no product schema invented, no FQ or CI triggered by this source batch.

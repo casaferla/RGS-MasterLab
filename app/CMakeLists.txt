@@ -101,6 +101,7 @@ qt_add_resources(rgsml_app "rgsml_window_icon" PREFIX "/rgsml"
 )
 
 target_include_directories(rgsml_app PRIVATE
+    ${CMAKE_SOURCE_DIR}/audio/src
     ${CMAKE_SOURCE_DIR}/analysis/src
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
