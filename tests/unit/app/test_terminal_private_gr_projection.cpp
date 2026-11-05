@@ -271,6 +271,43 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
     offlineCaptured={bypStage,{}};
     offlinePresenter.refresh();
     QVERIFY(!offlinePresenter.offline_available());
+    if(sourceHz==48000 && outputHz==48000) {
+        // Test-only NON-CONFORMING wrapper around a SECOND genuinely
+        // executed DSP terminal; classification is deliberately synthetic.
+        // Only actual gain witnesses may be painted, and the view MUST
+        // say NON-CONFORMING, never VERIFIED MASTER / consumed LIVE.
+        QVERIFY(terminal.value()->set_user_bypass(false));
+        auto second=render::render_true_peak_limiter_owned_output_rate_candidate(
+            owner,*manual.value(),*frames.value(),manual.value()->revision(),
+            *outputRate.value(),terminal.value()->chain(),
+            terminal.value()->execution_bindings(),*registry.value(),
+            *block.value());
+        QVERIFY(second);
+        render::TruePeakLimiterMeasuredNonconformingCandidate fakeMeasured{
+            std::move(second.value()->terminal.checked.terminal),
+            -12.0,std::pow(10.0,-12.0/20.0),0.5,
+            render::M17NonconformingReason::POST_TRIM_ABOVE_CEILING,
+            analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED};
+        render::TruePeakLimiterOwnedMeasuredNonconformingCandidate fakeOwned{
+            owner,std::move(fakeMeasured),*instanceId.value(),
+            terminal.value()->chain().revision(),*outputRate.value(),
+            *frames.value(),owner->chain_revision(),false,{}};
+        const auto measured=std::make_shared<
+            const app::TerminalCandidateGate::StagedMeasuredCandidate>(
+                app::TerminalCandidateGate::StagedMeasuredCandidate{
+                    std::move(fakeOwned),core::RealizationId{33},owner});
+        offlineCaptured={{},measured};
+        offlinePresenter.refresh();
+        QVERIFY(offlinePresenter.offline_available());
+        QCOMPARE(offlinePresenter.offline_status(),
+            QStringLiteral("OFFLINE · NON-CONFORMING · SAMPLED"));
+        QVERIFY(!offlinePresenter.verified());
+        QVERIFY(offlinePresenter.verified_series().isEmpty());
+        // Ambiguous two-owner source is never allowed to claim any GR.
+        offlineCaptured={stage,measured};
+        offlinePresenter.refresh();
+        QVERIFY(!offlinePresenter.offline_available());
+    }
 }
 
 
