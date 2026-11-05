@@ -29,6 +29,8 @@ Rectangle {
     property var memoryAdvisor: null
     property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
+    property real m17GrTimelineFraction: -1
+    property string m17GrTimelineScope: ""
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
     property alias viewModel: root.eqViewModel
@@ -65,6 +67,8 @@ Rectangle {
             memoryAdvisor: root.memoryAdvisor
             limiterGrProvider: root.limiterGrProvider
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
+            m17GrTimelineFraction: root.m17GrTimelineFraction
+            m17GrTimelineScope: root.m17GrTimelineScope
             activeChainRow: realChainSelector.activeRow
             onDockToggleRequested: {
                 if (root.dockToggleHandler) root.dockToggleHandler(additionalEditorHost)
@@ -120,6 +124,8 @@ Rectangle {
         memoryAdvisor: root.memoryAdvisor
             limiterGrProvider: root.limiterGrProvider
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
+            m17GrTimelineFraction: root.m17GrTimelineFraction
+            m17GrTimelineScope: root.m17GrTimelineScope
             activeChainRow: realChainSelector.activeRow
             detachedWindow: root.hostDetached
             onDockToggleRequested: {
