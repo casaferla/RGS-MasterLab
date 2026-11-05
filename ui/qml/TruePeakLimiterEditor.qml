@@ -11,6 +11,7 @@ Item {
     property var limiterModule: null
     property bool showLocalValidation: true
     property var limiterGrProvider: null
+    property var limiterOfflineGrProvider: null
     property var limiterViewModel: null
     property var monitorViewModel: null
     property bool monitorLocked: false
@@ -41,6 +42,7 @@ Item {
         showLimiterControls: true
         limiterBypassed: root.bypassed
         limiterGrProvider: root.limiterGrProvider
+        limiterOfflineGrProvider: root.limiterOfflineGrProvider
         limiterViewModel: root.limiterViewModel
         monitorViewModel: root.monitorViewModel
         limiterSonicControlsEnabled: root.sonicControlsEnabled
