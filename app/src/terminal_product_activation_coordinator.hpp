@@ -25,6 +25,7 @@ namespace rgsml::app {
 // a limiter state bit alone never counts as audible M17 verification.
 class TerminalProductActivationCoordinator final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(bool directReturnAvailable READ direct_return_available NOTIFY directReturnChanged)
 public:
     TerminalProductActivationCoordinator(
         TerminalLimiterState&,TerminalLimiterViewModel&,
@@ -32,6 +33,10 @@ public:
         TerminalPrivateProductSession&,QObject* parent=nullptr);
     ~TerminalProductActivationCoordinator() override;
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
+    [[nodiscard]] bool direct_return_available() const noexcept;
+    // Explicit UI Return from current exact M17 direct OUTPUT_RATE owner.
+    // Never route to anonymous MASTER->DEVICE monitor or issue new Prepare.
+    Q_INVOKABLE bool returnToSource();
     // Explicit user handoff from an already installed M17 Preview Prepared
     // to Master Audition. Retires the exact M17 DEVICE owner, restores
     // MANUAL and keeps the SAME verified MASTER; never runs Prepare.
@@ -70,6 +75,8 @@ public:
         measuredProbe_=std::move(probe);
         measuredRecheck_=std::move(recheck);
     }
+signals:
+    void directReturnChanged();
 private:
     void limiter_accepted();
     void master_rate_changed();
