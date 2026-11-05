@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +13,7 @@ permissions:
 jobs:
   linux-portable-dsp:
     name: Linux Portable DSP Guard
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || startsWith(github.head_ref, 'staging/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head (B2b qualification provenance)
@@ -22,7 +24,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: 'tools/ci/requirements-src-numerical.txt'
 
       # Phase-11 exact Q0 mathematics; does not assert MPFR assets, Q1-Q6
       # spectral qualification or release readiness. No Qt/MPFR required.
@@ -80,7 +84,8 @@ jobs:
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
       # No new product/runtime dependency or Windows build stage.
       - name: Install independent SRC numerical screening (Linux)
-        run: python -m pip install --disable-pip-version-check mpmath==1.3.0 numpy==2.3.5
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: -r tools/ci/requirements-src-numerical.txt
 
       # Complete PRIVATE 14/36 asset ZIPs are never installed on routine
       # public PR CI. This tests atomic fail-closed control flow and
@@ -553,6 +558,7 @@ jobs:
 
   windows-focused-dsp:
     name: Windows Focused DSP
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || startsWith(github.head_ref, 'staging/') }}
     runs-on: windows-2022
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
@@ -856,90 +862,9 @@ jobs:
           }
           if ($process.ExitCode -ne 0) { throw 'M17_REAL_MAIN_QT_150_APP_FAILURE' }
 
-      # The official cold FQ uses canonical Visual Studio/MSVC Debug,
-      # while the existing Focused UI smoke uses Ninja/MSVC Release.
-      # The isolated Debug probe MUST also use the Visual Studio generator:
-      # audio/playback_sample_rate_adapter.cpp has deliberate Debug /O2 and
-      # VS_SETTINGS=BasicRuntimeChecks=Default; Ninja ignores VS_SETTINGS
-      # and combines /O2 with incompatible /RTC1 (CI #849). Never weaken
-      # the frozen audio per-source optimization just to make this probe pass.
-      # Use its OWN VS build directory: the pre-existing windows-msvc B2f
-      # attestation generator stays configure-only and untouched.
-      - name: Configure isolated Windows Debug UI diagnostic
-        shell: pwsh
-        run: |
-          cmake -S . -B build/windows-focused-debug-ui -G "Visual Studio 17 2022" -A x64 `
-            -DRGSML_BUILD_TESTS=ON `
-            -DRGSML_WARNINGS_AS_ERRORS=ON `
-            -DRGSML_PROVENANCE_TYPE=PR `
-            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
-            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
-            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }} `
-            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
-          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DEBUG_UI_CONFIG_FAILED' }
-      - name: Build isolated Windows Debug UI diagnostic
-        shell: pwsh
-        run: |
-          $raw = "$env:RUNNER_TEMP/rgsml-focused-debug-ui-build.log"
-          cmake --build build/windows-focused-debug-ui --config Debug `
-            --target rgsml_source_metadata_panel_smoke rgsml_external_playback_fir_assets_tests --parallel 4 *> $raw
-          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DEBUG_UI_BUILD_FAILED' }
-      - name: Upload bounded Windows Debug UI compiler errors
-        if: failure()
-        shell: pwsh
-        run: |
-          python tools/ci/summarize_focused_build.py --input "$env:RUNNER_TEMP/rgsml-focused-debug-ui-build.log" --output "$env:RUNNER_TEMP/rgsml-focused-debug-ui-build-bounded.txt" --platform windows
-          if ($LASTEXITCODE -ne 0) { throw 'DEBUG_UI_BUILD_SUMMARY_FAILED' }
-      - name: Attach bounded Windows Debug UI compiler diagnostic
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: RGS-Focused-Debug-UI-Build-Windows-${{ github.run_number }}-${{ github.sha }}
-          path: ${{ runner.temp }}/rgsml-focused-debug-ui-build-bounded.txt
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Run isolated Windows Debug Qt UI Smoke Diagnostic
-        id: focused_debug_ui_smoke
-        shell: pwsh
-        env:
-          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\\build\\focused-debug-visual
-        run: |
-          $env:PATH = "$env:RGSML_QT_ROOT\\bin;$env:PATH"
-          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\\qml"
-          $log = "$env:RUNNER_TEMP/rgsml-focused-debug-ui-smoke.txt"
-          & build/windows-focused-debug-ui/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
-          $code=$LASTEXITCODE
-          if (Test-Path $log) {
-            $critical=@(Select-String -Path $log -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'Fatal error' | Select-Object -First 8)
-            foreach ($hit in $critical) {
-              Write-Host ("DEBUG_QT_SMOKE_CRITICAL_LINE_{0}: {1}" -f $hit.LineNumber, $hit.Line.Substring(0,[Math]::Min(200,$hit.Line.Length)))
-            }
-          }
-          if ($code -ne 0) { throw "FOCUSED_DEBUG_UI_FAILED_$code" }
-      # Pre-FQ protection for the two Debug failures on official FQ #85.
-      - name: Preflight FQ Debug external FIR Qt and public header guards
-        shell: pwsh
-        run: |
-          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
-          ctest --test-dir build/windows-focused-debug-ui -C Debug `
-            -R '^(rgsml_external_playback_fir_assets_tests|audio_forbidden_include_contract)$' `
-            --output-on-failure
-          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_FQ_DEBUG_FIR_PREFLIGHT_FAILED' }
-
-      - name: Capture bounded Windows Debug UI Smoke assertions
-        if: ${{ failure() && steps.focused_debug_ui_smoke.outcome == 'failure' }}
-        shell: pwsh
-        run: |
-          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-focused-debug-ui/Testing/Temporary --qt-smoke-log "$env:RUNNER_TEMP/rgsml-focused-debug-ui-smoke.txt" --output "$env:RUNNER_TEMP/rgsml-focused-debug-ui-smoke-bounded.txt"
-          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DEBUG_UI_SUMMARY_FAILED' }
-      - name: Upload bounded Windows Debug UI Smoke assertions
-        if: ${{ failure() && steps.focused_debug_ui_smoke.outcome == 'failure' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: RGS-Focused-Debug-UI-Errors-Windows-${{ github.run_number }}-${{ github.sha }}
-          path: ${{ runner.temp }}/rgsml-focused-debug-ui-smoke-bounded.txt
-          retention-days: 7
-          if-no-files-found: error
+      # Debug UI smoke and Debug FIR/header qualification remain mandatory in
+      # windows-full-qualification.yml for the exact candidate SHA. The
+      # release GUI smoke above remains a per-PR Focused gate.
 
       - name: Run Focused DSP Tests (Release)
         env:
@@ -951,7 +876,7 @@ jobs:
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
-          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_master_output_rate_state_tests|rgsml_master_output_rate_codec_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_external_playback_fir_assets_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_|audio_forbidden_include_contract)" --output-on-failure --verbose
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_master_output_rate_state_tests|rgsml_master_output_rate_codec_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_external_playback_fir_assets_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_|audio_forbidden_include_contract)" --output-on-failure --verbose
 
       # Windows may crash before CTest can collect QtTest stdout. Only
       # on failure, re-run this *one* test executable directly to create a
