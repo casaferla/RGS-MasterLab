@@ -3,9 +3,79 @@
 #include <QVariantMap>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace rgsml::app {
+
+namespace {
+// Only actual immutable M17 applied_gain_frames may feed offline GR.
+// Each reported point is the PEAK OF A BOUNDED SET OF REAL SAMPLES from
+// its indicated master interval; unexamined frames are not invented.
+// This is a sampled visualization, NOT a sink-consumed LIVE certificate.
+[[nodiscard]] std::optional<QVariantList> sampled_offline_m17_gr(
+    const render::TruePeakLimiterTerminalCandidate& terminal)
+{
+    const auto pcm=terminal.compensated_pcm.view();
+    const auto n=pcm.frame_count().value();
+    const auto& gains=terminal.applied_gain_frames;
+    const auto delay=terminal.algorithmic_latency_frames;
+    if(terminal.bypassed||delay<=0||n<=0
+       ||pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.absolute_start_frame()!=core::FrameIndex{0}
+       ||static_cast<std::uint64_t>(n)!=gains.size())
+        return std::nullopt;
+    constexpr std::int64_t kBuckets=256;
+    constexpr std::int64_t kSamplesPerBucket=256;
+    const auto buckets=std::min(kBuckets,n);
+    const auto base=n/buckets;
+    const auto extra=n%buckets;
+    QVariantList result;
+    result.reserve(static_cast<qsizetype>(buckets));
+    const auto checked=[&](std::int64_t frame)
+        ->std::optional<double> {
+        const auto& sample=gains[static_cast<std::size_t>(frame)];
+        if(frame>std::numeric_limits<std::int64_t>::max()-delay
+           ||sample.programme_frame!=frame
+           ||sample.raw_output_frame!=frame+delay
+           ||!std::isfinite(sample.reduction_db)
+           ||sample.reduction_db<0.0
+           ||!std::isfinite(sample.gain)
+           ||sample.gain<=0.0 ||sample.gain>1.0
+           ||std::abs(sample.reduction_db
+                +20.0*std::log10(sample.gain))>1e-5)
+            return std::nullopt;
+        return sample.reduction_db;
+    };
+    for(std::int64_t i=0;i<buckets;++i) {
+        // Quotient/remainder partition avoids i*n signed overflow.
+        const auto begin=i*base+std::min(i,extra);
+        const auto end=(i+1)*base+std::min(i+1,extra);
+        const auto span=end-begin;
+        if(span<=0)return std::nullopt;
+        const auto step=1+(span-1)/kSamplesPerBucket;
+        double peak=0.0;
+        for(auto cursor=begin;cursor<end;) {
+            const auto gain=checked(cursor);
+            if(!gain)return std::nullopt;
+            peak=std::max(peak,*gain);
+            if(end-cursor<=step)break;
+            cursor+=step;
+        }
+        const auto tail=checked(end-1);
+        if(!tail)return std::nullopt;
+        peak=std::max(peak,*tail);
+        QVariantMap point;
+        point.insert(QStringLiteral("peakReductionDb"),peak);
+        point.insert(QStringLiteral("frameBegin"),
+                     QVariant::fromValue(static_cast<qlonglong>(begin)));
+        point.insert(QStringLiteral("frameEndExclusive"),
+                     QVariant::fromValue(static_cast<qlonglong>(end)));
+        result.append(point);
+    }
+    return result;
+}
+} // namespace
 
 TerminalPrivateGrViewModel::TerminalPrivateGrViewModel(
     Observation observe,QObject* parent)
@@ -31,9 +101,59 @@ void TerminalPrivateGrViewModel::suspend_unverified()
     emit changed();
 }
 
+void TerminalPrivateGrViewModel::clear_offline()
+{
+    offlineVerifiedOwner_.reset();
+    offlineMeasuredOwner_.reset();
+    if(offlineSeries_.isEmpty()
+       &&offlineStatus_==QStringLiteral("NOT PREPARED · NO GR DATA"))
+        return;
+    offlineSeries_.clear();
+    offlineStatus_=QStringLiteral("NOT PREPARED · NO GR DATA");
+    emit changed();
+}
+
+void TerminalPrivateGrViewModel::refresh_offline()
+{
+    if(!observeOffline_)return;
+    const auto capture=observeOffline_();
+    // One current source, never a verified and a nonconforming identity
+    // simultaneously. This read is independently owner-guarded in session.
+    if(static_cast<bool>(capture.verified)
+       ==static_cast<bool>(capture.nonconforming)) {
+        clear_offline();
+        return;
+    }
+    if(!offlineSeries_.isEmpty()
+       &&capture.verified==offlineVerifiedOwner_
+       &&capture.nonconforming==offlineMeasuredOwner_)
+        return;
+    const render::TruePeakLimiterTerminalCandidate* terminal=nullptr;
+    QString label;
+    if(capture.verified) {
+        const auto& bound=capture.verified->rendered.terminal.checked;
+        if(!bound.final_check) {clear_offline();return;}
+        terminal=&bound.terminal;
+        label=QStringLiteral("OFFLINE · VERIFIED MASTER · SAMPLED");
+    } else {
+        terminal=&capture.nonconforming->rendered.terminal.terminal;
+        label=QStringLiteral("OFFLINE · NON-CONFORMING · SAMPLED");
+    }
+    const auto points=sampled_offline_m17_gr(*terminal);
+    if(!points ||points->isEmpty()) {clear_offline();return;}
+    offlineVerifiedOwner_=capture.verified;
+    offlineMeasuredOwner_=capture.nonconforming;
+    offlineSeries_=*points;
+    offlineStatus_=std::move(label);
+    emit changed();
+}
+
 void TerminalPrivateGrViewModel::invalidate()
 {
-    // A product/source/limiter ownership change destroys retained history.
+    // Both witnessed LIVE and source-owned OFFLINE data must be invalidated
+    // immediately at an epoch transition. The next separate refresh re-proves
+    // the current source; never show a retained old Master by default.
+    clear_offline();
     suspend_unverified();
     lastProven_.reset();
     lastProvenPoints_.clear();
@@ -43,6 +163,10 @@ void TerminalPrivateGrViewModel::invalidate()
 
 void TerminalPrivateGrViewModel::refresh()
 {
+    // Independent from the Windows consumed-output observer: even when
+    // LIVE proof is impossible, a current immutable prepared MASTER may
+    // truthfully provide a separately labeled offline sampled GR history.
+    refresh_offline();
     std::optional<TerminalPrivateGrSeries> sample;
     std::optional<EvidenceKey> acceptedKey;
     if(observeEvidence_) {
