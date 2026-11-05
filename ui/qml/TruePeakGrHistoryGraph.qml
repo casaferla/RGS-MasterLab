@@ -1,10 +1,8 @@
 import QtQuick
 
-// M17 GR graph CHROME only. Axis references are not measurements.
-// Until the verified, sink-bound applied-gain sidecar is available this
-// Canvas MUST NOT paint a line, fill, fake zero-history or peak marker.
-// Future audio integration must independently authenticate actual OUTPUT_RATE
-// consumption and RealizationId before binding historical GR data.
+// M17 GR has TWO distinct, truthfully labeled sources: actual applied
+// M17 MASTER gains sampled offline, and the stricter Windows consumed-output
+// live witness. No candidate means NO painted curve, never fake zero-history.
 Canvas {
     id: root
     objectName: "m17GainReductionPlot"
@@ -12,8 +10,13 @@ Canvas {
     // The current production default stays NULL / NO GRAPH, not fake zero.
     property var verifiedHistory: []
     property bool backendVerified: false
+    property var offlineHistory: []
+    property bool backendOfflineAvailable: false
     readonly property bool verifiedSeriesAvailable: backendVerified
         && !bypassed && verifiedHistory && verifiedHistory.length > 0
+    readonly property bool offlineSeriesAvailable: backendOfflineAvailable
+        && !bypassed && offlineHistory && offlineHistory.length > 0
+        && !verifiedSeriesAvailable
     property color familyAccent: "#C4774A"
     property bool bypassed: true
     implicitWidth: 160
@@ -26,6 +29,8 @@ Canvas {
     onFamilyAccentChanged: requestPaint()
     onVerifiedHistoryChanged: requestPaint()
     onBackendVerifiedChanged: requestPaint()
+    onOfflineHistoryChanged: requestPaint()
+    onBackendOfflineAvailableChanged: requestPaint()
     onBypassedChanged: requestPaint()
 
     onPaint: {
@@ -40,9 +45,10 @@ Canvas {
         const plotWidth = Math.max(1, right - left)
         const plotHeight = Math.max(1, bottom - top)
 
-        // No signal curve is drawn unless the backend explicitly marks
-        // an authentic gain witness bound to consumed OUTPUT_RATE frames.
-        const history = root.verifiedSeriesAvailable ? root.verifiedHistory : []
+        // LIVE has precedence. Otherwise a separately labeled offline
+        // sampled curve may use ONLY source-bound, actual M17 applied gains.
+        const history = root.verifiedSeriesAvailable ? root.verifiedHistory
+            : root.offlineSeriesAvailable ? root.offlineHistory : []
         let valid = history.length > 0 && history.length <= 256
         let axisMax = 6
         if (valid) {
