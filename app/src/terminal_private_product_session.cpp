@@ -2232,12 +2232,20 @@ TerminalPrivateProductSession::capture_offline_gr_for_display() const
     if(status_==QStringLiteral("MONITOR_PRIVATE_PLAYING")
        ||status_==QStringLiteral("MONITOR_PRIVATE_PAUSED")
        ||status_==QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED")) {
-        // The monitor is an ANONYMOUS DEVICE owner. The GR source remains
-        // the exact immutable verified MASTER whose PCM was borrowed.
-        const auto owned=private_monitor_master_snapshot();
-        if(owned &&approvedMonitorMaster_&&pending_
+        // Offline gain belongs to the source-bound immutable MASTER, NOT
+        // to the device. Do not ask Windows for hardware identity at each
+        // UI refresh: that is for the independent consumed-LIVE observer.
+        if(installedMonitor_&&approvedMonitor_
+           &&installedMonitor_==approvedMonitor_
+           &&approvedMonitorMaster_&&pending_
            &&candidates_->staged()==approvedMonitorMaster_
-           &&renderer_->status()==QStringLiteral("READY_PRIVATE"))
+           &&renderer_->status()==QStringLiteral("READY_PRIVATE")
+           &&current_selection_for_pending()
+           &&prepared_&&manual_&&manualId_&&sourceLoop_
+           &&prepared_()==pending_->prepared
+           &&manual_()==pending_->manual
+           &&manualId_()==std::optional{pending_->manualId}
+           &&sourceLoop_()==pending_->loop)
             return {approvedMonitorMaster_,{}};
         return {};
     }
@@ -2279,10 +2287,20 @@ TerminalPrivateProductSession::capture_offline_gr_for_display() const
     if(status_==QStringLiteral("MEASURED_DEVICE_PLAYING")
        ||status_==QStringLiteral("MEASURED_DEVICE_PAUSED")
        ||status_==QStringLiteral("MEASURED_DEVICE_INSTALLED_STOPPED")) {
-        // Crossrate nonconforming device can show only OFFLINE measured
-        // gain; it never creates an M16-verified output RealizationId.
-        if(!installedMeasuredTicket_
-           ||!measured_device_snapshot())return {};
+        // Anonymous DEVICE PCM never gains LIVE/verified GR authority.
+        // Source-bound offline gain is a separate, inexpensive snapshot.
+        if(!installedMeasuredTicket_||!installedMonitor_||!pending_
+           ||!selected_||!selected_()
+           ||!prepared_||!manual_||!manualId_||!sourceLoop_
+           ||prepared_()!=pending_->prepared
+           ||manual_()!=pending_->manual
+           ||manualId_()!=std::optional{pending_->manualId}
+           ||sourceLoop_()!=pending_->loop
+           ||installedMonitor_!=installedMeasuredTicket_->audition_device_pcm()
+           ||candidates_->staged_measured()
+                !=installedMeasuredTicket_->measured_master()
+           ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE"))
+            return {};
         return {{},installedMeasuredTicket_->measured_master()};
     }
     return {};
