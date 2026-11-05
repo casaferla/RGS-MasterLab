@@ -10,7 +10,6 @@ Item {
     objectName: "truePeakLimiterSurface"
     property var limiterModule: null
     property bool showLocalValidation: true
-    property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
     property real grTimelineFraction: -1
     property string grTimelineScope: ""
@@ -43,7 +42,6 @@ Item {
         showLimiterGrHistory: true
         showLimiterControls: true
         limiterBypassed: root.bypassed
-        limiterGrProvider: root.limiterGrProvider
         limiterOfflineGrProvider: root.limiterOfflineGrProvider
         grTimelineFraction: root.grTimelineFraction
         grTimelineScope: root.grTimelineScope
