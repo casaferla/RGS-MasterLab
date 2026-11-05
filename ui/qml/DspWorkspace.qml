@@ -27,6 +27,7 @@ Rectangle {
     property var masterRateState: null
     property var memoryAdvisor: null
     property var limiterGrProvider: null
+    property var limiterOfflineGrProvider: null
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
     property alias viewModel: root.eqViewModel
@@ -61,6 +62,7 @@ Rectangle {
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
             limiterGrProvider: root.limiterGrProvider
+            limiterOfflineGrProvider: root.limiterOfflineGrProvider
             activeChainRow: realChainSelector.activeRow
             onDockToggleRequested: {
                 if (root.dockToggleHandler) root.dockToggleHandler(additionalEditorHost)
@@ -114,6 +116,7 @@ Rectangle {
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor
             limiterGrProvider: root.limiterGrProvider
+            limiterOfflineGrProvider: root.limiterOfflineGrProvider
             activeChainRow: realChainSelector.activeRow
             detachedWindow: root.hostDetached
             onDockToggleRequested: {
