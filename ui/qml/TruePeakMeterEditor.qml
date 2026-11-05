@@ -17,7 +17,6 @@ Item {
     property bool showLimiterControls: false
     property bool limiterBypassed: true
     property bool limiterSonicControlsEnabled: false
-    property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
     property real grTimelineFraction: -1
     property string grTimelineScope: ""
@@ -27,9 +26,9 @@ Item {
         && root.monitorViewModel && root.monitorViewModel.monitorPreparing
     // The lower bay is stable: show PREPARATION only for an actual job.
     // READY, MONITOR, Return to Source, ERROR, BYPASS and NEEDS PREPARATION
-    // all show the GR HISTORY chrome. In those states the graph is EMPTY
-    // unless its independently authenticated OUTPUT-consumption witness
-    // exists; a prepared MASTER is not itself proof of audible GR.
+    // all show the GR HISTORY chrome. A current source-bound MASTER may
+    // show its immutable OFFLINE SAMPLED GR without asserting a device
+    // consumed-output LIVE measurement. No current MASTER means EMPTY.
     readonly property string terminalAudioStatus: root.limiterViewModel
         ? root.limiterViewModel.audioStatus : ""
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
@@ -263,7 +262,7 @@ Item {
                                     : grHistoryGraph.offlineSeriesAvailable
                                         ? root.limiterOfflineGrProvider.offlineStatus.indexOf("NON-CONFORMING") >= 0
                                             ? "NON-CONFORMING" : "OFFLINE · SAMPLED"
-                                        : "NOT PREPARED · NO GR DATA"
+                                        : "NO GR DATA"
                                 color: "#91A8B7"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
