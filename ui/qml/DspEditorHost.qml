@@ -81,7 +81,6 @@ Rectangle {
         if (!hz || hz <= 0) return "—"
         return (hz / 1000).toFixed(1).replace(".0", "") + " kHz"
     }
-    property var limiterGrProvider: null
     // OFFLINE applied gain is immutable MASTER evidence, not a Windows
     // consumed-output LIVE witness. It remains visible during Master Audition.
     property var limiterOfflineGrProvider: null
@@ -693,8 +692,6 @@ Rectangle {
             monitorLocked: root.monitorExclusive
             limiterViewModel: root.isLimiterEditor ? root.terminalLimiterViewModel : null
             monitorViewModel: root.terminalMonitorViewModel
-            limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
-                ? root.limiterGrProvider : null
             limiterOfflineGrProvider: root.isLimiterEditor
                 ? root.limiterOfflineGrProvider : null
             grTimelineFraction: root.m17GrTimelineFraction
