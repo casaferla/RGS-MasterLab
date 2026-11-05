@@ -1976,6 +1976,27 @@ set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
     LABELS "audio;m18;preproduction;dither;philox"
 )
 
+# M18 canonical WavWriter opt-in: 6 rates x 2 layouts x 2 encodings,
+# exact whole-byte oracle, partition invariance, seed, RF64 and failures.
+# Existing WavWriter::open() and Windows export remain F64-only.
+qt_add_executable(rgsml_m18_canonical_wav_writer_tests
+    unit/audio/test_m18_canonical_wav_writer.cpp
+)
+target_include_directories(rgsml_m18_canonical_wav_writer_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_canonical_wav_writer_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_canonical_wav_writer_tests)
+add_test(NAME rgsml_m18_canonical_wav_writer_tests
+    COMMAND rgsml_m18_canonical_wav_writer_tests
+)
+set_tests_properties(rgsml_m18_canonical_wav_writer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;canonical_writer;pcm24;float32;preproduction"
+)
+
 # M18 core ResourceWriter seam: short-write and failure regression,
 # plus actual PCM24 WAV bytes through the canonical byte port.
 # Windows' TransactionalAudioExporter still owns all publication policy.
