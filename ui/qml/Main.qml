@@ -938,8 +938,6 @@ ApplicationWindow {
             masterListeningHandler: function() { return root.listenToPreparedMaster() }
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
-            limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
-                ? terminalPrivateGrViewModel : null
             limiterOfflineGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
             m17GrTimelineFraction: root.m17GrTimelineFraction
