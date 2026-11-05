@@ -18,6 +18,7 @@ Item {
     property bool limiterBypassed: true
     property bool limiterSonicControlsEnabled: false
     property var limiterGrProvider: null
+    property var limiterOfflineGrProvider: null
     property var limiterViewModel: null
     property var monitorViewModel: null
     readonly property bool devicePreparing: root.showLimiterGrHistory
@@ -258,8 +259,10 @@ Item {
                                           ? "OFFLINE · IN PROGRESS" : "OFFLINE · NOT RUNNING"
                                     : root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
                                     : grHistoryGraph.verifiedSeriesAvailable
-                                        ? "VERIFIED · CONSUMED GR"
-                                        : "UNAVAILABLE · NO VERIFIED GR"
+                                        ? "LIVE · CONSUMED GR"
+                                        : grHistoryGraph.offlineSeriesAvailable
+                                          ? root.limiterOfflineGrProvider.offlineStatus
+                                          : "NOT PREPARED · NO GR DATA"
                                 color: "#91A8B7"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
@@ -421,6 +424,10 @@ Item {
                                 ? root.limiterGrProvider.verified : false
                             verifiedHistory: root.limiterGrProvider
                                 ? root.limiterGrProvider.verifiedSeries : []
+                            backendOfflineAvailable: root.limiterOfflineGrProvider
+                                ? root.limiterOfflineGrProvider.offlineAvailable : false
+                            offlineHistory: root.limiterOfflineGrProvider
+                                ? root.limiterOfflineGrProvider.offlineSeries : []
                             bypassed: root.limiterBypassed
                         }
                     }
