@@ -26,6 +26,19 @@ set_tests_properties(rgsml_master_output_rate_codec_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "project;master_rate;finalization;codec")
 
+# M18 candidate preference: exact 64-bit dither seed and format.
+# Draft-only, NOT a recognized .rgsmaster output field or release gate.
+qt_add_executable(rgsml_m18_output_preference_candidate_tests
+    unit/project/test_m18_output_preference_candidate.cpp)
+target_link_libraries(rgsml_m18_output_preference_candidate_tests
+    PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m18_output_preference_candidate_tests)
+add_test(NAME rgsml_m18_output_preference_candidate_tests
+    COMMAND rgsml_m18_output_preference_candidate_tests)
+set_tests_properties(rgsml_m18_output_preference_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;m18;preproduction;seed;schema_candidate")
+
 add_test(NAME rgsml_project_dependency_contract_tests
     COMMAND "${CMAKE_COMMAND}"
         "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
