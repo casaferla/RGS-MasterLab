@@ -4,8 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    # Draft PRs move to the obligatory gate on ready_for_review.
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -14,9 +12,6 @@ permissions:
 jobs:
   linux-portable-dsp:
     name: Linux Portable DSP Guard
-    # Dormant dependent experimental Draft PRs have no automatic expensive CI.
-    # An active staging PR, ready PR, or explicit workflow_dispatch runs both OS.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft || startsWith(github.head_ref, 'staging/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head (B2b qualification provenance)
@@ -560,7 +555,6 @@ jobs:
 
   windows-focused-dsp:
     name: Windows Focused DSP
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft || startsWith(github.head_ref, 'staging/') }}
     runs-on: windows-2022
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
