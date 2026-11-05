@@ -752,16 +752,19 @@ QSGNode* WaveformItem::updatePaintNode(
             x - internal::kWaveformPlayheadMarkerSize * 0.5F, 0.0F,
             std::max(0.0F, static_cast<float>(width())
                 - internal::kWaveformPlayheadMarkerSize));
+        std::vector<Vertex> playheadGeometry{
+            {playheadLeft, 0.0F}, {playheadLeft, static_cast<float>(height())},
+            {playheadRight, static_cast<float>(height())},
+            {playheadLeft, 0.0F}, {playheadRight, static_cast<float>(height())},
+            {playheadRight, 0.0F},
+            {markerLeft, 0.0F},
+            {markerLeft + internal::kWaveformPlayheadMarkerSize, 0.0F},
+            {x, internal::kWaveformPlayheadMarkerSize},
+        };
+        // One top marker and one shared stereo playhead: no duplicate
+        // lower-lane ornament. Region handles likewise occur only at top.
         root->appendChildNode(make_triangles(
-            std::vector<Vertex>{
-                {playheadLeft, 0.0F}, {playheadLeft, static_cast<float>(height())},
-                {playheadRight, static_cast<float>(height())},
-                {playheadLeft, 0.0F}, {playheadRight, static_cast<float>(height())},
-                {playheadRight, 0.0F},
-                {markerLeft, 0.0F}, {markerLeft + internal::kWaveformPlayheadMarkerSize, 0.0F},
-                {x, internal::kWaveformPlayheadMarkerSize},
-            },
-            playheadColor_));
+            playheadGeometry, playheadColor_));
     }
 
     if (hasOverrange_) {

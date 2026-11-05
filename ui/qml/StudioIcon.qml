@@ -7,6 +7,10 @@ Canvas {
     property color strokeColor: "#DDE6F3"
     property color fillColor: strokeColor
     property real strokeWidth: 1.8
+    // Real, same-hue phosphor glow follows the silhouette, not a second LED.
+    // Default/unconfigured icons and non-chain controls remain unlit.
+    property bool glowEnabled: false
+    readonly property real glowBlur: glowEnabled ? 6.5 : 0.0
 
     implicitWidth: 18
     implicitHeight: 18
@@ -16,6 +20,7 @@ Canvas {
     onStrokeColorChanged: requestPaint()
     onFillColorChanged: requestPaint()
     onStrokeWidthChanged: requestPaint()
+    onGlowEnabledChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
     Component.onCompleted: requestPaint()
@@ -32,6 +37,13 @@ Canvas {
         ctx.lineWidth = strokeWidth
         ctx.lineCap = "round"
         ctx.lineJoin = "round"
+        // Qt 6 Canvas Context2D natively supports shadowBlur/shadowColor.
+        // One path emits a crisp core plus an integrated colored halo; no
+        // extra item, dot, size change, new import or glow under Bypass.
+        ctx.shadowBlur = icon.glowBlur
+        ctx.shadowColor = icon.glowEnabled ? icon.strokeColor : "transparent"
+        ctx.shadowOffsetX = 0
+        ctx.shadowOffsetY = 0
 
         function line(x1, y1, x2, y2) {
             ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
@@ -50,16 +62,197 @@ Canvas {
             }
         }
 
-        if (kind === "zoom-in" || kind === "zoom-out") {
-            ctx.beginPath(); ctx.arc(7.2, 7.2, 4.7, 0, Math.PI * 2); ctx.stroke()
-            line(10.7, 10.7, 15.8, 15.8)
-            line(4.7, 7.2, 9.7, 7.2)
-            if (kind === "zoom-in") line(7.2, 4.7, 7.2, 9.7)
+        // PO-approved source silhouettes, 2026-10-25, 18x18 optical grid.
+        // Keep the family hue, opacity and fixed 16px row slot in
+        // DspChainSelector; these are semantic glyphs, never LED dots.
+        if (kind === "module-gain") {
+            // Three HORIZONTAL slider tracks; never the old single fader.
+            line(2.5, 3.6, 10.2, 3.6)
+            line(13.0, 3.6, 15.5, 3.6)
+            line(11.6, 1.9, 11.6, 5.2)
+            line(2.5, 9.0, 4.6, 9.0)
+            line(7.4, 9.0, 15.5, 9.0)
+            line(6.0, 7.3, 6.0, 10.7)
+            line(2.5, 14.5, 10.8, 14.5)
+            line(13.6, 14.5, 15.5, 14.5)
+            line(12.2, 12.8, 12.2, 16.2)
+        } else if (kind === "module-eq") {
+            // Three VERTICAL mixing faders, staggered per source artwork.
+            line(3.5, 2.0, 3.5, 9.2)
+            line(3.5, 12.2, 3.5, 16.0)
+            line(1.9, 10.7, 5.1, 10.7)
+            line(9.0, 2.0, 9.0, 4.6)
+            line(9.0, 7.6, 9.0, 16.0)
+            line(7.4, 6.1, 10.6, 6.1)
+            line(14.5, 2.0, 14.5, 11.0)
+            line(14.5, 14.0, 14.5, 16.0)
+            line(12.9, 12.5, 16.1, 12.5)
+        } else if (kind === "module-compressor") {
+            // Rounded audio bars; the old transfer curve is NOT approved.
+            ctx.save()
+            ctx.lineWidth = 2.5
+            line(2.8, 7.1, 2.8, 11.1)
+            line(5.9, 4.5, 5.9, 13.5)
+            line(9.0, 2.1, 9.0, 15.9)
+            line(12.1, 5.0, 12.1, 13.0)
+            line(15.2, 7.2, 15.2, 10.8)
+            ctx.restore()
+        } else if (kind === "module-stereo") {
+            // The approved branching M/S arrow, not overlapping rings.
+            line(9.0, 16.1, 9.0, 9.3)
+            line(9.0, 9.3, 3.4, 3.7)
+            line(9.0, 9.3, 14.6, 3.7)
+            line(3.4, 3.7, 3.4, 7.1)
+            line(3.4, 3.7, 6.8, 3.7)
+            line(14.6, 3.7, 11.2, 3.7)
+            line(14.6, 3.7, 14.6, 7.1)
+        } else if (kind === "module-peak-meter") {
+            // A metering HISTOGRAM: three solid graduated columns.
+            ctx.save()
+            ctx.lineWidth = 3.2
+            line(3.6, 10.4, 3.6, 15.1)
+            line(9.0, 4.3, 9.0, 15.1)
+            line(14.4, 8.0, 14.4, 15.1)
+            ctx.restore()
+        } else if (kind === "module-limiter") {
+            // Verified-terminal shield/check mark, not a ceiling curve.
+            ctx.beginPath()
+            ctx.moveTo(9.0, 1.9)
+            ctx.lineTo(15.1, 4.7)
+            ctx.lineTo(15.1, 9.4)
+            ctx.quadraticCurveTo(15.1, 13.3, 9.0, 16.3)
+            ctx.quadraticCurveTo(2.9, 13.3, 2.9, 9.4)
+            ctx.lineTo(2.9, 4.7)
+            ctx.closePath()
+            ctx.stroke()
+            line(6.1, 9.3, 8.2, 11.4)
+            line(8.2, 11.4, 12.2, 7.3)
+        } else if (kind === "module-headphones") {
+            // Rounded headset band and two independent ear cups.
+            ctx.beginPath()
+            ctx.arc(9.0, 9.0, 6.0, Math.PI, Math.PI * 2)
+            ctx.stroke()
+            line(3.0, 9.0, 3.0, 14.4)
+            line(15.0, 9.0, 15.0, 14.4)
+            ctx.beginPath()
+            ctx.moveTo(3.1, 11.1)
+            ctx.quadraticCurveTo(6.0, 10.4, 6.0, 13.4)
+            ctx.quadraticCurveTo(6.0, 16.4, 3.1, 15.0)
+            ctx.closePath()
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(14.9, 11.1)
+            ctx.quadraticCurveTo(12.0, 10.4, 12.0, 13.4)
+            ctx.quadraticCurveTo(12.0, 16.4, 14.9, 15.0)
+            ctx.closePath()
+            ctx.stroke()
+        } else if (kind === "dock-large") {
+            // PO 2026-10-27: independent optical drawing for 64x64 center
+            // well, NOT an enlarged clone of the 20x20 native-window icon.
+            // The inward arrow has shorter prongs, visibly thinner strokes
+            // and positive breathing room from the surrounding square.
+            // Native small Dock/Undock kinds below MUST remain unchanged.
+            ctx.save()
+            ctx.lineWidth = strokeWidth
+            ctx.beginPath()
+            ctx.moveTo(10.5, 4.1)
+            ctx.lineTo(4.1, 4.1)
+            ctx.quadraticCurveTo(3.0, 4.1, 3.0, 5.2)
+            ctx.lineTo(3.0, 13.8)
+            ctx.quadraticCurveTo(3.0, 14.9, 4.1, 14.9)
+            ctx.lineTo(12.8, 14.9)
+            ctx.quadraticCurveTo(13.9, 14.9, 13.9, 13.8)
+            ctx.lineTo(13.9, 9.3)
+            ctx.stroke()
+            // Arrow enters the gap and ends inside the frame without
+            // resting on either the frame's right wall or its upper edge.
+            line(15.2, 2.8, 8.3, 9.7)
+            line(8.3, 6.3, 8.3, 9.7)
+            line(8.3, 9.7, 11.7, 9.7)
+            ctx.restore()
+        } else if (kind === "undock" || kind === "dock") {
+            // The SAME open-window silhouette in both actions: arrow
+            // exits towards the upper right or enters towards lower left.
+            // PO-approved minimal pictogram; fits exact 18x18 Canvas.
+            ctx.save()
+            ctx.lineWidth = 2.1
+            ctx.beginPath()
+            ctx.moveTo(10.5,3.7); ctx.lineTo(3.4,3.7)
+            ctx.quadraticCurveTo(2.4,3.7,2.4,4.7)
+            ctx.lineTo(2.4,14.1)
+            ctx.quadraticCurveTo(2.4,15.2,3.5,15.2)
+            ctx.lineTo(13.2,15.2)
+            ctx.quadraticCurveTo(14.3,15.2,14.3,14.1)
+            ctx.lineTo(14.3,8.9)
+            ctx.stroke()
+            if (kind === "undock") {
+                line(8.0,9.8,16.0,1.8)
+                line(11.8,1.8,16.0,1.8)
+                line(16.0,1.8,16.0,6.0)
+            } else {
+                line(16.0,1.8,8.0,9.8)
+                line(8.0,5.6,8.0,9.8)
+                line(8.0,9.8,12.2,9.8)
+            }
+            ctx.restore()
+        } else if (kind === "zoom-in" || kind === "zoom-out") {
+            // Approved Transport Icon Concept v2: original 24x24 SVG
+            // geometry, uniformly mapped onto StudioIcon's 18x18 Canvas.
+            // Four open target corners replace the stock magnifying lens.
+            // Colors and disabled/hover/down states remain the caller's;
+            // these utility controls are NOT illuminated DSP module LEDs.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.scale(0.75, 0.75)
+            ctx.strokeStyle = strokeColor
+            ctx.globalAlpha = 0.82
+            ctx.lineWidth = 2.25
+            ctx.beginPath()
+            ctx.moveTo(8, 3.6)
+            ctx.lineTo(5.5, 3.6)
+            ctx.quadraticCurveTo(3.6, 3.6, 3.6, 5.5)
+            ctx.lineTo(3.6, 8)
+            ctx.moveTo(16, 3.6)
+            ctx.lineTo(18.5, 3.6)
+            ctx.quadraticCurveTo(20.4, 3.6, 20.4, 5.5)
+            ctx.lineTo(20.4, 8)
+            ctx.moveTo(3.6, 16)
+            ctx.lineTo(3.6, 18.5)
+            ctx.quadraticCurveTo(3.6, 20.4, 5.5, 20.4)
+            ctx.lineTo(8, 20.4)
+            ctx.moveTo(20.4, 16)
+            ctx.lineTo(20.4, 18.5)
+            ctx.quadraticCurveTo(20.4, 20.4, 18.5, 20.4)
+            ctx.lineTo(16, 20.4)
+            ctx.stroke()
+            ctx.globalAlpha = 1.0
+            ctx.lineWidth = 2.8
+            line(8.6, 12, 15.4, 12)
+            if (kind === "zoom-in") line(12, 8.6, 12, 15.4)
+            ctx.restore()
         } else if (kind === "fit-source") {
-            line(2.5, 3.0, 2.5, 15.0); line(15.5, 3.0, 15.5, 15.0)
-            line(5.0, 9.0, 13.0, 9.0)
-            line(5.0, 9.0, 7.5, 6.5); line(5.0, 9.0, 7.5, 11.5)
-            line(13.0, 9.0, 10.5, 6.5); line(13.0, 9.0, 10.5, 11.5)
+            // Approved v2: SOURCE waveform between the two time boundaries.
+            // Distinct from Stereo/M-S Width and the region-fit command.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.scale(0.75, 0.75)
+            ctx.strokeStyle = strokeColor
+            ctx.globalAlpha = 0.82
+            ctx.lineWidth = 2.35
+            line(4.1, 5, 4.1, 19)
+            line(19.9, 5, 19.9, 19)
+            ctx.globalAlpha = 1.0
+            ctx.lineWidth = 2.45
+            ctx.beginPath()
+            ctx.moveTo(6.6, 12)
+            ctx.lineTo(8.2, 12)
+            ctx.lineTo(10, 9.1)
+            ctx.lineTo(12.15, 15)
+            ctx.lineTo(14.15, 10.15)
+            ctx.lineTo(15.55, 12)
+            ctx.lineTo(17.4, 12)
+            ctx.stroke()
+            ctx.restore()
         } else if (kind === "fit-region") {
             line(2.0, 3.0, 2.0, 15.0); line(16.0, 3.0, 16.0, 15.0)
             dashRect(5.0, 5.0, 8.0, 8.0, 2.0, 2.0)

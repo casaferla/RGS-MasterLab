@@ -1,4 +1,5 @@
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
+#include <rgsml/audio/external_playback_fir_assets.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
 
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <numeric>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -44,17 +46,8 @@ private:
     WavReader& reader_;
 };
 
-constexpr std::array<std::uint64_t, 30'721> kKernel44100To48000{
-#include "internal/playback_src_kernel_44100_48000.inc"
-};
-constexpr std::array<std::uint64_t, 28'225> kKernel48000To44100{
-#include "internal/playback_src_kernel_48000_44100.inc"
-};
-
-constexpr std::string_view kKernel44100To48000Sha256 =
-    "ec8c4d554eb4ede15f58eead1fede923e74c4692c57832bda716e3fc826926b4";
-constexpr std::string_view kKernel48000To44100Sha256 =
-    "37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22";
+// Frozen FIR coefficients now ship as authenticated external binary64 resources.
+// No coefficient words are embedded in this translation unit.
 
 struct WideUnsigned final {
     std::uint64_t high;
@@ -297,6 +290,17 @@ template <typename T>
         remainder < inputFrames ? remainder : period - 1 - remainder);
 }
 
+
+// The six supported rates all use externally SHA-pinned FIR assets.
+// The two historic Playback kernels remain byte-identical; all other
+// nonidentity DEVICE paths borrow the original Q0 ratio from the same
+// packaged 16-asset catalog. Never synthesize a replacement filter here.
+[[nodiscard]] bool six_rate(std::int64_t hz) noexcept
+{
+    return hz==44100||hz==48000||hz==88200||hz==96000
+        ||hz==176400||hz==192000;
+}
+
 }  // namespace
 
 core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
@@ -304,24 +308,19 @@ core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
 {
     const auto inputRate = spec.inputRate.value();
     const auto outputRate = spec.outputRate.value();
-    const std::uint64_t* coefficients = nullptr;
-    std::size_t coefficientCount = 0U;
-    std::string_view checksum;
     std::int64_t interpolation = 0;
     std::int64_t decimation = 0;
-
     if (inputRate == 44'100 && outputRate == 48'000) {
         interpolation = 160;
         decimation = 147;
-        coefficients = kKernel44100To48000.data();
-        coefficientCount = kKernel44100To48000.size();
-        checksum = kKernel44100To48000Sha256;
     } else if (inputRate == 48'000 && outputRate == 44'100) {
         interpolation = 147;
         decimation = 160;
-        coefficients = kKernel48000To44100.data();
-        coefficientCount = kKernel48000To44100.size();
-        checksum = kKernel48000To44100Sha256;
+    } else if (six_rate(inputRate) && six_rate(outputRate)
+               && inputRate!=outputRate) {
+        const auto divisor=std::gcd(inputRate,outputRate);
+        interpolation=outputRate/divisor;
+        decimation=inputRate/divisor;
     } else {
         return failure<PlaybackSampleRateAdapter>(
             core::ErrorCode::UnsupportedOperation,
@@ -352,22 +351,25 @@ core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
         return core::Result<PlaybackSampleRateAdapter>::failure(
             *outputFrames.error());
     }
+    // Fully external and source-pinned for all 30 directions. No generated
+    // fallback if a Q0 binary is missing, tampered, or improperly installed.
+    auto verified=load_external_playback_fir(inputRate,outputRate);
+    if(!verified)
+        return core::Result<PlaybackSampleRateAdapter>::failure(
+            *verified.error());
+    auto owner=verified.value()->bits;
+    const auto kernelSha=verified.value()->sha256;
     return core::Result<PlaybackSampleRateAdapter>::success(
         PlaybackSampleRateAdapter{
-            spec,
-            interpolation,
-            decimation,
-            coefficients,
-            coefficientCount,
-            checksum,
-            *outputFrames.value(),
-        });
+            spec,interpolation,decimation,owner,owner->data(),
+            owner->size(),kernelSha,*outputFrames.value()});
 }
 
 PlaybackSampleRateAdapter::PlaybackSampleRateAdapter(
     PlaybackRateSpec spec,
     std::int64_t interpolation,
     std::int64_t decimation,
+    std::shared_ptr<const std::vector<std::uint64_t>> coefficientsOwner,
     const std::uint64_t* coefficientBits,
     std::size_t coefficientCount,
     std::string_view kernelSha256,
@@ -375,6 +377,7 @@ PlaybackSampleRateAdapter::PlaybackSampleRateAdapter(
     : spec_(spec)
     , interpolation_(interpolation)
     , decimation_(decimation)
+    , coefficientsOwner_(std::move(coefficientsOwner))
     , coefficientBits_(coefficientBits)
     , coefficientCount_(coefficientCount)
     , kernelSha256_(kernelSha256)
@@ -501,6 +504,92 @@ PlaybackSampleRateAdapter::map_output_frame_to_input_cursor(
         std::min(*mapped.value(), spec_.totalInputFrames.value())});
 }
 
+core::Result<core::FrameRange>
+PlaybackSampleRateAdapter::conservative_input_enclosure_for_output_range(
+    core::FrameRange outputRange) const
+{
+    const auto begin = outputRange.begin().value();
+    const auto end = outputRange.end().value();
+    if (begin < 0 || end <= begin || end > outputFrames_.value()
+        || end - begin > kMaximumOutputBlockFrames
+        || spec_.totalInputFrames.value() <= 0) {
+        return failure<core::FrameRange>(
+            core::ErrorCode::InvalidArgument,
+            "Playback SRC dependency enclosure needs a bounded OUTPUT_RATE interval.");
+    }
+    std::int64_t first = spec_.totalInputFrames.value();
+    std::int64_t last = -1;
+    for (auto outputFrame = begin; outputFrame < end; ++outputFrame) {
+        auto window = convolution_window(
+            outputFrame, static_cast<std::uint32_t>(interpolation_),
+            static_cast<std::uint32_t>(decimation_), coefficientCount_);
+        if (!window) {
+            return core::Result<core::FrameRange>::failure(*window.error());
+        }
+        for (auto logical = window.value()->firstInput;
+             logical <= window.value()->lastInput; ++logical) {
+            auto reflected = reflect_frame(
+                logical, spec_.totalInputFrames.value());
+            if (!reflected) {
+                return core::Result<core::FrameRange>::failure(*reflected.error());
+            }
+            first = std::min(first, *reflected.value());
+            last = std::max(last, *reflected.value());
+        }
+    }
+    // Intentional over-approximation. A sink-consumed OUTPUT interval does
+    // NOT thereby certify any enclosed pre-SRC source window for M16 LIVE.
+    return core::FrameRange::create(
+        core::FrameIndex{first}, core::FrameIndex{last + 1});
+}
+
+core::Result<core::FrameIndex>
+PlaybackSampleRateAdapter::no_future_dependency_source_prefix(
+    core::FrameIndex consumedOutputExclusive) const
+{
+    const auto consumed = consumedOutputExclusive.value();
+    const auto outputFrames = outputFrames_.value();
+    const auto sourceFrames = spec_.totalInputFrames.value();
+    if (consumed < 0 || consumed > outputFrames || sourceFrames <= 0) {
+        return failure<core::FrameIndex>(
+            core::ErrorCode::InvalidArgument,
+            "SRC retirement proof requires a valid consumed OUTPUT prefix.");
+    }
+    // No future convolution windows remain only at complete consumption.
+    if (consumed == outputFrames) {
+        return core::Result<core::FrameIndex>::success(
+            core::FrameIndex{sourceFrames});
+    }
+    auto firstFuture = convolution_window(
+        consumed, static_cast<std::uint32_t>(interpolation_),
+        static_cast<std::uint32_t>(decimation_), coefficientCount_);
+    auto finalFuture = convolution_window(
+        outputFrames - 1, static_cast<std::uint32_t>(interpolation_),
+        static_cast<std::uint32_t>(decimation_), coefficientCount_);
+    if (!firstFuture) {
+        return core::Result<core::FrameIndex>::failure(*firstFuture.error());
+    }
+    if (!finalFuture) {
+        return core::Result<core::FrameIndex>::failure(*finalFuture.error());
+    }
+    // Every possible remaining unreflected FIR tap index is within the
+    // monotone enclosure below; the actual active phase is a subset.
+    // Period 2*N is checked at adapter construction. Decline proof if the
+    // enclosure might cross an even-reflection trough or include negatives.
+    const auto low = firstFuture.value()->firstInput;
+    const auto high = finalFuture.value()->lastInput;
+    const auto period = sourceFrames * 2;
+    if (low < 0 || high >= period - 1 || low > high) {
+        return core::Result<core::FrameIndex>::success(core::FrameIndex{0});
+    }
+    // Reflect(x)=x up to N-1, otherwise 2*N-1-x. Its minimum
+    // over [low,high] lies at one of the two endpoints. Restrict the
+    // retirement frontier to this lower bound on future dependencies.
+    const auto firstRemaining = std::min(low, period - 1 - high);
+    return core::Result<core::FrameIndex>::success(core::FrameIndex{
+        std::clamp(firstRemaining, std::int64_t{0}, sourceFrames)});
+}
+
 core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     WavReader& source,
     core::FrameIndex absoluteOutputStart,
@@ -578,9 +667,10 @@ core::Result<core::FrameCount> internal::read_playback_src_frames(
         maximumSource = std::max(maximumSource, *reflected.value());
     }
     const auto sourceWindowFrames = maximumSource - minimumSource + 1;
-    constexpr auto kMaximumSourceWindowFrames =
-        PlaybackSampleRateAdapter::kMaximumOutputBlockFrames
-        + (PlaybackSampleRateAdapter::kTapsPerPhase * 2) + 4;
+    // All six-rate rational pairs: <=1024 output frames, decimation /
+    // interpolation <=640/147 or 4, and <=1024 source taps per phase.
+    // A fixed 8192-source-frame guard is intentionally conservative.
+    constexpr std::int64_t kMaximumSourceWindowFrames=8192;
     if (sourceWindowFrames > kMaximumSourceWindowFrames) {
         return failure<core::FrameCount>(
             core::ErrorCode::InvalidState,
@@ -627,22 +717,78 @@ core::Result<core::FrameCount> internal::read_playback_src_frames(
         destinationPlanes[channel] = *destinationPlane.value();
     }
 
+    // Full interior device blocks use contiguous SOURCE samples. Preserve
+    // coefficient bits and sequential scalar accumulation, but avoid an
+    // expensive modulo/Result reflection on every one of the FIR taps.
+    const bool contiguousInterior =
+        firstWindow.value()->firstInput >= 0
+        && lastWindow.value()->lastInput < adapter.input_frame_count().value();
+    const auto interpolation = static_cast<std::uint32_t>(
+        adapter.interpolation_factor());
+    const auto decimation = static_cast<std::uint32_t>(
+        adapter.decimation_factor());
     for (std::int64_t localOutput = 0; localOutput < requested; ++localOutput) {
-        auto window = convolution_window(
-            absoluteOutputStart.value() + localOutput,
-            static_cast<std::uint32_t>(adapter.interpolation_factor()),
-            static_cast<std::uint32_t>(adapter.decimation_factor()),
-            adapter.kernel_size());
-        if (!window) {
-            return core::Result<core::FrameCount>::failure(*window.error());
+        ConvolutionWindow directWindow{};
+        if (contiguousInterior && interpolation == 1U) {
+            // L=1 downsamplers (192->48): monotone fixed convolution,
+            // no per-device-frame wide integer division needed.
+            directWindow.firstInput = firstWindow.value()->firstInput
+                + localOutput * decimation;
+            directWindow.lastInput = directWindow.firstInput
+                + static_cast<std::int64_t>(adapter.kernel_size() - 1U);
+            directWindow.firstCoefficient = adapter.kernel_size() - 1U;
+        } else {
+            auto resolved = convolution_window(
+                absoluteOutputStart.value() + localOutput,
+                interpolation, decimation, adapter.kernel_size());
+            if (!resolved) {
+                return core::Result<core::FrameCount>::failure(*resolved.error());
+            }
+            directWindow = *resolved.value();
         }
+        if (contiguousInterior) {
+            const auto firstOffset = static_cast<std::size_t>(
+                directWindow.firstInput - minimumSource);
+            const auto taps = static_cast<std::size_t>(
+                directWindow.lastInput - directWindow.firstInput + 1);
+            for (std::size_t channel = 0;
+                 channel < source.format().channel_count(); ++channel) {
+                const double* samples = sourcePlanes[channel].data() + firstOffset;
+                auto coefficient = directWindow.firstCoefficient;
+                double accumulator = 0.0;
+                for (std::size_t tap = 0; tap < taps; ++tap) {
+                    const double sample = samples[tap];
+                    if (!std::isfinite(sample)) {
+                        return failure<core::FrameCount>(
+                            core::ErrorCode::InvalidAudioSample,
+                            "Non-finite canonical sample reached playback SRC.");
+                    }
+                    const double kernel = std::bit_cast<double>(
+                        adapter.coefficient_bits(coefficient));
+                    accumulator = accumulator + sample * kernel;
+                    if (tap + 1U < taps) {
+                        coefficient -= interpolation;
+                    }
+                }
+                if (!std::isfinite(accumulator)) {
+                    return failure<core::FrameCount>(
+                        core::ErrorCode::InvalidAudioSample,
+                        "Playback SRC produced a non-finite sample.");
+                }
+                destinationPlanes[channel][static_cast<std::size_t>(localOutput)] =
+                    accumulator;
+            }
+            continue;
+        }
+        // Reflected file-edge blocks retain the existing checked scalar path.
+        const auto window = &directWindow;
         for (std::size_t channel = 0;
              channel < source.format().channel_count();
              ++channel) {
             double accumulator = 0.0;
-            auto coefficient = window.value()->firstCoefficient;
-            for (auto logical = window.value()->firstInput;
-                 logical <= window.value()->lastInput;
+            auto coefficient = window->firstCoefficient;
+            for (auto logical = window->firstInput;
+                 logical <= window->lastInput;
                  ++logical) {
                 auto reflected = reflect_frame(
                     logical, adapter.input_frame_count().value());
@@ -662,7 +808,7 @@ core::Result<core::FrameCount> internal::read_playback_src_frames(
                     adapter.coefficient_bits(coefficient));
                 const auto product = sample * kernel;
                 accumulator = accumulator + product;
-                if (logical != window.value()->lastInput) {
+                if (logical != window->lastInput) {
                     coefficient -= static_cast<std::size_t>(
                         adapter.interpolation_factor());
                 }

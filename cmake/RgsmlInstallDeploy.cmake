@@ -23,6 +23,15 @@ function(rgsml_configure_install_deploy target manifest)
         DESTINATION "${CMAKE_INSTALL_DATADIR}/RGSMasterLab"
     )
 
+    # Both approved FIR roles share a single EXE-relative flat resource
+    # root. The build manifest decides the exact source-pinned inventory:
+    # 2 Playback in routine PR CI, and ALL 16 mandatory for FQ provenance.
+    # No separate manual Q0 copy, Python installer or hidden external path.
+    install(
+        FILES ${RGSML_FIR_INSTALL_FILES}
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/resources/fir"
+    )
+
     qt_generate_deploy_qml_app_script(
         TARGET ${target}
         OUTPUT_SCRIPT deploy_script

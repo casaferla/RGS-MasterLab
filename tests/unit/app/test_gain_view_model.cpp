@@ -30,6 +30,7 @@ private slots:
     void testGainUndoRedoBypassOrthogonality();
     void testNoOpCommitCreatesNoHistoryOrExtraPreview();
     void testInvalidInputCreatesNoHistory();
+    void testInvalidDraftCannotReplaceAppliedReadoutOrTriggerDoublePreview();
     void testNewEditAfterUndoClearsRedo();
     void testResetToDefaultIsUndoableWhenChanged();
     void testNewSourceAndRefreshClearHistory();
@@ -444,6 +445,43 @@ void GainViewModelTest::testNewSourceAndRefreshClearHistory()
     vm.refreshFromAuthority();
     QVERIFY(!vm.can_undo());
     QVERIFY(!vm.can_redo());
+}
+
+
+void GainViewModelTest::testInvalidDraftCannotReplaceAppliedReadoutOrTriggerDoublePreview()
+{
+    // Native C++ Q_PROPERTY contract consumed by InputGainEditor:
+    // gainDbText is the authoritative big display; draftGainDbText is
+    // field-local, even for empty invalid drafts and repeated blur.
+    GainViewModel vm;
+    QVERIFY(vm.setGainDbText(QStringLiteral("3.0")));
+    QCOMPARE(vm.gain_db(),3.0);
+    QCOMPARE(vm.gain_db_text(),QStringLiteral("3.0"));
+    const quint64 beforeInvalid=vm.preview_generation();
+    QVERIFY(!vm.setGainDbText(QStringLiteral("not-a-number")));
+    QCOMPARE(vm.gain_db(),3.0);
+    QCOMPARE(vm.gain_db_text(),QStringLiteral("3.0"));
+    QCOMPARE(vm.draft_gain_db_text(),QStringLiteral("not-a-number"));
+    QCOMPARE(vm.preview_generation(),beforeInvalid);
+    QVERIFY(!vm.setGainDbText(QStringLiteral("")));
+    QCOMPARE(vm.gain_db_text(),QStringLiteral("3.0"));
+    QCOMPARE(vm.draft_gain_db_text(),QStringLiteral(""));
+    QCOMPARE(vm.preview_generation(),beforeInvalid);
+    // Escape: apply exact authoritative value as a NO-OP; no new preview.
+    QVERIFY(vm.setGainDbText(vm.gain_db_text()));
+    QCOMPARE(vm.gain_db_text(),QStringLiteral("3.0"));
+    QCOMPARE(vm.draft_gain_db_text(),QStringLiteral("3.0"));
+    QVERIFY(vm.validation_error().isEmpty());
+    QCOMPARE(vm.preview_generation(),beforeInvalid);
+    // Enter, followed by genuine blur, must not double-commit.
+    QVERIFY(vm.setGainDbText(QStringLiteral("4.0")));
+    const quint64 committed=vm.preview_generation();
+    QCOMPARE(committed,beforeInvalid+1U);
+    QCOMPARE(vm.gain_db_text(),QStringLiteral("4.0"));
+    QVERIFY(vm.setGainDbText(QStringLiteral("4.0")));
+    QCOMPARE(vm.preview_generation(),committed);
+    vm.undo();
+    QCOMPARE(vm.gain_db_text(),QStringLiteral("3.0"));
 }
 
 }  // namespace

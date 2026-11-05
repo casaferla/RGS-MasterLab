@@ -1,19 +1,27 @@
 #include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
+#include <rgsml/render/stereo_ms_execution_signature.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/compressor_module.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_module.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,9 +32,13 @@ namespace {
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
+constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
+constexpr auto kTruePeakLimiterTypeId = "rgsml.dsp.true-peak-limiter";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
+    rgsml::dsp::ModuleInstanceId instance_id;
+    std::string type_id;
     std::int64_t algorithmic_latency_frames{0};
     std::int64_t look_ahead_frames{0};
     std::int64_t effective_tail_frames{0};
@@ -54,6 +66,481 @@ struct PreparedModule final {
         });
     return iterator == bindings.end() ? nullptr : std::addressof(*iterator);
 }
+
+// Direct, integer Grid100 evaluation avoids cumulative rounding drift at
+// non-10-divisible sample rates (e.g. 44105 Hz hop 4410, 4411, 4411, 4410).
+[[nodiscard]] std::optional<std::int64_t> correlation_grid_offset(
+    std::uint64_t index,
+    std::uint64_t sample_rate) noexcept
+{
+    if (sample_rate == 0 ||
+        index > std::numeric_limits<std::uint64_t>::max() / sample_rate) {
+        return std::nullopt;
+    }
+    const auto numerator = index * sample_rate;
+    auto rounded = numerator / 10U;
+    const auto remainder = numerator % 10U;
+    if (remainder > 5U || (remainder == 5U && (rounded % 2U) == 1U)) {
+        ++rounded;
+    }
+    if (rounded > static_cast<std::uint64_t>(
+                      std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(rounded);
+}
+
+[[nodiscard]] StereoMsCorrelationWindow measure_centered_correlation(
+    std::int64_t begin,
+    std::int64_t end,
+    std::span<const double> left,
+    std::span<const double> right) noexcept
+{
+    StereoMsCorrelationWindow result{begin, end};
+    const auto n = left.size();
+    if (n == 0 || n != right.size()) {
+        return result;
+    }
+    // Both passes use the same exact complete window; removing the local
+    // means is mandatory, unlike raw Side-energy or RMS measurement.
+    long double mean_left = 0.0L;
+    long double mean_right = 0.0L;
+    for (std::size_t i = 0; i < n; ++i) {
+        mean_left += static_cast<long double>(left[i]);
+        mean_right += static_cast<long double>(right[i]);
+    }
+    mean_left /= static_cast<long double>(n);
+    mean_right /= static_cast<long double>(n);
+    long double energy_l = 0.0L;
+    long double energy_r = 0.0L;
+    long double covariance = 0.0L;
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto l = static_cast<long double>(left[i]) - mean_left;
+        const auto r = static_cast<long double>(right[i]) - mean_right;
+        energy_l += l * l;
+        energy_r += r * r;
+        covariance += l * r;
+    }
+    const auto denominator = std::sqrt(energy_l) * std::sqrt(energy_r);
+    if (energy_l / static_cast<long double>(n) < 1e-10L
+        || energy_r / static_cast<long double>(n) < 1e-10L
+        || denominator < 1e-20L
+        || !std::isfinite(denominator)) {
+        return result;
+    }
+    long double value = covariance / denominator;
+    if (std::isfinite(value) && (value < -1.0L || value > 1.0L)) {
+        // At the exact +/-1 endpoints sqrt(E_L)*sqrt(E_R) can round
+        // below |C| on either toolchain. Re-evaluate using the equivalent
+        // nonnegative squared-distance identity, not a numeric clamp:
+        // rho = sign(C) * (1 - sum((L' - sign(C)*sqrt(E_L/E_R)*R')^2)/(2*E_L)).
+        const long double sign = covariance < 0.0L ? -1.0L : 1.0L;
+        const long double scale = std::sqrt(energy_l / energy_r);
+        long double squared_distance = 0.0L;
+        if (std::isfinite(scale)) {
+            for (std::size_t i = 0; i < n; ++i) {
+                const auto l = static_cast<long double>(left[i]) - mean_left;
+                const auto r = static_cast<long double>(right[i]) - mean_right;
+                const auto difference = l - sign * scale * r;
+                squared_distance += difference * difference;
+            }
+            value = sign * (1.0L - squared_distance / (2.0L * energy_l));
+        }
+    }
+    if (!std::isfinite(value) || value < -1.0L || value > 1.0L) {
+        // Bad arithmetic remains invalid; never silently clamp a
+        // genuinely out-of-range result to a plausible correlation.
+        return result;
+    }
+    result.validity = StereoMsCorrelationWindowValidity::VALID;
+    result.rho = static_cast<double>(value);
+    return result;
+}
+
+// Canonical Grid20 starts are anchored to the source's frame-zero domain.
+// Round ties to even directly for each index; never sum rounded hops.
+[[nodiscard]] std::optional<std::int64_t> density_grid_offset(
+    std::uint64_t index, std::uint64_t fs) noexcept
+{
+    if (fs == 0 || index > std::numeric_limits<std::uint64_t>::max() / fs) {
+        return std::nullopt;
+    }
+    const auto numerator = index * fs;
+    auto rounded = numerator / 20U;
+    const auto rem = numerator % 20U;
+    if (rem > 10U || (rem == 10U && (rounded % 2U) == 1U)) {
+        ++rounded;
+    }
+    if (rounded > static_cast<std::uint64_t>(
+                      std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(rounded);
+}
+
+void collect_stage_density(
+    StereoMsStageOutputSidecar& capture,
+    rgsml::audio::AudioBufferView output,
+    std::int64_t source_origin,
+    std::size_t max_telemetry_bytes)
+{
+    const auto fs = static_cast<std::uint64_t>(capture.sample_rate_hz);
+    const auto requested_begin = capture.requested_begin_frame;
+    const auto requested_end = capture.requested_end_frame;
+    if (fs == 0 || source_origin > requested_begin
+        || requested_begin >= requested_end || !output.channel(0)
+        || !output.channel(1)) {
+        return;
+    }
+    const auto first = output.absolute_start_frame().value();
+    const auto last = output.absolute_end_frame().value();
+    if (requested_begin < first || requested_end > last) {
+        return; // no fabricated padding/partial prehistory
+    }
+    constexpr std::size_t kMaxDensityBytes = 32U * 1024U * 1024U;
+    const auto used = capture.output_lr_frames.size() * sizeof(std::array<double, 2>)
+        + capture.correlation_windows.size() * sizeof(StereoMsCorrelationWindow)
+        + capture.side_low_windows.size() * sizeof(StereoMsSideLowWindow);
+    const auto left_budget = max_telemetry_bytes > used
+        ? max_telemetry_bytes - used : std::size_t{0};
+    const auto capacity = std::min(kMaxDensityBytes, left_budget)
+        / sizeof(StereoMsDensityBucket);
+    if (capacity == 0) return;
+
+    const auto left = *output.channel(0).value();
+    const auto right = *output.channel(1).value();
+    const auto delta = static_cast<std::uint64_t>(requested_begin - source_origin);
+    const auto seconds = delta / fs;
+    if (seconds > std::numeric_limits<std::uint64_t>::max() / 20U) return;
+    auto j = seconds * 20U;
+    // Conservative count estimate without multiplying huge absolute frame
+    // ranges by 20 (which could overflow the timeline integer type).
+    const auto support = static_cast<std::uint64_t>(
+        requested_end - requested_begin);
+    const auto whole_seconds = support / fs;
+    const auto whole_buckets = whole_seconds >
+        (std::numeric_limits<std::uint64_t>::max() - 24U) / 20U
+        ? std::numeric_limits<std::uint64_t>::max()
+        : whole_seconds * 20U + 24U;
+    const auto nominal_count = static_cast<std::size_t>(
+        std::min<std::uint64_t>(whole_buckets, capacity));
+    capture.density_buckets.reserve(nominal_count);
+    const double a = std::sqrt(2.0);
+    const double inv_root2 = 1.0 / std::sqrt(2.0);
+    bool omitted = false;
+    while (true) {
+        const auto off0 = density_grid_offset(j, fs);
+        if (!off0 || j == std::numeric_limits<std::uint64_t>::max()) break;
+        const auto off1 = density_grid_offset(j + 1U, fs);
+        if (!off1) break;
+        const auto start = rgsml::core::checked_add(source_origin, *off0);
+        const auto stop = rgsml::core::checked_add(source_origin, *off1);
+        if (!start || !stop) break;
+        const auto begin = *start.value();
+        const auto end = *stop.value();
+        if (begin >= requested_end || end > requested_end) break;
+        if (begin >= requested_begin && begin >= first && end <= last
+            && begin < end) {
+            if (capture.density_buckets.size() >= capacity) {
+                omitted = true;
+                break;
+            }
+            StereoMsDensityBucket bucket;
+            bucket.begin_frame = begin;
+            bucket.end_frame = end;
+            const auto offset = static_cast<std::size_t>(begin - first);
+            const auto count = static_cast<std::size_t>(end - begin);
+            bucket.frame_count = static_cast<std::uint32_t>(count);
+            double min_side = std::numeric_limits<double>::infinity();
+            double max_side = -std::numeric_limits<double>::infinity();
+            double min_mid = std::numeric_limits<double>::infinity();
+            double max_mid = -std::numeric_limits<double>::infinity();
+            double max_radius = -1.0;
+            bool invalid = false;
+            for (std::size_t k = 0; k < count; ++k) {
+                const double l = left[offset + k];
+                const double r = right[offset + k];
+                const double side = (l - r) * inv_root2;
+                const double mid = (l + r) * inv_root2;
+                if (!std::isfinite(l) || !std::isfinite(r)
+                    || !std::isfinite(side) || !std::isfinite(mid)) {
+                    ++bucket.invalid_count;
+                    invalid = true;
+                    break;
+                }
+                ++bucket.valid_frame_count;
+                if (std::abs(l) > 1.0 || std::abs(r) > 1.0) {
+                    ++bucket.channel_overrange_count;
+                }
+                const auto absolute_frame = begin + static_cast<std::int64_t>(k);
+                auto witness = [&](std::size_t slot) {
+                    bucket.witnesses[slot] = {absolute_frame, side, mid, true};
+                };
+                // Silence remains a real mathematical extremum; only
+                // display-side origin intensity suppresses zero vectors.
+                if (side < min_side) { min_side = side; witness(0); }
+                if (side > max_side) { max_side = side; witness(1); }
+                if (mid < min_mid) { min_mid = mid; witness(2); }
+                if (mid > max_mid) { max_mid = mid; witness(3); }
+                const auto radius = std::hypot(side, mid);
+                if (!std::isfinite(radius)) {
+                    ++bucket.invalid_count;
+                    invalid = true;
+                    break;
+                }
+                if (radius > max_radius) { max_radius = radius; witness(4); }
+                if (!bucket.witnesses[5].valid &&
+                    ((l < 0.0 && r > 0.0) || (l > 0.0 && r < 0.0))) {
+                    witness(5);
+                }
+                if (std::abs(side) > a || std::abs(mid) > a) {
+                    ++bucket.overflow_count;
+                    continue;
+                }
+                const double sx = std::floor(16.0 * side / a + 16.5);
+                const double my = std::floor(16.0 * mid / a + 16.5);
+                if (sx < 0.0 || sx > 32.0 || my < 0.0 || my > 32.0) {
+                    ++bucket.invalid_count;
+                    invalid = true;
+                    break;
+                }
+                const auto x = static_cast<std::size_t>(sx);
+                const auto y = static_cast<std::size_t>(my);
+                ++bucket.occupancy[y * StereoMsDensityBucket::kGridSide + x];
+                if (l == 0.0 && r == 0.0) ++bucket.zero_vector_count;
+            }
+            // A nonfinite sample or inconsistent quantizer fails closed
+            // for this observation, without modifying the successful PCM.
+            if (invalid) {
+                capture.density_buckets.clear();
+                capture.density_status = StereoMsDensityStatus::UNAVAILABLE;
+                return;
+            }
+            capture.density_buckets.push_back(std::move(bucket));
+        }
+        ++j;
+    }
+    if (!capture.density_buckets.empty()) {
+        capture.density_status = omitted
+            ? StereoMsDensityStatus::PARTIAL : StereoMsDensityStatus::COMPLETE;
+    }
+}
+
+void collect_stage_correlation(
+    StereoMsStageOutputSidecar& capture,
+    rgsml::audio::AudioBufferView output,
+    std::int64_t source_origin,
+    std::size_t max_telemetry_bytes)
+{
+    const auto fs = static_cast<std::uint64_t>(capture.sample_rate_hz);
+    const auto requested_begin = capture.requested_begin_frame;
+    const auto requested_end = capture.requested_end_frame;
+    if (fs == 0 || source_origin > requested_begin
+        || requested_begin >= requested_end || !output.channel(0)
+        || !output.channel(1)) {
+        return;
+    }
+    constexpr std::size_t kMaxCorrelationBytes = 64U * 1024U;
+    const auto used_capture_bytes =
+        capture.output_lr_frames.size() * sizeof(std::array<double, 2>);
+    const auto remaining_budget = max_telemetry_bytes > used_capture_bytes
+        ? max_telemetry_bytes - used_capture_bytes : 0U;
+    const auto capacity = std::min(kMaxCorrelationBytes, remaining_budget)
+        / sizeof(StereoMsCorrelationWindow);
+    if (capacity == 0) {
+        return;
+    }
+    const auto count = static_cast<std::int64_t>((2U * fs + 2U) / 5U);
+    if (count < 1 || requested_end - requested_begin < count) {
+        return;
+    }
+
+    const auto left = *output.channel(0).value();
+    const auto right = *output.channel(1).value();
+    const auto origin = output.absolute_start_frame().value();
+    const auto upper = output.absolute_end_frame().value();
+    const auto delta = static_cast<std::uint64_t>(requested_begin - source_origin);
+    // Start near the first eligible grid point without iterating the whole
+    // track's history (a preview can begin far beyond the source start).
+    const auto whole_seconds = delta / fs;
+    if (whole_seconds > std::numeric_limits<std::uint64_t>::max() / 10U) {
+        return;
+    }
+    auto j = whole_seconds * 10U;
+    capture.correlation_windows.reserve(std::min<std::size_t>(capacity, 256U));
+    bool omitted_windows = false;
+    while (true) {
+        const auto hop = correlation_grid_offset(j, fs);
+        if (!hop) {
+            break;
+        }
+        const auto absolute_start = rgsml::core::checked_add(
+            source_origin, *hop);
+        if (!absolute_start) {
+            break;
+        }
+        const auto begin = *absolute_start.value();
+        if (begin >= requested_end || requested_end - begin < count) {
+            break;
+        }
+        if (begin >= requested_begin && begin >= origin
+            && upper - begin >= count) {
+            if (capture.correlation_windows.size() >= capacity) {
+                omitted_windows = true;
+                break;
+            }
+            const auto offset = static_cast<std::size_t>(begin - origin);
+            const auto n = static_cast<std::size_t>(count);
+            capture.correlation_windows.push_back(
+                measure_centered_correlation(
+                    begin, begin + count,
+                    left.subspan(offset, n), right.subspan(offset, n)));
+        }
+        if (j == std::numeric_limits<std::uint64_t>::max()) {
+            break;
+        }
+        ++j;
+    }
+    if (!capture.correlation_windows.empty()) {
+        capture.correlation_status = omitted_windows
+            ? StereoMsCorrelationStatus::PARTIAL
+            : StereoMsCorrelationStatus::COMPLETE;
+    }
+}
+
+// Source-timeline Side Low RMS; the ring is 400 ms, not full audio PCM.
+// All memory is reserved BEFORE the DSP process loop and callbacks are noexcept.
+class SideLowWindowCollector final : public rgsml::dsp::IStereoMsSideLowTelemetrySink {
+public:
+    SideLowWindowCollector(std::int64_t origin, std::int64_t requested_begin,
+        std::int64_t requested_end, std::uint32_t fs, std::size_t budget)
+        : origin_(origin), requested_begin_(requested_begin),
+          requested_end_(requested_end), sample_rate_(fs), expected_frame_(origin)
+    {
+        constexpr std::size_t kMaxRingBytes = 4U * 1024U * 1024U;
+        constexpr std::size_t kMaxResultsBytes = 64U * 1024U;
+        constexpr std::size_t kEarlierSidecarBudget = 128U * 1024U;
+        if (fs == 0 || requested_end <= requested_begin) {
+            return;
+        }
+        const auto count = (2ULL * fs + 2ULL) / 5ULL;
+        if (count == 0 || count > kMaxRingBytes / sizeof(std::array<double, 2>)
+            || requested_end - requested_begin < static_cast<std::int64_t>(count)) {
+            return;
+        }
+        const auto ring_bytes = static_cast<std::size_t>(count) * sizeof(std::array<double, 2>);
+        if (budget <= kEarlierSidecarBudget || ring_bytes > budget - kEarlierSidecarBudget) {
+            return;
+        }
+        const auto remaining = budget - kEarlierSidecarBudget - ring_bytes;
+        capacity_ = std::min(kMaxResultsBytes, remaining) / sizeof(StereoMsSideLowWindow);
+        if (capacity_ == 0) {
+            return;
+        }
+        try {
+            ring_.resize(static_cast<std::size_t>(count));
+            windows_.reserve(capacity_);
+            enabled_ = true;
+        } catch (...) {
+            ring_.clear();
+            windows_.clear();
+            enabled_ = false;
+        }
+    }
+
+    void push_side_low_frame(
+        std::int64_t frame, double before, double after) noexcept override
+    {
+        if (!enabled_) return;
+        if (frame != expected_frame_ || !std::isfinite(before) || !std::isfinite(after)
+            || frame == std::numeric_limits<std::int64_t>::max()) {
+            enabled_ = false;
+            windows_.clear();
+            return;
+        }
+        ++expected_frame_;
+        ring_[cursor_] = {before, after};
+        cursor_ = (cursor_ + 1) % ring_.size();
+        if (seen_ < ring_.size()) ++seen_;
+        if (seen_ < ring_.size()) return;
+
+        // The earliest complete 400-ms window closes at origin + N.
+        // Each later start is computed directly from Grid100, never by
+        // adding rounded hop values to a previous frame.
+        while (!truncated_) {
+            const auto offset = correlation_grid_offset(grid_index_, sample_rate_);
+            if (!offset || *offset < 0 ||
+                origin_ > std::numeric_limits<std::int64_t>::max() - *offset) {
+                enabled_ = false;
+                windows_.clear();
+                return;
+            }
+            const auto start = origin_ + *offset;
+            const auto duration = static_cast<std::int64_t>(ring_.size());
+            if (start > std::numeric_limits<std::int64_t>::max() - duration) {
+                enabled_ = false;
+                windows_.clear();
+                return;
+            }
+            const auto end = start + duration;
+            if (end > expected_frame_) break;
+            if (start >= requested_begin_ && end <= requested_end_) {
+                if (windows_.size() == capacity_) {
+                    truncated_ = true;
+                    break;
+                }
+                long double before_square_sum = 0.0L;
+                long double after_square_sum = 0.0L;
+                for (const auto& point : ring_) {
+                    const auto b = static_cast<long double>(point[0]);
+                    const auto a = static_cast<long double>(point[1]);
+                    before_square_sum += b * b;
+                    after_square_sum += a * a;
+                }
+                const auto n = static_cast<long double>(ring_.size());
+                const double rms_before = static_cast<double>(
+                    std::sqrt(before_square_sum / n));
+                const double rms_after = static_cast<double>(
+                    std::sqrt(after_square_sum / n));
+                if (!std::isfinite(rms_before) || !std::isfinite(rms_after)) {
+                    enabled_ = false;
+                    windows_.clear();
+                    return;
+                }
+                windows_.push_back(
+                    StereoMsSideLowWindow{start, end, rms_before, rms_after});
+            }
+            if (grid_index_ == std::numeric_limits<std::uint64_t>::max()) {
+                enabled_ = false;
+                windows_.clear();
+                return;
+            }
+            ++grid_index_;
+        }
+    }
+
+    [[nodiscard]] StereoMsSideLowStatus status() const noexcept
+    {
+        if (!enabled_ || windows_.empty()) return StereoMsSideLowStatus::UNAVAILABLE;
+        return truncated_ ? StereoMsSideLowStatus::PARTIAL
+                          : StereoMsSideLowStatus::COMPLETE;
+    }
+
+    [[nodiscard]] std::vector<StereoMsSideLowWindow> take_windows() noexcept
+    {
+        return std::move(windows_);
+    }
+
+private:
+    std::int64_t origin_{0}, requested_begin_{0}, requested_end_{0};
+    std::uint64_t sample_rate_{0};
+    std::int64_t expected_frame_{0};
+    std::uint64_t grid_index_{0};
+    std::vector<std::array<double, 2>> ring_;
+    std::vector<StereoMsSideLowWindow> windows_;
+    std::size_t cursor_{0}, seen_{0}, capacity_{0};
+    bool enabled_{false}, truncated_{false};
+};
 
 [[nodiscard]] rgsml::core::Status copy_audio(
     rgsml::audio::AudioBufferView input,
@@ -106,15 +593,55 @@ rgsml::core::Result<RenderResult> render_preview(
                 return rgsml::core::Result<RenderResult>::failure(*descriptor.error());
             }
 
+            // M17 Core-first has a real factory, but that does NOT authorize
+            // execution in Source-processing-rate Render Preview. The core
+            // requires OUTPUT_RATE input and strict EOS D-frame drain; this
+            // renderer has neither the terminal typed-binding authority nor
+            // the proven post-trim/GR realization owner yet. Fail *before*
+            // factory creation, even if someone mistakenly activates M17.
+            // Its bypassed terminal node remains an exact audio identity.
+            if (instance.module_type_id() == kTruePeakLimiterTypeId
+                && instance.active()) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::UnsupportedOperation,
+                    "M17_OUTPUT_RATE_RENDER_NOT_INTEGRATED",
+                    "Active True Peak Limiter requires the qualified terminal OUTPUT_RATE renderer, typed Ceiling binding and real EOS/GR provenance."));
+            }
+
+            // M15-B2c: Stereo/M-S uses only its exact immutable typed binding.
+            // Never call the generic default factory for this module.
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
             const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
-            const bool is_parameterized = is_gain || is_eq || is_compressor;
+            const bool is_stereo_ms = (instance.module_type_id() == kStereoMsTypeId);
+            const bool is_parameterized = is_gain || is_eq || is_compressor || is_stereo_ms;
 
             if (!instance.active()) {
                 if (is_parameterized) {
                     const auto* binding = find_binding(request, instance.instance_id());
-                    if (is_gain) {
+                    if (binding == nullptr) {
+                        return rgsml::core::Result<RenderResult>::failure(render_error(
+                            rgsml::core::ErrorCode::InvalidArgument,
+                            "MISSING_PARAMETER_BINDING",
+                            "A bypassed parameterized module has no immutable binding."));
+                    }
+                    if (is_stereo_ms) {
+                        const auto* parameters = std::get_if<rgsml::dsp::StereoMsParameters>(
+                            &binding->parameters);
+                        if (parameters == nullptr) {
+                            return rgsml::core::Result<RenderResult>::failure(render_error(
+                                rgsml::core::ErrorCode::InvalidArgument,
+                                "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                                "Stereo/M-S requires a typed StereoMsParameters binding."));
+                        }
+                        auto signature = make_stereo_ms_execution_signature(
+                            descriptor.value()->get(), instance.instance_id(),
+                            *parameters, source.format().channel_layout(), true);
+                        if (!signature) {
+                            return rgsml::core::Result<RenderResult>::failure(*signature.error());
+                        }
+                        signatures.push_back(std::move(*signature.value()));
+                    } else if (is_gain) {
                         const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
                         signatures.push_back(ModuleExecutionSignature{
                             instance.instance_id(),
@@ -219,11 +746,29 @@ rgsml::core::Result<RenderResult> render_preview(
             (*module.value())->reset();
             modules.push_back(PreparedModule{
                 std::move(*module.value()),
+                instance.instance_id(),
+                std::string{instance.module_type_id()},
                 required.algorithmic_latency_frames.value(),
                 required.look_ahead_frames.value(),
                 required.effective_tail_frames.value()});
 
-            if (is_gain) {
+            if (is_stereo_ms) {
+                const auto* parameters = std::get_if<rgsml::dsp::StereoMsParameters>(
+                    &binding->parameters);
+                if (parameters == nullptr) {
+                    return rgsml::core::Result<RenderResult>::failure(render_error(
+                        rgsml::core::ErrorCode::InvalidArgument,
+                        "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                        "Stereo/M-S requires a typed StereoMsParameters binding."));
+                }
+                auto signature = make_stereo_ms_execution_signature(
+                    descriptor.value()->get(), instance.instance_id(),
+                    *parameters, source.format().channel_layout(), false);
+                if (!signature) {
+                    return rgsml::core::Result<RenderResult>::failure(*signature.error());
+                }
+                signatures.push_back(std::move(*signature.value()));
+            } else if (is_gain) {
                 const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
                 signatures.push_back(ModuleExecutionSignature{
                     instance.instance_id(),
@@ -298,6 +843,9 @@ rgsml::core::Result<RenderResult> render_preview(
         const auto needed_source_end = std::min(source_end, target_raw_end);
         const auto source_read_count = needed_source_end - source_start;
 
+        std::optional<CompressorTelemetrySidecar> compressor_sidecar;
+        std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_captures;
+
         if (modules.empty()) {
             auto source_chunk = source.subview(
                 window.begin(),
@@ -343,8 +891,12 @@ rgsml::core::Result<RenderResult> render_preview(
             std::int64_t stage_start = source_start;
             std::int64_t stage_end = needed_source_end;
             bool stream_eos_reached = (needed_source_end == source_end);
+            std::int64_t stage_accumulated_latency = 0;
 
             for (std::size_t m = 0; m < modules.size(); ++m) {
+                // This module's stage samples live in the accumulated
+                // latency domain, not necessarily the final playback domain.
+                stage_accumulated_latency += modules[m].algorithmic_latency_frames;
                 const auto in_count = stage_end - stage_start;
                 const bool is_latency_or_lookahead_bearing =
                     (modules[m].algorithmic_latency_frames > 0 || modules[m].look_ahead_frames > 0);
@@ -358,6 +910,57 @@ rgsml::core::Result<RenderResult> render_preview(
                 }
 
                 const auto out_frame_count = *rgsml::core::FrameCount::create(*out_count_res.value()).value();
+
+                std::unique_ptr<CompressorTelemetryCollector> collector;
+                auto* comp_mod = dynamic_cast<rgsml::dsp::CompressorModule*>(modules[m].instance.get());
+                if (comp_mod != nullptr) {
+                    const auto* binding = find_binding(request, modules[m].instance_id);
+                    if (binding != nullptr) {
+                        if (const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters)) {
+                            const std::int64_t total_mod_frames = out_frame_count.value();
+                            const auto sample_rate_val = static_cast<std::uint32_t>(source.format().sample_rate().value());
+                            collector = std::make_unique<CompressorTelemetryCollector>(
+                                stage_start,
+                                total_mod_frames,
+                                sample_rate_val,
+                                source.format().channel_layout(),
+                                comp_params->channel_link(),
+                                modules[m].instance_id,
+                                request.chain_revision(),
+                                request.max_telemetry_bytes().value_or(128U * 1024U * 1024U),
+                                request.realization_id());
+                            comp_mod->set_telemetry_sink(collector.get());
+                        }
+                    }
+                }
+
+                std::unique_ptr<SideLowWindowCollector> side_low_collector;
+                auto* ms_mod = dynamic_cast<rgsml::dsp::StereoMsModule*>(
+                    modules[m].instance.get());
+                if (ms_mod != nullptr
+                    && source.format().channel_layout()
+                        == rgsml::audio::ChannelLayout::STEREO_LR
+                    && !ms_mod->parameters().side_muted()
+                    && ms_mod->parameters().mono_bass_mode()
+                        != rgsml::dsp::MonoBassMode::OFF) {
+                    const auto stage_origin = rgsml::core::checked_add(
+                        source_start, stage_accumulated_latency);
+                    const auto supported_begin = rgsml::core::checked_add(
+                        window.begin().value(), stage_accumulated_latency);
+                    const auto supported_end = rgsml::core::checked_add(
+                        window.end().value(), stage_accumulated_latency);
+                    if (stage_origin && supported_begin && supported_end) {
+                        side_low_collector = std::make_unique<SideLowWindowCollector>(
+                            *stage_origin.value(), *supported_begin.value(),
+                            *supported_end.value(),
+                            static_cast<std::uint32_t>(
+                                source.format().sample_rate().value()),
+                            request.max_telemetry_bytes().value_or(
+                                128U * 1024U * 1024U));
+                        ms_mod->set_side_low_telemetry_sink(side_low_collector.get());
+                    }
+                }
+
                 auto next_buffer = rgsml::audio::AudioBuffer::create(
                     source.format(),
                     source.timebase().frame_domain_id(),
@@ -439,6 +1042,133 @@ rgsml::core::Result<RenderResult> render_preview(
                     }
                 }
 
+                if (comp_mod != nullptr && collector != nullptr) {
+                    comp_mod->set_telemetry_sink(nullptr);
+                    compressor_sidecar = collector->build_sidecar();
+                }
+                if (ms_mod != nullptr && side_low_collector != nullptr) {
+                    ms_mod->set_side_low_telemetry_sink(nullptr);
+                }
+
+                if (modules[m].type_id == kStereoMsTypeId
+                    && source.format().channel_layout()
+                        == rgsml::audio::ChannelLayout::STEREO_LR) {
+                    StereoMsStageOutputSidecar capture{modules[m].instance_id};
+                    capture.chain_revision = request.chain_revision();
+                    capture.realization_id = request.realization_id();
+                    capture.channel_layout = source.format().channel_layout();
+                    capture.sample_rate_hz =
+                        static_cast<std::uint32_t>(source.format().sample_rate().value());
+                    capture.frame_domain_id = source.timebase().frame_domain_id();
+
+                    const auto requested_start = rgsml::core::checked_add(
+                        window.begin().value(), stage_accumulated_latency);
+                    const auto requested_end = rgsml::core::checked_add(
+                        window.end().value(), stage_accumulated_latency);
+                    if (requested_start && requested_end) {
+                        capture.requested_begin_frame = *requested_start.value();
+                        capture.requested_end_frame = *requested_end.value();
+                        capture.captured_begin_frame = capture.requested_begin_frame;
+
+                        // Limit this exact PCM excerpt to 64 KiB; 400 ms
+                        // correlation and live density are separate B4b/B4c
+                        // streaming measurements, NEVER inferred from a
+                        // truncated prefix as if it were full evidence.
+                        constexpr std::size_t kMaxCaptureBytes = 64U * 1024U;
+                        constexpr std::size_t kMaxCaptureFrames = 4096U;
+                        const auto cap_bytes = std::min(
+                            kMaxCaptureBytes,
+                            request.max_telemetry_bytes().value_or(kMaxCaptureBytes));
+                        const auto available = next_buffer.value()->view();
+                        const auto capture_start = capture.requested_begin_frame;
+                        const auto capture_end = capture.requested_end_frame;
+                        const auto first = available.absolute_start_frame().value();
+                        const auto last = available.absolute_end_frame().value();
+                        if (capture_start >= first && capture_start < last
+                            && capture_end > capture_start) {
+                            const auto remaining = static_cast<std::size_t>(
+                                std::min(capture_end, last) - capture_start);
+                            const auto take = std::min({
+                                remaining,
+                                kMaxCaptureFrames,
+                                cap_bytes / sizeof(std::array<double, 2>)});
+                            if (take > 0) {
+                                try {
+                                    const auto left = *available.channel(0).value();
+                                    const auto right = *available.channel(1).value();
+                                    const auto offset = static_cast<std::size_t>(
+                                        capture_start - first);
+                                    capture.output_lr_frames.reserve(take);
+                                    bool finite = true;
+                                    for (std::size_t i = 0; i < take; ++i) {
+                                        const double l = left[offset + i];
+                                        const double r = right[offset + i];
+                                        if (!std::isfinite(l) || !std::isfinite(r)) {
+                                            finite = false;
+                                            break;
+                                        }
+                                        capture.output_lr_frames.push_back({l, r});
+                                    }
+                                    if (finite) {
+                                        const bool complete =
+                                            capture_start == capture.requested_begin_frame
+                                            && take == static_cast<std::size_t>(
+                                                capture_end - capture_start);
+                                        capture.status = complete
+                                            ? StereoMsStageCaptureStatus::COMPLETE
+                                            : StereoMsStageCaptureStatus::PARTIAL;
+                                    } else {
+                                        capture.output_lr_frames.clear();
+                                    }
+                                } catch (...) {
+                                    // Telemetry allocation failures must NOT
+                                    // turn successful audible PCM into a failure.
+                                    capture.output_lr_frames.clear();
+                                }
+                            }
+                        }
+                    }
+                    if (side_low_collector) {
+                        capture.side_low_status = side_low_collector->status();
+                        capture.side_low_windows = side_low_collector->take_windows();
+                    }
+                    // Compute canonical complete correlation windows from
+                    // the FULL real stage output, never B4a's capped excerpt.
+                    // A failed or incomplete window remains UNAVAILABLE.
+                    try {
+                        const auto stage_grid_origin = rgsml::core::checked_add(
+                            source_start, stage_accumulated_latency);
+                        if (stage_grid_origin) {
+                            collect_stage_correlation(
+                                capture, next_buffer.value()->view(),
+                                *stage_grid_origin.value(),
+                                request.max_telemetry_bytes().value_or(
+                                    128U * 1024U * 1024U));
+                        }
+                    } catch (...) {
+                        capture.correlation_windows.clear();
+                        capture.correlation_status = StereoMsCorrelationStatus::UNAVAILABLE;
+                    }
+                    // B4c1 density is a separate complete Grid20 observation.
+                    // It uses the FULL real post-M15 stage buffer, never the
+                    // bounded B4a excerpt or any QML-generated points.
+                    try {
+                        const auto density_origin = rgsml::core::checked_add(
+                            source_start, stage_accumulated_latency);
+                        if (density_origin) {
+                            collect_stage_density(
+                                capture, next_buffer.value()->view(),
+                                *density_origin.value(),
+                                request.max_telemetry_bytes().value_or(
+                                    128U * 1024U * 1024U));
+                        }
+                    } catch (...) {
+                        capture.density_buckets.clear();
+                        capture.density_status = StereoMsDensityStatus::UNAVAILABLE;
+                    }
+                    stereo_ms_stage_captures.push_back(std::move(capture));
+                }
+
                 current_buffer = std::move(next_buffer);
                 stage_end = *rgsml::core::checked_add(stage_end, drain_length).value();
             }
@@ -470,7 +1200,9 @@ rgsml::core::Result<RenderResult> render_preview(
             window,
             source.timebase().frame_domain_id(),
             request.chain_revision(),
-            std::move(signatures)});
+            std::move(signatures),
+            std::move(compressor_sidecar),
+            std::move(stereo_ms_stage_captures)});
     } catch (...) {
         return rgsml::core::Result<RenderResult>::failure(render_error(
             rgsml::core::ErrorCode::InvalidState,

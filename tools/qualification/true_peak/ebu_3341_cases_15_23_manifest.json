@@ -1,0 +1,131 @@
+{
+  "identity": "RGS M16 B2a / EBU Tech 3341 v5 official cases 15-23",
+  "status": "PREPRODUCTION_PROVENANCE_ONLY__NOT_PRODUCTION_GATE_G",
+  "authority": "RGS ContentBox Independent Mathematical Standards PreAudit Work (2026-10-04), Appendix B tables 7, 11, 12",
+  "archive_sha256": "9cc500b4df83f7c21855c74dce795ef5209a752bf884253ae57d0ce512efb062",
+  "copyright": "© EBU; official WAV bytes NOT included or redistributed",
+  "official_tolerance_dbtp": {
+    "low_offset": -0.4,
+    "high_offset": 0.2
+  },
+  "exact_peak_denominator": 68719476736,
+  "cases": [
+    {
+      "case": 15,
+      "filename": "seq-3341-15-24bit.wav.wav",
+      "wav_sha256": "86f8a70eca1bc77623dd20a4acbadbc449711cd348615d852e3b0689827bea55",
+      "pcm64_sha256": "bbd032c1ce76640c87f9ec0f77d7fcda46aded4b4ab1f96f44c8c79d048eb27c",
+      "frames": 153600,
+      "expected_ebu_dbtp": -6,
+      "independent_preproduction_dbtp": -6.197536643471,
+      "left_numerator": 33666890908,
+      "right_numerator": 33666890908,
+      "left_j": 19235,
+      "right_j": 19235
+    },
+    {
+      "case": 16,
+      "filename": "seq-3341-16-24bit.wav.wav",
+      "wav_sha256": "9843c6fbc7c14d1bc5902ab23474851d766fd2ea92be5c45ab78ccd7e8a99ecd",
+      "pcm64_sha256": "f3d63ecf3f90f88a3330f97728726ac3c901dc863c3ca264feb44539edd42f45",
+      "frames": 153600,
+      "expected_ebu_dbtp": -6,
+      "independent_preproduction_dbtp": -5.955520147201,
+      "left_numerator": 34618148498,
+      "right_numerator": 34618148498,
+      "left_j": 595218,
+      "right_j": 595218
+    },
+    {
+      "case": 17,
+      "filename": "seq-3341-17-24bit.wav.wav",
+      "wav_sha256": "b4e7377b6c5c0c30bf68752f6d02f7b23909e40aed083a25902a550e0e1e2265",
+      "pcm64_sha256": "17d84aff734423fbd2a67536aebf044f0764d247dc879323a489a8cfb5340666",
+      "frames": 153600,
+      "expected_ebu_dbtp": -6,
+      "independent_preproduction_dbtp": -6.29540474525,
+      "left_numerator": 33289678939,
+      "right_numerator": 33289678939,
+      "left_j": 19226,
+      "right_j": 19226
+    },
+    {
+      "case": 18,
+      "filename": "seq-3341-18-24bit.wav.wav",
+      "wav_sha256": "d5fbe4854e93ef2a5a23260b522bdaa44bc739b69597bf751de919f11641d161",
+      "pcm64_sha256": "55b5da0dc75e56454654bf74b296ec07bbc94ccc992b04d7f464ef25d1672fcc",
+      "frames": 153600,
+      "expected_ebu_dbtp": -6,
+      "independent_preproduction_dbtp": -6.007442486979,
+      "left_numerator": 34411826102,
+      "right_numerator": 34411826102,
+      "left_j": 19225,
+      "right_j": 19225
+    },
+    {
+      "case": 19,
+      "filename": "seq-3341-19-24bit.wav.wav",
+      "wav_sha256": "31bda52dc66bb63aa0d04b2e5a1e6a4332296fa5635570469b2863d05a06d309",
+      "pcm64_sha256": "7cbf796d04300e24b48fa557915d848264a3155233b5d32fe0e030ae5cc37b57",
+      "frames": 153600,
+      "expected_ebu_dbtp": 3,
+      "independent_preproduction_dbtp": 3.054462934098,
+      "left_numerator": 97679401650,
+      "right_numerator": 97679401650,
+      "left_j": 595218,
+      "right_j": 595218
+    },
+    {
+      "case": 20,
+      "filename": "seq-3341-20-24bit.wav.wav",
+      "wav_sha256": "a2df8791198781579a25e0437008ce9b1a48b13605a8b71886a360c4ceed16e4",
+      "pcm64_sha256": "40a7fbcc4a24b2749c6820514dceb92f66fb8dae91ff89c8fd1b2ef38ccc2f4d",
+      "frames": 153604,
+      "expected_ebu_dbtp": 0,
+      "independent_preproduction_dbtp": -0.147325457484,
+      "left_numerator": 67563722737,
+      "right_numerator": 67563722561,
+      "left_j": 289948,
+      "right_j": 289955
+    },
+    {
+      "case": 21,
+      "filename": "seq-3341-21-24bit.wav.wav",
+      "wav_sha256": "fc508ae04cb6d1dbcb286d6cdffe8e81a87effa9ba7bb267c17a5807d5b273d3",
+      "pcm64_sha256": "4c5d6ed32ea16baed41d82d68c62151698f46f214a05459e5effe1833063d4cc",
+      "frames": 153604,
+      "expected_ebu_dbtp": 0,
+      "independent_preproduction_dbtp": -0.078911986891,
+      "left_numerator": 68097980328,
+      "right_numerator": 68097982351,
+      "left_j": 289947,
+      "right_j": 289947
+    },
+    {
+      "case": 22,
+      "filename": "seq-3341-22-24bit.wav.wav",
+      "wav_sha256": "d238255454a091b49592b25355738e200f59868c0804be5427c901ed10b3a910",
+      "pcm64_sha256": "6ced373f46a1bbaa1ed39b309df11347b6adb1901a2ce8d7c9150ae4082bb80d",
+      "frames": 153604,
+      "expected_ebu_dbtp": 0,
+      "independent_preproduction_dbtp": -0.204109671564,
+      "left_numerator": 67123461212,
+      "right_numerator": 67123463931,
+      "left_j": 289953,
+      "right_j": 289953
+    },
+    {
+      "case": 23,
+      "filename": "seq-3341-23-24bit.wav.wav",
+      "wav_sha256": "c7243e22970b82e020b45241c92d210cbf47217ccc967f014787a5f6400fa8a3",
+      "pcm64_sha256": "912c2bc889c1feea0f3e9cbaefc2071a2d1251ae55a735d69f58de3640176caf",
+      "frames": 153604,
+      "expected_ebu_dbtp": 0,
+      "independent_preproduction_dbtp": -0.078910896084,
+      "left_numerator": 68097990903,
+      "right_numerator": 68097982096,
+      "left_j": 289952,
+      "right_j": 289952
+    }
+  ]
+}

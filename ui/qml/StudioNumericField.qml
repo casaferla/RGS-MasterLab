@@ -18,6 +18,11 @@ Item {
     property string interactionHint: ""
 
     readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
+    // The same error message used by the fixed global status bar is readable
+    // at its owning field. Gain exposes validationError; other DSPs use
+    // validationMessage. This is tooltip-only and never changes layout/sonics.
+    readonly property string validationTooltip: !isInvalid || !viewModel ? ""
+        : (viewModel.validationMessage || viewModel.validationError || "")
 
     readonly property int fieldWidth: compact ? compactFieldWidth : 164
     implicitWidth: fieldWidth + (unitText.length > 0 ? unitTextLabel.implicitWidth + (compact ? 6 : 8) : 0)
@@ -67,13 +72,17 @@ Item {
                     onClicked: input.forceActiveFocus()
                 }
 
-                HoverHandler {
-                    id: fieldHover
+                StudioTooltipDwell {
+                    id: numericTooltipDwell
+                    anchors.fill: parent
+                    canShow: control.validationTooltip.length > 0
+                        || control.interactionHint.length > 0
+                    interacting: input.activeFocus
                 }
-
-                ToolTip.text: control.interactionHint
-                ToolTip.visible: control.interactionHint.length > 0 && fieldHover.hovered
-                ToolTip.delay: 550
+                ToolTip.text: control.validationTooltip.length > 0
+                    ? control.validationTooltip : control.interactionHint
+                ToolTip.visible: numericTooltipDwell.ready
+                ToolTip.delay: 0
 
                 TextInput {
                     id: input

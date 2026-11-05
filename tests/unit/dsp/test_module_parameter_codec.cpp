@@ -3,6 +3,7 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 
 #include <QtTest/QTest>
 
@@ -26,6 +27,9 @@ private slots:
     void eqRoundTripAllFilterTypes();
     void eqRejectionsAndMalformedJson();
     void genericModuleParameterCodecApi();
+    void stereoMsRoundTripAndNonEffectivePersistence();
+    void stereoMsStrictSchemaAndBoundaryRejections();
+    void stereoMsGenericCodecDispatch();
 };
 
 void ModuleParameterCodecTest::gainRoundTripAndBoundaries()
@@ -175,6 +179,94 @@ void ModuleParameterCodecTest::eqRejectionsAndMalformedJson()
         "{\"bandId\":\"00000000-0000-4000-8000-000000000001\",\"enabled\":true,\"filterType\":\"BELL\",\"routing\":\"STEREO\",\"frequencyHz\":1000.0,\"gainDb\":0.0,\"q\":0.707},"
         "{\"bandId\":\"00000000-0000-4000-8000-000000000001\",\"enabled\":true,\"filterType\":\"BELL\",\"routing\":\"STEREO\",\"frequencyHz\":2000.0,\"gainDb\":0.0,\"q\":0.707}"
         "]}"));
+}
+
+void ModuleParameterCodecTest::stereoMsRoundTripAndNonEffectivePersistence()
+{
+    auto defaults = StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto default_json = encode_stereo_ms_parameters_json(*defaults.value());
+    QVERIFY(default_json);
+    auto default_roundtrip = decode_stereo_ms_parameters_json(*default_json.value());
+    QVERIFY(default_roundtrip);
+    QCOMPARE(*default_roundtrip.value(), *defaults.value());
+
+    for (auto mode : {MonoBassMode::OFF, MonoBassMode::LR12, MonoBassMode::LR24}) {
+        for (bool muted : {false, true}) {
+            // Stored values survive even where OFF/mute makes them non-effective.
+            auto source = StereoMsParameters::create(
+                -12.0, 12.0, muted, mode, 300.0, 0.0);
+            QVERIFY(source);
+            auto json = encode_stereo_ms_parameters_json(*source.value());
+            QVERIFY(json);
+            auto decoded = decode_stereo_ms_parameters_json(*json.value());
+            QVERIFY(decoded);
+            QCOMPARE(*decoded.value(), *source.value());
+            QCOMPARE(decoded.value()->side_gain_db(), 12.0);
+            QCOMPARE(decoded.value()->mono_bass_cutoff_hz(), 300.0);
+            QCOMPARE(decoded.value()->low_band_width_percent(), 0.0);
+        }
+    }
+
+    auto negzero = StereoMsParameters::create(
+        -0.0, -0.0, true, MonoBassMode::LR12, 120.0, -0.0);
+    QVERIFY(negzero);
+    auto json = encode_stereo_ms_parameters_json(*negzero.value());
+    QVERIFY(json);
+    auto decoded = decode_stereo_ms_parameters_json(*json.value());
+    QVERIFY(decoded);
+    QVERIFY(!std::signbit(decoded.value()->mid_gain_db()));
+    QVERIFY(!std::signbit(decoded.value()->side_gain_db()));
+    QVERIFY(!std::signbit(decoded.value()->low_band_width_percent()));
+    QVERIFY(decoded.value()->side_muted());
+}
+
+void ModuleParameterCodecTest::stereoMsStrictSchemaAndBoundaryRejections()
+{
+    // Six exact keys, canonical enum tokens, real numeric types and boolean mute.
+    const std::string valid =
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100})";
+    QVERIFY(decode_stereo_ms_parameters_json(valid));
+    QVERIFY(!decode_stereo_ms_parameters_json("garbled"));
+    QVERIFY(!decode_stereo_ms_parameters_json("[]"));
+    QVERIFY(!decode_stereo_ms_parameters_json("{}"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100,"widthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":0,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"LR48","monoBassCutoffHz":120,"lowBandWidthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":"0","sideGainDb":0,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"LR12","monoBassCutoffHz":39.999,"lowBandWidthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"LR24","monoBassCutoffHz":300.001,"lowBandWidthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":0,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100.001})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":12.01,"sideGainDb":0,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100})"));
+    QVERIFY(!decode_stereo_ms_parameters_json(
+        R"({"midGainDb":0,"sideGainDb":-24.01,"sideMuted":false,"monoBassMode":"OFF","monoBassCutoffHz":120,"lowBandWidthPercent":100})"));
+}
+
+void ModuleParameterCodecTest::stereoMsGenericCodecDispatch()
+{
+    auto p = StereoMsParameters::create(
+        -3.0, 5.5, true, MonoBassMode::LR24, 80.0, 25.0);
+    QVERIFY(p);
+    const ModuleParameterPayload payload{*p.value()};
+    const auto encoded = encode_module_parameters_json(payload);
+    QVERIFY(encoded);
+    const auto decoded = decode_module_parameters_json(
+        "rgsml.dsp.stereo-ms.parameters/1.0.0", *encoded.value());
+    QVERIFY(decoded);
+    QVERIFY(std::holds_alternative<StereoMsParameters>(*decoded.value()));
+    QCOMPARE(std::get<StereoMsParameters>(*decoded.value()), *p.value());
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.stereo-ms.parameters/9.9.9", *encoded.value()));
 }
 
 void ModuleParameterCodecTest::genericModuleParameterCodecApi()

@@ -153,10 +153,17 @@ void MasteringPreviewController::worker_loop()
 
         auto outcome = std::make_shared<core::Result<render::RenderResult>>(std::move(renderResult));
         const auto gen = job.generation;
+        const auto preparedForJob = job.preparedSnapshot;
 
         QMetaObject::invokeMethod(
             this,
-            [this, gen, outcome] {
+            [this, gen, outcome, preparedForJob] {
+                // A source switch may not trigger a new DSP preview; check
+                // the ORIGINAL prepared owner before publishing stale audio.
+                if (!snapshotProvider_ || snapshotProvider_() != preparedForJob) {
+                    ++staleResultsDiscarded_;
+                    return;
+                }
                 publish_preview_result(gen, outcome);
             },
             Qt::QueuedConnection);
