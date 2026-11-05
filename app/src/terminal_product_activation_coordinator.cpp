@@ -21,6 +21,12 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
 {
     connect(view_,&TerminalLimiterViewModel::acceptedStateChanged,
             this,&TerminalProductActivationCoordinator::limiter_accepted);
+    // A click affordance follows the typed source/parameter state;
+    // a separate exact-owner check always runs again before retirement.
+    connect(view_,&TerminalLimiterViewModel::changed,
+            this,&TerminalProductActivationCoordinator::directReturnChanged);
+    connect(session_,&TerminalPrivateProductSession::changed,
+            this,&TerminalProductActivationCoordinator::directReturnChanged);
     connect(session_,&TerminalPrivateProductSession::changed,
             this,&TerminalProductActivationCoordinator::private_session_changed);
     connect(view_,&TerminalLimiterViewModel::prepareRequested,
@@ -804,6 +810,7 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
         readyToPreview_=false;
         handoffStarted_=false;
         transitioning_=false;
+        emit directReturnChanged();
         return;
     }
     auto accepted=session_->private_installed_output_identity();
@@ -841,6 +848,84 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
     readyToPreview_=false;
     handoffStarted_=false;
     transitioning_=false;
+    emit directReturnChanged();
+}
+
+bool TerminalProductActivationCoordinator::direct_return_available() const noexcept
+{
+    if(transitioning_||!deviceActive_||!intent_||state_->bypassed()
+       ||session_->monitoring_transaction_active())return false;
+    const auto status=session_->status();
+    return status==QStringLiteral("PRIVATE_INSTALLED")
+        ||status==QStringLiteral("NONCONFORMING_INSTALLED");
+}
+
+bool TerminalProductActivationCoordinator::returnToSource()
+{
+    // Main and the docked/floating editor must not guess that a MONITOR
+    // anonymous DEVICE sink belongs to the direct M17 terminal publisher.
+    // Identity is rechecked at the exact synchronous user-action boundary.
+    if(QThread::currentThread()!=thread()||!direct_return_available())return false;
+    const auto status=session_->status();
+    const auto predecessor=*intent_;
+    if(status==QStringLiteral("PRIVATE_INSTALLED")) {
+        const auto installed=session_->private_installed_output_identity();
+        if(!installed || !session_->private_id()
+           ||installed.value()->realizationId!=*session_->private_id()
+           ||installed.value()->owner->rendered.manual_owner
+               !=predecessor.manualOwner
+           ||installed.value()->owner->original_manual_realization_id
+               !=predecessor.manualId)
+            return false;
+    } else if(status==QStringLiteral("NONCONFORMING_INSTALLED")) {
+        const auto current=transport_->playback_snapshot();
+        const auto selected=transport_->source_display_snapshot();
+        const auto id=session_->private_id();
+        if(!id||!current||!selected
+           ||current.value()->state==core::PlaybackState::NO_SOURCE
+           ||current.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||current.value()->audibleRealization.realizationId
+               !=std::optional{*id}
+           ||selected.value()->duration
+               !=predecessor.manualOwner->view().frame_count())
+            return false;
+    } else return false;
+    // Existing A/B retirement is the ONLY authority for native M17:
+    // it suspends this exact private owner, restores original MANUAL
+    // SOURCE cue/state/Loop and retains immutable M17 PCM for re-preview.
+    // Never call TerminalMonitorViewModel::cancel() for this owner.
+    deactivate(true);
+    if(deviceActive_||intent_||!session_->comparison_cached())
+        return false;
+    const auto manual=transport_->playback_snapshot();
+    if(!manual||manual.value()->state==core::PlaybackState::NO_SOURCE
+       ||manual.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||manual.value()->audibleRealization.realizationId
+           !=std::optional{predecessor.manualId}
+       ||manual.value()->duration
+           !=std::optional{predecessor.manualOwner->view().frame_count()})
+        return false;
+    // Re-arm the SAME immutable verified / measured candidate without
+    // a second multi-minute Prepare. Restored SOURCE is already audible.
+    const auto original=selector_->capture_terminal_activation_intent();
+    if(!original||original.value()->manualOwner!=predecessor.manualOwner
+       ||original.value()->manualId!=predecessor.manualId)
+        return false;
+    intent_=*original.value();
+    const auto rearmed=session_->resume_comparison();
+    if(!rearmed) {
+        intent_.reset();
+        view_->reportAudioError(QString::fromStdString(
+            rearmed.error()->message()));
+        emit directReturnChanged();
+        return false;
+    }
+    // The session's synchronous changed signal routes through the existing
+    // ready/nonconforming presentation, preserving the same original PCM.
+    emit directReturnChanged();
+    return true;
 }
 
 bool TerminalProductActivationCoordinator::can_handoff_installed_to_monitor() const
@@ -971,6 +1056,7 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
         ? QStringLiteral("BYPASS · MANUAL PROCESSED")
         : QStringLiteral("NEEDS PREPARATION"));
     transitioning_=false;
+    emit directReturnChanged();
 }
 
 void TerminalProductActivationCoordinator::limiter_accepted()
