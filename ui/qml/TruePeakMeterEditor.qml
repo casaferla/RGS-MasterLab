@@ -268,7 +268,7 @@ Item {
                                 font.pixelSize: 9
                                 font.weight: Font.Bold
                                 HoverHandler { id: grStatusHover }
-                                ToolTip.text: "The grid is a reference, not an observed gain-reduction series. Verified applied limiter gain and sink-consumed OUTPUT identity are required before drawing GR."
+                                ToolTip.text: "OFFLINE shows sampled actual M17 gain applied to this MASTER; LIVE requires independently witnessed consumed device output. No source, bypass or stale owner means no curve."
                                 ToolTip.visible: (grStatusHover.hovered) && stationaryTooltipDwell1.ready
                                 ToolTip.delay: 0
                                 StudioTooltipDwell {
