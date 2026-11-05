@@ -113,6 +113,55 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
     auto stage=std::make_shared<const app::TerminalCandidateGate::StagedCandidate>(
         app::TerminalCandidateGate::StagedCandidate{
             std::move(output),core::RealizationId{33},owner});
+    // Real M17 applied gains remain usable as a separately LABELED
+    // OFFLINE sampled curve even if Windows exposes NO consumed-output
+    // witness. This observer is incapable of elevating offline GR to LIVE.
+    app::TerminalPrivateProductSession::OfflineGrCapture offlineCaptured{
+        stage,{}};
+    app::TerminalPrivateGrViewModel offlinePresenter(
+        []()->core::Result<app::TerminalPrivateGrSeries> {
+            return core::Result<app::TerminalPrivateGrSeries>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "NO_WINDOWS_CONSUMED_OUTPUT"});
+        });
+    offlinePresenter.set_offline_observation([&]{return offlineCaptured;});
+    offlinePresenter.refresh();
+    QVERIFY(!offlinePresenter.verified());
+    QVERIFY(offlinePresenter.verified_series().isEmpty());
+    QVERIFY(offlinePresenter.offline_available());
+    QCOMPARE(offlinePresenter.offline_status(),
+        QStringLiteral("OFFLINE · VERIFIED MASTER · SAMPLED"));
+    const auto offlinePoints=offlinePresenter.offline_series();
+    QVERIFY(!offlinePoints.isEmpty());
+    QVERIFY(offlinePoints.size()<=256);
+    QCOMPARE(offlinePoints.front().toMap()
+        .value(QStringLiteral("frameBegin")).toLongLong(),qint64{0});
+    QCOMPARE(offlinePoints.back().toMap()
+        .value(QStringLiteral("frameEndExclusive")).toLongLong(),
+        qint64{outputHz/100});
+    double offlinePeak=0;
+    for(const auto& value:offlinePoints) {
+        const auto point=value.toMap();
+        const auto db=point.value(QStringLiteral("peakReductionDb")).toDouble();
+        QVERIFY(std::isfinite(db));
+        QVERIFY(db>=0);
+        offlinePeak=std::max(offlinePeak,db);
+    }
+    QVERIFY(offlinePeak>0.0);
+    offlinePresenter.refresh();
+    QCOMPARE(offlinePresenter.offline_series(),offlinePoints);
+    // An old source/MASTER epoch is forbidden to retain a stale curve.
+    offlineCaptured={};
+    offlinePresenter.refresh();
+    QVERIFY(!offlinePresenter.offline_available());
+    QCOMPARE(offlinePresenter.offline_status(),
+        QStringLiteral("NOT PREPARED · NO GR DATA"));
+    offlineCaptured={stage,{}};
+    offlinePresenter.refresh();
+    QVERIFY(offlinePresenter.offline_available());
+    offlinePresenter.invalidate();
+    QVERIFY(!offlinePresenter.offline_available());
+
     // Synthetic consumed interval in this unit test, NOT physical
     // sink chronology. The real observer must validate it separately.
     const app::TerminalConsumedOutputEvidence proof{
@@ -217,6 +266,11 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
     auto bypProof=proof;
     bypProof.owner=bypStage;
     QVERIFY(!app::project_private_terminal_gr(bypProof));
+    // BYPASS cannot claim a measured reducer output even when a candidate
+    // retains an otherwise legitimate and current immutable PCM.
+    offlineCaptured={bypStage,{}};
+    offlinePresenter.refresh();
+    QVERIFY(!offlinePresenter.offline_available());
 }
 
 
