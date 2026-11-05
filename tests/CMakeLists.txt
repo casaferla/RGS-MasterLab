@@ -1976,6 +1976,27 @@ set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
     LABELS "audio;m18;preproduction;dither;philox"
 )
 
+# M18 core ResourceWriter seam: short-write and failure regression,
+# plus actual PCM24 WAV bytes through the canonical byte port.
+# Windows' TransactionalAudioExporter still owns all publication policy.
+qt_add_executable(rgsml_m18_core_resource_sink_tests
+    unit/audio/test_m18_core_resource_byte_sink.cpp
+)
+target_include_directories(rgsml_m18_core_resource_sink_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_core_resource_sink_tests
+    PRIVATE rgsml_core rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_core_resource_sink_tests)
+add_test(NAME rgsml_m18_core_resource_sink_tests
+    COMMAND rgsml_m18_core_resource_sink_tests
+)
+set_tests_properties(rgsml_m18_core_resource_sink_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;streaming;resource_writer;preproduction"
+)
+
 # M18 exact binary64 Master-owner bridge: real AudioBuffer, no publisher.
 qt_add_executable(rgsml_m18_master_owner_bridge_tests
     unit/audio/test_m18_owned_master_frame_provider.cpp
