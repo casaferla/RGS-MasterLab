@@ -147,7 +147,7 @@ channelAtomicRollbackAfterNonfinite()
     const auto m=accum.value()->get()->finalize();
     const auto r=analysis::internal::measure_unqualified_true_peak_full_resource(*source);
     QVERIFY(m &&r);
-    QCOMPARE(m.value()->global_linear_peak,r.value()->global_linear_peak());
+    QCOMPARE(m.value()->global_linear_peak,r.value()->global_linear_peak);
 }
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::M18DeliveredTruePeakCandidateTest)
