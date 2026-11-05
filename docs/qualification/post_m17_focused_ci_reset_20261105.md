@@ -43,8 +43,10 @@ Now:
   Qt Release smoke remains an immediate Focused failure on regression.
 
 **Important:** Focused SUCCESS is never physical qualification, cold FQ,
-or authority to integrate. Before M18, the exact reset SHA must pass Windows
-and Linux Focused CI, required FQ and explicit PO approval. A second CI reset
+or authority to integrate. Before M18, the exact reset SHA must pass Windows and Linux Focused CI
+and receive explicit PO integration approval. Accepted M17 cold FQ #97 remains
+the product FQ evidence; a reset that modifies *only* CI/tests/docs does not
+by itself require repeating the 55-minute cold product FQ. A second CI reset
 macro-lot must wait for this lot's CI to finish.
 
 ## Later candidates — not yet implemented
@@ -89,5 +91,5 @@ off the PR head until the preceding run is terminal.
 
 **Gate:** the staging changes remain UNQUALIFIED until the prior candidate
 Focused #1024 concludes and this coherent lot receives an exact-SHA PR
-promotion and its own Windows+Linux SUCCESS. PO-only cold FQ still required
-before main integration.
+promotion and its own Windows+Linux SUCCESS. The existing PO-approved M17 cold FQ #97 is unchanged; a new FQ is
+needed only for product/build/packaging changes or an explicit PO request.
