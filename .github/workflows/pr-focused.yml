@@ -382,6 +382,8 @@ jobs:
             rgsml_m18_core_resource_sink_tests \
             rgsml_m18_canonical_wav_writer_tests \
             rgsml_m18_decoded_delivery_verifier_tests \
+            rgsml_m18_decoded_wav_candidate_tests \
+            rgsml_m18_delivered_true_peak_candidate_tests \
             rgsml_true_peak_itu4x_coefficients_tests \
             rgsml_true_peak_itu4x_channel_stream_tests \
             rgsml_true_peak_full_resource_tests \
@@ -747,6 +749,8 @@ jobs:
             rgsml_m18_core_resource_sink_tests `
             rgsml_m18_canonical_wav_writer_tests `
             rgsml_m18_decoded_delivery_verifier_tests `
+            rgsml_m18_decoded_wav_candidate_tests `
+            rgsml_m18_delivered_true_peak_candidate_tests `
             rgsml_true_peak_itu4x_coefficients_tests `
             rgsml_true_peak_itu4x_channel_stream_tests `
             rgsml_true_peak_full_resource_tests `
