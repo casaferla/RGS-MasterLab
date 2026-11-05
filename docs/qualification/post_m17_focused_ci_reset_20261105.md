@@ -64,3 +64,30 @@ Single-Writer Epoch; exact-head checkout and CAS on ref writes; no overlapping
 macro-lot while preceding CI is pending; `main` untouched until PO approval;
 never fetch whole Actions logs; use job/step duration metadata and bounded
 error-specific artifacts only.
+
+## Macro-lot 2 — staging-only, NOT covered by Focused #1024
+
+Path `staging/post-m17-ci-reset-no-ci-20261105`; its commits must remain
+off the PR head until the preceding run is terminal.
+
+- Linux Python numerical-screening interpreter is fixed at CPython 3.13
+  rather than a moving `3.x` selector.
+- Exact original dependency versions remain `mpmath==1.3.0` and
+  `numpy==2.3.5` in `tools/ci/requirements-src-numerical.txt`;
+  `--only-binary=:all:` rejects slow/uncontrolled source builds,
+  failing the CI instead of silently changing math or native wheels.
+- `actions/setup-python` caches pip distributions using that locked file.
+  The 217 s baseline install is the measured cost, **not proof** of its
+  root cause; a new real CI must establish whether this saves time.
+- Both jobs suppress automatic expensive CI for dormant
+  `experimental/*` Draft PRs. Staging Draft PRs still run; non-Draft PRs
+  run; `workflow_dispatch` runs explicitly. The
+  `ready_for_review` PR event is included so changing Draft→Ready
+  triggers the required real dual-OS gate.
+- No DSP test suites, authentic FIRs, independent oracles or full FQ logic
+  are removed in this lot. Skipped Draft CI is NOT a successful test gate.
+
+**Gate:** the staging changes remain UNQUALIFIED until the prior candidate
+Focused #1024 concludes and this coherent lot receives an exact-SHA PR
+promotion and its own Windows+Linux SUCCESS. PO-only cold FQ still required
+before main integration.
