@@ -908,6 +908,8 @@ ApplicationWindow {
             memoryAdvisor: root.appMemoryAdvisor
             limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
+            limiterOfflineGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
+                ? terminalPrivateGrViewModel : null
         }
     }
 
