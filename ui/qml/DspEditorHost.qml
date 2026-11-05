@@ -77,6 +77,9 @@ Rectangle {
         return (hz / 1000).toFixed(1).replace(".0", "") + " kHz"
     }
     property var limiterGrProvider: null
+    // OFFLINE applied gain is immutable MASTER evidence, not a Windows
+    // consumed-output LIVE witness. It remains visible during Master Audition.
+    property var limiterOfflineGrProvider: null
     property Item activeChainRow: null
     // Drag is only the user's tear-off INTENT. Parent/Main owns all window
     // creation and module identity; the live editor never clones itself.
@@ -679,6 +682,8 @@ Rectangle {
             monitorViewModel: root.terminalMonitorViewModel
             limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
                 ? root.limiterGrProvider : null
+            limiterOfflineGrProvider: root.isLimiterEditor
+                ? root.limiterOfflineGrProvider : null
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive
         }
