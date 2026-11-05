@@ -5,6 +5,7 @@
 #include "terminal_measured_device_audition_ticket.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
+#include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <QObject>
 #include <QString>
 #include <cstdint>
@@ -202,6 +203,25 @@ public:
     // Session and output identity must be rechecked before any file commit.
     [[nodiscard]] std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
     capture_m18_verified_master_for_read(core::SampleRate selectedMasterRate) const;
+    // PREPRODUCTION synchronous Product->M18 authorizer, no Q_INVOKABLE/UI.
+    // Must be invoked on this QObject's owning thread. Caller supplies an
+    // explicit, non-reentrant Product consent predicate. The transaction
+    // MUST run synchronously on the SAME thread: the UI event loop must not
+    // be pumped, since thread serialization pins the live stage across
+    // last commit check+rename+postcommit readback. Not a scalable product
+    // export API; async export requires a separately designed epoch lock.
+    using M18ExplicitExportConsent=std::function<core::Status()>;
+    [[nodiscard]] core::Result<
+        platform::windows::M18TransactionalAudioExportRequest>
+    make_private_m18_synchronous_export_request(
+        core::SampleRate selectedMasterRate,
+        core::ResourceReference source,
+        core::ResourceReference destination,
+        audio::WavSampleFormat format,
+        std::optional<std::uint64_t> seed,
+        double ceilingDbTp,
+        const M18ExplicitExportConsent& explicitConsent) const;
+
     // SECOND P0 PRIVATE BRIDGE: derive DEVICE PCM from the very same
     // verified M17 owner, with exact rate/owner recheck after a potentially
     // long SRC. This never installs a sink, runs another M17/M16 Prepare,
