@@ -2,6 +2,7 @@
 
 #include "internal/sha256.hpp"
 #include "internal/transactional_audio_exporter_test_seam.hpp"
+#include "internal/m18_candidate_delivery_validation.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -25,6 +26,8 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -180,7 +183,10 @@ struct CandidateEvidence final {
 [[nodiscard]] core::Result<CandidateEvidence> validate_candidate(
     const QString& candidate,
     audio::AudioBufferView expected,
-    std::uint64_t expectedSize)
+    std::uint64_t expectedSize,
+    std::optional<audio::WavSampleFormat> m18Encoding,
+    std::optional<std::uint64_t> m18Seed,
+    std::optional<double> m18Ceiling)
 {
     const auto candidateUtf8 = candidate.toUtf8().toStdString();
     auto readReference = WindowsResourceReader::make_read_reference(
@@ -198,6 +204,36 @@ struct CandidateEvidence final {
         return core::Result<CandidateEvidence>::failure(*wav.error());
     }
     const auto& info = wav.value()->get()->info();
+    if (m18Encoding) {
+        if(!m18Ceiling)
+            return failure<CandidateEvidence>(
+                core::ErrorCode::InvalidArgument,"m18_candidate_ceiling_missing");
+        const auto fileSize=QFileInfo{candidate}.size();
+        if(fileSize<0 ||static_cast<std::uint64_t>(fileSize)!=expectedSize)
+            return failure<CandidateEvidence>(
+                core::ErrorCode::MalformedAudioContainer,
+                "m18_candidate_exact_size_mismatch");
+        // A single 4096-frame decode pass computes exact postquant samples,
+        // canonical decoded SHA, and delivered full-resource M16 True Peak.
+        const auto verified=internal::validate_m18_candidate_decoded_delivery(
+            *wav.value()->get(),expected,*m18Encoding,m18Seed,*m18Ceiling);
+        if(!verified)
+            return core::Result<CandidateEvidence>::failure(*verified.error());
+        if(!verified.value()->meets_ceiling)
+            return failure<CandidateEvidence>(
+                core::ErrorCode::InvalidState,
+                "m18_candidate_nonconforming_delivered_true_peak: "
+                "no implicit Export Anyway or rounding relaxation");
+        auto encoded=encoded_file_sha256(candidate);
+        if(!encoded)
+            return core::Result<CandidateEvidence>::failure(*encoded.error());
+        const auto closed=wav.value()->get()->close();
+        if(!closed)
+            return core::Result<CandidateEvidence>::failure(*closed.error());
+        return core::Result<CandidateEvidence>::success(CandidateEvidence{
+            verified.value()->container_kind,expectedSize,
+            *encoded.value(),verified.value()->canonical_decoded_sha256});
+    }
     if (info.encoded_sample_format() != audio::WavSampleFormat::IEEE_F64
         || info.audio_format() != expected.format()
         || info.frame_count() != expected.frame_count()) {
@@ -305,6 +341,54 @@ void set_export_failure_point_for_test(ExportFailurePoint point) noexcept
 }
 
 }  // namespace internal
+
+core::Result<M18TransactionalAudioExportRequest>
+M18TransactionalAudioExportRequest::create(
+    core::ResourceReference source,
+    std::shared_ptr<const audio::AudioBuffer> immutableVerifiedMaster,
+    core::ResourceReference destination,
+    audio::WavSampleFormat sampleFormat,
+    std::optional<std::uint64_t> pcm24DitherSeed,
+    double ceilingDbTp,
+    ExportCollisionPolicy collisionPolicy,
+    M18AcquireCommitLease acquireCommitLease)
+{
+    using R=core::Result<M18TransactionalAudioExportRequest>;
+    if (!immutableVerifiedMaster || !acquireCommitLease)
+        return R::failure(core::Error{core::ErrorCode::InvalidArgument,
+            "m18_export_owner_or_commit_authority_missing"});
+    const auto view=immutableVerifiedMaster->view();
+    const auto hz=view.format().sample_rate().value();
+    const auto layout=view.format().channel_layout();
+    const bool supportedRate=hz==44100 ||hz==48000 ||hz==88200
+        ||hz==96000 ||hz==176400 ||hz==192000;
+    if (view.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+        ||view.absolute_start_frame()!=core::FrameIndex{0}
+        ||view.frame_count().value()<=0 ||!supportedRate
+        ||(layout!=audio::ChannelLayout::MONO_C
+           &&layout!=audio::ChannelLayout::STEREO_LR))
+        return R::failure(core::Error{core::ErrorCode::InvalidArgument,
+            "m18_export_owner_must_be_full_output_rate_master"});
+    if ((sampleFormat!=audio::WavSampleFormat::PCM_S24
+          &&sampleFormat!=audio::WavSampleFormat::IEEE_F32)
+        ||(sampleFormat==audio::WavSampleFormat::PCM_S24)
+            !=pcm24DitherSeed.has_value()
+        ||!std::isfinite(ceilingDbTp) ||ceilingDbTp< -12.0
+        ||ceilingDbTp>0.0)
+        return R::failure(core::Error{core::ErrorCode::InvalidArgument,
+            "m18_export_bad_encoding_seed_or_ceiling"});
+    if(collisionPolicy!=ExportCollisionPolicy::FAIL_IF_EXISTS)
+        return R::failure(core::Error{core::ErrorCode::UnsupportedOperation,
+            "m18_export_no_overwrite_only"});
+    if(!source.permissions().can_read()
+        ||!destination.permissions().can_write())
+        return R::failure(core::Error{core::ErrorCode::AccessDenied,
+            "m18_export_resource_permission_denied"});
+    return R::success(M18TransactionalAudioExportRequest{
+        std::move(source),std::move(immutableVerifiedMaster),
+        std::move(destination),sampleFormat,pcm24DitherSeed,
+        ceilingDbTp,collisionPolicy,std::move(acquireCommitLease)});
+}
 
 core::Result<TransactionalAudioExportRequest> TransactionalAudioExportRequest::create(
     core::ResourceReference source,
@@ -446,21 +530,63 @@ core::Result<TransactionalAudioExportResult>
 TransactionalAudioExporter::export_new_file(
     const TransactionalAudioExportRequest& request)
 {
-    if (request.source().provider_id() != WindowsResourceReader::provider_id()
-        || request.destination().provider_id() != WindowsResourceWriter::provider_id()) {
+    // Legacy M09 F64 behaviour remains the sole GUI production path.
+    return export_impl(
+        request.source(),request.payload(),request.destination(),
+        request.sample_format(),request.collision_policy(),
+        std::nullopt,std::nullopt,nullptr);
+}
+
+core::Result<TransactionalAudioExportResult>
+TransactionalAudioExporter::export_new_file(
+    const M18TransactionalAudioExportRequest& request)
+{
+    // Request retains the exact immutable M17 AudioBuffer throughout
+    // all candidate processing and final commit authorization.
+    return export_impl(
+        request.source(),request.payload(),request.destination(),
+        request.sample_format(),request.collision_policy(),
+        request.dither_seed(),request.ceiling_db_tp(),
+        &request.commit_lease_factory());
+}
+
+core::Result<TransactionalAudioExportResult>
+TransactionalAudioExporter::export_impl(
+    const core::ResourceReference& source,
+    audio::AudioBufferView payload,
+    const core::ResourceReference& destinationReference,
+    audio::WavSampleFormat format,
+    ExportCollisionPolicy policy,
+    std::optional<std::uint64_t> seed,
+    std::optional<double> ceilingDbTp,
+    const M18AcquireCommitLease* commitLeaseFactory)
+{
+    const bool m18=ceilingDbTp.has_value();
+    if(m18!=static_cast<bool>(commitLeaseFactory)
+        ||(m18 &&((format!=audio::WavSampleFormat::PCM_S24
+                 &&format!=audio::WavSampleFormat::IEEE_F32)
+                ||(format==audio::WavSampleFormat::PCM_S24)!=seed.has_value()
+                ||!std::isfinite(*ceilingDbTp)))
+        ||(!m18 &&(format!=audio::WavSampleFormat::IEEE_F64
+                 ||seed.has_value()))) {
+        return failure<TransactionalAudioExportResult>(
+            core::ErrorCode::UnsupportedOperation,
+            "export_request_unsupported: invalid legacy or M18 product contract.");
+    }
+    if (source.provider_id() != WindowsResourceReader::provider_id()
+        || destinationReference.provider_id() != WindowsResourceWriter::provider_id()) {
         return failure<TransactionalAudioExportResult>(
             core::ErrorCode::InvalidArgument,
             "export_provider_invalid: source and destination must use Windows local-file.");
     }
-    if (request.sample_format() != audio::WavSampleFormat::IEEE_F64
-        || request.collision_policy() != ExportCollisionPolicy::FAIL_IF_EXISTS) {
+    if (policy != ExportCollisionPolicy::FAIL_IF_EXISTS) {
         return failure<TransactionalAudioExportResult>(
             core::ErrorCode::UnsupportedOperation,
-            "export_request_unsupported: request violates the L1-M09 frozen policy.");
+            "export_unsupported_collision_policy: only FAIL_IF_EXISTS is allowed.");
     }
 
-    const auto sourcePath = qpath(request.source());
-    const auto destinationPath = qpath(request.destination());
+    const auto sourcePath = qpath(source);
+    const auto destinationPath = qpath(destinationReference);
     auto sourceIdentity = file_identity(sourcePath, true);
     if (!sourceIdentity) {
         return core::Result<TransactionalAudioExportResult>::failure(*sourceIdentity.error());
@@ -517,25 +643,28 @@ TransactionalAudioExporter::export_new_file(
     }
 
     audio::WavWriteSpec spec{
-        request.payload().format(),
-        request.payload().frame_count(),
-        request.sample_format()};
-    auto writer = audio::WavWriter::open(std::move(*destination.value()), spec);
+        payload.format(),
+        payload.frame_count(),
+        format};
+    auto writer = m18
+        ? audio::WavWriter::open_m18(
+            std::move(*destination.value()),spec,seed)
+        : audio::WavWriter::open(std::move(*destination.value()),spec);
     if (!writer) {
         return cleanup_failure(*writer.error(), *candidatePath.value(), false);
     }
     const auto expectedSize = writer.value()->get()->expected_file_size_bytes();
     constexpr std::int64_t kWriteFrames = 4096;
     std::int64_t offset = 0;
-    while (offset < request.payload().frame_count().value()) {
+    while (offset < payload.frame_count().value()) {
         const auto countValue = std::min(
-            kWriteFrames, request.payload().frame_count().value() - offset);
+            kWriteFrames, payload.frame_count().value() - offset);
         auto count = core::FrameCount::create(countValue);
         if (!count) {
             return cleanup_failure(*count.error(), *candidatePath.value(), false);
         }
-        auto view = request.payload().subview(
-            core::FrameIndex{request.payload().absolute_start_frame().value() + offset},
+        auto view = payload.subview(
+            core::FrameIndex{payload.absolute_start_frame().value() + offset},
             *count.value());
         if (!view) {
             return cleanup_failure(*view.error(), *candidatePath.value(), false);
@@ -564,7 +693,9 @@ TransactionalAudioExporter::export_new_file(
     }
 
     auto evidence = validate_candidate(
-        *candidatePath.value(), request.payload(), expectedSize);
+        *candidatePath.value(), payload, expectedSize,
+        m18?std::optional<audio::WavSampleFormat>{format}:std::nullopt,
+        seed,ceilingDbTp);
     if (!evidence) {
         return cleanup_failure(*evidence.error(), *candidatePath.value(), false);
     }
@@ -579,6 +710,37 @@ TransactionalAudioExporter::export_new_file(
             core::Error{core::ErrorCode::IoFailure,
                 "decoded_checksum_mismatch: injected decoded hash mismatch."},
             *candidatePath.value(), false);
+    }
+    // M18 candidate bytes have passed decoded postquant SHA and M16 TP.
+    // Acquire the Product's *own* epoch/consent/owner lifetime lock now.
+    // The lease MUST hold the same identity stable through rename+readback.
+    // Never run this authorization for legacy IEEE_F64.
+    std::unique_ptr<M18ExportCommitLease> commitLease;
+    if (m18) {
+        if (!commitLeaseFactory || !*commitLeaseFactory) {
+            return cleanup_failure(core::Error{core::ErrorCode::InvalidState,
+                "m18_commit_authority_missing"},*candidatePath.value(),false);
+        }
+        auto permitted=(*commitLeaseFactory)();
+        if(!permitted ||!permitted.value() || !*permitted.value()) {
+            return cleanup_failure(
+                permitted ? core::Error{core::ErrorCode::InvalidState,
+                    "m18_commit_lease_not_acquired"}:*permitted.error(),
+                *candidatePath.value(),false);
+        }
+        commitLease=std::move(*permitted.value());
+        const auto current=commitLease->revalidate_current();
+        if(!current) {
+            return cleanup_failure(*current.error(),*candidatePath.value(),false);
+        }
+        // Reject source swapped while our candidate was generated.
+        const auto currentSource=file_identity(sourcePath,true);
+        if(!currentSource ||!currentSource.value()->has_value()
+            ||**currentSource.value()!=**sourceIdentity.value()) {
+            return cleanup_failure(core::Error{core::ErrorCode::InvalidState,
+                "m18_source_identity_changed_before_commit"},
+                *candidatePath.value(),false);
+        }
     }
     if (QFileInfo::exists(destinationPath)) {
         return cleanup_failure(
@@ -609,11 +771,11 @@ TransactionalAudioExporter::export_new_file(
     }
     return core::Result<TransactionalAudioExportResult>::success(
         TransactionalAudioExportResult{
-            request.destination(),
+            destinationReference,
             evidence.value()->container_kind,
-            request.sample_format(),
-            request.payload().format(),
-            request.payload().frame_count(),
+            format,
+            payload.format(),
+            payload.frame_count(),
             evidence.value()->file_size,
             evidence.value()->encoded_sha256,
             evidence.value()->decoded_sha256});

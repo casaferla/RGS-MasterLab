@@ -3,8 +3,16 @@
 #include "internal/m18_candidate_delivery_validation.hpp"
 #include "wav_test_support.hpp"
 #include "m18_streaming_wav.hpp"
+#include "internal/transactional_audio_exporter_test_seam.hpp"
+#include <rgsml/platform/windows/transactional_audio_exporter.hpp>
+#include <rgsml/platform/windows/windows_resource_reader.hpp>
+#include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <QtTest/QTest>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -98,6 +106,69 @@ open(wav_support::Bytes bytes,
     return audio::WavReader::open(
         wav_support::memory_reader(std::move(bytes),control));
 }
+
+struct TestSessionState final {
+    bool current{true};
+    std::size_t acquired{0};
+    std::size_t revalidated{0};
+    std::size_t retired{0};
+};
+class TestM18Lease final:public platform::windows::M18ExportCommitLease {
+public:
+    explicit TestM18Lease(std::shared_ptr<TestSessionState> owner)
+        : owner_(std::move(owner)) {}
+    ~TestM18Lease() override{++owner_->retired;}
+    [[nodiscard]] core::Status revalidate_current() const override {
+        ++owner_->revalidated;
+        return owner_->current?core::Status::success()
+            :core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TEST_EPOCH_REJECTED"});
+    }
+private:
+    std::shared_ptr<TestSessionState> owner_;
+};
+[[nodiscard]] platform::windows::M18AcquireCommitLease
+make_test_commit_authority(std::shared_ptr<TestSessionState> state)
+{
+    return [state=std::move(state)]()
+        ->core::Result<std::unique_ptr<platform::windows::M18ExportCommitLease>> {
+        ++state->acquired;
+        std::unique_ptr<platform::windows::M18ExportCommitLease> result=
+            std::make_unique<TestM18Lease>(state);
+        return core::Result<std::unique_ptr<
+            platform::windows::M18ExportCommitLease>>::success(std::move(result));
+    };
+}
+[[nodiscard]] std::string m18_path(const QString& value)
+{return value.toUtf8().toStdString();}
+[[nodiscard]] core::Result<platform::windows::M18TransactionalAudioExportRequest>
+make_real_transaction_request(
+    const QString& src,const QString& dst,
+    std::shared_ptr<const audio::AudioBuffer> owner,
+    audio::WavSampleFormat format,
+    std::optional<std::uint64_t> seed,double ceiling,
+    std::shared_ptr<TestSessionState> session)
+{
+    using namespace platform::windows;
+    auto sourceRef=WindowsResourceReader::make_read_reference(
+        m18_path(src),m18_path(QFileInfo{src}.fileName()));
+    if(!sourceRef)return core::Result<M18TransactionalAudioExportRequest>::failure(
+        *sourceRef.error());
+    auto destRef=WindowsResourceWriter::make_write_reference(
+        m18_path(dst),m18_path(QFileInfo{dst}.fileName()));
+    if(!destRef)return core::Result<M18TransactionalAudioExportRequest>::failure(
+        *destRef.error());
+    return M18TransactionalAudioExportRequest::create(
+        *sourceRef.value(),std::move(owner),*destRef.value(),
+        format,seed,ceiling,ExportCollisionPolicy::FAIL_IF_EXISTS,
+        make_test_commit_authority(std::move(session)));
+}
+[[nodiscard]] bool m18_no_temporary_candidates(const QString& dir)
+{
+    return QDir{dir}.entryList(
+        {QStringLiteral("*.rgsml-export-*.tmp")},
+        QDir::Files|QDir::Hidden).isEmpty();
+}
 } // namespace
 
 class M18CandidateDeliveryValidationTest final : public QObject{
@@ -106,6 +177,8 @@ private slots:
     void exactPcm24ReadbackAndCeilingEvidence();
     void float32AndWrongSeedFailClosed();
     void tamperedPayloadAndWrongMasterRejected();
+    void realWindowsM18TransactionalReadback();
+    void realWindowsM18RollbackAndEpochGate();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -203,6 +276,136 @@ tamperedPayloadAndWrongMasterRejected()
     QCOMPARE(rejected.error()->code(),
         core::ErrorCode::MalformedAudioContainer);
 }
+
+void M18CandidateDeliveryValidationTest::
+realWindowsM18TransactionalReadback()
+{
+    using namespace platform::windows;
+    for(const auto encoding:{audio::WavSampleFormat::PCM_S24,
+                             audio::WavSampleFormat::IEEE_F32}){
+        QTemporaryDir dir;QVERIFY(dir.isValid());
+        const auto src=dir.filePath(QStringLiteral("source.bin"));
+        QFile input{src};
+        QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+        QCOMPARE(input.write("owner",5),qint64{5});
+        input.close();
+        const auto dst=dir.filePath(QStringLiteral("master.wav"));
+        const auto pcm=master(audio::ChannelLayout::STEREO_LR,4105);
+        QVERIFY(pcm);
+        auto state=std::make_shared<TestSessionState>();
+        const auto seed=encoding==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(0xFEDCBA9876543210)}
+            :std::nullopt;
+        const auto request=make_real_transaction_request(
+            src,dst,pcm,encoding,seed,-1.0,state);
+        QVERIFY(request);
+        const auto saved=TransactionalAudioExporter::export_new_file(
+            *request.value());
+        QVERIFY(saved);
+        QCOMPARE(saved.value()->sample_format(),encoding);
+        QCOMPARE(saved.value()->frame_count().value(),std::int64_t{4105});
+        QCOMPARE(saved.value()->encoded_file_sha256().size(),std::size_t{64});
+        QCOMPARE(saved.value()->decoded_audio_sha256().size(),std::size_t{64});
+        QCOMPARE(static_cast<std::uint64_t>(QFileInfo{dst}.size()),
+            saved.value()->exact_file_size_bytes());
+        QFile unchanged{src};QVERIFY(unchanged.open(QIODevice::ReadOnly));
+        QCOMPARE(unchanged.readAll(),QByteArray("owner",5));
+        unchanged.close();
+        QCOMPARE(state->acquired,std::size_t{1});
+        QCOMPARE(state->revalidated,std::size_t{1});
+        QCOMPARE(state->retired,std::size_t{1});
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+        const auto rr=WindowsResourceReader::make_read_reference(
+            m18_path(dst),m18_path(QFileInfo{dst}.fileName()));
+        QVERIFY(rr);
+        auto bytes=WindowsResourceReader::open_read_only(*rr.value());
+        QVERIFY(bytes);
+        auto opened=audio::WavReader::open(std::move(*bytes.value()));
+        QVERIFY(opened);
+        QCOMPARE(opened.value()->get()->info().encoded_sample_format(),encoding);
+        QCOMPARE(opened.value()->get()->info().frame_count().value(),
+            std::int64_t{4105});
+        const auto blocked=TransactionalAudioExporter::export_new_file(
+            *request.value());
+        QVERIFY(!blocked);
+        QCOMPARE(blocked.error()->code(),core::ErrorCode::InvalidState);
+        QCOMPARE(state->acquired,std::size_t{1});
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+    }
+}
+
+void M18CandidateDeliveryValidationTest::
+realWindowsM18RollbackAndEpochGate()
+{
+    using namespace platform::windows;
+    using internal::ExportFailurePoint;
+    using internal::set_export_failure_point_for_test;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("source.bin"));
+    QFile input{src};QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(input.write("source",6),qint64{6});
+    input.close();
+    const auto pcm=master(audio::ChannelLayout::MONO_C,4105);
+    QVERIFY(pcm);
+    auto state=std::make_shared<TestSessionState>();
+    const auto rejectedPath=dir.filePath(QStringLiteral("nonconforming.wav"));
+    const auto over=make_real_transaction_request(
+        src,rejectedPath,pcm,audio::WavSampleFormat::PCM_S24,
+        42U,-12.0,state);
+    QVERIFY(over);
+    const auto failed=TransactionalAudioExporter::export_new_file(
+        *over.value());
+    QVERIFY(!failed);
+    QVERIFY(failed.error()->message().find("nonconforming")!=std::string::npos);
+    QVERIFY(!QFileInfo::exists(rejectedPath));
+    QCOMPARE(state->acquired,std::size_t{0});
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+
+    const auto expiredPath=dir.filePath(QStringLiteral("expired.wav"));
+    const auto expired=make_real_transaction_request(
+        src,expiredPath,pcm,audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,state);
+    QVERIFY(expired);
+    state->current=false;
+    const auto denied=TransactionalAudioExporter::export_new_file(
+        *expired.value());
+    QVERIFY(!denied);
+    QVERIFY(!QFileInfo::exists(expiredPath));
+    QCOMPARE(state->acquired,std::size_t{1});
+    QCOMPARE(state->revalidated,std::size_t{1});
+    QCOMPARE(state->retired,std::size_t{1});
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+
+    state->current=true;
+    const auto commitPath=dir.filePath(QStringLiteral("commit-failure.wav"));
+    const auto commit=make_real_transaction_request(
+        src,commitPath,pcm,audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,state);
+    QVERIFY(commit);
+    set_export_failure_point_for_test(ExportFailurePoint::COMMIT);
+    const auto sabotaged=TransactionalAudioExporter::export_new_file(
+        *commit.value());
+    set_export_failure_point_for_test(ExportFailurePoint::NONE);
+    QVERIFY(!sabotaged);
+    QVERIFY(!QFileInfo::exists(commitPath));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+
+    // Neither missing seed nor missing commit lease can create a file.
+    const auto r=WindowsResourceReader::make_read_reference(
+        m18_path(src),m18_path(QFileInfo{src}.fileName()));
+    const auto w=WindowsResourceWriter::make_write_reference(
+        m18_path(commitPath),m18_path(QFileInfo{commitPath}.fileName()));
+    QVERIFY(r &&w);
+    QVERIFY(!M18TransactionalAudioExportRequest::create(
+        *r.value(),pcm,*w.value(),audio::WavSampleFormat::PCM_S24,
+        std::nullopt,-1.0,ExportCollisionPolicy::FAIL_IF_EXISTS,
+        make_test_commit_authority(state)));
+    QVERIFY(!M18TransactionalAudioExportRequest::create(
+        *r.value(),pcm,*w.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,ExportCollisionPolicy::FAIL_IF_EXISTS,{}));
+    QVERIFY(!QFileInfo::exists(commitPath));
+}
+
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::M18CandidateDeliveryValidationTest)
 #include "test_m18_candidate_delivery_validation.moc"
