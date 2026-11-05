@@ -93,3 +93,10 @@ off the PR head until the preceding run is terminal.
 Focused #1024 concludes and this coherent lot receives an exact-SHA PR
 promotion and its own Windows+Linux SUCCESS. The existing PO-approved M17 cold FQ #97 is unchanged; a new FQ is
 needed only for product/build/packaging changes or an explicit PO request.
+
+## Recovery addendum — post-#1024 (2026-11-05)
+
+- Focused #1024 (run 42086108390) passed Windows and Linux at `ca3a2245b59c788415b3924680d565215aba8670`; the official M17 cold FQ #97 is unchanged. Measured #1024 Windows 19m59s and Linux 20m09s vs #1023 Windows 18m38s and Linux 14m24s. Thus there is no demonstrated *net* wall-time saving for the first lot on this one run; cache, build and test variability must be isolated rather than promising an unsupported gain.
+- Initial lot-2 `0531bd577cc3fc5a8b2e634f51711033f8eb8314` was CAS-promoted to Draft PR #83 after #1024 terminal. Its staging push workflows, including #1025–#1028, failed with **zero jobs**, not DSP test failure; no PR-triggered Focused Windows/Linux exists yet for that HEAD. The earlier HEAD is unqualified.
+- On separate NO-CI staging, isolated validity probes reverted the workflow to the known-green form and reintroduced pinned/cache/wheel-only numerical setup; then added `ready_for_review` and each job's Draft guard separately. The first Boolean-negation expression is not retained; the candidate now uses `github.event.pull_request.draft == false` in both job guards. No zero-job push failure appeared for the newly isolated forms. This static/event finding does **not** replace a dual-OS PR Focused CI.
+- Final candidate must receive one CAS fast-forward promotion from this staging branch after updating documentation, then run actual PR Focused Windows/Linux at its own exact SHA. If workflow activation is absent, diagnose trigger delivery before declaring PASS. Continue to keep `main`, M18–M22 Draft branches, original M17 FQ and audio code untouched. No merge without PO GO.
