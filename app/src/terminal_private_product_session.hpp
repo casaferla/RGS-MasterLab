@@ -300,6 +300,16 @@ public:
             || static_cast<bool>(returnRecovery_)
             || (pending_.has_value() && pending_->masterOnly);
     }
+    // Read-only actual M17 applied-gain evidence for the GR HISTORY UI.
+    // This is OFFLINE programme gain, never Windows consumed-output LIVE
+    // certification, and grants no sink, WAV or export authority.
+    struct OfflineGrCapture final {
+        std::shared_ptr<const TerminalCandidateGate::StagedCandidate> verified;
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            nonconforming;
+    };
+    [[nodiscard]] OfflineGrCapture capture_offline_gr_for_display() const;
+
     [[nodiscard]] QString status() const {return status_;}
     [[nodiscard]] QString error() const {return error_;}
     [[nodiscard]] render::TerminalRenderProgress render_progress() const noexcept {
