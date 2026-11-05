@@ -85,6 +85,8 @@ Rectangle {
     // OFFLINE applied gain is immutable MASTER evidence, not a Windows
     // consumed-output LIVE witness. It remains visible during Master Audition.
     property var limiterOfflineGrProvider: null
+    property real m17GrTimelineFraction: -1
+    property string m17GrTimelineScope: ""
     property Item activeChainRow: null
     // Drag is only the user's tear-off INTENT. Parent/Main owns all window
     // creation and module identity; the live editor never clones itself.
@@ -695,6 +697,8 @@ Rectangle {
                 ? root.limiterGrProvider : null
             limiterOfflineGrProvider: root.isLimiterEditor
                 ? root.limiterOfflineGrProvider : null
+            grTimelineFraction: root.m17GrTimelineFraction
+            grTimelineScope: root.m17GrTimelineScope
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive
         }
