@@ -40,6 +40,7 @@ qt_add_executable(rgsml_terminal_product_activation_tests
 target_include_directories(rgsml_terminal_product_activation_tests
     PRIVATE
         "${CMAKE_SOURCE_DIR}/app/src"
+        "${CMAKE_SOURCE_DIR}/audio/src"
         "${CMAKE_SOURCE_DIR}/platform/windows/include"
         "${CMAKE_SOURCE_DIR}/analysis/src")
 target_link_libraries(rgsml_terminal_product_activation_tests
