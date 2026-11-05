@@ -12,6 +12,8 @@ Item {
     property bool showLocalValidation: true
     property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
+    property real grTimelineFraction: -1
+    property string grTimelineScope: ""
     property var limiterViewModel: null
     property var monitorViewModel: null
     property bool monitorLocked: false
@@ -43,6 +45,8 @@ Item {
         limiterBypassed: root.bypassed
         limiterGrProvider: root.limiterGrProvider
         limiterOfflineGrProvider: root.limiterOfflineGrProvider
+        grTimelineFraction: root.grTimelineFraction
+        grTimelineScope: root.grTimelineScope
         limiterViewModel: root.limiterViewModel
         monitorViewModel: root.monitorViewModel
         limiterSonicControlsEnabled: root.sonicControlsEnabled
