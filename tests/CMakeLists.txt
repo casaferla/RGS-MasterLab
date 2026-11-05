@@ -1976,6 +1976,26 @@ set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
     LABELS "audio;m18;preproduction;dither;philox"
 )
 
+# M18 bounded real WAV readback: canonical WavWriter -> WavReader
+# -> exact decoded POST-QUANT comparison; no platform publisher.
+qt_add_executable(rgsml_m18_decoded_wav_candidate_tests
+    unit/audio/test_m18_decoded_wav_candidate.cpp
+)
+target_include_directories(rgsml_m18_decoded_wav_candidate_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_decoded_wav_candidate_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_decoded_wav_candidate_tests)
+add_test(NAME rgsml_m18_decoded_wav_candidate_tests
+    COMMAND rgsml_m18_decoded_wav_candidate_tests
+)
+set_tests_properties(rgsml_m18_decoded_wav_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;real_wav_readback;decoded_delivery;preproduction"
+)
+
 # M18 true delivered-PCM oracle: compare decoded PCM against post-quant
 # deterministic samples, not the former immutable binary64 master.
 qt_add_executable(rgsml_m18_decoded_delivery_verifier_tests
