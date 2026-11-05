@@ -1890,6 +1890,10 @@ Window {
     objectName: "gateMParityFixture"
     property bool bypass: true
     property string validationMessage: ""
+    property real grFraction: -1
+    property string grScope: "SOURCE"
+    property bool badGrSeries: false
+    property bool nonConformingGr: false
     width: 1184
     height: 688
     visible: false
@@ -1909,6 +1913,23 @@ Window {
         property real ceilingDbTp: -1
         property string ceilingDbTpText: "-1.00"
     }
+    // Synthetic sampled MASTER only for UI geometry and cursor behavior.
+    // Its status cannot authenticate Windows output or M16 measurements.
+    QtObject {
+        id: grFixture
+        property bool offlineAvailable: true
+        property string offlineStatus: fixture.nonConformingGr
+            ? "OFFLINE · NON-CONFORMING · SAMPLED"
+            : "OFFLINE · VERIFIED MASTER · SAMPLED"
+        property var offlineSeries: fixture.badGrSeries
+            ? [{ peakReductionDb: 1, frameBegin: 1, frameEndExclusive: 25 }]
+            : [
+                { peakReductionDb: 0, frameBegin: 0, frameEndExclusive: 25 },
+                { peakReductionDb: 2, frameBegin: 25, frameEndExclusive: 50 },
+                { peakReductionDb: 5, frameBegin: 50, frameEndExclusive: 75 },
+                { peakReductionDb: 1, frameBegin: 75, frameEndExclusive: 100 }
+              ]
+    }
     Rectangle {
         id: surface
         objectName: "m17CandidateCaptureSurface"
@@ -1926,6 +1947,9 @@ Window {
             width: parent.width-474; height: parent.height-140
             limiterModule: fixture
             limiterViewModel: vm
+            limiterOfflineGrProvider: grFixture
+            grTimelineFraction: fixture.grFraction
+            grTimelineScope: fixture.grScope
         }
     }
 }
@@ -2028,9 +2052,55 @@ Window {
         QCoreApplication::processEvents();
         QCOMPARE(prepPlot->property("visible").toBool(),preparing);
         QCOMPARE(grPlot->property("visible").toBool(),!preparing);
-        QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
+        QVERIFY(!grPlot->property("backendVerified").isValid());
+        QVERIFY(!grPlot->property("verifiedSeriesAvailable").isValid());
     };
     expectSlot("NEEDS PREPARATION",false);
+    // A single OFFLINE graph: no legacy GR LIVE controls, no toggle.
+    QVERIFY(grPlot->property("offlineSeriesValid").toBool());
+    QVERIFY(!grPlot->property("offlineSeriesAvailable").toBool()); // BYPASS
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("bypass",false));
+    QCoreApplication::processEvents();
+    QVERIFY(grPlot->property("offlineSeriesAvailable").toBool());
+    for(const double fraction:{0.0,0.25,0.5,0.75,1.0}) {
+        QVERIFY(fixture->setProperty("grFraction",fraction));
+        QCoreApplication::processEvents();
+        QVERIFY(grPlot->property("playheadAvailable").toBool());
+        QCOMPARE(grPlot->property("timelineFraction").toDouble(),fraction);
+        QCOMPARE(grPlot->property("timelineScope").toString(),
+            QStringLiteral("SOURCE"));
+    }
+    // Missing position/invalid scope never creates a false clock.
+    QVERIFY(fixture->setProperty("grFraction",-1.0));
+    QCoreApplication::processEvents();
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("grFraction",0.5));
+    QVERIFY(fixture->setProperty("grScope",QStringLiteral("MASTER")));
+    QCoreApplication::processEvents();
+    QVERIFY(grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("grScope",QString{}));
+    QCoreApplication::processEvents();
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("grScope",QStringLiteral("SOURCE")));
+    QVERIFY(fixture->setProperty("badGrSeries",true));
+    QCoreApplication::processEvents();
+    QVERIFY(!grPlot->property("offlineSeriesValid").toBool());
+    QVERIFY(!grPlot->property("offlineSeriesAvailable").toBool());
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("badGrSeries",false));
+    QVERIFY(fixture->setProperty("nonConformingGr",true));
+    QCoreApplication::processEvents();
+    QVERIFY(grPlot->property("offlineSeriesAvailable").toBool());
+    auto* grStatus=find_child_by_name(m17,
+        QStringLiteral("m17GrProvenanceStatus"));
+    QVERIFY(grStatus);
+    QCOMPARE(grStatus->property("text").toString(),
+        QStringLiteral("NON-CONFORMING"));
+    QVERIFY(fixture->setProperty("nonConformingGr",false));
+    QVERIFY(fixture->setProperty("grFraction",-1.0));
+    QVERIFY(fixture->setProperty("bypass",true));
+    QCoreApplication::processEvents();
     expectSlot("Preparing audio",true);
     auto* liveEta=find_child_by_name(
         m17,QStringLiteral("m17PreparationProgressLabel"));
