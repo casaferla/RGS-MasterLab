@@ -1,0 +1,4 @@
+# Pinned independent SRC numerical screening dependencies.
+# Exact versions from M17 qualified #1023; binary wheels only in Focused CI.
+mpmath==1.3.0
+numpy==2.3.5
