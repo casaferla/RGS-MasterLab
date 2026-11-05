@@ -58,3 +58,9 @@
 - New real QtTest rgsml_m18_core_resource_sink_tests checks short writes, no implicit flush/close, zero-progress and I/O error, over-report, thrown exceptions, and a 4-frame PCM24 WAV candidate fully encoded through the canonical core writer port (RIFF header, exact file size and byte count). The in-memory writer is a test only; it never touches the OS filesystem.
 - Existing WavWriter and Windows TransactionalAudioExporter remain unchanged, F64-only and authoritative. They are not yet M18-capable. Actual M18 integration must adapt their F64 restrictions, maintain no-overwrite Windows staging, true file readback + SHA, cancellation, and decoded M16 True Peak. Do not route application export through the separate M18TransactionalFile preproduction prototype.
 - Still NO PR promotion, CI or merger. This is source-level preproduction, no FQ or approved final project seed schema yet.
+
+
+## Follow-up self-audit in NO-CI staging (same writer adapter milestone)
+- Corrected a test-only C++ name collision: MemoryWriter's member reference() would shadow the anonymous-namespace free helper in its constructor. The helper is now uniquely named make_memory_reference(), avoiding an invalid self-read at construction.
+- Extended the same mock-writer QtTest to Float32 WAV at 96 kHz, mono, signed-zero byte representations and no dither seed in delivery identity even if the private input spec holds an arbitrary seed; added a failing header write test to ensure no receipt or false success.
+- This correction was made only in staging; a single later Windows/Linux CI must prove actual compilation. No completed CI result is asserted.

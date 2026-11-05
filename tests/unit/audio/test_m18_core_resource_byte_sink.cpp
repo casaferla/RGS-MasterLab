@@ -14,7 +14,7 @@
 
 namespace rgsml::tests {
 namespace {
-[[nodiscard]] core::ResourceReference reference()
+[[nodiscard]] core::ResourceReference make_memory_reference()
 {
     auto r=core::ResourceReference::create(
         "test.memory","m18-core-writer",false,true,"M18 sink test");
@@ -23,7 +23,7 @@ namespace {
 }
 class MemoryWriter final : public core::IResourceWriter {
 public:
-    MemoryWriter():reference_(reference()){}
+    MemoryWriter():reference_(make_memory_reference()){}
     [[nodiscard]] const core::ResourceReference& reference() const noexcept override
     { return reference_; }
     [[nodiscard]] core::ResourceCapabilities capabilities() const noexcept override
@@ -74,6 +74,7 @@ private slots:
     void acceptShortWritesAndNoHiddenCommit();
     void failClosedOnZeroErrorOverreportAndException();
     void streamingPcm24UsesTheSameCanonicalBytePort();
+    void streamingFloat32KeepsDitherDisabled();
 };
 
 void M18CoreResourceByteSinkTest::acceptShortWritesAndNoHiddenCommit()
@@ -164,6 +165,51 @@ void M18CoreResourceByteSinkTest::streamingPcm24UsesTheSameCanonicalBytePort()
     QCOMPARE(w.flush_calls,std::size_t{0});
     QCOMPARE(w.close_calls,std::size_t{0});
 }
+
+void M18CoreResourceByteSinkTest::streamingFloat32KeepsDitherDisabled()
+{
+    using namespace audio::internal;
+    MemoryWriter w;
+    w.max_transfer=2U;
+    M18CoreResourceByteSink sink(w);
+    // Even an arbitrary seed in private spec MUST be irrelevant to F32.
+    const M18WavSpec spec{
+        M18WavEncoding::IEEE_FLOAT32,96000U,1U,3U,UINT64_MAX};
+    M18StreamingWavWriter wav(sink,spec);
+    QCOMPARE(wav.start(),M18StreamStatus::OK);
+    const std::array<double,3> samples{{0.0,-0.0,0.5}};
+    QCOMPARE(wav.append(samples),M18StreamStatus::OK);
+    const auto result=wav.finish();
+    QCOMPARE(result.status,M18StreamStatus::OK);
+    QVERIFY(result.receipt.has_value());
+    QVERIFY(!result.receipt->identity.dither_seed.has_value());
+    QCOMPARE(w.bytes.size(),
+        static_cast<std::size_t>(result.receipt->plan.file_bytes));
+    const auto payload=static_cast<std::size_t>(
+        result.receipt->plan.header_bytes);
+    QVERIFY(w.bytes.size()>=payload+12U);
+    // IEEE little-endian: +0.0 then signed -0.0 then +0.5f.
+    for(std::size_t i=0;i<4U;++i)
+        QCOMPARE(std::to_integer<std::uint8_t>(w.bytes[payload+i]),
+                 std::uint8_t{0});
+    for(std::size_t i=0;i<3U;++i)
+        QCOMPARE(std::to_integer<std::uint8_t>(w.bytes[payload+4U+i]),
+                 std::uint8_t{0});
+    QCOMPARE(std::to_integer<std::uint8_t>(w.bytes[payload+7U]),
+             std::uint8_t{0x80});
+    QCOMPARE(std::to_integer<std::uint8_t>(w.bytes[payload+11U]),
+             std::uint8_t{0x3f});
+    QCOMPARE(w.close_calls,std::size_t{0});
+    QCOMPARE(w.flush_calls,std::size_t{0});
+    MemoryWriter failed;
+    failed.error_on_call=1U;
+    M18CoreResourceByteSink badSink(failed);
+    M18StreamingWavWriter rejected(badSink,spec);
+    QCOMPARE(rejected.start(),M18StreamStatus::SINK_FAILED);
+    QCOMPARE(badSink.failure(),M18CoreSinkFailure::WRITER_ERROR);
+    QVERIFY(!rejected.finish().receipt.has_value());
+}
+
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::M18CoreResourceByteSinkTest)
 #include "test_m18_core_resource_byte_sink.moc"
