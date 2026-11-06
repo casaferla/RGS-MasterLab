@@ -7,6 +7,8 @@
 #include <QUrl>
 
 #include <optional>
+#include <functional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -29,6 +31,13 @@ public:
     [[nodiscard]] QString metadata() const;
     [[nodiscard]] QString error_message() const;
     [[nodiscard]] const audio::SourceResource* gold_resource() const noexcept;
+    // PREPRODUCTION M18: Product-owned admission before an independently
+    // selected GOLD replacement or clear. Inert unless explicitly installed.
+    // SOURCE-driven GOLD retirement must instead be within its SOURCE/Project
+    // epoch transaction, because the selector may already be invalidated.
+    using M18GoldMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_gold_mutation_admission(M18GoldMutationAdmission gate)
+    {m18GoldMutationAdmission_=std::move(gate);}
     [[nodiscard]] core::Status adopt_probed_gold(audio::SourceResource candidate);
 
     Q_INVOKABLE void selectGold(const QUrl& selectedFile);
@@ -40,7 +49,9 @@ signals:
     void changed();
 
 private:
+    [[nodiscard]] core::Status admit_m18_gold_mutation(const char* operation) const;
     AuditionSourceSelector* selector_;
+    M18GoldMutationAdmission m18GoldMutationAdmission_;
     std::optional<audio::SourceResource> gold_;
     QString displayName_;
     QString metadata_;
