@@ -86,6 +86,18 @@ bool M18PrivateExportProgressViewModel::export_in_progress() const noexcept
         ||snapshot_.phase==Phase::CANCELLING;
 }
 
+bool M18PrivateExportProgressViewModel::can_cancel() const noexcept
+{
+    return snapshot_.phase==Phase::ENCODING_OR_VERIFYING;
+}
+
+bool M18PrivateExportProgressViewModel::can_acknowledge() const noexcept
+{
+    return snapshot_.phase==Phase::VERIFIED_DELIVERED
+        ||snapshot_.phase==Phase::FAILED
+        ||snapshot_.phase==Phase::CANCELLED;
+}
+
 bool M18PrivateExportProgressViewModel::verified_delivered() const noexcept
 {
     return snapshot_.phase==Phase::VERIFIED_DELIVERED;
