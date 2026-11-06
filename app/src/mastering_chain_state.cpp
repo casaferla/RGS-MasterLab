@@ -460,6 +460,25 @@ Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find
     return registry_->find_descriptor(type_id);
 }
 
+void MasteringChainState::set_private_m18_chain_mutation_admission(
+    M18MutationAdmission gate)
+{
+    // Only the Product's original writer may replace or remove an active
+    // gate. Callback reentrancy must not be allowed to uninstall itself.
+    if(m18MutationAdmission_.admitting)return;
+    if(m18MutationAdmission_.callback
+       &&std::this_thread::get_id()!=m18MutationAdmission_.ownerThread)
+        return;
+    if(gate) {
+        m18MutationAdmission_.ownerThread=std::this_thread::get_id();
+        m18MutationAdmission_.callback=
+            std::make_shared<M18MutationAdmission>(std::move(gate));
+    } else {
+        m18MutationAdmission_.callback.reset();
+        m18MutationAdmission_.ownerThread={};
+    }
+}
+
 void MasteringChainState::adopt_chain_after_authorized_project_open(
     MasteringChainState replacement)
 {
@@ -477,6 +496,19 @@ Status MasteringChainState::admit_m18_chain_mutation(
     if(!m18MutationAdmission_.callback
        ||!(*m18MutationAdmission_.callback))
         return Status::success();
+    if(std::this_thread::get_id()!=m18MutationAdmission_.ownerThread)
+        return Status::failure(Error{
+            ErrorCode::InvalidState,
+            "M18_CHAIN_MUTATION_WRONG_OWNER_THREAD"});
+    if(m18MutationAdmission_.admitting)
+        return Status::failure(Error{
+            ErrorCode::InvalidState,
+            "M18_CHAIN_MUTATION_REENTRANT_ADMISSION"});
+    m18MutationAdmission_.admitting=true;
+    struct Reset final {
+        bool* flag;
+        ~Reset(){*flag=false;}
+    } reset{&m18MutationAdmission_.admitting};
     try {return (*m18MutationAdmission_.callback)(operation);}
     catch(...) {
         return Status::failure(Error{
