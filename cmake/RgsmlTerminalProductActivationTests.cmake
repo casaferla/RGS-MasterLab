@@ -24,6 +24,10 @@ set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
     # a separate app translation unit. Exercise the REAL owner/consent
     # bridge in this existing Windows M17 activation test closure.
     "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_authority.cpp"
+    # M18 preproduction GUI status is a real Q_OBJECT, not registered
+    # in the app. Test closure must compile the same Qt signals/slots.
+    "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_progress_view_model.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_progress_view_model.hpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.hpp"
     # Real MasteringPreviewController signal/worker regression uses the
