@@ -484,3 +484,60 @@ is pending, no Full Qualification or main merge. Before production
 activation, all authoritative Source/Project/MASTER/M17 candidate
 mutators must share one Product epoch and the worker must receive the
 typed verified stage, immutable SOURCE, and fresh explicit consent.
+
+### #71 after Focused #1061 GREEN — Product session to worker seam macrolot
+Product Owner reported #1061 Windows+Linux GREEN; the Draft PR #84
+advanced by a single exact-SHA fast-forward from 9b0bc8c9 to
+`af0528b4e73430f0d90d8b415c8b9f0bf3bc0bf5` and triggered
+[Focused #1062](https://github.com/casaferla/RGS-MasterLab/actions/runs/42265949888).
+The PO alone checks the #1062 outcomes. No CI polling or extra PR
+promotion while #1062 is pending.
+
+Next staged-only coherent macrolot brings the **real private Product
+session** one step closer to the existing Qt-free Windows worker:
+- `TerminalPrivateProductSession::capture_m18_verified_stage_for_worker`
+  returns the EXACT retained M16-checked M17 `StagedCandidate` only on
+  its Qt thread, only for the selected final MASTER rate, and only
+  while it is the same Product candidate-gate stage. It does not
+  issue any export approval, modify playback, or copy PCM.
+- `make_m18_checked_stage_worker_request_from_live_product` takes
+  the actual `TerminalPrivateProductSession`,
+  `SourceSelectionViewModel`, `MasterOutputRateState`,
+  `TerminalCandidateGate`, the explicit immutable Product ticket,
+  source/destination resource references, encoding, and dither seed.
+  Every QObject must have the SAME current owning Qt thread. It
+  derives the stage and current SOURCE/rate on that thread, then
+  delegates to the existing checked zero-copy exporter request factory.
+  Worker invocation is forbidden.
+- The Product ticket now carries a separate optional
+  `master_rate_revision` scalar. The LIVE Product builder *requires*
+  nonzero exact equality to `MasterOutputRateState::rate_revision()`,
+  which increments on every accepted SOURCE commit EVEN if sample rate
+  and locator appear unchanged, and on selected MASTER rate edits.
+  Standalone synthetic ticket tests can still omit this optional
+  field, but such tickets cannot be accepted by the real Product
+  worker builder. A stale pre-SOURCE-selection ticket thus cannot
+  borrow a subsequently selected stage just because its Fs matches.
+- Existing Windows native M17 Product activation test closure now
+  links the actual SourceSelectionViewModel. A genuine local IEEE-F64
+  WAV generated from the real verified M17 master is loaded through
+  that component in a QTemporaryDir, the actual Project MASTER rate
+  is adopted, and a new revision-bound Product ticket is minted
+  solely for the test. Assert exact zero-copy M17->M18 PCM pointer,
+  no second render, and correct PCM24 and Float32/no-dither requests.
+  Deny stale requested SOURCE, missing SOURCE, wrong/absent Project
+  MASTER rate, unbound identity revision, same-rate SOURCE reselection,
+  illegal PCM24 missing seed, illegal Float32 seeded request, and
+  invocation from a foreign worker thread. Existing M17 Product
+  cancellation, audition, M16 and FIR tests remain in the same native
+  executable.
+
+**Important unresolved integration boundary:** This full Product
+builder is private and UNUSED by `app/src/main.cpp`. No user-facing
+Export is enabled, no async job is launched, no new saved Project
+schema is approved. Numeric Product source/project/master generations
+still require one authoritative coordinator that gates ALL mutations,
+including legacy void candidate invalidations and Qt reentrancy, plus
+FQ cold Windows and Product Owner physical acceptance before any
+shipping export. These new tests/source are not compiled or qualified
+in #1062. Do not merge PR #84 yet.
