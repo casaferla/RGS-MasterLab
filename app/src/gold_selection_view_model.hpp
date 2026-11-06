@@ -52,6 +52,10 @@ private:
     [[nodiscard]] core::Status admit_m18_gold_mutation(const char* operation) const;
     AuditionSourceSelector* selector_;
     M18GoldMutationAdmission m18GoldMutationAdmission_;
+    // Owner-thread only: a callback must not install a nested M18 epoch,
+    // and a Qt changed() listener must not reenter GOLD publication.
+    mutable bool m18GoldAdmitting_{false};
+    bool m18GoldPublicationActive_{false};
     std::optional<audio::SourceResource> gold_;
     QString displayName_;
     QString metadata_;
