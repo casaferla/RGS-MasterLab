@@ -188,6 +188,7 @@ private slots:
     void m18SelectorThrowingAdmissionPreservesAuditionAndCanRecover();
     void m18GoldClearQtChangedCannotReinstallGoldDuringPublication();
     void m18GoldViewModelAndSelectorUseOneProductAdmission();
+    void m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -619,6 +620,46 @@ m18GoldViewModelAndSelectorUseOneProductAdmission()
     QCOMPARE(modelCalls,std::size_t{2});
     QVERIFY(!model.has_gold());
     model.set_private_m18_gold_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto path=write_valid_wav(
+        dir,QStringLiteral("m18-gold-qt-reentry.wav"),14);
+    QVERIFY(!path.isEmpty());
+    auto fake=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionSourceSelector selector{&transport};
+    app::GoldSelectionViewModel gold{&selector};
+    std::size_t admissions=0,observerCalls=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::success();
+        });
+    QObject::connect(&gold,&app::GoldSelectionViewModel::changed,
+        &gold,[&] {
+            ++observerCalls;
+            // The selector has finished its own nested set_gold(), but
+            // this Gold VM still owns the outer publication epoch.
+            // A synchronous listener must not clear or reload GOLD.
+            gold.clearGold();
+        });
+    gold.selectGold(QUrl::fromLocalFile(path));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(observerCalls,std::size_t{1});
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),
+             QStringLiteral("m18-gold-qt-reentry.wav"));
+    // After RAII publication unwind, an independent clear is permitted.
+    gold.clearGold();
+    QCOMPARE(admissions,std::size_t{2});
+    QCOMPARE(observerCalls,std::size_t{2});
+    QVERIFY(!gold.has_gold());
+    selector.set_private_m18_mutation_admission({});
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
