@@ -195,6 +195,7 @@ private slots:
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
     void exclusiveProductProjectMutationBlocksWorkerCommitUntilComplete();
     void productMutationBatchPinsIdentityAndForbidsPartialCapture();
+    void productDestroyedDuringProjectMutationCannotReviveWorkerExport();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
@@ -743,6 +744,38 @@ productMutationBatchPinsIdentityAndForbidsPartialCapture()
     newLease.value()->reset();
     QVERIFY(owner.try_transition(80U,81U,changed,false));
     QVERIFY(!now.value()->commit_lease_factory()());
+}
+
+void M18CandidateDeliveryValidationTest::
+productDestroyedDuringProjectMutationCannotReviveWorkerExport()
+{
+    // The Qt Product owner may be destroyed while a Project-open batch
+    // token still lives in an early-return cleanup path. A retained worker
+    // factory must fail both before and after that token is released.
+    using platform::windows::internal::M18EpochCommitBarrier;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    const M18ProductExportIdentity initial{31U,32U,33U,0U,44100U};
+    auto owner=std::make_unique<M18ProductEpochTicketAuthority>(
+        201U,initial);
+    QVERIFY(owner->try_transition(201U,202U,initial,true));
+    auto prior=owner->capture(initial);
+    QVERIFY(prior);
+    const auto factory=prior.value()->commit_lease_factory();
+    QVERIFY(factory()); // prove Product consent was actually live
+    auto replacement=initial;
+    replacement.project_generation=92U;
+    // Recheck that the transient lease from above was released before
+    // the new exclusive Project mutation begins.
+    auto batch=owner->try_begin_product_mutation(
+        202U,203U,replacement,false);
+    QVERIFY(batch);
+    QVERIFY(!factory());
+    auto held=std::move(*batch.value());
+    owner.reset(); // Product retirement is nonblocking and fail-closed.
+    QVERIFY(!factory());
+    held.reset(); // Still never grants old Product/epoch credentials.
+    QVERIFY(!factory());
 }
 
 void M18CandidateDeliveryValidationTest::
