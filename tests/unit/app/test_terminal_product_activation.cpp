@@ -138,6 +138,7 @@ private slots:
     void unchangedCeilingLeavesRevisionAndConsentUntouched();
     void m18DirectTerminalStateMutationRequiresProductEpoch();
     void m18TerminalDirectMutationUsesRealCommitLease();
+    void m18DirectTerminalMutationRejectsReentrantEpochCallback();
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
     void firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory();
 };
@@ -516,6 +517,49 @@ m18TerminalDirectMutationUsesRealCommitLease()
     QVERIFY(!state.value()->set_user_bypass(false));
     QVERIFY(state.value()->bypassed());
     QCOMPARE(attempted,std::size_t{4});
+    state.value()->set_private_m18_mutation_admission({});
+}
+
+void TerminalActivationIntegrationTest::
+m18DirectTerminalMutationRejectsReentrantEpochCallback()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a3").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    std::size_t calls=0;
+    bool nestedDenied=false;
+    const auto initialCeilingRevision=state.value()->parameter_revision();
+    const auto initialChainRevision=state.value()->chain().revision();
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++calls;
+            if(calls==1) {
+                // A malicious/synchronous Product callback must not
+                // change Ceiling underneath the outer BYPASS admission.
+                auto nested=state.value()->set_ceiling_db_tp(-6.0);
+                nestedDenied=!nested &&nested.error()->code()
+                    ==core::ErrorCode::InvalidState;
+            }
+            return core::Status::success();
+        });
+    QVERIFY(state.value()->set_user_bypass(false));
+    QVERIFY(nestedDenied);
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(!state.value()->bypassed());
+    QCOMPARE(state.value()->parameter_revision(),initialCeilingRevision);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY(state.value()->chain().revision()>initialChainRevision);
+    // The guard has been released: a second genuine, non-reentrant
+    // edit may be admitted normally instead of staying permanently busy.
+    QVERIFY(state.value()->set_ceiling_db_tp(-4.0));
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(state.value()->parameter_revision(),initialCeilingRevision+1);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-4.0);
     state.value()->set_private_m18_mutation_admission({});
 }
 
