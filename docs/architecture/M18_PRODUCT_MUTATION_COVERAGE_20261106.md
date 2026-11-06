@@ -781,3 +781,42 @@ This fixes one specific bypass but does NOT by itself close a Product-wide
 single-writer epoch: physical SOURCE changes, DSP, terminal limiter,
 candidate-gate legacy invalidations, nested project-error callbacks, and
 fresh verified M17 consent must all participate before GUI export activation.
+
+### Chat #72 — consolidation into 15–25 commit macrolots: SaveAs owner lease + reentrancy
+PO requested bigger coherent CI batches, rather than dispatching one Focused
+run after only 8–10 commits. This staging continues after immutable PR #84
+`9cc9e471` / Focused #1066, without touching the pinned candidate while
+the PO checks Windows/Linux. No CI or FQ dispatched for these changes.
+
+The Project Open-batch vs SaveAs boundary now has an explicit optional
+`M18ProjectSaveBatchBegin` returning a Product-held opaque RAII lease.
+When the Project has an Open-batch policy, a one-shot SaveAs status grant
+is insufficient and must fail closed; a real SaveAs batch must own the epoch
+from BEFORE snapshot capture until AFTER canonical .rgsml create-new,
+readback/verification, and final Project metadata/Qt signal publication.
+Missing, null, throwing or competing grants are rejected without file
+creation. An unchanged legacy M17 session installs no M18 guard; previous
+behavior stays unchanged. A separate Save-only gate cannot authorize
+unguarded Open Project.
+
+A shared owner-thread `M18ScopedProjectOperation` sentinel now prevents
+nested/reentrant Project Open/Save calls, including synchronous Qt signals,
+while a Product-gated operation is executing. Its RAII lifetime covers all
+returns, including errors and exceptions handled by admission. It does not
+block the Qt event loop. Without M18 policy, legacy M17 behavior is intact.
+The owner-only guard remains dormant in the application.
+
+Windows-native Project QtTests added: null/throwing/ambiguous SaveAs leases,
+collision rollback with original bytes preserved, actual status-signal
+publication while the lease is still held, refusal of Save-only Open,
+nested Save during Save, nested Open during Save, and nested Save/Open during
+Open; independent second commands after scope exit must succeed normally.
+The real M18 Product epoch coordinator, renderer legacy invalidation,
+SOURCE/Gold/project mutations and explicit export consent are still **NOT**
+fully installed: therefore NO M18 GUI export, Product Merge, FQ or release.
+All new sublots are **uncompiled** until a later Windows/Linux CI gate.
+
+The Focused workflow staging also adds the existing SOURCE-selection native
+test target to BOTH build/test matrices, avoiding blind spots in the earlier
+reduced Focused CTest allowlist. No M16 B2i frozen source, M17 DSP, FIR assets,
+audio codecs or already-green candidate paths were edited in this batch.
