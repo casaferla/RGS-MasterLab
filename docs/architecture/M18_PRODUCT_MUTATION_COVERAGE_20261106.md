@@ -366,3 +366,40 @@ Previously the typed M17→M18 bridge could accept any retained `StagedCandidate
 The signature now also requires `const TerminalCandidateGate& currentProductGate` and rejects unless `currentProductGate.staged() == stage` on the one Product owner thread. This check precedes zero-copy alias construction or worker lease factory publication. The native M17 Product test passes its real current candidate gate for all valid, wrong-Fs and wrong-chain cases and adds a regression with a distinct empty gate + the exact same valid ticket and old stage: the request MUST fail `InvalidState`.
 Together with the monotonic epoch and Product mutation contract, a new request must originate from the actual current M17 candidate; a retained old buffer cannot be reused after candidate-gate replacement. This does NOT yet prove the physical file Source identity; authoritative SourceSelectionViewModel reference, Project generation and fully-wired mutations remain mandatory at real GUI activation.
 These test and bridge changes are STAGING ONLY, not part of Focused #1060 and not yet compiled on Windows or Linux. Do not promote while #1060 is awaiting Product Owner verdict.
+
+### Chat #71 subsequent staging macrolot — SOURCE provider/locator + destination contract
+After the last #1060 PR candidate (SHA `446ae57a`), the Qt-free
+`make_m18_checked_stage_worker_request` preproduction bridge now receives
+the *authoritative current SOURCE reference* from the Product owner
+alongside the requested export SOURCE reference and destination. Before
+creating ANY worker request or aliasing the retained M17 PCM it rejects:
+- unreadable authoritative current SOURCE or unreadable requested SOURCE;
+- provider ID or opaque locator mismatch, including a same-locator but
+  different-provider source;
+- destination without write permission or with exactly the same
+  provider/locator identity as SOURCE;
+- the preexisting stale/detached M17 candidate gate, wrong Master Fs,
+  chain revision mismatch, or invalid M17 terminal verification.
+
+The native M17 Product integration test is updated at all four bridge
+call sites and adds negative tests for wrong locator, wrong provider,
+unreadable current source, unreadable requested source, same-resource
+write destination, and non-writable destination. It retains the
+zero-copy PCM pointer-equality assertion and previous stale-gate,
+rate and chain checks. All new ResourceReference fixtures have at least
+one valid permission, as required by `ResourceReference::create`.
+
+**Security scope:** Provider+locator equality is a strict logical
+identity check, not proof of the same physical file under Windows
+symlink/hardlink/rename semantics. The Windows transactional exporter
+remains responsible for physical alias handling and final source/dest
+readback. At any production UI integration, the Product owner must
+read the *actual* SourceSelectionViewModel current reference without
+reentrant event-loop dispatch, bind generations to the exact verified
+M17 stage, and enforce one Product-wide mutation epoch until commit.
+These functions remain uncalled by the GUI; no Project schema keys or
+DSP algorithms change.
+
+**Qualification:** Entire sublot is staging-only, not in Focused #1060,
+and has no new CI yet. Next PR promotion requires the Product Owner's
+#1060 verdict plus an exact-SHA ancestry/diff check. No merge/FQ.
