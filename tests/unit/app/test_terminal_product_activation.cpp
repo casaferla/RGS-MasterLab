@@ -415,6 +415,29 @@ m18DirectTerminalStateMutationRequiresProductEpoch()
         });
     QVERIFY(!state.value()->set_ceiling_db_tp(-5.0));
     QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy published{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
+    // Direct state guard sees the same denied operation when the VM
+    // callback is not installed; no accepted render signal is emitted.
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(published.count(),0);
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    std::size_t ambiguousVmCalls=0;
+    vm.set_private_m18_processing_mutation_admission([&] {
+        ++ambiguousVmCalls;
+        return true;
+    });
+    // Concurrently installed status callbacks are not "two approvals":
+    // their product epochs might differ. Fail closed before calling either.
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(ambiguousVmCalls,std::size_t{0});
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    vm.setBypass(false);
+    QVERIFY(state.value()->bypassed());
+    QCOMPARE(ambiguousVmCalls,std::size_t{0});
+    QCOMPARE(published.count(),0);
+    vm.set_private_m18_processing_mutation_admission({});
     // Legacy unguarded M17 functionality remains intact when the
     // preproduction gate is not installed.
     state.value()->set_private_m18_mutation_admission({});
