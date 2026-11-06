@@ -740,3 +740,15 @@ admission/negative-test sublot:
 Project-open can partially adopt SOURCE before a rejected nested MASTER
 restore, even though export consent must remain revoked. No GUI Export,
 Product schema/seed approval, physical test, FQ or main merge is authorized.
+
+### Chat #72 follow-up — Focused CI coverage correction (staging only)
+Review of the existing `.github/workflows/pr-focused.yml` found that
+`rgsml_source_selection_tests` was a genuine CMake QtTest target but was
+not compiled or run in the reduced Focused CI build list on either OS.
+The new opt-in SOURCE thread/BUSY regression would therefore have been
+invisible to Focused. The workflow now adds this one existing target
+to the explicit Linux and Windows build lists AND both CTest filters.
+No broad log/download, new workflow, DSP/FIR changes, or FQ dispatch.
+The workflow change will accompany the next complete staging macro-lot
+AFTER the PO reports #1066's terminal result; it is not in the pinned
+PR #84 candidate under review. Linux/Windows remain platform-parallel.
