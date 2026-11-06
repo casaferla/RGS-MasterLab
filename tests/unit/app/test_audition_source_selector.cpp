@@ -189,6 +189,7 @@ private slots:
     void m18GoldClearQtChangedCannotReinstallGoldDuringPublication();
     void m18GoldViewModelAndSelectorUseOneProductAdmission();
     void m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection();
+    void m18GoldOwnGateRejectsReentrantCallbackAndCanRecover();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -660,6 +661,54 @@ m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection()
     QCOMPARE(observerCalls,std::size_t{2});
     QVERIFY(!gold.has_gold());
     selector.set_private_m18_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldOwnGateRejectsReentrantCallbackAndCanRecover()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto path=write_valid_wav(
+        dir,QStringLiteral("m18-gold-reentrant-callback.wav"),21);
+    QVERIFY(!path.isEmpty());
+    auto fake=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionSourceSelector selector{&transport};
+    app::GoldSelectionViewModel gold{&selector};
+    std::size_t authorized=0;
+    gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++authorized;
+            // A Product callback cannot nest a second GOLD mutation
+            // before authorizing the first one.
+            gold.clearGold();
+            return core::Status::success();
+        });
+    gold.selectGold(QUrl::fromLocalFile(path));
+    QCOMPARE(authorized,std::size_t{1});
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),
+             QStringLiteral("m18-gold-reentrant-callback.wav"));
+    gold.set_private_m18_gold_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_GOLD_ADMISSION_FAULT");
+        });
+    const auto priorName=gold.display_name();
+    gold.clearGold();
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),priorName);
+    QVERIFY(!gold.error_message().isEmpty());
+    // A thrown gate cannot leave the original Product forever BUSY.
+    gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++authorized;
+            return core::Status::success();
+        });
+    gold.clearGold();
+    QCOMPARE(authorized,std::size_t{2});
+    QVERIFY(!gold.has_gold());
+    QVERIFY(gold.error_message().isEmpty());
+    gold.set_private_m18_gold_mutation_admission({});
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
