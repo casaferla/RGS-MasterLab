@@ -5,6 +5,7 @@
 #include "m18_streaming_wav.hpp"
 #include "internal/transactional_audio_exporter_test_seam.hpp"
 #include "internal/m18_epoch_commit_barrier.hpp"
+#include "internal/m18_product_epoch_ticket.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -187,6 +188,7 @@ private slots:
     void realWindowsSixRatesBothLayoutsBothEncodingsOddEven();
     void realWindowsFailureInjectionCleansUpBothFormats();
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
+    void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -625,6 +627,79 @@ crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking()
     QVERIFY(barrier->try_retire(78U));
     QVERIFY(!barrier->try_acquire(78U));
     QVERIFY(!barrier->try_advance_epoch(78U,79U));
+}
+
+
+void M18CandidateDeliveryValidationTest::
+productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
+{
+    // PREPRODUCTION admission contract: no QObjects, no Product hook, no
+    // filesystem publication. Simulate Product-owner consent and mutations.
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    const M18ProductExportIdentity id{11U,12U,13U,14U,48000U};
+    M18ProductEpochTicketAuthority authority{200U,id};
+    QVERIFY(!authority.capture(id)); // No implicit user consent.
+    QVERIFY(!authority.try_transition(200U,200U,id,true));
+    QVERIFY(authority.try_transition(200U,201U,id,true));
+    auto captured=authority.capture(id);
+    QVERIFY(captured);
+    const auto factory=captured.value()->commit_lease_factory();
+
+    std::promise<bool> admission;
+    auto ready=admission.get_future();
+    std::promise<void> release;
+    auto go=release.get_future();
+    bool leaseRemainsCurrent=false;
+    std::thread worker([factory,&admission,&leaseRemainsCurrent,
+                        done=std::move(go)]() mutable {
+        auto held=factory();
+        admission.set_value(static_cast<bool>(held));
+        if(!held)return;
+        done.wait();
+        leaseRemainsCurrent=static_cast<bool>(
+            (*held.value())->revalidate_current());
+        held.value()->reset();
+    });
+    const bool admitted=ready.get();
+    auto switched=id;
+    switched.source_generation=33U;
+    // Real Product MUST refuse/defer any such mutation while held.
+    const auto blockedSource=authority.try_transition(
+        201U,202U,switched,false);
+    const auto blockedConsent=authority.try_transition(
+        201U,202U,id,false);
+    const auto blockedSecond=factory();
+    release.set_value();
+    worker.join(); // Always join BEFORE assertions can return early.
+    QVERIFY(admitted);
+    QVERIFY(leaseRemainsCurrent);
+    QVERIFY(!blockedSource);
+    QVERIFY(!blockedConsent);
+    QVERIFY(!blockedSecond);
+    QCOMPARE(blockedSource.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(blockedConsent.error()->code(),core::ErrorCode::InvalidState);
+
+    // After the commit is fully released, a Source revision revokes the
+    // old ticket, even if the old Master buffer was retained elsewhere.
+    QVERIFY(authority.try_transition(201U,202U,switched,false));
+    QVERIFY(!factory());
+    QVERIFY(!authority.capture(switched));
+    QVERIFY(!authority.capture(id));
+    auto wrongRate=switched;
+    wrongRate.master_rate_hz=44100U;
+    QVERIFY(!authority.capture(wrongRate));
+    // A fresh, explicit consent and Product identity may mint a new ticket.
+    QVERIFY(authority.try_transition(202U,203U,wrongRate,true));
+    auto newest=authority.capture(wrongRate);
+    QVERIFY(newest);
+    QVERIFY(!authority.capture(switched));
+    auto newLease=newest.value()->commit_lease_factory()();
+    QVERIFY(newLease);
+    QVERIFY((*newLease.value())->revalidate_current());
+    newLease.value()->reset();
+    QVERIFY(authority.try_transition(203U,204U,wrongRate,false));
+    QVERIFY(!newest.value()->commit_lease_factory()());
 }
 
 } // namespace rgsml::tests
