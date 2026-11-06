@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <thread>
 
 namespace rgsml::tests {
 namespace {
@@ -130,6 +131,50 @@ void SourceSelectionTest::initialSuccessCancelFailureRetry()
     QCOMPARE(model.display_name(), QStringLiteral("Retry RF64.wav"));
     QCOMPARE(model.container_label(), QStringLiteral("RF64/WAVE"));
     QCOMPARE(model.sample_format_label(), QStringLiteral("IEEE float 64-bit"));
+    QVERIFY(model.error_message().isEmpty());
+}
+
+void SourceSelectionTest::m18SourceMutationDeniedBeforeSelectionAndAcrossThreads()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto firstPath=write_file(directory,
+        QStringLiteral("m18-current.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto secondPath=write_file(directory,
+        QStringLiteral("m18-replacement.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!firstPath.isEmpty()&&!secondPath.isEmpty());
+    app::SourceSelectionViewModel model;
+    model.selectSource(QUrl::fromLocalFile(firstPath));
+    QVERIFY(model.has_source());
+    QCOMPARE(model.display_name(),QStringLiteral("m18-current.wav"));
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    std::size_t rejected=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char* op)->core::Status {
+            if(op!=nullptr)++rejected;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SOURCE_WORKER_COMMIT_BUSY"});
+        });
+    model.selectSource(QUrl::fromLocalFile(secondPath));
+    QCOMPARE(rejected,std::size_t{1});
+    QCOMPARE(model.display_name(),QStringLiteral("m18-current.wav"));
+    QVERIFY(!model.error_message().isEmpty());
+    QCOMPARE(changed.count(),0);
+    const auto priorError=model.error_message();
+    std::thread foreign([&] {
+        model.selectSource(QUrl::fromLocalFile(secondPath));
+    });
+    foreign.join();
+    QCOMPARE(rejected,std::size_t{1});
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(model.error_message(),priorError);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-current.wav"));
+    model.set_private_m18_source_mutation_admission({});
+    model.selectSource(QUrl::fromLocalFile(secondPath));
+    QCOMPARE(model.display_name(),QStringLiteral("m18-replacement.wav"));
+    QCOMPARE(changed.count(),1);
     QVERIFY(model.error_message().isEmpty());
 }
 
