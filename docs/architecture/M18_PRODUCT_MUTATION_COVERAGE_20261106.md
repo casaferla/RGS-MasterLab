@@ -1123,3 +1123,62 @@ CRITICAL REMAINING PRODUCT P0:
 NO main merge, NO M18 GUI Export activation, NO FQ and no second
 Focused CI on this staging. Its code/tests are not yet compiled on
 Windows/Linux; await the PO's #1071 terminal result before promotion.
+
+### Chat #72 — #1071 green; #1072 candidate; P0 legacy mutation bypass closures
+PO reported [#1071](https://github.com/casaferla/RGS-MasterLab/actions/runs/42301660916)
+green; GitHub verified BOTH Windows and Linux SUCCESS on exact SHA
+`4751b9d1420c9ed2a4b9e00346d4dd6b8247d01c`.
+Fifteen staging commits fast-forwarded Draft PR #84 to
+`83e096101086593708dc44b01434b502a1ed8778`, and one new
+Focused [#1072](https://github.com/casaferla/RGS-MasterLab/actions/runs/42306402500)
+started on that exact SHA. No main merge, no Full Qualification.
+
+The subsequent NO-CI staging repairs two genuine remaining Product
+mutation bypasses. Both are opt-in so M17 remains unchanged until a
+shared M18 epoch is installed:
+
+1. `MasterOutputRateState::source_committed` and
+   `source_cleared` are historical void API mutations. Previously,
+   installing the M18 rate callback would NOT affect these paths:
+   a SOURCE replacement could silently increment `rateRevision_`
+   and alter the selected MASTER rate even while a worker held a
+   commit lease. With a gate installed, BOTH historical void paths
+   now fail closed without Qt signals/revision changes. The bool
+   `try_source_committed_for_m18` and
+   `try_source_cleared_for_m18` explicitly request one Product
+   admission and then invoke private `*_unchecked` implementations.
+   QtTest covers denied/throwing gates, same-rate SOURCE identity,
+   old void bypass denial, true authorized SOURCE reset, QML NOTIFY
+   counts, legacy behavior and source clear no-op.
+   **Mandatory follow-up before activation:** migrate main/Project
+   SOURCE dispatcher to the status API, so M17's old void caller
+   never silently loses real SOURCE change notifications.
+
+2. `TerminalCandidateGate::invalidate()` is also a legacy void
+   mutator. It previously bypassed `try_invalidate_for_m18()`
+   and discarded checked M17 PCM during a worker commit. When its
+   M18 gate is installed, the void entry now fails closed, and the
+   status path exclusively invokes the private `invalidate_unchecked`
+   AFTER successful Product admission. Other stage mutations
+   (`capture`, `accept`, `accept_measured`) now request the
+   Product epoch BEFORE replacing an M17 candidate. Invalid or
+   exhausted capture must authorize candidate retirement, or
+   preserve a worker-owned checked stage; an already-admitted
+   stale/nonconforming candidate is cleared exactly once without
+   reentering another epoch. An existing true M17
+   terminal-admission test now proves legacy invalidate, valid
+   replacement and malformed replacement cannot remove the
+   immutable checked stage while the worker holds the lease; an
+   independently authorized retirement succeeds afterward.
+
+   **Mandatory follow-up before activation:** M17 Product controller
+   still calls `invalidate()` from legacy void cancellation and
+   return/error paths. Every such call must be migrated to the
+   status API and respect BUSY/defer, including the M17
+   renderer's rejected completion and cancellation. Until then
+   the default Product M18 export remains disabled.
+
+None of these isolated changes has been compiled or CI qualified.
+Do not promote before the PO's #1072 result; do not merge to main.
+As repeatedly directed by PO, **one combined Full Qualification
+AFTER integrated M18–M22**, not an M18-only FQ.
