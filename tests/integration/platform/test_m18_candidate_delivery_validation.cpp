@@ -195,6 +195,7 @@ private slots:
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
+    void realWorkerRevokedBeforeCommitAdmissionCleansCandidate();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -849,6 +850,72 @@ realWindowsFinalAuthorityRevocationRollsBackBothFormats()
         QFile check{src};QVERIFY(check.open(QIODevice::ReadOnly));
         QCOMPARE(check.readAll(),QByteArray("unchanged",9));
     }
+}
+
+
+void M18CandidateDeliveryValidationTest::
+realWorkerRevokedBeforeCommitAdmissionCleansCandidate()
+{
+    // Deterministic interleaving: the real Windows exporter has prepared
+    // an actual WAV and reaches the Product lease factory; revoke on the
+    // owner thread BEFORE allowing the worker to acquire that lease.
+    using namespace platform::windows;
+    using internal::M18ProductEpochTicketAuthority;
+    using internal::M18ProductExportIdentity;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("source.bin"));
+    QFile input{src};
+    QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(input.write("original",8),qint64{8});
+    input.close();
+    const auto destination=dir.filePath(QStringLiteral("must-not-commit.wav"));
+    const auto srcRef=WindowsResourceReader::make_read_reference(
+        m18_path(src),m18_path(QFileInfo{src}.fileName()));
+    const auto dstRef=WindowsResourceWriter::make_write_reference(
+        m18_path(destination),m18_path(QFileInfo{destination}.fileName()));
+    QVERIFY(srcRef &&dstRef);
+    const M18ProductExportIdentity id{10U,11U,12U,13U,48000U};
+    M18ProductEpochTicketAuthority owner{66U,id};
+    QVERIFY(owner.try_transition(66U,67U,id,true));
+    auto ticket=owner.capture(id);QVERIFY(ticket);
+    const auto realFactory=ticket.value()->commit_lease_factory();
+    std::promise<void> reachedAdmission;
+    auto entered=reachedAdmission.get_future();
+    std::promise<void> mayProceed;
+    auto released=mayProceed.get_future().share();
+    M18AcquireCommitLease pauseBeforeCommit=
+        [realFactory,released,&reachedAdmission]()
+          ->core::Result<std::unique_ptr<M18ExportCommitLease>> {
+            reachedAdmission.set_value();
+            released.wait();
+            return realFactory();
+        };
+    const auto pcm=master(audio::ChannelLayout::MONO_C,4105);
+    QVERIFY(pcm);
+    auto request=M18TransactionalAudioExportRequest::create(
+        *srcRef.value(),pcm,*dstRef.value(),
+        audio::WavSampleFormat::PCM_S24,UINT64_C(0xC0FFEE0102030405),
+        0.0,ExportCollisionPolicy::FAIL_IF_EXISTS,
+        std::move(pauseBeforeCommit));
+    QVERIFY(request);
+    bool correctlyDenied=false;
+    std::thread worker([&] {
+        const auto exported=TransactionalAudioExporter::export_new_file(
+            *request.value());
+        correctlyDenied=!exported &&exported.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    // Wait until candidate processing has actually reached its commit
+    // boundary: no timing assumptions or sleeps.
+    entered.get();
+    QVERIFY(owner.try_transition(67U,68U,id,false));
+    mayProceed.set_value();
+    worker.join(); // Join before assertions so no leaked running worker.
+    QVERIFY(correctlyDenied);
+    QVERIFY(!QFileInfo::exists(destination));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+    QFile source{src};QVERIFY(source.open(QIODevice::ReadOnly));
+    QCOMPARE(source.readAll(),QByteArray("original",8));
 }
 
 } // namespace rgsml::tests
