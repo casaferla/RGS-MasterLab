@@ -3154,6 +3154,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             1101U,1102U,1103U,
             original->rendered.manual_chain_revision,
             static_cast<std::uint32_t>(masterRate.value()->value())};
+        // M17 initial MANUAL revision can legitimately be zero; it
+        // remains a concrete identity, not an unset generation marker.
+        QCOMPARE(verifiedId.chain_revision,
+                 original->rendered.manual_chain_revision);
+        QVERIFY(verifiedId.valid());
         M18ProductEpochTicketAuthority sharedEpoch{777U,verifiedId};
         QVERIFY(sharedEpoch.try_transition(777U,778U,verifiedId,true));
         auto masterTicket=sharedEpoch.capture(verifiedId);
@@ -3194,6 +3199,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongRate);
         QCOMPARE(deniedWrongRate.error()->code(),
+                 core::ErrorCode::InvalidState);
+        // Same output Fs, different chain revision: never alias PCM.
+        auto wrongChainIdentity=verifiedId;
+        ++wrongChainIdentity.chain_revision;
+        M18ProductEpochTicketAuthority wrongChainOwner{
+            890U,wrongChainIdentity};
+        QVERIFY(wrongChainOwner.try_transition(
+            890U,891U,wrongChainIdentity,true));
+        auto wrongChainTicket=wrongChainOwner.capture(wrongChainIdentity);
+        QVERIFY(wrongChainTicket);
+        const auto deniedWrongChain=
+            app::internal::make_m18_checked_stage_worker_request(
+                original,*wrongChainTicket.value(),
+                *src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongChain);
+        QCOMPARE(deniedWrongChain.error()->code(),
                  core::ErrorCode::InvalidState);
         const auto workerFactory=masterTicket.value()->commit_lease_factory();
         auto heldCommit=workerFactory();
