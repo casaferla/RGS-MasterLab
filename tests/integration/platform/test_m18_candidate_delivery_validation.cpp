@@ -118,6 +118,7 @@ struct TestSessionState final {
     std::size_t acquired{0};
     std::size_t revalidated{0};
     std::size_t retired{0};
+    std::size_t rejectOnRevalidationCall{0};
 };
 class TestM18Lease final:public platform::windows::M18ExportCommitLease {
 public:
@@ -126,7 +127,10 @@ public:
     ~TestM18Lease() override{++owner_->retired;}
     [[nodiscard]] core::Status revalidate_current() const override {
         ++owner_->revalidated;
-        return owner_->current?core::Status::success()
+        return (owner_->current
+                &&(owner_->rejectOnRevalidationCall==0
+                   ||owner_->revalidated!=owner_->rejectOnRevalidationCall))
+            ?core::Status::success()
             :core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,"M18_TEST_EPOCH_REJECTED"});
     }
@@ -190,6 +194,7 @@ private slots:
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
+    void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -323,7 +328,7 @@ realWindowsM18TransactionalReadback()
         QCOMPARE(unchanged.readAll(),QByteArray("owner",5));
         unchanged.close();
         QCOMPARE(state->acquired,std::size_t{1});
-        QCOMPARE(state->revalidated,std::size_t{1});
+        QCOMPARE(state->revalidated,std::size_t{2});
         QCOMPARE(state->retired,std::size_t{1});
         QVERIFY(m18_no_temporary_candidates(dir.path()));
         const auto rr=WindowsResourceReader::make_read_reference(
@@ -496,7 +501,7 @@ realWindowsSixRatesBothLayoutsBothEncodingsOddEven()
                         *sampleBytes;
                     QCOMPARE(info.data_size_bytes(),logicalBytes);
                     QCOMPARE(permission->acquired,std::size_t{1});
-                    QCOMPARE(permission->revalidated,std::size_t{1});
+                    QCOMPARE(permission->revalidated,std::size_t{2});
                     QCOMPARE(permission->retired,std::size_t{1});
                     QVERIFY(m18_no_temporary_candidates(dir.path()));
                     ++exercised;
@@ -802,6 +807,48 @@ realWorkerTicketExportsOnlyWithCurrentConsentAndSource()
     // Physical delivery was already complete; revocation does not
     // retroactively remove the user's previously verified WAV file.
     QVERIFY(QFileInfo::exists(validPath));
+}
+
+
+void M18CandidateDeliveryValidationTest::
+realWindowsFinalAuthorityRevocationRollsBackBothFormats()
+{
+    // The authority may be retired after the first pre-rename check but
+    // during final readback. M18 MUST delete the freshly committed file
+    // instead of returning VERIFIED on a revoked session.
+    using namespace platform::windows;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("source.bin"));
+    QFile original{src};
+    QVERIFY(original.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(original.write("unchanged",9),qint64{9});
+    original.close();
+    for(const auto format:{audio::WavSampleFormat::PCM_S24,
+                           audio::WavSampleFormat::IEEE_F32}) {
+        const auto pcm=master(audio::ChannelLayout::MONO_C,4105);
+        QVERIFY(pcm);
+        auto state=std::make_shared<TestSessionState>();
+        state->rejectOnRevalidationCall=2;
+        const auto dest=dir.filePath(QStringLiteral("late-revoked-%1.wav")
+            .arg(static_cast<int>(format)));
+        const auto seed=format==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(0xFFFFFFFF00000001)}
+            :std::nullopt;
+        const auto request=make_real_transaction_request(
+            src,dest,pcm,format,seed,0.0,state);
+        QVERIFY(request);
+        const auto rejected=TransactionalAudioExporter::export_new_file(
+            *request.value());
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error()->code(),core::ErrorCode::InvalidState);
+        QCOMPARE(state->acquired,std::size_t{1});
+        QCOMPARE(state->revalidated,std::size_t{2});
+        QCOMPARE(state->retired,std::size_t{1});
+        QVERIFY(!QFileInfo::exists(dest));
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+        QFile check{src};QVERIFY(check.open(QIODevice::ReadOnly));
+        QCOMPARE(check.readAll(),QByteArray("unchanged",9));
+    }
 }
 
 } // namespace rgsml::tests
