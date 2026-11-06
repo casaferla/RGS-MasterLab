@@ -306,3 +306,26 @@ Owner alone will report its results. PR Draft, no merge/FQ/GUI export.
   transaction. Further error-path rollback and full authoritative Product
   wiring are mandatory BEFORE any M18 background export activation.
   No main merge, no FQ, and these tests have not yet run in Focused #1058.
+
+## Chat #71 — corrected single-writer provenance and guarded second M17 Prepare
+The Product Owner clarified that the apparent adjacent staging commits
+were authored by THIS SAME operational chat before interrupted responses.
+They are NOT evidence of a separate concurrent writer. Resume the
+existing single staging writer, sequential CAS file updates and serial
+Focused CI promotions. Do not stop work or claim an external conflict.
+CI results are checked and reported only by the Product Owner.
+
+Following isolated preproduction sublot, NOT included in PR #84 / Focused
+#1059: `TerminalCandidateGate::m18_mutation_admission_installed()` is a
+read-only indicator of the optional Product epoch gate. In
+`TerminalPrivateRenderController::request_private`, when that gate is
+installed, first call the existing status-returning
+`try_invalidate_for_m18()` before serial/progress/job/M17 candidate
+withdrawal. A worker-held M18 commit will immediately fail BUSY; a
+second M17 Prepare must not silently cancel the already verified MASTER.
+When no gate is installed, the exact legacy `invalidate()` path remains
+unchanged. The existing Product integration test adds denied-second-
+Prepare, verifies the error and stable renderer state plus retained stage,
+and updates the five/six-path denial counter to seven.
+This is not yet compiled or independently qualified; still no
+production GUI/worker export nor `main` merge.
