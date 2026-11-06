@@ -3124,6 +3124,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(candidates.staged()==original);
         QCOMPARE(deniedUpstreamMutations,std::size_t{1});
         selector.set_private_m18_mutation_admission({});
+        // Rate edits use a separate mutation-only Product admission, not
+        // a side-effecting query from the QML canEditTarget property.
+        app::MasterOutputRateState guardedRate;
+        guardedRate.source_committed(48000);
+        const auto oldRevision=guardedRate.rate_revision();
+        std::size_t deniedRateChanges=0;
+        guardedRate.set_private_m18_rate_mutation_admission([&] {
+            ++deniedRateChanges;
+            return false;
+        });
+        QVERIFY(!guardedRate.choose_master_rate(44100));
+        QCOMPARE(guardedRate.master_rate_hz(),qint64{48000});
+        QCOMPARE(guardedRate.rate_revision(),oldRevision);
+        QCOMPARE(deniedRateChanges,std::size_t{1});
+        guardedRate.set_private_m18_rate_mutation_admission({});
+        QVERIFY(guardedRate.choose_master_rate(44100));
+        QCOMPARE(guardedRate.rate_revision(),oldRevision+1);
+
 
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
