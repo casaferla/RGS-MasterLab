@@ -183,6 +183,7 @@ private slots:
     void availabilityCuesSwitchingAndFallbackAreTruthful();
     void m18GoldClearFallbackRequiresSingleMutationAdmission();
     void m18GoldClearFallbackToProcessedUsesOneAdmission();
+    void m18SelectorAdmissionAndPublicationAreNonReentrant();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -403,6 +404,64 @@ m18GoldClearFallbackToProcessedUsesOneAdmission()
     QVERIFY(selector.processed_available());
 }
 
+void AuditionSourceSelectorTest::
+m18SelectorAdmissionAndPublicationAreNonReentrant()
+{
+    auto fake=std::make_unique<FakePlaybackService>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,180)));
+    QVERIFY(selector.set_processed_realization(realization(0,180)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    std::size_t admissionCount=0;
+    bool reentrantAdmissionDenied=false;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCount;
+            if(admissionCount==1) {
+                // The callback itself cannot recursively approve another
+                // Product epoch while the outer one is still pending.
+                const auto nested=selector.switch_to(app::AuditionTarget::PROCESSED);
+                reentrantAdmissionDenied=!nested
+                    &&nested.error()->code()==core::ErrorCode::InvalidState;
+            }
+            return core::Status::success();
+        });
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(reentrantAdmissionDenied);
+    QCOMPARE(admissionCount,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+
+    std::size_t publicationAttempts=0,publicationDenied=0;
+    QObject::connect(&selector,&app::AuditionSourceSelector::changed,
+        &selector,[&] {
+            ++publicationAttempts;
+            const auto nested=selector.switch_to(app::AuditionTarget::PREPARED);
+            if(!nested &&nested.error()->code()
+               ==core::ErrorCode::InvalidState)++publicationDenied;
+        });
+    // An accepted visible switch emits changed() before the outer
+    // publication has left its Single-Writer scope. Its listeners
+    // cannot switch again (and cannot start a second worker epoch).
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD)==false);
+    QCOMPARE(admissionCount,std::size_t{1}); // unavailable is epoch-neutral
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(admissionCount,std::size_t{2});
+    QCOMPARE(publicationAttempts,std::size_t{1});
+    QCOMPARE(publicationDenied,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    // An independent edit after the scope is released is permitted.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(admissionCount,std::size_t{3});
+    QCOMPARE(publicationAttempts,std::size_t{2});
+    QCOMPARE(publicationDenied,std::size_t{2});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+}
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
 {
     auto service = std::make_unique<FakePlaybackService>();
