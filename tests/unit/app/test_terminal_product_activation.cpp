@@ -3357,6 +3357,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             &exportView,&app::M18PrivateExportProgressViewModel::changed};
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
         QVERIFY(!exportView.export_in_progress());
+        QVERIFY(!exportView.can_cancel());
+        QVERIFY(!exportView.can_acknowledge());
         QVERIFY(!exportView.verified_delivered());
         const auto viewOutputPath=m18ProductSourceDir.filePath(
             QStringLiteral("viewmodel-m18-verified.wav"));
@@ -3380,11 +3382,15 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                  QStringLiteral("VERIFIED_DELIVERED"));
         QCOMPARE(exportView.encoded_progress(),1.0);
         QVERIFY(!exportView.export_in_progress());
+        QVERIFY(!exportView.can_cancel());
+        QVERIFY(exportView.can_acknowledge());
         QVERIFY(exportView.error_text().isEmpty());
         QVERIFY(exportChanges.count()>=2);
         QVERIFY(QFileInfo::exists(viewOutputPath));
         QVERIFY(exportView.acknowledgeExport());
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(!exportView.can_acknowledge());
+        QVERIFY(!exportView.can_cancel());
         QVERIFY(!exportView.acknowledgeExport());
 
         // A second attempt to use the same published filename must
@@ -3399,6 +3405,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QTRY_VERIFY_WITH_TIMEOUT(
             exportView.status_text()==QStringLiteral("FAILED"),30000);
         QVERIFY(!exportView.error_text().isEmpty());
+        QVERIFY(exportView.can_acknowledge());
+        QVERIFY(!exportView.can_cancel());
         exportView.cancelExport();
         QCOMPARE(exportView.status_text(),QStringLiteral("FAILED"));
         QVERIFY(exportView.acknowledgeExport());
