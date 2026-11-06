@@ -17,6 +17,8 @@ class M18PrivateExportProgressViewModel final : public QObject {
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(double encodedProgress READ encoded_progress NOTIFY changed)
     Q_PROPERTY(bool exportInProgress READ export_in_progress NOTIFY changed)
+    Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
+    Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
     Q_PROPERTY(bool verifiedDelivered READ verified_delivered NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
 public:
@@ -41,6 +43,8 @@ public:
     [[nodiscard]] QString status_text() const;
     [[nodiscard]] double encoded_progress() const noexcept;
     [[nodiscard]] bool export_in_progress() const noexcept;
+    [[nodiscard]] bool can_cancel() const noexcept;
+    [[nodiscard]] bool can_acknowledge() const noexcept;
     [[nodiscard]] bool verified_delivered() const noexcept;
     [[nodiscard]] QString error_text() const;
 
