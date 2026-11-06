@@ -193,12 +193,23 @@ const audio::SourceResource* SourceSelectionViewModel::source_resource() const n
 void SourceSelectionViewModel::set_playback_transport(
     PlaybackTransportViewModel* playback) noexcept
 {
+    // The callback publisher must not retarget its transport while
+    // the preceding SOURCE's entire M18 epoch remains in publication.
+    if(m18SourceMutationAdmission_
+       &&(m18SourcePublishing_||m18SourceAdmitting_
+          ||QThread::currentThread()!=thread()))return;
     playbackTransport_ = playback;
 }
 
 void SourceSelectionViewModel::set_source_committed_handler(
     SourceCommittedHandler handler)
 {
+    // Mutating a std::function while it is being invoked would also
+    // destroy the active callback closure. Keep the Product handler
+    // constant from admission through all synchronous Qt observers.
+    if(m18SourceMutationAdmission_
+       &&(m18SourcePublishing_||m18SourceAdmitting_
+          ||QThread::currentThread()!=thread()))return;
     sourceCommittedHandler_ = std::move(handler);
 }
 
