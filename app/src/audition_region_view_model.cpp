@@ -410,6 +410,11 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
 
 core::Status AuditionRegionViewModel::seek(core::FrameIndex position)
 {
+    // SEEK changes only transport navigation, never M18 export identity.
+    // It remains available to the Qt owner during encoding and commit.
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_SEEK_REQUIRES_QT_OWNER_THREAD"});
     if (!playback_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
@@ -429,6 +434,9 @@ void AuditionRegionViewModel::source_committed(
     core::FrameCount frameCount,
     core::SampleRate sampleRate)
 {
+    // Derived from the already authorized SOURCE/Project transaction.
+    // It may not advance its own nested Product epoch.
+    if(m18_foreign_owner_thread())return;
     sourceFrames_ = frameCount.value();
     sampleRate_ = sampleRate.value();
     waveformReady_ = false;
@@ -441,6 +449,7 @@ void AuditionRegionViewModel::source_committed(
 
 void AuditionRegionViewModel::set_waveform_ready(bool ready)
 {
+    if(m18_foreign_owner_thread())return;
     if (waveformReady_ == ready) {
         return;
     }
@@ -451,6 +460,7 @@ void AuditionRegionViewModel::set_waveform_ready(bool ready)
 
 void AuditionRegionViewModel::synchronize_playback()
 {
+    if(m18_foreign_owner_thread())return;
     if (!playback_) {
         return;
     }
