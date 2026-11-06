@@ -6,6 +6,7 @@
 #include "internal/transactional_audio_exporter_test_seam.hpp"
 #include "internal/m18_epoch_commit_barrier.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
+#include "internal/m18_owner_mutation_fanout.hpp"
 #include "internal/m18_async_export_worker.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
@@ -202,11 +203,62 @@ private slots:
     void productMutationBatchPinsIdentityAndForbidsPartialCapture();
     void productDestroyedDuringProjectMutationCannotReviveWorkerExport();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
+    void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
     void realWorkerRevokedBeforeCommitAdmissionCleansCandidate();
 };
+
+void M18CandidateDeliveryValidationTest::
+sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks()
+{
+    using internal::M18ProductEpochTicketAuthority;
+    using internal::M18ProductExportIdentity;
+    using internal::M18OwnerMutationFanout;
+    // No application/QML activation: this is the exact same future
+    // Product-mutation callback shared by multiple controller domains.
+    const M18ProductExportIdentity initial{
+        71U,72U,73U,0U,48000U,11U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        900U,initial);
+    QVERIFY(owner->try_transition(900U,901U,initial,true));
+    auto ticket=owner->capture(initial);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,901U,initial};
+    auto sourceGate=fanout.status_admission();
+    auto chainGate=fanout.status_admission();
+    auto rateGate=fanout.rate_admission();
+
+    // A genuinely held worker lease excludes all owner mutations.
+    auto commit=ticket.value()->commit_lease_factory()();
+    QVERIFY(commit);
+    QVERIFY(!sourceGate("source_selection"));
+    QVERIFY(!chainGate("compressor_parameters"));
+    QVERIFY(!rateGate());
+    QVERIFY((*commit.value())->revalidate_current());
+    commit.value()->reset();
+
+    // An admitted SOURCE edit retires the old verified Master ticket.
+    QVERIFY(sourceGate("source_selection"));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    // Chain and rate edits share the SAME epoch sequence, not their own
+    // per-widget status callbacks or independently grantable tickets.
+    QVERIFY(chainGate("compressor_parameters"));
+    QVERIFY(rateGate());
+    QVERIFY(!owner->capture(initial)); // explicit consent was revoked
+
+    bool foreignDenied=false;
+    std::thread thread([&]{
+        const auto status=chainGate("off_thread_chain");
+        foreignDenied=!status &&status.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    thread.join();
+    QVERIFY(foreignDenied);
+    QVERIFY(!sourceGate(nullptr));
+    QVERIFY(!sourceGate(""));
+}
 
 void M18CandidateDeliveryValidationTest::
 realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit()
