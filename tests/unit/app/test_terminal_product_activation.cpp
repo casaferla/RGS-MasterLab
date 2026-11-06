@@ -18,6 +18,7 @@
 #include "internal/m18_checked_stage_worker_bridge.hpp"
 #include "internal/m18_private_async_export_handoff.hpp"
 #include "internal/m18_private_async_export_session.hpp"
+#include "m18_private_export_progress_view_model.hpp"
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
@@ -3347,6 +3348,45 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QCOMPARE(exportSession.snapshot().phase,
                  app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
         QVERIFY(!exportSession.acknowledge_finished());
+
+        // A dormant but genuine Qt ViewModel observes ONLY atomic worker
+        // progress and a post-readback verified result. No Product/GUI
+        // registration, and no worker callback may enter the QML thread.
+        app::M18PrivateExportProgressViewModel exportView;
+        QSignalSpy exportChanges{
+            &exportView,&app::M18PrivateExportProgressViewModel::changed};
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(!exportView.export_in_progress());
+        QVERIFY(!exportView.verified_delivered());
+        const auto viewOutputPath=m18ProductSourceDir.filePath(
+            QStringLiteral("viewmodel-m18-verified.wav"));
+        auto viewOutputRef=platform::windows::WindowsResourceWriter::
+            make_write_reference(
+                viewOutputPath.toUtf8().toStdString(),
+                "viewmodel-m18-verified.wav");
+        QVERIFY(viewOutputRef);
+        QVERIFY(exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QVERIFY(!exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QTRY_VERIFY_WITH_TIMEOUT(exportView.verified_delivered(),30000);
+        QCOMPARE(exportView.status_text(),
+                 QStringLiteral("VERIFIED_DELIVERED"));
+        QCOMPARE(exportView.encoded_progress(),1.0);
+        QVERIFY(!exportView.export_in_progress());
+        QVERIFY(exportView.error_text().isEmpty());
+        QVERIFY(exportChanges.count()>=2);
+        QVERIFY(QFileInfo::exists(viewOutputPath));
+        QVERIFY(exportView.acknowledgeExport());
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(!exportView.acknowledgeExport());
+
         // A ticket and verified M17 MASTER do not authorize export while
         // the Product has NO real current SOURCE selected in its QObject.
         app::SourceSelectionViewModel noCurrentProductSource;
