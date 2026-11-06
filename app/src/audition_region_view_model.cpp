@@ -401,10 +401,16 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
     if(m18_foreign_owner_thread())return core::Status::failure(
         core::Error{core::ErrorCode::InvalidState,
                     "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&m18RegionOperationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_NESTED_PUBLICATION_DENIED"});
+    M18RegionPublicationScope scope{
+        m18RegionMutationAdmission_?&m18RegionOperationActive_:nullptr};
+    (void)scope;
     if(m18RegionMutationAdmission_ &&loopEnabled_==enabled)
         return core::Status::success();
-    if(const auto admission=admit_m18_region_mutation("loop_toggle");
-       !admission)return admission;
+    // An invalid request cannot revoke an already verified M18 Master.
     if (enabled && (!region_ || !playback_ || !playback_->playback_available())) {
         const auto failure = core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
@@ -419,6 +425,8 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
         publish_error(*failure.error());
         return failure;
     }
+    if(const auto admission=admit_m18_region_mutation("loop_toggle");
+       !admission)return admission;
     std::optional<core::FrameIndex> positionBeforeLoopUpdate;
     if (enabled) {
         const auto snapshot = playback_->source_display_snapshot();
