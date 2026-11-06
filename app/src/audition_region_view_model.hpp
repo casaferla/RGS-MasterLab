@@ -125,6 +125,10 @@ private:
     PlaybackTransportViewModel* playback_{nullptr};
     M18RegionMutationAdmission m18RegionMutationAdmission_;
     mutable bool m18RegionAdmitting_{false};
+    // Scoped across playback I/O and synchronous changed() notifications.
+    // A callback may not recursively commit a second Region/Loop edit
+    // while the first Product-authorized edit is still publishing.
+    bool m18RegionOperationActive_{false};
     std::optional<core::FrameRange> region_;
     std::int64_t sourceFrames_{0};
     std::int64_t sampleRate_{0};
