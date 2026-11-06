@@ -3415,6 +3415,27 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!deniedWithoutSource);
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
 
+        // Worker threads may only see the immutable M18 request and
+        // atomic progress, never ask the live Qt ViewModel to mint a
+        // new Product export or acknowledge a prior terminal outcome.
+        const auto ownerSourceRef=liveSource->reference();
+        const auto ownerDestinationRef=*viewOutputRef.value();
+        bool refusedCrossThreadStart=false;
+        bool refusedCrossThreadAck=false;
+        std::thread rogueExportCaller([&] {
+            const auto denied=exportView.begin_private_export(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),ownerSourceRef,ownerDestinationRef,
+                audio::WavSampleFormat::IEEE_F32,std::nullopt,0.0);
+            refusedCrossThreadStart=!denied
+                &&denied.error()->code()==core::ErrorCode::InvalidState;
+            refusedCrossThreadAck=!exportView.acknowledgeExport();
+        });
+        rogueExportCaller.join();
+        QVERIFY(refusedCrossThreadStart);
+        QVERIFY(refusedCrossThreadAck);
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+
         // A ticket and verified M17 MASTER do not authorize export while
         // the Product has NO real current SOURCE selected in its QObject.
         app::SourceSelectionViewModel noCurrentProductSource;
