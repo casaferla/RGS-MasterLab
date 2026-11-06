@@ -579,6 +579,29 @@ m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly()
     QVERIFY(stillCurrent);
     QVERIFY(stillCurrent.value()->same_resource_identity(
         current->reference()));
+
+    // Two real filesystem SOURCE selections with the exact same WAV
+    // format, frame count and samples are still different Product inputs.
+    // A bridge may never reuse a previous SOURCE snapshot by Fs alone.
+    QTemporaryDir directory;QVERIFY(directory.isValid());
+    const auto firstPath=write_file(
+        directory,QStringLiteral("m18-source-A.wav"),valid_wav());
+    const auto secondPath=write_file(
+        directory,QStringLiteral("m18-source-B.wav"),valid_wav());
+    QVERIFY(!firstPath.isEmpty()&&!secondPath.isEmpty());
+    source.selectSource(QUrl::fromLocalFile(firstPath));
+    QVERIFY(source.has_source());
+    const auto first=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(first);
+    source.selectSource(QUrl::fromLocalFile(secondPath));
+    QVERIFY(source.has_source());
+    const auto second=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(second);
+    QVERIFY(!first.value()->same_resource_identity(*second.value()));
+    QVERIFY(second.value()->same_resource_identity(
+        source.source_resource()->reference()));
 }
 
 void SourceMetadataPanelSmokeTest::
