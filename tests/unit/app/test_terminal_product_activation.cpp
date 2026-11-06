@@ -3248,6 +3248,20 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(correctProductWorkerRequest.value()->payload()
                 .channel(0U).value()->data()
             ==m17View.channel(0U).value()->data());
+        // Float32 is a second valid delivery encoding from the SAME
+        // immutable final M17 MASTER: never dither Float32 or re-render.
+        const auto float32ProductWorkerRequest=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::IEEE_F32,std::nullopt,-1.0);
+        QVERIFY(float32ProductWorkerRequest);
+        QCOMPARE(float32ProductWorkerRequest.value()->sample_format(),
+                 audio::WavSampleFormat::IEEE_F32);
+        QVERIFY(!float32ProductWorkerRequest.value()->dither_seed());
+        QVERIFY(float32ProductWorkerRequest.value()->payload()
+                .channel(0U).value()->data()
+            ==m17View.channel(0U).value()->data());
         const auto falseProductSource=core::ResourceReference::create(
             liveSource->reference().provider_id(),
             liveSource->reference().locator()+".stale",
