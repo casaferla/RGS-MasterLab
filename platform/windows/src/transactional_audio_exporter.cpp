@@ -534,12 +534,13 @@ TransactionalAudioExporter::export_new_file(
     return export_impl(
         request.source(),request.payload(),request.destination(),
         request.sample_format(),request.collision_policy(),
-        std::nullopt,std::nullopt,nullptr);
+        std::nullopt,std::nullopt,nullptr,nullptr);
 }
 
 core::Result<TransactionalAudioExportResult>
 TransactionalAudioExporter::export_new_file(
-    const M18TransactionalAudioExportRequest& request)
+    const M18TransactionalAudioExportRequest& request,
+    const std::function<bool()>& cancellationRequested)
 {
     // Request retains the exact immutable M17 AudioBuffer throughout
     // all candidate processing and final commit authorization.
@@ -547,7 +548,7 @@ TransactionalAudioExporter::export_new_file(
         request.source(),request.payload(),request.destination(),
         request.sample_format(),request.collision_policy(),
         request.dither_seed(),request.ceiling_db_tp(),
-        &request.commit_lease_factory());
+        &request.commit_lease_factory(),&cancellationRequested);
 }
 
 core::Result<TransactionalAudioExportResult>
@@ -559,9 +560,21 @@ TransactionalAudioExporter::export_impl(
     ExportCollisionPolicy policy,
     std::optional<std::uint64_t> seed,
     std::optional<double> ceilingDbTp,
-    const M18AcquireCommitLease* commitLeaseFactory)
+    const M18AcquireCommitLease* commitLeaseFactory,
+    const std::function<bool()>* cancellationRequested)
 {
     const bool m18=ceilingDbTp.has_value();
+    // Cancellation is strictly an M18 worker-level advisory: a failed
+    // callback also denies publication. Legacy F64 has no such callback.
+    const auto cancelled=[&]() noexcept {
+        if(!m18 ||!cancellationRequested ||!(*cancellationRequested))
+            return false;
+        try{return (*cancellationRequested)();}
+        catch(...){return true;}
+    };
+    if(cancelled())return failure<TransactionalAudioExportResult>(
+        core::ErrorCode::InvalidState,
+        "m18_export_cancelled_before_candidate_creation");
     if(m18!=static_cast<bool>(commitLeaseFactory)
         ||(m18 &&((format!=audio::WavSampleFormat::PCM_S24
                  &&format!=audio::WavSampleFormat::IEEE_F32)
@@ -657,6 +670,13 @@ TransactionalAudioExporter::export_impl(
     constexpr std::int64_t kWriteFrames = 4096;
     std::int64_t offset = 0;
     while (offset < payload.frame_count().value()) {
+        if(cancelled()) {
+            static_cast<void>(writer.value()->get()->close());
+            return cleanup_failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "m18_export_cancelled_while_streaming"},
+                *candidatePath.value(),false);
+        }
         const auto countValue = std::min(
             kWriteFrames, payload.frame_count().value() - offset);
         auto count = core::FrameCount::create(countValue);
@@ -692,6 +712,10 @@ TransactionalAudioExporter::export_impl(
             *candidatePath.value(), false);
     }
 
+    if(cancelled())return cleanup_failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "m18_export_cancelled_before_validation"},
+        *candidatePath.value(),false);
     auto evidence = validate_candidate(
         *candidatePath.value(), payload, expectedSize,
         m18?std::optional<audio::WavSampleFormat>{format}:std::nullopt,
@@ -711,6 +735,12 @@ TransactionalAudioExporter::export_impl(
                 "decoded_checksum_mismatch: injected decoded hash mismatch."},
             *candidatePath.value(), false);
     }
+    // A user cancellation during a long decoded SHA/M16 validation
+    // must revoke the candidate BEFORE lease acquisition or rename.
+    if(cancelled())return cleanup_failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "m18_export_cancelled_before_commit"},
+        *candidatePath.value(),false);
     // M18 candidate bytes have passed decoded postquant SHA and M16 TP.
     // Acquire the Product's *own* epoch/consent/owner lifetime lock now.
     // The lease MUST hold the same identity stable through rename+readback.
@@ -742,6 +772,10 @@ TransactionalAudioExporter::export_impl(
                 *candidatePath.value(),false);
         }
     }
+    if(cancelled())return cleanup_failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "m18_export_cancelled_under_commit_lease"},
+        *candidatePath.value(),false);
     if (QFileInfo::exists(destinationPath)) {
         return cleanup_failure(
             core::Error{core::ErrorCode::InvalidState,
@@ -779,6 +813,10 @@ TransactionalAudioExporter::export_impl(
             return cleanup_failure(
                 *finalAuthority.error(),destinationPath,false);
     }
+    if(cancelled())return cleanup_failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "m18_export_cancelled_after_publish_readback"},
+        destinationPath,false);
     return core::Result<TransactionalAudioExportResult>::success(
         TransactionalAudioExportResult{
             destinationReference,
