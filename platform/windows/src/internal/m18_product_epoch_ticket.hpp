@@ -157,8 +157,13 @@ public:
     // other multi-controller mutation. Advances identity/epoch and revokes
     // consent atomically with the exclusive mutation lease. Any worker
     // ticket, even for the NEW epoch, is denied until caller releases it.
+    // IMPORTANT: batch completion is NOT proof of a newly verified M17
+    // Master. An aborted/partial Project open must NEVER silently reinstate
+    // a valid export ticket. Accordingly consent=true is forbidden here;
+    // a separately VERIFIED accepted M17 stage and explicit fresh user
+    // consent must be established by a later try_transition call.
     // This is not installed by the app; Project must first prove that all
-    // of its downstream controllers share this SAME epoch and batch.
+    // downstream controllers share this SAME epoch and batch.
     [[nodiscard]] core::Result<
         std::unique_ptr<M18EpochCommitBarrier::MutationLease>>
     try_begin_product_mutation(
@@ -167,7 +172,7 @@ public:
         using R=core::Result<
             std::unique_ptr<M18EpochCommitBarrier::MutationLease>>;
         std::lock_guard guard{state_->mutex};
-        if(!state_->owner_alive ||!nextIdentity.valid()
+        if(!state_->owner_alive ||!nextIdentity.valid() ||consent
            ||expectedEpoch==0 ||state_->epoch!=expectedEpoch
            ||nextEpoch<=expectedEpoch)
             return R::failure(core::Error{
@@ -178,7 +183,7 @@ public:
         if(!held)return held;
         // No allocations or throwing Qt callbacks inside this boundary.
         state_->identity=nextIdentity;
-        state_->explicit_consent=consent;
+        state_->explicit_consent=false; // The batch can abort or fail.
         state_->epoch=nextEpoch;
         return held;
     }
