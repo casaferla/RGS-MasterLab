@@ -151,8 +151,7 @@ Following **staging only**, one cohesive additional mutation-coverage lot:
    rate, M17 limiter BYPASS, and the new candidate invalidation).
    This does NOT mean the Product uses the guarded candidate path yet.
 
-**HARD BLOCKER, NOT PRODUCTION READY:** Project chain replacement via
-`*masteringChainState_ = ...`, legacy `TerminalCandidateGate::invalidate`,
+**HARD BLOCKER, NOT PRODUCTION READY:** legacy `TerminalCandidateGate::invalidate`,
 several VIEWMODEL draft/undo mutations, and cross-controller Source/Project
 rebinding STILL bypass the new runtime epoch. The actual Product has not
 installed the gate, no M18 worker GUI/export job is activated, no storage
@@ -160,3 +159,18 @@ schema is approved and no FQ/merge is authorized. Do not claim protection
 until every mutator is migrated and a cold Windows FQ plus PO physical
 acceptance are completed. These next-lot changes have NOT been compiled
 or run in #1057 and require their own later exact-SHA Focused CI.
+
+### Subsequent staging sublot — preserve Product gate on Project restore
+The original Project-open DSP replacement assigned a freshly deserialized
+`MasteringChainState` with the default NULL runtime gate, thereby *silently
+erasing* any opt-in Product M18 gate installed on the previous state. The
+`ProjectSessionViewModel` now calls
+`MasteringChainState::adopt_chain_after_authorized_project_open`,
+which preserves the pre-existing Product runtime guard when replacing the
+chain AFTER the previously required Project-open preflight admission.
+The native mastering-chain test verifies the gate still denies a subsequent
+Gain edit after a successful whole-chain replacement. This only fixes
+lifetime/policy retention; it does **not** automatically protect a direct
+MasteringChainState assignment by unrelated callers, nor the nested
+Source/Gold/MASTER mutators during Project-open. No GUI activation and
+no new CI for this individual staging sublot.
