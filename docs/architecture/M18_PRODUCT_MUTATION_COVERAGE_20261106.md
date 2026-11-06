@@ -1182,3 +1182,46 @@ None of these isolated changes has been compiled or CI qualified.
 Do not promote before the PO's #1072 result; do not merge to main.
 As repeatedly directed by PO, **one combined Full Qualification
 AFTER integrated M18–M22**, not an M18-only FQ.
+
+### Chat #72 — Focused #1072 double red, same missing Project include; portable binding correction
+PO reported #1072 WINDOWS+LINUX FAILED. GitHub run
+https://github.com/casaferla/RGS-MasterLab/actions/runs/42306402500
+completed failure on exact PR SHA `83e096101086593708dc44b01434b502a1ed8778`.
+Only bounded artifacts were inspected (Windows 595 bytes, Linux
+573 bytes), **never any full GitHub logs**. Both platforms stopped
+at `Build Focused DSP Targets`. Their diagnostics were:
+
+- Windows: `app/src/project_session_view_model.hpp(3): fatal error
+  C1083: Cannot open include file: 'rgsml/project/project_snapshot.hpp'`.
+  Failed compiling `rgsml_audition_source_selector_tests`.
+- Linux: identical missing `rgsml/project/project_snapshot.hpp`
+  while compiling `rgsml_mastering_chain_state_tests`.
+
+Root cause: the new inline
+`app/src/internal/m18_product_controller_binding.hpp` imported
+`project_session_view_model.hpp` even for independent DSP and Audition
+tests that do not have the Project module public-header include
+directory. This is a dependency-graph error in the new M18 binding,
+**not** a DSP math/audio result and **not** an indication those tests
+actually ran. The additional Windows M17 matrix report correctly
+withheld a complete PASS because test executables were unavailable.
+
+Corrective isolated staging:
+1. Remove the ProjectSession include and SaveAs binding from the shared
+   DSP/Audition/Source binder, keeping its typed common Product epoch
+   fanout unchanged.
+2. Create `app/src/internal/m18_product_project_save_binding.hpp`,
+   which alone includes `project_session_view_model.hpp` and exposes
+   `M18ProductProjectSaveBinding::bind_project_save_only`.
+3. Update only `tests/integration/app/test_project_session.cpp`
+   to use the Project-specific binding. Existing Project test target
+   already has its own required Project module compile/link context.
+4. Preserve Windows/Linux focused compile of actual DSP/Audition
+   binder users, forcing a native include-boundary check on both OS.
+
+The following isolated 17-commit SOURCE/master-rate and M17 candidate
+gate epoch-bypass corrections remain in this NO-CI staging; they are
+not claimed compiled. The #1072 SHA is red and cannot qualify this
+newer candidate. Promoting this corrected macrolot requires a
+distinct new Focused Windows/Linux run; still NO main merge or
+Full Qualification until after integrated M18-M22 as PO directed.
