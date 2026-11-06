@@ -3170,6 +3170,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         guardedRate.set_private_m18_rate_mutation_admission([&] {
             return static_cast<bool>(commonAdmission("master_rate_edit"));
         });
+        vm.set_private_m18_processing_mutation_admission([&] {
+            return static_cast<bool>(commonAdmission("m17_limiter_edit"));
+        });
+        const auto originalBypass=vm.bypass();
+        vm.setBypass(!originalBypass);
+        QCOMPARE(vm.bypass(),originalBypass);
         const auto blockedProductCancel=product.cancel();
         const auto blockedUpstreamSource=selector.switch_to(
             app::AuditionTarget::PREPARED);
@@ -3178,7 +3184,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!blockedProductCancel);
         QVERIFY(!blockedUpstreamSource);
         QVERIFY(!blockedProjectRate);
-        QCOMPARE(interlockedAttempts,std::size_t{3});
+        QCOMPARE(interlockedAttempts,std::size_t{4});
         QVERIFY(candidates.staged()==original);
         QCOMPARE(guardedRate.master_rate_hz(),selectedRateBefore);
         QVERIFY((*heldCommit.value())->revalidate_current());
@@ -3188,6 +3194,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         product.set_private_m18_mutation_admission({});
         selector.set_private_m18_mutation_admission({});
         guardedRate.set_private_m18_rate_mutation_admission({});
+        vm.set_private_m18_processing_mutation_admission({});
 
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
