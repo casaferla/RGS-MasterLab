@@ -3177,6 +3177,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(ownerBoundLeft&&originalLeftBefore);
         QVERIFY(ownerBoundLeft.value()->data()
                 ==originalLeftBefore.value()->data());
+        // A ticket for the DEVICE rate must NEVER borrow a separately
+        // verified final MASTER at a different chosen output rate.
+        auto wrongMasterIdentity=verifiedId;
+        wrongMasterIdentity.master_rate_hz=48000U;
+        M18ProductEpochTicketAuthority wrongRateOwner{
+            888U,wrongMasterIdentity};
+        QVERIFY(wrongRateOwner.try_transition(
+            888U,889U,wrongMasterIdentity,true));
+        auto wrongRateTicket=wrongRateOwner.capture(wrongMasterIdentity);
+        QVERIFY(wrongRateTicket);
+        const auto deniedWrongRate=
+            app::internal::make_m18_checked_stage_worker_request(
+                original,*wrongRateTicket.value(),
+                *src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongRate);
+        QCOMPARE(deniedWrongRate.error()->code(),
+                 core::ErrorCode::InvalidState);
         const auto workerFactory=masterTicket.value()->commit_lease_factory();
         auto heldCommit=workerFactory();
         QVERIFY(heldCommit);
