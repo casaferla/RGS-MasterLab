@@ -261,6 +261,22 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
     QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
     QCOMPARE(denied,std::size_t{6});
     QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    // Project-restored DSP state did not silently reset the Product
+    // thread affinity: a non-owner still cannot edit the new chain or
+    // erase its preserved runtime authority.
+    bool offThreadDenied=false;
+    std::thread foreign([&] {
+        const auto result=state.value()->set_gain_parameters(*gain.value());
+        offThreadDenied=!result&&result.error()->code()
+            ==core::ErrorCode::InvalidState;
+        state.value()->set_private_m18_chain_mutation_admission({});
+    });
+    foreign.join();
+    QVERIFY(offThreadDenied);
+    QCOMPARE(denied,std::size_t{6});
+    QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
+    QCOMPARE(denied,std::size_t{7});
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
     state.value()->set_private_m18_chain_mutation_admission({});
 }
 
