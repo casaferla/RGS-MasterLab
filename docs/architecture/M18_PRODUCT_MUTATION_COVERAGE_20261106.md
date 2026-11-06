@@ -444,3 +444,43 @@ This is NOT active Product export, no GUI control, no new Project
 schema, no new CI target, no DSP/Final SRC change. Source file physical
 identity, symlink/hardlink revalidation and the product-wide mutation
 epoch remain mandatory before enabling a user export.
+
+### Post-#1061 staging final macro-batch — Product minting thread and EOF epoch safety
+Completing one 15+ commit staging-only lot before serial promotion:
+1. `M18ProductEpochTicketAuthority` records the immutable C++ creator
+   thread ID, distinct from the worker lease factory. Its three
+   Product-owner operations `try_transition`,
+   `try_begin_product_mutation`, and `capture` now **reject calls from
+   any foreign thread** with InvalidState BEFORE locking or minting
+   credentials. A worker cannot grant its own export consent, change the
+   Project identity, or create a new ticket. Normal worker
+   `Ticket::commit_lease_factory` remains Qt-free and cross-thread safe.
+2. The existing native M18 Windows delivery integration test checks
+   wrong-thread attempts for all three owner operations, then confirms
+   the owner-thread ticket remains current. Further strict identity
+   tests reject wrong Source/Project/MASTER generations (including
+   invalid generation zero), enumerate all six supported M17 Final SRC
+   rates and unsupported rates, and prove the monotonic epoch cannot
+   wrap or create a stale factory at UINT64_MAX.
+3. The actual Qt SourceSelection snapshot test now also loads two REAL
+   distinct WAV paths with byte-identical audio; each selection must
+   issue a different provider+locator identity. Owner-thread capture
+   fails before dereferencing QObject if invoked by the worker.
+4. If copying the live SOURCE reference throws std::bad_alloc,
+   `capture_m18_current_source_on_product_owner` returns IoFailure
+   rather than creating a partial/forged export request.
+5. The preproduction Product-source worker bridge remains **opt-in,
+   unused by the actual GUI**, with zero-copy M17 stage and exact
+   Source/master/epoch read validation before publication.
+6. The Windows real transaction rollback test checks both PCM24 and
+   Float32 after a failed Project-open mutation batch; another test
+   proves owner destruction while a batch token remains alive does
+   not revive stale worker permissions.
+
+**Qualification boundary:** No changes above are in the already-running
+Focused #1061; do not claim PASS before that new candidate completes
+its own Windows+Linux Focused gate. No extra PR promotion while #1061
+is pending, no Full Qualification or main merge. Before production
+activation, all authoritative Source/Project/MASTER/M17 candidate
+mutators must share one Product epoch and the worker must receive the
+typed verified stage, immutable SOURCE, and fresh explicit consent.
