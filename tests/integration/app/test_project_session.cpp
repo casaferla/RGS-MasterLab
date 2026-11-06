@@ -171,6 +171,7 @@ private slots:
     void m18SaveBatchMissingOrThrowingFailsClosed();
     void m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch();
     void m18NestedProjectCommandsRefusedDuringSaveBatch();
+    void m18NestedProjectCommandsRefusedDuringOpenBatch();
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
@@ -433,6 +434,58 @@ void ProjectSessionTest::m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch()
         !=originalLocator);
     reopened.project.set_private_m18_project_open_batch_begin({});
     reopened.project.set_private_m18_project_save_admission({});
+}
+
+void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringOpenBatch()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto oldSource=wav(dir,QStringLiteral("nested-old.wav"),14);
+    const auto newSource=wav(dir,QStringLiteral("nested-new.wav"),17);
+    QVERIFY(!oldSource.isEmpty()&&!newSource.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(newSource));
+    const auto toOpen=dir.filePath(QStringLiteral("nested-project.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(toOpen));
+    QVERIFY(QFileInfo::exists(toOpen));
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(oldSource));
+    QVERIFY(session.source.has_source());
+    const auto deniedSave=dir.filePath(QStringLiteral("nested-open-save.rgsml"));
+    std::size_t openBatches=0,saveBatches=0;
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++saveBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    session.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++openBatches;
+            // Bounded fault injection: absent single-writer protection
+            // would recurse only once, then the assertions fail.
+            if(openBatches==1) {
+                session.project.openProject(QUrl::fromLocalFile(toOpen));
+                session.project.saveProjectAs(QUrl::fromLocalFile(deniedSave));
+            }
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    session.project.openProject(QUrl::fromLocalFile(toOpen));
+    QCOMPARE(openBatches,std::size_t{1});
+    QCOMPARE(saveBatches,std::size_t{0});
+    QVERIFY(!QFileInfo::exists(deniedSave));
+    QCOMPARE(session.project.error_message(),QString());
+    QVERIFY(session.source.has_source());
+    QVERIFY(std::string{session.source.source_resource()->reference().display_name()}
+        ==std::string{"nested-new.wav"});
+
+    // The same initial Project may be opened again after the scope is
+    // released: outer epoch ownership must not become permanently BUSY.
+    session.project.openProject(QUrl::fromLocalFile(toOpen));
+    QCOMPARE(openBatches,std::size_t{2});
+    QCOMPARE(saveBatches,std::size_t{0});
+    QCOMPARE(session.project.error_message(),QString());
 }
 
 void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringSaveBatch()
