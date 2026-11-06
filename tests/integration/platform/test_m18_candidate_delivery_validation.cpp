@@ -206,6 +206,7 @@ private slots:
     void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
     void retiredProductMutationFanoutRejectsCachedControllerCallbacks();
     void productMutationFanoutRejectsOverflowAndInvalidOperations();
+    void actualProductSaveBatchBlocksWorkerAndOtherEditorCallbacks();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
@@ -321,6 +322,49 @@ productMutationFanoutRejectsOverflowAndInvalidOperations()
         max,valid);
     M18OwnerMutationFanout last{exhausted,max,valid};
     QVERIFY(!last.status_admission()("source_committed"));
+}
+
+void M18CandidateDeliveryValidationTest::
+actualProductSaveBatchBlocksWorkerAndOtherEditorCallbacks()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{24U,25U,26U,0U,48000U,7U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        400U,id);
+    QVERIFY(owner->try_transition(400U,401U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,401U,id};
+    const auto save=fanout.project_save_batch();
+    const auto edit=fanout.status_admission();
+    auto committing=ticket.value()->commit_lease_factory()();
+    QVERIFY(committing);
+    // A worker in the final commit/readback phase must deny a physical
+    // Project SaveAs batch before any snapshot/file is touched.
+    QVERIFY(!save());
+    QVERIFY((*committing.value())->revalidate_current());
+    committing.value()->reset();
+
+    auto saving=save();QVERIFY(saving);
+    QVERIFY(saving.value()->get()!=nullptr);
+    QVERIFY(!edit("source_selection"));
+    QVERIFY(!edit("terminal_ceiling"));
+    QVERIFY(!save()); // no nested Project transaction
+    QVERIFY(!owner->capture(id));
+    saving.value()->reset();
+    // Once the exclusive Project scope is released, new owner-thread
+    // mutations may advance again; old worker consent stays revoked.
+    QVERIFY(edit("source_selection"));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    bool foreignSaveDenied=false;
+    std::thread foreign([&] {
+        const auto result=save();
+        foreignSaveDenied=!result &&result.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    foreign.join();
+    QVERIFY(foreignSaveDenied);
 }
 
 void M18CandidateDeliveryValidationTest::
