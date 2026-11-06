@@ -7,8 +7,10 @@
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -74,6 +76,15 @@ public:
         std::optional<core::RealizationId> current_manual_id,
         const dsp::ProcessingChain& current_manual_chain,
         const TerminalLimiterState& current_terminal_state);
+    // M18 opt-in Product epoch interface, NOT installed in production.
+    // This status-returning entry allows Product to reject a destructive
+    // candidate invalidation while a worker holds the exact commit epoch.
+    // Legacy M17 invalidate() remains separate until all call sites are
+    // upgraded to honor BUSY; do NOT enable async export before then.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_mutation_admission(M18MutationAdmission guard)
+    {m18MutationAdmission_=std::move(guard);}
+    [[nodiscard]] core::Status try_invalidate_for_m18();
     void invalidate() noexcept;
     [[nodiscard]] std::shared_ptr<const StagedMeasuredCandidate>
     staged_measured() const noexcept {return stagedMeasured_;}
@@ -81,6 +92,7 @@ public:
     { return staged_; }
 
 private:
+    M18MutationAdmission m18MutationAdmission_;
     std::uint64_t ticket_{0};
     std::shared_ptr<const StagedCandidate> staged_;
     std::shared_ptr<const StagedMeasuredCandidate> stagedMeasured_;
