@@ -158,6 +158,13 @@ public:
         return core::Status::success();
     }
 
+    // Used ONLY by Product capture to withhold incomplete newly opened
+    // Project stages while an exclusive batch mutation is still underway.
+    [[nodiscard]] bool product_mutation_active() const noexcept {
+        std::lock_guard guard{state_->mutex};
+        return state_->mutation_active;
+    }
+
     // Diagnostic only, NEVER a source of authorization for a new export.
     [[nodiscard]] std::uint64_t epoch_snapshot() const noexcept {
         std::lock_guard guard{state_->mutex};
