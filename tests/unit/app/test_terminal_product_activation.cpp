@@ -10,11 +10,14 @@
 #include "terminal_private_render_controller.hpp"
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QUrl>
 #include "terminal_private_product_session.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
 #include "internal/m18_checked_stage_worker_bridge.hpp"
+#include "internal/m18_private_async_export_handoff.hpp"
+#include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "master_output_rate_state.hpp"
@@ -3245,6 +3248,68 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 *boundTicket.value(),liveSource->reference(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(correctProductWorkerRequest);
+        // M18 private vertical slice: use the REAL M17 Product session and
+        // SOURCE selection, freeze the exact stage on Qt owner thread, then
+        // run the actual Windows transactional export on a detached worker.
+        // No QML/export menu is enabled. Test-owned Product ticket is
+        // explicit and the source/destination are real local filesystem
+        // references; worker never dereferences a QObject.
+        for(const auto targetFormat:{
+                audio::WavSampleFormat::PCM_S24,
+                audio::WavSampleFormat::IEEE_F32}) {
+            const auto filename=QStringLiteral("product-m18-%1.wav")
+                .arg(static_cast<int>(targetFormat));
+            const auto path=m18ProductSourceDir.filePath(filename);
+            const auto destination=
+                platform::windows::WindowsResourceWriter::
+                    make_write_reference(
+                        path.toUtf8().toStdString(),
+                        filename.toUtf8().toStdString());
+            QVERIFY(destination);
+            const auto ditherSeed=
+                targetFormat==audio::WavSampleFormat::PCM_S24
+                    ?std::optional<std::uint64_t>{UINT64_C(42)}
+                    :std::nullopt;
+            auto worker=app::internal::
+                launch_m18_async_export_from_live_product(
+                    product,selectedSource,selectedProjectRate,candidates,
+                    *boundTicket.value(),liveSource->reference(),
+                    *destination.value(),targetFormat,ditherSeed,0.0);
+            QVERIFY(worker);
+            QCOMPARE((*worker.value())->total_frames(),
+                     static_cast<std::uint64_t>(
+                         m17View.frame_count().value()));
+            QTRY_VERIFY_WITH_TIMEOUT(
+                (*worker.value())->finished(),30000);
+            const auto done=(*worker.value())->result_if_finished();
+            QVERIFY(done);
+            QVERIFY2(static_cast<bool>(*done),
+                done->error()?done->error()->message().c_str()
+                             :"no Product export evidence");
+            QCOMPARE(done->value()->sample_format(),targetFormat);
+            QCOMPARE(done->value()->frame_count(),
+                     m17View.frame_count());
+            QCOMPARE(done->value()->encoded_file_sha256().size(),
+                     std::size_t{64});
+            QVERIFY(QFileInfo::exists(path));
+            const auto before=QFileInfo{path}.size();
+            QVERIFY(before>0);
+            // The live Product pipeline never authorizes overwriting its
+            // own previous verified export, even on a second click.
+            const auto duplicate=app::internal::
+                launch_m18_async_export_from_live_product(
+                    product,selectedSource,selectedProjectRate,candidates,
+                    *boundTicket.value(),liveSource->reference(),
+                    *destination.value(),targetFormat,ditherSeed,0.0);
+            QVERIFY(duplicate);
+            QTRY_VERIFY_WITH_TIMEOUT(
+                (*duplicate.value())->finished(),30000);
+            const auto duplicateResult=
+                (*duplicate.value())->result_if_finished();
+            QVERIFY(duplicateResult);
+            QVERIFY(!*duplicateResult);
+            QCOMPARE(QFileInfo{path}.size(),before);
+        }
         // A ticket and verified M17 MASTER do not authorize export while
         // the Product has NO real current SOURCE selected in its QObject.
         app::SourceSelectionViewModel noCurrentProductSource;
