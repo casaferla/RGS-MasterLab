@@ -438,6 +438,27 @@ m18DirectTerminalStateMutationRequiresProductEpoch()
     QCOMPARE(ambiguousVmCalls,std::size_t{0});
     QCOMPARE(published.count(),0);
     vm.set_private_m18_processing_mutation_admission({});
+    // Every Qt-bound editor path, including draft-only changes, refuses a
+    // foreign thread once the Product's terminal epoch is installed.
+    QSignalSpy observedUi{&vm,&app::TerminalLimiterViewModel::changed};
+    const auto beforeDraft=vm.draft_ceiling_db_tp();
+    bool foreignDraftDenied=false,foreignCommitDenied=false;
+    std::thread illegalEditor([&] {
+        foreignDraftDenied=!vm.setDraftFieldValue(
+            QStringLiteral("ceilingDbTp"),-4.0);
+        foreignCommitDenied=!vm.commitDraft();
+        vm.resetToDefault();
+        vm.setBypass(false);
+        vm.cancelDraft();
+    });
+    illegalEditor.join();
+    QVERIFY(foreignDraftDenied);
+    QVERIFY(foreignCommitDenied);
+    QCOMPARE(vm.draft_ceiling_db_tp(),beforeDraft);
+    QCOMPARE(observedUi.count(),0);
+    QCOMPARE(published.count(),0);
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    QVERIFY(state.value()->bypassed());
     // Legacy unguarded M17 functionality remains intact when the
     // preproduction gate is not installed.
     state.value()->set_private_m18_mutation_admission({});
