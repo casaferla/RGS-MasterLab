@@ -4,6 +4,7 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 
 #include <cstdint>
 #include <string>
@@ -188,6 +189,20 @@ void SourceSelectionViewModel::set_source_committed_handler(
     sourceCommittedHandler_ = std::move(handler);
 }
 
+core::Status SourceSelectionViewModel::admit_m18_source_mutation(
+    const char* operation) const
+{
+    if(!m18SourceMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18SourceMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_SOURCE_ADOPTION_ADMISSION_THROWN"});}
+}
+
 void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
 {
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
@@ -224,11 +239,15 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
         return;
     }
 
-    adopt_probed_source(std::move(*candidate.value()));
+    auto accepted=adopt_probed_source(std::move(*candidate.value()));
+    if(!accepted)publish_error(*accepted.error());
 }
 
-void SourceSelectionViewModel::adopt_probed_source(audio::SourceResource candidate)
+core::Status SourceSelectionViewModel::adopt_probed_source(
+    audio::SourceResource candidate)
 {
+    const auto gate=admit_m18_source_mutation("source_adopt_probed");
+    if(!gate)return gate;
     const auto& info = candidate.wav_info();
     const auto sampleRate = info.audio_format().sample_rate().value();
     const auto frames = info.frame_count().value();
@@ -260,6 +279,7 @@ void SourceSelectionViewModel::adopt_probed_source(audio::SourceResource candida
     if (hadError) {
         emit errorChanged();
     }
+    return core::Status::success();
 }
 
 void SourceSelectionViewModel::cancelSourceSelection() noexcept
