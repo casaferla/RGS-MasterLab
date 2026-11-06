@@ -804,8 +804,18 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // With any M18 Product policy, even invalid-file diagnostics must
     // remain on the owning Qt thread. Never probe disk or emit errors
     // from a foreign worker before an eventual epoch admission.
-    if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_)
+    if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_
+        ||m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
        &&QThread::currentThread()!=thread())return;
+    // A Product that installed only the SaveAs epoch cannot permit an
+    // unguarded Open Project to retire SOURCE/MASTER during M18 export.
+    if((m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
+       &&!m18ProjectOpenBatchBegin_&&!m18ProjectMutationAdmission_) {
+        publish_error(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_OPEN_REQUIRES_OWN_MUTATION_ADMISSION"});
+        return;
+    }
     auto reference = read_reference(selectedFile);
     if (!reference) { publish_error(*reference.error()); return; }
     auto reader = platform::windows::WindowsResourceReader::open_read_only(*reference.value());
