@@ -921,3 +921,35 @@ Windows-dependent SOURCE tests to Linux (the exact #1067 failure).
 Linux portable DSP tests remain unchanged. These changes are
 staging-only and **UNCOMPILED**, with no claim of qualification or
 full Product Single-Writer completeness.
+
+### Chat #72 — #1068 GREEN, full Region/Loop publication-scope macrolot
+The Product Owner reports Focused #1068 green; the GitHub run was verified
+SUCCESS on exact PR #84 SHA `1a0e0628f07f2cc5ec15a7575a9f05613aa217b9`.
+The next isolated staging group extends the optional M18 Region gate:
+
+- An owner-thread RAII `M18RegionPublicationScope` now spans validation,
+  Product epoch admission, playback loop change, exact Region publication
+  and synchronous `changed()` callbacks. It rejects nested Region
+  setters and loop toggles during an active publication *without* Qt
+  error-signal recursion. The separate existing admission-time sentinel
+  still protects the Product callback itself.
+- Invalid Region bounds and invalid Loop-enable requests are checked
+  BEFORE the mutation admission, and identical Region/Loop requests are
+  true no-ops when M18 mode is installed. Neither errors nor no-ops may
+  burn an export epoch. Legacy M17 semantics remain unchanged when the
+  opt-in gate is absent.
+- New Windows-native QtTests cover an unchanged Region while a worker
+  is BUSY, invalid bounds, invalid enable without a region, unguarded
+  owner-thread seek, and reentrant `changed()` listeners attempting
+  `clear_region` during Region/Loop publication. A later independent
+  owner mutation succeeds after the RAII scope is released.
+- The exact `rgsml_audition_region_tests` target is included only in
+  Windows Focused compile and CTest, never accidentally in the Linux
+  portable target list (cf. #1067 `Windows.h` build failure).
+
+The scope is opt-in, not Product registered. A genuine single writer
+still requires shared SOURCE, Project, GOLD, MASTER rate, terminal and
+candidate-state admission with explicit owner-consent retirement. No
+Release, Export GUI, FQ or merge is authorized by these isolated changes.
+The next Focused run must compile/test the *exact promoted SHA* on both
+OS before the PO may accept this lot.
