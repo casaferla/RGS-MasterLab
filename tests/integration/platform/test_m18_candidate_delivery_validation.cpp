@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <chrono>
 #include <future>
+#include <limits>
 #include <thread>
 #include <memory>
 #include <optional>
