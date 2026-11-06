@@ -194,6 +194,7 @@ private slots:
     void realWindowsFailureInjectionCleansUpBothFormats();
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
     void exclusiveProductProjectMutationBlocksWorkerCommitUntilComplete();
+    void productMutationBatchPinsIdentityAndForbidsPartialCapture();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
@@ -681,6 +682,47 @@ crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking()
     QVERIFY(!barrier->try_advance_epoch(78U,79U));
 }
 
+
+void M18CandidateDeliveryValidationTest::
+productMutationBatchPinsIdentityAndForbidsPartialCapture()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    const M18ProductExportIdentity before{11U,12U,13U,0U,192000U};
+    M18ProductEpochTicketAuthority owner{77U,before};
+    QVERIFY(owner.try_transition(77U,78U,before,true));
+    auto oldTicket=owner.capture(before);
+    QVERIFY(oldTicket);
+    const auto previousFactory=oldTicket.value()->commit_lease_factory();
+    const auto changed=[&] {
+        auto next=before;
+        next.project_generation=99U;
+        next.master_generation=101U;
+        return next;
+    }();
+    // An authorized Project batch advances the monotonic identity once,
+    // while holding exclusive protection across ALL downstream mutations.
+    auto batch=owner.try_begin_product_mutation(78U,79U,changed,true);
+    QVERIFY(batch);
+    QCOMPARE((*batch.value())->epoch(),std::uint64_t{79U});
+    QVERIFY(!previousFactory());
+    QVERIFY(!owner.capture(before));
+    QVERIFY(!owner.capture(changed)); // the new project is still incomplete
+    QVERIFY(!owner.try_transition(79U,80U,changed,true));
+    QVERIFY(!owner.try_begin_product_mutation(79U,80U,changed,true));
+    batch.value()->reset();
+    // The old ticket stays revoked even if the old M17 PCM was retained.
+    QVERIFY(!previousFactory());
+    auto now=owner.capture(changed);
+    QVERIFY(now);
+    auto newLease=now.value()->commit_lease_factory()();
+    QVERIFY(newLease);
+    QVERIFY((*newLease.value())->revalidate_current());
+    QVERIFY(!owner.try_begin_product_mutation(79U,80U,changed,false));
+    newLease.value()->reset();
+    QVERIFY(owner.try_transition(79U,80U,changed,false));
+    QVERIFY(!now.value()->commit_lease_factory()());
+}
 
 void M18CandidateDeliveryValidationTest::
 productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
