@@ -789,6 +789,25 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     // Product epoch require nonzero values.
     const M18ProductExportIdentity id{11U,12U,13U,0U,48000U};
     QVERIFY(id.valid());
+    // Exactly the M17 frozen Final SRC family may be present in a
+    // Product-issued M18 ticket; no DEVICE-only/unsupported rate.
+    for(const auto rate:{
+            44100U,48000U,88200U,96000U,176400U,192000U}) {
+        auto validRate=id;
+        validRate.master_rate_hz=rate;
+        QVERIFY(validRate.valid());
+    }
+    for(const auto rate:{0U,8000U,32000U,44101U,384000U}) {
+        auto invalidRate=id;
+        invalidRate.master_rate_hz=rate;
+        QVERIFY(!invalidRate.valid());
+    }
+    auto missingSource=id;missingSource.source_generation=0;
+    auto missingProject=id;missingProject.project_generation=0;
+    auto missingMaster=id;missingMaster.master_generation=0;
+    QVERIFY(!missingSource.valid());
+    QVERIFY(!missingProject.valid());
+    QVERIFY(!missingMaster.valid());
     M18ProductEpochTicketAuthority authority{200U,id};
     QVERIFY(!authority.capture(id)); // No implicit user consent.
     QVERIFY(!authority.try_transition(200U,200U,id,true));
