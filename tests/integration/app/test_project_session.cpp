@@ -170,6 +170,7 @@ private slots:
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
     void m18SaveBatchMissingOrThrowingFailsClosed();
     void m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch();
+    void m18NestedProjectCommandsRefusedDuringSaveBatch();
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
@@ -432,6 +433,53 @@ void ProjectSessionTest::m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch()
         !=originalLocator);
     reopened.project.set_private_m18_project_open_batch_begin({});
     reopened.project.set_private_m18_project_save_admission({});
+}
+
+void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringSaveBatch()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("nested-save-source.wav"),21);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto first=dir.filePath(QStringLiteral("nested-first.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(first));
+    QVERIFY(QFileInfo::exists(first));
+
+    const auto outer=dir.filePath(QStringLiteral("nested-outer.rgsml"));
+    const auto inner=dir.filePath(QStringLiteral("nested-must-not-create.rgsml"));
+    const auto second=dir.filePath(QStringLiteral("nested-after-return.rgsml"));
+    std::size_t saveBatches=0,openBatches=0;
+    session.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++openBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++saveBatches;
+            // Simulate a synchronous Qt callback trying to start another
+            // Project mutation while the first SaveAs lease is being issued.
+            session.project.saveProjectAs(QUrl::fromLocalFile(inner));
+            session.project.openProject(QUrl::fromLocalFile(first));
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(outer));
+    QCOMPARE(saveBatches,std::size_t{1});
+    QCOMPARE(openBatches,std::size_t{0});
+    QVERIFY(QFileInfo::exists(outer));
+    QVERIFY(!QFileInfo::exists(inner));
+    QCOMPARE(session.project.error_message(),QString());
+
+    // The owner sentinel is RAII: no stale BUSY remains after returning.
+    session.project.saveProjectAs(QUrl::fromLocalFile(second));
+    QCOMPARE(saveBatches,std::size_t{2});
+    QCOMPARE(openBatches,std::size_t{0});
+    QVERIFY(QFileInfo::exists(second));
+    QVERIFY(!QFileInfo::exists(inner));
 }
 
 void ProjectSessionTest::m18SaveBatchMissingOrThrowingFailsClosed()
