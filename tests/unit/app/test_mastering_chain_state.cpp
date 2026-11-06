@@ -334,7 +334,6 @@ m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner()
     auto state=MasteringChainState::create_default(
         *registry.value(),chainId,gainId,eqId,compId);
     QVERIFY(state);
-    const auto originalComp=state.value()->compressor_parameters();
     const auto originalBypass=state.value()->is_bypassed(compId);
     QVERIFY(originalBypass);
     const auto newGain=GainParameters::create(3.0);
@@ -374,7 +373,7 @@ m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner()
     QCOMPARE(state.value()->gain_parameters(),*newGain.value());
     const auto bypass=state.value()->is_bypassed(compId);
     QVERIFY(bypass);
-    QCOMPARE(bypass.value(),originalBypass.value());
+    QCOMPARE(*bypass.value(),*originalBypass.value());
     state.value()->set_private_m18_chain_mutation_admission({});
     QVERIFY(state.value()->set_gain_parameters(*alternativeGain.value()));
 }
