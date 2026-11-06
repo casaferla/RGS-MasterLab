@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <new>
 #include <mutex>
 #include <utility>
 
@@ -42,7 +43,32 @@ class M18ProductEpochTicketAuthority final {
         std::uint64_t epoch;
         M18ProductExportIdentity identity;
         bool explicit_consent{false};
+        bool owner_alive{true};
         M18EpochCommitBarrier barrier;
+    };
+    // A held commit must fail its final authorization if the Product owner
+    // is retired, even if its worker retained a previously valid ticket.
+    class ProductLease final : public M18ExportCommitLease {
+    public:
+        ProductLease(std::shared_ptr<State> state,std::uint64_t epoch,
+                     M18ProductExportIdentity id,
+                     std::unique_ptr<M18ExportCommitLease> held) noexcept
+            :state_(std::move(state)),epoch_(epoch),identity_(id),
+             held_(std::move(held)){}
+        [[nodiscard]] core::Status revalidate_current() const override {
+            std::lock_guard guard{state_->mutex};
+            if(!state_->owner_alive ||!state_->explicit_consent
+               ||state_->epoch!=epoch_ ||state_->identity!=identity_)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PRODUCT_AUTHORITY_RETIRED_DURING_COMMIT"});
+            return held_->revalidate_current();
+        }
+    private:
+        std::shared_ptr<State> state_;
+        std::uint64_t epoch_;
+        M18ProductExportIdentity identity_;
+        std::unique_ptr<M18ExportCommitLease> held_;
     };
 public:
     class Ticket final {
@@ -63,14 +89,26 @@ public:
                 ->core::Result<std::unique_ptr<M18ExportCommitLease>> {
                 using R=core::Result<std::unique_ptr<M18ExportCommitLease>>;
                 std::lock_guard guard{state->mutex};
-                if(!state->explicit_consent ||state->epoch!=epoch
+                if(!state->owner_alive ||!state->explicit_consent
+                   ||state->epoch!=epoch
                    ||state->identity!=id ||!id.valid())
                     return R::failure(core::Error{
                         core::ErrorCode::InvalidState,
                         "M18_PRODUCT_TICKET_REVOKED_OR_IDENTITY_CHANGED"});
                 // Same lock as every owner transition: no gap between
                 // consent/identity validation and commit lease admission.
-                return state->barrier.try_acquire(epoch);
+                auto held=state->barrier.try_acquire(epoch);
+                if(!held)return held;
+                try {
+                    std::unique_ptr<M18ExportCommitLease> wrapper=
+                        std::make_unique<ProductLease>(
+                            state,epoch,id,std::move(*held.value()));
+                    return R::success(std::move(wrapper));
+                }catch(const std::bad_alloc&){
+                    return R::failure(core::Error{
+                        core::ErrorCode::IoFailure,
+                        "M18_PRODUCT_TICKET_LEASE_ALLOCATION_FAILED"});
+                }
             };
         }
     private:
@@ -82,6 +120,12 @@ public:
     explicit M18ProductEpochTicketAuthority(
         std::uint64_t initialEpoch,M18ProductExportIdentity initialIdentity)
         :state_(std::make_shared<State>(initialEpoch,initialIdentity)){}
+    ~M18ProductEpochTicketAuthority() {
+        // Does not wait for a worker. Any held lease will fail its final
+        // pre-publication recheck and must roll back rather than publish.
+        std::lock_guard guard{state_->mutex};
+        state_->owner_alive=false;
+    }
     M18ProductEpochTicketAuthority(const M18ProductEpochTicketAuthority&)=delete;
     M18ProductEpochTicketAuthority& operator=(const M18ProductEpochTicketAuthority&)=delete;
 
