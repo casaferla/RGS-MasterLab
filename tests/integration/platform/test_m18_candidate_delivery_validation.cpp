@@ -852,12 +852,9 @@ realWindowsExportDeniedAfterAbortedProductProjectBatch()
     QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
     QCOMPARE(input.write("unchanged",9),qint64{9});
     input.close();
-    const auto dest=dir.filePath(QStringLiteral("aborted-project.wav"));
     const auto srcRef=WindowsResourceReader::make_read_reference(
         m18_path(src),m18_path(QFileInfo{src}.fileName()));
-    const auto dstRef=WindowsResourceWriter::make_write_reference(
-        m18_path(dest),m18_path(QFileInfo{dest}.fileName()));
-    QVERIFY(srcRef&&dstRef);
+    QVERIFY(srcRef);
     const auto pcm=master(audio::ChannelLayout::MONO_C,4105,48000);
     QVERIFY(pcm);
     const M18ProductExportIdentity oldId{61U,62U,63U,0U,48000U};
@@ -880,18 +877,31 @@ realWindowsExportDeniedAfterAbortedProductProjectBatch()
     QVERIFY(!priorFactory());
     QVERIFY(!owner.capture(newProjectId));
 
-    auto deniedRequest=M18TransactionalAudioExportRequest::create(
-        *srcRef.value(),pcm,*dstRef.value(),
-        audio::WavSampleFormat::PCM_S24,
-        std::optional<std::uint64_t>{UINT64_C(0xBADC0FFEE0DDF00D)},
-        0.0,ExportCollisionPolicy::FAIL_IF_EXISTS,priorFactory);
-    QVERIFY(deniedRequest);
-    const auto rejected=TransactionalAudioExporter::export_new_file(
-        *deniedRequest.value());
-    QVERIFY(!rejected);
-    QCOMPARE(rejected.error()->code(),core::ErrorCode::InvalidState);
-    QVERIFY(!QFileInfo::exists(dest));
-    QVERIFY(m18_no_temporary_candidates(dir.path()));
+    for(const auto format:{
+            audio::WavSampleFormat::PCM_S24,
+            audio::WavSampleFormat::IEEE_F32}) {
+        // Both output encodings must hit the SAME fail-closed Product
+        // lease revocation, even when the WAV samples were encoded.
+        const auto dest=dir.filePath(QStringLiteral("aborted-project-%1.wav")
+            .arg(static_cast<int>(format)));
+        const auto dstRef=WindowsResourceWriter::make_write_reference(
+            m18_path(dest),m18_path(QFileInfo{dest}.fileName()));
+        QVERIFY(dstRef);
+        const auto seed=format==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(0xBADC0FFEE0DDF00D)}
+            :std::nullopt;
+        auto deniedRequest=M18TransactionalAudioExportRequest::create(
+            *srcRef.value(),pcm,*dstRef.value(),
+            format,seed,0.0,
+            ExportCollisionPolicy::FAIL_IF_EXISTS,priorFactory);
+        QVERIFY(deniedRequest);
+        const auto rejected=TransactionalAudioExporter::export_new_file(
+            *deniedRequest.value());
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(!QFileInfo::exists(dest));
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+    }
     QFile check{src};
     QVERIFY(check.open(QIODevice::ReadOnly));
     QCOMPARE(check.readAll(),QByteArray("unchanged",9));
