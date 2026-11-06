@@ -210,6 +210,15 @@ core::Status SourceSelectionViewModel::admit_m18_source_mutation(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_SOURCE_ADOPTION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18SourceAdmitting_||m18SourcePublishing_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REENTRANT_EPOCH_DENIED"});
+    m18SourceAdmitting_=true;
+    struct AdmissionUnwind final {
+        bool* active;
+        ~AdmissionUnwind(){*active=false;}
+    } unwind{&m18SourceAdmitting_};
     try{return m18SourceMutationAdmission_(operation);}
     catch(...){return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
