@@ -197,6 +197,7 @@ private slots:
     void productMutationBatchPinsIdentityAndForbidsPartialCapture();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
+    void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
     void realWorkerRevokedBeforeCommitAdmissionCleansCandidate();
 };
@@ -834,6 +835,71 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     QVERIFY(!orphanFactory());
 }
 
+
+void M18CandidateDeliveryValidationTest::
+realWindowsExportDeniedAfterAbortedProductProjectBatch()
+{
+    // End-to-end negative case: an exclusive Product Project-open batch
+    // may have already replaced SOURCE/MASTER before it fails. Releasing
+    // that batch must NOT reauthorize an old ticket or automatically
+    // authorize the new partially restored Project to write a WAV file.
+    using namespace platform::windows;
+    using internal::M18ProductEpochTicketAuthority;
+    using internal::M18ProductExportIdentity;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("original-source.bin"));
+    QFile input{src};
+    QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(input.write("unchanged",9),qint64{9});
+    input.close();
+    const auto dest=dir.filePath(QStringLiteral("aborted-project.wav"));
+    const auto srcRef=WindowsResourceReader::make_read_reference(
+        m18_path(src),m18_path(QFileInfo{src}.fileName()));
+    const auto dstRef=WindowsResourceWriter::make_write_reference(
+        m18_path(dest),m18_path(QFileInfo{dest}.fileName()));
+    QVERIFY(srcRef&&dstRef);
+    const auto pcm=master(audio::ChannelLayout::MONO_C,4105,48000);
+    QVERIFY(pcm);
+    const M18ProductExportIdentity oldId{61U,62U,63U,0U,48000U};
+    M18ProductEpochTicketAuthority owner{101U,oldId};
+    QVERIFY(owner.try_transition(101U,102U,oldId,true));
+    auto oldTicket=owner.capture(oldId);
+    QVERIFY(oldTicket);
+    const auto priorFactory=oldTicket.value()->commit_lease_factory();
+
+    auto newProjectId=oldId;
+    newProjectId.source_generation=71U;
+    newProjectId.project_generation=72U;
+    newProjectId.master_generation=73U;
+    auto projectBatch=owner.try_begin_product_mutation(
+        102U,103U,newProjectId,false);
+    QVERIFY(projectBatch);
+    QVERIFY(!priorFactory());
+    QVERIFY(!owner.capture(newProjectId));
+    projectBatch.value()->reset();  // Simulated failed/aborted open.
+    QVERIFY(!priorFactory());
+    QVERIFY(!owner.capture(newProjectId));
+
+    auto deniedRequest=M18TransactionalAudioExportRequest::create(
+        *srcRef.value(),pcm,*dstRef.value(),
+        audio::WavSampleFormat::PCM_S24,
+        std::optional<std::uint64_t>{UINT64_C(0xBADC0FFEE0DDF00D)},
+        0.0,ExportCollisionPolicy::FAIL_IF_EXISTS,priorFactory);
+    QVERIFY(deniedRequest);
+    const auto rejected=TransactionalAudioExporter::export_new_file(
+        *deniedRequest.value());
+    QVERIFY(!rejected);
+    QCOMPARE(rejected.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(!QFileInfo::exists(dest));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+    QFile check{src};
+    QVERIFY(check.open(QIODevice::ReadOnly));
+    QCOMPARE(check.readAll(),QByteArray("unchanged",9));
+    // Only a later checked M17 MASTER plus explicit new consent MAY
+    // advance the Product epoch and mint an altogether new ticket.
+    QVERIFY(owner.try_transition(103U,104U,newProjectId,true));
+    QVERIFY(owner.capture(newProjectId));
+}
 
 void M18CandidateDeliveryValidationTest::
 realWorkerTicketExportsOnlyWithCurrentConsentAndSource()
