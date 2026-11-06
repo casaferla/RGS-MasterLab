@@ -216,6 +216,15 @@ m18ProjectMutationDeniedBeforeOpenOrSavePublication()
 
     Session reopened;
     std::size_t blockedOpens=0;
+    std::size_t attemptedSourceAdoptions=0;
+    // Shared busy policy: project must stop BEFORE entering any Source
+    // adoption callback. No Qt event-loop pumping or half-open session.
+    reopened.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++attemptedSourceAdoptions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SOURCE_COMMIT_BUSY"});
+        });
     reopened.project.set_private_m18_project_mutation_admission(
         [&](const char*)->core::Status {
             ++blockedOpens;
@@ -224,9 +233,11 @@ m18ProjectMutationDeniedBeforeOpenOrSavePublication()
         });
     reopened.project.openProject(QUrl::fromLocalFile(initial));
     QCOMPARE(blockedOpens,std::size_t{1});
+    QCOMPARE(attemptedSourceAdoptions,std::size_t{0});
     QVERIFY(!reopened.project.error_message().isEmpty());
     QVERIFY(!reopened.source.has_source());
     reopened.project.set_private_m18_project_mutation_admission({});
+    reopened.source.set_private_m18_source_mutation_admission({});
     reopened.project.openProject(QUrl::fromLocalFile(initial));
     QCOMPARE(reopened.project.error_message(),QString());
     QVERIFY(reopened.source.has_source());
