@@ -814,6 +814,17 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     QVERIFY(authority.try_transition(200U,201U,id,true));
     auto captured=authority.capture(id);
     QVERIFY(captured);
+    // Matching Fs and DSP revision do not compensate for a different
+    // Source/Project/Master generation: every identity component is exact.
+    auto forgedProject=id;++forgedProject.project_generation;
+    auto forgedMaster=id;++forgedMaster.master_generation;
+    auto forgedSource=id;++forgedSource.source_generation;
+    QVERIFY(!authority.capture(forgedProject));
+    QVERIFY(!authority.capture(forgedMaster));
+    QVERIFY(!authority.capture(forgedSource));
+    auto invalidNext=id;invalidNext.source_generation=0;
+    QVERIFY(!authority.try_transition(201U,202U,invalidNext,true));
+    QVERIFY(authority.capture(id)); // rejected proposal is non-mutating
     const auto factory=captured.value()->commit_lease_factory();
 
     // The worker is allowed to acquire ONLY an immutable factory lease.
