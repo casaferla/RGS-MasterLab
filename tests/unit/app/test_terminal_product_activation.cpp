@@ -3262,6 +3262,20 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(float32ProductWorkerRequest.value()->payload()
                 .channel(0U).value()->data()
             ==m17View.channel(0U).value()->data());
+        // No implicit PCM24 dither seed and no Float32 dither:
+        // invalid encoding/seed combinations fail before worker dispatch.
+        const auto missingPcm24Seed=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,std::nullopt,-1.0);
+        QVERIFY(!missingPcm24Seed);
+        const auto forbiddenFloat32Seed=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::IEEE_F32,UINT64_C(42),-1.0);
+        QVERIFY(!forbiddenFloat32Seed);
         const auto falseProductSource=core::ResourceReference::create(
             liveSource->reference().provider_id(),
             liveSource->reference().locator()+".stale",
