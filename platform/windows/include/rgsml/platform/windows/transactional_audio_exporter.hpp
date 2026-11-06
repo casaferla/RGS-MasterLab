@@ -165,7 +165,12 @@ public:
     // Explicit M18-only transaction. The app has NO caller for this API:
     // first establish a genuine M17 owner + epoch locking commit lease.
     [[nodiscard]] static core::Result<TransactionalAudioExportResult>
-    export_new_file(const M18TransactionalAudioExportRequest& request);
+    export_new_file(
+        const M18TransactionalAudioExportRequest& request,
+        // Optional worker-only cooperative cancellation. Checked during
+        // PCM streaming, before publish and after final readback; never
+        // used by the existing synchronous M17/F64 export contract.
+        const std::function<bool()>& cancellationRequested = {});
 
 private:
     [[nodiscard]] static core::Result<TransactionalAudioExportResult>
@@ -177,7 +182,8 @@ private:
         ExportCollisionPolicy policy,
         std::optional<std::uint64_t> ditherSeed,
         std::optional<double> ceilingDbTp,
-        const M18AcquireCommitLease* commitLeaseFactory);
+        const M18AcquireCommitLease* commitLeaseFactory,
+        const std::function<bool()>* cancellationRequested);
 };
 
 }  // namespace rgsml::platform::windows
