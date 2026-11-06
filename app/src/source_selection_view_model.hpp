@@ -2,6 +2,7 @@
 
 #include <rgsml/audio/source_resource.hpp>
 #include <rgsml/core/error.hpp>
+#include <rgsml/core/result.hpp>
 
 #include <QObject>
 #include <QString>
@@ -9,6 +10,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -47,7 +49,13 @@ public:
     [[nodiscard]] bool read_only() const noexcept;
     [[nodiscard]] QString error_message() const;
     [[nodiscard]] const audio::SourceResource* source_resource() const noexcept;
-    void adopt_probed_source(audio::SourceResource candidate);
+    // Source replacement is a commit-like mutation, even when invoked by
+    // Project open rather than by the native SOURCE file picker.
+    using M18SourceMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_source_mutation_admission(
+        M18SourceMutationAdmission gate)
+    {m18SourceMutationAdmission_=std::move(gate);}
+    [[nodiscard]] core::Status adopt_probed_source(audio::SourceResource candidate);
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
     void set_source_committed_handler(SourceCommittedHandler handler);
@@ -60,6 +68,8 @@ signals:
     void errorChanged();
 
 private:
+    [[nodiscard]] core::Status admit_m18_source_mutation(
+        const char* operation) const;
     void publish_error(const QString& message);
     void publish_error(const core::Error& error);
 
@@ -74,6 +84,7 @@ private:
     qint64 frameCount_{0};
     int channelCount_{0};
     PlaybackTransportViewModel* playbackTransport_{nullptr};
+    M18SourceMutationAdmission m18SourceMutationAdmission_;
     SourceCommittedHandler sourceCommittedHandler_;
 };
 
