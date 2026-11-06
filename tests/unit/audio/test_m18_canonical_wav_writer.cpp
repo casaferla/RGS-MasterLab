@@ -221,6 +221,15 @@ void M18CanonicalWavWriterTest::allSixRatesBothLayoutsAndFormats()
                 for(std::size_t i=0;i<expected.size();++i)
                     QCOMPARE(std::to_integer<std::uint8_t>(
                         data[header.size()+i]),expected[i]);
+                // RIFF data-chunk length is the logical PCM byte count;
+                // an ODD mono PCM24 payload requires one physical ZERO
+                // after the chunk and that pad is NOT an audio sample.
+                const auto padding=static_cast<std::size_t>(
+                    plan.plan.data_bytes&UINT64_C(1));
+                QCOMPARE(data.size(),header.size()+expected.size()+padding);
+                if(padding!=0U)
+                    QCOMPARE(std::to_integer<std::uint8_t>(data.back()),
+                             std::uint8_t{0});
             }
         }
     }

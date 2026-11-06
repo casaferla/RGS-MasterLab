@@ -134,8 +134,17 @@ public:
             return {reject(M18StreamStatus::BAD_SEQUENCE),{}};
         if(written_frames_!=plan_->spec.frame_count)
             return {reject(M18StreamStatus::INCOMPLETE),{}};
-        finished_=true;
         try {
+            // RIFF/RF64 requires a single ZERO pad byte after an odd-sized
+            // data payload. The data chunk length and PCM payload SHA
+            // exclude the pad; only full-file size/SHA include it.
+            if((plan_->data_bytes&UINT64_C(1))!=0U){
+                const std::array<std::uint8_t,1> pad{{0U}};
+                if(!sink_.write_all(pad))
+                    return {reject(M18StreamStatus::SINK_FAILED),{}};
+                file_sha_.update(std::as_bytes(std::span{pad}));
+            }
+            finished_=true;
             return {M18StreamStatus::OK,M18StreamReceipt{
                 *plan_,*identity_,written_frames_,
                 core::sha256_hex(payload_sha_.finalize()),

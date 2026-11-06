@@ -128,6 +128,7 @@ class M18DecodedWavCandidateTest final : public QObject {
     Q_OBJECT
 private slots:
     void realPcm24Over4096FramesAndTamper();
+    void pcm24MonoOddAndEvenPayloadReaderRoundtrip();
     void realFloat32StereoSignedZeroAndSeedRejection();
 };
 
@@ -195,6 +196,43 @@ void M18DecodedWavCandidateTest::realFloat32StereoSignedZeroAndSeedRejection()
     QVERIFY(!invalid);
     QCOMPARE(invalid.error()->code(),core::ErrorCode::InvalidArgument);
 }
+
+void M18DecodedWavCandidateTest::pcm24MonoOddAndEvenPayloadReaderRoundtrip()
+{
+    using namespace audio::internal;
+    for(const std::int64_t frames:{4104,4105}){
+        auto original=make_master(48000,audio::ChannelLayout::MONO_C,frames);
+        QVERIFY(original);
+        constexpr std::uint64_t seed=UINT64_C(0x123456789ABCDEF0);
+        const auto wavBytes=write_m18_wav(original->view(),
+            audio::WavSampleFormat::PCM_S24,seed);
+        QVERIFY(wavBytes);
+        const auto plan=m18_plan_wav({
+            M18WavEncoding::PCM24,48000U,1U,
+            static_cast<std::uint64_t>(frames),seed});
+        QCOMPARE(plan.status,M18WavStatus::OK);
+        QCOMPARE(plan.plan.data_bytes,static_cast<std::uint64_t>(frames)*3U);
+        const std::uint64_t pad=static_cast<std::uint64_t>(frames)&1U;
+        QCOMPARE(plan.plan.file_bytes,44U+plan.plan.data_bytes+pad);
+        QCOMPARE(wavBytes->bytes.size(),
+            static_cast<std::size_t>(plan.plan.file_bytes));
+        if(pad!=0U)
+            QCOMPARE(std::to_integer<std::uint8_t>(wavBytes->bytes.back()),
+                std::uint8_t{0});
+        auto readControl=std::make_shared<wav_support::ReaderControl>();
+        auto decoded=audio::WavReader::open(
+            wav_support::memory_reader(wavBytes->bytes,readControl));
+        QVERIFY(decoded);
+        const auto check=m18_verify_decoded_wav_candidate(
+            *decoded.value()->get(),original->view(),
+            audio::WavSampleFormat::PCM_S24,seed);
+        QVERIFY(check);
+        QCOMPARE(check.value()->frame_count,
+            static_cast<std::uint64_t>(frames));
+        QCOMPARE(check.value()->data_bytes,plan.plan.data_bytes);
+    }
+}
+
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::M18DecodedWavCandidateTest)
 #include "test_m18_decoded_wav_candidate.moc"

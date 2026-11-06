@@ -356,7 +356,12 @@ realWindowsM18RollbackAndEpochGate()
     const auto failed=TransactionalAudioExporter::export_new_file(
         *over.value());
     QVERIFY(!failed);
-    QVERIFY(failed.error()->message().find("nonconforming")!=std::string::npos);
+    // If a lower-level container/codec error wins before the ceiling
+    // check, report the EXACT underlying reason instead of a blind FAIL.
+    const auto reason=failed.error()->message();
+    QCOMPARE(failed.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY2(reason.find("nonconforming")!=std::string::npos,
+             reason.c_str());
     QVERIFY(!QFileInfo::exists(rejectedPath));
     QCOMPARE(state->acquired,std::size_t{0});
     QVERIFY(m18_no_temporary_candidates(dir.path()));

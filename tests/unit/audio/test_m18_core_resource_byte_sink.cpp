@@ -74,6 +74,7 @@ private slots:
     void acceptShortWritesAndNoHiddenCommit();
     void failClosedOnZeroErrorOverreportAndException();
     void streamingPcm24UsesTheSameCanonicalBytePort();
+    void streamingPcm24MonoOddPayloadPadAndFailure();
     void streamingFloat32KeepsDitherDisabled();
 };
 
@@ -208,6 +209,49 @@ void M18CoreResourceByteSinkTest::streamingFloat32KeepsDitherDisabled()
     QCOMPARE(rejected.start(),M18StreamStatus::SINK_FAILED);
     QCOMPARE(badSink.failure(),M18CoreSinkFailure::WRITER_ERROR);
     QVERIFY(!rejected.finish().receipt.has_value());
+}
+
+
+void M18CoreResourceByteSinkTest::streamingPcm24MonoOddPayloadPadAndFailure()
+{
+    using namespace audio::internal;
+    const M18WavSpec spec{M18WavEncoding::PCM24,48000U,1U,3U,42U};
+    const std::array<double,3> samples{{0.1,-0.2,0.3}};
+    const auto plan=m18_plan_wav(spec);
+    QCOMPARE(plan.status,M18WavStatus::OK);
+    QCOMPARE(plan.plan.data_bytes,std::uint64_t{9});
+    QCOMPARE(plan.plan.file_bytes,std::uint64_t{54}); // 44 + 9 + RIFF pad
+    MemoryWriter w;
+    w.max_transfer=1U; // adversarial short progress for pad too
+    M18CoreResourceByteSink sink(w);
+    M18StreamingWavWriter wav(sink,spec);
+    QCOMPARE(wav.start(),M18StreamStatus::OK);
+    QCOMPARE(wav.append(samples),M18StreamStatus::OK);
+    const auto receipt=wav.finish();
+    QCOMPARE(receipt.status,M18StreamStatus::OK);
+    QVERIFY(receipt.receipt.has_value());
+    QCOMPARE(w.bytes.size(),std::size_t{54});
+    QCOMPARE(std::to_integer<std::uint8_t>(w.bytes.back()),std::uint8_t{0});
+    const auto independent=m18_make_bounded_wav_candidate(spec,samples);
+    QCOMPARE(independent.status,M18WavStatus::OK);
+    QCOMPARE(independent.bytes.size(),w.bytes.size());
+    for(std::size_t i=0;i<w.bytes.size();++i)
+        QCOMPARE(std::to_integer<std::uint8_t>(w.bytes[i]),
+                 independent.bytes[i]);
+    QCOMPARE(sink.bytes_accepted(),std::uint64_t{54});
+    QCOMPARE(w.flush_calls,std::size_t{0});
+    QCOMPARE(w.close_calls,std::size_t{0});
+    // Failure exactly on the THIRD physical write (the padding byte).
+    MemoryWriter blocked;
+    blocked.error_on_call=3U;
+    M18CoreResourceByteSink failedSink(blocked);
+    M18StreamingWavWriter failed(failedSink,spec);
+    QCOMPARE(failed.start(),M18StreamStatus::OK);
+    QCOMPARE(failed.append(samples),M18StreamStatus::OK);
+    const auto bad=failed.finish();
+    QCOMPARE(bad.status,M18StreamStatus::SINK_FAILED);
+    QVERIFY(!bad.receipt.has_value());
+    QCOMPARE(blocked.bytes.size(),std::size_t{53});
 }
 
 } // namespace rgsml::tests

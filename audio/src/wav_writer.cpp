@@ -569,6 +569,18 @@ core::Status WavWriter::finalize()
             ErrorCode::InvalidState,
             "wav_writer_incomplete_frame_count: exact declared frame count is required.");
     }
+    // M18 RIFF/RF64: data chunk retains the exact sample-byte count,
+    // but an odd PCM24 mono payload requires a physical ZERO pad byte.
+    // This is container alignment, not an audio sample or dither output.
+    // Legacy IEEE_F64 output remains byte-identical.
+    if (m18_mode_ && (layout_.data_bytes & UINT64_C(1))!=0U) {
+        const std::array<std::byte,1> pad{{std::byte{0}}};
+        auto padWritten = write_all(*destination_, pad);
+        if (!padWritten) {
+            failed_ = true;
+            return padWritten;
+        }
+    }
     auto position = destination_->position_bytes();
     if (!position) {
         failed_ = true;

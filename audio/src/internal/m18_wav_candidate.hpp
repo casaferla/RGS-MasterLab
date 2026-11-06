@@ -68,19 +68,23 @@ struct M18WavPlanResult {
     if(spec.frame_count>UINT64_MAX/align)
         return {M18WavStatus::SIZE_OVERFLOW,{}};
     const std::uint64_t data_bytes=spec.frame_count*align;
+    // RIFF chunks are WORD aligned. The data chunk reports the exact
+    // unpadded sample-byte count; a trailing zero byte belongs only to
+    // the enclosing RIFF/RF64 file size (and full-file SHA), never PCM.
+    const std::uint64_t data_pad=data_bytes&UINT64_C(1);
     const std::uint64_t riff_overhead=
         spec.encoding==M18WavEncoding::PCM24 ? 44U:58U;
     const std::uint64_t rf64_overhead=
         spec.encoding==M18WavEncoding::PCM24 ? 80U:94U;
-    if(data_bytes>UINT64_MAX-rf64_overhead)
+    if(data_bytes>UINT64_MAX-rf64_overhead-data_pad)
         return {M18WavStatus::SIZE_OVERFLOW,{}};
     const bool use_rf64=data_bytes>UINT32_C(0xFFFFFFFE)
-        || data_bytes>UINT64_C(0xFFFFFFFE)-(riff_overhead-8U);
+        || data_bytes+data_pad>UINT64_C(0xFFFFFFFE)-(riff_overhead-8U);
     const auto overhead=use_rf64?rf64_overhead:riff_overhead;
     return {M18WavStatus::OK,M18WavPlan{
         spec,use_rf64,static_cast<std::uint16_t>(align),
         static_cast<std::uint32_t>(bytes_per_sec),data_bytes,
-        data_bytes+overhead,static_cast<std::uint32_t>(overhead)}};
+        data_bytes+data_pad+overhead,static_cast<std::uint32_t>(overhead)}};
 }
 
 namespace m18_wav_detail {
