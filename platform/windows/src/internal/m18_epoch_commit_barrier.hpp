@@ -149,8 +149,8 @@ public:
     // Must be called before final Product retirement, never after.
     [[nodiscard]] core::Status try_retire(std::uint64_t expectedEpoch) const {
         std::lock_guard guard{state_->mutex};
-        if(state_->active ||state_->retired ||expectedEpoch==0
-           ||state_->epoch!=expectedEpoch)
+        if(state_->active ||state_->mutation_active ||state_->retired
+           ||expectedEpoch==0 ||state_->epoch!=expectedEpoch)
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "M18_EPOCH_RETIRE_DENIED_ACTIVE_OR_STALE"});
