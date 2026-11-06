@@ -139,6 +139,7 @@ private slots:
     void m18DirectTerminalStateMutationRequiresProductEpoch();
     void m18TerminalDirectMutationUsesRealCommitLease();
     void m18DirectTerminalMutationRejectsReentrantEpochCallback();
+    void m18TerminalViewModelUsesSingleDirectStateEpochAuthority();
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
     void firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory();
 };
@@ -560,6 +561,55 @@ m18DirectTerminalMutationRejectsReentrantEpochCallback()
     QCOMPARE(calls,std::size_t{2});
     QCOMPARE(state.value()->parameter_revision(),initialCeilingRevision+1);
     QCOMPARE(state.value()->parameters().ceiling_db_tp(),-4.0);
+    state.value()->set_private_m18_mutation_admission({});
+}
+
+void TerminalActivationIntegrationTest::
+m18TerminalViewModelUsesSingleDirectStateEpochAuthority()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a4").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    std::size_t admitted=0;
+    bool available=true;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char* operation)->core::Status {
+            if(!operation ||!available)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"M18_TERMINAL_EPOCH_BUSY"});
+            ++admitted;
+            return core::Status::success();
+        });
+    QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(admitted,std::size_t{1});
+    QCOMPARE(accepted.count(),1);
+    QVERIFY(vm.commitDraft()); // no-op must not revoke Product epoch
+    QCOMPARE(admitted,std::size_t{1});
+    QCOMPARE(accepted.count(),1);
+    vm.setBypass(false);
+    QCOMPARE(admitted,std::size_t{2});
+    QCOMPARE(accepted.count(),2);
+    QVERIFY(!vm.bypass());
+    // A denied real reset leaves both canonical M17 parameter and UI
+    // accepted-signal sequence intact.
+    available=false;
+    vm.resetToDefault();
+    QCOMPARE(admitted,std::size_t{2});
+    QCOMPARE(accepted.count(),2);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-2.0);
+    available=true;
+    vm.resetToDefault();
+    QCOMPARE(admitted,std::size_t{3});
+    QCOMPARE(accepted.count(),3);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
     state.value()->set_private_m18_mutation_admission({});
 }
 
