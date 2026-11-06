@@ -864,8 +864,18 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         if (rate.value()->has_value()) {
             const bool accepted = masterOutputRateState_->choose_master_rate(
                 rate.value()->value());
-            Q_ASSERT(accepted);
-            Q_UNUSED(accepted);
+            // M18 Product epoch admission is allowed to refuse the
+            // requested MASTER rate while a worker owns a commit lease.
+            // Never assert/crash in a debug build or silently continue a
+            // partially restored Project in a release build. The outer
+            // Project batch remains consent-revoked on every error path.
+            if(!accepted) {
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "PROJECT_MASTER_RATE_MUTATION_REFUSED"});
+                return;
+            }
         }
     }
     if (goldCandidate) {
