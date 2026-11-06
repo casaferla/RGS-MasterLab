@@ -136,6 +136,10 @@ signals:
     void changed();
 
 private:
+    // A GOLD clear is one Product epoch; its fallback to PREPARED or
+    // PROCESSED must not request a second independent admission.
+    [[nodiscard]] core::Status switch_to_after_authorized_mutation(
+        AuditionTarget target);
     [[nodiscard]] core::Status admit_m18_source_mutation(
         const char* operation) const;
     [[nodiscard]] core::Status store_active_cue();
