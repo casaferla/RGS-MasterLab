@@ -127,6 +127,7 @@ private:
     // Exactly one Product mutation authority: installing both ViewModel
     // and direct TerminalLimiterState guards is ambiguous and fail closed.
     [[nodiscard]] bool admit_m18_view_mutation() const noexcept;
+    [[nodiscard]] bool m18_foreign_owner_thread() const noexcept;
     void set_validation(const QString& message);
     void clear_validation();
     TerminalLimiterState* state_{nullptr};
