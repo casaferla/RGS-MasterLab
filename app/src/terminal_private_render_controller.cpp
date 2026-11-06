@@ -29,12 +29,30 @@ TerminalPrivateRenderController::~TerminalPrivateRenderController() {
     if(worker_.joinable())worker_.join();
 }
 void TerminalPrivateRenderController::invalidate() {
+    // Legacy M17 path: keep its cancellation and candidate-gate ordering
+    // unchanged until all synchronous callers honor BUSY admission.
+    invalidate_local_after_candidate_gate(false);
+}
+core::Status TerminalPrivateRenderController::try_invalidate_for_m18() {
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_RENDER_INVALIDATION_REQUIRES_QT_OWNER_THREAD"});
+    // Admission MUST precede serial, progress, M17 candidate, and pending
+    // worker changes. A BUSY rejection leaves all these exactly untouched.
+    const auto allowed=gate_->try_invalidate_for_m18();
+    if(!allowed)return allowed;
+    invalidate_local_after_candidate_gate(true);
+    return core::Status::success();
+}
+void TerminalPrivateRenderController::invalidate_local_after_candidate_gate(
+    bool gateAlreadyInvalidated) {
     ++serial_;
     activeSerial_.store(serial_,std::memory_order_release);
     progressPhase_.store(0,std::memory_order_release);
     progressFrames_.store(0,std::memory_order_relaxed);
     progressTotal_.store(0,std::memory_order_relaxed);
-    gate_->invalidate();
+    if(!gateAlreadyInvalidated)gate_->invalidate();
     lastApprovedPrepareTiming_.reset(); // Revoked PCM can never calibrate ETA.
     {std::lock_guard lock(mutex_);pending_.reset();}
     status_=QStringLiteral("IDLE");error_.clear();lastError_.reset();emit changed();
