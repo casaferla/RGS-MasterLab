@@ -215,3 +215,36 @@ The staging also contains the uncompiled central mastering-chain
 mutation gate and guarded candidate invalidation covered in prior audit
 entries. They will travel together in the *next* exact-SHA macrolot
 following completion of #1057. PR #84 and `main` unchanged.
+
+## Follow-up #71: renderer invalidation isolation after Focused #1058 candidate
+- #1057 Windows red: fail-only artifact `rgsml-terminal-activation-bounded.txt`
+  (913-byte ZIP, NOT complete logs) identifies test
+  `TerminalActivationIntegrationTest::privateMaster192kOn48kDeviceRemainsUninstalled`,
+  failing `sharedEpoch.try_transition(777U,778U,verifiedId,true)`.
+  The original policy rejected genuine initial zero MANUAL chain revision.
+  Fix already on staging: Product ticket permits exact zero revision but
+  still matches complete Source/Project/Master generations and actual rate;
+  checked-stage bridge compares EXACT chain revision, including zero.
+  Separate stale/wrong-chain tests added. Promoted to PR #84 at
+  `3908b6c0c389bdf861dcda3035d7284ddef84dfe`, triggering Focused
+  [#1058](https://github.com/casaferla/RGS-MasterLab/actions/runs/42253593966).
+  Product Owner exclusively checks Windows/Linux CI results.
+- **Following #1058 staging-only / not in PR:** renderer's original
+  `void invalidate()` still calls `TerminalCandidateGate::invalidate()`
+  and changes serial, progress, pending job, output state. Introduced
+  `TerminalPrivateRenderController::try_invalidate_for_m18()`, which
+  checks Qt owner thread, consults candidate's status-returning
+  `try_invalidate_for_m18()` FIRST and leaves all renderer observables
+  intact on BUSY. A single internal finalizer shares original M17
+  invalidation code; the legacy M17 ordering remains unchanged.
+  Existing native Product activation test asserts a held worker epoch
+  rejects both candidate-gate and renderer invalidation, retains exact
+  verified stage, renderer status and render invocation count.
+  No production caller uses the new renderer admission yet.
+- **Remaining hard blocker:** renderer `request_private()`,
+  error/incomplete paths, Product cancellation and private source/
+  project switch still invoke the legacy void `invalidate()`. They
+  can bypass the opt-in status-returning path. A single Product-owned
+  state controller and all-callsite migration is REQUIRED before
+  turning on asynchronous M18 export, plus M18 FQ and PO acceptance.
+  Do not claim M18 merged/qualified from this staging work.
