@@ -15,8 +15,10 @@ namespace rgsml::app::internal {
 
 // Consumes only an immutable M17 stage plus an UNFORGEABLE Product ticket.
 // The caller MUST supply its authoritative TerminalCandidateGate AND the
-// identical current staged pointer, then capture the Product epoch ticket
-// on the same Qt owner thread, without event-loop reentrancy.
+// identical current staged pointer AND the actual live SOURCE reference
+// (provider + locator), then capture the Product epoch ticket on the same
+// Qt owner thread, without event-loop reentrancy. Alias/symlink/hardlink
+// physical-file protections remain independently enforced by Windows.
 // Nothing here may call a QObject or grant a FILE commit;
 // the worker's first actual lease is obtained by Windows after encoding.
 [[nodiscard]] inline
@@ -26,6 +28,7 @@ make_m18_checked_stage_worker_request(
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> stage,
     const platform::windows::internal::
         M18ProductEpochTicketAuthority::Ticket& productTicket,
+    const core::ResourceReference& authoritativeCurrentSource,
     core::ResourceReference source,
     core::ResourceReference destination,
     audio::WavSampleFormat targetFormat,
@@ -36,6 +39,11 @@ make_m18_checked_stage_worker_request(
     using R=core::Result<Request>;
     const auto id=productTicket.identity();
     if(!id.valid() ||productTicket.epoch()==0 ||!stage
+       // The Qt Product owner must provide the current SOURCE identity
+       // from SourceSelectionViewModel, not the worker's own claimed path.
+       ||!authoritativeCurrentSource.permissions().can_read()
+       ||!source.permissions().can_read()
+       ||!authoritativeCurrentSource.same_resource_identity(source)
        // Product-owner thread MUST supply the exact currently staged M17
        // MASTER from the authoritative candidate gate, never a detached
        // old pointer retained after SOURCE/Project replacement.
