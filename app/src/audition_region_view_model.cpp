@@ -1,6 +1,7 @@
 #include "audition_region_view_model.hpp"
 
 #include "playback_transport_view_model.hpp"
+#include <QThread>
 
 #include <rgsml/core/checked_integer.hpp>
 
@@ -240,8 +241,39 @@ core::Status AuditionRegionViewModel::validate(core::FrameRange candidate) const
     return core::Status::success();
 }
 
+bool AuditionRegionViewModel::m18_foreign_owner_thread() const noexcept
+{
+    return m18RegionMutationAdmission_
+        &&QThread::currentThread()!=thread();
+}
+
+core::Status AuditionRegionViewModel::admit_m18_region_mutation(
+    const char* operation) const
+{
+    if(!m18RegionMutationAdmission_)return core::Status::success();
+    if(m18_foreign_owner_thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionAdmitting_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_MUTATION_REENTRANT_ADMISSION"});
+    m18RegionAdmitting_=true;
+    struct Reset final {
+        bool* active;
+        ~Reset(){*active=false;}
+    } reset{&m18RegionAdmitting_};
+    try{return m18RegionMutationAdmission_(operation);}
+    catch(...) {return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_REGION_MUTATION_ADMISSION_THROWN"});}
+}
+
 core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
 {
+    if(const auto admission=admit_m18_region_mutation("region_set");
+       !admission)return admission;
     const auto valid = validate(candidate);
     if (!valid) {
         publish_error(*valid.error());
@@ -276,6 +308,9 @@ core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
 
 core::Status AuditionRegionViewModel::set_start(core::FrameIndex start)
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
     if (!region_) {
         return invalid_region("Create an Audition Region before editing its start.");
     }
@@ -288,6 +323,9 @@ core::Status AuditionRegionViewModel::set_start(core::FrameIndex start)
 
 core::Status AuditionRegionViewModel::set_end_exclusive(core::FrameIndex end)
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
     if (!region_) {
         return invalid_region("Create an Audition Region before editing its end.");
     }
@@ -300,9 +338,14 @@ core::Status AuditionRegionViewModel::set_end_exclusive(core::FrameIndex end)
 
 core::Status AuditionRegionViewModel::clear_region()
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
     if (!region_) {
         return core::Status::success();
     }
+    if(const auto admission=admit_m18_region_mutation("region_clear");
+       !admission)return admission;
     if (loopEnabled_) {
         if (!playback_) {
             return invalid_region("Playback transport is unavailable.");
@@ -319,6 +362,13 @@ core::Status AuditionRegionViewModel::clear_region()
 
 core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&loopEnabled_==enabled)
+        return core::Status::success();
+    if(const auto admission=admit_m18_region_mutation("loop_toggle");
+       !admission)return admission;
     if (enabled && (!region_ || !playback_ || !playback_->playback_available())) {
         const auto failure = core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
