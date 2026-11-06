@@ -3214,6 +3214,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!unreadableRequest);
         QCOMPARE(unreadableRequest.error()->code(),
                  core::ErrorCode::InvalidState);
+        auto unreadableWorkerSource=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator(),
+            false,true,"unreadable-worker-source");
+        QVERIFY(unreadableWorkerSource);
+        const auto deniedWorkerSource=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*unreadableWorkerSource.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWorkerSource);
+        QCOMPARE(deniedWorkerSource.error()->code(),
+                 core::ErrorCode::InvalidState);
         // A write-authorized reference still may not alias the exact
         // SOURCE provider/locator. Physical aliases are checked by Windows
         // again at commit time.
