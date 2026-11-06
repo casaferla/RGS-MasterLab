@@ -27,6 +27,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -184,6 +185,7 @@ private slots:
     void m18GoldClearFallbackRequiresSingleMutationAdmission();
     void m18GoldClearFallbackToProcessedUsesOneAdmission();
     void m18SelectorAdmissionAndPublicationAreNonReentrant();
+    void m18SelectorThrowingAdmissionPreservesAuditionAndCanRecover();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -466,6 +468,43 @@ m18SelectorAdmissionAndPublicationAreNonReentrant()
     QCOMPARE(selector.active_target(),
         std::optional{app::AuditionTarget::PROCESSED});
 }
+void AuditionSourceSelectorTest::
+m18SelectorThrowingAdmissionPreservesAuditionAndCanRecover()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,175)));
+    QVERIFY(selector.set_processed_realization(realization(0,175)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QSignalSpy changed{&selector,&app::AuditionSourceSelector::changed};
+    selector.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_SIMULATED_PRODUCT_CALLBACK_FAILURE");
+        });
+    const auto denied=selector.switch_to(app::AuditionTarget::PROCESSED);
+    QVERIFY(!denied);
+    QCOMPARE(denied.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    QCOMPARE(changed.count(),0);
+    // The fail-closed callback guard is scoped, not a permanent BUSY.
+    std::size_t admits=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            return core::Status::success();
+        });
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(changed.count(),1);
+    selector.set_private_m18_mutation_admission({});
+}
+
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
 {
     auto service = std::make_unique<FakePlaybackService>();
