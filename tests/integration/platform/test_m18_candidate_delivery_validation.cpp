@@ -6,6 +6,7 @@
 #include "internal/transactional_audio_exporter_test_seam.hpp"
 #include "internal/m18_epoch_commit_barrier.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
+#include "internal/m18_async_export_worker.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -25,6 +26,7 @@
 #include <thread>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <span>
 #include <string>
 #include <vector>
@@ -191,6 +193,7 @@ private slots:
     void tamperedPayloadAndWrongMasterRejected();
     void realWindowsM18TransactionalReadback();
     void realWindowsM18RollbackAndEpochGate();
+    void realWindowsM18CooperativeCancellationAndAsyncWorker();
     void realWindowsSixRatesBothLayoutsBothEncodingsOddEven();
     void realWindowsFailureInjectionCleansUpBothFormats();
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
@@ -203,6 +206,91 @@ private slots:
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
     void realWorkerRevokedBeforeCommitAdmissionCleansCandidate();
 };
+
+void M18CandidateDeliveryValidationTest::
+realWindowsM18CooperativeCancellationAndAsyncWorker()
+{
+    // One REAL Windows transactional path, two encoding families, no UI
+    // callback or unverified candidate file exposed to the Product.
+    using namespace platform::windows;
+    using internal::M18AsyncExportWorker;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto inputPath=dir.filePath(QStringLiteral("source-safe.bin"));
+    QFile input{inputPath};
+    QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(input.write("source-stable",13),qint64{13});
+    input.close();
+
+    for(const auto encoding:{
+            audio::WavSampleFormat::PCM_S24,
+            audio::WavSampleFormat::IEEE_F32}) {
+        const auto data=master(audio::ChannelLayout::MONO_C,8193,48000);
+        QVERIFY(data);
+        const auto seed=encoding==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(0x5A55A55A01234567)}
+            :std::nullopt;
+        for(int scenario=0;scenario<4;++scenario) {
+            const auto out=dir.filePath(
+                QStringLiteral("cancel-%1-%2.wav")
+                .arg(static_cast<int>(encoding)).arg(scenario));
+            auto auth=std::make_shared<TestSessionState>();
+            auto req=make_real_transaction_request(
+                inputPath,out,data,encoding,seed,0.0,auth);
+            QVERIFY(req);
+            std::size_t calls=0;
+            // Scenario 0: cancel before candidate creation.
+            // Scenario 1: cancel during streaming after first 4096 frames.
+            // Scenario 2: cancel AFTER publish/readback while lease is held.
+            // Scenario 3: throwing cancellation callback denies closed.
+            const std::function<bool()> cancellation=[&,scenario] {
+                ++calls;
+                if(scenario==0)return true;
+                if(scenario==1)return calls>=3;
+                if(scenario==2)return QFileInfo::exists(out);
+                throw std::runtime_error("denied callback");
+            };
+            const auto result=TransactionalAudioExporter::export_new_file(
+                *req.value(),cancellation);
+            QVERIFY(!result);
+            QCOMPARE(result.error()->code(),core::ErrorCode::InvalidState);
+            QVERIFY(!QFileInfo::exists(out));
+            QVERIFY(m18_no_temporary_candidates(dir.path()));
+            QCOMPARE(auth->acquired,scenario==2?std::size_t{1}
+                                                :std::size_t{0});
+            QCOMPARE(auth->retired,auth->acquired);
+        }
+
+        // Actual detached nonblocking worker, with only an immutable
+        // AudioBuffer, value references, and Qt-free commit lease factory.
+        const auto out=dir.filePath(QStringLiteral("async-%1.wav")
+            .arg(static_cast<int>(encoding)));
+        auto auth=std::make_shared<TestSessionState>();
+        auto req=make_real_transaction_request(
+            inputPath,out,data,encoding,seed,0.0,auth);
+        QVERIFY(req);
+        auto task=M18AsyncExportWorker::launch(std::move(*req.value()));
+        QVERIFY(task);
+        QTRY_VERIFY_WITH_TIMEOUT((*task.value())->finished(),30000);
+        const auto finished=(*task.value())->result_if_finished();
+        QVERIFY(finished);
+        QVERIFY(*finished);
+        QCOMPARE(finished->value()->sample_format(),encoding);
+        QCOMPARE(finished->value()->frame_count().value(),std::int64_t{8193});
+        QCOMPARE(finished->value()->encoded_file_sha256().size(),
+                 std::size_t{64});
+        QVERIFY(QFileInfo::exists(out));
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+        QCOMPARE(auth->acquired,std::size_t{1});
+        QCOMPARE(auth->retired,std::size_t{1});
+        // Idempotent cancellation after success never lies about result.
+        (*task.value())->cancel();
+        QVERIFY((*task.value())->finished());
+        QVERIFY((*task.value())->result_if_finished());
+    }
+    QFile unchanged{inputPath};
+    QVERIFY(unchanged.open(QIODevice::ReadOnly));
+    QCOMPARE(unchanged.readAll(),QByteArray("source-stable",13));
+}
 
 void M18CandidateDeliveryValidationTest::
 exactPcm24ReadbackAndCeilingEvidence()
