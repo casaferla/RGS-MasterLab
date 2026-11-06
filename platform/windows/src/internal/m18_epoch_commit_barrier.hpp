@@ -19,6 +19,7 @@ class M18EpochCommitBarrier final {
         mutable std::mutex mutex;
         std::uint64_t epoch;
         bool active{false};
+        bool mutation_active{false};
         bool retired{false};
     };
     class HeldLease final : public M18ExportCommitLease {
@@ -45,6 +46,27 @@ class M18EpochCommitBarrier final {
         std::uint64_t epoch_;
     };
 public:
+    // Owner-only exclusive batch: prevents worker publication between
+    // Source, Project, chain and MASTER changes of a single transaction.
+    // This is an isolated primitive until Product controller wiring exists.
+    class MutationLease final {
+        friend class M18EpochCommitBarrier;
+        MutationLease(std::shared_ptr<State> state,std::uint64_t epoch)
+            :state_(std::move(state)),epoch_(epoch){}
+    public:
+        MutationLease(const MutationLease&)=delete;
+        MutationLease& operator=(const MutationLease&)=delete;
+        ~MutationLease() {
+            std::lock_guard guard{state_->mutex};
+            if(state_->mutation_active&&state_->epoch==epoch_)
+                state_->mutation_active=false;
+        }
+        [[nodiscard]] std::uint64_t epoch() const noexcept{return epoch_;}
+    private:
+        std::shared_ptr<State> state_;
+        std::uint64_t epoch_;
+    };
+
     explicit M18EpochCommitBarrier(std::uint64_t epoch)
         :state_(std::make_shared<State>(epoch)) {}
     M18EpochCommitBarrier(const M18EpochCommitBarrier&)=delete;
@@ -58,7 +80,7 @@ public:
         using R=core::Result<std::unique_ptr<M18ExportCommitLease>>;
         std::lock_guard guard{state_->mutex};
         if(expectedEpoch==0 ||state_->retired ||state_->active
-           ||expectedEpoch!=state_->epoch)
+           ||state_->mutation_active ||expectedEpoch!=state_->epoch)
             return R::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "M18_EPOCH_REVOKED_STALE_OR_COMMIT_BUSY"});
@@ -83,7 +105,8 @@ public:
     [[nodiscard]] core::Status try_advance_epoch(
         std::uint64_t expectedEpoch,std::uint64_t nextEpoch) const {
         std::lock_guard guard{state_->mutex};
-        if(state_->active ||state_->retired ||expectedEpoch==0
+        if(state_->active ||state_->mutation_active
+           ||state_->retired ||expectedEpoch==0
            ||expectedEpoch!=state_->epoch
            ||nextEpoch<=expectedEpoch)
             return core::Status::failure(core::Error{
@@ -91,6 +114,35 @@ public:
                 "M18_EPOCH_ADVANCE_DENIED_ACTIVE_OR_STALE"});
         state_->epoch=nextEpoch;
         return core::Status::success();
+    }
+
+    // Begin a multi-controller mutation as ONE epoch-advancing atomic
+    // reservation, before changing even the first observable Product field.
+    // While held, no worker may commit and no other mutation/retire may
+    // advance the same epoch. The caller must complete its whole transaction
+    // without invoking Qt events or yielding the Product owner thread.
+    [[nodiscard]] core::Result<std::unique_ptr<MutationLease>>
+    try_begin_mutation(std::uint64_t expectedEpoch,
+                       std::uint64_t nextEpoch) const {
+        using R=core::Result<std::unique_ptr<MutationLease>>;
+        std::lock_guard guard{state_->mutex};
+        if(expectedEpoch==0 ||nextEpoch<=expectedEpoch
+           ||state_->epoch!=expectedEpoch ||state_->active
+           ||state_->mutation_active ||state_->retired)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_MUTATION_BUSY_OR_STALE"});
+        try {
+            auto lease=std::unique_ptr<MutationLease>(
+                new MutationLease{state_,nextEpoch});
+            state_->epoch=nextEpoch;
+            state_->mutation_active=true;
+            return R::success(std::move(lease));
+        }catch(const std::bad_alloc&) {
+            return R::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "M18_PRODUCT_MUTATION_LEASE_ALLOCATION_FAILED"});
+        }
     }
 
     // The owner cannot destruct/rebind Project while a commit is held.
