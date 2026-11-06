@@ -509,6 +509,14 @@ core::Status AuditionSourceSelector::set_gold(
 
 core::Status AuditionSourceSelector::clear_gold()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_CLEAR_WRONG_OWNER_THREAD"});
+    // Already-empty GOLD cannot revoke a retained M18 verified master.
+    if(m18MutationAdmission_ &&!gold_
+       &&activeTarget_!=AuditionTarget::GOLD)
+        return core::Status::success();
     if(const auto admission=admit_m18_source_mutation("clear_gold");
        !admission)return admission;
     offlineProcessedAuthority_.reset();
