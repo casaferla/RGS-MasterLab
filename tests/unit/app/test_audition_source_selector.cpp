@@ -1,4 +1,5 @@
 #include "audition_region_view_model.hpp"
+#include "internal/m18_product_controller_binding.hpp"
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
@@ -190,6 +191,7 @@ private slots:
     void m18GoldViewModelAndSelectorUseOneProductAdmission();
     void m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection();
     void m18GoldOwnGateRejectsReentrantCallbackAndCanRecover();
+    void m18RealAuditionGoldRegionControllersShareOneProductEpoch();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -709,6 +711,60 @@ m18GoldOwnGateRejectsReentrantCallbackAndCanRecover()
     QVERIFY(!gold.has_gold());
     QVERIFY(gold.error_message().isEmpty());
     gold.set_private_m18_gold_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18RealAuditionGoldRegionControllersShareOneProductEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto goldFile=write_valid_wav(
+        dir,QStringLiteral("m18-shared-owner-gold.wav"),5);
+    QVERIFY(!goldFile.isEmpty());
+    auto service=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel playback{std::move(service)};
+    app::AuditionRegionViewModel region{&playback};
+    app::AuditionSourceSelector audition{&playback};
+    app::GoldSelectionViewModel gold{&audition};
+    region.source_committed(
+        *core::FrameCount::create(64).value(),
+        *core::SampleRate::create(48000).value());
+    region.set_waveform_ready(true);
+    const auto selection=core::FrameRange::create(
+        core::FrameIndex{2},core::FrameIndex{48});
+    QVERIFY(selection);
+    const M18ProductExportIdentity id{11U,12U,13U,0U,48000U,2U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        150U,id);
+    QVERIFY(owner->try_transition(150U,151U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,151U,id};
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        audition,region,gold,fanout);
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    // Same held commit excludes *both* actual Qt editor surfaces:
+    // a Region edit and file-probed GOLD replacement.
+    QVERIFY(!region.set_region(*selection.value()));
+    gold.selectGold(QUrl::fromLocalFile(goldFile));
+    QVERIFY(!gold.has_gold());
+    QVERIFY(!region.has_region());
+    QVERIFY((*lease.value())->revalidate_current());
+    lease.value()->reset();
+
+    QVERIFY(region.set_region(*selection.value()));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    gold.selectGold(QUrl::fromLocalFile(goldFile));
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),
+        QStringLiteral("m18-shared-owner-gold.wav"));
+    QVERIFY(region.clear_region());
+    gold.clearGold();
+    QVERIFY(!gold.has_gold());
+    // No GUI export action or consent was installed by this binding.
+    QVERIFY(!owner->capture(id));
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
