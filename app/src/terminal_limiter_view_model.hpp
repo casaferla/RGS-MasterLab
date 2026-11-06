@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -36,6 +37,13 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
 public:
     using AcceptedStateChange = std::function<void()>;
+    // M18 PREPRODUCTION: true committed Ceiling/BYPASS edits invalidate
+    // the exact M17 export source identity. No callback is set in the app
+    // until every other Product/Project/Source mutator is epoch-protected.
+    using M18ProcessingMutationAdmission=std::function<bool()>;
+    void set_private_m18_processing_mutation_admission(
+        M18ProcessingMutationAdmission gate)
+    {m18ProcessingMutationAdmission_=std::move(gate);}
 
     explicit TerminalLimiterViewModel(
         TerminalLimiterState* state,
@@ -123,6 +131,7 @@ private:
     QString validationField_;
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
+    M18ProcessingMutationAdmission m18ProcessingMutationAdmission_;
     QString audioStatus_{QStringLiteral("BYPASS")};
     QString verificationTrimStatus_{QStringLiteral("UNAVAILABLE · NOT VERIFIED")};
     QString verificationTrimDetails_{QStringLiteral(
