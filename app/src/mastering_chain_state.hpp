@@ -22,6 +22,15 @@ namespace rgsml::app {
 
 class MasteringChainState final {
 public:
+    // M18 staging-only injection point, uninstalled in the application.
+    // A real Product must share one epoch across every mutator, including
+    // Project replacement and the terminal candidate gate. Fail closed.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_chain_mutation_admission(M18MutationAdmission gate)
+    {m18MutationAdmission_=gate
+        ?std::make_shared<M18MutationAdmission>(std::move(gate))
+        :nullptr;}
+
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_default(
         const dsp::ModuleRegistry& registry,
         rgsml::core::Uuid chain_id,
@@ -139,6 +148,8 @@ public:
     friend bool operator==(const MasteringChainState&, const MasteringChainState&) = default;
 
 private:
+    [[nodiscard]] core::Status admit_m18_chain_mutation(
+        const char* operation) const;
     MasteringChainState(
         std::shared_ptr<const dsp::ModuleRegistry> registry,
         rgsml::core::Uuid chain_id,
@@ -161,6 +172,9 @@ private:
     dsp::CompressorParameters compressor_params_;
     std::optional<dsp::ModuleInstanceId> stereo_ms_id_;
     std::optional<dsp::StereoMsParameters> stereo_ms_params_;
+    // Pointer preserves defaulted value semantics/assignment for
+    // unconfigured models and lets snapshots retain a shared guard.
+    std::shared_ptr<M18MutationAdmission> m18MutationAdmission_;
 };
 
 }  // namespace rgsml::app
