@@ -3042,6 +3042,72 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.verified_master_rate_for_monitoring());
     QCOMPARE(*product.verified_master_rate_for_monitoring(),
         *masterRate.value());
+
+    // M18 PRIVATE PRODUCT authority: exact M17 owner and explicit consent.
+    // Never writes an actual WAV or grants a GUI export permission.
+    {
+        auto src=core::ResourceReference::create(
+            "test.memory","m18-product-source",true,false,
+            "Synthetic M18 source identity");
+        auto dst=core::ResourceReference::create(
+            "test.memory","m18-product-destination",false,true,
+            "Synthetic M18 destination identity");
+        QVERIFY(src && dst);
+        bool consentCurrent=true;
+        std::size_t consentChecks=0;
+        const auto approve=[&]()->core::Status {
+            ++consentChecks;
+            if(!consentCurrent)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::AccessDenied,
+                    "M18_TEST_EXPLICIT_CONSENT_REVOKED"});
+            return core::Status::success();
+        };
+        auto noConsent=product.make_private_m18_synchronous_export_request(
+            *masterRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,{});
+        QVERIFY(!noConsent);
+        QCOMPARE(noConsent.error()->code(),core::ErrorCode::AccessDenied);
+        auto wrongRate=product.make_private_m18_synchronous_export_request(
+            *deviceRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,approve);
+        QVERIFY(!wrongRate);
+        auto wrongSeed=product.make_private_m18_synchronous_export_request(
+            *masterRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,std::nullopt,-1.0,approve);
+        QVERIFY(!wrongSeed);
+        const auto authorized=product.make_private_m18_synchronous_export_request(
+            *masterRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,approve);
+        QVERIFY2(authorized,authorized?"":authorized.error()->message().c_str());
+        QCOMPARE(authorized.value()->sample_format(),
+                 audio::WavSampleFormat::PCM_S24);
+        QVERIFY(authorized.value()->dither_seed()
+                ==std::optional<std::uint64_t>{UINT64_C(42)});
+        const auto original=candidates.staged();
+        QVERIFY(original);
+        const auto originalPcm=original->rendered.terminal.checked.terminal
+            .compensated_pcm.view();
+        const auto requestedPcm=authorized.value()->payload();
+        QCOMPARE(requestedPcm.frame_count(),originalPcm.frame_count());
+        QVERIFY(requestedPcm.format()==originalPcm.format());
+        const auto originalLeft=originalPcm.channel(0U);
+        const auto requestedLeft=requestedPcm.channel(0U);
+        QVERIFY(originalLeft && requestedLeft);
+        // Alias retention of EXACT original M17 Master; never copy/render.
+        QVERIFY(originalLeft.value()->data()==requestedLeft.value()->data());
+        const auto commitLease=authorized.value()->commit_lease_factory()();
+        QVERIFY(commitLease);
+        QVERIFY((*commitLease.value())->revalidate_current());
+        consentCurrent=false;
+        // Product permission is checked again AT COMMIT, not merely at
+        // request capture. The held lease may no longer authorize file IO.
+        const auto revoked=(*commitLease.value())->revalidate_current();
+        QVERIFY(!revoked);
+        QCOMPARE(revoked.error()->code(),core::ErrorCode::AccessDenied);
+        QVERIFY(!authorized.value()->commit_lease_factory()());
+        QVERIFY(consentChecks>=5U);
+    }
     QCOMPARE(monitorUi.master_rate_hz(),int{192000});
     QVERIFY(monitorUi.can_install());
     QSignalSpy installEligibility{&monitorUi,&app::TerminalMonitorViewModel::changed};

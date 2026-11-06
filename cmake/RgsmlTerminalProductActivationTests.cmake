@@ -16,6 +16,10 @@ set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
     "${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.hpp"
+    # M18 private M17 Product session-to-commit authority method is
+    # a separate app translation unit. Exercise the REAL owner/consent
+    # bridge in this existing Windows M17 activation test closure.
+    "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_authority.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.hpp"
     # Real MasteringPreviewController signal/worker regression uses the
