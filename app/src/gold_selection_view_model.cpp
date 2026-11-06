@@ -49,7 +49,8 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
 {
     // Once the private Product gate is installed, reject foreign-thread
     // calls before reading or modifying Qt-owned state, including errors.
-    if(m18GoldMutationAdmission_ &&QThread::currentThread()!=thread())return;
+    if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
+       &&QThread::currentThread()!=thread())return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         errorMessage_ = QStringLiteral("Choose one local Gold WAV file.");
         emit changed();
@@ -94,6 +95,14 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
 core::Status GoldSelectionViewModel::admit_m18_gold_mutation(
     const char* operation) const
 {
+    // Exactly one component may advance the authoritative Product epoch.
+    // If the selector has its own M18 gate, the GOLD ViewModel must
+    // delegate to it rather than issue a second independent grant.
+    if(selector_->m18_mutation_admission_installed()
+       &&m18GoldMutationAdmission_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_MUTATION_DOUBLE_EPOCH_AMBIGUOUS"});
     if(!m18GoldMutationAdmission_)return core::Status::success();
     if(QThread::currentThread()!=thread())
         return core::Status::failure(core::Error{
@@ -139,7 +148,8 @@ void GoldSelectionViewModel::cancelGoldSelection() noexcept
 
 void GoldSelectionViewModel::clearGold()
 {
-    if(m18GoldMutationAdmission_ &&QThread::currentThread()!=thread())return;
+    if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
+       &&QThread::currentThread()!=thread())return;
     const auto admission=admit_m18_gold_mutation("gold_clear");
     if(!admission) {
         errorMessage_=QString::fromStdString(admission.error()->message());
@@ -161,6 +171,8 @@ void GoldSelectionViewModel::clearGold()
 
 void GoldSelectionViewModel::sourceChanged()
 {
+    if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
+       &&QThread::currentThread()!=thread())return;
     // Derived SOURCE invalidation: the Product must admit the SOURCE
     // mutation before it changes the selector; GOLD cannot retroactively
     // refuse that already-published outer transaction.
