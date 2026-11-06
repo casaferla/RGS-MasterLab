@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -38,9 +39,10 @@ public:
 };
 
 [[nodiscard]] std::shared_ptr<audio::AudioBuffer> master(
-    audio::ChannelLayout layout,std::int64_t frames)
+    audio::ChannelLayout layout,std::int64_t frames,
+    std::int64_t fs=48000)
 {
-    const auto hz=core::SampleRate::create(48000);
+    const auto hz=core::SampleRate::create(fs);
     if(!hz)return {};
     const auto format=audio::AudioFormat::create(*hz.value(),layout);
     const auto count=core::FrameCount::create(frames);
@@ -179,6 +181,7 @@ private slots:
     void tamperedPayloadAndWrongMasterRejected();
     void realWindowsM18TransactionalReadback();
     void realWindowsM18RollbackAndEpochGate();
+    void realWindowsSixRatesBothLayoutsBothEncodingsOddEven();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -409,6 +412,91 @@ realWindowsM18RollbackAndEpochGate()
         *r.value(),pcm,*w.value(),audio::WavSampleFormat::IEEE_F32,
         std::nullopt,-1.0,ExportCollisionPolicy::FAIL_IF_EXISTS,{}));
     QVERIFY(!QFileInfo::exists(commitPath));
+}
+
+
+void M18CandidateDeliveryValidationTest::
+realWindowsSixRatesBothLayoutsBothEncodingsOddEven()
+{
+    // Complete delivery filesystem matrix: ALL supported Master output
+    // rates, mono/stereo, PCM24/Float32 and both payload parities.
+    // Use the original Windows create-new transaction, not memory mocks.
+    using namespace platform::windows;
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto sourcePath=dir.filePath(QStringLiteral("source.bin"));
+    QFile source{sourcePath};
+    QVERIFY(source.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(source.write("M18",3),qint64{3});
+    source.close();
+    int exercised=0;
+    for(const auto fs:rates) {
+        for(const auto layout:{audio::ChannelLayout::MONO_C,
+                               audio::ChannelLayout::STEREO_LR}) {
+            for(const auto encoding:{audio::WavSampleFormat::PCM_S24,
+                                     audio::WavSampleFormat::IEEE_F32}) {
+                for(const std::int64_t frames:{4104,4105}) {
+                    auto sourceOwner=master(layout,frames,fs);
+                    QVERIFY(sourceOwner);
+                    const auto seed=encoding==audio::WavSampleFormat::PCM_S24
+                        ?std::optional<std::uint64_t>{
+                            UINT64_C(0xF0E1D2C3B4A59687)}
+                        :std::nullopt;
+                    const auto destination=dir.filePath(
+                        QStringLiteral("m18-%1-%2-%3-%4.wav")
+                            .arg(fs).arg(static_cast<int>(layout))
+                            .arg(static_cast<int>(encoding)).arg(frames));
+                    const auto permission=std::make_shared<TestSessionState>();
+                    auto requested=make_real_transaction_request(
+                        sourcePath,destination,sourceOwner,encoding,seed,
+                        0.0,permission);
+                    QVERIFY(requested);
+                    const auto exported=TransactionalAudioExporter::export_new_file(
+                        *requested.value());
+                    QVERIFY2(exported,exported
+                        ?"":exported.error()->message().c_str());
+                    QCOMPARE(exported.value()->sample_format(),encoding);
+                    QCOMPARE(exported.value()->frame_count().value(),frames);
+                    QCOMPARE(exported.value()->audio_format(),
+                             sourceOwner->view().format());
+                    QCOMPARE(exported.value()->encoded_file_sha256().size(),
+                             std::size_t{64});
+                    QCOMPARE(exported.value()->decoded_audio_sha256().size(),
+                             std::size_t{64});
+                    QCOMPARE(static_cast<std::uint64_t>(
+                             QFileInfo{destination}.size()),
+                             exported.value()->exact_file_size_bytes());
+                    auto rr=WindowsResourceReader::make_read_reference(
+                        m18_path(destination),
+                        m18_path(QFileInfo{destination}.fileName()));
+                    QVERIFY(rr);
+                    auto bytes=WindowsResourceReader::open_read_only(*rr.value());
+                    QVERIFY(bytes);
+                    auto decoded=audio::WavReader::open(
+                        std::move(*bytes.value()));
+                    QVERIFY(decoded);
+                    const auto& info=decoded.value()->get()->info();
+                    QCOMPARE(info.encoded_sample_format(),encoding);
+                    QCOMPARE(info.frame_count().value(),frames);
+                    QCOMPARE(info.audio_format(),sourceOwner->view().format());
+                    const std::uint64_t sampleBytes=
+                        encoding==audio::WavSampleFormat::PCM_S24?3U:4U;
+                    const auto logicalBytes=
+                        static_cast<std::uint64_t>(frames)
+                        *sourceOwner->view().format().channel_count()
+                        *sampleBytes;
+                    QCOMPARE(info.data_size_bytes(),logicalBytes);
+                    QCOMPARE(permission->acquired,std::size_t{1});
+                    QCOMPARE(permission->revalidated,std::size_t{1});
+                    QCOMPARE(permission->retired,std::size_t{1});
+                    QVERIFY(m18_no_temporary_candidates(dir.path()));
+                    ++exercised;
+                }
+            }
+        }
+    }
+    QCOMPARE(exercised,48);
 }
 
 } // namespace rgsml::tests
