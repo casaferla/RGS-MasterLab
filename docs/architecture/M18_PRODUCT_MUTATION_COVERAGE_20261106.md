@@ -541,3 +541,63 @@ including legacy void candidate invalidations and Qt reentrancy, plus
 FQ cold Windows and Product Owner physical acceptance before any
 shipping export. These new tests/source are not compiled or qualified
 in #1062. Do not merge PR #84 yet.
+
+### #71 post-#1063 staged macro-lot — asynchronous, cancelable M18 WAV delivery
+Product Owner reported Focused #1062 Windows+Linux GREEN; serial PR #84
+fast-forward to `a00236137e2bca2eab45cd9fcb170d025ed714a1`
+triggered [Focused #1063](https://github.com/casaferla/RGS-MasterLab/actions/runs/42268433766).
+The PO alone checks #1063 results. All work below is on the single
+NO-CI staging branch, **not** on PR #84, and is **not compiled/qualified**.
+
+NEXT coherent functional step toward a real (but still disabled) M18 export:
+- The canonical Windows `TransactionalAudioExporter` now accepts an
+  OPTIONAL worker-only cancellation predicate and bounded
+  encoded-frame callback for the M18 request overload ONLY. The existing
+  F64 synchronous export path passes null cancellation and progress
+  pointers and preserves its original encoding/commit behavior.
+- M18 cancellation is checked before candidate creation, once per
+  4096-frame PCM write, before expensive candidate validation,
+  immediately after validation, while the commit lease is held before
+  publication, and after destination SHA/readback. Rejection cleans the
+  temporary candidate; if requested after the newly published WAV
+  appears but before the final checkpoint, cleanup removes that newly
+  published destination. A throwing cancellation predicate is treated
+  as CANCEL, while a throwing progress observer aborts and cleans up.
+  No success/verified delivery is emitted until file SHA, delivered
+  audio verification, final Product authority and cancellation checks.
+- `platform/windows/src/internal/m18_async_export_worker.hpp` contains
+  the first Qt-free detached M18 export worker. The only things crossing
+  threads are the immutable, lifetime-retained MASTER request with
+  source/destination reference values, exact lease factory, shared
+  cancellation flag and encoded-frame progress atomics. It owns NO
+  QObject, QPointer, UI renderer, or mutable SOURCE state.
+  Dropping the UI-side handle requests cancellation without waiting
+  for encoding to finish. The background thread owns its own lifetime
+  until it records a success or terminal failure.
+- Progress is deliberately `encoded_frames()/total_frames()`, NOT
+  a claim of file delivery. `finished()` and
+  `result_if_finished()` are separate. 100% frames can be encoded
+  while SHA/true-peak/epoch/rename/readback remain outstanding.
+  Cancellation requested after verified completion does not remove
+  an already successful file; pre-publication cancellation is
+  cooperative, with bounded check points.
+- The existing native Windows M18 delivery integration test extends
+  both PCM24+seed and Float32+no-dither with: cancel before creation,
+  midway through PCM streaming, after publish/readback, callback
+  exception, progress-observer exception, successful detached worker
+  delivery and SHA verification, atomic encoded frame evidence,
+  duplicate-output FAIL_IF_EXISTS without changing delivered bytes,
+  deterministic cancellation while an export waits at commit lease,
+  deterministic revocation of the Product epoch before the worker
+  reaches commit, 100%-encoded-but-not-verified assertions, source
+  bytes intact and no orphan candidate files. No QML or actual app
+  export action is activated.
+
+Still **BLOCKED for real Product activation**: one authoritative
+Product epoch wired BEFORE every Source/Project/MASTER/DSP/M17
+mutation, explicit user consent and final .rgsml encoding+seed key
+mapping, Qt-side export lifetime/polling/error presentation, full
+Windows/Linux Focused gate for this new batch, separate cold FQ,
+physical PCM24/Float32 acceptance, and PO merge authorization.
+The detached worker is strictly an internal preproduction component
+and must NOT be invoked by QML before all gates are wired.
