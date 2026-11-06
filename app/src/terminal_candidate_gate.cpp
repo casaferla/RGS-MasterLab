@@ -224,11 +224,21 @@ core::Status TerminalCandidateGate::try_invalidate_for_m18()
         catch(...) {}
         if(!authorized)return authorized;
     }
-    invalidate();
+    invalidate_unchecked();
     return core::Status::success();
 }
 
 void TerminalCandidateGate::invalidate() noexcept
+{
+    // Existing M17 callers return void and cannot acknowledge BUSY.
+    // An installed Product epoch gate must never be bypassed by them.
+    // All such call sites MUST use try_invalidate_for_m18 before
+    // activating export; otherwise they fail closed.
+    if(m18MutationAdmission_)return;
+    invalidate_unchecked();
+}
+
+void TerminalCandidateGate::invalidate_unchecked() noexcept
 {
     staged_.reset();
     stagedMeasured_.reset();
