@@ -284,3 +284,25 @@ invalidation and isolated Product mutation lease/barrier tests. They
 are **NOT YET COMPILED/QUALIFIED** and must enter only one coherent
 PR #84 SHA for the next serial Windows/Linux Focused CI; the Product
 Owner alone will report its results. PR Draft, no merge/FQ/GUI export.
+
+### Follow-up: scoped ProjectSession batch hook and real Project-open regression
+- `ProjectSessionViewModel::set_private_m18_project_open_batch_begin`
+  is a separate opt-in callback that returns an opaque RAII **Product-owned**
+  batch lease after all Project preflight succeeds and **before**
+  `stop_and_clear`, `adopt_probed_source`, MASTER-rate/GOLD/chain update.
+  The token lives until every Project-open return path completes.
+- If batch mode is installed, an independent per-operation
+  `M18ProjectMutationAdmission` on the same ProjectSession is forbidden:
+  conflicting admission modes fail closed. Wrong QObject thread,
+  throwing/null/failed batch also fail before transport/source changes.
+  Production registers NEITHER optional mode; M17 remains unchanged.
+- Existing `rgsml_project_session_tests` has a new real `.rgsml`
+  Project-open regression: batch active during the nested SOURCE adoption,
+  released upon return, and a refused batch prevents any SOURCE
+  adoption. No new build target or CI workflow.
+- **Important scope**: This API provides lexical batch lifetime, NOT
+  automatically nested authorization for independent SOURCE/GOLD/MasterRate
+  guards. Their Product callbacks must explicitly recognize the SAME
+  transaction. Further error-path rollback and full authoritative Product
+  wiring are mandatory BEFORE any M18 background export activation.
+  No main merge, no FQ, and these tests have not yet run in Focused #1058.
