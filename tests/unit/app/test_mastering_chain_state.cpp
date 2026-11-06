@@ -212,8 +212,9 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
     QCOMPARE(state.value()->compressor_parameters(),originalComp);
     QCOMPARE(state.value()->stereo_ms_parameters(),originalStereo);
     QCOMPARE(state.value()->chain().revision(),originalRevision);
-    QCOMPARE(state.value()->is_bypassed(stereoId).value(),
-             originalBypass.value());
+    auto finalBypass=state.value()->is_bypassed(stereoId);
+    QVERIFY(finalBypass);
+    QCOMPARE(*finalBypass.value(),*originalBypass.value());
 
     // When the lease has ended, the Product can explicitly remove the
     // optional protection. All ordinary M11-15 behavior is untouched.
