@@ -58,6 +58,7 @@ class SourceSelectionTest final : public QObject {
 
 private slots:
     void initialSuccessCancelFailureRetry();
+    void m18SourceMutationDeniedBeforeSelectionAndAcrossThreads();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
