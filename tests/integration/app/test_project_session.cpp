@@ -289,6 +289,14 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,"M18_PROJECT_SAVE_WORKER_BUSY"});
         });
+    // A status-only callback cannot protect an Open-batch Project SaveAs
+    // over a long synchronous write. Refuse without invoking the callback.
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{0});
+    QVERIFY(!QFileInfo::exists(proposed));
+    // The legacy one-shot admission is still a supported isolated policy
+    // when no Project-wide M18 batch is enabled (no background Product).
+    session.project.set_private_m18_project_open_batch_begin({});
     session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
     QCOMPARE(saveCalls,std::size_t{1});
     QVERIFY(!QFileInfo::exists(proposed));
@@ -316,14 +324,42 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
     QCOMPARE(saveCalls,std::size_t{2});
     QVERIFY(!QFileInfo::exists(proposed));
 
-    // One unambiguous explicit admission may now authorize a new file.
+    // A genuine M18 Product must furnish one real exclusive RAII batch
+    // for both Open and SaveAs; a mere status callback is insufficient.
     session.project.set_private_m18_project_mutation_admission({});
+    session.project.set_private_m18_project_save_admission({});
+    session.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    bool batchHeld=false;
+    std::size_t batchesStarted=0,batchesReleased=0;
+    struct SaveScope final {
+        bool* active;std::size_t* released;
+        ~SaveScope(){*active=false;++*released;}
+    };
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            if(batchHeld)
+                return core::Result<std::shared_ptr<const void>>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                                "M18_PROJECT_SAVE_ALREADY_BUSY"});
+            batchHeld=true;++batchesStarted;
+            std::shared_ptr<const void> lease=
+                std::make_shared<SaveScope>(
+                    SaveScope{&batchHeld,&batchesReleased});
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::move(lease));
+        });
     session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
-    QCOMPARE(saveCalls,std::size_t{3});
+    QCOMPARE(batchesStarted,std::size_t{1});
+    QCOMPARE(batchesReleased,std::size_t{1});
+    QVERIFY(!batchHeld);
     QVERIFY(QFileInfo::exists(proposed));
     QCOMPARE(session.project.error_message(),QString());
+    session.project.set_private_m18_project_save_batch_begin({});
     session.project.set_private_m18_project_open_batch_begin({});
-    session.project.set_private_m18_project_save_admission({});
 }
 
 void ProjectSessionTest::
