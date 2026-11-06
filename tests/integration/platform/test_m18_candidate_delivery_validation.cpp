@@ -4,6 +4,7 @@
 #include "wav_test_support.hpp"
 #include "m18_streaming_wav.hpp"
 #include "internal/transactional_audio_exporter_test_seam.hpp"
+#include "internal/m18_epoch_commit_barrier.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -17,6 +18,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <future>
+#include <thread>
 #include <memory>
 #include <optional>
 #include <span>
@@ -183,6 +186,7 @@ private slots:
     void realWindowsM18RollbackAndEpochGate();
     void realWindowsSixRatesBothLayoutsBothEncodingsOddEven();
     void realWindowsFailureInjectionCleansUpBothFormats();
+    void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -564,6 +568,63 @@ realWindowsFailureInjectionCleansUpBothFormats()
         }
     }
     QCOMPARE(cases,14);
+}
+
+
+void M18CandidateDeliveryValidationTest::
+crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking()
+{
+    // A real worker holds the commit permit while the Qt owner attempts
+    // to advance/retire. Both fail immediately instead of blocking Qt.
+    // This standalone primitive is NOT wired into Product mutations yet.
+    using platform::windows::internal::M18EpochCommitBarrier;
+    auto barrier=std::make_shared<M18EpochCommitBarrier>(77U);
+    QVERIFY(!barrier->try_acquire(76U));
+    QCOMPARE(barrier->epoch_snapshot(),std::uint64_t{77});
+    std::promise<bool> admitted;
+    auto admittedFuture=admitted.get_future();
+    std::promise<void> release;
+    auto releaseFuture=release.get_future();
+    bool workerLeaseStillCurrent=false;
+    std::thread worker([&,future=std::move(releaseFuture)]() mutable {
+        auto held=barrier->try_acquire(77U);
+        const bool ok=static_cast<bool>(held);
+        admitted.set_value(ok);
+        if(!held)return;
+        future.wait();
+        workerLeaseStillCurrent=static_cast<bool>(
+            (*held.value())->revalidate_current());
+        held.value()->reset();
+    });
+    const bool workerAdmitted=admittedFuture.get();
+    const auto blockedSecond=barrier->try_acquire(77U);
+    const auto blockedChange=barrier->try_advance_epoch(77U,78U);
+    const auto blockedRetire=barrier->try_retire(77U);
+    // Unblock/join unconditionally BEFORE any QVERIFY/QCOMPARE return.
+    release.set_value();
+    worker.join();
+    QVERIFY(workerAdmitted);
+    QVERIFY(workerLeaseStillCurrent);
+    QVERIFY(!blockedSecond);
+    QVERIFY(!blockedChange);
+    QVERIFY(!blockedRetire);
+    QCOMPARE(blockedSecond.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(blockedChange.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(blockedRetire.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(barrier->epoch_snapshot(),std::uint64_t{77});
+    // A Source change may now advance. Stale tickets must fail closed.
+    QVERIFY(barrier->try_advance_epoch(77U,78U));
+    QCOMPARE(barrier->epoch_snapshot(),std::uint64_t{78});
+    QVERIFY(!barrier->try_acquire(77U));
+    QVERIFY(!barrier->try_advance_epoch(77U,79U));
+    auto current=barrier->try_acquire(78U);
+    QVERIFY(current);
+    QVERIFY((*current.value())->revalidate_current());
+    QVERIFY(!barrier->try_retire(78U));
+    current.value()->reset();
+    QVERIFY(barrier->try_retire(78U));
+    QVERIFY(!barrier->try_acquire(78U));
+    QVERIFY(!barrier->try_advance_epoch(78U,79U));
 }
 
 } // namespace rgsml::tests
