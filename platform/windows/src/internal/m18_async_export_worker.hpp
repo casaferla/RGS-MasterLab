@@ -31,6 +31,10 @@ public:
         using R=core::Result<std::shared_ptr<M18AsyncExportWorker>>;
         try {
             auto state=std::make_shared<State>();
+            state->total_frames.store(
+                static_cast<std::uint64_t>(
+                    request.payload().frame_count().value()),
+                std::memory_order_release);
             auto handle=std::shared_ptr<M18AsyncExportWorker>(
                 new M18AsyncExportWorker(state));
             std::thread([state,request=std::move(request)]() mutable {
@@ -39,9 +43,16 @@ public:
                 const auto cancelled=[state]() noexcept {
                     return state->cancelled.load(std::memory_order_acquire);
                 };
+                const auto progress=[state](
+                    std::uint64_t encoded,std::uint64_t total) noexcept {
+                    state->total_frames.store(
+                        total,std::memory_order_release);
+                    state->encoded_frames.store(
+                        encoded,std::memory_order_release);
+                };
                 try {
                     auto completed=TransactionalAudioExporter::export_new_file(
-                        request,cancelled);
+                        request,cancelled,progress);
                     {
                         std::lock_guard lock(state->mutex);
                         state->outcome.emplace(std::move(completed));
@@ -82,6 +93,15 @@ public:
     [[nodiscard]] bool finished() const noexcept {
         return state_->finished.load(std::memory_order_acquire);
     }
+    // Encoded PCM frames only. A fully encoded WAV may still fail SHA,
+    // True-Peak, epoch permission or destination readback. Do NOT label
+    // 100% encoded as delivered until finished() + success outcome.
+    [[nodiscard]] std::uint64_t encoded_frames() const noexcept {
+        return state_->encoded_frames.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] std::uint64_t total_frames() const noexcept {
+        return state_->total_frames.load(std::memory_order_acquire);
+    }
     // Only a complete outcome is observable. No partially written file
     // may be treated as successful delivery or a valid MASTER reference.
     [[nodiscard]] std::optional<Result> result_if_finished() const {
@@ -101,6 +121,8 @@ private:
         std::atomic_bool cancelled{false};
         std::atomic_bool finished{false};
         std::atomic_bool unexpected_failure{false};
+        std::atomic<std::uint64_t> encoded_frames{0};
+        std::atomic<std::uint64_t> total_frames{0};
         std::optional<Result> outcome;
     };
     explicit M18AsyncExportWorker(std::shared_ptr<State> state)
