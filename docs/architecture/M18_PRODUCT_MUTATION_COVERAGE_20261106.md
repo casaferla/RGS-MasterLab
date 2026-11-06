@@ -1059,3 +1059,67 @@ Qualification. Never merge to main without explicit PO authorization;
 do not remove or waive relevant interim safety and cross-module CI tests.
 This policy does not activate the M18 exporter before the shared
 Single-Writer Product epoch has been wired and tested.
+
+### Chat #72 — #1070 GREEN and focused #1071: first shared Product epoch fanout (PREPRODUCTION)
+The Product Owner reported #1070 GREEN. Both Windows and Linux
+`SUCCESS` were verified on PR #84 `1ff2915d`. The following
+16-commit macrolot was promoted by exact-SHA fast-forward to Draft
+PR #84 `4751b9d1420c9ed2a4b9e00346d4dd6b8247d01c`;
+[Focused #1071](https://github.com/casaferla/RGS-MasterLab/actions/runs/42301660916)
+started on that exact SHA. Main is unchanged. The PO reconfirmed a
+**single final Full Qualification after M18–M22 are all integrated**:
+intermediate macrolots require Focused Windows/Linux and module checks,
+NOT independent milestone-wide FQ.
+
+The NEW isolated staging introduces a real, typed, Qt-free common
+`M18OwnerMutationFanout` in
+`platform/windows/src/internal/m18_owner_mutation_fanout.hpp`.
+Each copyable controller callback contains a weak reference to ONE
+Product-thread state; a successful edit advances the same
+`M18ProductEpochTicketAuthority`, increments a monotonic conservative
+Master generation and REVOKES consent before observable mutation.
+A held worker commit lease refuses edits from every controller; a
+foreign owner, expired binder, invalid operation, stale or exhausted
+epoch fail closed. This fanout **DOES NOT MINT any export ticket**:
+the real Product must separately refresh actual SOURCE/Project/
+MASTER/chain identity and obtain exact checked M17 owner and explicit
+consent. This protects against falsely treating a provisional revision
+as a newly verified export.
+
+The private `M18ProductControllerBinding` provides type-safe enrollment
+of actual SOURCE + MasteringChain + MasterOutputRate, real
+AuditionSourceSelector + Region + GOLD (one selector gate, not two),
+and MasteringChain + TerminalLimiterState. Tests now exercise
+real GOLD selection, real Region writes, real M11–M15 chain and limiter
+edits against the SAME actual worker commit lease. The binding is
+**not called by app/src/main.cpp** or QML.
+
+The new exclusive `project_save_batch()` wraps the already-existing
+Product authority's real `try_begin_product_mutation` and returns the
+opaque RAII lease required by `ProjectSessionViewModel`: one batch
+spans canonical .rgsml SaveAs snapshot, create-new, readback and Qt
+publication. Real ProjectSession integration test verifies worker-commit
+BUSY -> no output, subsequent successful SaveAs -> file exists,
+old ticket revoked, and Open Project denied in a SAVE-only configuration.
+This is a deliberate intermediate policy: Open Project has nested
+SOURCE/MASTER/chain/GOLD mutations which must share one separately
+authorized Project-open batch, without individual epoch advances.
+
+CRITICAL REMAINING PRODUCT P0:
+1. Provide an atomic Project-open nested owner transaction (no
+   unrelated Qt reentrancy) and the exact current source/project/M17
+   generation capture/reconciliation after it completes.
+2. Enroll full Product session cancellations, candidate-gate
+   `invalidate()` legacy void call sites, M17 retry/return paths and
+   Source/MASTER rate dispatch into that one barrier; never allow
+   unsafe direct invalidation while a worker holds a commit lease.
+3. Establish verified M17 stage + physical SOURCE identity + selected
+   output schema/PCM24 seed + revocable explicit end-user consent
+   before minting any new worker ticket or showing Export.
+4. Cross-qualify actual Windows async Product GUI, cancellation,
+   progress, fault/rollback, decoded post-quant M16 TP, physical audio
+   and RF64 under the **common post-M22 Full Qualification**.
+
+NO main merge, NO M18 GUI Export activation, NO FQ and no second
+Focused CI on this staging. Its code/tests are not yet compiled on
+Windows/Linux; await the PO's #1071 terminal result before promotion.
