@@ -322,20 +322,21 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
     QVERIFY(sourceReference&&destinationReference);
     std::promise<void> atFactory;
     auto arrived=atFactory.get_future();
+    auto announce=std::make_shared<std::promise<void>>(
+        std::move(atFactory));
     std::promise<void> releaseFactory;
     auto mayContinue=releaseFactory.get_future().share();
     auto lockState=std::make_shared<TestSessionState>();
     M18AcquireCommitLease pausedFactory=[
         auth=make_test_commit_authority(lockState),
-        arrived=std::move(atFactory),
-        mayContinue]() mutable
+        announce,mayContinue]() mutable
         ->core::Result<std::unique_ptr<M18ExportCommitLease>> {
-        arrived.set_value();
+        announce->set_value();
         mayContinue.wait();
         return auth();
     };
-    // std::function requires a copyable target; put the one-shot
-    // producer into shared ownership without any QObject capture.
+    // Copyable pause callback shares the one-shot producer and never
+    // captures QObject or a mutable Product ViewModel.
     auto sharedPaused=std::make_shared<M18AcquireCommitLease>(
         std::move(pausedFactory));
     auto blockedRequest=M18TransactionalAudioExportRequest::create(
