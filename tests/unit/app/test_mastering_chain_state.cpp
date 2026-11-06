@@ -1089,12 +1089,18 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     QVERIFY(gate.staged());
     QCOMPARE(gate.staged().get(),activeStaged.get());
     QCOMPARE(retirementAttempts,std::size_t{0});
-    QVERIFY(!gate.try_invalidate_for_m18());
+    const auto prematureCapture=gate.capture(
+        owner,owner,identity,*manual.value(),*terminal.value(),outputRate);
+    QVERIFY(!prematureCapture);
+    QVERIFY(gate.staged());
+    QCOMPARE(gate.staged().get(),activeStaged.get());
     QCOMPARE(retirementAttempts,std::size_t{1});
+    QVERIFY(!gate.try_invalidate_for_m18());
+    QCOMPARE(retirementAttempts,std::size_t{2});
     QVERIFY(gate.staged());
     allowRetirement=true;
     QVERIFY(gate.try_invalidate_for_m18());
-    QCOMPARE(retirementAttempts,std::size_t{2});
+    QCOMPARE(retirementAttempts,std::size_t{3});
     QVERIFY(!gate.staged());
     gate.set_private_m18_mutation_admission({});
     gate.invalidate();
