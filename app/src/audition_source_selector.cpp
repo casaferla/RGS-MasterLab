@@ -1,6 +1,7 @@
 #include "audition_source_selector.hpp"
 
 #include "playback_transport_view_model.hpp"
+#include <QThread>
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -43,6 +44,20 @@ constexpr std::int64_t kRealizationBlockFrames = 4096;
 }
 
 }  // namespace
+
+core::Status AuditionSourceSelector::admit_m18_source_mutation(
+    const char* operation) const
+{
+    if(!m18MutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18MutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_SOURCE_MUTATION_ADMISSION_THROWN"});}
+}
 
 AuditionSourceSelector::AuditionSourceSelector(
     PlaybackTransportViewModel* playback,
@@ -155,6 +170,8 @@ bool AuditionSourceSelector::offline_processed_selected_for_final_master() const
 
 core::Status AuditionSourceSelector::authorize_offline_processed_for_final_master()
 {
+    if(const auto admission=admit_m18_source_mutation("authorize_offline");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||!playback_
        ||!prepared_ ||!processed_ ||!processedRealizationId_
@@ -315,6 +332,8 @@ void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provide
 core::Status AuditionSourceSelector::source_committed(
     const core::ResourceReference& source)
 {
+    if(const auto admission=admit_m18_source_mutation("source_committed");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     if(sourceEpoch_==std::numeric_limits<std::uint64_t>::max())
         return unavailable("OFFLINE_MASTER_SOURCE_EPOCH_EXHAUSTED");
@@ -359,6 +378,8 @@ core::Status AuditionSourceSelector::source_committed(
 core::Status AuditionSourceSelector::set_prepared_realization(
     render::RenderResult realization)
 {
+    if(const auto admission=admit_m18_source_mutation("set_prepared");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PREPARED) {
         auto cleared = playback_->stop_and_clear();
@@ -375,6 +396,8 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
+    if(const auto admission=admit_m18_source_mutation("set_processed");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     if (nextRealizationIdValue_
         == std::numeric_limits<std::uint64_t>::max()) {
@@ -453,6 +476,8 @@ core::Status AuditionSourceSelector::set_gold(
     core::SampleRate sampleRate,
     core::FrameCount frameCount)
 {
+    if(const auto admission=admit_m18_source_mutation("set_gold");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     if (source_) {
         if (source_->same_resource_identity(reference)) {
@@ -484,6 +509,8 @@ core::Status AuditionSourceSelector::set_gold(
 
 core::Status AuditionSourceSelector::clear_gold()
 {
+    if(const auto admission=admit_m18_source_mutation("clear_gold");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     const bool wasGold = activeTarget_ == AuditionTarget::GOLD;
     if (wasGold) {
@@ -517,6 +544,8 @@ core::Status AuditionSourceSelector::clear_gold()
 
 core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
 {
+    if(const auto admission=admit_m18_source_mutation("switch_target");
+       !admission)return admission;
     offlineProcessedAuthority_.reset();
     if ((target == AuditionTarget::PREPARED && !prepared_)
         || (target == AuditionTarget::PROCESSED && !processed_)
@@ -591,6 +620,8 @@ core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
     std::shared_ptr<const render::RenderResult> expectedManual,
     core::RealizationId expectedManualId, core::FrameIndex sourceCue)
 {
+    if(const auto admission=admit_m18_source_mutation("restore_manual");
+       !admission)return admission;
     auto refuse=[](const char* message) -> core::Status {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,message});
