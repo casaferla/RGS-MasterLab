@@ -99,6 +99,8 @@ private:
     // an export epoch is configured. Legacy void invalidation is disabled
     // rather than silently discarding a worker-owned verified candidate.
     void invalidate_unchecked() noexcept;
+    [[nodiscard]] core::Status admit_m18_candidate_mutation(
+        const char* operation) const;
     M18MutationAdmission m18MutationAdmission_;
     std::uint64_t ticket_{0};
     std::shared_ptr<const StagedCandidate> staged_;
