@@ -46,6 +46,9 @@ target_include_directories(rgsml_terminal_product_activation_tests
         "${CMAKE_SOURCE_DIR}/app/src"
         "${CMAKE_SOURCE_DIR}/audio/src"
         "${CMAKE_SOURCE_DIR}/platform/windows/include"
+        # PREPRODUCTION: exercise the same Qt-free epoch ticket compiled
+        # by the existing Windows M18 real-filesystem integration target.
+        "${CMAKE_SOURCE_DIR}/platform/windows/src"
         "${CMAKE_SOURCE_DIR}/analysis/src")
 target_link_libraries(rgsml_terminal_product_activation_tests
     PRIVATE
