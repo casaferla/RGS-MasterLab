@@ -808,6 +808,19 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     QVERIFY(!missingSource.valid());
     QVERIFY(!missingProject.valid());
     QVERIFY(!missingMaster.valid());
+    // Monotonic 64-bit epoch IDs must never wrap and accidentally accept
+    // an ancient ticket as the current Product after a UINT64_MAX edge.
+    M18ProductEpochTicketAuthority nearMax{
+        std::numeric_limits<std::uint64_t>::max()-1U,id};
+    const auto lastEpoch=std::numeric_limits<std::uint64_t>::max();
+    QVERIFY(nearMax.try_transition(lastEpoch-1U,lastEpoch,id,true));
+    auto finalTicket=nearMax.capture(id);
+    QVERIFY(finalTicket);
+    QVERIFY(!nearMax.try_transition(lastEpoch,0U,id,false));
+    QVERIFY(!nearMax.try_transition(lastEpoch,lastEpoch,id,false));
+    QVERIFY(!nearMax.try_begin_product_mutation(
+        lastEpoch,0U,id,false));
+    QVERIFY(nearMax.capture(id));
     M18ProductEpochTicketAuthority authority{200U,id};
     QVERIFY(!authority.capture(id)); // No implicit user consent.
     QVERIFY(!authority.try_transition(200U,200U,id,true));
