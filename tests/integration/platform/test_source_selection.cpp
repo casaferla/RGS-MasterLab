@@ -362,6 +362,58 @@ m18DirectProbedSourceFromForeignThreadCannotBypassOwner()
     model.set_private_m18_source_mutation_admission({});
 }
 
+void SourceSelectionTest::
+m18DirectSourceAdoptionBlockedDuringOuterPublication()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=write_file(dir,QStringLiteral("m18-primary-direct.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto second=write_file(dir,QStringLiteral("m18-reentrant-direct.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    const auto path=second.toUtf8().toStdString();
+    const auto name=QFileInfo{second}.fileName().toUtf8().toStdString();
+    auto reference=platform::windows::WindowsResourceReader::make_read_reference(
+        path,name);
+    QVERIFY(reference);
+    auto reader=platform::windows::WindowsResourceReader::open_read_only(
+        *reference.value());
+    QVERIFY(reader);
+    auto replacement=audio::SourceResource::probe(
+        std::move(*reader.value()));
+    QVERIFY(replacement);
+    app::SourceSelectionViewModel model;
+    std::size_t admits=0,handlers=0,nestedRejected=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            return core::Status::success();
+        });
+    model.set_source_committed_handler([&](const core::ResourceReference&) {
+        ++handlers;
+        if(handlers==1) {
+            auto nested=model.adopt_probed_source(
+                std::move(*replacement.value()));
+            if(!nested &&nested.error()->code()
+               ==core::ErrorCode::InvalidState)++nestedRejected;
+        }
+    });
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    model.selectSource(QUrl::fromLocalFile(first));
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(handlers,std::size_t{1});
+    QCOMPARE(nestedRejected,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-primary-direct.wav"));
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(admits,std::size_t{2});
+    QCOMPARE(handlers,std::size_t{2});
+    QCOMPARE(changed.count(),2);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-reentrant-direct.wav"));
+    model.set_private_m18_source_mutation_admission({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
