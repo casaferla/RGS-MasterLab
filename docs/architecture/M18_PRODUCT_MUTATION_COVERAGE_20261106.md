@@ -752,3 +752,32 @@ No broad log/download, new workflow, DSP/FIR changes, or FQ dispatch.
 The workflow change will accompany the next complete staging macro-lot
 AFTER the PO reports #1066's terminal result; it is not in the pinned
 PR #84 candidate under review. Linux/Windows remain platform-parallel.
+
+### Chat #72 subsequent staging — Project SaveAs independent admission while Open has a batch
+**Do NOT mistake an Open-only Product batch for a SaveAs permission.**
+Previously `ProjectSessionViewModel::set_private_m18_project_open_batch_begin`
+could protect Project-open but could not coexist with the generic
+`set_private_m18_project_mutation_admission` (Open explicitly refuses
+ambiguous modes). Its SaveAs path therefore had no independently
+available M18 permission and could publish an unguarded `.rgsml` file.
+
+The isolated, opt-in fix provides
+`set_private_m18_project_save_admission` separately from the Open
+RAII-batch path. SaveAs refuses BEFORE snapshot/file allocation when:
+- an Open batch exists without a separately installed Save admission;
+- the generic gate and the dedicated Save gate conflict;
+- a Save gate explicitly refuses, throws, or is called from a foreign
+  Qt thread.
+
+Without any M18 gate the legacy M17 SaveAs remains unchanged; the
+original generic M18-only save policy still works when no batch is set.
+Project open/save check foreign-thread calls before Qt error signals or
+filesystem access whenever M18 policy is installed.
+The existing Windows-native Project session tests add denial, exception,
+ambiguous-guard, foreign-thread, rollback/no-output, and authorized SaveAs
+cases. **Staging only, uncompiled, no Product registration, no PR CI move.**
+
+This fixes one specific bypass but does NOT by itself close a Product-wide
+single-writer epoch: physical SOURCE changes, DSP, terminal limiter,
+candidate-gate legacy invalidations, nested project-error callbacks, and
+fresh verified M17 consent must all participate before GUI export activation.
