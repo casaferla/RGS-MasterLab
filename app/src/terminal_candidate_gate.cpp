@@ -65,6 +65,12 @@ TerminalCandidateGate::capture(
             "M17_CAPTURE_TICKET_EXHAUSTED",
             "Terminal candidate admission sequence exhausted."));
     }
+    // The next M17 candidate replaces the same exportable stage.
+    // An active M18 file commit must refuse the replacement BEFORE
+    // changing a ticket, stage pointer or any observable owner.
+    if(const auto allowed=admit_m18_candidate_mutation(
+           "candidate_capture");!allowed)
+        return core::Result<Capture>::failure(*allowed.error());
     // Evaluate non-owning metadata BEFORE moving the owner pointers.
     // C++ aggregate initializer evaluation is left-to-right: using
     // manual->view() after std::move(manual) would dereference null.
