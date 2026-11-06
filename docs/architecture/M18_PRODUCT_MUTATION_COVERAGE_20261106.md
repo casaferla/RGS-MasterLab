@@ -601,3 +601,63 @@ Windows/Linux Focused gate for this new batch, separate cold FQ,
 physical PCM24/Float32 acceptance, and PO merge authorization.
 The detached worker is strictly an internal preproduction component
 and must NOT be invoked by QML before all gates are wired.
+
+### Chat #71 post-#1063 GREEN: actual Product async handoff + dormant Qt job model
+PO reported Focused #1063 Windows and Linux GREEN. The sole Draft PR
+#84 was fast-forwarded, with exact expected old SHA, to
+`c49c2d5ef921b00d2ff5c174e981c5e3eccb98dd`, triggering
+[Focused #1064](https://github.com/casaferla/RGS-MasterLab/actions/runs/42271049335).
+The Product Owner is the EXCLUSIVE observer/reporter of test outcomes.
+NO polling of CI results and NO log-complete GitHub downloads.
+
+The next cohesive staging-only 16+ commit macro-batch moves M18
+significantly closer to Product/GUI integration but is deliberately
+not activated or qualified:
+1. `app/src/internal/m18_private_async_export_handoff.hpp` is an
+   explicit typed Product-owner → worker handoff. It captures the actual
+   current M17 verified stage, selected SOURCE, Project MASTER Fs
+   and exact revision, M18 epoch ticket, encoding, seed and destination
+   on the owning Qt thread; only the lifetime-retained immutable
+   `M18TransactionalAudioExportRequest` crosses to
+   `M18AsyncExportWorker`. Early preflight failure launches NOTHING.
+2. `app/src/internal/m18_private_async_export_session.hpp` owns at
+   most ONE active/pending worker. A result must be explicitly ACKed
+   before a second export starts; GUI teardown calls nonblocking
+   `cancel()`. Snapshot provides encoded frames, total, precise
+   status and ErrorCode, distinguishing `FAILED` (I/O, SHA, collision,
+   stale epoch) from actual `CANCELLED` only when exporter evidence
+   starts with the exact cancellation reason. 100%-encoded is NOT
+   `VERIFIED_DELIVERED` until the worker finishes SHA+readback.
+3. `app/src/m18_private_export_progress_view_model.hpp/.cpp`
+   declares a real Qt `Q_OBJECT`, testable Q_PROPERTY statusText,
+   encodedProgress, exportInProgress, canCancel, canAcknowledge,
+   verifiedDelivered and errorText. An 80-ms owner-thread timer
+   observes only worker atomic data; it stops on terminal states.
+   Starting is a typed PRIVATE C++ method, intentionally NOT
+   `Q_INVOKABLE`, while Cancel/Acknowledge are genuinely functional.
+   No instance is created or registered in `app/src/main.cpp`
+   or QML, so there is NO new menu privilege or partially working
+   production Export.
+4. The existing Windows M17 terminal Product integration CMake
+   closure compiles the new Qt ViewModel with AUTOMOC, so early
+   compile/link errors are caught on the next focused candidate.
+   An end-to-end native Product test now starts a real M18
+   asynchronous worker from genuine SourceSelectionViewModel and
+   already checked M17 PCM, writes real PCM24 seeded and Float32
+   undithered WAVs, checks SHA/readback, frame counts, final file
+   and no overwrite on duplicate export. It also tests a single-job
+   lifecycle with explicit acknowledgment, and the real QObject
+   ViewModel: IDLE, encoding/verification completion, VERIFIED,
+   100%-encoded progress, available Cancel/Acknowledge controls,
+   duplicate-output error preserved as FAILED even after late Cancel,
+   preflight denied if SOURCE absent, wrong-thread start/ACK denial,
+   signals and return to IDLE after acknowledgment.
+   **No full-resource re-render or PCM copy is permitted.**
+
+Staging-only: no CI for this new batch, no main merge, no M18 FQ,
+and no physical Product GUI Export enabled. Hard blocker remains
+wiring ONE Product epoch to every SOURCE, Project, chain/DSP/MASTER,
+candidate-gate and M17 renderer mutation before any production worker
+publication. Project output schema / seed semantics need final PO
+approval, together with physical Windows tests and cold FQ.
+Do not move PR #84 before the PO explicitly reports #1064 outcome.
