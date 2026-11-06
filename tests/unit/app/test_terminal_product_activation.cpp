@@ -3188,6 +3188,20 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!wrongSourceRequest);
         QCOMPARE(wrongSourceRequest.error()->code(),
                  core::ErrorCode::InvalidState);
+        // Same opaque locator but a different provider is NOT identical
+        // SOURCE provenance (nor a license to reinterpret local paths).
+        auto foreignProvider=core::ResourceReference::create(
+            "test.other-provider",src.value()->locator(),true,false,
+            "foreign-provider-source");
+        QVERIFY(foreignProvider);
+        const auto foreignProviderRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *foreignProvider.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!foreignProviderRequest);
+        QCOMPARE(foreignProviderRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
         auto readDenied=core::ResourceReference::create(
             src.value()->provider_id(),src.value()->locator(),
             false,true,"unreadable-source");
