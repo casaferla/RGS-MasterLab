@@ -231,6 +231,10 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
     // or publish an error before the real SOURCE admission is checked.
     // Legacy M17 behavior remains unchanged when no guard is installed.
     if(m18SourceMutationAdmission_ &&QThread::currentThread()!=thread())return;
+    // Never start a second QFile/Qt notification path from an admission
+    // callback or from the outer SOURCE commit's changed() listener.
+    if(m18SourceMutationAdmission_
+       &&(m18SourceAdmitting_||m18SourcePublishing_))return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         publish_error(QStringLiteral("Choose one local WAV file."));
         return;
