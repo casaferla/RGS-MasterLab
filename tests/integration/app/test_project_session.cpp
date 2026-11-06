@@ -1,5 +1,5 @@
 #include "project_session_view_model.hpp"
-#include "internal/m18_product_controller_binding.hpp"
+#include "internal/m18_product_project_save_binding.hpp"
 #include "source_selection_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
@@ -224,7 +224,7 @@ m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease()
     QVERIFY(owner->try_transition(600U,601U,id,true));
     auto ticket=owner->capture(id);QVERIFY(ticket);
     M18OwnerMutationFanout fanout{owner,601U,id};
-    app::internal::M18ProductControllerBinding::bind_project_save_only(
+    app::internal::M18ProductProjectSaveBinding::bind_project_save_only(
         session.project,fanout);
     auto worker=ticket.value()->commit_lease_factory()();
     QVERIFY(worker);
