@@ -22,6 +22,7 @@
 #include "project_session_view_model.hpp"
 #include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "internal/m18_owner_source_snapshot.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
@@ -60,6 +61,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace rgsml::tests {
@@ -515,6 +517,7 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 private slots:
     void childNameLookupVisitsQObjectOnce();
     void hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm();
+    void m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly();
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsProductDefaultDockedStartup();
@@ -531,6 +534,52 @@ private slots:
 
 
 
+
+void SourceMetadataPanelSmokeTest::
+m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly()
+{
+    app::SourceSelectionViewModel source;
+    const auto missing=
+        app::internal::capture_m18_current_source_on_product_owner(source);
+    QVERIFY(!missing);
+    QCOMPARE(missing.error()->code(),core::ErrorCode::AccessDenied);
+
+    const auto bytes=valid_wav();
+    wav_support::Bytes binary;
+    binary.reserve(static_cast<std::size_t>(bytes.size()));
+    for(const auto octet:bytes)
+        binary.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(octet)));
+    auto control=std::make_shared<wav_support::ReaderControl>();
+    auto probed=audio::SourceResource::probe(
+        wav_support::memory_reader(std::move(binary),control));
+    QVERIFY(probed);
+    QVERIFY(source.adopt_probed_source(std::move(*probed.value())));
+    const auto* current=source.source_resource();
+    QVERIFY(current);
+    const auto exact=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(exact);
+    QVERIFY(exact.value()->same_resource_identity(current->reference()));
+    QVERIFY(exact.value()->permissions().can_read());
+    // A worker must not read a QObject-held current SOURCE. Thread
+    // affinity is checked before accessing even the source pointer.
+    bool rejectedWrongThread=false;
+    std::thread worker([&] {
+        const auto forbidden=app::internal::
+            capture_m18_current_source_on_product_owner(source);
+        rejectedWrongThread=!forbidden
+            &&forbidden.error()->code()==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(rejectedWrongThread);
+    // The owner can still snapshot the same current SOURCE afterward.
+    const auto stillCurrent=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(stillCurrent);
+    QVERIFY(stillCurrent.value()->same_resource_identity(
+        current->reference()));
+}
 
 void SourceMetadataPanelSmokeTest::
 sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
