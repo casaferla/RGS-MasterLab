@@ -187,6 +187,7 @@ private slots:
     void m18SelectorAdmissionAndPublicationAreNonReentrant();
     void m18SelectorThrowingAdmissionPreservesAuditionAndCanRecover();
     void m18GoldClearQtChangedCannotReinstallGoldDuringPublication();
+    void m18GoldViewModelAndSelectorUseOneProductAdmission();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -553,6 +554,71 @@ m18GoldClearQtChangedCannotReinstallGoldDuringPublication()
     QCOMPARE(accepted,std::size_t{2});
     QCOMPARE(nestedDenied,std::size_t{2});
     QVERIFY(selector.gold_available());
+}
+
+void AuditionSourceSelectorTest::
+m18GoldViewModelAndSelectorUseOneProductAdmission()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=write_valid_wav(dir,QStringLiteral("m18-gold-one.wav"),1);
+    const auto second=write_valid_wav(dir,QStringLiteral("m18-gold-two.wav"),2);
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    auto fake=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionSourceSelector selector{&transport};
+    app::GoldSelectionViewModel model{&selector};
+    std::size_t selectorCalls=0,modelCalls=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++selectorCalls;
+            return core::Status::success();
+        });
+    model.selectGold(QUrl::fromLocalFile(first));
+    QVERIFY(model.has_gold());
+    QCOMPARE(model.display_name(),QStringLiteral("m18-gold-one.wav"));
+    QCOMPARE(selectorCalls,std::size_t{1});
+
+    model.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++modelCalls;
+            return core::Status::success();
+        });
+    model.selectGold(QUrl::fromLocalFile(second));
+    QCOMPARE(selectorCalls,std::size_t{1});
+    QCOMPARE(modelCalls,std::size_t{0});
+    QVERIFY(!model.error_message().isEmpty());
+    QCOMPARE(model.display_name(),QStringLiteral("m18-gold-one.wav"));
+    model.clearGold();
+    QCOMPARE(selectorCalls,std::size_t{1});
+    QCOMPARE(modelCalls,std::size_t{0});
+    QVERIFY(model.has_gold());
+
+    // Selector-only gate handles physical GOLD mutation exactly once.
+    model.set_private_m18_gold_mutation_admission({});
+    model.selectGold(QUrl::fromLocalFile(second));
+    QCOMPARE(selectorCalls,std::size_t{2});
+    QCOMPARE(modelCalls,std::size_t{0});
+    QCOMPARE(model.display_name(),QStringLiteral("m18-gold-two.wav"));
+    model.clearGold();
+    QCOMPARE(selectorCalls,std::size_t{3});
+    QVERIFY(!model.has_gold());
+    selector.set_private_m18_mutation_admission({});
+
+    // A standalone GOLD ViewModel gate remains supported when there is
+    // no independent selector gate, without changing legacy M17.
+    model.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++modelCalls;
+            return core::Status::success();
+        });
+    model.selectGold(QUrl::fromLocalFile(first));
+    QCOMPARE(modelCalls,std::size_t{1});
+    QVERIFY(model.has_gold());
+    model.clearGold();
+    QCOMPARE(modelCalls,std::size_t{2});
+    QVERIFY(!model.has_gold());
+    model.set_private_m18_gold_mutation_admission({});
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
