@@ -700,6 +700,20 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     newLease.value()->reset();
     QVERIFY(authority.try_transition(203U,204U,wrongRate,false));
     QVERIFY(!newest.value()->commit_lease_factory()());
+
+    // Destroying the Product authority is NOT an implicit worker grant.
+    // A retained ticket and even an already-held permit must fail closed.
+    auto dying=std::make_unique<M18ProductEpochTicketAuthority>(300U,id);
+    QVERIFY(dying->try_transition(300U,301U,id,true));
+    auto orphan=dying->capture(id);
+    QVERIFY(orphan);
+    const auto orphanFactory=orphan.value()->commit_lease_factory();
+    auto orphanLease=orphanFactory();
+    QVERIFY(orphanLease);
+    dying.reset();
+    QVERIFY(!(*orphanLease.value())->revalidate_current());
+    orphanLease.value()->reset();
+    QVERIFY(!orphanFactory());
 }
 
 } // namespace rgsml::tests
