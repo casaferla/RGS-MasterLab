@@ -532,10 +532,10 @@ core::Status AuditionSourceSelector::clear_gold()
         return core::Status::success();
     }
     if (prepared_) {
-        return switch_to(AuditionTarget::PREPARED);
+        return switch_to_after_authorized_mutation(AuditionTarget::PREPARED);
     }
     if (processed_) {
-        return switch_to(AuditionTarget::PROCESSED);
+        return switch_to_after_authorized_mutation(AuditionTarget::PROCESSED);
     }
     playback_->set_source_derived_active(false);
     emit changed();
@@ -544,8 +544,27 @@ core::Status AuditionSourceSelector::clear_gold()
 
 core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
 {
+    // The optional M18 Product gate has one owner thread. No listener may
+    // publish Qt errors from a worker, and a true no-op cannot burn an epoch.
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_AUDITION_SWITCH_WRONG_OWNER_THREAD"});
+    if(m18MutationAdmission_) {
+        if(activeTarget_==target)return core::Status::success();
+        if((target==AuditionTarget::PREPARED &&!prepared_)
+           ||(target==AuditionTarget::PROCESSED &&!processed_)
+           ||(target==AuditionTarget::GOLD &&!gold_))
+            return unavailable("The requested audition target has no authoritative realization.");
+    }
     if(const auto admission=admit_m18_source_mutation("switch_target");
        !admission)return admission;
+    return switch_to_after_authorized_mutation(target);
+}
+
+core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(
+    AuditionTarget target)
+{
     offlineProcessedAuthority_.reset();
     if ((target == AuditionTarget::PREPARED && !prepared_)
         || (target == AuditionTarget::PROCESSED && !processed_)
