@@ -2,6 +2,7 @@
 
 #include "../../audio_golden/wav/golden_vectors.hpp"
 #include "../../unit/audio/wav_test_support.hpp"
+#include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QFile>
 #include <QSignalSpy>
@@ -65,6 +66,7 @@ private slots:
     void m18SourceGateCannotUninstallOrNestedSelectDuringAdmission();
     void m18SourcePublicationRejectsReentrantQtListeners();
     void m18ThrownAdmissionRecoversWithoutReplacingSource();
+    void m18DirectProbedSourceFromForeignThreadCannotBypassOwner();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
