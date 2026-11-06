@@ -3251,6 +3251,21 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 *masterTicket.value(),liveSource->reference(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongProjectMaster);
+        // UI-only Product stage/rate/SOURCE lookup must be denied before
+        // any QObject access when invoked from an export worker.
+        const auto verifiedCurrentSource=liveSource->reference();
+        bool workerRejectedLiveProduct=false;
+        std::thread illicitExportWorker([&] {
+            const auto denied=
+                app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                    product,selectedSource,selectedProjectRate,candidates,
+                    *masterTicket.value(),verifiedCurrentSource,*dst.value(),
+                    audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+            workerRejectedLiveProduct=!denied
+                &&denied.error()->code()==core::ErrorCode::InvalidState;
+        });
+        illicitExportWorker.join();
+        QVERIFY(workerRejectedLiveProduct);
         // The preproduction typed handoff consumes a REAL checked M17
         // Product candidate plus the Qt-free worker epoch Ticket. It may
         // never copy Master PCM or forge a new terminal realization.
