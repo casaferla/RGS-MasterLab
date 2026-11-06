@@ -182,6 +182,7 @@ class AuditionSourceSelectorTest final : public QObject {
 private slots:
     void availabilityCuesSwitchingAndFallbackAreTruthful();
     void m18GoldClearFallbackRequiresSingleMutationAdmission();
+    void m18GoldClearFallbackToProcessedUsesOneAdmission();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -366,6 +367,40 @@ m18GoldClearFallbackRequiresSingleMutationAdmission()
     QCOMPARE(selector.active_target(),
         std::optional{app::AuditionTarget::PREPARED});
     selector.set_private_m18_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldClearFallbackToProcessedUsesOneAdmission()
+{
+    auto fake=std::make_unique<FakePlaybackService>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_processed_realization(realization(0,140)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto gold=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/m18-processed.wav",
+        true,false,"m18-processed.wav");
+    QVERIFY(gold);
+    QVERIFY(selector.set_gold(
+        *gold.value(),*core::SampleRate::create(48000).value(),
+        *core::FrameCount::create(140).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    std::size_t admits=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            if(admits>1)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SECOND_ADMISSION"});
+            return core::Status::success();
+        });
+    QVERIFY(selector.clear_gold());
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(!selector.gold_available());
+    QVERIFY(selector.processed_available());
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
