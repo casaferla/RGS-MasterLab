@@ -257,3 +257,30 @@ After that PR promotion, no-CI staging added an isolated nonblocking **exclusive
 - `M18ProductEpochTicketAuthority::try_begin_product_mutation` under its own consistent mutex updates the Product Source/Project/MASTER/chain identity and consent **with** the batch lease atomically. Even a ticket for the new identity cannot be captured until the batch is released, and an old worker ticket cannot publish. Existing single-mutation `try_transition` still applies to simple non-batch paths.
 - Existing `rgsml_m18_windows_candidate_delivery_tests` now includes two extra deterministic regressions: cross-thread worker commit rejected while Project batch is held, and exact Product identity/consent+no-partial-capture behavior through PROJECT replacement and batch release. No new executable/workflow/CI triggered by staging alone.
 - **NOT YET PRODUCT WIRED**: `ProjectSessionViewModel` and nested Source/Gold/MASTER/chain controllers do NOT yet hold this batch lease through real Qt project-open; the export worker is still disabled; unrestricted legacy `TerminalCandidateGate::invalidate()` remains a Product blocker. Do not represent this staging primitive as closing M18 or authorizing user-facing WAV export. Keep main unchanged; no FQ/merge without PO.
+
+## 06 Nov 2026 — #1058 dual compile red and bounded diagnostic fix
+The Product Owner reported both Windows and Linux RED for Focused #1058
+([run 42253593966](https://github.com/casaferla/RGS-MasterLab/actions/runs/42253593966)).
+**Do not download complete GitHub job logs.** Inspected only the tiny
+`RGS-Focused-Errors-Windows-1058` and `RGS-Focused-Errors-Linux-1058`
+artifacts. Both identify the **same** compile defect in
+`tests/unit/app/test_mastering_chain_state.cpp:198`: the new M18 test
+used `*state.value()==stateBeforeGuard`, invoking a deleted defaulted
+`MasteringChainState::operator==` because `dsp::ProcessingChain` has
+no equality operator (MSVC C2280/C2088, GCC deleted operator).
+This is a TEST compile bug, not a demonstrated failure of the M18 audio
+or epoch transaction logic.
+
+Staging commit `fa68ae5ee2c580698c2baffc09e0f19b1b76a48f` removes
+that invalid aggregate equality and replaces it with comparisons of
+chain ID, module count, revision, all module instance IDs and the
+existing Gain/EQ/Compressor/Stereo-M/S parameter snapshots. It does
+**not** change DSP algorithms, product behavior, or `main`.
+The original defaulted aggregate equality was already unavailable;
+the M18 runtime guard does not grant a new equality operation.
+
+The remaining staging changes since #1058 include renderer guarded
+invalidation and isolated Product mutation lease/barrier tests. They
+are **NOT YET COMPILED/QUALIFIED** and must enter only one coherent
+PR #84 SHA for the next serial Windows/Linux Focused CI; the Product
+Owner alone will report its results. PR Draft, no merge/FQ/GUI export.
