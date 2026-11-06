@@ -156,7 +156,9 @@ core::Status TerminalCandidateGate::accept(
                ||check.terminal.applied_gain_frames.size()
                     !=static_cast<std::size_t>(pcmView.frame_count().value())));
     if(isStale) {
-        invalidate();
+        // The M18 admission was granted above: do not request a second
+        // epoch merely to retire this invalid accepted candidate.
+        invalidate_unchecked();
         return core::Status::failure(reject(
             "M17_STALE_OR_INVALID_TERMINAL",
             "M17 terminal candidate no longer matches the accepted source and DSP revisions."));
@@ -225,7 +227,8 @@ core::Status TerminalCandidateGate::accept_measured(
         ||measured.terminal.applied_gain_frames.size()
              !=static_cast<std::size_t>(pcm.frame_count().value());
     if(invalid) {
-        invalidate();
+        // Same already-granted epoch; no independent nested retirement.
+        invalidate_unchecked();
         return core::Status::failure(reject(
             "M17_NONCONFORMING_STALE_OR_UNSAFE",
             "Measured PCM does not match current Manual/output-rate authority."));
