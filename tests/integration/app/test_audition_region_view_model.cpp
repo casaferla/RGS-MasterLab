@@ -4,10 +4,13 @@
 #include <rgsml/core/audio_playback_service.hpp>
 
 #include <QTest>
+#include <QSignalSpy>
 
 #include <array>
 #include <memory>
 #include <optional>
+#include <thread>
+#include <stdexcept>
 
 namespace rgsml::tests {
 namespace {
@@ -106,7 +109,88 @@ private slots:
     void explicitSeekIsSingleAndPositionExactAcrossLoopStates();
     void loopTransactionsAndRepositioning();
     void failureAndSourceReplacementRemainTruthful();
+    void m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate();
 };
+
+void AuditionRegionViewModelTest::
+m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate()
+{
+    auto service=std::make_unique<RegionPlaybackFake>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    app::AuditionRegionViewModel model{&transport};
+    model.source_committed(
+        *core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    model.set_waveform_ready(true);
+    const auto original=range(10,100);
+    const auto replacement=range(20,90);
+    QVERIFY(model.set_region(original));
+    QVERIFY(model.set_loop_enabled(true));
+    QCOMPARE(model.region(),std::optional{original});
+    const auto priorLoopCalls=observed->setLoopCalls;
+    const auto priorSeekCalls=observed->seekCalls;
+    QSignalSpy changed{&model,&app::AuditionRegionViewModel::changed};
+    std::size_t attempts=0;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char* name)->core::Status {
+            if(name)++attempts;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_REGION_EPOCH_BUSY"});
+        });
+    QVERIFY(!model.set_region(replacement));
+    QVERIFY(!model.set_start(core::FrameIndex{15}));
+    QVERIFY(!model.set_end_exclusive(core::FrameIndex{95}));
+    QVERIFY(!model.set_loop_enabled(false));
+    QVERIFY(!model.clear_region());
+    QCOMPARE(attempts,std::size_t{5});
+    QCOMPARE(model.region(),std::optional{original});
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(observed->setLoopCalls,priorLoopCalls);
+    QCOMPARE(observed->seekCalls,priorSeekCalls);
+    QCOMPARE(changed.count(),0);
+    // Same-loop no-op doesn't burn an epoch or disturb playback.
+    QVERIFY(model.set_loop_enabled(true));
+    QCOMPARE(attempts,std::size_t{5});
+    // A foreign worker may not touch any Qt playback/Region field.
+    bool deniedForeign=false;
+    std::thread worker([&] {
+        const auto r=model.set_region(replacement);
+        deniedForeign=!r &&r.error()->code()==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(deniedForeign);
+    QCOMPARE(attempts,std::size_t{5});
+    QCOMPARE(changed.count(),0);
+
+    bool nestedDenied=false;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            const auto nested=model.clear_region();
+            nestedDenied=!nested
+                &&nested.error()->code()==core::ErrorCode::InvalidState;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_REGION_OUTER_DENIED"});
+        });
+    QVERIFY(!model.set_region(replacement));
+    QVERIFY(nestedDenied);
+    QCOMPARE(model.region(),std::optional{original});
+    QCOMPARE(changed.count(),0);
+    model.set_private_m18_region_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_REGION_CALLBACK_THROW");
+        });
+    QVERIFY(!model.clear_region());
+    QCOMPARE(observed->setLoopCalls,priorLoopCalls);
+    QCOMPARE(model.region(),std::optional{original});
+    // Future Product gate uninstalled: frozen M17 behavior is unchanged.
+    model.set_private_m18_region_mutation_admission({});
+    QVERIFY(model.set_loop_enabled(false));
+    QVERIFY(model.set_region(replacement));
+    QCOMPARE(model.region(),std::optional{replacement});
+    QVERIFY(model.clear_region());
+    QVERIFY(!model.has_region());
+}
 
 void AuditionRegionViewModelTest::exactRegionAndTimeEditing()
 {
