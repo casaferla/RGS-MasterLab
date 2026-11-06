@@ -47,6 +47,18 @@ struct M18ProductControllerBinding final {
             fanout.rate_admission());
     }
 
+    static void bind_chain_and_terminal(
+        MasteringChainState& chain,
+        TerminalLimiterState& terminal,
+        const Fanout& fanout)
+    {
+        // Both direct DSP mutators receive the SAME epoch stream.
+        // The terminal editor must delegate to TerminalLimiterState.
+        chain.set_private_m18_chain_mutation_admission(
+            fanout.status_admission());
+        bind_terminal_parameters(terminal,fanout);
+    }
+
     static void bind_terminal_parameters(
         TerminalLimiterState& terminal,const Fanout& fanout)
     {
