@@ -424,6 +424,8 @@ m18DirectTerminalStateMutationRequiresProductEpoch()
     // Direct state guard sees the same denied operation when the VM
     // callback is not installed; no accepted render signal is emitted.
     QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.validation_message(),
+        QStringLiteral("Limiter change blocked by active export"));
     QCOMPARE(published.count(),0);
     QCOMPARE(state.value()->parameter_revision(),paramsRevision);
     std::size_t ambiguousVmCalls=0;
@@ -602,11 +604,14 @@ m18TerminalViewModelUsesSingleDirectStateEpochAuthority()
     // accepted-signal sequence intact.
     available=false;
     vm.resetToDefault();
+    QCOMPARE(vm.validation_message(),
+        QStringLiteral("Limiter reset blocked by active export"));
     QCOMPARE(admitted,std::size_t{2});
     QCOMPARE(accepted.count(),2);
     QCOMPARE(state.value()->parameters().ceiling_db_tp(),-2.0);
     available=true;
     vm.resetToDefault();
+    QVERIFY(vm.validation_message().isEmpty());
     QCOMPARE(admitted,std::size_t{3});
     QCOMPARE(accepted.count(),3);
     QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
