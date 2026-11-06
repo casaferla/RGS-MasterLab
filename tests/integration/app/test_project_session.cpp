@@ -233,8 +233,8 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     foreignClear.join();
     QCOMPARE(denied,std::size_t{2});
     QVERIFY(session.gold.has_gold());
-    QCOMPARE(session.gold.gold_resource()->reference().display_name(),
-             std::string_view{"m18-gold-a.wav"});
+    QVERIFY(std::string{session.gold.gold_resource()->reference().display_name()}
+            ==std::string{"m18-gold-a.wav"});
     session.gold.set_private_m18_gold_mutation_admission({});
     session.gold.selectGold(QUrl::fromLocalFile(goldB));
     QVERIFY(session.gold.has_gold());
