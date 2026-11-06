@@ -103,6 +103,8 @@ public:
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_mutation_admission(M18MutationAdmission guard)
     {m18MutationAdmission_=std::move(guard);}
+    [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
+    {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
         const core::ResourceReference& source);
