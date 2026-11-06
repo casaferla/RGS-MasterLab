@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <thread>
 #include <vector>
 
 namespace rgsml::app {
@@ -26,10 +27,8 @@ public:
     // A real Product must share one epoch across every mutator, including
     // Project replacement and the terminal candidate gate. Fail closed.
     using M18MutationAdmission=std::function<core::Status(const char*)>;
-    void set_private_m18_chain_mutation_admission(M18MutationAdmission gate)
-    {m18MutationAdmission_.callback=gate
-        ?std::make_shared<M18MutationAdmission>(std::move(gate))
-        :nullptr;}
+    void set_private_m18_chain_mutation_admission(
+        M18MutationAdmission gate);
     // Project open has its own preflight epoch admission BEFORE stopping
     // playback / replacing SOURCE. Preserve this runtime guard across the
     // once-authorized replacement of the project DSP snapshot.
@@ -182,6 +181,8 @@ private:
     std::optional<dsp::StereoMsParameters> stereo_ms_params_;
     struct M18RuntimeGuard final {
         std::shared_ptr<M18MutationAdmission> callback;
+        std::thread::id ownerThread{};
+        mutable bool admitting{false};
         // This guard is an ephemeral authorizer, NOT DSP/project content.
         // Preserve the original value equality semantics of the state.
         friend bool operator==(const M18RuntimeGuard&,
