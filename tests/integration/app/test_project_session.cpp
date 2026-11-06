@@ -441,6 +441,32 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
     QVERIFY(!reopened.project.degraded()); // recognized known output schema
     QCOMPARE(restored.source_rate_hz(),qint64{44100});
     QCOMPARE(restored.master_rate_hz(),qint64{192000});
+
+    // M18 preproduction: Project open must fail closed if an outer worker
+    // commit denies its nested MASTER mutation. Never Q_ASSERT/crash in
+    // debug or continue saving metadata with the wrong 44.1k target.
+    Session deniedRate;
+    app::MasterOutputRateState deniedMaster;
+    deniedRate.project.set_master_output_rate_state(&deniedMaster);
+    std::size_t deniedRateEdits=0;
+    deniedMaster.set_private_m18_rate_mutation_admission([&] {
+        ++deniedRateEdits;
+        return false;
+    });
+    deniedRate.project.openProject(QUrl::fromLocalFile(path));
+    QVERIFY(!deniedRate.project.error_message().isEmpty());
+    QCOMPARE(deniedRateEdits,std::size_t{1});
+    QCOMPARE(deniedMaster.source_rate_hz(),qint64{44100});
+    QCOMPARE(deniedMaster.master_rate_hz(),qint64{44100});
+    // The SOURCE may already have been adopted; this is why real Product
+    // activation also needs an exclusive Project-wide batch and revoked
+    // export consent, not just a late per-rate admission callback.
+    QVERIFY(deniedRate.source.has_source());
+    deniedMaster.set_private_m18_rate_mutation_admission({});
+    deniedRate.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(deniedRate.project.error_message(),QString());
+    QCOMPARE(deniedMaster.master_rate_hz(),qint64{192000});
+
     const auto second=dir.filePath(QStringLiteral("master192-again.rgsml"));
     reopened.project.saveProjectAs(QUrl::fromLocalFile(second));
     QCOMPARE(reopened.project.error_message(),QString());
