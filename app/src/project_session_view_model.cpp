@@ -806,8 +806,40 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Source/Gold/MASTER/chain/project identity all change below this
     // boundary. Product epoch admission must happen BEFORE stopping any
     // current sink or adopting the newly opened Project.
-    const auto openAdmission=admit_m18_project_mutation("open_project");
-    if(!openAdmission) {publish_error(*openAdmission.error());return;}
+    // If a future Product supplies a genuine cross-controller batch,
+    // keep its RAII owner through ALL the source/rate/Gold/chain writes,
+    // including early error returns. A worker must not acquire commit
+    // authority halfway through the Project replacement.
+    std::shared_ptr<const void> projectMutationBatch;
+    if(m18ProjectOpenBatchBegin_) {
+        if(m18ProjectMutationAdmission_
+           ||QThread::currentThread()!=thread()) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_BATCH_AMBIGUOUS_OR_WRONG_OWNER_THREAD"});
+            return;
+        }
+        try {
+            auto token=m18ProjectOpenBatchBegin_();
+            if(!token) {publish_error(*token.error());return;}
+            if(!*token.value()) {
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PROJECT_BATCH_MISSING_EXCLUSIVE_LEASE"});
+                return;
+            }
+            projectMutationBatch=std::move(*token.value());
+        } catch(...) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_BATCH_ADMISSION_THROWN"});
+            return;
+        }
+    } else {
+        const auto admission=admit_m18_project_mutation("open_project");
+        if(!admission) {publish_error(*admission.error());return;}
+    }
+    Q_UNUSED(projectMutationBatch); // RAII lifetime extends to function exit.
     isCommittingProjectOpen_ = true;
 
     auto stopped = playback_->stop_and_clear();
