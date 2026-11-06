@@ -463,9 +463,10 @@ Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find
 Status MasteringChainState::admit_m18_chain_mutation(
     const char* operation) const
 {
-    if(!m18MutationAdmission_ ||!(*m18MutationAdmission_))
+    if(!m18MutationAdmission_.callback
+       ||!(*m18MutationAdmission_.callback))
         return Status::success();
-    try {return (*m18MutationAdmission_)(operation);}
+    try {return (*m18MutationAdmission_.callback)(operation);}
     catch(...) {
         return Status::failure(Error{
             ErrorCode::InvalidState,
