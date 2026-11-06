@@ -143,6 +143,18 @@ make_m18_checked_stage_worker_request_from_live_product(
             core::ErrorCode::InvalidState,
             "M18_WORKER_REQUEST_MISMATCHED_PRODUCT_OWNER_THREADS"});
     }
+    // A Source re-selection at the SAME Fs still increments the actual
+    // Product rate/Source revision. A retained ticket from the earlier
+    // SOURCE must not borrow a newer current selection with a stale
+    // M17 MASTER whose PCM happens to have an identical output rate.
+    const auto bound=productTicket.identity();
+    if(bound.master_rate_revision==0
+       ||bound.master_rate_revision
+            !=currentProductMasterRate.rate_revision()) {
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_WORKER_REQUEST_STALE_PRODUCT_SOURCE_RATE_REVISION"});
+    }
     const auto selectedRate=core::SampleRate::create(
         currentProductMasterRate.master_rate_hz());
     if(!selectedRate) {
