@@ -210,6 +210,14 @@ public:
     // be pumped, since thread serialization pins the live stage across
     // last commit check+rename+postcommit readback. Not a scalable product
     // export API; async export requires a separately designed epoch lock.
+    // PREPRODUCTION ONLY: optional Product-owned epoch mutation admission.
+    // If unconfigured, ALL M17 behavior stays byte-for-byte equivalent.
+    // The real Product must install an admission which advances the SAME
+    // epoch BEFORE every Source/Project/MASTER mutation; other upstream
+    // controllers and TerminalCandidateGate are not yet covered.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_mutation_admission(M18MutationAdmission gate)
+    { m18MutationAdmission_=std::move(gate); }
     using M18ExplicitExportConsent=std::function<core::Status()>;
     [[nodiscard]] core::Result<
         platform::windows::M18TransactionalAudioExportRequest>
@@ -403,12 +411,17 @@ private:
     [[nodiscard]] core::Status install_accepted_candidate();
     [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
     current_verified_private_master() const;
+    [[nodiscard]] core::Status admit_m18_private_mutation(
+        const char* operation) const;
     void failed(const core::Error& error);
     void stale();
     TerminalPrivateRenderController* renderer_;
     TerminalPrivatePublicationCoordinator* publisher_;
     TerminalCandidateGate* candidates_;
     PlaybackTransportViewModel* transport_;
+    // Opt-in isolated safety seam. NO production use until every upstream
+    // mutation and candidate-gate invalidation participates in the epoch.
+    M18MutationAdmission m18MutationAdmission_;
     Snapshot prepared_;
     Snapshot manual_;
     ManualId manualId_;
