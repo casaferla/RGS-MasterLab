@@ -3107,6 +3107,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         // Clear the inert seam: the existing M17 product test must then
         // continue with exact old behavior and no new M18 UI activation.
         product.set_private_m18_mutation_admission({});
+        std::size_t deniedUpstreamMutations=0;
+        selector.set_private_m18_mutation_admission(
+            [&](const char* operation)->core::Status {
+                if(operation &&*operation)++deniedUpstreamMutations;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_TEST_UPSTREAM_SOURCE_BUSY"});
+            });
+        const auto switchDenied=selector.switch_to(
+            app::AuditionTarget::PREPARED);
+        QVERIFY(!switchDenied);
+        QCOMPARE(switchDenied.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(selector.active_target()
+                ==std::optional{app::AuditionTarget::PROCESSED});
+        QVERIFY(candidates.staged()==original);
+        QCOMPARE(deniedUpstreamMutations,std::size_t{1});
+        selector.set_private_m18_mutation_admission({});
 
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
