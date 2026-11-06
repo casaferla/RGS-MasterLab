@@ -97,6 +97,12 @@ public:
         std::shared_ptr<const render::RenderResult> manual_owner,
         std::optional<core::RealizationId> manual_id);
 
+    // PREPRODUCTION M18. The actual Product has NOT installed this
+    // admission and must coordinate the SAME epoch across selectors,
+    // chain, output rate, terminal gate and every other Source mutator.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_mutation_admission(M18MutationAdmission guard)
+    {m18MutationAdmission_=std::move(guard);}
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
         const core::ResourceReference& source);
@@ -130,6 +136,8 @@ signals:
     void changed();
 
 private:
+    [[nodiscard]] core::Status admit_m18_source_mutation(
+        const char* operation) const;
     [[nodiscard]] core::Status store_active_cue();
     [[nodiscard]] core::Status prepare_realization(
         const render::RenderResult& realization,
@@ -141,6 +149,7 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_;
+    M18MutationAdmission m18MutationAdmission_;
     SourceLoopProvider sourceLoopProvider_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
