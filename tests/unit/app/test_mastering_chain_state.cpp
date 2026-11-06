@@ -62,6 +62,7 @@ private slots:
     void defaultTopologyAndCanonicalOrder();
     void productStartupHasFourModulesWithStereoMsInitiallyBypassed();
     void stableInstanceIdsDuringEdits();
+    void m18OptInChainEpochBlocksAllFiveEdits();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
@@ -161,6 +162,64 @@ void MasteringChainStateTest::productStartupHasFourModulesWithStereoMsInitiallyB
     stereoBypass = state.value()->is_bypassed(stereoId);
     QVERIFY(stereoBypass);
     QVERIFY(!*stereoBypass.value());
+}
+
+void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
+{
+    // No Product GUI integration: exercise every CENTRAL typed chain edit,
+    // including all four modules and generic bypass, with one BUSY gate.
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e0000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e0000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e0000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e0000000-0000-4000-8000-000000000030");
+    const auto stereoId=test_instance_id("e0000000-0000-4000-8000-000000000040");
+    auto state=MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
+    QVERIFY(state);
+    const auto originalGain=state.value()->gain_parameters();
+    const auto originalEq=state.value()->parametric_eq_parameters();
+    const auto originalComp=state.value()->compressor_parameters();
+    const auto originalStereo=state.value()->stereo_ms_parameters();
+    const auto originalRevision=state.value()->chain().revision();
+    auto originalBypass=state.value()->is_bypassed(stereoId);
+    QVERIFY(originalBypass);
+    std::size_t denied=0;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_MASTER_CHAIN_MUTATION_DURING_COMMIT"});
+        });
+    auto gain=GainParameters::create(2.5);
+    auto eq=ParametricEqParameters::create_legacy_default();
+    auto comp=CompressorParameters::create(
+        CompressorDetectorMode::PEAK,CompressorChannelLink::DUAL_MONO,
+        -18.0,3.0);
+    auto stereo=StereoMsParameters::create(2.0);
+    QVERIFY(gain&&eq&&comp&&stereo);
+    QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
+    QVERIFY(!state.value()->set_parametric_eq_parameters(*eq.value()));
+    QVERIFY(!state.value()->set_compressor_parameters(*comp.value()));
+    QVERIFY(!state.value()->set_stereo_ms_parameters(*stereo.value()));
+    QVERIFY(!state.value()->set_user_bypass(stereoId,
+                                         !*originalBypass.value()));
+    QCOMPARE(denied,std::size_t{5});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->parametric_eq_parameters(),originalEq);
+    QCOMPARE(state.value()->compressor_parameters(),originalComp);
+    QCOMPARE(state.value()->stereo_ms_parameters(),originalStereo);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    QCOMPARE(state.value()->is_bypassed(stereoId).value(),
+             originalBypass.value());
+
+    // When the lease has ended, the Product can explicitly remove the
+    // optional protection. All ordinary M11-15 behavior is untouched.
+    state.value()->set_private_m18_chain_mutation_admission({});
+    QVERIFY(state.value()->set_gain_parameters(*gain.value()));
+    QCOMPARE(state.value()->gain_parameters(),*gain.value());
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
