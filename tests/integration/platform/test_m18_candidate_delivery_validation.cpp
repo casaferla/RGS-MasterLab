@@ -645,7 +645,11 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     // filesystem publication. Simulate Product-owner consent and mutations.
     using platform::windows::internal::M18ProductEpochTicketAuthority;
     using platform::windows::internal::M18ProductExportIdentity;
-    const M18ProductExportIdentity id{11U,12U,13U,14U,48000U};
+    // The initial native ProcessingChain revision is zero by design;
+    // only the explicitly minted Source/Project/MASTER generations and
+    // Product epoch require nonzero values.
+    const M18ProductExportIdentity id{11U,12U,13U,0U,48000U};
+    QVERIFY(id.valid());
     M18ProductEpochTicketAuthority authority{200U,id};
     QVERIFY(!authority.capture(id)); // No implicit user consent.
     QVERIFY(!authority.try_transition(200U,200U,id,true));
