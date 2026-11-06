@@ -3241,16 +3241,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QCOMPARE(guardedLimiter.bypass(),originalBypass);
         const auto blockedCandidateInvalidation=
             candidates.try_invalidate_for_m18();
+        const auto rendererStatusBefore=renderer.status();
+        const auto renderCountBefore=renderer.render_invocation_count();
+        const auto blockedRendererInvalidation=
+            renderer.try_invalidate_for_m18();
         const auto blockedProductCancel=product.cancel();
         const auto blockedUpstreamSource=selector.switch_to(
             app::AuditionTarget::PREPARED);
         const auto selectedRateBefore=guardedRate.master_rate_hz();
         const auto blockedProjectRate=guardedRate.choose_master_rate(48000);
         QVERIFY(!blockedCandidateInvalidation);
+        QVERIFY(!blockedRendererInvalidation);
+        QCOMPARE(renderer.status(),rendererStatusBefore);
+        QCOMPARE(renderer.render_invocation_count(),renderCountBefore);
         QVERIFY(!blockedProductCancel);
         QVERIFY(!blockedUpstreamSource);
         QVERIFY(!blockedProjectRate);
-        QCOMPARE(interlockedAttempts,std::size_t{5});
+        QCOMPARE(interlockedAttempts,std::size_t{6});
         QVERIFY(candidates.staged()==original);
         QCOMPARE(guardedRate.master_rate_hz(),selectedRateBefore);
         QVERIFY((*heldCommit.value())->revalidate_current());
