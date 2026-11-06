@@ -5932,11 +5932,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     observedPlayback->state = core::PlaybackState::PLAYING;
     QVERIFY(auditionSelector.switch_to(
         app::AuditionTarget::PREPARED));
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(
+    // The resolver is refreshed by a 33 ms Qt timer. A fixed 50 ms
+    // sleep may not include even one timer tick on a loaded Windows CI
+    // runner, retaining the prior PAUSED status (#1069). Require the
+    // SAME strict NOT AUDITIONED state, but allow bounded convergence.
+    QTRY_COMPARE_WITH_TIMEOUT(
         compressorViewModel.telemetry_status(),
-        QStringLiteral("NOT AUDITIONED"));
+        QStringLiteral("NOT AUDITIONED"),
+        1000);
     QCOMPARE(
         compressorViewModel.telemetry_history_lanes(),
         liveHistory);
