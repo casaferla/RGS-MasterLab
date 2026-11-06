@@ -44,6 +44,11 @@ make_m18_checked_stage_worker_request(
        ||!authoritativeCurrentSource.permissions().can_read()
        ||!source.permissions().can_read()
        ||!authoritativeCurrentSource.same_resource_identity(source)
+       // Immediate logical no-overwrite preflight. Windows must still
+       // independently check physical aliases (symlinks/hardlinks) and
+       // final filesystem identity again at transactional publication.
+       ||!destination.permissions().can_write()
+       ||source.same_resource_identity(destination)
        // Product-owner thread MUST supply the exact currently staged M17
        // MASTER from the authoritative candidate gate, never a detached
        // old pointer retained after SOURCE/Project replacement.
