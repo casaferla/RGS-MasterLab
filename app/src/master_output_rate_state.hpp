@@ -100,5 +100,9 @@ private:
     TargetSelectionGuard targetSelectionGuard_;
     M18RateMutationAdmission m18RateMutationAdmission_;
     [[nodiscard]] bool admit_m18_source_rate_mutation() noexcept;
+    // Internal application of an already-authorized source epoch.
+    // Legacy void entrypoints must NOT bypass the M18 Product gate.
+    void commit_source_rate_unchecked(qint64 hz) noexcept;
+    void clear_source_rate_unchecked() noexcept;
 };
 } // namespace rgsml::app
