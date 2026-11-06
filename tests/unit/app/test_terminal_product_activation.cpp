@@ -137,6 +137,7 @@ private slots:
     void rejectedCeilingCannotAlterAuthority();
     void unchangedCeilingLeavesRevisionAndConsentUntouched();
     void m18DirectTerminalStateMutationRequiresProductEpoch();
+    void m18TerminalDirectMutationUsesRealCommitLease();
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
     void firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory();
 };
@@ -467,6 +468,55 @@ m18DirectTerminalStateMutationRequiresProductEpoch()
     QCOMPARE(state.value()->parameters().ceiling_db_tp(),-3.0);
     QCOMPARE(state.value()->parameter_revision(),paramsRevision+1);
     QVERIFY(!state.value()->bypassed());
+}
+
+void TerminalActivationIntegrationTest::
+m18TerminalDirectMutationUsesRealCommitLease()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    const M18ProductExportIdentity id{41U,42U,43U,0U,48000U};
+    M18ProductEpochTicketAuthority authority{600U,id};
+    QVERIFY(authority.try_transition(600U,601U,id,true));
+    const auto ticket=authority.capture(id);
+    QVERIFY(ticket);
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto limiterId=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a2").value());
+    QVERIFY(limiterId);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(state);
+    std::size_t attempted=0;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++attempted;
+            return authority.try_transition(601U,602U,id,false);
+        });
+    const auto initialChain=state.value()->chain().revision();
+    const auto initialParam=state.value()->parameter_revision();
+    QVERIFY(!state.value()->set_user_bypass(false));
+    QVERIFY(!state.value()->set_ceiling_db_tp(-3.0));
+    QCOMPARE(attempted,std::size_t{2});
+    QCOMPARE(state.value()->chain().revision(),initialChain);
+    QCOMPARE(state.value()->parameter_revision(),initialParam);
+    QVERIFY(state.value()->bypassed());
+    QVERIFY((*lease.value())->revalidate_current());
+    lease.value()->reset();
+    // After physical commit is finished, exactly one authoritative edit
+    // can advance the Product epoch and revoke the old M18 worker ticket.
+    QVERIFY(state.value()->set_ceiling_db_tp(-3.0));
+    QCOMPARE(attempted,std::size_t{3});
+    QCOMPARE(state.value()->parameter_revision(),initialParam+1);
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    // A stale expected epoch cannot subsequently toggle BYPASS.
+    QVERIFY(!state.value()->set_user_bypass(false));
+    QVERIFY(state.value()->bypassed());
+    QCOMPARE(attempted,std::size_t{4});
+    state.value()->set_private_m18_mutation_admission({});
 }
 
 void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority_data()
