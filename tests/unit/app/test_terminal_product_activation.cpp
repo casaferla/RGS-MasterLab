@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QUrl>
 #include "terminal_private_product_session.hpp"
+#include "internal/m18_product_epoch_ticket.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "master_output_rate_state.hpp"
@@ -3142,6 +3143,51 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(guardedRate.choose_master_rate(44100));
         QCOMPARE(guardedRate.rate_revision(),oldRevision+1);
 
+        // One real Qt-free M18 epoch authority serves all THREE dormant
+        // Product mutation ports: terminal cancellation, upstream SOURCE
+        // selection and Project MASTER-rate choice. No callback is wired
+        // into the production application by this regression.
+        using platform::windows::internal::M18ProductEpochTicketAuthority;
+        using platform::windows::internal::M18ProductExportIdentity;
+        const M18ProductExportIdentity verifiedId{
+            1101U,1102U,1103U,1104U,
+            static_cast<std::uint32_t>(masterRate.value()->value())};
+        M18ProductEpochTicketAuthority sharedEpoch{777U,verifiedId};
+        QVERIFY(sharedEpoch.try_transition(777U,778U,verifiedId,true));
+        auto masterTicket=sharedEpoch.capture(verifiedId);
+        QVERIFY(masterTicket);
+        const auto workerFactory=masterTicket.value()->commit_lease_factory();
+        auto heldCommit=workerFactory();
+        QVERIFY(heldCommit);
+        std::size_t interlockedAttempts=0;
+        const auto commonAdmission=[&](const char*)->core::Status {
+            ++interlockedAttempts;
+            return sharedEpoch.try_transition(
+                778U,779U,verifiedId,false);
+        };
+        product.set_private_m18_mutation_admission(commonAdmission);
+        selector.set_private_m18_mutation_admission(commonAdmission);
+        guardedRate.set_private_m18_rate_mutation_admission([&] {
+            return static_cast<bool>(commonAdmission("master_rate_edit"));
+        });
+        const auto blockedProductCancel=product.cancel();
+        const auto blockedUpstreamSource=selector.switch_to(
+            app::AuditionTarget::PREPARED);
+        const auto selectedRateBefore=guardedRate.master_rate_hz();
+        const auto blockedProjectRate=guardedRate.choose_master_rate(48000);
+        QVERIFY(!blockedProductCancel);
+        QVERIFY(!blockedUpstreamSource);
+        QVERIFY(!blockedProjectRate);
+        QCOMPARE(interlockedAttempts,std::size_t{3});
+        QVERIFY(candidates.staged()==original);
+        QCOMPARE(guardedRate.master_rate_hz(),selectedRateBefore);
+        QVERIFY((*heldCommit.value())->revalidate_current());
+        heldCommit.value()->reset();
+        QVERIFY(sharedEpoch.try_transition(778U,779U,verifiedId,false));
+        QVERIFY(!workerFactory()); // no re-admission after revocation
+        product.set_private_m18_mutation_admission({});
+        selector.set_private_m18_mutation_admission({});
+        guardedRate.set_private_m18_rate_mutation_admission({});
 
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
