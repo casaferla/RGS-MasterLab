@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <optional>
 #include <filesystem>
 #include <vector>
@@ -204,7 +205,7 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     session.gold.selectGold(QUrl::fromLocalFile(goldA));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.gold_resource());
-    const auto original=session.gold.gold_resource()->reference().locator();
+    const std::string original{session.gold.gold_resource()->reference().locator()};
     std::size_t denied=0;
     session.gold.set_private_m18_gold_mutation_admission(
         [&](const char* operation)->core::Status {
@@ -218,18 +219,18 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     session.gold.selectGold(QUrl::fromLocalFile(goldB));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.gold_resource());
-    QCOMPARE(session.gold.gold_resource()->reference().locator(),original);
+    QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}==original);
     QCOMPARE(denied,std::size_t{1});
     QVERIFY(!session.gold.error_message().isEmpty());
     session.gold.clearGold();
     QVERIFY(session.gold.has_gold());
-    QCOMPARE(session.gold.gold_resource()->reference().locator(),original);
+    QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}==original);
     QCOMPARE(denied,std::size_t{2});
     session.gold.set_private_m18_gold_mutation_admission({});
     session.gold.selectGold(QUrl::fromLocalFile(goldB));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.gold_resource());
-    QVERIFY(session.gold.gold_resource()->reference().locator()!=original);
+    QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}!=original);
     session.gold.clearGold();
     QVERIFY(!session.gold.has_gold());
 }
