@@ -651,6 +651,7 @@ void AuditionRegionViewModel::commitStartSegments(
     const QString& seconds,
     const QString& fraction)
 {
+    if(m18_foreign_owner_thread())return;
     const auto parsed = parse_segmented_time(
         hours, minutes, seconds, fraction);
     if (!parsed || !region_) {
@@ -675,6 +676,7 @@ void AuditionRegionViewModel::commitEndSegments(
     const QString& seconds,
     const QString& fraction)
 {
+    if(m18_foreign_owner_thread())return;
     const auto parsed = parse_segmented_time(
         hours, minutes, seconds, fraction);
     if (!parsed || !region_) {
@@ -705,12 +707,14 @@ void AuditionRegionViewModel::requestClearRegion()
 
 void AuditionRegionViewModel::nudgeStartBackward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         static_cast<void>(set_start(core::FrameIndex{region_->begin().value() - 1}));
     }
 }
 void AuditionRegionViewModel::nudgeStartForward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         const auto incremented = core::checked_increment(region_->begin().value());
         if (incremented) {
@@ -720,12 +724,14 @@ void AuditionRegionViewModel::nudgeStartForward()
 }
 void AuditionRegionViewModel::nudgeEndBackward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         static_cast<void>(set_end_exclusive(core::FrameIndex{region_->end().value() - 1}));
     }
 }
 void AuditionRegionViewModel::nudgeEndForward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         const auto incremented = core::checked_increment(region_->end().value());
         if (incremented) {
