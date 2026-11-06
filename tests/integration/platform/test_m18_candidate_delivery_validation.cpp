@@ -379,6 +379,30 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
         QVERIFY(m18_no_temporary_candidates(dir.path()));
         QCOMPARE(auth->acquired,std::size_t{1});
         QCOMPARE(auth->retired,std::size_t{1});
+
+        // A second worker targeting an already delivered name must never
+        // overwrite/reencode the existing WAV or mint a commit lease.
+        QFile published{out};
+        QVERIFY(published.open(QIODevice::ReadOnly));
+        const auto alreadyPublished=published.readAll();
+        published.close();
+        auto secondAuth=std::make_shared<TestSessionState>();
+        auto duplicate=make_real_transaction_request(
+            inputPath,out,data,encoding,seed,0.0,secondAuth);
+        QVERIFY(duplicate);
+        auto duplicateTask=M18AsyncExportWorker::launch(
+            std::move(*duplicate.value()));
+        QVERIFY(duplicateTask);
+        QTRY_VERIFY_WITH_TIMEOUT((*duplicateTask.value())->finished(),30000);
+        const auto second=(*duplicateTask.value())->result_if_finished();
+        QVERIFY(second);
+        QVERIFY(!*second);
+        QCOMPARE(secondAuth->acquired,std::size_t{0});
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+        QVERIFY(published.open(QIODevice::ReadOnly));
+        QCOMPARE(published.readAll(),alreadyPublished);
+        published.close();
+
         // Idempotent cancellation after success never lies about result.
         (*task.value())->cancel();
         QVERIFY((*task.value())->finished());
