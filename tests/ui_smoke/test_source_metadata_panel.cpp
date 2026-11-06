@@ -668,7 +668,7 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     auto probed=audio::SourceResource::probe(
         wav_support::memory_reader(std::move(binary),control));
     QVERIFY(probed);
-    source.adopt_probed_source(std::move(*probed.value()));
+    QVERIFY(source.adopt_probed_source(std::move(*probed.value())));
     QVERIFY(source.has_source());
     // RAM/DEVICE rows from an earlier SOURCE must be cleared as soon as
     // this real source is committed, even before a manual popup refresh.
@@ -762,7 +762,7 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
         wav_support::memory_reader(
             std::move(replacement),replacementControl));
     QVERIFY(replacementSource);
-    source.adopt_probed_source(std::move(*replacementSource.value()));
+    QVERIFY(source.adopt_probed_source(std::move(*replacementSource.value())));
     QCOMPARE(adviceNotifications.count(),1); // second SOURCE, same geometry
     QCOMPARE(advisor.status_text(),
         QStringLiteral("SOURCE changed · refresh memory"));
