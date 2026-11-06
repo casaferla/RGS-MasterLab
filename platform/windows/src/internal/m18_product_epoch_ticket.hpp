@@ -153,6 +153,36 @@ public:
         return core::Status::success();
     }
 
+    // Product-owner-thread transaction spanning an entire Project-open or
+    // other multi-controller mutation. Advances identity/epoch and revokes
+    // consent atomically with the exclusive mutation lease. Any worker
+    // ticket, even for the NEW epoch, is denied until caller releases it.
+    // This is not installed by the app; Project must first prove that all
+    // of its downstream controllers share this SAME epoch and batch.
+    [[nodiscard]] core::Result<
+        std::unique_ptr<M18EpochCommitBarrier::MutationLease>>
+    try_begin_product_mutation(
+        std::uint64_t expectedEpoch,std::uint64_t nextEpoch,
+        M18ProductExportIdentity nextIdentity,bool consent) const {
+        using R=core::Result<
+            std::unique_ptr<M18EpochCommitBarrier::MutationLease>>;
+        std::lock_guard guard{state_->mutex};
+        if(!state_->owner_alive ||!nextIdentity.valid()
+           ||expectedEpoch==0 ||state_->epoch!=expectedEpoch
+           ||nextEpoch<=expectedEpoch)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_BATCH_INVALID_EPOCH_OR_IDENTITY"});
+        auto held=state_->barrier.try_begin_mutation(
+            expectedEpoch,nextEpoch);
+        if(!held)return held;
+        // No allocations or throwing Qt callbacks inside this boundary.
+        state_->identity=nextIdentity;
+        state_->explicit_consent=consent;
+        state_->epoch=nextEpoch;
+        return held;
+    }
+
     // Product-owner-thread admission. Only a separately checked current
     // verified-M17 owner and explicit user choice may supply this identity.
     [[nodiscard]] core::Result<Ticket> capture(
