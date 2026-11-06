@@ -163,6 +163,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
+    void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
     void missing_source_preflight_preserves_live_session();
@@ -242,6 +243,76 @@ m18ProjectMutationDeniedBeforeOpenOrSavePublication()
     QCOMPARE(reopened.project.error_message(),QString());
     QVERIFY(reopened.source.has_source());
     QCOMPARE(reopened.source.sample_rate_hz(),qint64{48000});
+}
+
+void ProjectSessionTest::
+m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("batch-source.wav"),4,48000U);
+    QVERIFY(!src.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(author.source.has_source());
+    const auto projectPath=dir.filePath(QStringLiteral("batch.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QVERIFY(QFileInfo::exists(projectPath));
+
+    // One exclusive Product mutation batch surrounds every synchronous
+    // Qt controller update in Project open, including Source adoption.
+    struct Scope final {
+        Scope(bool* active,std::size_t* released)
+            :active_(active),released_(released) {}
+        ~Scope(){*active_=false;++*released_;}
+        bool* active_;
+        std::size_t* released_;
+    };
+    Session reopened;
+    bool mutationActive=false;
+    std::size_t batchesStarted=0,batchesReleased=0,sourceAdoptions=0;
+    reopened.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batchesStarted;
+            mutationActive=true;
+            std::shared_ptr<const void> token=
+                std::make_shared<Scope>(&mutationActive,&batchesReleased);
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::move(token));
+        });
+    reopened.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++sourceAdoptions;
+            if(mutationActive)return core::Status::success();
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_SOURCE_MUTATION_WITHOUT_PROJECT_BATCH"});
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(reopened.source.has_source());
+    QCOMPARE(batchesStarted,std::size_t{1});
+    QCOMPARE(sourceAdoptions,std::size_t{1});
+    QCOMPARE(batchesReleased,std::size_t{1});
+    QVERIFY(!mutationActive); // Product batch closed at function exit.
+
+    // A denied batch must fail BEFORE transport stop and Source adoption.
+    Session denied;
+    std::size_t deniedSourceAdoptions=0;
+    denied.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_PRODUCT_PROJECT_COMMIT_ALREADY_BUSY"});
+        });
+    denied.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++deniedSourceAdoptions;
+            return core::Status::success();
+        });
+    denied.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!denied.project.error_message().isEmpty());
+    QVERIFY(!denied.source.has_source());
+    QCOMPARE(deniedSourceAdoptions,std::size_t{0});
 }
 
 void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
