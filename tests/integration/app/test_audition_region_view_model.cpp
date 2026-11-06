@@ -174,7 +174,7 @@ m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate()
     // identity change; owner-thread navigation remains usable during M18.
     QVERIFY(model.seek(core::FrameIndex{42}));
     QCOMPARE(observed->seekCalls,priorSeekCalls+1);
-    QCOMPARE(observed->position,core::FrameIndex{42});
+    QCOMPARE(observed->position.value(),std::int64_t{42});
     QCOMPARE(attempts,std::size_t{5});
 
     bool nestedDenied=false;
