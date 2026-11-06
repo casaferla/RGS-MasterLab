@@ -425,7 +425,7 @@ m18ActualChainAndTerminalShareOneProductWorkerBarrier()
     M18OwnerMutationFanout gate{owner,251U,id};
     app::internal::M18ProductControllerBinding::bind_chain_and_terminal(
         *chain.value(),*terminal.value(),gate);
-    const auto held=ticket.value()->commit_lease_factory()();
+    auto held=ticket.value()->commit_lease_factory()();
     QVERIFY(held);
     const auto deniedChain=chain.value()->set_gain_parameters(
         *updatedGain.value());
