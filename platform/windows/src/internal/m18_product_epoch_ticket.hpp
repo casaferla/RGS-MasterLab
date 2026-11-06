@@ -17,6 +17,8 @@ struct M18ProductExportIdentity final {
     std::uint64_t source_generation{0};
     std::uint64_t project_generation{0};
     std::uint64_t master_generation{0};
+    // A legitimate initial M11-15 ProcessingChain has revision ZERO.
+    // Compare the exact value, but never mistake zero for an absent chain.
     std::uint64_t chain_revision{0};
     std::uint32_t master_rate_hz{0};
 
@@ -25,7 +27,7 @@ struct M18ProductExportIdentity final {
             ||master_rate_hz==88200U ||master_rate_hz==96000U
             ||master_rate_hz==176400U ||master_rate_hz==192000U;
         return source_generation!=0 &&project_generation!=0
-            &&master_generation!=0 &&chain_revision!=0 &&rate;
+            &&master_generation!=0 &&rate;
     }
     friend bool operator==(const M18ProductExportIdentity&,
                            const M18ProductExportIdentity&)=default;
