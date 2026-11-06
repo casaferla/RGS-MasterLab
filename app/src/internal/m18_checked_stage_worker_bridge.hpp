@@ -3,6 +3,8 @@
 // shipping export action. A real Product must first atomically bind every
 // authoritative upstream mutation to the identical single-writer epoch.
 #include "../terminal_candidate_gate.hpp"
+#include "../terminal_private_product_session.hpp"
+#include "../master_output_rate_state.hpp"
 #include "m18_owner_source_snapshot.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
@@ -107,6 +109,57 @@ make_m18_checked_stage_worker_request_from_product_source(
     return make_m18_checked_stage_worker_request(
         currentProductGate,std::move(stage),productTicket,
         *provenance.value(),std::move(source),std::move(destination),
+        targetFormat,pcm24Seed,ceilingDbTp);
+}
+
+// Cohesive Product-owner PREPRODUCTION entry point. Reads the actual
+// selected Project MASTER rate, the real Product private session's
+// current verified M17 candidate, and SOURCE from SourceSelectionViewModel
+// on their common Qt owner thread. No GUI activation, no worker QoBject
+// access, and no new consent; it consumes only an existing Product ticket.
+// The Product must separately install all authoritative mutation gates
+// before using the produced cross-thread lease in an actual export.
+[[nodiscard]] inline
+core::Result<platform::windows::M18TransactionalAudioExportRequest>
+make_m18_checked_stage_worker_request_from_live_product(
+    const TerminalPrivateProductSession& currentProductSession,
+    const SourceSelectionViewModel& currentProductSource,
+    const MasterOutputRateState& currentProductMasterRate,
+    const TerminalCandidateGate& currentProductGate,
+    const platform::windows::internal::
+        M18ProductEpochTicketAuthority::Ticket& productTicket,
+    core::ResourceReference requestedSource,
+    core::ResourceReference destination,
+    audio::WavSampleFormat targetFormat,
+    std::optional<std::uint64_t> pcm24Seed,
+    double ceilingDbTp)
+{
+    using R=core::Result<
+        platform::windows::M18TransactionalAudioExportRequest>;
+    if(QThread::currentThread()!=currentProductSession.thread()
+       ||QThread::currentThread()!=currentProductMasterRate.thread()
+       ||QThread::currentThread()!=currentProductSource.thread()) {
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_WORKER_REQUEST_MISMATCHED_PRODUCT_OWNER_THREADS"});
+    }
+    const auto selectedRate=core::SampleRate::create(
+        currentProductMasterRate.master_rate_hz());
+    if(!selectedRate) {
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_WORKER_REQUEST_INVALID_CURRENT_MASTER_RATE"});
+    }
+    const auto stage=currentProductSession.capture_m18_verified_stage_for_worker(
+        *selectedRate.value());
+    if(!stage) {
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_WORKER_REQUEST_NO_CURRENT_VERIFIED_PRODUCT_STAGE"});
+    }
+    return make_m18_checked_stage_worker_request_from_product_source(
+        currentProductSource,currentProductGate,std::move(stage),
+        productTicket,std::move(requestedSource),std::move(destination),
         targetFormat,pcm24Seed,ceilingDbTp);
 }
 } // namespace rgsml::app::internal
