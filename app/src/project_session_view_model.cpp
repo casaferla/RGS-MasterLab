@@ -770,6 +770,11 @@ core::Status ProjectSessionViewModel::admit_m18_project_save() const
 
 void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 {
+    // With any M18 Product policy, even invalid-file diagnostics must
+    // remain on the owning Qt thread. Never probe disk or emit errors
+    // from a foreign worker before an eventual epoch admission.
+    if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_)
+       &&QThread::currentThread()!=thread())return;
     auto reference = read_reference(selectedFile);
     if (!reference) { publish_error(*reference.error()); return; }
     auto reader = platform::windows::WindowsResourceReader::open_read_only(*reference.value());
@@ -977,6 +982,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
 {
+    if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_
+        ||m18ProjectSaveAdmission_)
+       &&QThread::currentThread()!=thread())return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
