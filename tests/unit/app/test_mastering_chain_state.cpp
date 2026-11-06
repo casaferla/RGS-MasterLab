@@ -185,8 +185,12 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
     const auto originalRevision=state.value()->chain().revision();
     auto originalBypass=state.value()->is_bypassed(stereoId);
     QVERIFY(originalBypass);
-    // Runtime gate must not alter the semantic equality of DSP state.
-    const auto stateBeforeGuard=*state.value();
+    // Snapshot the public authoritative DSP state: ProcessingChain has
+    // no operator==, so MasteringChainState's defaulted comparison is
+    // intentionally unavailable. The Product guard must never alter
+    // topology, identity, revisions or any accepted DSP parameters.
+    const auto originalChainId=state.value()->chain_id();
+    const auto originalModuleCount=state.value()->module_count();
     std::size_t denied=0;
     state.value()->set_private_m18_chain_mutation_admission(
         [&](const char*)->core::Status {
@@ -195,7 +199,18 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
                 core::ErrorCode::InvalidState,
                 "M18_MASTER_CHAIN_MUTATION_DURING_COMMIT"});
         });
-    QVERIFY(*state.value()==stateBeforeGuard);
+    QCOMPARE(state.value()->chain_id(),originalChainId);
+    QCOMPARE(state.value()->module_count(),originalModuleCount);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    QCOMPARE(state.value()->gain_instance_id(),gainId);
+    QCOMPARE(state.value()->eq_instance_id(),eqId);
+    QCOMPARE(state.value()->compressor_instance_id(),compId);
+    QCOMPARE(state.value()->stereo_ms_instance_id(),
+             std::optional{stereoId});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->parametric_eq_parameters(),originalEq);
+    QCOMPARE(state.value()->compressor_parameters(),originalComp);
+    QCOMPARE(state.value()->stereo_ms_parameters(),originalStereo);
     auto gain=GainParameters::create(2.5);
     auto eq=ParametricEqParameters::create_legacy_default();
     auto comp=CompressorParameters::create(
