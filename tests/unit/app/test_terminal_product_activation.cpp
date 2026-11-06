@@ -3169,17 +3169,44 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto ownerBoundRequest=
             app::internal::make_m18_checked_stage_worker_request(
                 candidates,original,*masterTicket.value(),
-                *src.value(),*dst.value(),
+                *src.value(),*src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,
                 UINT64_C(42),-1.0);
         QVERIFY(ownerBoundRequest);
+        // Exact current-Source provenance is distinct from a worker's
+        // asserted file path. Even a real M17 stage and valid Product epoch
+        // cannot authorize writing PCM for a different current SOURCE.
+        auto otherSource=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator()+".other",
+            true,false,"other-source");
+        QVERIFY(otherSource);
+        const auto wrongSourceRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *otherSource.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!wrongSourceRequest);
+        QCOMPARE(wrongSourceRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
+        auto readDenied=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator(),
+            false,false,"unreadable-source");
+        QVERIFY(readDenied);
+        const auto unreadableRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *readDenied.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!unreadableRequest);
+        QCOMPARE(unreadableRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
         // A retained M17 stage from another/retired Product candidate gate
         // can never use a current ticket to publish a different MASTER.
         app::TerminalCandidateGate detachedGate;
         const auto detachedRequest=
             app::internal::make_m18_checked_stage_worker_request(
                 detachedGate,original,*masterTicket.value(),
-                *src.value(),*dst.value(),
+                *src.value(),*src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,
                 UINT64_C(42),-1.0);
         QVERIFY(!detachedRequest);
@@ -3207,7 +3234,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto deniedWrongRate=
             app::internal::make_m18_checked_stage_worker_request(
                 candidates,original,*wrongRateTicket.value(),
-                *src.value(),*dst.value(),
+                *src.value(),*src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongRate);
         QCOMPARE(deniedWrongRate.error()->code(),
@@ -3224,7 +3251,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto deniedWrongChain=
             app::internal::make_m18_checked_stage_worker_request(
                 candidates,original,*wrongChainTicket.value(),
-                *src.value(),*dst.value(),
+                *src.value(),*src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongChain);
         QCOMPARE(deniedWrongChain.error()->code(),
