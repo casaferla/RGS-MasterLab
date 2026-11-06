@@ -124,6 +124,9 @@ signals:
     void previewNonconformingRequested();
 
 private:
+    // Exactly one Product mutation authority: installing both ViewModel
+    // and direct TerminalLimiterState guards is ambiguous and fail closed.
+    [[nodiscard]] bool admit_m18_view_mutation() const noexcept;
     void set_validation(const QString& message);
     void clear_validation();
     TerminalLimiterState* state_{nullptr};
