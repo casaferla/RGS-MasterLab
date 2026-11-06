@@ -170,7 +170,11 @@ public:
         // Optional worker-only cooperative cancellation. Checked during
         // PCM streaming, before publish and after final readback; never
         // used by the existing synchronous M17/F64 export contract.
-        const std::function<bool()>& cancellationRequested = {});
+        const std::function<bool()>& cancellationRequested = {},
+        // Reports encoded frames, not published/verified audio. Even when
+        // written==total, success is false until readback and final lease.
+        const std::function<void(std::uint64_t,std::uint64_t)>&
+            onEncodedFrames = {});
 
 private:
     [[nodiscard]] static core::Result<TransactionalAudioExportResult>
@@ -183,7 +187,9 @@ private:
         std::optional<std::uint64_t> ditherSeed,
         std::optional<double> ceilingDbTp,
         const M18AcquireCommitLease* commitLeaseFactory,
-        const std::function<bool()>* cancellationRequested);
+        const std::function<bool()>* cancellationRequested,
+        const std::function<void(std::uint64_t,std::uint64_t)>*
+            onEncodedFrames);
 };
 
 }  // namespace rgsml::platform::windows
