@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -83,11 +84,23 @@ public:
         if(completed && *completed) {
             current.phase=Phase::VERIFIED_DELIVERED;
         } else {
-            current.phase=job_->cancellation_requested()
-                ?Phase::CANCELLED :Phase::FAILED;
-            if(completed &&completed->error())
-                current.failure_code=completed->error()->code();
+            // Cancellation is NOT permission to hide an unrelated export
+            // failure. Only the specific exporter cancellation evidence
+            // is presented as CANCELLED; a failed SHA, destination race,
+            // source revocation or I/O error remains FAILED even if the
+            // user clicks Cancel after it has already happened.
+            const auto* error=completed?completed->error():nullptr;
+            if(error)current.failure_code=error->code();
             else current.failure_code=core::ErrorCode::IoFailure;
+            constexpr std::string_view cancelledPrefix{
+                "m18_export_cancelled_"};
+            const auto message=error
+                ?std::string_view{error->message()}:std::string_view{};
+            const bool confirmedCancelled=
+                job_->cancellation_requested()
+                &&message.starts_with(cancelledPrefix);
+            current.phase=confirmedCancelled
+                ?Phase::CANCELLED :Phase::FAILED;
         }
         return current;
     }
