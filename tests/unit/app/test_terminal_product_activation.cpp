@@ -3168,11 +3168,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         // never copy Master PCM or forge a new terminal realization.
         const auto ownerBoundRequest=
             app::internal::make_m18_checked_stage_worker_request(
-                original,*masterTicket.value(),
+                candidates,original,*masterTicket.value(),
                 *src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,
                 UINT64_C(42),-1.0);
         QVERIFY(ownerBoundRequest);
+        // A retained M17 stage from another/retired Product candidate gate
+        // can never use a current ticket to publish a different MASTER.
+        app::TerminalCandidateGate detachedGate;
+        const auto detachedRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                detachedGate,original,*masterTicket.value(),
+                *src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,
+                UINT64_C(42),-1.0);
+        QVERIFY(!detachedRequest);
+        QCOMPARE(detachedRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
         const auto aliasView=ownerBoundRequest.value()->payload();
         const auto originalStageView=original->rendered.terminal.checked
             .terminal.compensated_pcm.view();
@@ -3194,7 +3206,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(wrongRateTicket);
         const auto deniedWrongRate=
             app::internal::make_m18_checked_stage_worker_request(
-                original,*wrongRateTicket.value(),
+                candidates,original,*wrongRateTicket.value(),
                 *src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongRate);
@@ -3211,7 +3223,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(wrongChainTicket);
         const auto deniedWrongChain=
             app::internal::make_m18_checked_stage_worker_request(
-                original,*wrongChainTicket.value(),
+                candidates,original,*wrongChainTicket.value(),
                 *src.value(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongChain);
