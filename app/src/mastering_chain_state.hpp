@@ -30,6 +30,14 @@ public:
     {m18MutationAdmission_.callback=gate
         ?std::make_shared<M18MutationAdmission>(std::move(gate))
         :nullptr;}
+    // Project open has its own preflight epoch admission BEFORE stopping
+    // playback / replacing SOURCE. Preserve this runtime guard across the
+    // once-authorized replacement of the project DSP snapshot.
+    // This is NOT an independent admission; only the ProjectSession
+    // transaction may call it, after checking its master epoch.
+    void adopt_chain_after_authorized_project_open(
+        MasteringChainState replacement);
+
 
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_default(
         const dsp::ModuleRegistry& registry,
