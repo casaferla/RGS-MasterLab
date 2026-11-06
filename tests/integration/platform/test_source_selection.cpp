@@ -68,6 +68,7 @@ private slots:
     void m18SourcePublicationRejectsReentrantQtListeners();
     void m18ThrownAdmissionRecoversWithoutReplacingSource();
     void m18DirectProbedSourceFromForeignThreadCannotBypassOwner();
+    void m18DirectSourceAdoptionBlockedDuringOuterPublication();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
