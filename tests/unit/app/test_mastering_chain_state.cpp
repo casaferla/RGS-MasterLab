@@ -185,6 +185,8 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
     const auto originalRevision=state.value()->chain().revision();
     auto originalBypass=state.value()->is_bypassed(stereoId);
     QVERIFY(originalBypass);
+    // Runtime gate must not alter the semantic equality of DSP state.
+    const auto stateBeforeGuard=*state.value();
     std::size_t denied=0;
     state.value()->set_private_m18_chain_mutation_admission(
         [&](const char*)->core::Status {
@@ -193,6 +195,7 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
                 core::ErrorCode::InvalidState,
                 "M18_MASTER_CHAIN_MUTATION_DURING_COMMIT"});
         });
+    QVERIFY(*state.value()==stateBeforeGuard);
     auto gain=GainParameters::create(2.5);
     auto eq=ParametricEqParameters::create_legacy_default();
     auto comp=CompressorParameters::create(
