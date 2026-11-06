@@ -249,6 +249,21 @@ m18InvalidOrUnchangedRegionNeverConsumesProductEpoch()
     QVERIFY(model.seek(core::FrameIndex{44}));
     QCOMPARE(admissionCalls,std::size_t{1});
     QCOMPARE(observed->position.value(),std::int64_t{44});
+    // An unavailable loop cannot consume a Product epoch just to report
+    // invalid selection, even while a worker owns the immutable Master.
+    model.set_private_m18_region_mutation_admission({});
+    QVERIFY(model.set_loop_enabled(false));
+    QVERIFY(model.clear_region());
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_BUSY"});
+        });
+    QVERIFY(!model.set_loop_enabled(true));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QVERIFY(!model.loop_enabled());
+    QVERIFY(!model.has_region());
 }
 
 void AuditionRegionViewModelTest::
