@@ -998,3 +998,46 @@ Current branch remains NO-CI staging and uncompiled. The #1069 Linux
 outcome must be supplied by PO; no branch promotion/next CI before its
 terminal result. PR #84 and main must not be merged. M18 Product-wide
 single writer and physical qualification remain unresolved.
+
+### Chat #72 — after #1069 Linux green, Focused #1070 and next isolated Product-epoch batch
+The PO reports Focused #1069 **Linux green**, Windows red. GitHub
+job data confirms Linux SUCCESS and Windows FAILURE on exact
+`2d3c8743`. A fast-forward promoted the isolated 16-commit Windows
+smoke timing correction and AuditionSourceSelector coverage to Draft
+PR #84 SHA `1ff2915df45c774e619d1447927c5450a7dfee21`.
+The one new Focused [#1070](https://github.com/casaferla/RGS-MasterLab/actions/runs/42299752247)
+was queued on that exact SHA. PO controls Windows/Linux outcomes.
+No Full Qualification or main merge.
+
+A **separate, UNCOMPILED** 15-commit macrolot was prepared without
+moving PR #84 or starting another CI. It closes two related
+Single-Writer bypasses in the optional M18 mutation API:
+1. `MasteringChainState`'s previously installed status callback had
+   no thread affinity and allowed recursive edits or unregistering the
+   callback during its own invocation. It now captures the Product
+   installation thread, denies foreign mutation without calling the
+   Product epoch callback, scopes a reentrancy bit through exceptions,
+   and blocks unauthorized foreign/unwinding policy replacement. The
+   ephemeral runtime guard survives authorized Project DSP-chain
+   adoption, retaining the original owner. Native focused chain tests
+   cover direct foreign edits, attempted foreign unregister, callback
+   exceptions, reentrant edits/self-removal and Project replacement.
+2. `GoldSelectionViewModel::adopt_probed_gold/clearGold` already called
+   the inner `AuditionSourceSelector::set_gold/clear_gold`. With both
+   optional Product gates installed, one user click would advance two
+   independent epochs. A new read-only selector guard-presence witness
+   allows GOLD ViewModel to fail closed if *both* are installed; when
+   selector-only is installed the selector alone admits the real
+   mutation; when GOLD-only is installed the ViewModel alone admits it.
+   A scoped owner-thread GOLD publication bit covers nested selector
+   calls, file metadata and synchronous Qt `changed()` signals,
+   denying callback reentry and wrong-thread methods before any
+   secondary Product mutation. Qt native regressions prove two-policy
+   ambiguity, precisely one admission for selected GOLD/clear,
+   reentrant Qt notifications, throwing and reentrant callback
+   recovery, and unchanged legacy M17 with no gates installed.
+
+The new code is only a guarded preproduction seam; no Product GUI M18
+registration, new exporter activation, physical PCM24/Float32 gate, FQ,
+main merge or proof that the entire single-writer orchestration is
+ready. The current PR candidate and current CI remain unchanged.
