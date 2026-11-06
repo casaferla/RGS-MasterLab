@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <thread>
 
 namespace rgsml::tests {
@@ -179,6 +180,47 @@ void SourceSelectionTest::m18SourceMutationDeniedBeforeSelectionAndAcrossThreads
     QCOMPARE(model.display_name(),QStringLiteral("m18-replacement.wav"));
     QCOMPARE(changed.count(),1);
     QVERIFY(model.error_message().isEmpty());
+}
+
+void SourceSelectionTest::
+m18SourceGateCannotUninstallOrNestedSelectDuringAdmission()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto first=write_file(directory,QStringLiteral("m18-outer-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto second=write_file(directory,QStringLiteral("m18-nested-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    app::SourceSelectionViewModel model;
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    QSignalSpy errors{&model,&app::SourceSelectionViewModel::errorChanged};
+    std::size_t admissions=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char* op)->core::Status {
+            if(!op ||std::string_view{op}!="source_adopt_probed")
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"M18_SOURCE_OPERATION_UNKNOWN"});
+            ++admissions;
+            model.set_private_m18_source_mutation_admission({});
+            // The callback cannot reenter a file picker and replace the
+            // still-not-published outer SOURCE, or erase its own gate.
+            model.selectSource(QUrl::fromLocalFile(second));
+            return core::Status::success();
+        });
+    model.selectSource(QUrl::fromLocalFile(first));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(model.display_name(),QStringLiteral("m18-outer-source.wav"));
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(errors.count(),0);
+    // The attempt to tear down the policy was refused; the second
+    // independent SOURCE choice still requires Product admission.
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(admissions,std::size_t{2});
+    QCOMPARE(model.display_name(),QStringLiteral("m18-nested-source.wav"));
+    QCOMPARE(changed.count(),2);
+    QCOMPARE(errors.count(),0);
+    model.set_private_m18_source_mutation_admission({});
 }
 
 void SourceSelectionTest::acceptedFormatMappings_data()
