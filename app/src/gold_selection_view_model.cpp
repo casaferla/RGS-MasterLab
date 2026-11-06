@@ -5,6 +5,7 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 
 #include <string_view>
 #include <utility>
@@ -77,11 +78,34 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
         emit changed();
         return;
     }
-    (void)adopt_probed_gold(std::move(*candidate.value()));
+    const auto accepted=adopt_probed_gold(std::move(*candidate.value()));
+    if(!accepted) {
+        const auto message=QString::fromStdString(accepted.error()->message());
+        if(errorMessage_!=message) {
+            errorMessage_=message;
+            emit changed();
+        }
+    }
+}
+
+core::Status GoldSelectionViewModel::admit_m18_gold_mutation(
+    const char* operation) const
+{
+    if(!m18GoldMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18GoldMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_GOLD_MUTATION_ADMISSION_THROWN"});}
 }
 
 core::Status GoldSelectionViewModel::adopt_probed_gold(audio::SourceResource candidate)
 {
+    const auto admission=admit_m18_gold_mutation("gold_adopt_probed");
+    if(!admission)return admission;
     const auto& info = candidate.wav_info();
     auto committed = selector_->set_gold(
         candidate.reference(),
@@ -112,6 +136,12 @@ void GoldSelectionViewModel::cancelGoldSelection() noexcept
 
 void GoldSelectionViewModel::clearGold()
 {
+    const auto admission=admit_m18_gold_mutation("gold_clear");
+    if(!admission) {
+        errorMessage_=QString::fromStdString(admission.error()->message());
+        emit changed();
+        return;
+    }
     auto cleared = selector_->clear_gold();
     if (!cleared) {
         errorMessage_ = QString::fromStdString(cleared.error()->message());
@@ -127,6 +157,9 @@ void GoldSelectionViewModel::clearGold()
 
 void GoldSelectionViewModel::sourceChanged()
 {
+    // Derived SOURCE invalidation: the Product must admit the SOURCE
+    // mutation before it changes the selector; GOLD cannot retroactively
+    // refuse that already-published outer transaction.
     if (!selector_->gold_available()) {
         gold_.reset();
         displayName_.clear();
