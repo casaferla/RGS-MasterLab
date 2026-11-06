@@ -21,6 +21,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include "master_output_rate_state.hpp"
@@ -373,6 +374,20 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
     QVERIFY(!batchHeld);
     QVERIFY(QFileInfo::exists(proposed));
     QCOMPARE(session.project.error_message(),QString());
+    // A collision after admission is a failed transaction, not a
+    // permanently held Single-Writer epoch or permission to overwrite.
+    QFile published{proposed};
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    const auto originalBytes=published.readAll();
+    published.close();
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(batchesStarted,std::size_t{2});
+    QCOMPARE(batchesReleased,std::size_t{2});
+    QVERIFY(!batchHeld);
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    QCOMPARE(published.readAll(),originalBytes);
+    published.close();
     session.project.set_private_m18_project_save_batch_begin({});
     session.project.set_private_m18_project_open_batch_begin({});
 }
