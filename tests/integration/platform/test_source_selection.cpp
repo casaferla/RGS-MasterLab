@@ -5,6 +5,7 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QFile>
+#include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -309,6 +310,54 @@ m18ThrownAdmissionRecoversWithoutReplacingSource()
     QCOMPARE(changed.count(),1);
     QCOMPARE(model.display_name(),QStringLiteral("m18-after-throw.wav"));
     QVERIFY(model.error_message().isEmpty());
+    model.set_private_m18_source_mutation_admission({});
+}
+
+void SourceSelectionTest::
+m18DirectProbedSourceFromForeignThreadCannotBypassOwner()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=write_file(dir,QStringLiteral("m18-owner-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto second=write_file(dir,QStringLiteral("m18-worker-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    app::SourceSelectionViewModel model;
+    model.selectSource(QUrl::fromLocalFile(first));
+    QVERIFY(model.has_source());
+    std::size_t admissions=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::success();
+        });
+    const auto utf8=second.toUtf8().toStdString();
+    const auto name=QFileInfo{second}.fileName().toUtf8().toStdString();
+    const auto ref=platform::windows::WindowsResourceReader::make_read_reference(
+        utf8,name);
+    QVERIFY(ref);
+    auto reader=platform::windows::WindowsResourceReader::open_read_only(
+        *ref.value());
+    QVERIFY(reader);
+    auto source=audio::SourceResource::probe(std::move(*reader.value()));
+    QVERIFY(source);
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    bool deniedFromWorker=false;
+    std::thread worker([&] {
+        auto result=model.adopt_probed_source(std::move(*source.value()));
+        deniedFromWorker=!result &&result.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(deniedFromWorker);
+    QCOMPARE(admissions,std::size_t{0});
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-owner-source.wav"));
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-worker-source.wav"));
     model.set_private_m18_source_mutation_admission({});
 }
 
