@@ -14,6 +14,19 @@
 namespace rgsml::app {
 namespace {
 
+// Retains exclusive owner-thread publication scope through synchronous
+// playback operations, Qt changed() signals and every early return.
+// This is an opt-in M18 safeguard; legacy M17 callers do not install it.
+struct M18RegionPublicationScope final {
+    explicit M18RegionPublicationScope(bool* active) noexcept
+        : active_(active) {if(active_)*active_=true;}
+    M18RegionPublicationScope(const M18RegionPublicationScope&)=delete;
+    M18RegionPublicationScope& operator=(const M18RegionPublicationScope&)=delete;
+    ~M18RegionPublicationScope(){if(active_)*active_=false;}
+private:
+    bool* active_;
+};
+
 [[nodiscard]] core::Status invalid_region(const char* message)
 {
     return core::Status::failure(core::Error{
