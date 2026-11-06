@@ -85,6 +85,11 @@ private:
     int channelCount_{0};
     PlaybackTransportViewModel* playbackTransport_{nullptr};
     M18SourceMutationAdmission m18SourceMutationAdmission_;
+    // Scoped across the Product admission and the SOURCE committed
+    // handler, audio transport preparation and Qt NOTIFY publication.
+    // Inert until a shared M18 owner gate is explicitly installed.
+    mutable bool m18SourceAdmitting_{false};
+    bool m18SourcePublishing_{false};
     SourceCommittedHandler sourceCommittedHandler_;
 };
 
