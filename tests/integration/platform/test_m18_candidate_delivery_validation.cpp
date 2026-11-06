@@ -752,7 +752,6 @@ productDestroyedDuringProjectMutationCannotReviveWorkerExport()
     // The Qt Product owner may be destroyed while a Project-open batch
     // token still lives in an early-return cleanup path. A retained worker
     // factory must fail both before and after that token is released.
-    using platform::windows::internal::M18EpochCommitBarrier;
     using platform::windows::internal::M18ProductEpochTicketAuthority;
     using platform::windows::internal::M18ProductExportIdentity;
     const M18ProductExportIdentity initial{31U,32U,33U,0U,44100U};
