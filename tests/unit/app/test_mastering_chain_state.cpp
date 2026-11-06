@@ -22,6 +22,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <thread>
+#include <stdexcept>
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -63,6 +65,7 @@ private slots:
     void productStartupHasFourModulesWithStereoMsInitiallyBypassed();
     void stableInstanceIdsDuringEdits();
     void m18OptInChainEpochBlocksAllFiveEdits();
+    void m18ChainRejectsForeignThreadAndProtectsGateRemoval();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
@@ -258,6 +261,64 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
     QCOMPARE(denied,std::size_t{6});
     QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
     state.value()->set_private_m18_chain_mutation_admission({});
+}
+
+void MasteringChainStateTest::
+m18ChainRejectsForeignThreadAndProtectsGateRemoval()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e1000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e1000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e1000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e1000000-0000-4000-8000-000000000030");
+    auto state=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId,compId);
+    QVERIFY(state);
+    const auto originalGain=state.value()->gain_parameters();
+    const auto originalRevision=state.value()->chain().revision();
+    const auto newGain=GainParameters::create(2.5);
+    QVERIFY(newGain);
+    std::size_t admits=0;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char* operation)->core::Status {
+            if(!operation)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_NO_OPERATION"});
+            ++admits;
+            return core::Status::success();
+        });
+    bool foreignDenied=false;
+    std::thread illegal([&]{
+        const auto denied=state.value()->set_gain_parameters(*newGain.value());
+        foreignDenied=!denied &&denied.error()->code()
+            ==core::ErrorCode::InvalidState;
+        // Unauthorized worker cannot silently erase the Product gate.
+        state.value()->set_private_m18_chain_mutation_admission({});
+    });
+    illegal.join();
+    QVERIFY(foreignDenied);
+    QCOMPARE(admits,std::size_t{0});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    // The retained Product callback must still be the only authority.
+    QVERIFY(state.value()->set_gain_parameters(*newGain.value()));
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(state.value()->gain_parameters(),*newGain.value());
+
+    state.value()->set_private_m18_chain_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_CHAIN_EPOCH_THROW");
+        });
+    const auto reset=GainParameters::create(-1.0);
+    QVERIFY(reset);
+    const auto denied=state.value()->set_gain_parameters(*reset.value());
+    QVERIFY(!denied);
+    QCOMPARE(denied.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(state.value()->gain_parameters(),*newGain.value());
+    // Owner can retire the optional preproduction guard explicitly.
+    state.value()->set_private_m18_chain_mutation_admission({});
+    QVERIFY(state.value()->set_gain_parameters(*reset.value()));
+    QCOMPARE(state.value()->gain_parameters(),*reset.value());
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
