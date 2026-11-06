@@ -3245,6 +3245,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto renderCountBefore=renderer.render_invocation_count();
         const auto blockedRendererInvalidation=
             renderer.try_invalidate_for_m18();
+        // A second M17 Prepare while a verified M18 worker owns the
+        // file-commit epoch must ALSO refuse before clearing the MASTER.
+        const auto blockedSecondPrepare=
+            renderer.request_private(*masterRate.value());
         const auto blockedProductCancel=product.cancel();
         const auto blockedUpstreamSource=selector.switch_to(
             app::AuditionTarget::PREPARED);
@@ -3252,12 +3256,15 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto blockedProjectRate=guardedRate.choose_master_rate(48000);
         QVERIFY(!blockedCandidateInvalidation);
         QVERIFY(!blockedRendererInvalidation);
+        QVERIFY(!blockedSecondPrepare);
+        QCOMPARE(blockedSecondPrepare.error()->code(),
+                 core::ErrorCode::InvalidState);
         QCOMPARE(renderer.status(),rendererStatusBefore);
         QCOMPARE(renderer.render_invocation_count(),renderCountBefore);
         QVERIFY(!blockedProductCancel);
         QVERIFY(!blockedUpstreamSource);
         QVERIFY(!blockedProjectRate);
-        QCOMPARE(interlockedAttempts,std::size_t{6});
+        QCOMPARE(interlockedAttempts,std::size_t{7});
         QVERIFY(candidates.staged()==original);
         QCOMPARE(guardedRate.master_rate_hz(),selectedRateBefore);
         QVERIFY((*heldCommit.value())->revalidate_current());
