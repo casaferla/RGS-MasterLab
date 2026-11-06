@@ -193,6 +193,7 @@ private slots:
     void realWindowsSixRatesBothLayoutsBothEncodingsOddEven();
     void realWindowsFailureInjectionCleansUpBothFormats();
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
+    void exclusiveProductProjectMutationBlocksWorkerCommitUntilComplete();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
@@ -580,6 +581,49 @@ realWindowsFailureInjectionCleansUpBothFormats()
     QCOMPARE(cases,14);
 }
 
+
+void M18CandidateDeliveryValidationTest::
+exclusiveProductProjectMutationBlocksWorkerCommitUntilComplete()
+{
+    using platform::windows::internal::M18EpochCommitBarrier;
+    M18EpochCommitBarrier authority{51U};
+    auto batched=authority.try_begin_mutation(51U,52U);
+    QVERIFY(batched);
+    QCOMPARE((*batched.value())->epoch(),std::uint64_t{52U});
+    QCOMPARE(authority.epoch_snapshot(),std::uint64_t{52U});
+
+    // The newly advanced epoch does not authorize a worker until the
+    // entire SOURCE/Project/chain/MASTER transaction has finished.
+    std::promise<bool> deniedPromise;
+    auto deniedFuture=deniedPromise.get_future();
+    std::thread worker([&] {
+        const auto denied=authority.try_acquire(52U);
+        deniedPromise.set_value(!denied
+            &&denied.error()->code()==core::ErrorCode::InvalidState);
+    });
+    const bool workerDenied=deniedFuture.get();
+    worker.join();
+    QVERIFY(workerDenied);
+    QVERIFY(!authority.try_acquire(51U)); // stale pre-project ticket
+    QVERIFY(!authority.try_begin_mutation(52U,53U));
+    QVERIFY(!authority.try_advance_epoch(52U,53U));
+    QVERIFY(!authority.try_retire(52U));
+
+    // No spin, sleep, event-loop block, or QObject access. Releasing the
+    // Product-owned batch makes ONLY the new epoch eligible.
+    batched.value()->reset();
+    QVERIFY(!authority.try_acquire(51U));
+    auto newer=authority.try_acquire(52U);
+    QVERIFY(newer);
+    QVERIFY((*newer.value())->revalidate_current());
+    QVERIFY(!authority.try_begin_mutation(52U,53U));
+    newer.value()->reset();
+    auto next=authority.try_begin_mutation(52U,53U);
+    QVERIFY(next);
+    next.value()->reset();
+    QVERIFY(authority.try_retire(53U));
+    QVERIFY(!authority.try_acquire(53U));
+}
 
 void M18CandidateDeliveryValidationTest::
 crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking()
