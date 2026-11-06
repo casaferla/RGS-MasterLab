@@ -370,6 +370,13 @@ core::Status AuditionRegionViewModel::clear_region()
     if(m18_foreign_owner_thread())return core::Status::failure(
         core::Error{core::ErrorCode::InvalidState,
                     "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&m18RegionOperationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_NESTED_PUBLICATION_DENIED"});
+    M18RegionPublicationScope scope{
+        m18RegionMutationAdmission_?&m18RegionOperationActive_:nullptr};
+    (void)scope;
     if (!region_) {
         return core::Status::success();
     }
