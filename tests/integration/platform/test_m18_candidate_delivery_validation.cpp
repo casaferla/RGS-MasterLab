@@ -705,33 +705,42 @@ productMutationBatchPinsIdentityAndForbidsPartialCapture()
     auto oldCommit=previousFactory();
     QVERIFY(oldCommit);
     auto deniedBatch=owner.try_begin_product_mutation(
-        78U,79U,changed,true);
+        78U,79U,changed,false);
     QVERIFY(!deniedBatch);
     QVERIFY((*oldCommit.value())->revalidate_current());
     oldCommit.value()->reset();
     QVERIFY(owner.capture(before));
+    // No Product batch may directly carry export consent, even if its
+    // caller claims that the newly loaded Project already has permission.
+    QVERIFY(!owner.try_begin_product_mutation(
+        78U,79U,changed,true));
+    QVERIFY(owner.capture(before));
 
     // An authorized Project batch advances the monotonic identity once,
     // while holding exclusive protection across ALL downstream mutations.
-    auto batch=owner.try_begin_product_mutation(78U,79U,changed,true);
+    auto batch=owner.try_begin_product_mutation(78U,79U,changed,false);
     QVERIFY(batch);
     QCOMPARE((*batch.value())->epoch(),std::uint64_t{79U});
     QVERIFY(!previousFactory());
     QVERIFY(!owner.capture(before));
     QVERIFY(!owner.capture(changed)); // the new project is still incomplete
     QVERIFY(!owner.try_transition(79U,80U,changed,true));
-    QVERIFY(!owner.try_begin_product_mutation(79U,80U,changed,true));
+    QVERIFY(!owner.try_begin_product_mutation(79U,80U,changed,false));
     batch.value()->reset();
-    // The old ticket stays revoked even if the old M17 PCM was retained.
+    // An aborted Project open cannot restore export consent on RAII
+    // release. Even a valid-looking new identity requires fresh Product
+    // verification plus an explicit separate consent transition.
     QVERIFY(!previousFactory());
+    QVERIFY(!owner.capture(changed));
+    QVERIFY(owner.try_transition(79U,80U,changed,true));
     auto now=owner.capture(changed);
     QVERIFY(now);
     auto newLease=now.value()->commit_lease_factory()();
     QVERIFY(newLease);
     QVERIFY((*newLease.value())->revalidate_current());
-    QVERIFY(!owner.try_begin_product_mutation(79U,80U,changed,false));
+    QVERIFY(!owner.try_begin_product_mutation(80U,81U,changed,false));
     newLease.value()->reset();
-    QVERIFY(owner.try_transition(79U,80U,changed,false));
+    QVERIFY(owner.try_transition(80U,81U,changed,false));
     QVERIFY(!now.value()->commit_lease_factory()());
 }
 
