@@ -37,7 +37,7 @@ public:
                 std::memory_order_release);
             auto handle=std::shared_ptr<M18AsyncExportWorker>(
                 new M18AsyncExportWorker(state));
-            std::thread([state,request=std::move(request)]() mutable {
+            std::thread workerThread([state,request=std::move(request)]() mutable {
                 // No Qt calls and no application source/MASTER object read.
                 // In particular, never spin/wait on the owning GUI thread.
                 const auto cancelled=[state]() noexcept {
@@ -70,7 +70,15 @@ public:
                         true,std::memory_order_release);}
                 }
                 state->finished.store(true,std::memory_order_release);
-            }).detach();
+            });
+            try {workerThread.detach();}
+            catch(...) {
+                // Never let a joinable std::thread destructor call
+                // std::terminate if the OS rejects detach().
+                state->cancelled.store(true,std::memory_order_release);
+                workerThread.join();
+                throw;
+            }
             return R::success(std::move(handle));
         }catch(const std::bad_alloc&) {
             return R::failure(core::Error{
