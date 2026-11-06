@@ -99,6 +99,8 @@ core::Status TerminalCandidateGate::accept(
     if(job.ticket!=ticket_)
         return core::Status::failure(reject(
             "M17_STALE_TICKET","Terminal candidate has been superseded."));
+    if(const auto allowed=admit_m18_candidate_mutation(
+           "candidate_accept");!allowed)return allowed;
     const auto& check=candidate.terminal.checked;
     const auto& pcm=check.terminal.compensated_pcm;
     const auto pcmView=pcm.view();
