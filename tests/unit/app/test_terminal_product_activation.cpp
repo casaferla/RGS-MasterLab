@@ -3086,6 +3086,28 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 ==std::optional<std::uint64_t>{UINT64_C(42)});
         const auto original=candidates.staged();
         QVERIFY(original);
+        // PREPRODUCTION owner-thread mutation admission: a held export
+        // epoch must deny Product cancellation without clearing the true
+        // M17 MASTER or changing the audible manual predecessor.
+        std::size_t deniedMutations=0;
+        product.set_private_m18_mutation_admission(
+            [&](const char* operation)->core::Status {
+                if(operation &&*operation)++deniedMutations;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_TEST_COMMIT_BUSY_MUTATION_DENIED"});
+            });
+        const auto cancelDenied=product.cancel();
+        QVERIFY(!cancelDenied);
+        QCOMPARE(cancelDenied.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(candidates.staged()==original);
+        QVERIFY(!product.adopt_pending_source_loop_without_rerender());
+        QVERIFY(candidates.staged()==original);
+        QCOMPARE(deniedMutations,std::size_t{2});
+        // Clear the inert seam: the existing M17 product test must then
+        // continue with exact old behavior and no new M18 UI activation.
+        product.set_private_m18_mutation_admission({});
+
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
         const auto requestedPcm=authorized.value()->payload();
