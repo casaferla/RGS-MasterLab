@@ -19,6 +19,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <future>
 #include <thread>
 #include <memory>
@@ -907,10 +908,17 @@ realWorkerRevokedBeforeCommitAdmissionCleansCandidate()
     });
     // Wait until candidate processing has actually reached its commit
     // boundary: no timing assumptions or sleeps.
-    entered.get();
-    QVERIFY(owner.try_transition(67U,68U,id,false));
+    const bool admissionReached=
+        entered.wait_for(std::chrono::seconds(30))==std::future_status::ready;
+    const auto revoked=admissionReached
+        ?owner.try_transition(67U,68U,id,false)
+        :core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_TEST_WORKER_NEVER_REACHED_COMMIT_ADMISSION"});
     mayProceed.set_value();
-    worker.join(); // Join before assertions so no leaked running worker.
+    worker.join(); // ALWAYS join before assertions, including failure.
+    QVERIFY(admissionReached);
+    QVERIFY(revoked);
     QVERIFY(correctlyDenied);
     QVERIFY(!QFileInfo::exists(destination));
     QVERIFY(m18_no_temporary_candidates(dir.path()));
