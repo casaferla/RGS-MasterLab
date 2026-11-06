@@ -13,6 +13,19 @@
 namespace rgsml::app {
 namespace {
 
+// M18 opt-in owner-thread scope. One SOURCE adoption includes the
+// committed-handler cascade, playback rebinding and synchronous Qt signals.
+struct M18ScopedSourcePublication final {
+    explicit M18ScopedSourcePublication(bool* flag) noexcept
+        :flag_(flag) {if(flag_)*flag_=true;}
+    M18ScopedSourcePublication(const M18ScopedSourcePublication&)=delete;
+    M18ScopedSourcePublication&
+    operator=(const M18ScopedSourcePublication&)=delete;
+    ~M18ScopedSourcePublication(){if(flag_)*flag_=false;}
+private:
+    bool* flag_;
+};
+
 [[nodiscard]] QString container_label_for(audio::WavContainerKind kind)
 {
     switch (kind) {
