@@ -110,6 +110,7 @@ private slots:
     void loopTransactionsAndRepositioning();
     void failureAndSourceReplacementRemainTruthful();
     void m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate();
+    void m18InvalidOrUnchangedRegionNeverConsumesProductEpoch();
 };
 
 void AuditionRegionViewModelTest::
@@ -204,6 +205,49 @@ m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate()
     QCOMPARE(model.region(),std::optional{replacement});
     QVERIFY(model.clear_region());
     QVERIFY(!model.has_region());
+}
+
+void AuditionRegionViewModelTest::
+m18InvalidOrUnchangedRegionNeverConsumesProductEpoch()
+{
+    auto fake=std::make_unique<RegionPlaybackFake>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionRegionViewModel model{&transport};
+    model.source_committed(
+        *core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    model.set_waveform_ready(true);
+    const auto current=range(10,200);
+    QVERIFY(model.set_region(current));
+    QVERIFY(model.set_loop_enabled(true));
+    const auto loopBefore=observed->setLoopCalls;
+    std::size_t admissionCalls=0;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_BUSY"});
+        });
+    // Same region and same loop state are true no-ops in M18 mode.
+    QVERIFY(model.set_region(current));
+    QVERIFY(model.set_loop_enabled(true));
+    QCOMPARE(admissionCalls,std::size_t{0});
+    QCOMPARE(observed->setLoopCalls,loopBefore);
+    QCOMPARE(model.region(),std::optional{current});
+    const auto invalid=range(900,1200);
+    QVERIFY(!model.set_region(invalid));
+    QCOMPARE(admissionCalls,std::size_t{0});
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(model.region(),std::optional{current});
+    // A different valid selection must ask exactly once and be rejected.
+    QVERIFY(!model.set_region(range(20,190)));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QCOMPARE(model.region(),std::optional{current});
+    // No REGION operation is needed for a source-relative playback seek.
+    QVERIFY(model.seek(core::FrameIndex{44}));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QCOMPARE(observed->position.value(),std::int64_t{44});
 }
 
 void AuditionRegionViewModelTest::exactRegionAndTimeEditing()
