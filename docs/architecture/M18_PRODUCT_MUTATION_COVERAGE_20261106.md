@@ -174,3 +174,44 @@ lifetime/policy retention; it does **not** automatically protect a direct
 MasteringChainState assignment by unrelated callers, nor the nested
 Source/Gold/MASTER mutators during Project-open. No GUI activation and
 no new CI for this individual staging sublot.
+
+## Chat #71 — #1057 Windows red, target-specific fix on staging (PO checks CI)
+Product Owner reported Windows RED on [Focused #1057](https://github.com/casaferla/RGS-MasterLab/actions/runs/42246730038), immutable PR #84 SHA `2df7fc082b91a28e9a125e787a7d57dc980346d7`.
+We read ONLY the reported Windows job diagnostics; no recurring CI polling.
+
+**Blocking Focused CTest:** `rgsml_terminal_product_activation_tests` failed exactly at
+`privateMaster192kOn48kDeviceRemainsUninstalled`, line 3158,
+`sharedEpoch.try_transition(777U,778U,verifiedId,true)`.
+The new M18 `M18ProductExportIdentity::valid` incorrectly required
+`chain_revision != 0`, while the real freshly constructed M17/manual
+`ProcessingChain::revision()` can be zero. Similarly the new typed worker
+bridge incorrectly rejected `stage->rendered.manual_chain_revision == 0`.
+SOURCE/PROJECT/MASTER generations and the ticket epoch are deliberately
+nonzero and STILL checked. An exact chain-revision equality, including
+legitimate zero, remains mandatory. This is a preproduction M18 policy
+bug, NOT evidence of an M17 limiter or DSP-math regression.
+
+**STAGING FIX (no CI yet):**
+- `f6b550a`: Product ticket allows a zero starting DSP chain revision.
+- `b720d13`: M17 checked-stage to M18 worker request still pins EXACT
+  revision but no longer marks zero as unowned.
+- `de955b9`: real M17 checked-MASTER test confirms valid exact identity and
+  rejects a different chain revision even at the correct MASTER sample rate.
+- `2a2854a`: Qt-free worker ticket negative/positive test uses revision
+  zero to prevent regression.
+No original M17/M16 DSP, protected B2i blobs, FIR assets, codec or M18
+PCM format are altered.
+
+An additional standalone direct playback-SRC diagnostic in the Windows
+job reported `PLAYBACK_FIR_RESOURCE_ROOT_NOT_CONFIGURED` from
+`test_playback_support`; the CTest run itself passed other test targets.
+The direct diagnostic lacks the CTest-injected
+`RGSML_PLAYBACK_FIR_ROOT` environment; this is recorded separately,
+not silently reclassified as a DSP failure nor used to weaken any
+qualification gate. Do NOT promote or start another CI until Product
+Owner communicates both platforms' #1057 terminal results.
+
+The staging also contains the uncompiled central mastering-chain
+mutation gate and guarded candidate invalidation covered in prior audit
+entries. They will travel together in the *next* exact-SHA macrolot
+following completion of #1057. PR #84 and `main` unchanged.
