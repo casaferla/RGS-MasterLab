@@ -276,8 +276,13 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
 core::Status SourceSelectionViewModel::adopt_probed_source(
     audio::SourceResource candidate)
 {
+    // The direct Project-open path must not bypass owner-thread or
+    // publication-level exclusion provided to the native SOURCE picker.
     const auto gate=admit_m18_source_mutation("source_adopt_probed");
     if(!gate)return gate;
+    M18ScopedSourcePublication publication{
+        m18SourceMutationAdmission_?&m18SourcePublishing_:nullptr};
+    (void)publication;
     const auto& info = candidate.wav_info();
     const auto sampleRate = info.audio_format().sample_rate().value();
     const auto frames = info.frame_count().value();
