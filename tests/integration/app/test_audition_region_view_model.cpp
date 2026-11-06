@@ -157,11 +157,25 @@ m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate()
     std::thread worker([&] {
         const auto r=model.set_region(replacement);
         deniedForeign=!r &&r.error()->code()==core::ErrorCode::InvalidState;
+        model.nudgeStartForward();
+        model.requestClearRegion();
+        model.requestLoopEnabled(false);
+        model.commitEndSegments(
+            QStringLiteral("00"),QStringLiteral("00"),
+            QStringLiteral("00"),QStringLiteral("100000000"));
     });
     worker.join();
     QVERIFY(deniedForeign);
+    QCOMPARE(model.region(),std::optional{original});
+    QVERIFY(model.loop_enabled());
     QCOMPARE(attempts,std::size_t{5});
     QCOMPARE(changed.count(),0);
+    // A source-relative seek is not a Project, Region, loop or PCM
+    // identity change; owner-thread navigation remains usable during M18.
+    QVERIFY(model.seek(core::FrameIndex{42}));
+    QCOMPARE(observed->seekCalls,priorSeekCalls+1);
+    QCOMPARE(observed->position,core::FrameIndex{42});
+    QCOMPARE(attempts,std::size_t{5});
 
     bool nestedDenied=false;
     model.set_private_m18_region_mutation_admission(
