@@ -42,6 +42,7 @@
 #include <QDebug>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -135,6 +136,7 @@ private slots:
     void rejectedCeilingCannotAlterAuthority_data();
     void rejectedCeilingCannotAlterAuthority();
     void unchangedCeilingLeavesRevisionAndConsentUntouched();
+    void m18DirectTerminalStateMutationRequiresProductEpoch();
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
     void firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory();
 };
@@ -354,6 +356,73 @@ verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners()
     vm.clearVerificationTrim(); // invalidated SOURCE or MASTER owner
     QCOMPARE(vm.verification_trim_status(),
         QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+}
+
+void TerminalActivationIntegrationTest::
+m18DirectTerminalStateMutationRequiresProductEpoch()
+{
+    // A direct TerminalLimiterState writer must not bypass the ViewModel
+    // admission while an M18 commit holds the immutable M17 owner.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a1").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    QVERIFY(state.value()->bypassed());
+    const auto chainRevision=state.value()->chain().revision();
+    const auto paramsRevision=state.value()->parameter_revision();
+    std::size_t calls=0;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char* name)->core::Status {
+            ++calls;
+            if(!name)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TERMINAL_OPERATION_MISSING"});
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TERMINAL_COMMIT_BUSY"});
+        });
+    QVERIFY(state.value()->m18_mutation_admission_installed());
+    const auto deniedCeiling=state.value()->set_ceiling_db_tp(-3.0);
+    QVERIFY(!deniedCeiling);
+    QCOMPARE(deniedCeiling.error()->code(),core::ErrorCode::InvalidState);
+    const auto deniedBypass=state.value()->set_user_bypass(false);
+    QVERIFY(!deniedBypass);
+    QCOMPARE(deniedBypass.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    QCOMPARE(state.value()->chain().revision(),chainRevision);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY(state.value()->bypassed());
+    // True no-ops do not manufacture a new Product generation.
+    QVERIFY(state.value()->set_ceiling_db_tp(-1.0));
+    QVERIFY(state.value()->set_user_bypass(true));
+    QCOMPARE(calls,std::size_t{2});
+    // A foreign worker is rejected BEFORE its callback can mutate state.
+    bool deniedForeign=false;
+    std::thread worker([&] {
+        const auto outcome=state.value()->set_ceiling_db_tp(-4.0);
+        deniedForeign=!outcome &&outcome.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(deniedForeign);
+    QCOMPARE(calls,std::size_t{2});
+    state.value()->set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_TERMINAL_ADMISSION_THROWN");
+        });
+    QVERIFY(!state.value()->set_ceiling_db_tp(-5.0));
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    // Legacy unguarded M17 functionality remains intact when the
+    // preproduction gate is not installed.
+    state.value()->set_private_m18_mutation_admission({});
+    QVERIFY(state.value()->set_ceiling_db_tp(-3.0));
+    QVERIFY(state.value()->set_user_bypass(false));
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-3.0);
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision+1);
+    QVERIFY(!state.value()->bypassed());
 }
 
 void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority_data()
