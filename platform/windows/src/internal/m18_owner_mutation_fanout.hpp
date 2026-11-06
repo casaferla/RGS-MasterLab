@@ -29,6 +29,9 @@ class M18OwnerMutationFanout final {
 public:
     using StatusAdmission=std::function<core::Status(const char*)>;
     using RateAdmission=std::function<bool()>;
+    using ProjectSaveBatch=std::function<
+        core::Result<std::shared_ptr<const void>>()>;
+
     M18OwnerMutationFanout(
         std::shared_ptr<M18ProductEpochTicketAuthority> authority,
         std::uint64_t currentEpoch,M18ProductExportIdentity currentIdentity)
@@ -85,6 +88,59 @@ public:
             return static_cast<bool>(same("master_rate_change"));
         };
     }
+    // Project SaveAs requires a physical exclusive mutation lease from
+    // before snapshot capture through file readback and Qt publication.
+    // It cannot use a one-shot status callback. Project OPEN remains
+    // separately unresolved because it invokes several nested mutators.
+    [[nodiscard]] ProjectSaveBatch project_save_batch() const {
+        return [weak=std::weak_ptr<Shared>{shared_}]()
+            ->core::Result<std::shared_ptr<const void>> {
+            using R=core::Result<std::shared_ptr<const void>>;
+            auto state=weak.lock();
+            if(!state)return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_SAVE_BATCH_PRODUCT_OWNER_RETIRED"});
+            if(std::this_thread::get_id()!=state->ownerThread
+               ||!state->authority ||!state->identity.valid()
+               ||state->epoch==0 ||state->admitting)
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SAVE_BATCH_WRONG_OWNER_OR_REENTRANT"});
+            if(state->epoch==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max())
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SAVE_BATCH_EPOCH_EXHAUSTED"});
+            state->admitting=true;
+            struct Unwind final {
+                bool* active;
+                ~Unwind(){*active=false;}
+            } unwind{&state->admitting};
+            auto nextIdentity=state->identity;
+            ++nextIdentity.master_generation;
+            const auto newEpoch=state->epoch+1;
+            auto lease=state->authority->try_begin_product_mutation(
+                state->epoch,newEpoch,nextIdentity,false);
+            if(!lease)return R::failure(*lease.error());
+            // Generation/consent change is irreversible even if the
+            // subsequent filesystem operation fails: no stale export
+            // identity may be resurrected by a failed SaveAs.
+            state->epoch=newEpoch;
+            state->identity=nextIdentity;
+            try {
+                std::shared_ptr<M18EpochCommitBarrier::MutationLease> held{
+                    std::move(*lease.value())};
+                return R::success(
+                    std::static_pointer_cast<const void>(std::move(held)));
+            } catch(const std::bad_alloc&) {
+                return R::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "M18_SAVE_BATCH_LEASE_ALLOCATION_FAILED"});
+            }
+        };
+    }
+
 private:
     [[nodiscard]] static core::Status reject(const char* message) {
         return core::Status::failure(core::Error{
