@@ -17,6 +17,7 @@
 #include "internal/m18_product_epoch_ticket.hpp"
 #include "internal/m18_checked_stage_worker_bridge.hpp"
 #include "internal/m18_private_async_export_handoff.hpp"
+#include "internal/m18_private_async_export_session.hpp"
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
@@ -3310,6 +3311,45 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             QVERIFY(!*duplicateResult);
             QCOMPARE(QFileInfo{path}.size(),before);
         }
+        // The preproduction Product lifecycle admits exactly ONE async
+        // export until its terminal result is acknowledged. No lost WAV
+        // evidence, accidental parallel export or UI-thread blocking.
+        app::internal::M18PrivateAsyncExportSession exportSession;
+        auto managedPath=m18ProductSourceDir.filePath(
+            QStringLiteral("managed-session-master.wav"));
+        const auto managedDestination=
+            platform::windows::WindowsResourceWriter::
+                make_write_reference(
+                    managedPath.toUtf8().toStdString(),
+                    "managed-session-master.wav");
+        QVERIFY(managedDestination);
+        QVERIFY(exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QVERIFY(!exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QVERIFY(!exportSession.acknowledge_finished()
+            ||exportSession.snapshot().phase
+                ==app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            exportSession.snapshot().phase
+                ==app::internal::M18PrivateAsyncExportSession::
+                    Phase::VERIFIED_DELIVERED,
+            30000);
+        const auto finalSessionSnapshot=exportSession.snapshot();
+        QCOMPARE(finalSessionSnapshot.encoded_frames,
+                 finalSessionSnapshot.total_frames);
+        QVERIFY(!finalSessionSnapshot.failure_code);
+        QVERIFY(QFileInfo::exists(managedPath));
+        QVERIFY(exportSession.acknowledge_finished());
+        QCOMPARE(exportSession.snapshot().phase,
+                 app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+        QVERIFY(!exportSession.acknowledge_finished());
         // A ticket and verified M17 MASTER do not authorize export while
         // the Product has NO real current SOURCE selected in its QObject.
         app::SourceSelectionViewModel noCurrentProductSource;
