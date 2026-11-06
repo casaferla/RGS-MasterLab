@@ -137,8 +137,21 @@ core::Status GoldSelectionViewModel::admit_m18_gold_mutation(
 
 core::Status GoldSelectionViewModel::adopt_probed_gold(audio::SourceResource candidate)
 {
+    const bool guarded=static_cast<bool>(
+        m18GoldMutationAdmission_||selector_->m18_mutation_admission_installed());
+    if(guarded &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_ADOPT_REQUIRES_QT_OWNER_THREAD"});
+    if(guarded &&(m18GoldAdmitting_||m18GoldPublicationActive_))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_ADOPT_REENTRANT_PUBLICATION"});
     const auto admission=admit_m18_gold_mutation("gold_adopt_probed");
     if(!admission)return admission;
+    M18GoldPublicationScope scope{
+        guarded?&m18GoldPublicationActive_:nullptr};
+    (void)scope;
     const auto& info = candidate.wav_info();
     auto committed = selector_->set_gold(
         candidate.reference(),
@@ -169,14 +182,19 @@ void GoldSelectionViewModel::cancelGoldSelection() noexcept
 
 void GoldSelectionViewModel::clearGold()
 {
-    if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
-       &&QThread::currentThread()!=thread())return;
+    const bool guarded=static_cast<bool>(
+        m18GoldMutationAdmission_||selector_->m18_mutation_admission_installed());
+    if(guarded &&QThread::currentThread()!=thread())return;
+    if(guarded &&(m18GoldAdmitting_||m18GoldPublicationActive_))return;
     const auto admission=admit_m18_gold_mutation("gold_clear");
     if(!admission) {
         errorMessage_=QString::fromStdString(admission.error()->message());
         emit changed();
         return;
     }
+    M18GoldPublicationScope scope{
+        guarded?&m18GoldPublicationActive_:nullptr};
+    (void)scope;
     auto cleared = selector_->clear_gold();
     if (!cleared) {
         errorMessage_ = QString::fromStdString(cleared.error()->message());
