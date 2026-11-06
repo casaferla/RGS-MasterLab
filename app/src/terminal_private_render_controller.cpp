@@ -119,7 +119,16 @@ bool TerminalPrivateRenderController::remember_existing_original_q0_folder(
     return privateOriginalFirFamilyReady_;
 }
 core::Status TerminalPrivateRenderController::request_private(core::SampleRate rate) {
-    invalidate();
+    // First authorization BEFORE clearing the M17 stage, advancing the
+    // renderer serial or touching any pending job. In an M18-aware Product,
+    // BUSY means no mutation whatsoever. Unconfigured M17 keeps the exact
+    // legacy invalidation sequence.
+    if(gate_->m18_mutation_admission_installed()) {
+        const auto authorized=try_invalidate_for_m18();
+        if(!authorized)return authorized;
+    }else {
+        invalidate();
+    }
     if(!prepared_||!manual_||!id_||!chain_)
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,"Private M17 render owner providers missing."});
