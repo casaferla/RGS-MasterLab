@@ -857,7 +857,11 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
 
     if (masteringChainState_ && chainCandidate.value()->chainState) {
-        *masteringChainState_ = std::move(*chainCandidate.value()->chainState);
+        // This Project open was pre-admitted before all destructive changes.
+        // Retain the Product's M18 epoch gate; ordinary assignment would
+        // silently erase it with the newly deserialized chain snapshot.
+        masteringChainState_->adopt_chain_after_authorized_project_open(
+            std::move(*chainCandidate.value()->chainState));
     }
 
     if (adapterModel_) {
