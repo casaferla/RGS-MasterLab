@@ -336,6 +336,9 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
     bool batchHeld=false;
     std::size_t batchesStarted=0,batchesReleased=0;
     struct SaveScope final {
+        SaveScope(bool* a,std::size_t* r):active(a),released(r){}
+        SaveScope(const SaveScope&)=delete;
+        SaveScope& operator=(const SaveScope&)=delete;
         bool* active;std::size_t* released;
         ~SaveScope(){*active=false;++*released;}
     };
@@ -348,7 +351,7 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
             batchHeld=true;++batchesStarted;
             std::shared_ptr<const void> lease=
                 std::make_shared<SaveScope>(
-                    SaveScope{&batchHeld,&batchesReleased});
+                    &batchHeld,&batchesReleased);
             return core::Result<std::shared_ptr<const void>>::success(
                 std::move(lease));
         });
