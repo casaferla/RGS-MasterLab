@@ -224,6 +224,25 @@ void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
     state.value()->set_private_m18_chain_mutation_admission({});
     QVERIFY(state.value()->set_gain_parameters(*gain.value()));
     QCOMPARE(state.value()->gain_parameters(),*gain.value());
+
+    // A previously admitted Project open may legitimately replace the
+    // full DSP chain. It must NOT erase the Product runtime epoch guard.
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_CHAIN_EPOCH_STILL_BUSY"});
+        });
+    auto projectReplacement=MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
+    QVERIFY(projectReplacement);
+    state.value()->adopt_chain_after_authorized_project_open(
+        std::move(*projectReplacement.value()));
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
+    QCOMPARE(denied,std::size_t{6});
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    state.value()->set_private_m18_chain_mutation_admission({});
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
