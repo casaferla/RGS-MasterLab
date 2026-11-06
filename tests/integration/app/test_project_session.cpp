@@ -162,6 +162,7 @@ class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
     void missing_source_preflight_preserves_live_session();
@@ -183,6 +184,54 @@ private slots:
     void product_default_stereo_ms_project_save_open_save_identity();
 };
 
+
+void ProjectSessionTest::
+m18ProjectMutationDeniedBeforeOpenOrSavePublication()
+{
+    // Opt-in PREPRODUCTION Product epoch BUSY: denied Project open/save
+    // must not replace a SOURCE, rate, chain, or publish a new project.
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("current.wav"),4,48000U);
+    QVERIFY(!src.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(author.source.has_source());
+    const auto initial=dir.filePath(QStringLiteral("good.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(initial));
+    QCOMPARE(author.project.error_message(),QString());
+    QVERIFY(QFileInfo::exists(initial));
+    std::size_t blockedWrites=0;
+    author.project.set_private_m18_project_mutation_admission(
+        [&](const char*)->core::Status {
+            ++blockedWrites;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_COMMIT_BUSY"});
+        });
+    const auto deniedOutput=dir.filePath(QStringLiteral("blocked.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(deniedOutput));
+    QVERIFY(!author.project.error_message().isEmpty());
+    QVERIFY(!QFileInfo::exists(deniedOutput));
+    QCOMPARE(blockedWrites,std::size_t{1});
+    author.project.set_private_m18_project_mutation_admission({});
+
+    Session reopened;
+    std::size_t blockedOpens=0;
+    reopened.project.set_private_m18_project_mutation_admission(
+        [&](const char*)->core::Status {
+            ++blockedOpens;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_COMMIT_BUSY"});
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(initial));
+    QCOMPARE(blockedOpens,std::size_t{1});
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QVERIFY(!reopened.source.has_source());
+    reopened.project.set_private_m18_project_mutation_admission({});
+    reopened.project.openProject(QUrl::fromLocalFile(initial));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(reopened.source.has_source());
+    QCOMPARE(reopened.source.sample_rate_hz(),qint64{48000});
+}
 
 void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
 {
