@@ -141,6 +141,10 @@ private:
     M18ProjectOpenBatchBegin m18ProjectOpenBatchBegin_;
     M18ProjectSaveAdmission m18ProjectSaveAdmission_;
     M18ProjectSaveBatchBegin m18ProjectSaveBatchBegin_;
+    // Owner-thread only, scoped to one Open/Save command including
+    // synchronous signals and filesystem readback. With any M18 policy
+    // installed, nested Project operations fail before another admission.
+    bool m18ProjectOperationActive_{false};
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
