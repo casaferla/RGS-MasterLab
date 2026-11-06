@@ -54,7 +54,12 @@ public:
     using M18SourceMutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_source_mutation_admission(
         M18SourceMutationAdmission gate)
-    {m18SourceMutationAdmission_=std::move(gate);}
+    {
+        // A synchronous Product callback or Qt publication listener
+        // cannot silently unregister its own shared mutation authority.
+        if(m18SourceAdmitting_||m18SourcePublishing_)return;
+        m18SourceMutationAdmission_=std::move(gate);
+    }
     [[nodiscard]] core::Status adopt_probed_source(audio::SourceResource candidate);
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
