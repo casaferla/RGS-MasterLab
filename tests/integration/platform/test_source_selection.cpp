@@ -250,6 +250,9 @@ m18SourcePublicationRejectsReentrantQtListeners()
         model.selectSource(QUrl::fromLocalFile(second));
         // The current SOURCE mutation guard must still be installed.
         model.set_private_m18_source_mutation_admission({});
+        // Cannot replace/destroy a std::function while its own closure
+        // is executing; the same handler must run on the next SOURCE.
+        model.set_source_committed_handler({});
     });
     QObject::connect(&model,&app::SourceSelectionViewModel::sourceChanged,
         &model,[&] {
