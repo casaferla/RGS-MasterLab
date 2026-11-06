@@ -31,6 +31,19 @@
 namespace rgsml::app {
 namespace {
 
+// Only the Qt owner enters a Product-gated Project operation. The local
+// scope rejects nested Open/Save commands (including reentrant signals)
+// without blocking the event loop or leaking a held Product epoch.
+struct M18ScopedProjectOperation final {
+    explicit M18ScopedProjectOperation(bool* active) noexcept
+        :active_(active) {if(active_)*active_=true;}
+    M18ScopedProjectOperation(const M18ScopedProjectOperation&)=delete;
+    M18ScopedProjectOperation& operator=(const M18ScopedProjectOperation&)=delete;
+    ~M18ScopedProjectOperation() {if(active_)*active_=false;}
+private:
+    bool* active_;
+};
+
 [[nodiscard]] core::Error invalid(std::string_view field)
 {
     return core::Error{core::ErrorCode::InvalidArgument,
@@ -804,9 +817,14 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // With any M18 Product policy, even invalid-file diagnostics must
     // remain on the owning Qt thread. Never probe disk or emit errors
     // from a foreign worker before an eventual epoch admission.
-    if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_
-        ||m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
-       &&QThread::currentThread()!=thread())return;
+    const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
+        ||m18ProjectMutationAdmission_||m18ProjectSaveAdmission_
+        ||m18ProjectSaveBatchBegin_);
+    if(m18Guarded &&QThread::currentThread()!=thread())return;
+    if(m18Guarded &&m18ProjectOperationActive_)return;
+    M18ScopedProjectOperation singleWriter{
+        m18Guarded?&m18ProjectOperationActive_:nullptr};
+    Q_UNUSED(singleWriter);
     // A Product that installed only the SaveAs epoch cannot permit an
     // unguarded Open Project to retire SOURCE/MASTER during M18 export.
     if((m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
@@ -1023,9 +1041,14 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
 {
-    if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_
-        ||m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
-       &&QThread::currentThread()!=thread())return;
+    const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
+        ||m18ProjectMutationAdmission_||m18ProjectSaveAdmission_
+        ||m18ProjectSaveBatchBegin_);
+    if(m18Guarded &&QThread::currentThread()!=thread())return;
+    if(m18Guarded &&m18ProjectOperationActive_)return;
+    M18ScopedProjectOperation singleWriter{
+        m18Guarded?&m18ProjectOperationActive_:nullptr};
+    Q_UNUSED(singleWriter);
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
