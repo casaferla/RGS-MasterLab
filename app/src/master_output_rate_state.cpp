@@ -36,6 +36,13 @@ bool MasterOutputRateState::choose_master_rate(qint64 hz) noexcept {
     // A requested *change* during an exact DEVICE monitor is refused
     // without invalidating either the Project or the M17 render epoch.
     if(!can_edit_target())return false;
+    // Gate a *real* rate mutation, not the canEditTarget QML query.
+    // A throwing or denied epoch transition must not change the revision.
+    if(m18RateMutationAdmission_) {
+        bool permitted=false;
+        try { permitted=m18RateMutationAdmission_(); } catch(...) {}
+        if(!permitted)return false;
+    }
     masterRateHz_=hz;++rateRevision_;
     emit changed();
     // The current MASTER admission and observable six-rate list share the
