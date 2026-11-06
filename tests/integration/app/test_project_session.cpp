@@ -308,10 +308,17 @@ m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
 {
     QTemporaryDir dir;QVERIFY(dir.isValid());
     const auto src=wav(dir,QStringLiteral("batch-source.wav"),4,48000U);
-    QVERIFY(!src.isEmpty());
+    const auto goldPath=wav(dir,QStringLiteral("batch-gold.wav"),7,48000U);
+    QVERIFY(!src.isEmpty()&&!goldPath.isEmpty());
     Session author;
     author.source.selectSource(QUrl::fromLocalFile(src));
     QVERIFY(author.source.has_source());
+    author.gold.selectGold(QUrl::fromLocalFile(goldPath));
+    QVERIFY(author.gold.has_gold());
+    app::MasterOutputRateState selectedMaster;
+    selectedMaster.source_committed(author.source.sample_rate_hz());
+    QVERIFY(selectedMaster.choose_master_rate(192000));
+    author.project.set_master_output_rate_state(&selectedMaster);
     const auto projectPath=dir.filePath(QStringLiteral("batch.rgsml"));
     author.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
     QVERIFY(QFileInfo::exists(projectPath));
@@ -326,8 +333,11 @@ m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
         std::size_t* released_;
     };
     Session reopened;
+    app::MasterOutputRateState reopenedMaster;
+    reopened.project.set_master_output_rate_state(&reopenedMaster);
     bool mutationActive=false;
     std::size_t batchesStarted=0,batchesReleased=0,sourceAdoptions=0;
+    std::size_t goldAdoptions=0,rateAdoptions=0;
     reopened.project.set_private_m18_project_open_batch_begin(
         [&]()->core::Result<std::shared_ptr<const void>> {
             ++batchesStarted;
@@ -345,9 +355,25 @@ m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
                 core::ErrorCode::InvalidState,
                 "M18_SOURCE_MUTATION_WITHOUT_PROJECT_BATCH"});
         });
+    reopened.gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++goldAdoptions;
+            return mutationActive?core::Status::success()
+                :core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_GOLD_MUTATION_OUTSIDE_PROJECT_BATCH"});
+        });
+    reopenedMaster.set_private_m18_rate_mutation_admission([&] {
+        ++rateAdoptions;
+        return mutationActive;
+    });
     reopened.project.openProject(QUrl::fromLocalFile(projectPath));
     QCOMPARE(reopened.project.error_message(),QString());
     QVERIFY(reopened.source.has_source());
+    QVERIFY(reopened.gold.has_gold());
+    QCOMPARE(reopenedMaster.master_rate_hz(),qint64{192000});
+    QCOMPARE(goldAdoptions,std::size_t{1});
+    QCOMPARE(rateAdoptions,std::size_t{1});
     QCOMPARE(batchesStarted,std::size_t{1});
     QCOMPARE(sourceAdoptions,std::size_t{1});
     QCOMPARE(batchesReleased,std::size_t{1});
