@@ -204,6 +204,7 @@ private slots:
     void productDestroyedDuringProjectMutationCannotReviveWorkerExport();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
+    void retiredProductMutationFanoutRejectsCachedControllerCallbacks();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
@@ -258,6 +259,35 @@ sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks()
     QVERIFY(foreignDenied);
     QVERIFY(!sourceGate(nullptr));
     QVERIFY(!sourceGate(""));
+}
+
+void M18CandidateDeliveryValidationTest::
+retiredProductMutationFanoutRejectsCachedControllerCallbacks()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{81U,82U,83U,0U,96000U,19U};
+    auto authority=std::make_shared<M18ProductEpochTicketAuthority>(
+        40U,id);
+    M18OwnerMutationFanout::StatusAdmission retainedSource;
+    M18OwnerMutationFanout::RateAdmission retainedRate;
+    {
+        M18OwnerMutationFanout ProductCallbacks{authority,40U,id};
+        retainedSource=ProductCallbacks.status_admission();
+        retainedRate=ProductCallbacks.rate_admission();
+        QVERIFY(retainedSource("source_committed"));
+        QVERIFY(retainedRate());
+    }
+    // A surviving Qt model must not be able to resurrect its deleted
+    // Product callback owner after that Product binding was retired.
+    const auto result=retainedSource("stale_after_owner_destroyed");
+    QVERIFY(!result);
+    QCOMPARE(result.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(!retainedRate());
+    // Product authority lifetime itself is separate from this adapter.
+    // The future app must destroy/revoke both together; neither this
+    // test nor the adapter grants a fresh export ticket.
 }
 
 void M18CandidateDeliveryValidationTest::
