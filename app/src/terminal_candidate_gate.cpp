@@ -51,9 +51,15 @@ TerminalCandidateGate::capture(
        ||terminal.chain().instances().size()!=1
        ||terminal.chain().instances()[0].instance_id()!=terminal.instance_id()
        ||terminal.chain().instances()[0].module_type_id()!="rgsml.dsp.true-peak-limiter") {
-        // Even a failed replacement attempt must withdraw an older staged
-        // output, never leave seemingly-current PCM available for promotion.
-        invalidate();
+        // An invalid replacement must withdraw a stale stage, but a
+        // worker-owned M18 commit MUST NOT be invalidated by the old void
+        // API. If the shared epoch denies retirement, preserve its owner
+        // and still refuse to capture the malformed replacement.
+        if(m18MutationAdmission_) {
+            const auto retired=try_invalidate_for_m18();
+            if(!retired)
+                return core::Result<Capture>::failure(*retired.error());
+        } else invalidate();
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_INVALID_AUTHORITY",
             "M17 cannot capture an incomplete or unowned manual/terminal realization."));
