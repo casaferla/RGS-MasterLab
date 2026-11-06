@@ -223,6 +223,55 @@ m18SourceGateCannotUninstallOrNestedSelectDuringAdmission()
     model.set_private_m18_source_mutation_admission({});
 }
 
+void SourceSelectionTest::
+m18SourcePublicationRejectsReentrantQtListeners()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=write_file(dir,QStringLiteral("m18-qt-primary.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto second=write_file(dir,QStringLiteral("m18-qt-reentrant.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    app::SourceSelectionViewModel model;
+    std::size_t admissions=0,committedHandlerCalls=0,observerCalls=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::success();
+        });
+    model.set_source_committed_handler([&](const core::ResourceReference&) {
+        ++committedHandlerCalls;
+        model.selectSource(QUrl::fromLocalFile(second));
+        // The current SOURCE mutation guard must still be installed.
+        model.set_private_m18_source_mutation_admission({});
+    });
+    QObject::connect(&model,&app::SourceSelectionViewModel::sourceChanged,
+        &model,[&] {
+            ++observerCalls;
+            model.selectSource(QUrl::fromLocalFile(second));
+        });
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    QSignalSpy errors{&model,&app::SourceSelectionViewModel::errorChanged};
+    model.selectSource(QUrl::fromLocalFile(first));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(committedHandlerCalls,std::size_t{1});
+    QCOMPARE(observerCalls,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(errors.count(),0);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-qt-primary.wav"));
+    // After the entire callback/Qt publication scope exits, a second
+    // independent owner-thread action is allowed by that same authority.
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(admissions,std::size_t{2});
+    QCOMPARE(committedHandlerCalls,std::size_t{2});
+    QCOMPARE(observerCalls,std::size_t{2});
+    QCOMPARE(changed.count(),2);
+    QCOMPARE(errors.count(),0);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-qt-reentrant.wav"));
+    model.set_private_m18_source_mutation_admission({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
