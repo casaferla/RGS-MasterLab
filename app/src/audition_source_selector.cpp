@@ -717,18 +717,21 @@ core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
 
 void AuditionSourceSelector::selectPrepared()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())return;
     auto result = switch_to(AuditionTarget::PREPARED);
     if (!result) publish_error(QString::fromStdString(result.error()->message()));
 }
 
 void AuditionSourceSelector::selectProcessed()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())return;
     auto result = switch_to(AuditionTarget::PROCESSED);
     if (!result) publish_error(QString::fromStdString(result.error()->message()));
 }
 
 void AuditionSourceSelector::selectGold()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())return;
     auto result = switch_to(AuditionTarget::GOLD);
     if (!result) publish_error(QString::fromStdString(result.error()->message()));
 }
