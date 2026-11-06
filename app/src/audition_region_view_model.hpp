@@ -124,6 +124,7 @@ private:
 
     PlaybackTransportViewModel* playback_{nullptr};
     M18RegionMutationAdmission m18RegionMutationAdmission_;
+    mutable bool m18RegionAdmitting_{false};
     std::optional<core::FrameRange> region_;
     std::int64_t sourceFrames_{0};
     std::int64_t sampleRate_{0};
