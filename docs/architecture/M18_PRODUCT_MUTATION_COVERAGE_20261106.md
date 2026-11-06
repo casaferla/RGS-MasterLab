@@ -893,3 +893,31 @@ code, alter frozen M16 B2i, or misrepresent Windows-native source tests
 as Linux-portable tests. One new exact-SHA Focused Windows/Linux
 candidate is required before qualification; no old #1067 result can
 qualify the updated candidate.
+
+### Chat #72 — next NO-CI staging after #1068 dispatch: SOURCE Region/Loop authority
+While Focused [#1068](https://github.com/casaferla/RGS-MasterLab/actions/runs/42294595972)
+checks exact PR candidate `1a0e0628`, a separate unqualified batch
+guards `AuditionRegionViewModel` with an optional Product-shared epoch
+callback. This is not enabled in `main.cpp`, and no GUI Export is
+visible. It covers direct `set_region`, `clear_region`,
+`set_start`/`set_end_exclusive` via `set_region`, and
+`set_loop_enabled` BEFORE playback loop mutation. Busy/throwing,
+reentrant, foreign-thread calls fail closed. True no-op loop toggles
+do not advance the Product epoch. Foreign worker QML time edits/nudges
+cannot publish Qt signals or change Region metadata.
+
+Normal Qt-owner `seek` remains allowed while worker consent is live:
+navigation has no authority to mutate exported Master PCM, SOURCE or
+selected MASTER rate. SOURCE-driven `source_committed` is a derived
+part of the OUTER, already-admitted SOURCE/Project epoch and does not
+advance another independent Region epoch. The actual Product must
+install the common gate and deny SOURCE outside the exclusive batch.
+New Windows native Region QtTest proves busy, foreign-thread,
+reentrancy, no-op, live seek and restoration after guard uninstall.
+
+The Focused workflow staging adds `rgsml_audition_region_tests` to
+the **Windows** native build/CTest list. It deliberately does NOT add
+Windows-dependent SOURCE tests to Linux (the exact #1067 failure).
+Linux portable DSP tests remain unchanged. These changes are
+staging-only and **UNCOMPILED**, with no claim of qualification or
+full Product Single-Writer completeness.
