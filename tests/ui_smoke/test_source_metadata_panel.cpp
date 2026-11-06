@@ -564,6 +564,19 @@ sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
     };
     QVERIFY(load());
     QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    // The direct probe-to-Source adoption seam (also used by Project open)
+    // must not bypass a worker-held M18 commit epoch.
+    std::size_t deniedSourceReplacements=0;
+    source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++deniedSourceReplacements;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SOURCE_BUSY_TEST"});
+        });
+    QVERIFY(!load());
+    QCOMPARE(deniedSourceReplacements,std::size_t{1});
+    QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    source.set_private_m18_source_mutation_admission({});
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};
     auto table=advisor.prepare_time_rows();
