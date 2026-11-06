@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <optional>
 #include <filesystem>
 #include <vector>
@@ -226,6 +227,14 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     QVERIFY(session.gold.has_gold());
     QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}==original);
     QCOMPARE(denied,std::size_t{2});
+    // The foreign worker is NEVER permitted to mutate or even publish a
+    // Qt-owned GOLD error; the Product owner remains the only writer.
+    std::thread foreignClear([&session]{session.gold.clearGold();});
+    foreignClear.join();
+    QCOMPARE(denied,std::size_t{2});
+    QVERIFY(session.gold.has_gold());
+    QCOMPARE(session.gold.gold_resource()->reference().display_name(),
+             std::string_view{"m18-gold-a.wav"});
     session.gold.set_private_m18_gold_mutation_admission({});
     session.gold.selectGold(QUrl::fromLocalFile(goldB));
     QVERIFY(session.gold.has_gold());
