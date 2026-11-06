@@ -27,7 +27,7 @@ public:
     // Project replacement and the terminal candidate gate. Fail closed.
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_chain_mutation_admission(M18MutationAdmission gate)
-    {m18MutationAdmission_=gate
+    {m18MutationAdmission_.callback=gate
         ?std::make_shared<M18MutationAdmission>(std::move(gate))
         :nullptr;}
 
@@ -172,9 +172,14 @@ private:
     dsp::CompressorParameters compressor_params_;
     std::optional<dsp::ModuleInstanceId> stereo_ms_id_;
     std::optional<dsp::StereoMsParameters> stereo_ms_params_;
-    // Pointer preserves defaulted value semantics/assignment for
-    // unconfigured models and lets snapshots retain a shared guard.
-    std::shared_ptr<M18MutationAdmission> m18MutationAdmission_;
+    struct M18RuntimeGuard final {
+        std::shared_ptr<M18MutationAdmission> callback;
+        // This guard is an ephemeral authorizer, NOT DSP/project content.
+        // Preserve the original value equality semantics of the state.
+        friend bool operator==(const M18RuntimeGuard&,
+                               const M18RuntimeGuard&) noexcept {return true;}
+    };
+    M18RuntimeGuard m18MutationAdmission_;
 };
 
 }  // namespace rgsml::app
