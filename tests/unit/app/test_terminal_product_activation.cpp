@@ -3099,6 +3099,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto commitLease=authorized.value()->commit_lease_factory()();
         QVERIFY(commitLease);
         QVERIFY((*commitLease.value())->revalidate_current());
+        // A caller on a worker thread MUST NOT obtain a Product export
+        // request or revalidate the existing lease: Qt owner affinity is
+        // a hard contract, not a silent post-consent race.
+        bool workerDenied=false;
+        std::thread worker([&] {
+            const auto offThread=
+                product.make_private_m18_synchronous_export_request(
+                    *masterRate.value(),*src.value(),*dst.value(),
+                    audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,approve);
+            const auto offThreadLease=
+                (*commitLease.value())->revalidate_current();
+            workerDenied=!offThread
+                &&offThread.error()->code()==core::ErrorCode::InvalidState
+                &&!offThreadLease
+                &&offThreadLease.error()->code()==core::ErrorCode::InvalidState;
+        });
+        worker.join();
+        QVERIFY(workerDenied);
         consentCurrent=false;
         // Product permission is checked again AT COMMIT, not merely at
         // request capture. The held lease may no longer authorize file IO.
