@@ -194,6 +194,7 @@ private slots:
     void realWindowsM18TransactionalReadback();
     void realWindowsM18RollbackAndEpochGate();
     void realWindowsM18CooperativeCancellationAndAsyncWorker();
+    void realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit();
     void realWindowsSixRatesBothLayoutsBothEncodingsOddEven();
     void realWindowsFailureInjectionCleansUpBothFormats();
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
@@ -206,6 +207,76 @@ private slots:
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
     void realWorkerRevokedBeforeCommitAdmissionCleansCandidate();
 };
+
+void M18CandidateDeliveryValidationTest::
+realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit()
+{
+    // The file worker is independent of the QObject Product. Its exact
+    // immutable ticket must fail after a genuinely accepted Source/Project
+    // mutation, even if candidate encoding has already completed.
+    using namespace platform::windows;
+    using internal::M18AsyncExportWorker;
+    using internal::M18ProductEpochTicketAuthority;
+    using internal::M18ProductExportIdentity;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=dir.filePath(QStringLiteral("actual-input.bin"));
+    const auto output=dir.filePath(QStringLiteral("obsolete-master.wav"));
+    QFile file{source};
+    QVERIFY(file.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(file.write("source-is-stable",16),qint64{16});
+    file.close();
+    const auto src=WindowsResourceReader::make_read_reference(
+        m18_path(source),m18_path(QFileInfo{source}.fileName()));
+    const auto dst=WindowsResourceWriter::make_write_reference(
+        m18_path(output),m18_path(QFileInfo{output}.fileName()));
+    const auto pcm=master(audio::ChannelLayout::MONO_C,8193,48000);
+    QVERIFY(src&&dst&&pcm);
+    const M18ProductExportIdentity identity{901U,902U,903U,0U,48000U};
+    M18ProductEpochTicketAuthority owner{500U,identity};
+    QVERIFY(owner.try_transition(500U,501U,identity,true));
+    auto ticket=owner.capture(identity);
+    QVERIFY(ticket);
+    const auto factory=ticket.value()->commit_lease_factory();
+
+    std::promise<void> reachesCommit;
+    auto awaited=reachesCommit.get_future();
+    auto announce=std::make_shared<std::promise<void>>(
+        std::move(reachesCommit));
+    std::promise<void> allowCommit;
+    auto release=allowCommit.get_future().share();
+    M18AcquireCommitLease delayed=[factory,announce,release]() {
+        announce->set_value();
+        release.wait();
+        return factory();
+    };
+    auto request=M18TransactionalAudioExportRequest::create(
+        *src.value(),pcm,*dst.value(),audio::WavSampleFormat::PCM_S24,
+        std::optional<std::uint64_t>{UINT64_C(0x5566778899AABBCC)},
+        0.0,ExportCollisionPolicy::FAIL_IF_EXISTS,std::move(delayed));
+    QVERIFY(request);
+    auto task=M18AsyncExportWorker::launch(std::move(*request.value()));
+    QVERIFY(task);
+    const auto entered=awaited.wait_for(std::chrono::seconds{20});
+    // Release even on failed timing assertions, so no orphan worker
+    // remains blocked waiting on a test-owned promise.
+    auto nextIdentity=identity;
+    ++nextIdentity.source_generation;
+    const auto revoked=owner.try_transition(
+        501U,502U,nextIdentity,false);
+    allowCommit.set_value();
+    QVERIFY(entered==std::future_status::ready);
+    QVERIFY(revoked);
+    QTRY_VERIFY_WITH_TIMEOUT((*task.value())->finished(),30000);
+    const auto result=(*task.value())->result_if_finished();
+    QVERIFY(result);
+    QVERIFY(!*result);
+    QCOMPARE(result->error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(!QFileInfo::exists(output));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+    QFile verify{source};
+    QVERIFY(verify.open(QIODevice::ReadOnly));
+    QCOMPARE(verify.readAll(),QByteArray("source-is-stable",16));
+}
 
 void M18CandidateDeliveryValidationTest::
 realWindowsM18CooperativeCancellationAndAsyncWorker()
