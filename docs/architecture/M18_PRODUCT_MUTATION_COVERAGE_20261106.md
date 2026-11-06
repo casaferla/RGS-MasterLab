@@ -953,3 +953,48 @@ candidate-state admission with explicit owner-consent retirement. No
 Release, Export GUI, FQ or merge is authorized by these isolated changes.
 The next Focused run must compile/test the *exact promoted SHA* on both
 OS before the PO may accept this lot.
+
+### Chat #72 — Focused #1069 Windows red: bounded Qt smoke diagnosis and isolated staging fix
+PO reported Windows FAILED on [#1069](https://github.com/casaferla/RGS-MasterLab/actions/runs/42297300251),
+PR SHA `2d3c87431739eed9e0c1ef0d5b5ec241cb0ed8ec`.
+Only tiny failure artifact ZIPs were fetched, never complete GitHub job
+logs. The direct M18 QtTest summary states **20 passed/0 failed** and
+terminal activation states **22 passed/0 failed**. Windows UI Smoke
+`SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle`
+failed one assertion at line 5939: expected exactly `NOT AUDITIONED`,
+observed the preceding `PAUSED` after a fixed 50-ms sleep. The
+`CompressorViewModel` refreshes from a 33-ms Qt timer; overloaded
+Windows CI can miss its first tick after a target handoff. The test
+already used `QTRY_COMPARE_WITH_TIMEOUT(..., 1000)` later for the
+exact BYPASS convergence. Fix the **smoke assertion only** to use the
+same bounded Qt event-loop eventual check for the *unchanged expected*
+`NOT AUDITIONED` state; neither DSP semantics nor assertions are
+relaxed. This diagnostic indicates timing sensitivity, not proof of a
+user-visible code regression.
+
+The additional Windows report step failed because CTest was skipped
+after the preceding UI smoke failure. The bounded M17 matrix artifact
+reported `DIRECT_GRID_TEST=PASS` yet
+`WINDOWS_PRODUCT_TEST=NOT_EXECUTED`; the full positive attestation
+requires CTest and is correctly withheld. It is NOT an independent
+failed 432-route audio algorithm test. No qualifying inference is
+permitted until the next exact-SHA Focused Windows/Linux run.
+
+The same isolated staging macrolot adds independent M18 selector
+admission/publication reentrancy protection:
+- GOLD clear fallback to PREPARED or PROCESSED uses one admission, never
+  a second Product epoch;
+- already-empty GOLD and unchanged audition target are identity no-ops;
+- owner-thread scoped publication lease spans playback handoff and
+  `changed()` callbacks; synchronous listeners cannot set GOLD or
+  change target while the outer Product epoch is in flight;
+- Product admission itself is not recursively callable and exceptions
+  fail closed;
+- native QtTests prove two fallbacks, denied nested admission,
+  denied synchronous changed() reentry, throwing gate recovery, foreign
+  Qt wrapper denial, and later independent authorized edits.
+
+Current branch remains NO-CI staging and uncompiled. The #1069 Linux
+outcome must be supplied by PO; no branch promotion/next CI before its
+terminal result. PR #84 and main must not be merged. M18 Product-wide
+single writer and physical qualification remain unresolved.
