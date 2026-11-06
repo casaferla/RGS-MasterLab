@@ -19,6 +19,7 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QSignalSpy>
 #include <QUrl>
 
 #include <algorithm>
@@ -26,6 +27,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace rgsml::tests {
@@ -179,6 +181,7 @@ class AuditionSourceSelectorTest final : public QObject {
 
 private slots:
     void availabilityCuesSwitchingAndFallbackAreTruthful();
+    void m18GoldClearFallbackRequiresSingleMutationAdmission();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -303,6 +306,66 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     QVERIFY(!selector.offline_processed_provenance_current());
     QVERIFY(!selector.offline_processed_selected_for_final_master());
     QVERIFY(!selector.processed_realization_snapshot());
+}
+
+void AuditionSourceSelectorTest::
+m18GoldClearFallbackRequiresSingleMutationAdmission()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,200)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    const auto gold=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/m18-once.wav",
+        true,false,"m18-once.wav");
+    QVERIFY(gold);
+    QVERIFY(selector.set_gold(
+        *gold.value(),*core::SampleRate::create(48000).value(),
+        *core::FrameCount::create(200).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(selector.gold_active());
+    std::size_t accepted=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char* op)->core::Status {
+            if(op==nullptr)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_AUDITION_OPERATION_MISSING"});
+            ++accepted;
+            if(accepted>1)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_AUDITION_SECOND_EPOCH_FORBIDDEN"});
+            return core::Status::success();
+        });
+    QSignalSpy changed{&selector,&app::AuditionSourceSelector::changed};
+    // One GOLD clear must include its PREPARED fallback under the SAME
+    // Product epoch, not request a second independent authorization.
+    QVERIFY(selector.clear_gold());
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    QVERIFY(!selector.gold_available());
+    QCOMPARE(changed.count(),1);
+    // True no-ops and unavailable targets never consume another epoch.
+    QVERIFY(selector.clear_gold());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(!selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    // QML wrappers must not publish error messages from a foreign thread.
+    std::thread worker([&] {
+        selector.selectGold();
+        selector.selectProcessed();
+        selector.selectPrepared();
+    });
+    worker.join();
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    selector.set_private_m18_mutation_admission({});
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
