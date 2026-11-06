@@ -565,6 +565,45 @@ private slots:
     QCOMPARE(changes.count(),2);
     QCOMPARE(availability.count(),4); // new SOURCE invalidates six QML rows
  }
+ void m18LegacyVoidSourceRateCannotBypassProductEpoch(){
+    MasterOutputRateState state;
+    state.source_committed(44100);
+    QVERIFY(state.choose_master_rate(192000));
+    const auto revision=state.rate_revision();
+    QSignalSpy changed{&state,&MasterOutputRateState::changed};
+    std::size_t callbacks=0;
+    bool busy=true;
+    state.set_private_m18_rate_mutation_admission([&] {
+        ++callbacks;
+        return !busy;
+    });
+    // These historically void APIs cannot report admission failure:
+    // with M18 installed, they MUST NOT mutate or bypass its gate.
+    state.source_committed(96000);
+    state.source_cleared();
+    QCOMPARE(callbacks,std::size_t{0});
+    QCOMPARE(state.source_rate_hz(),qint64{44100});
+    QCOMPARE(state.master_rate_hz(),qint64{192000});
+    QCOMPARE(state.rate_revision(),revision);
+    QCOMPARE(changed.count(),0);
+    QVERIFY(!state.try_source_committed_for_m18(96000));
+    QVERIFY(!state.try_source_cleared_for_m18());
+    QCOMPARE(callbacks,std::size_t{2});
+    QCOMPARE(state.rate_revision(),revision);
+    busy=false;
+    QVERIFY(state.try_source_committed_for_m18(96000));
+    QCOMPARE(state.source_rate_hz(),qint64{96000});
+    QCOMPARE(state.master_rate_hz(),qint64{96000});
+    QCOMPARE(state.rate_revision(),revision+1);
+    QVERIFY(state.try_source_cleared_for_m18());
+    QCOMPARE(state.source_rate_hz(),qint64{0});
+    QCOMPARE(state.rate_revision(),revision+2);
+    QCOMPARE(callbacks,std::size_t{4});
+    QCOMPARE(changed.count(),2);
+    state.set_private_m18_rate_mutation_admission({});
+    state.source_committed(48000);
+    QCOMPARE(state.source_rate_hz(),qint64{48000});
+ }
  void m18GuardedSourceRateIdentityAndClearCannotBypassWorkerEpoch(){
     MasterOutputRateState state;
     state.source_committed(48000);
