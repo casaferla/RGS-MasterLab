@@ -213,9 +213,9 @@ private slots:
 void M18CandidateDeliveryValidationTest::
 sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks()
 {
-    using internal::M18ProductEpochTicketAuthority;
-    using internal::M18ProductExportIdentity;
-    using internal::M18OwnerMutationFanout;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
     // No application/QML activation: this is the exact same future
     // Product-mutation callback shared by multiple controller domains.
     const M18ProductExportIdentity initial{
