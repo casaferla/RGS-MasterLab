@@ -9,6 +9,7 @@
 #include <memory>
 #include <new>
 #include <mutex>
+#include <thread>
 #include <utility>
 
 namespace rgsml::platform::windows::internal {
@@ -121,7 +122,8 @@ public:
 
     explicit M18ProductEpochTicketAuthority(
         std::uint64_t initialEpoch,M18ProductExportIdentity initialIdentity)
-        :state_(std::make_shared<State>(initialEpoch,initialIdentity)){}
+        :state_(std::make_shared<State>(initialEpoch,initialIdentity)),
+         owner_thread_(std::this_thread::get_id()) {}
     ~M18ProductEpochTicketAuthority() {
         // Does not wait for a worker. Any held lease will fail its final
         // pre-publication recheck and must roll back rather than publish.
@@ -138,6 +140,10 @@ public:
     [[nodiscard]] core::Status try_transition(
         std::uint64_t expectedEpoch,std::uint64_t nextEpoch,
         M18ProductExportIdentity nextIdentity,bool consent) const {
+        if(std::this_thread::get_id()!=owner_thread_)
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_EPOCH_TRANSITION_WRONG_OWNER_THREAD"});
         std::lock_guard guard{state_->mutex};
         if(!nextIdentity.valid() ||expectedEpoch==0
            ||state_->epoch!=expectedEpoch ||nextEpoch<=expectedEpoch)
@@ -171,6 +177,10 @@ public:
         M18ProductExportIdentity nextIdentity,bool consent) const {
         using R=core::Result<
             std::unique_ptr<M18EpochCommitBarrier::MutationLease>>;
+        if(std::this_thread::get_id()!=owner_thread_)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_EPOCH_BATCH_WRONG_OWNER_THREAD"});
         std::lock_guard guard{state_->mutex};
         if(!state_->owner_alive ||!nextIdentity.valid() ||consent
            ||expectedEpoch==0 ||state_->epoch!=expectedEpoch
@@ -193,6 +203,10 @@ public:
     [[nodiscard]] core::Result<Ticket> capture(
         M18ProductExportIdentity currentIdentity) const {
         using R=core::Result<Ticket>;
+        if(std::this_thread::get_id()!=owner_thread_)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_EPOCH_CAPTURE_WRONG_OWNER_THREAD"});
         std::lock_guard guard{state_->mutex};
         if(!state_->owner_alive ||state_->epoch==0
            ||state_->barrier.product_mutation_active()
@@ -205,5 +219,8 @@ public:
     }
 private:
     std::shared_ptr<State> state_;
+    // Owner-only minting, mutation, consent and capture. Only Ticket's
+    // immutable commit-lease factory may cross into a worker thread.
+    const std::thread::id owner_thread_;
 };
 } // namespace rgsml::platform::windows::internal
