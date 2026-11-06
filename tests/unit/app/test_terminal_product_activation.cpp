@@ -3222,10 +3222,27 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             selectedSource.sample_rate_hz());
         QCOMPARE(selectedProjectRate.master_rate_hz(),
                  static_cast<qint64>(masterRate.value()->value()));
-        const auto correctProductWorkerRequest=
+        // Product live handoff additionally binds the exact monotonic
+        // SOURCE/MASTER selector revision. The legacy standalone ticket
+        // remains usable only by the isolated pure request builder.
+        auto boundIdentity=verifiedId;
+        boundIdentity.master_rate_revision=
+            selectedProjectRate.rate_revision();
+        M18ProductEpochTicketAuthority boundOwner{900U,boundIdentity};
+        QVERIFY(boundOwner.try_transition(
+            900U,901U,boundIdentity,true));
+        auto boundTicket=boundOwner.capture(boundIdentity);
+        QVERIFY(boundTicket);
+        const auto deniedUnboundRevision=
             app::internal::make_m18_checked_stage_worker_request_from_live_product(
                 product,selectedSource,selectedProjectRate,candidates,
                 *masterTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedUnboundRevision);
+        const auto correctProductWorkerRequest=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(correctProductWorkerRequest);
         QVERIFY(correctProductWorkerRequest.value()->payload()
@@ -3239,7 +3256,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto deniedWrongProductSource=
             app::internal::make_m18_checked_stage_worker_request_from_live_product(
                 product,selectedSource,selectedProjectRate,candidates,
-                *masterTicket.value(),*falseProductSource.value(),
+                *boundTicket.value(),*falseProductSource.value(),
                 *dst.value(),audio::WavSampleFormat::PCM_S24,
                 UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongProductSource);
@@ -3248,7 +3265,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         const auto deniedWrongProjectMaster=
             app::internal::make_m18_checked_stage_worker_request_from_live_product(
                 product,selectedSource,differentProjectMaster,candidates,
-                *masterTicket.value(),liveSource->reference(),*dst.value(),
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedWrongProjectMaster);
         // UI-only Product stage/rate/SOURCE lookup must be denied before
@@ -3259,13 +3276,28 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             const auto denied=
                 app::internal::make_m18_checked_stage_worker_request_from_live_product(
                     product,selectedSource,selectedProjectRate,candidates,
-                    *masterTicket.value(),verifiedCurrentSource,*dst.value(),
+                    *boundTicket.value(),verifiedCurrentSource,*dst.value(),
                     audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
             workerRejectedLiveProduct=!denied
                 &&denied.error()->code()==core::ErrorCode::InvalidState;
         });
         illicitExportWorker.join();
         QVERIFY(workerRejectedLiveProduct);
+        // Re-selecting SOURCE at the same sample rate is still a new
+        // Product identity. The old ticket must not be able to publish
+        // the retained old M17 buffer even if Fs and locator match.
+        const auto previousRevision=selectedProjectRate.rate_revision();
+        selectedProjectRate.source_committed(
+            selectedSource.sample_rate_hz());
+        QCOMPARE(selectedProjectRate.rate_revision(),previousRevision+1);
+        const auto staleSameRateProduct=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),verifiedCurrentSource,*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!staleSameRateProduct);
+        QCOMPARE(staleSameRateProduct.error()->code(),
+                 core::ErrorCode::InvalidState);
         // The preproduction typed handoff consumes a REAL checked M17
         // Product candidate plus the Qt-free worker epoch Ticket. It may
         // never copy Master PCM or forge a new terminal realization.
