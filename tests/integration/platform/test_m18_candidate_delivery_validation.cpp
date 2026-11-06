@@ -260,6 +260,25 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
             QCOMPARE(auth->retired,auth->acquired);
         }
 
+        // A throwing progress observer must also fail closed and clean
+        // its partially written WAV; telemetry is NEVER an authority.
+        const auto progressOut=dir.filePath(
+            QStringLiteral("throwing-progress-%1.wav")
+                .arg(static_cast<int>(encoding)));
+        auto progressSession=std::make_shared<TestSessionState>();
+        auto progressReq=make_real_transaction_request(
+            inputPath,progressOut,data,encoding,seed,0.0,progressSession);
+        QVERIFY(progressReq);
+        const auto badProgress=TransactionalAudioExporter::export_new_file(
+            *progressReq.value(),{},
+            [](std::uint64_t,std::uint64_t) {
+                throw std::runtime_error("cancelled telemetry");
+            });
+        QVERIFY(!badProgress);
+        QCOMPARE(badProgress.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(!QFileInfo::exists(progressOut));
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+
         // Actual detached nonblocking worker, with only an immutable
         // AudioBuffer, value references, and Qt-free commit lease factory.
         const auto out=dir.filePath(QStringLiteral("async-%1.wav")
@@ -270,7 +289,9 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
         QVERIFY(req);
         auto task=M18AsyncExportWorker::launch(std::move(*req.value()));
         QVERIFY(task);
+        QCOMPARE((*task.value())->total_frames(),std::uint64_t{8193});
         QTRY_VERIFY_WITH_TIMEOUT((*task.value())->finished(),30000);
+        QCOMPARE((*task.value())->encoded_frames(),std::uint64_t{8193});
         const auto finished=(*task.value())->result_if_finished();
         QVERIFY(finished);
         QVERIFY(*finished);
