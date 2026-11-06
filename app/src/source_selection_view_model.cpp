@@ -205,6 +205,10 @@ core::Status SourceSelectionViewModel::admit_m18_source_mutation(
 
 void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
 {
+    // M18 opt-in gate: never let a foreign worker enter Qt path parsing
+    // or publish an error before the real SOURCE admission is checked.
+    // Legacy M17 behavior remains unchanged when no guard is installed.
+    if(m18SourceMutationAdmission_ &&QThread::currentThread()!=thread())return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         publish_error(QStringLiteral("Choose one local WAV file."));
         return;
