@@ -1,5 +1,6 @@
 #include "master_output_rate_state.hpp"
 #include "final_src_candidate_policy.hpp"
+#include <QThread>
 namespace rgsml::app {
 bool MasterOutputRateState::m17_candidate_rate_admissible(qint64 hz) const noexcept {
     return m17_final_src_candidate_admissible(sourceRateHz_,hz,originalQ0Ready_);
@@ -17,6 +18,24 @@ QString MasterOutputRateState::final_src_path_status(qint64 hz) const {
     }
 }
 
+bool MasterOutputRateState::admit_m18_source_rate_mutation() noexcept {
+    if(!m18RateMutationAdmission_)return true;
+    if(QThread::currentThread()!=thread())return false;
+    try{return m18RateMutationAdmission_();}
+    catch(...){return false;}
+}
+bool MasterOutputRateState::try_source_committed_for_m18(
+    qint64 hz) noexcept {
+    if(!admit_m18_source_rate_mutation())return false;
+    source_committed(hz);
+    return true;
+}
+bool MasterOutputRateState::try_source_cleared_for_m18() noexcept {
+    if(sourceRateHz_==0 &&masterRateHz_==0)return true;
+    if(!admit_m18_source_rate_mutation())return false;
+    source_cleared();
+    return true;
+}
 void MasterOutputRateState::source_committed(qint64 hz) noexcept {
     sourceRateHz_=hz>0?hz:0;
     masterRateHz_=supported(sourceRateHz_)?sourceRateHz_:0;
