@@ -154,6 +154,10 @@ private:
 
     PlaybackTransportViewModel* playback_;
     M18MutationAdmission m18MutationAdmission_;
+    // Owner-thread scoped: every public selector mutation must complete
+    // playback handoff and changed() callbacks before reentry is allowed.
+    mutable bool m18SourceAdmissionActive_{false};
+    bool m18SourcePublicationActive_{false};
     SourceLoopProvider sourceLoopProvider_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
