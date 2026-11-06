@@ -118,7 +118,9 @@ bool TerminalLimiterViewModel::commitDraft()
     if(!admit_m18_view_mutation())return false;
     auto committed=state_->set_ceiling_db_tp(newValue);
     if(!committed) {
-        set_validation(kInvalidRange);
+        set_validation(state_->m18_mutation_admission_installed()
+            ?QStringLiteral("Limiter change blocked by active export")
+            :kInvalidRange);
         return false;
     }
     clear_validation();
@@ -159,7 +161,9 @@ void TerminalLimiterViewModel::resetToDefault()
     if(!admit_m18_view_mutation())return;
     auto applied=state_->set_ceiling_db_tp(ceiling);
     if(!applied) {
-        set_validation(QStringLiteral("True Peak Limiter reset failed"));
+        set_validation(state_->m18_mutation_admission_installed()
+            ?QStringLiteral("Limiter reset blocked by active export")
+            :QStringLiteral("True Peak Limiter reset failed"));
         return;
     }
     draftCeilingDbTp_=ceiling;
@@ -177,8 +181,9 @@ void TerminalLimiterViewModel::setBypass(bool value)
     if(!admit_m18_view_mutation())return;
     auto status=state_->set_user_bypass(value);
     if(!status) {
-        set_validation(QStringLiteral(
-            "True Peak Limiter bypass could not be updated"));
+        set_validation(state_->m18_mutation_admission_installed()
+            ?QStringLiteral("Limiter bypass blocked by active export")
+            :QStringLiteral("True Peak Limiter bypass could not be updated"));
         return;
     }
     clear_validation();
