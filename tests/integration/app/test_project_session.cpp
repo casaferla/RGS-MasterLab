@@ -168,6 +168,7 @@ private slots:
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
+    void m18SaveBatchMissingOrThrowingFailsClosed();
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
@@ -361,6 +362,70 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
     QVERIFY(!batchHeld);
     QVERIFY(QFileInfo::exists(proposed));
     QCOMPARE(session.project.error_message(),QString());
+    session.project.set_private_m18_project_save_batch_begin({});
+    session.project.set_private_m18_project_open_batch_begin({});
+}
+
+void ProjectSessionTest::m18SaveBatchMissingOrThrowingFailsClosed()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m18-save-fail-source.wav"),11);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto initial=dir.filePath(QStringLiteral("m18-save-initial.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(initial));
+    QCOMPARE(session.project.error_message(),QString());
+    const auto priorName=session.project.project_display_name();
+
+    session.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    const auto destination=dir.filePath(QStringLiteral("m18-save-attempt.rgsml"));
+    std::size_t calls=0;
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++calls;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::shared_ptr<const void>{});
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(!QFileInfo::exists(destination));
+    QCOMPARE(session.project.project_display_name(),priorName);
+
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++calls;
+            throw std::runtime_error("M18_SAVE_BATCH_FAULT");
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(destination));
+    QCOMPARE(session.project.project_display_name(),priorName);
+
+    // Two independently granting callbacks are not one coherent epoch.
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++calls;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    session.project.set_private_m18_project_save_admission(
+        [](const char*)->core::Status {return core::Status::success();});
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(destination));
+    QCOMPARE(session.project.project_display_name(),priorName);
+
+    session.project.set_private_m18_project_save_admission({});
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{3});
+    QCOMPARE(session.project.error_message(),QString());
+    QVERIFY(QFileInfo::exists(destination));
     session.project.set_private_m18_project_save_batch_begin({});
     session.project.set_private_m18_project_open_batch_begin({});
 }
