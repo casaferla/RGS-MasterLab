@@ -9,6 +9,8 @@
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
 #include <QDir>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QUrl>
 #include "terminal_private_product_session.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
@@ -16,6 +18,7 @@
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "master_output_rate_state.hpp"
+#include "source_selection_view_model.hpp"
 #include "mastering_preview_controller.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
@@ -3182,6 +3185,72 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(sharedEpoch.try_transition(777U,778U,verifiedId,true));
         auto masterTicket=sharedEpoch.capture(verifiedId);
         QVERIFY(masterTicket);
+        // Exercise the REAL future Product-facing seam against an actual
+        // SourceSelectionViewModel, a genuine disk WAV and the current M17
+        // Product session, without QML, exporter invocation or device.
+        const auto m17View=original->rendered.terminal.checked.terminal
+            .compensated_pcm.view();
+        auto sourceBytes=std::make_shared<MatrixWavBytes>();
+        const audio::WavWriteSpec realSourceSpec{
+            m17View.format(),m17View.frame_count(),
+            audio::WavSampleFormat::IEEE_F64};
+        auto sourceWriter=audio::WavWriter::open(
+            std::make_unique<MatrixWavSink>(sourceBytes),realSourceSpec);
+        QVERIFY(sourceWriter);
+        QVERIFY((*sourceWriter.value())->write_frames(m17View));
+        QVERIFY((*sourceWriter.value())->finalize());
+        QVERIFY((*sourceWriter.value())->close());
+        QTemporaryDir m18ProductSourceDir;QVERIFY(m18ProductSourceDir.isValid());
+        const auto selectedSourcePath=m18ProductSourceDir.filePath(
+            QStringLiteral("selected-source-master.wav"));
+        QFile selectedSourceFile{selectedSourcePath};
+        QVERIFY(selectedSourceFile.open(
+            QIODevice::WriteOnly|QIODevice::NewOnly));
+        const auto sourceLength=
+            static_cast<qint64>(sourceBytes->bytes.size());
+        QCOMPARE(selectedSourceFile.write(
+            reinterpret_cast<const char*>(sourceBytes->bytes.data()),
+            sourceLength),sourceLength);
+        selectedSourceFile.close();
+        app::SourceSelectionViewModel selectedSource;
+        selectedSource.selectSource(QUrl::fromLocalFile(selectedSourcePath));
+        QVERIFY(selectedSource.has_source());
+        const auto* liveSource=selectedSource.source_resource();
+        QVERIFY(liveSource);
+        app::MasterOutputRateState selectedProjectRate;
+        selectedProjectRate.source_committed(
+            selectedSource.sample_rate_hz());
+        QCOMPARE(selectedProjectRate.master_rate_hz(),
+                 static_cast<qint64>(masterRate.value()->value()));
+        const auto correctProductWorkerRequest=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *masterTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(correctProductWorkerRequest);
+        QVERIFY(correctProductWorkerRequest.value()->payload()
+                .channel(0U).value()->data()
+            ==m17View.channel(0U).value()->data());
+        const auto falseProductSource=core::ResourceReference::create(
+            liveSource->reference().provider_id(),
+            liveSource->reference().locator()+".stale",
+            true,false,"stale-product-source");
+        QVERIFY(falseProductSource);
+        const auto deniedWrongProductSource=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *masterTicket.value(),*falseProductSource.value(),
+                *dst.value(),audio::WavSampleFormat::PCM_S24,
+                UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongProductSource);
+        app::MasterOutputRateState differentProjectMaster;
+        differentProjectMaster.source_committed(48000);
+        const auto deniedWrongProjectMaster=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,differentProjectMaster,candidates,
+                *masterTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongProjectMaster);
         // The preproduction typed handoff consumes a REAL checked M17
         // Product candidate plus the Qt-free worker epoch Ticket. It may
         // never copy Master PCM or forge a new terminal realization.
