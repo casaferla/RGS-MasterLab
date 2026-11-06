@@ -9,6 +9,10 @@ endif()
 list(FILTER _rgsml_act_a EXCLUDE REGEX "test_audition_source_selector\\.cpp$")
 list(FILTER _rgsml_act_b EXCLUDE REGEX "test_mastering_chain_state\\.cpp$")
 set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
+    # M18 Product owner-backed SOURCE snapshot is compiled and tested
+    # using the same genuine SourceSelectionViewModel as the application.
+    "${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp"
     # M17's coordinator now depends on the authoritative Project MASTER
     # Q_OBJECT. Both implementation and header must participate in this
     # executable's link/AUTOMOC closure, not just the production app.
