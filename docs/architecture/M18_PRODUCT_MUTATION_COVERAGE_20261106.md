@@ -661,3 +661,41 @@ candidate-gate and M17 renderer mutation before any production worker
 publication. Project output schema / seed semantics need final PO
 approval, together with physical Windows tests and cold FQ.
 Do not move PR #84 before the PO explicitly reports #1064 outcome.
+
+### Chat #72 — staging-only GOLD and Project MASTER fail-closed coverage (after #1064 candidate)
+The Product Owner's explicit Windows/Linux #1064 verdict has not yet been
+provided in this chat, so **PR #84 stays pinned to `c49c2d5e`**.
+No CI/FQ/main promotion is authorized by this sublot.
+
+- `GoldSelectionViewModel` now has a separate optional,
+  runtime-only `set_private_m18_gold_mutation_admission`. It checks
+  the owning Qt thread and Product admission BEFORE a direct GOLD
+  replacement or clear touches `AuditionSourceSelector`; guard
+  exceptions fail closed. Native Project-session integration exercises
+  an existing GOLD owner, denied replacement, denied clear, and
+  restoration of the unchanged legacy behavior after removing the gate.
+  Foreign-thread clear returns without mutating even Qt error state.
+  This GOLD callback is **NOT registered in the application**.
+- SOURCE-driven GOLD removal in `GoldSelectionViewModel::sourceChanged`
+  is intentionally distinct: the SOURCE/Project epoch must have been
+  authorized BEFORE its selector change. A GOLD-level callback cannot
+  safely retroactively reverse an already published SOURCE transition.
+- `ProjectSessionViewModel::openProject` no longer `Q_ASSERT`s and
+  continues on a rejected nested MASTER rate choice; instead it reports
+  `PROJECT_MASTER_RATE_MUTATION_REFUSED` and exits without applying
+  subsequent GOLD/region/DSP snapshot changes. The corresponding
+  native Project-session test injects a denied M18 rate mutation,
+  confirms the old default MASTER rate is preserved and the Project
+  open is visibly refused, then retries successfully after removing
+  the admission.
+- **Critical remaining limitation:** the SOURCE may already have been
+  adopted before the nested MASTER choice is rejected. Fail-closed
+  consent revocation and exclusive Project-wide epoch batching are
+  mandatory; neither this defensive fix nor a collection of local
+  callbacks makes Project-open fully atomic. Candidate-gate legacy
+  void invalidation, all nested owner transitions, error reentrancy,
+  and actual Product registration remain outstanding.
+
+These are independent staging commits only. They are **uncompiled and
+unqualified** until a future coherent exact-SHA Focused CI, and do
+not enable M18 Export, add GUI controls, or alter frozen M16 DSP.
