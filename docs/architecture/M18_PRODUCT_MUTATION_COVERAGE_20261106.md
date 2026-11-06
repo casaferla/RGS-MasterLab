@@ -1041,3 +1041,21 @@ The new code is only a guarded preproduction seam; no Product GUI M18
 registration, new exporter activation, physical PCM24/Float32 gate, FQ,
 main merge or proof that the entire single-writer orchestration is
 ready. The current PR candidate and current CI remain unchanged.
+
+### Product Owner clarification — ONE shared Full Qualification AFTER integration M18–M22 (2026-11-06)
+The Product Owner reconfirmed the cross-milestone acceptance plan:
+**DO NOT perform or require a separate Full Qualification for M18,
+M19, M20, or M21 (or a separate one for M22 before the full set).**
+Finish each milestone in strict dependency order, promote controlled
+macrolots via focused Windows/Linux CI, and pass relevant targeted
+module/integration regressions, but reserve the comprehensive Windows
+Full Qualification, physical application tests and overall Product
+acceptance for **AFTER M18, M19, M20, M21 and M22 have ALL been
+integrated**. The prior scattered wording "M18 Full Qualification
+before main merge" in historical documents is superseded by this
+explicit PO decision. Focused green is only the intermediate technical
+integration gate and must not be described as a completed Full
+Qualification. Never merge to main without explicit PO authorization;
+do not remove or waive relevant interim safety and cross-module CI tests.
+This policy does not activate the M18 exporter before the shared
+Single-Writer Product epoch has been wired and tested.
