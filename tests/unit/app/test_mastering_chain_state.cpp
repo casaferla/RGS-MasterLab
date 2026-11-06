@@ -66,6 +66,7 @@ private slots:
     void stableInstanceIdsDuringEdits();
     void m18OptInChainEpochBlocksAllFiveEdits();
     void m18ChainRejectsForeignThreadAndProtectsGateRemoval();
+    void m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
@@ -319,6 +320,63 @@ m18ChainRejectsForeignThreadAndProtectsGateRemoval()
     state.value()->set_private_m18_chain_mutation_admission({});
     QVERIFY(state.value()->set_gain_parameters(*reset.value()));
     QCOMPARE(state.value()->gain_parameters(),*reset.value());
+}
+
+void MasteringChainStateTest::
+m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e2000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e2000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e2000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e2000000-0000-4000-8000-000000000030");
+    auto state=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId,compId);
+    QVERIFY(state);
+    const auto originalComp=state.value()->compressor_parameters();
+    const auto originalBypass=state.value()->is_bypassed(compId);
+    QVERIFY(originalBypass);
+    const auto newGain=GainParameters::create(3.0);
+    const auto alternativeGain=GainParameters::create(-6.0);
+    QVERIFY(newGain&&alternativeGain);
+    std::size_t admits=0;
+    bool recursiveDenied=false;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            if(admits==1) {
+                // The callback may itself be a synchronous Qt listener.
+                // It cannot edit a second DSP parameter while the
+                // original Product epoch admission has not completed.
+                const auto nested=state.value()->set_gain_parameters(
+                    *alternativeGain.value());
+                recursiveDenied=!nested &&nested.error()->code()
+                    ==core::ErrorCode::InvalidState;
+                // Likewise it cannot uninstall or replace its own
+                // Product-wide guard during the admission stack.
+                state.value()->set_private_m18_chain_mutation_admission({});
+            }
+            return core::Status::success();
+        });
+    const auto revised=CompressorParameters::create(
+        CompressorDetectorMode::PEAK,CompressorChannelLink::DUAL_MONO,
+        -15.0,2.0);
+    QVERIFY(revised);
+    QVERIFY(state.value()->set_compressor_parameters(*revised.value()));
+    QVERIFY(recursiveDenied);
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(state.value()->compressor_parameters(),*revised.value());
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    // Successful outer mutation did not remove its Product guard.
+    QVERIFY(state.value()->set_gain_parameters(*newGain.value()));
+    QCOMPARE(admits,std::size_t{2});
+    QCOMPARE(state.value()->gain_parameters(),*newGain.value());
+    const auto bypass=state.value()->is_bypassed(compId);
+    QVERIFY(bypass);
+    QCOMPARE(bypass.value(),originalBypass.value());
+    state.value()->set_private_m18_chain_mutation_admission({});
+    QVERIFY(state.value()->set_gain_parameters(*alternativeGain.value()));
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
