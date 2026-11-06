@@ -7,6 +7,8 @@
 #include <QString>
 
 #include <optional>
+#include <functional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -54,6 +56,13 @@ public:
     [[nodiscard]] QString end_frame_text() const;
     [[nodiscard]] QString error_message() const;
 
+    // M18 PREPRODUCTION: SOURCE and Project changes must own one
+    // Product epoch across all Region/Loop mutations. Do not install
+    // this callback until the common cross-controller authority is wired.
+    using M18RegionMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_region_mutation_admission(
+        M18RegionMutationAdmission gate)
+    {m18RegionMutationAdmission_=std::move(gate);}
     [[nodiscard]] core::Status set_region(core::FrameRange candidate);
     [[nodiscard]] core::Status set_start(core::FrameIndex start);
     [[nodiscard]] core::Status set_end_exclusive(core::FrameIndex end);
@@ -94,6 +103,9 @@ private:
         QString fraction;
     };
 
+    [[nodiscard]] core::Status admit_m18_region_mutation(
+        const char* operation) const;
+    [[nodiscard]] bool m18_foreign_owner_thread() const noexcept;
     [[nodiscard]] core::Status validate(core::FrameRange candidate) const;
     [[nodiscard]] core::Status reposition_if_outside(
         core::FrameRange activeLoop,
@@ -111,6 +123,7 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_{nullptr};
+    M18RegionMutationAdmission m18RegionMutationAdmission_;
     std::optional<core::FrameRange> region_;
     std::int64_t sourceFrames_{0};
     std::int64_t sampleRate_{0};
