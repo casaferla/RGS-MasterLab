@@ -78,6 +78,14 @@ public:
     void set_private_m18_project_open_batch_begin(
         M18ProjectOpenBatchBegin begin)
     {m18ProjectOpenBatchBegin_=std::move(begin);}
+    // A Project-open batch and a one-shot generic Project gate cannot be
+    // installed together; SaveAs still needs a separate Product admission.
+    // If a batch is configured without this additional SaveAs guard,
+    // SaveAs MUST fail closed (never write an unguarded .rgsml file).
+    using M18ProjectSaveAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_project_save_admission(
+        M18ProjectSaveAdmission gate)
+    {m18ProjectSaveAdmission_=std::move(gate);}
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
@@ -99,6 +107,7 @@ signals:
 private:
     [[nodiscard]] core::Status admit_m18_project_mutation(
         const char* operation) const;
+    [[nodiscard]] core::Status admit_m18_project_save() const;
     [[nodiscard]] core::Result<project::ProjectSnapshot> current_snapshot(
         const QString& destinationStem);
     [[nodiscard]] core::Uuid next_id();
@@ -120,6 +129,7 @@ private:
     MasterOutputRateState* masterOutputRateState_{nullptr};
     M18ProjectMutationAdmission m18ProjectMutationAdmission_;
     M18ProjectOpenBatchBegin m18ProjectOpenBatchBegin_;
+    M18ProjectSaveAdmission m18ProjectSaveAdmission_;
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
