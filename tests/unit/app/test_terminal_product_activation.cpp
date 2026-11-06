@@ -3151,7 +3151,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         using platform::windows::internal::M18ProductEpochTicketAuthority;
         using platform::windows::internal::M18ProductExportIdentity;
         const M18ProductExportIdentity verifiedId{
-            1101U,1102U,1103U,1104U,
+            1101U,1102U,1103U,
+            original->rendered.manual_chain_revision,
             static_cast<std::uint32_t>(masterRate.value()->value())};
         M18ProductEpochTicketAuthority sharedEpoch{777U,verifiedId};
         QVERIFY(sharedEpoch.try_transition(777U,778U,verifiedId,true));
