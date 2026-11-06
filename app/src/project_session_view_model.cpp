@@ -742,30 +742,61 @@ core::Status ProjectSessionViewModel::admit_m18_project_mutation(
         "M18_PROJECT_MUTATION_ADMISSION_THROWN"});}
 }
 
-core::Status ProjectSessionViewModel::admit_m18_project_save() const
+core::Result<std::shared_ptr<const void>>
+ProjectSessionViewModel::begin_m18_project_save() const
 {
-    // A batch protects Open Project, but it does NOT silently authorize a
-    // separate .rgsml SaveAs publication. Reject missing/ambiguous policy.
+    using R=core::Result<std::shared_ptr<const void>>;
+    // The future Product must keep a real exclusive epoch through the
+    // entire .rgsml publication, not just grant a one-shot status.
+    if(m18ProjectSaveBatchBegin_) {
+        if(m18ProjectSaveAdmission_||m18ProjectMutationAdmission_)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_ADMISSION_AMBIGUOUS"});
+        if(QThread::currentThread()!=thread())
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_WRONG_OWNER_THREAD"});
+        try {
+            auto lease=m18ProjectSaveBatchBegin_();
+            if(!lease)return lease;
+            if(!*lease.value())
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PROJECT_SAVE_BATCH_NO_EXCLUSIVE_LEASE"});
+            return lease;
+        }catch(...){
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_ADMISSION_THROWN"});
+        }
+    }
+    // Installing a Product batch for Open forbids status-only SaveAs:
+    // the worker might commit after admission but before SaveAs finishes.
+    if(m18ProjectOpenBatchBegin_)
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_REQUIRES_EXCLUSIVE_BATCH"});
     if(m18ProjectSaveAdmission_ &&m18ProjectMutationAdmission_)
-        return core::Status::failure(core::Error{
+        return R::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_PROJECT_SAVE_ADMISSION_MODES_AMBIGUOUS"});
-    if(m18ProjectOpenBatchBegin_ &&!m18ProjectSaveAdmission_)
-        return core::Status::failure(core::Error{
+    const auto admit=[&]()->core::Status {
+        if(!m18ProjectSaveAdmission_)
+            return admit_m18_project_mutation("save_project_as");
+        if(QThread::currentThread()!=thread())
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_REQUIRES_QT_OWNER_THREAD"});
+        try{return m18ProjectSaveAdmission_("save_project_as");}
+        catch(...){return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
-            "M18_PROJECT_SAVE_REQUIRES_SEPARATE_EPOCH_ADMISSION"});
-    if(!m18ProjectSaveAdmission_)
-        return admit_m18_project_mutation("save_project_as");
-    if(QThread::currentThread()!=thread())
-        return core::Status::failure(core::Error{
-            core::ErrorCode::InvalidState,
-            "M18_PROJECT_SAVE_REQUIRES_QT_OWNER_THREAD"});
-    try{return m18ProjectSaveAdmission_("save_project_as");}
-    catch(...) {
-        return core::Status::failure(core::Error{
-            core::ErrorCode::InvalidState,
-            "M18_PROJECT_SAVE_ADMISSION_THROWN"});
-    }
+            "M18_PROJECT_SAVE_ADMISSION_THROWN"});}
+    }();
+    if(!admit)return R::failure(*admit.error());
+    // No M18 Product registration is installed today. Legacy M17 stays
+    // unchanged; this empty token is never permission for async export.
+    return R::success(std::shared_ptr<const void>{});
 }
 
 void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
@@ -983,7 +1014,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
 {
     if((m18ProjectOpenBatchBegin_||m18ProjectMutationAdmission_
-        ||m18ProjectSaveAdmission_)
+        ||m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
        &&QThread::currentThread()!=thread())return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
@@ -992,8 +1023,12 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     // Before reading even the draft Project snapshot, refuse an M18
     // worker-owned epoch. This also covers an Open-batch-only policy,
     // which otherwise could allow an unguarded Project SaveAs.
-    const auto saveAdmission=admit_m18_project_save();
-    if(!saveAdmission) {publish_error(*saveAdmission.error());return;}
+    auto saveBatch=begin_m18_project_save();
+    if(!saveBatch) {publish_error(*saveBatch.error());return;}
+    // The opaque Product lease remains alive across physical output write,
+    // checksum/readback and final in-memory Project metadata publication.
+    std::shared_ptr<const void> heldSaveBatch=std::move(*saveBatch.value());
+    Q_UNUSED(heldSaveBatch);
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }
