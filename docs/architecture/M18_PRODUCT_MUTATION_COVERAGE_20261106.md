@@ -329,3 +329,34 @@ Prepare, verifies the error and stable renderer state plus retained stage,
 and updates the five/six-path denial counter to seven.
 This is not yet compiled or independently qualified; still no
 production GUI/worker export nor `main` merge.
+
+## #71 post-#1059 green — fail-closed consent on aborted Product batch
+Product Owner reported Focused #1059 GREEN. Serial PR #84 fast-forward
+to `446ae57a4567f0957adc4da8fccf4f562d0d8767` triggered
+[Focused #1060](https://github.com/casaferla/RGS-MasterLab/actions/runs/42258433430).
+The PO, not the agent, verifies Windows/Linux conclusions.
+
+Following isolated staging (NOT INCLUDED in #1060), an additional
+security review found that `M18ProductEpochTicketAuthority::
+try_begin_product_mutation(expected,next,identity,consent=true)` previously
+made the new Product export-consented as soon as its RAII batch was
+destructed, even if downstream `.rgsml`/SOURCE/GOLD/MASTER restoration
+had failed partway through. The worker could then capture a seemingly
+current, but **incompletely verified**, new Product ticket.
+
+**Fixed:** Product batch admission now refuses `consent=true`
+unconditionally; the batch always advances the epoch with consent=false.
+An aborted batch's RAII release CANNOT reinstate worker authorization.
+Only a later, separately verified M17 final Master and explicit user
+opt-in may call `try_transition(next,next+1,identity,true)` after the
+batch has ended and before any ticket can be captured. A held old worker
+commit still rejects a new Project batch before identity mutation.
+
+The existing Windows M18 native integration target extends its
+Product batch regression: deny forbidden consentful batch, reject old
+ticket and partial new Product capture, deny transition while the batch
+is active, deny capture even AFTER release, require a second explicit
+consent transition, then verify later revocation and worker rejection.
+No Product QML hook, export enablement, legacy M17 changes, project-file
+schema change, or direct source writer permission are made. This sublot
+is **uncompiled until a later exact-SHA Focused CI**.
