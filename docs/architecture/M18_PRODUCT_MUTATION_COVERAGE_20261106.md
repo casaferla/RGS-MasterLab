@@ -820,3 +820,49 @@ The Focused workflow staging also adds the existing SOURCE-selection native
 test target to BOTH build/test matrices, avoiding blind spots in the earlier
 reduced Focused CTest allowlist. No M16 B2i frozen source, M17 DSP, FIR assets,
 audio codecs or already-green candidate paths were edited in this batch.
+
+### Chat #72 after #1066 green — M18 direct terminal Single-Writer closure (staging only)
+PO confirmed #1066 Windows+Linux GREEN. PR #84 was fast-forwarded from
+`9cc9e471` to `86177384eef2cdb930b78678c93159c1fc4e3722`,
+promoting a 22-commit macrolot with zero divergence. The next single
+Focused [#1067](https://github.com/casaferla/RGS-MasterLab/actions/runs/42288760084)
+runs Windows+Linux on exact SHA `86177384`. No CI result is to be
+inferred from elapsed time; the Product Owner reports it. Main unchanged.
+
+The next cohesive 16+ commit staging-only batch addresses a bypass in
+the *terminal DSP state itself*, not the GUI editor alone:
+
+- `TerminalLimiterState` owns an optional Qt-free M18 Product mutation
+  admission. The real thread owner is captured at construction. Any
+  DIRECT canonical Ceiling or BYPASS mutation must pass before
+  changing parameter / chain revisions, including attempts bypassing
+  `TerminalLimiterViewModel`. Invalid Ceiling and true no-op Ceiling
+  changes never burn an epoch. A no-op BYPASS under M18 guard also
+  leaves authority unchanged. No callback installed = old M17 behavior.
+- A foreign-thread direct mutation is rejected before calling the
+  Product epoch callback. Throwing callback or BUSY refuses without
+  changing data or revisions. A scoped reentrancy sentinel prevents
+  a callback from recursively committing another terminal mutation
+  before its own admission has finished. No GUI thread wait/spin.
+- `TerminalLimiterViewModel` now explicitly rejects *ambiguous dual*
+  M18 guards (VM + State): one user action cannot advance two distinct
+  epochs. When only the direct state guard is installed, all accepted
+  edits still flow through it exactly once; successful no-op edits
+  invoke no mutation callback. When any M18 guard is installed, a
+  foreign thread cannot even modify Qt-owned draft fields or fire
+  editor notifications. Ceiling, reset, and bypass statuses distinguish
+  active-export refusal from invalid parameter values.
+- Existing native Windows M17 Product QtTest adds direct State attacks,
+  illegal foreign thread, actual `M18ProductEpochTicketAuthority`
+  commit lease (BUSY then accepted/revoked), reentrancy, dual-guard
+  ambiguity, one legitimate VM mutation per epoch, no-op behavior,
+  error/status and unchanged M17 fallback. All new tests remain
+  **UNCOMPILED until the next approved Focused candidate**.
+
+Hard blockers unchanged: state/VM admission is not registered in
+`app/src/main.cpp`, all candidate-gate legacy void invalidations
+and Project/SOURCE/Gold dispatches must share one Product epoch,
+fresh verified M17 Master and final output preference/PCM24 seed rules
+require explicit PO consent, and M18 must complete Windows cold FQ and
+physical PCM24/F32 acceptance. NO GUI Export enabled, NO main merge,
+NO qualification claim for this staging batch.
