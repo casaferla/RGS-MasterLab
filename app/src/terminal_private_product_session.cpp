@@ -2458,6 +2458,19 @@ TerminalPrivateProductSession::borrow_verified_m17_master_for_device(
     return stage;
 }
 
+std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+TerminalPrivateProductSession::capture_m18_verified_stage_for_worker(
+    core::SampleRate selectedMasterRate) const
+{
+    if(QThread::currentThread()!=thread())return {};
+    const auto stage=current_verified_private_master();
+    if(!stage ||stage->rendered.output_rate!=selectedMasterRate
+       ||!stage->rendered.terminal.checked.final_check
+       ||candidates_->staged()!=stage)
+        return {};
+    return stage;
+}
+
 std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
 TerminalPrivateProductSession::capture_m18_verified_master_for_read(
     core::SampleRate selectedMasterRate) const
