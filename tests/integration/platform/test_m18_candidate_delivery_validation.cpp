@@ -257,6 +257,11 @@ realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit()
     auto task=M18AsyncExportWorker::launch(std::move(*request.value()));
     QVERIFY(task);
     const auto entered=awaited.wait_for(std::chrono::seconds{20});
+    if(entered==std::future_status::ready) {
+        QCOMPARE((*task.value())->encoded_frames(),std::uint64_t{8193});
+        QVERIFY(!(*task.value())->finished());
+        QVERIFY(!(*task.value())->result_if_finished());
+    }
     // Release even on failed timing assertions, so no orphan worker
     // remains blocked waiting on a test-owned promise.
     auto nextIdentity=identity;
@@ -421,6 +426,13 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
         std::move(*blockedRequest.value()));
     QVERIFY(stopped);
     const auto entered=arrived.wait_for(std::chrono::seconds{20});
+    if(entered==std::future_status::ready) {
+        // Encoding 100% is NOT a successful delivery: the worker is still
+        // waiting for the Product commit lease and final WAV readback.
+        QCOMPARE((*stopped.value())->encoded_frames(),std::uint64_t{8193});
+        QVERIFY(!(*stopped.value())->finished());
+        QVERIFY(!(*stopped.value())->result_if_finished());
+    }
     // Release FIRST to ensure no detached job remains blocked if any
     // subsequent assertion fails.
     (*stopped.value())->cancel();
