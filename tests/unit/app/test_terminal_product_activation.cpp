@@ -3191,12 +3191,13 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         guardedRate.set_private_m18_rate_mutation_admission([&] {
             return static_cast<bool>(commonAdmission("master_rate_edit"));
         });
-        vm.set_private_m18_processing_mutation_admission([&] {
+        app::TerminalLimiterViewModel guardedLimiter{limiter.value()};
+        guardedLimiter.set_private_m18_processing_mutation_admission([&] {
             return static_cast<bool>(commonAdmission("m17_limiter_edit"));
         });
-        const auto originalBypass=vm.bypass();
-        vm.setBypass(!originalBypass);
-        QCOMPARE(vm.bypass(),originalBypass);
+        const auto originalBypass=guardedLimiter.bypass();
+        guardedLimiter.setBypass(!originalBypass);
+        QCOMPARE(guardedLimiter.bypass(),originalBypass);
         const auto blockedProductCancel=product.cancel();
         const auto blockedUpstreamSource=selector.switch_to(
             app::AuditionTarget::PREPARED);
@@ -3215,7 +3216,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         product.set_private_m18_mutation_admission({});
         selector.set_private_m18_mutation_admission({});
         guardedRate.set_private_m18_rate_mutation_admission({});
-        vm.set_private_m18_processing_mutation_admission({});
+        guardedLimiter.set_private_m18_processing_mutation_admission({});
 
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
