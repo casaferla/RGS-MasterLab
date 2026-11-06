@@ -33,3 +33,42 @@ The M18EpochCommitBarrier mutex only protects the SHORT gate transitions; never 
 
 ## Decision log
 Focused #1050 checked 48 Windows filesystem exports; #1051 checked 14 injected rollback cases; #1052 checked one nonblocking barrier primitive. Those were valid individual qualification checkpoints but small in delivery scope. Going forward batch multi-component functionality/negative tests into a single coherent preproduction macro-lot and avoid a new CI for each small test/documentation change.
+
+## Handoff #71 — sublot A1/A2 staged, UNCOMPILED, 06 Nov 2026
+Single no-PR/no-CI staging (after #1052 green): commit chain
+`72c73a0` → `73607bd0` → `711d18b9` → `76a3e380`.
+Adds Qt-free `platform/windows/src/internal/m18_product_epoch_ticket.hpp`
+and extends the existing Windows M18 delivery-validation QtTest target.
+**No new CI target or workflow, no main/PR #84 move, no GUI/export activation.**
+
+- `M18ProductExportIdentity` is a nonzero Source, Project, immutable
+  M17 Master generation, processing-chain revision and one of six legal
+  output MASTER rates. A ticket captures one exact identity and epoch
+  after explicit consent. A copied ticket alone never grants a commit.
+- `try_transition(expected,next,newIdentity,consent)` is the sole proposed
+  Product-owner mutation/revocation gate. It and worker admission
+  serialize consent+identity checks with the preexisting nonblocking
+  `M18EpochCommitBarrier`; a held worker commit prevents any transition.
+  A stale ticket cannot renew or commit after a successful transition.
+  No mutex is held during WAV I/O, DSP or Qt callbacks.
+- Worker-safe lease wrapper rechecks authority lifetime and consent
+  immediately before publish. Destroying the tentative Product authority
+  invalidates both retained tickets and an already-acquired worker permit.
+  Any failed recheck must preserve transactional cleanup/rollback.
+- Test sublot exercises missing consent, no-op epoch, consent grant,
+  competing worker permits, SOURCE change and consent revoke during a
+  held commit, source/rate identity mismatch, stale ticket after revoke,
+  fresh opt-in and retirement of the authorizing owner. Joins the worker
+  before QtTest assertions. These new assertions are **not yet CI proven**.
+
+**UNRESOLVED / gate BLOCKED:** This is deliberately a disconnected
+preproduction primitive. Source/Project/MASTER mutators still bypass it,
+the real Product does NOT mint these generations, the ticket is not
+bound to an independently checked M17 output owner or filesystem source,
+and the Windows exporter/GUI has NO Product worker caller. Do not use
+this contract to justify asynchronous M18 publication. Next coherent
+sublots must wire authoritative mutations (including cancellation and
+error/stale/return reentrancy) and fully adversarial end-to-end worker
+handoff, with no F64/M16/M17 regressions; only then one immutable
+exact-SHA PR promotion and one Windows/Linux Focused CI. No merge/FQ
+without Product Owner permission.
