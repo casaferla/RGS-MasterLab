@@ -12,6 +12,7 @@
 #include <QUrl>
 #include "terminal_private_product_session.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
+#include "internal/m18_checked_stage_worker_bridge.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "master_output_rate_state.hpp"
@@ -3156,6 +3157,25 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(sharedEpoch.try_transition(777U,778U,verifiedId,true));
         auto masterTicket=sharedEpoch.capture(verifiedId);
         QVERIFY(masterTicket);
+        // The preproduction typed handoff consumes a REAL checked M17
+        // Product candidate plus the Qt-free worker epoch Ticket. It may
+        // never copy Master PCM or forge a new terminal realization.
+        const auto ownerBoundRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                original,*masterTicket.value(),
+                *src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,
+                UINT64_C(42),-1.0);
+        QVERIFY(ownerBoundRequest);
+        const auto aliasView=ownerBoundRequest.value()->payload();
+        const auto originalStageView=original->rendered.terminal.checked
+            .terminal.compensated_pcm.view();
+        QCOMPARE(aliasView.frame_count(),originalStageView.frame_count());
+        const auto ownerBoundLeft=aliasView.channel(0U);
+        const auto originalLeftBefore=originalStageView.channel(0U);
+        QVERIFY(ownerBoundLeft&&originalLeftBefore);
+        QVERIFY(ownerBoundLeft.value()->data()
+                ==originalLeftBefore.value()->data());
         const auto workerFactory=masterTicket.value()->commit_lease_factory();
         auto heldCommit=workerFactory();
         QVERIFY(heldCommit);
