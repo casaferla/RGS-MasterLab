@@ -313,6 +313,47 @@ m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
     QVERIFY(!denied.project.error_message().isEmpty());
     QVERIFY(!denied.source.has_source());
     QCOMPARE(deniedSourceAdoptions,std::size_t{0});
+
+    // An inner Source admission can fail *after* the outer Product batch
+    // was acquired. Its RAII ownership must still be released on this
+    // early return, so a subsequent legal Project open cannot inherit a
+    // permanently busy Product epoch.
+    Session failedInner;
+    bool innerBatchActive=false;
+    std::size_t innerBatches=0,innerReleases=0,innerAttempts=0;
+    failedInner.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            if(innerBatchActive)
+                return core::Result<std::shared_ptr<const void>>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                                "M18_BATCH_ALREADY_ACTIVE_AFTER_ERROR"});
+            ++innerBatches;
+            innerBatchActive=true;
+            std::shared_ptr<const void> owner=
+                std::make_shared<Scope>(&innerBatchActive,&innerReleases);
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::move(owner));
+        });
+    failedInner.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++innerAttempts;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_NESTED_SOURCE_ADMISSION_REJECTED"});
+        });
+    failedInner.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!failedInner.project.error_message().isEmpty());
+    QVERIFY(!failedInner.source.has_source());
+    QCOMPARE(innerBatches,std::size_t{1});
+    QCOMPARE(innerReleases,std::size_t{1});
+    QCOMPARE(innerAttempts,std::size_t{1});
+    QVERIFY(!innerBatchActive);
+    failedInner.source.set_private_m18_source_mutation_admission({});
+    failedInner.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(failedInner.source.has_source());
+    QCOMPARE(innerBatches,std::size_t{2});
+    QCOMPARE(innerReleases,std::size_t{2});
+    QVERIFY(!innerBatchActive);
 }
 
 void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
