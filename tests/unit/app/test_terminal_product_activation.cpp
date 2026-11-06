@@ -3387,6 +3387,34 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
         QVERIFY(!exportView.acknowledgeExport());
 
+        // A second attempt to use the same published filename must
+        // surface a FAILED state and retain the previous WAV untouched.
+        // Pressing Cancel afterward must NOT relabel that verification/
+        // collision failure as a successful user cancellation.
+        QVERIFY(exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QTRY_VERIFY_WITH_TIMEOUT(
+            exportView.status_text()==QStringLiteral("FAILED"),30000);
+        QVERIFY(!exportView.error_text().isEmpty());
+        exportView.cancelExport();
+        QCOMPARE(exportView.status_text(),QStringLiteral("FAILED"));
+        QVERIFY(exportView.acknowledgeExport());
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+
+        // A denied preflight does not start a worker, emit a phantom
+        // export result or occupy the one-job lifecycle state.
+        app::SourceSelectionViewModel emptyViewSource;
+        const auto deniedWithoutSource=exportView.begin_private_export(
+            product,emptyViewSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0);
+        QVERIFY(!deniedWithoutSource);
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+
         // A ticket and verified M17 MASTER do not authorize export while
         // the Product has NO real current SOURCE selected in its QObject.
         app::SourceSelectionViewModel noCurrentProductSource;
