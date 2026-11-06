@@ -51,6 +51,10 @@ private:
     std::uint64_t parameterRevision_{0};
     std::thread::id ownerThread_;
     M18MutationAdmission m18MutationAdmission_;
+    // An epoch-admission callback may invoke another Qt-facing controller
+    // synchronously. Never let it recursively mutate this terminal state
+    // before the outer admission and its revision are committed.
+    mutable bool m18MutationAdmitting_{false};
     [[nodiscard]] core::Status admit_m18_mutation(const char* operation) const;
 };
 } // namespace rgsml::app
