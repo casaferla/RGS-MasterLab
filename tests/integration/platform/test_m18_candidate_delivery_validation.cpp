@@ -189,6 +189,7 @@ private slots:
     void realWindowsFailureInjectionCleansUpBothFormats();
     void crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
+    void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
 };
 
 void M18CandidateDeliveryValidationTest::
@@ -714,6 +715,93 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     QVERIFY(!(*orphanLease.value())->revalidate_current());
     orphanLease.value()->reset();
     QVERIFY(!orphanFactory());
+}
+
+
+void M18CandidateDeliveryValidationTest::
+realWorkerTicketExportsOnlyWithCurrentConsentAndSource()
+{
+    // Real Windows create-new/readback, but synthetic Product-issued
+    // identity: Product mutators are NOT wired into this prototype.
+    using namespace platform::windows;
+    using internal::M18ProductEpochTicketAuthority;
+    using internal::M18ProductExportIdentity;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto original=dir.filePath(QStringLiteral("worker-source.bin"));
+    QFile source{original};
+    QVERIFY(source.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(source.write("source-unchanged",16),qint64{16});
+    source.close();
+    const auto pcm=master(audio::ChannelLayout::MONO_C,4105,44100);
+    QVERIFY(pcm);
+    const M18ProductExportIdentity id{100U,101U,102U,103U,44100U};
+    M18ProductEpochTicketAuthority owner{900U,id};
+    QVERIFY(owner.try_transition(900U,901U,id,true));
+    auto permittedTicket=owner.capture(id);
+    QVERIFY(permittedTicket);
+    auto sourceRef=WindowsResourceReader::make_read_reference(
+        m18_path(original),m18_path(QFileInfo{original}.fileName()));
+    QVERIFY(sourceRef);
+    const auto validPath=dir.filePath(QStringLiteral("worker-real.wav"));
+    const auto destRef=WindowsResourceWriter::make_write_reference(
+        m18_path(validPath),m18_path(QFileInfo{validPath}.fileName()));
+    QVERIFY(destRef);
+    const auto seed=std::optional<std::uint64_t>{
+        UINT64_C(0xEABCBAD981234567)};
+    auto request=M18TransactionalAudioExportRequest::create(
+        *sourceRef.value(),pcm,*destRef.value(),
+        audio::WavSampleFormat::PCM_S24,seed,0.0,
+        ExportCollisionPolicy::FAIL_IF_EXISTS,
+        permittedTicket.value()->commit_lease_factory());
+    QVERIFY(request);
+    // Transfer a COPY of the immutable request (no QObject) to the worker.
+    // Product's owning thread never blocks on the WAV algorithm.
+    bool workerPassed=false;
+    std::thread worker([&]{
+        const auto delivered=TransactionalAudioExporter::export_new_file(
+            *request.value());
+        workerPassed=static_cast<bool>(delivered)
+            &&delivered.value()->frame_count().value()==4105
+            &&delivered.value()->encoded_file_sha256().size()==64U
+            &&delivered.value()->decoded_audio_sha256().size()==64U;
+    });
+    worker.join();
+    QVERIFY(workerPassed);
+    QVERIFY(QFileInfo::exists(validPath));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+
+    // A stale ticket cannot publish a second file, even with retained PCM.
+    auto switched=id;
+    switched.project_generation=201U;
+    QVERIFY(owner.try_transition(901U,902U,switched,false));
+    const auto deniedPath=dir.filePath(QStringLiteral("revoked.wav"));
+    const auto deniedDest=WindowsResourceWriter::make_write_reference(
+        m18_path(deniedPath),m18_path(QFileInfo{deniedPath}.fileName()));
+    QVERIFY(deniedDest);
+    auto expired=M18TransactionalAudioExportRequest::create(
+        *sourceRef.value(),pcm,*deniedDest.value(),
+        audio::WavSampleFormat::PCM_S24,seed,0.0,
+        ExportCollisionPolicy::FAIL_IF_EXISTS,
+        permittedTicket.value()->commit_lease_factory());
+    QVERIFY(expired);
+    bool rejectedAsExpected=false;
+    std::thread revoked([&] {
+        const auto result=TransactionalAudioExporter::export_new_file(
+            *expired.value());
+        rejectedAsExpected=!result &&result.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    revoked.join();
+    QVERIFY(rejectedAsExpected);
+    QVERIFY(!QFileInfo::exists(deniedPath));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+    QFile readOriginal{original};QVERIFY(readOriginal.open(QIODevice::ReadOnly));
+    QCOMPARE(readOriginal.readAll(),QByteArray("source-unchanged",16));
+    readOriginal.close();
+
+    // Physical delivery was already complete; revocation does not
+    // retroactively remove the user's previously verified WAV file.
+    QVERIFY(QFileInfo::exists(validPath));
 }
 
 } // namespace rgsml::tests
