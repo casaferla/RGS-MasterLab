@@ -866,3 +866,30 @@ fresh verified M17 Master and final output preference/PCM24 seed rules
 require explicit PO consent, and M18 must complete Windows cold FQ and
 physical PCM24/F32 acceptance. NO GUI Export enabled, NO main merge,
 NO qualification claim for this staging batch.
+
+### Chat #72 — CI #1067 Linux build failure diagnosis and portability correction
+[#1067](https://github.com/casaferla/RGS-MasterLab/actions/runs/42288760084)
+on `86177384` finished Windows SUCCESS and Linux FAILURE at
+`Build Focused DSP Targets`. The **bounded** 545-byte artifact
+`RGS-Focused-Errors-Linux-1067-28b199152d7c93982cb68a218973d1f537103a9c`
+was inspected without downloading any GitHub job logs. Its exact compiler
+diagnostic is from `platform/windows/src/transactional_audio_exporter.cpp:22`:
+`fatal error: Windows.h: No such file or directory`.
+
+Root cause: the preceding staging change placed native
+`rgsml_source_selection_tests` in BOTH Windows and Linux Focused
+build/CTest lists. That Qt integration target links the Windows
+`rgsml_platform` native implementation and cannot be built by the
+portable Linux Focused guard. It was **not** a failing SOURCE test and
+not an audio/limiter algorithm regression.
+
+Fix: remove only the SOURCE target from the Linux focused build
+list and Linux CTest regex. Keep the SOURCE target in BOTH Windows
+Focused build and Windows CTest regex, so its genuine native M18
+BUSY/owner-thread cases remain covered. Existing Linux portable
+Master-rate and independent M18/dither/DSP tests remain covered.
+Do not add fake Windows headers, condition out functional Windows
+code, alter frozen M16 B2i, or misrepresent Windows-native source tests
+as Linux-portable tests. One new exact-SHA Focused Windows/Linux
+candidate is required before qualification; no old #1067 result can
+qualify the updated candidate.
