@@ -61,6 +61,15 @@ public:
         targetSelectionGuard_=std::move(guard);
         emit selectionAvailabilityChanged();
     }
+    // Separate M18 Product epoch mutation admission. This is NOT a QML
+    // availability predicate: it is invoked only on a requested real rate
+    // edit, before rateRevision_ or any observable state changes. Optional
+    // and uninstalled in production until upstream mutation coverage exists.
+    using M18RateMutationAdmission=std::function<bool()>;
+    void set_private_m18_rate_mutation_admission(
+        M18RateMutationAdmission gate) {
+        m18RateMutationAdmission_=std::move(gate);
+    }
     [[nodiscard]] bool can_edit_target() const noexcept {
         return has_supported_master_rate()
             &&(!targetSelectionGuard_||targetSelectionGuard_());
@@ -84,5 +93,6 @@ private:
     quint64 rateRevision_{0};
     bool originalQ0Ready_{false};
     TargetSelectionGuard targetSelectionGuard_;
+    M18RateMutationAdmission m18RateMutationAdmission_;
 };
 } // namespace rgsml::app
