@@ -92,6 +92,13 @@ bool TerminalLimiterViewModel::commitDraft()
         emit changed();
         return true;
     }
+    // A held M18 commit must reject changing the exact verified
+    // limiter chain before publishing its final destination.
+    if(m18ProcessingMutationAdmission_) {
+        bool accepted=false;
+        try {accepted=m18ProcessingMutationAdmission_();} catch(...) {}
+        if(!accepted)return false;
+    }
     auto committed=state_->set_ceiling_db_tp(newValue);
     if(!committed) {
         set_validation(kInvalidRange);
@@ -131,6 +138,11 @@ void TerminalLimiterViewModel::resetToDefault()
         emit changed();
         return;
     }
+    if(m18ProcessingMutationAdmission_) {
+        bool accepted=false;
+        try {accepted=m18ProcessingMutationAdmission_();} catch(...) {}
+        if(!accepted)return;
+    }
     auto applied=state_->set_ceiling_db_tp(ceiling);
     if(!applied) {
         set_validation(QStringLiteral("True Peak Limiter reset failed"));
@@ -148,6 +160,11 @@ void TerminalLimiterViewModel::resetToDefault()
 void TerminalLimiterViewModel::setBypass(bool value)
 {
     if(!state_||state_->bypassed()==value)return;
+    if(m18ProcessingMutationAdmission_) {
+        bool accepted=false;
+        try {accepted=m18ProcessingMutationAdmission_();} catch(...) {}
+        if(!accepted)return;
+    }
     auto status=state_->set_user_bypass(value);
     if(!status) {
         set_validation(QStringLiteral(
