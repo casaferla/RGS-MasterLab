@@ -439,14 +439,18 @@ m18SelectorAdmissionAndPublicationAreNonReentrant()
     QObject::connect(&selector,&app::AuditionSourceSelector::changed,
         &selector,[&] {
             ++publicationAttempts;
-            const auto nested=selector.switch_to(app::AuditionTarget::PREPARED);
+            const auto alternate=selector.active_target()
+                ==app::AuditionTarget::PREPARED
+                ?app::AuditionTarget::PROCESSED
+                :app::AuditionTarget::PREPARED;
+            const auto nested=selector.switch_to(alternate);
             if(!nested &&nested.error()->code()
                ==core::ErrorCode::InvalidState)++publicationDenied;
         });
     // An accepted visible switch emits changed() before the outer
     // publication has left its Single-Writer scope. Its listeners
     // cannot switch again (and cannot start a second worker epoch).
-    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD)==false);
+    QVERIFY(!selector.switch_to(app::AuditionTarget::GOLD));
     QCOMPARE(admissionCount,std::size_t{1}); // unavailable is epoch-neutral
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(admissionCount,std::size_t{2});
