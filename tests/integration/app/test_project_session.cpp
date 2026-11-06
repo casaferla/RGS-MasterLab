@@ -266,6 +266,16 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
                 std::make_shared<int>(1));
         });
     const auto proposed=dir.filePath(QStringLiteral("batch-save-denied.rgsml"));
+    // No Project API may be entered from a foreign worker once a Product
+    // M18 gate is installed, including premature error QObjects/signals.
+    QSignalSpy foreignSignals{&session.project,&app::ProjectSessionViewModel::changed};
+    std::thread foreign([&session,&proposed,&initial] {
+        session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+        session.project.openProject(QUrl::fromLocalFile(initial));
+    });
+    foreign.join();
+    QCOMPARE(foreignSignals.count(),0);
+    QVERIFY(!QFileInfo::exists(proposed));
     session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
     QVERIFY(!session.project.error_message().isEmpty());
     QVERIFY(!QFileInfo::exists(proposed));
