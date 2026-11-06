@@ -168,6 +168,8 @@ core::Status TerminalCandidateGate::accept_measured(
         return core::Status::failure(reject(
             "M17_NONCONFORMING_STALE_TICKET",
             "Measured PCM cannot replace a newer M17 job."));
+    if(const auto allowed=admit_m18_candidate_mutation(
+           "candidate_accept_measured");!allowed)return allowed;
     const auto& measured=candidate.terminal;
     const auto pcm=measured.terminal.compensated_pcm.view();
     const bool invalid =
