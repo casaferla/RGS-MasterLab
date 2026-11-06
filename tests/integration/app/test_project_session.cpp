@@ -169,6 +169,7 @@ private slots:
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
     void m18SaveBatchMissingOrThrowingFailsClosed();
+    void m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch();
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
@@ -364,6 +365,65 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
     QCOMPARE(session.project.error_message(),QString());
     session.project.set_private_m18_project_save_batch_begin({});
     session.project.set_private_m18_project_open_batch_begin({});
+}
+
+void ProjectSessionTest::m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto oldSource=wav(dir,QStringLiteral("old-open-source.wav"),19);
+    const auto newSource=wav(dir,QStringLiteral("new-open-source.wav"),31);
+    QVERIFY(!oldSource.isEmpty()&&!newSource.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(newSource));
+    QVERIFY(author.source.has_source());
+    const auto projectPath=dir.filePath(QStringLiteral("new-project.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(author.project.error_message(),QString());
+
+    Session reopened;
+    reopened.source.selectSource(QUrl::fromLocalFile(oldSource));
+    QVERIFY(reopened.source.has_source());
+    const std::string originalLocator{
+        reopened.source.source_resource()->reference().locator()};
+    std::size_t saveBatches=0,openBatches=0;
+    reopened.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++saveBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QCOMPARE(openBatches,std::size_t{0});
+    QCOMPARE(saveBatches,std::size_t{0});
+    QVERIFY(reopened.source.has_source());
+    QVERIFY(std::string{reopened.source.source_resource()->reference().locator()}
+        ==originalLocator);
+
+    // A separately installed SaveAs status callback still cannot protect
+    // destructive Open Project without its own exclusive admission.
+    reopened.project.set_private_m18_project_save_batch_begin({});
+    reopened.project.set_private_m18_project_save_admission(
+        [](const char*)->core::Status {return core::Status::success();});
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QVERIFY(std::string{reopened.source.source_resource()->reference().locator()}
+        ==originalLocator);
+
+    reopened.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++openBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QCOMPARE(openBatches,std::size_t{1});
+    QVERIFY(reopened.source.has_source());
+    QVERIFY(std::string{reopened.source.source_resource()->reference().locator()}
+        !=originalLocator);
+    reopened.project.set_private_m18_project_open_batch_begin({});
+    reopened.project.set_private_m18_project_save_admission({});
 }
 
 void ProjectSessionTest::m18SaveBatchMissingOrThrowingFailsClosed()
