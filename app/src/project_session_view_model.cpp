@@ -817,7 +817,13 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         return;
     }
 
-    source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    const auto adoptedSource=
+        source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    if(!adoptedSource) {
+        isCommittingProjectOpen_=false;
+        publish_error(*adoptedSource.error());
+        return;
+    }
     if (masterOutputRateState_) {
         // The production SOURCE callback reset the authority on commit.
         // Standalone ProjectSession clients may have no such callback.
