@@ -700,6 +700,17 @@ productMutationBatchPinsIdentityAndForbidsPartialCapture()
         next.master_generation=101U;
         return next;
     }();
+    // An active worker commit has priority: the owner must refuse the
+    // proposed Project replacement without changing any Product identity.
+    auto oldCommit=previousFactory();
+    QVERIFY(oldCommit);
+    auto deniedBatch=owner.try_begin_product_mutation(
+        78U,79U,changed,true);
+    QVERIFY(!deniedBatch);
+    QVERIFY((*oldCommit.value())->revalidate_current());
+    oldCommit.value()->reset();
+    QVERIFY(owner.capture(before));
+
     // An authorized Project batch advances the monotonic identity once,
     // while holding exclusive protection across ALL downstream mutations.
     auto batch=owner.try_begin_product_mutation(78U,79U,changed,true);
