@@ -27,23 +27,34 @@ bool MasterOutputRateState::admit_m18_source_rate_mutation() noexcept {
 bool MasterOutputRateState::try_source_committed_for_m18(
     qint64 hz) noexcept {
     if(!admit_m18_source_rate_mutation())return false;
-    source_committed(hz);
+    commit_source_rate_unchecked(hz);
     return true;
 }
 bool MasterOutputRateState::try_source_cleared_for_m18() noexcept {
     if(sourceRateHz_==0 &&masterRateHz_==0)return true;
     if(!admit_m18_source_rate_mutation())return false;
-    source_cleared();
+    clear_source_rate_unchecked();
     return true;
 }
 void MasterOutputRateState::source_committed(qint64 hz) noexcept {
+    // M17's legacy void caller cannot report BUSY. Once a genuine M18
+    // gate is installed, fail closed instead of silently bypassing it.
+    // Product must migrate the outer SOURCE transaction to the bool API.
+    if(m18RateMutationAdmission_)return;
+    commit_source_rate_unchecked(hz);
+}
+void MasterOutputRateState::source_cleared() noexcept {
+    if(m18RateMutationAdmission_)return;
+    clear_source_rate_unchecked();
+}
+void MasterOutputRateState::commit_source_rate_unchecked(qint64 hz) noexcept {
     sourceRateHz_=hz>0?hz:0;
     masterRateHz_=supported(sourceRateHz_)?sourceRateHz_:0;
     ++rateRevision_; // different SOURCE identity invalidates even at same Fs
     emit changed();
     emit selectionAvailabilityChanged();
 }
-void MasterOutputRateState::source_cleared() noexcept {
+void MasterOutputRateState::clear_source_rate_unchecked() noexcept {
     if(sourceRateHz_==0&&masterRateHz_==0)return;
     sourceRateHz_=0;masterRateHz_=0;++rateRevision_;
     emit changed();
