@@ -72,3 +72,45 @@ error/stale/return reentrancy) and fully adversarial end-to-end worker
 handoff, with no F64/M16/M17 regressions; only then one immutable
 exact-SHA PR promotion and one Windows/Linux Focused CI. No merge/FQ
 without Product Owner permission.
+
+## Chat #71 macrolot B+C+D — isolated candidate before Focused CI
+Following the earlier Qt-free ticket component A, the isolated staging adds
+`app/src/terminal_private_product_session.hpp/.cpp` with an OPTIONAL
+`set_private_m18_mutation_admission()` callback and a fail-closed Qt-owning-
+thread check. Intercepts 12 local transition paths:
+request_private_impl, cancel, failed, stale, renderer status callback,
+return_monitor / retry_return, suspend/resume comparison, adopt_source_loop,
+and accepted/measured installs. In the absence of this callback, all M17
+behavior is unchanged, and no QML route installs it. The callback is
+purposely NOT claimed to protect external Source/Project/UI changes.
+
+Tests added in already-registered Focused binaries:
+* The real M17 Product activation native test attempts cancel and source-
+  loop adoption while the synthetic admission denies all mutations: both
+  must be refused and exact checked M17 stage preserved; then gate disabled
+  for remaining original M17 tests.
+* The existing M18 Windows candidate-delivery test executes actual PCM24
+  44.1k mono odd-frame `TransactionalAudioExporter::export_new_file` on
+  a real std::thread with an immutable request + Qt-free Product epoch
+  ticket. It requires destination/readback SHA metadata and zero tmp.
+  It then changes simulated Project generation, revokes consent and
+  attempts an identical new worker publication with the OLD ticket:
+  commit must fail and candidate temp must roll back. Original source
+  bytes unchanged; already-finalized prior output remains intact.
+* The ticket contract's earlier consent, Source/rate change, concurrency,
+  stale and Product destruction tests remain enabled.
+
+**IMPORTANT COVERAGE LIMIT:** This new callback is LOCAL and INERT.
+Actual upstream Source/Project/master-rate/chain mutators, candidate-gate
+invalidation, and any other bypass are NOT yet bound to its epoch.
+No GUI export, production async worker, user file output schema or FQ
+is authorized. Even after a green Focused candidate this restriction
+remains. Before real integration, gate ALL upstream mutations before
+publishing any observable change; maintain the exact M17 stage and
+physical source identity, and define deterministic cancellation/retire.
+No changes to M16 B2i protected blobs or legacy F64 codec.
+
+The new sublots are a coherent **preproduction candidate** for one
+Windows+Linux Focused native CI; they are not independently qualified
+until that run returns terminal. Never promote during an existing CI,
+never merge to main or start M18 FQ without Product Owner authorization.
