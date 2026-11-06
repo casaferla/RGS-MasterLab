@@ -9,7 +9,6 @@
 #include "gold_selection_view_model.hpp"
 #include "mastering_chain_state.hpp"
 #include "master_output_rate_state.hpp"
-#include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "../../../platform/windows/src/internal/m18_owner_mutation_fanout.hpp"
@@ -58,17 +57,6 @@ struct M18ProductControllerBinding final {
         chain.set_private_m18_chain_mutation_admission(
             fanout.status_admission());
         bind_terminal_parameters(terminal,fanout);
-    }
-
-    static void bind_project_save_only(
-        ProjectSessionViewModel& project,const Fanout& fanout)
-    {
-        // Safe intermediate Product wiring. SaveAs owns one real
-        // exclusive epoch through file readback. Open Project is
-        // intentionally FAIL-CLOSED until its full downstream batch
-        // is wired; never mistake this for complete Project support.
-        project.set_private_m18_project_save_batch_begin(
-            fanout.project_save_batch());
     }
 
     static void bind_terminal_parameters(
