@@ -60,6 +60,9 @@ class SourceSelectionTest final : public QObject {
 private slots:
     void initialSuccessCancelFailureRetry();
     void m18SourceMutationDeniedBeforeSelectionAndAcrossThreads();
+    void m18SourceGateCannotUninstallOrNestedSelectDuringAdmission();
+    void m18SourcePublicationRejectsReentrantQtListeners();
+    void m18ThrownAdmissionRecoversWithoutReplacingSource();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
