@@ -189,8 +189,9 @@ public:
         M18ProductExportIdentity currentIdentity) const {
         using R=core::Result<Ticket>;
         std::lock_guard guard{state_->mutex};
-        if(state_->epoch==0 ||!currentIdentity.valid()
-           ||state_->identity!=currentIdentity
+        if(!state_->owner_alive ||state_->epoch==0
+           ||state_->barrier.product_mutation_active()
+           ||!currentIdentity.valid() ||state_->identity!=currentIdentity
            ||!state_->explicit_consent)
             return R::failure(core::Error{
                 core::ErrorCode::AccessDenied,
