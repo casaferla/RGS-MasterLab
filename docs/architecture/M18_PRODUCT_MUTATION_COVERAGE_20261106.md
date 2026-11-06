@@ -120,3 +120,43 @@ never merge to main or start M18 FQ without Product Owner authorization.
 - In same no-CI staging, `app/src/internal/m18_checked_stage_worker_bridge.hpp` captures an exact shared checked M17 stage and a typed Qt-free `M18ProductEpochTicketAuthority::Ticket`. Checks actual manual chain revision and MASTER-rate binding, original manual realized ID, Prepared/Manual source ownership, active post-M16 final_check, and retains the exact AudioBuffer through aliasing shared_ptr without audio copying or QObject access. Uses worker ticket's revocable commit lease factory, never the former synchronous QPointer callback.
 - Real M17 product activation test verifies zero-copy PCM pointer equality for the new bridge, rejects a worker ticket whose output rate matches DAC but not selected MASTER, and still tests four concurrent owner-side mutation denials with the same held lease.
 - IMPORTANT: Typed stage bridge remains a PREPRODUCTION function, not a Product-issued live user export action. It cannot independently prove a current real filesystem SOURCE, Project epoch, or all upstream mutators. The matching Product current owner check and single-writer mutation wiring are prerequisites for any UI/worker enablement.
+
+## Chat #71 — staging after #1056 red / #1057 launched, NEXT macrolot unqualified
+The Product Owner is the sole observer/reporter of CI results from now on.
+The #1056 Windows failure is a STRICT MSVC warning-as-error
+C4834/C2220 from two unchecked `SourceSelectionViewModel::adopt_probed_source`
+returns in the original source metadata smoke; staged
+`2df7fc082b91a28e9a125e787a7d57dc980346d7` fixes BOTH via
+`QVERIFY(Status)`. The PR #84 head was serially advanced to this exact
+SHA and triggered [Focused #1057](https://github.com/casaferla/RGS-MasterLab/actions/runs/42246730038).
+NO polling of #1057 or PR mutation until the Product Owner reports
+both terminal platform results.
+
+Following **staging only**, one cohesive additional mutation-coverage lot:
+1. `MasteringChainState` now owns an optional, runtime-only M18 gate
+   that admits/rejects all FIVE canonical typed changes (Gain/EQ/Compressor/
+   Stereo-M/S parameters and generic bypass) BEFORE changing DSP state.
+   No callback exists by default in any Product instance; original M11-15
+   processing and tests remain unchanged. Guard exceptions deny closed.
+   The runtime guard is excluded from semantic `operator==` so it never
+   becomes project/audio identity. The existing native mastering-chain
+   test suite adds explicit five-way BUSY denial, unchanged old parameters,
+   same chain revision, and explicit opt-in removal to restore normal edits.
+2. `TerminalCandidateGate::try_invalidate_for_m18` is a NEW optional
+   status-returning guarded path. A refused worker-held epoch must leave
+   the original checked M17 stage and ticket untouched; the existing
+   M17 `void invalidate() noexcept` is deliberately unchanged.
+   The real M17 Product test now simulates one held M18 lease denying
+   FIVE distinct mutations (Terminal cancel, Selector target, MASTER
+   rate, M17 limiter BYPASS, and the new candidate invalidation).
+   This does NOT mean the Product uses the guarded candidate path yet.
+
+**HARD BLOCKER, NOT PRODUCTION READY:** Project chain replacement via
+`*masteringChainState_ = ...`, legacy `TerminalCandidateGate::invalidate`,
+several VIEWMODEL draft/undo mutations, and cross-controller Source/Project
+rebinding STILL bypass the new runtime epoch. The actual Product has not
+installed the gate, no M18 worker GUI/export job is activated, no storage
+schema is approved and no FQ/merge is authorized. Do not claim protection
+until every mutator is migrated and a cold Windows FQ plus PO physical
+acceptance are completed. These next-lot changes have NOT been compiled
+or run in #1057 and require their own later exact-SHA Focused CI.
