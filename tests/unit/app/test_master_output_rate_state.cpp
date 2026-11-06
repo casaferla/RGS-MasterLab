@@ -2,6 +2,7 @@
 #include "prepare_memory_advice_source_policy.hpp"
 #include "accepted_prepare_observation_policy.hpp"
 #include <limits>
+#include <stdexcept>
 #include <QSignalSpy>
 #include <QtTest>
 #include <array>
@@ -563,6 +564,44 @@ private slots:
     QCOMPARE(s.rate_revision(),priorRevision+2);
     QCOMPARE(changes.count(),2);
     QCOMPARE(availability.count(),4); // new SOURCE invalidates six QML rows
+ }
+ void m18GuardedSourceRateIdentityAndClearCannotBypassWorkerEpoch(){
+    MasterOutputRateState state;
+    state.source_committed(48000);
+    QVERIFY(state.choose_master_rate(192000));
+    const auto previous=state.rate_revision();
+    QSignalSpy changed{&state,&MasterOutputRateState::changed};
+    std::size_t deniedCalls=0;
+    state.set_private_m18_rate_mutation_admission([&] {
+        ++deniedCalls;
+        return false;
+    });
+    // Same rate but new SOURCE is still a destructive MASTER identity.
+    QVERIFY(!state.try_source_committed_for_m18(48000));
+    QVERIFY(!state.try_source_committed_for_m18(44100));
+    QVERIFY(!state.try_source_cleared_for_m18());
+    QCOMPARE(deniedCalls,std::size_t{3});
+    QCOMPARE(state.source_rate_hz(),qint64{48000});
+    QCOMPARE(state.master_rate_hz(),qint64{192000});
+    QCOMPARE(state.rate_revision(),previous);
+    QCOMPARE(changed.count(),0);
+    state.set_private_m18_rate_mutation_admission([]()->bool {
+        throw std::runtime_error("admission denied");
+    });
+    QVERIFY(!state.try_source_committed_for_m18(48000));
+    QCOMPARE(state.rate_revision(),previous);
+    state.set_private_m18_rate_mutation_admission({});
+    QVERIFY(state.try_source_committed_for_m18(48000));
+    QCOMPARE(state.source_rate_hz(),qint64{48000});
+    QCOMPARE(state.master_rate_hz(),qint64{48000});
+    QCOMPARE(state.rate_revision(),previous+1);
+    QVERIFY(state.try_source_cleared_for_m18());
+    QCOMPARE(state.master_rate_hz(),qint64{0});
+    QCOMPARE(state.source_rate_hz(),qint64{0});
+    QCOMPARE(state.rate_revision(),previous+2);
+    QVERIFY(state.try_source_cleared_for_m18());
+    QCOMPARE(state.rate_revision(),previous+2);
+    QCOMPARE(changed.count(),2);
  }
  void sourceChangeInvalidatesAndUnsupportedFailsClosed(){
     MasterOutputRateState s;s.source_committed(48000);
