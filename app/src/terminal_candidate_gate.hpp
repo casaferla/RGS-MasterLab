@@ -95,6 +95,10 @@ public:
     { return staged_; }
 
 private:
+    // Only the status-returning M18 path may call the actual reset while
+    // an export epoch is configured. Legacy void invalidation is disabled
+    // rather than silently discarding a worker-owned verified candidate.
+    void invalidate_unchecked() noexcept;
     M18MutationAdmission m18MutationAdmission_;
     std::uint64_t ticket_{0};
     std::shared_ptr<const StagedCandidate> staged_;
