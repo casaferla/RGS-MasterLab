@@ -534,13 +534,14 @@ TransactionalAudioExporter::export_new_file(
     return export_impl(
         request.source(),request.payload(),request.destination(),
         request.sample_format(),request.collision_policy(),
-        std::nullopt,std::nullopt,nullptr,nullptr);
+        std::nullopt,std::nullopt,nullptr,nullptr,nullptr);
 }
 
 core::Result<TransactionalAudioExportResult>
 TransactionalAudioExporter::export_new_file(
     const M18TransactionalAudioExportRequest& request,
-    const std::function<bool()>& cancellationRequested)
+    const std::function<bool()>& cancellationRequested,
+    const std::function<void(std::uint64_t,std::uint64_t)>& onEncodedFrames)
 {
     // Request retains the exact immutable M17 AudioBuffer throughout
     // all candidate processing and final commit authorization.
@@ -548,7 +549,8 @@ TransactionalAudioExporter::export_new_file(
         request.source(),request.payload(),request.destination(),
         request.sample_format(),request.collision_policy(),
         request.dither_seed(),request.ceiling_db_tp(),
-        &request.commit_lease_factory(),&cancellationRequested);
+        &request.commit_lease_factory(),&cancellationRequested,
+        &onEncodedFrames);
 }
 
 core::Result<TransactionalAudioExportResult>
@@ -561,7 +563,8 @@ TransactionalAudioExporter::export_impl(
     std::optional<std::uint64_t> seed,
     std::optional<double> ceilingDbTp,
     const M18AcquireCommitLease* commitLeaseFactory,
-    const std::function<bool()>* cancellationRequested)
+    const std::function<bool()>* cancellationRequested,
+    const std::function<void(std::uint64_t,std::uint64_t)>* onEncodedFrames)
 {
     const bool m18=ceilingDbTp.has_value();
     // Cancellation is strictly an M18 worker-level advisory: a failed
@@ -695,6 +698,20 @@ TransactionalAudioExporter::export_impl(
             return cleanup_failure(*write.error(), *candidatePath.value(), false);
         }
         offset += countValue;
+        if(m18 &&onEncodedFrames &&(*onEncodedFrames)) {
+            try {
+                (*onEncodedFrames)(
+                    static_cast<std::uint64_t>(offset),
+                    static_cast<std::uint64_t>(
+                        payload.frame_count().value()));
+            }catch(...) {
+                static_cast<void>(writer.value()->get()->close());
+                return cleanup_failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "m18_export_progress_callback_rejected"},
+                    *candidatePath.value(),false);
+            }
+        }
     }
     auto finalize = writer.value()->get()->finalize();
     if (!finalize) {
