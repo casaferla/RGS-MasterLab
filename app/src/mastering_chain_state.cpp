@@ -460,6 +460,17 @@ Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find
     return registry_->find_descriptor(type_id);
 }
 
+void MasteringChainState::adopt_chain_after_authorized_project_open(
+    MasteringChainState replacement)
+{
+    // Keep the active Product epoch policy when replacing the authoritative
+    // chain from an already-admitted Project transaction. The restored
+    // project's private runtime guard must never overwrite Product policy.
+    auto existing=std::move(m18MutationAdmission_);
+    *this=std::move(replacement);
+    m18MutationAdmission_=std::move(existing);
+}
+
 Status MasteringChainState::admit_m18_chain_mutation(
     const char* operation) const
 {
