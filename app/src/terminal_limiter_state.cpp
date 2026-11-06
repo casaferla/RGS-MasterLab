@@ -39,6 +39,17 @@ core::Status TerminalLimiterState::admit_m18_mutation(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_TERMINAL_MUTATION_WRONG_OWNER_THREAD"});
+    if(m18MutationAdmitting_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_TERMINAL_MUTATION_REENTRANT_ADMISSION_DENIED"});
+    // One stack-only flag, no worker wait or GUI event-loop pumping.
+    // Reentrant state edits are rejected before they can change revisions.
+    m18MutationAdmitting_=true;
+    struct Reset final {
+        bool* flag;
+        ~Reset(){*flag=false;}
+    } reset{&m18MutationAdmitting_};
     try{return m18MutationAdmission_(operation);}
     catch(...) {return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
