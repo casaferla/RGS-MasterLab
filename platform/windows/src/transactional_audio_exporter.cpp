@@ -769,6 +769,16 @@ TransactionalAudioExporter::export_impl(
             : *readback.error();
         return cleanup_failure(error, destinationPath, false);
     }
+    // M18 ONLY: a Qt Product owner can retire while worker readback is
+    // in progress. Revalidate after the final checksum and, if revoked,
+    // remove the new destination while the same commit lease is still held.
+    // The existing IEEE_F64 legacy exporter never enters this branch.
+    if(m18 &&commitLease) {
+        const auto finalAuthority=commitLease->revalidate_current();
+        if(!finalAuthority)
+            return cleanup_failure(
+                *finalAuthority.error(),destinationPath,false);
+    }
     return core::Result<TransactionalAudioExportResult>::success(
         TransactionalAudioExportResult{
             destinationReference,
