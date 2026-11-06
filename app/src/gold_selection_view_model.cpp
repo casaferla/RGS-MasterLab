@@ -11,6 +11,17 @@
 #include <utility>
 
 namespace rgsml::app {
+namespace {
+struct M18GoldPublicationScope final {
+    explicit M18GoldPublicationScope(bool* active) noexcept
+        :active_(active) {if(active_)*active_=true;}
+    M18GoldPublicationScope(const M18GoldPublicationScope&)=delete;
+    M18GoldPublicationScope& operator=(const M18GoldPublicationScope&)=delete;
+    ~M18GoldPublicationScope(){if(active_)*active_=false;}
+private:
+    bool* active_;
+};
+} // namespace
 
 GoldSelectionViewModel::GoldSelectionViewModel(
     AuditionSourceSelector* selector,
@@ -51,6 +62,7 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
     // calls before reading or modifying Qt-owned state, including errors.
     if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
        &&QThread::currentThread()!=thread())return;
+    if(m18GoldAdmitting_ ||m18GoldPublicationActive_)return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         errorMessage_ = QStringLiteral("Choose one local Gold WAV file.");
         emit changed();
@@ -108,6 +120,15 @@ core::Status GoldSelectionViewModel::admit_m18_gold_mutation(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_GOLD_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18GoldAdmitting_||m18GoldPublicationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_MUTATION_REENTRANT_EPOCH_DENIED"});
+    m18GoldAdmitting_=true;
+    struct Reset final {
+        bool* active;
+        ~Reset(){*active=false;}
+    } reset{&m18GoldAdmitting_};
     try{return m18GoldMutationAdmission_(operation);}
     catch(...){return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
