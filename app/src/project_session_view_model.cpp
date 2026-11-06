@@ -742,6 +742,32 @@ core::Status ProjectSessionViewModel::admit_m18_project_mutation(
         "M18_PROJECT_MUTATION_ADMISSION_THROWN"});}
 }
 
+core::Status ProjectSessionViewModel::admit_m18_project_save() const
+{
+    // A batch protects Open Project, but it does NOT silently authorize a
+    // separate .rgsml SaveAs publication. Reject missing/ambiguous policy.
+    if(m18ProjectSaveAdmission_ &&m18ProjectMutationAdmission_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_ADMISSION_MODES_AMBIGUOUS"});
+    if(m18ProjectOpenBatchBegin_ &&!m18ProjectSaveAdmission_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_REQUIRES_SEPARATE_EPOCH_ADMISSION"});
+    if(!m18ProjectSaveAdmission_)
+        return admit_m18_project_mutation("save_project_as");
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18ProjectSaveAdmission_("save_project_as");}
+    catch(...) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_ADMISSION_THROWN"});
+    }
+}
+
 void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 {
     auto reference = read_reference(selectedFile);
@@ -955,13 +981,14 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
     }
+    // Before reading even the draft Project snapshot, refuse an M18
+    // worker-owned epoch. This also covers an Open-batch-only policy,
+    // which otherwise could allow an unguarded Project SaveAs.
+    const auto saveAdmission=admit_m18_project_save();
+    if(!saveAdmission) {publish_error(*saveAdmission.error());return;}
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }
-    // No new Project save/publication while a different M18 worker owns
-    // the current Product epoch. The callback remains uninstalled in L1.
-    const auto saveAdmission=admit_m18_project_mutation("save_project_as");
-    if(!saveAdmission) {publish_error(*saveAdmission.error());return;}
     const auto path = selectedFile.toLocalFile().toUtf8().toStdString();
     const auto name = file.fileName().toUtf8().toStdString();
     auto writeRef = platform::windows::WindowsResourceWriter::make_write_reference(path, name);
