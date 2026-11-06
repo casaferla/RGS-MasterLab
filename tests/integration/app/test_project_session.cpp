@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <stdexcept>
 #include <thread>
 #include <optional>
 #include <filesystem>
@@ -166,6 +167,7 @@ private slots:
     void source_save_open_existing_fail();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
+    void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
@@ -242,6 +244,76 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}!=original);
     session.gold.clearGold();
     QVERIFY(!session.gold.has_gold());
+}
+
+
+void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("batch-save-source.wav"),27,48000U);
+    QVERIFY(!src.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(session.source.has_source());
+    const auto initial=dir.filePath(QStringLiteral("batch-save-initial.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(initial));
+    QVERIFY(QFileInfo::exists(initial));
+    // Installing only an Open Project batch cannot grant an unrelated
+    // SaveAs permission: the new output must not be created.
+    session.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    const auto proposed=dir.filePath(QStringLiteral("batch-save-denied.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    std::size_t saveCalls=0;
+    session.project.set_private_m18_project_save_admission(
+        [&](const char* op)->core::Status {
+            if(op==nullptr)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_SAVE_MISSING_OP"});
+            ++saveCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_SAVE_WORKER_BUSY"});
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{1});
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    // A throw from an installed save gate fails closed before any file
+    // allocation; it cannot be mistaken for an empty successful policy.
+    session.project.set_private_m18_project_save_admission(
+        [&](const char*)->core::Status {
+            ++saveCalls;
+            throw std::runtime_error("M18_PROJECT_SAVE_ADMISSION_THROWN");
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    // Installing two competing SaveAs admission modes must be rejected:
+    // the Project cannot choose the more permissive callback.
+    session.project.set_private_m18_project_save_admission(
+        [&](const char*)->core::Status {
+            ++saveCalls;return core::Status::success();
+        });
+    session.project.set_private_m18_project_mutation_admission(
+        [](const char*)->core::Status {return core::Status::success();});
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    // One unambiguous explicit admission may now authorize a new file.
+    session.project.set_private_m18_project_mutation_admission({});
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{3});
+    QVERIFY(QFileInfo::exists(proposed));
+    QCOMPARE(session.project.error_message(),QString());
+    session.project.set_private_m18_project_open_batch_begin({});
+    session.project.set_private_m18_project_save_admission({});
 }
 
 void ProjectSessionTest::
