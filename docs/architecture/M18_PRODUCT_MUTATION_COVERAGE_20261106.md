@@ -403,3 +403,44 @@ DSP algorithms change.
 **Qualification:** Entire sublot is staging-only, not in Focused #1060,
 and has no new CI yet. Next PR promotion requires the Product Owner's
 #1060 verdict plus an exact-SHA ancestry/diff check. No merge/FQ.
+
+### Post-#1061 staging — Qt owner SOURCE snapshot and source-locator handoff
+The Product Owner reported Focused #1060 GREEN; an exact serial
+fast-forward moved Draft PR #84 to SHA
+`9b0bc8c9ba71249788302d3b8897d05b6d1c4fd3` and launched
+[Focused #1061](https://github.com/casaferla/RGS-MasterLab/actions/runs/42262727474).
+Only the PO checks run results, so this staging lot has NO knowledge of
+the #1061 conclusion.
+
+A subsequent isolated larger macro-lot tightens actual owner provenance:
+- `app/src/internal/m18_owner_source_snapshot.hpp` provides an
+  opt-in **Qt owner thread** capture of the actual selected
+  `SourceSelectionViewModel::source_resource()->reference()`. Fails
+  closed before reading QObject state from a worker thread, when
+  SOURCE is missing, or when the source lacks READ permission. Returns
+  a VALUE copy, not a QObject/pointer sent to worker.
+- `app/src/internal/m18_checked_stage_worker_bridge.hpp` additionally
+  exposes the Product-facing
+  `make_m18_checked_stage_worker_request_from_product_source`
+  overload, which obtains the reference from the real QObject before
+  passing to the already-typed Source/MASTER/epoch identity validator.
+  This overload is inert until a real Product callsite has all upstream
+  mutation gates installed.
+- Existing `tests/ui_smoke/test_source_metadata_panel.cpp` adds a
+  focused Source snapshot regression: no SOURCE must refuse,
+  actual in-memory probed SOURCE must capture its exact identity,
+  wrong-thread worker must reject without dereferencing QObject,
+  capture remains current afterward, and two physically distinct
+  valid WAV paths with identical content must produce DIFFERENT
+  source identity snapshots after selection.
+- Existing Windows real-file delivery test now checks aborted-Project
+  rollback for **both PCM24 and Float32** rather than PCM24 alone.
+- Existing Windows epoch regression covers Product destruction while
+  an exclusive Project mutation token is alive (no stale worker
+  authority thereafter), plus all six rate identities and zero/
+  unsupported generation/rate rejection.
+
+This is NOT active Product export, no GUI control, no new Project
+schema, no new CI target, no DSP/Final SRC change. Source file physical
+identity, symlink/hardlink revalidation and the product-wide mutation
+epoch remain mandatory before enabling a user export.
