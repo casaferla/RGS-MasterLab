@@ -3287,8 +3287,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 done->error()?done->error()->message().c_str()
                              :"no Product export evidence");
             QCOMPARE(done->value()->sample_format(),targetFormat);
-            QCOMPARE(done->value()->frame_count(),
-                     m17View.frame_count());
+            QCOMPARE(done->value()->frame_count().value(),
+                     m17View.frame_count().value());
             QCOMPARE(done->value()->encoded_file_sha256().size(),
                      std::size_t{64});
             QVERIFY(QFileInfo::exists(path));
