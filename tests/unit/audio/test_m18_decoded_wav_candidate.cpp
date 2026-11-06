@@ -1,6 +1,7 @@
 // L1-M18: actual canonical writer -> canonical WavReader -> exact
 // decoded postquant evidence in bounded chunks. No Windows file publication.
 #include "internal/m18_decoded_wav_candidate.hpp"
+#include "internal/m18_wav_candidate.hpp"
 #include "wav_test_support.hpp"
 #include <rgsml/audio/wav_writer.hpp>
 #include <rgsml/core/resource_io.hpp>
