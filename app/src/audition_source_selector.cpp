@@ -43,6 +43,18 @@ constexpr std::int64_t kRealizationBlockFrames = 4096;
         core::ErrorCode::InvalidState, message});
 }
 
+// Owner-thread only. The scoped flag persists through playback handoffs
+// and synchronous Qt signals; no worker thread is ever blocked on it.
+struct M18ScopedAuditionMutation final {
+    explicit M18ScopedAuditionMutation(bool* state) noexcept
+        : state_(state) {if(state_)*state_=true;}
+    M18ScopedAuditionMutation(const M18ScopedAuditionMutation&)=delete;
+    M18ScopedAuditionMutation& operator=(const M18ScopedAuditionMutation&)=delete;
+    ~M18ScopedAuditionMutation(){if(state_)*state_=false;}
+private:
+    bool* state_;
+};
+
 }  // namespace
 
 core::Status AuditionSourceSelector::admit_m18_source_mutation(
@@ -53,6 +65,12 @@ core::Status AuditionSourceSelector::admit_m18_source_mutation(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_SOURCE_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18SourceAdmissionActive_||m18SourcePublicationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_MUTATION_REENTRANT_EPOCH_DENIED"});
+    m18SourceAdmissionActive_=true;
+    M18ScopedAuditionMutation scoped{&m18SourceAdmissionActive_};
     try{return m18MutationAdmission_(operation);}
     catch(...){return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
