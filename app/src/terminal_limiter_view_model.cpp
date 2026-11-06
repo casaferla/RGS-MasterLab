@@ -52,7 +52,7 @@ void TerminalLimiterViewModel::clear_validation()
 bool TerminalLimiterViewModel::setDraftFieldValue(
     const QString& field,double value)
 {
-    if(field!=kField||!state_)return false;
+    if(m18_foreign_owner_thread()||field!=kField||!state_)return false;
     auto valid=dsp::TruePeakLimiterParameters::create(value);
     if(!valid) {
         set_validation(kInvalidRange);
@@ -67,7 +67,7 @@ bool TerminalLimiterViewModel::setDraftFieldValue(
 bool TerminalLimiterViewModel::setDraftFieldText(
     const QString& field,const QString& text)
 {
-    if(field!=kField||!state_)return false;
+    if(m18_foreign_owner_thread()||field!=kField||!state_)return false;
     const auto normalized=text.trimmed();
     bool parsed=false;
     const double value=normalized.isEmpty()?0.0:normalized.toDouble(&parsed);
@@ -78,9 +78,16 @@ bool TerminalLimiterViewModel::setDraftFieldText(
     return setDraftFieldValue(field,value);
 }
 
+bool TerminalLimiterViewModel::m18_foreign_owner_thread() const noexcept
+{
+    return (m18ProcessingMutationAdmission_
+            ||(state_&&state_->m18_mutation_admission_installed()))
+        &&QThread::currentThread()!=thread();
+}
+
 bool TerminalLimiterViewModel::admit_m18_view_mutation() const noexcept
 {
-    if(!state_)return false;
+    if(!state_||m18_foreign_owner_thread())return false;
     // One physical terminal mutation must never advance the Product epoch
     // twice. Either the ViewModel guard OR the direct State guard owns it.
     if(state_->m18_mutation_admission_installed())
@@ -93,7 +100,7 @@ bool TerminalLimiterViewModel::admit_m18_view_mutation() const noexcept
 
 bool TerminalLimiterViewModel::commitDraft()
 {
-    if(!state_||!draftCeilingDbTp_.has_value())return false;
+    if(m18_foreign_owner_thread()||!state_||!draftCeilingDbTp_.has_value())return false;
     if(!validationMessage_.isEmpty())return false;
     auto valid=dsp::TruePeakLimiterParameters::create(*draftCeilingDbTp_);
     if(!valid) {
@@ -125,6 +132,7 @@ bool TerminalLimiterViewModel::commitDraft()
 
 void TerminalLimiterViewModel::cancelDraft()
 {
+    if(m18_foreign_owner_thread())return;
     if(state_)draftCeilingDbTp_=state_->parameters().ceiling_db_tp();
     else draftCeilingDbTp_.reset();
     clear_validation();
@@ -133,7 +141,7 @@ void TerminalLimiterViewModel::cancelDraft()
 
 void TerminalLimiterViewModel::resetToDefault()
 {
-    if(!state_)return;
+    if(m18_foreign_owner_thread()||!state_)return;
     // Use the same DSP constructor/authority as ordinary accepted edits.
     const auto defaults=dsp::TruePeakLimiterParameters::create_default();
     if(!defaults) {
@@ -165,7 +173,7 @@ void TerminalLimiterViewModel::resetToDefault()
 
 void TerminalLimiterViewModel::setBypass(bool value)
 {
-    if(!state_||state_->bypassed()==value)return;
+    if(m18_foreign_owner_thread()||!state_||state_->bypassed()==value)return;
     if(!admit_m18_view_mutation())return;
     auto status=state_->set_user_bypass(value);
     if(!status) {
