@@ -308,6 +308,58 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
         QVERIFY((*task.value())->finished());
         QVERIFY((*task.value())->result_if_finished());
     }
+    // Deterministic race: cancel the nonblocking worker WHILE the
+    // epoch factory is deliberately waiting immediately before commit.
+    // Once admitted, the worker must observe cancellation and remove
+    // the candidate; no destination file or partial evidence may escape.
+    const auto blockedOutput=dir.filePath(
+        QStringLiteral("cancel-while-commit-lease-waits.wav"));
+    const auto sourceReference=WindowsResourceReader::make_read_reference(
+        m18_path(inputPath),m18_path(QFileInfo{inputPath}.fileName()));
+    const auto destinationReference=WindowsResourceWriter::make_write_reference(
+        m18_path(blockedOutput),
+        m18_path(QFileInfo{blockedOutput}.fileName()));
+    QVERIFY(sourceReference&&destinationReference);
+    std::promise<void> atFactory;
+    auto arrived=atFactory.get_future();
+    std::promise<void> releaseFactory;
+    auto mayContinue=releaseFactory.get_future().share();
+    auto lockState=std::make_shared<TestSessionState>();
+    M18AcquireCommitLease pausedFactory=[
+        auth=make_test_commit_authority(lockState),
+        arrived=std::move(atFactory),
+        mayContinue]() mutable
+        ->core::Result<std::unique_ptr<M18ExportCommitLease>> {
+        arrived.set_value();
+        mayContinue.wait();
+        return auth();
+    };
+    // std::function requires a copyable target; put the one-shot
+    // producer into shared ownership without any QObject capture.
+    auto sharedPaused=std::make_shared<M18AcquireCommitLease>(
+        std::move(pausedFactory));
+    auto blockedRequest=M18TransactionalAudioExportRequest::create(
+        *sourceReference.value(),master(audio::ChannelLayout::MONO_C,8193),
+        *destinationReference.value(),audio::WavSampleFormat::PCM_S24,
+        std::optional<std::uint64_t>{UINT64_C(7263)},0.0,
+        ExportCollisionPolicy::FAIL_IF_EXISTS,
+        [sharedPaused]() {return (*sharedPaused)();});
+    QVERIFY(blockedRequest);
+    auto stopped=M18AsyncExportWorker::launch(
+        std::move(*blockedRequest.value()));
+    QVERIFY(stopped);
+    const auto entered=arrived.wait_for(std::chrono::seconds{20});
+    // Release FIRST to ensure no detached job remains blocked if any
+    // subsequent assertion fails.
+    (*stopped.value())->cancel();
+    releaseFactory.set_value();
+    QVERIFY(entered==std::future_status::ready);
+    QTRY_VERIFY_WITH_TIMEOUT((*stopped.value())->finished(),30000);
+    const auto canceled=(*stopped.value())->result_if_finished();
+    QVERIFY(canceled);
+    QVERIFY(!*canceled);
+    QVERIFY(!QFileInfo::exists(blockedOutput));
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
     QFile unchanged{inputPath};
     QVERIFY(unchanged.open(QIODevice::ReadOnly));
     QCOMPARE(unchanged.readAll(),QByteArray("source-stable",13));
