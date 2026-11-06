@@ -1225,3 +1225,53 @@ not claimed compiled. The #1072 SHA is red and cannot qualify this
 newer candidate. Promoting this corrected macrolot requires a
 distinct new Focused Windows/Linux run; still NO main merge or
 Full Qualification until after integrated M18-M22 as PO directed.
+
+### Chat #72 — after #1072 double-compile-red, #1073 dispatched; next SOURCE publication epoch staging
+Focused #1072 compiled neither platform's new controller tests due to
+the new shared binding's accidental `project_session_view_model.hpp`
+dependency; the precise bounded diagnostics and split-Project fix are
+recorded above. Following the 21-commit exact-SHA promotion, Focused
+[#1073](https://github.com/casaferla/RGS-MasterLab/actions/runs/42309556526)
+was started on Draft PR #84 `2b952c182eef7a40ad25b01eadffba7148d8594d`.
+It must be checked by PO. No other CI triggered; no main merge.
+
+The NEXT, fully isolated NO-CI macrolot addresses a separate direct
+SOURCE Product ownership bypass:
+- `SourceSelectionViewModel::adopt_probed_source` formerly admitted
+  its Product epoch only at the first call, then changed SOURCE
+  metadata, invoked a synchronous application-wide
+  `sourceCommittedHandler_`, reconfigured transport and emitted
+  `sourceChanged/sourceStateChanged/errorChanged`. A reentrant Qt
+  callback could start another SOURCE/Project adoption and advance a
+  second epoch before the first publication had completed.
+- When the opt-in M18 gate is installed, a scoped RAII SOURCE
+  publication flag now remains held through that full sequence.
+  Direct nested `adopt_probed_source` fails with InvalidState;
+  QML picker/Qt `selectSource` silently refuses nested publication
+  and foreign-owner-thread calls before probing or emitting errors.
+  The Product admission callback itself is non-reentrant with a
+  separate throwing-safe guard, and cannot uninstall its current
+  authority while executing.
+- SOURCE transport and committed-handler setters are also guarded:
+  no foreign-thread or in-flight Product write can replace the
+  transport or destroy the currently invoked `std::function`.
+  Ordinary M17 behavior without an installed M18 callback is
+  unchanged.
+- Windows native `rgsml_source_selection_tests` now includes
+  callback self-uninstall attempts, recursive SOURCE picker calls,
+  nested direct Project SOURCE adoption, synchronous SOURCE Qt
+  changed listeners, foreign-thread direct probed-source adoption,
+  and throwing callback recovery. No Windows-native SOURCE target
+  was added to portable Linux (cf. #1067 failure).
+
+IMPORTANT: This is NOT sufficient for the full M18 Product export
+gate. `sourceCommittedHandler_` remains a legacy void cascade;
+physical SOURCE metadata is written before that cascade finishes,
+and downstream failures/exception may not be rollback-atomic.
+To safely activate M18, implement an exclusive nested SOURCE/Project
+batch that covers SOURCE, rate, M17 candidate, GOLD/Region and M11-15
+without unhandled partial publication; bind/validate exact current
+verified M17 Master and explicit user consent. This staging is
+**UNCOMPILED**, does not enable Export or QML, and requires a later
+exact-SHA Focused Windows/Linux gate before promotion. Still one
+final Full Qualification after M18–M22, not per milestone.
