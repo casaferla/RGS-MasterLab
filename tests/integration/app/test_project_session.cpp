@@ -1,4 +1,5 @@
 #include "project_session_view_model.hpp"
+#include "internal/m18_product_controller_binding.hpp"
 #include "source_selection_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
@@ -169,6 +170,7 @@ private slots:
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
+    void m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease();
     void m18SaveBatchMissingOrThrowingFailsClosed();
     void m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch();
     void m18NestedProjectCommandsRefusedDuringSaveBatch();
@@ -195,6 +197,53 @@ private slots:
     void product_default_stereo_ms_project_save_open_save_identity();
 };
 
+
+void ProjectSessionTest::
+m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(
+        dir,QStringLiteral("m18-shared-save-source.wav"),36);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto original=dir.filePath(
+        QStringLiteral("m18-shared-before.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(original));
+    QVERIFY(QFileInfo::exists(original));
+    QCOMPARE(session.project.error_message(),QString());
+    const auto target=dir.filePath(
+        QStringLiteral("m18-shared-after.rgsml"));
+    const M18ProductExportIdentity id{41U,42U,43U,0U,48000U,5U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        600U,id);
+    QVERIFY(owner->try_transition(600U,601U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,601U,id};
+    app::internal::M18ProductControllerBinding::bind_project_save_only(
+        session.project,fanout);
+    auto worker=ticket.value()->commit_lease_factory()();
+    QVERIFY(worker);
+    session.project.saveProjectAs(QUrl::fromLocalFile(target));
+    QVERIFY(!QFileInfo::exists(target));
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY((*worker.value())->revalidate_current());
+    worker.value()->reset();
+    session.project.saveProjectAs(QUrl::fromLocalFile(target));
+    QVERIFY(QFileInfo::exists(target));
+    QCOMPARE(session.project.error_message(),QString());
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(fanout.status_admission()("source_edit_after_save"));
+    // Open Project remains fail-closed until its full, distinct nested
+    // SOURCE/MASTER/GOLD exclusive transaction is also bound.
+    session.project.openProject(QUrl::fromLocalFile(original));
+    QVERIFY(!session.project.error_message().isEmpty());
+    session.project.set_private_m18_project_save_batch_begin({});
+}
 
 void ProjectSessionTest::
 m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
