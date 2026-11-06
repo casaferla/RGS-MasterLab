@@ -357,7 +357,15 @@ void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
             return core::Result<std::shared_ptr<const void>>::success(
                 std::move(lease));
         });
+    bool observedFinalPublicationInsideLease=false;
+    QObject::connect(&session.project,&app::ProjectSessionViewModel::changed,
+        &session.project,[&] {
+            if(session.project.status_text()==
+               QStringLiteral("Project saved and verified."))
+                observedFinalPublicationInsideLease=batchHeld;
+        });
     session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QVERIFY(observedFinalPublicationInsideLease);
     QCOMPARE(batchesStarted,std::size_t{1});
     QCOMPARE(batchesReleased,std::size_t{1});
     QVERIFY(!batchHeld);
