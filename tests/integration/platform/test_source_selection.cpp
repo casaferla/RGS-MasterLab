@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 
@@ -269,6 +270,43 @@ m18SourcePublicationRejectsReentrantQtListeners()
     QCOMPARE(changed.count(),2);
     QCOMPARE(errors.count(),0);
     QCOMPARE(model.display_name(),QStringLiteral("m18-qt-reentrant.wav"));
+    model.set_private_m18_source_mutation_admission({});
+}
+
+void SourceSelectionTest::
+m18ThrownAdmissionRecoversWithoutReplacingSource()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=write_file(dir,QStringLiteral("m18-before-throw.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto second=write_file(dir,QStringLiteral("m18-after-throw.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    app::SourceSelectionViewModel model;
+    model.selectSource(QUrl::fromLocalFile(first));
+    QVERIFY(model.has_source());
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    model.set_private_m18_source_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_PRODUCT_SOURCE_GATE_FAULT");
+        });
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(model.display_name(),QStringLiteral("m18-before-throw.wav"));
+    QCOMPARE(changed.count(),0);
+    QVERIFY(!model.error_message().isEmpty());
+
+    std::size_t subsequentAdmission=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++subsequentAdmission;
+            return core::Status::success();
+        });
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(subsequentAdmission,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-after-throw.wav"));
+    QVERIFY(model.error_message().isEmpty());
     model.set_private_m18_source_mutation_admission({});
 }
 
