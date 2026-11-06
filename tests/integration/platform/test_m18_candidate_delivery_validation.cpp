@@ -205,6 +205,7 @@ private slots:
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
     void retiredProductMutationFanoutRejectsCachedControllerCallbacks();
+    void productMutationFanoutRejectsOverflowAndInvalidOperations();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
@@ -288,6 +289,38 @@ retiredProductMutationFanoutRejectsCachedControllerCallbacks()
     // Product authority lifetime itself is separate from this adapter.
     // The future app must destroy/revoke both together; neither this
     // test nor the adapter grants a fresh export ticket.
+}
+
+void M18CandidateDeliveryValidationTest::
+productMutationFanoutRejectsOverflowAndInvalidOperations()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    constexpr auto max=std::numeric_limits<std::uint64_t>::max();
+    const M18ProductExportIdentity maxGeneration{
+        14U,15U,max,0U,48000U,0U};
+    auto authority=std::make_shared<M18ProductEpochTicketAuthority>(
+        49U,maxGeneration);
+    M18OwnerMutationFanout g{authority,49U,maxGeneration};
+    QVERIFY(!g.status_admission()("gain_change"));
+    QVERIFY(!g.rate_admission()());
+    // The gate must also deny absent operation tags before consuming a
+    // generation, leaving the accepted Product identity unmodified.
+    const M18ProductExportIdentity valid{
+        14U,15U,16U,0U,48000U,0U};
+    auto current=std::make_shared<M18ProductEpochTicketAuthority>(72U,valid);
+    M18OwnerMutationFanout normal{current,72U,valid};
+    const auto gate=normal.status_admission();
+    QVERIFY(!gate(nullptr));
+    QVERIFY(!gate(""));
+    QVERIFY(gate("source_committed"));
+    const auto stale=normal.status_admission();
+    QVERIFY(stale("source_committed_same_fs"));
+    auto exhausted=std::make_shared<M18ProductEpochTicketAuthority>(
+        max,valid);
+    M18OwnerMutationFanout last{exhausted,max,valid};
+    QVERIFY(!last.status_admission()("source_committed"));
 }
 
 void M18CandidateDeliveryValidationTest::
