@@ -203,6 +203,13 @@ public:
     // Session and output identity must be rechecked before any file commit.
     [[nodiscard]] std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
     capture_m18_verified_master_for_read(core::SampleRate selectedMasterRate) const;
+    // M18 private, owner-thread-only immutable M17 STAGE snapshot.
+    // Unlike a PCM-only provider, this preserves the exact checked M16
+    // terminal candidate and original MANUAL identity for worker ticket
+    // admission. Never grants an export right or changes audible state.
+    [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+    capture_m18_verified_stage_for_worker(
+        core::SampleRate selectedMasterRate) const;
     // PREPRODUCTION synchronous Product->M18 authorizer, no Q_INVOKABLE/UI.
     // Must be invoked on this QObject's owning thread. Caller supplies an
     // explicit, non-reentrant Product consent predicate. The transaction
