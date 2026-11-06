@@ -14,12 +14,15 @@
 namespace rgsml::app::internal {
 
 // Consumes only an immutable M17 stage plus an UNFORGEABLE Product ticket.
-// The caller MUST capture the exact currently verified Product stage on its
-// Qt owner thread. Nothing here may call a QObject or grant a FILE commit;
+// The caller MUST supply its authoritative TerminalCandidateGate AND the
+// identical current staged pointer, then capture the Product epoch ticket
+// on the same Qt owner thread, without event-loop reentrancy.
+// Nothing here may call a QObject or grant a FILE commit;
 // the worker's first actual lease is obtained by Windows after encoding.
 [[nodiscard]] inline
 core::Result<platform::windows::M18TransactionalAudioExportRequest>
 make_m18_checked_stage_worker_request(
+    const TerminalCandidateGate& currentProductGate,
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> stage,
     const platform::windows::internal::
         M18ProductEpochTicketAuthority::Ticket& productTicket,
@@ -33,6 +36,10 @@ make_m18_checked_stage_worker_request(
     using R=core::Result<Request>;
     const auto id=productTicket.identity();
     if(!id.valid() ||productTicket.epoch()==0 ||!stage
+       // Product-owner thread MUST supply the exact currently staged M17
+       // MASTER from the authoritative candidate gate, never a detached
+       // old pointer retained after SOURCE/Project replacement.
+       ||currentProductGate.staged()!=stage
        ||!stage->prepared_owner ||!stage->rendered.manual_owner
        ||stage->original_manual_realization_id.value==0
        // Zero is an admissible initial M17/MANUAL chain revision. The
