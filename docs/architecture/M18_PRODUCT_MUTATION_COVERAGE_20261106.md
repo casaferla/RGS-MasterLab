@@ -360,3 +360,9 @@ consent transition, then verify later revocation and worker rejection.
 No Product QML hook, export enablement, legacy M17 changes, project-file
 schema change, or direct source writer permission are made. This sublot
 is **uncompiled until a later exact-SHA Focused CI**.
+
+### Additional #71 no-CI sublot — strict M17 candidate pointer for M18 worker
+Previously the typed M17→M18 bridge could accept any retained `StagedCandidate` pointer provided by its caller, as long as output rate and manual chain revision matched the Product ticket. This left a same-rate/same-revision detached previous-Project buffer plausible before the real Product was wired.
+The signature now also requires `const TerminalCandidateGate& currentProductGate` and rejects unless `currentProductGate.staged() == stage` on the one Product owner thread. This check precedes zero-copy alias construction or worker lease factory publication. The native M17 Product test passes its real current candidate gate for all valid, wrong-Fs and wrong-chain cases and adds a regression with a distinct empty gate + the exact same valid ticket and old stage: the request MUST fail `InvalidState`.
+Together with the monotonic epoch and Product mutation contract, a new request must originate from the actual current M17 candidate; a retained old buffer cannot be reused after candidate-gate replacement. This does NOT yet prove the physical file Source identity; authoritative SourceSelectionViewModel reference, Project generation and fully-wired mutations remain mandatory at real GUI activation.
+These test and bridge changes are STAGING ONLY, not part of Focused #1060 and not yet compiled on Windows or Linux. Do not promote while #1060 is awaiting Product Owner verdict.
