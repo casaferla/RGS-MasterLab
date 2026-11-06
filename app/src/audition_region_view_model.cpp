@@ -285,13 +285,29 @@ core::Status AuditionRegionViewModel::admit_m18_region_mutation(
 
 core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
 {
-    if(const auto admission=admit_m18_region_mutation("region_set");
-       !admission)return admission;
+    if(m18_foreign_owner_thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&m18RegionOperationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_NESTED_PUBLICATION_DENIED"});
+    M18RegionPublicationScope scope{
+        m18RegionMutationAdmission_?&m18RegionOperationActive_:nullptr};
+    (void)scope;
+    // Invalid and identical selections cannot advance Product export epoch.
+    // Legacy M17 re-evaluation of an unchanged loop is preserved when
+    // optional M18 admission is not configured.
     const auto valid = validate(candidate);
     if (!valid) {
         publish_error(*valid.error());
         return valid;
     }
+    if(m18RegionMutationAdmission_ &&region_ &&*region_==candidate)
+        return core::Status::success();
+    if(const auto admission=admit_m18_region_mutation("region_set");
+       !admission)return admission;
     if (loopEnabled_) {
         if (!playback_) {
             const auto failure = core::Status::failure(core::Error{
