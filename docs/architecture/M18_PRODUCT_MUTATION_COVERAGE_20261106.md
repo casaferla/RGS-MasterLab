@@ -699,3 +699,44 @@ No CI/FQ/main promotion is authorized by this sublot.
 These are independent staging commits only. They are **uncompiled and
 unqualified** until a future coherent exact-SHA Focused CI, and do
 not enable M18 Export, add GUI controls, or alter frozen M16 DSP.
+
+### Chat #72 — post-#1064 admission batch and CI #1065 (PREPRODUCTION)
+PO confirmed #1064 Windows+Linux SUCCESS. Draft PR #84 was promoted ONCE
+by expected-SHA fast-forward from `c49c2d5ef921b00d2ff5c174e981c5e3eccb98dd`
+to `8f19dcc0b8262fd2014eccba9d87eec4122429da`, strictly 27 ahead,
+0 behind, with no protected M16 B2i source changes. This triggered exactly
+one Focused [#1065](https://github.com/casaferla/RGS-MasterLab/actions/runs/42278593611)
+Windows+Linux on SHA `8f19dcc0`. **Result belongs to the PO; no CI log
+polling or premature PR movement.** Main has not changed.
+
+Following the promotion, the separate NO-CI staging adds a new cohesive
+admission/negative-test sublot:
+
+- New M18 opt-in `MasterOutputRateState::try_source_committed_for_m18`
+  and `try_source_cleared_for_m18` reject worker-held BUSY, foreign-thread
+  admission and throwing gate BEFORE SOURCE-rate/revision Qt notification.
+  Exact same-48k SOURCE reselection must advance revision if authorized,
+  not bypass the gate as a no-op. Uninstalled legacy void APIs unchanged;
+  **all real Product callsites still need migration**.
+- `choose_master_rate` now reuses the same fail-closed owner-thread
+  guarded mutation check rather than directly invoking a callback which
+  could accidentally be called from a foreign worker.
+- `SourceSelectionViewModel::selectSource` checks owner thread BEFORE
+  Qt path/error processing when the optional Product gate is installed.
+  Existing native SOURCE tests prove busy rejection, same SOURCE retention,
+  no wrong-thread error/signals, and successful legacy restoration when
+  the opt-in guard is removed.
+- Existing native MASTER-rate tests prove denied same-rate SOURCE rebind,
+  distinct-rate change, clear, throwing callback and subsequent accepted
+  mutation/revision notifications.
+- Native real Project-open batch test now serializes and asserts a nested
+  SOURCE selection, an accepted 192k Project MASTER restoration and a GOLD
+  adoption all under the SAME RAII Project mutation batch. Their callbacks
+  reject changes outside the batch; the Product batch must be released
+  at function exit. New test remains uncompiled until a later CI.
+
+**Still not Product wired:** none of these new opt-in guards is installed in
+`app/src/main.cpp`; unguarded legacy void paths can still bypass M18;
+Project-open can partially adopt SOURCE before a rejected nested MASTER
+restore, even though export consent must remain revoked. No GUI Export,
+Product schema/seed approval, physical test, FQ or main merge is authorized.
