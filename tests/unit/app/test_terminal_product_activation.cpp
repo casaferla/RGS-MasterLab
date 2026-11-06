@@ -3200,6 +3200,33 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!unreadableRequest);
         QCOMPARE(unreadableRequest.error()->code(),
                  core::ErrorCode::InvalidState);
+        // A write-authorized reference still may not alias the exact
+        // SOURCE provider/locator. Physical aliases are checked by Windows
+        // again at commit time.
+        auto sameFileDest=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator(),
+            false,true,"forbidden-alias");
+        QVERIFY(sameFileDest);
+        const auto aliasDestination=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*src.value(),*sameFileDest.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!aliasDestination);
+        QCOMPARE(aliasDestination.error()->code(),
+                 core::ErrorCode::InvalidState);
+        auto noWriteDest=core::ResourceReference::create(
+            dst.value()->provider_id(),dst.value()->locator(),
+            true,false,"forbidden-read-only-destination");
+        QVERIFY(noWriteDest);
+        const auto unwritableDestination=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*src.value(),*noWriteDest.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!unwritableDestination);
+        QCOMPARE(unwritableDestination.error()->code(),
+                 core::ErrorCode::InvalidState);
         // A retained M17 stage from another/retired Product candidate gate
         // can never use a current ticket to publish a different MASTER.
         app::TerminalCandidateGate detachedGate;
