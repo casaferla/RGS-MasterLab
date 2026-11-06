@@ -3,6 +3,7 @@
 // shipping export action. A real Product must first atomically bind every
 // authoritative upstream mutation to the identical single-writer epoch.
 #include "../terminal_candidate_gate.hpp"
+#include "m18_owner_source_snapshot.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/core/error.hpp>
@@ -77,5 +78,35 @@ make_m18_checked_stage_worker_request(
         targetFormat,pcm24Seed,ceilingDbTp,
         platform::windows::ExportCollisionPolicy::FAIL_IF_EXISTS,
         productTicket.commit_lease_factory());
+}
+
+// Product-facing preproduction overload: obtain SOURCE from the ACTUAL
+// current SourceSelectionViewModel on the Qt owner thread. No worker may
+// supply or reconstruct this authoritative reference from a file dialog,
+// old project snapshot, or matching filename alone. The retained stage and
+// epoch ticket are then checked by the shared pure request builder.
+[[nodiscard]] inline
+core::Result<platform::windows::M18TransactionalAudioExportRequest>
+make_m18_checked_stage_worker_request_from_product_source(
+    const SourceSelectionViewModel& currentProductSource,
+    const TerminalCandidateGate& currentProductGate,
+    std::shared_ptr<const TerminalCandidateGate::StagedCandidate> stage,
+    const platform::windows::internal::
+        M18ProductEpochTicketAuthority::Ticket& productTicket,
+    core::ResourceReference source,
+    core::ResourceReference destination,
+    audio::WavSampleFormat targetFormat,
+    std::optional<std::uint64_t> pcm24Seed,
+    double ceilingDbTp)
+{
+    using R=core::Result<
+        platform::windows::M18TransactionalAudioExportRequest>;
+    const auto provenance=
+        capture_m18_current_source_on_product_owner(currentProductSource);
+    if(!provenance)return R::failure(*provenance.error());
+    return make_m18_checked_stage_worker_request(
+        currentProductGate,std::move(stage),productTicket,
+        *provenance.value(),std::move(source),std::move(destination),
+        targetFormat,pcm24Seed,ceilingDbTp);
 }
 } // namespace rgsml::app::internal
