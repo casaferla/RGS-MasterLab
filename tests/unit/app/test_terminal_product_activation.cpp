@@ -3245,6 +3245,15 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 *boundTicket.value(),liveSource->reference(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(correctProductWorkerRequest);
+        // A ticket and verified M17 MASTER do not authorize export while
+        // the Product has NO real current SOURCE selected in its QObject.
+        app::SourceSelectionViewModel noCurrentProductSource;
+        const auto deniedMissingCurrentSource=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,noCurrentProductSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedMissingCurrentSource);
         QVERIFY(correctProductWorkerRequest.value()->payload()
                 .channel(0U).value()->data()
             ==m17View.channel(0U).value()->data());
