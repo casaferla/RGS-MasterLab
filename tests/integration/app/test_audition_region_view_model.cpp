@@ -111,6 +111,7 @@ private slots:
     void failureAndSourceReplacementRemainTruthful();
     void m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate();
     void m18InvalidOrUnchangedRegionNeverConsumesProductEpoch();
+    void m18NestedRegionMutationDuringChangedSignalIsRejected();
 };
 
 void AuditionRegionViewModelTest::
@@ -248,6 +249,56 @@ m18InvalidOrUnchangedRegionNeverConsumesProductEpoch()
     QVERIFY(model.seek(core::FrameIndex{44}));
     QCOMPARE(admissionCalls,std::size_t{1});
     QCOMPARE(observed->position.value(),std::int64_t{44});
+}
+
+void AuditionRegionViewModelTest::
+m18NestedRegionMutationDuringChangedSignalIsRejected()
+{
+    auto fake=std::make_unique<RegionPlaybackFake>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionRegionViewModel model{&transport};
+    model.source_committed(
+        *core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    model.set_waveform_ready(true);
+    QVERIFY(model.set_region(range(20,120)));
+    std::size_t admitted=0;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admitted;
+            return core::Status::success();
+        });
+    std::size_t callbacks=0;
+    std::size_t nestedDenied=0;
+    QObject::connect(&model,&app::AuditionRegionViewModel::changed,
+        &model,[&] {
+            ++callbacks;
+            // A synchronous listener cannot change the Region again
+            // until the originally admitted publication is complete.
+            const auto attempt=model.clear_region();
+            if(!attempt &&attempt.error()->code()
+                ==core::ErrorCode::InvalidState)++nestedDenied;
+        });
+    QVERIFY(model.set_region(range(30,110)));
+    QCOMPARE(model.region(),std::optional{range(30,110)});
+    QCOMPARE(admitted,std::size_t{1});
+    QVERIFY(callbacks>=1);
+    QCOMPARE(nestedDenied,callbacks);
+    QCOMPARE(observed->setLoopCalls,0);
+    QVERIFY(model.set_loop_enabled(true));
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(admitted,std::size_t{2});
+    QCOMPARE(nestedDenied,callbacks);
+    QVERIFY(model.clear_region());
+    QVERIFY(!model.has_region());
+    QCOMPARE(admitted,std::size_t{3});
+    QCOMPARE(nestedDenied,callbacks);
+    // RAII sentinel is released after every operation, so the new
+    // independent edit can still be admitted on the same owner thread.
+    QVERIFY(model.set_region(range(40,100)));
+    QCOMPARE(admitted,std::size_t{4});
+    QCOMPARE(model.region(),std::optional{range(40,100)});
 }
 
 void AuditionRegionViewModelTest::exactRegionAndTimeEditing()
