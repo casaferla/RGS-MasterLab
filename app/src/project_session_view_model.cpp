@@ -20,6 +20,7 @@
 #include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 #include <QUuid>
 
 #include <algorithm>
@@ -727,6 +728,20 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
 }
 
+core::Status ProjectSessionViewModel::admit_m18_project_mutation(
+    const char* operation) const
+{
+    if(!m18ProjectMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18ProjectMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_PROJECT_MUTATION_ADMISSION_THROWN"});}
+}
+
 void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 {
     auto reference = read_reference(selectedFile);
@@ -788,6 +803,11 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     auto chainCandidate = validate_mastering_chain(doc, *registryRes.value(), uuidFactory_);
     if (!chainCandidate) { publish_error(*chainCandidate.error()); return; }
 
+    // Source/Gold/MASTER/chain/project identity all change below this
+    // boundary. Product epoch admission must happen BEFORE stopping any
+    // current sink or adopting the newly opened Project.
+    const auto openAdmission=admit_m18_project_mutation("open_project");
+    if(!openAdmission) {publish_error(*openAdmission.error());return;}
     isCommittingProjectOpen_ = true;
 
     auto stopped = playback_->stop_and_clear();
@@ -886,6 +906,10 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }
+    // No new Project save/publication while a different M18 worker owns
+    // the current Product epoch. The callback remains uninstalled in L1.
+    const auto saveAdmission=admit_m18_project_mutation("save_project_as");
+    if(!saveAdmission) {publish_error(*saveAdmission.error());return;}
     const auto path = selectedFile.toLocalFile().toUtf8().toStdString();
     const auto name = file.fileName().toUtf8().toStdString();
     auto writeRef = platform::windows::WindowsResourceWriter::make_write_reference(path, name);
