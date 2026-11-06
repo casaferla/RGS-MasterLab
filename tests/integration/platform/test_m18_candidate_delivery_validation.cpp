@@ -816,6 +816,23 @@ productEpochTicketConsentAndMasterIdentityAreWorkerSafe()
     QVERIFY(captured);
     const auto factory=captured.value()->commit_lease_factory();
 
+    // The worker is allowed to acquire ONLY an immutable factory lease.
+    // Minting consent, advancing generations or capturing a new ticket
+    // from an alien thread must be rejected even if the epoch is current.
+    bool deniedAllOwnerOperations=false;
+    std::thread foreignOwner([&] {
+        const auto forbiddenCapture=authority.capture(id);
+        const auto forbiddenTransition=authority.try_transition(
+            201U,202U,id,false);
+        const auto forbiddenBatch=authority.try_begin_product_mutation(
+            201U,202U,id,false);
+        deniedAllOwnerOperations=!forbiddenCapture
+            &&!forbiddenTransition &&!forbiddenBatch;
+    });
+    foreignOwner.join();
+    QVERIFY(deniedAllOwnerOperations);
+    QVERIFY(authority.capture(id)); // no epoch change or lost consent
+
     std::promise<bool> admission;
     auto ready=admission.get_future();
     std::promise<void> release;
