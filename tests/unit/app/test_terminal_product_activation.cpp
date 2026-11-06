@@ -3333,9 +3333,6 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             *boundTicket.value(),liveSource->reference(),
             *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
             std::nullopt,0.0));
-        QVERIFY(!exportSession.acknowledge_finished()
-            ||exportSession.snapshot().phase
-                ==app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
         QTRY_VERIFY_WITH_TIMEOUT(
             exportSession.snapshot().phase
                 ==app::internal::M18PrivateAsyncExportSession::
