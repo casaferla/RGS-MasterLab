@@ -508,6 +508,9 @@ core::Status AuditionSourceSelector::set_gold(
 {
     if(const auto admission=admit_m18_source_mutation("set_gold");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if (source_) {
         if (source_->same_resource_identity(reference)) {
@@ -549,6 +552,9 @@ core::Status AuditionSourceSelector::clear_gold()
         return core::Status::success();
     if(const auto admission=admit_m18_source_mutation("clear_gold");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     const bool wasGold = activeTarget_ == AuditionTarget::GOLD;
     if (wasGold) {
@@ -597,6 +603,9 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
     }
     if(const auto admission=admit_m18_source_mutation("switch_target");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     return switch_to_after_authorized_mutation(target);
 }
 
@@ -679,6 +688,9 @@ core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
 {
     if(const auto admission=admit_m18_source_mutation("restore_manual");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     auto refuse=[](const char* message) -> core::Status {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,message});
