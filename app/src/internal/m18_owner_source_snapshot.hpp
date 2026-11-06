@@ -7,6 +7,7 @@
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/error.hpp>
 #include <QThread>
+#include <new>
 
 namespace rgsml::app::internal {
 
@@ -28,6 +29,14 @@ capture_m18_current_source_on_product_owner(
     // Value-copy provider+opaque locator+permissions at the same owner
     // epoch as the verified M17 stage. Nothing here opens files, transfers
     // QObject references to workers or authorizes a destination commit.
-    return R::success(source->reference());
+    try {
+        return R::success(source->reference());
+    } catch(const std::bad_alloc&) {
+        // An OOM while copying opaque provider/locator metadata must not
+        // mint a worker request with a missing or guessed SOURCE owner.
+        return R::failure(core::Error{
+            core::ErrorCode::IoFailure,
+            "M18_PRODUCT_SOURCE_REFERENCE_SNAPSHOT_ALLOCATION_FAILED"});
+    }
 }
 } // namespace rgsml::app::internal
