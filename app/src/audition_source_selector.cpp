@@ -190,6 +190,9 @@ core::Status AuditionSourceSelector::authorize_offline_processed_for_final_maste
 {
     if(const auto admission=admit_m18_source_mutation("authorize_offline");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||!playback_
        ||!prepared_ ||!processed_ ||!processedRealizationId_
@@ -352,6 +355,9 @@ core::Status AuditionSourceSelector::source_committed(
 {
     if(const auto admission=admit_m18_source_mutation("source_committed");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if(sourceEpoch_==std::numeric_limits<std::uint64_t>::max())
         return unavailable("OFFLINE_MASTER_SOURCE_EPOCH_EXHAUSTED");
@@ -398,6 +404,9 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 {
     if(const auto admission=admit_m18_source_mutation("set_prepared");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PREPARED) {
         auto cleared = playback_->stop_and_clear();
@@ -416,6 +425,9 @@ core::Status AuditionSourceSelector::set_processed_realization(
 {
     if(const auto admission=admit_m18_source_mutation("set_processed");
        !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if (nextRealizationIdValue_
         == std::numeric_limits<std::uint64_t>::max()) {
