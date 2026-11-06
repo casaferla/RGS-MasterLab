@@ -22,6 +22,12 @@ struct M18ProductExportIdentity final {
     // Compare the exact value, but never mistake zero for an absent chain.
     std::uint64_t chain_revision{0};
     std::uint32_t master_rate_hz{0};
+    // Optional in the Qt-free standalone ticket contract. Mandatory for
+    // the real Product-facing handoff: MasterOutputRateState increments
+    // this revision for EVERY SOURCE commit, including same-rate or
+    // same-path reselection, and for actual PROJECT MASTER rate edits.
+    // Unlike SOURCE Fs, this identifies a specific accepted selection.
+    std::uint64_t master_rate_revision{0};
 
     [[nodiscard]] bool valid() const noexcept {
         const bool rate=master_rate_hz==44100U ||master_rate_hz==48000U
