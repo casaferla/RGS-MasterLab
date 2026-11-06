@@ -3254,6 +3254,13 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 *boundTicket.value(),liveSource->reference(),*dst.value(),
                 audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
         QVERIFY(!deniedMissingCurrentSource);
+        app::MasterOutputRateState noCurrentProductRate;
+        const auto deniedMissingCurrentRate=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,noCurrentProductRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedMissingCurrentRate);
         QVERIFY(correctProductWorkerRequest.value()->payload()
                 .channel(0U).value()->data()
             ==m17View.channel(0U).value()->data());
