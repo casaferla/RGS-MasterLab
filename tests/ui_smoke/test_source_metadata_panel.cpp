@@ -558,8 +558,9 @@ sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
         auto found=audio::SourceResource::probe(
             wav_support::memory_reader(std::move(binary),control));
         if(!found)return false;
-        source.adopt_probed_source(std::move(*found.value()));
-        return source.has_source();
+        const auto adopted=source.adopt_probed_source(
+            std::move(*found.value()));
+        return static_cast<bool>(adopted)&&source.has_source();
     };
     QVERIFY(load());
     QCOMPARE(source.sample_rate_hz(),qint64{44100});
