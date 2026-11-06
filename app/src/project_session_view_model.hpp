@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <optional>
+#include <memory>
 #include <utility>
 
 namespace rgsml::app {
@@ -66,6 +67,17 @@ public:
     void set_private_m18_project_mutation_admission(
         M18ProjectMutationAdmission gate)
     {m18ProjectMutationAdmission_=std::move(gate);}
+    // M18 PREPRODUCTION: optional one-shot Product batch transaction,
+    // acquired BEFORE stopping the transport and kept alive until the
+    // entire Project-open function has returned (including error paths).
+    // Product may install this INSTEAD of a per-step open admission.
+    // This opaque RAII token must itself own the genuine exclusive epoch
+    // batch lease and is never sent to a worker. No GUI caller sets it.
+    using M18ProjectOpenBatchBegin=
+        std::function<core::Result<std::shared_ptr<const void>>()>;
+    void set_private_m18_project_open_batch_begin(
+        M18ProjectOpenBatchBegin begin)
+    {m18ProjectOpenBatchBegin_=std::move(begin);}
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
@@ -107,6 +119,7 @@ private:
     MasteringPreviewController* previewController_{nullptr};
     MasterOutputRateState* masterOutputRateState_{nullptr};
     M18ProjectMutationAdmission m18ProjectMutationAdmission_;
+    M18ProjectOpenBatchBegin m18ProjectOpenBatchBegin_;
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
