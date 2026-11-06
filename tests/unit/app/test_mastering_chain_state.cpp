@@ -1095,12 +1095,19 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     QVERIFY(gate.staged());
     QCOMPARE(gate.staged().get(),activeStaged.get());
     QCOMPARE(retirementAttempts,std::size_t{1});
-    QVERIFY(!gate.try_invalidate_for_m18());
+    // Malformed replacement also attempts an explicit Product retirement.
+    // BUSY must preserve the old exact M17 PCM, not silently discard it.
+    const auto malformedWhileWorkerBusy=gate.capture(
+        owner,{},identity,*manual.value(),*terminal.value(),outputRate);
+    QVERIFY(!malformedWhileWorkerBusy);
     QCOMPARE(retirementAttempts,std::size_t{2});
+    QCOMPARE(gate.staged().get(),activeStaged.get());
+    QVERIFY(!gate.try_invalidate_for_m18());
+    QCOMPARE(retirementAttempts,std::size_t{3});
     QVERIFY(gate.staged());
     allowRetirement=true;
     QVERIFY(gate.try_invalidate_for_m18());
-    QCOMPARE(retirementAttempts,std::size_t{3});
+    QCOMPARE(retirementAttempts,std::size_t{4});
     QVERIFY(!gate.staged());
     gate.set_private_m18_mutation_admission({});
     gate.invalidate();
