@@ -47,6 +47,9 @@ const audio::SourceResource* GoldSelectionViewModel::gold_resource() const noexc
 
 void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
 {
+    // Once the private Product gate is installed, reject foreign-thread
+    // calls before reading or modifying Qt-owned state, including errors.
+    if(m18GoldMutationAdmission_ &&QThread::currentThread()!=thread())return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         errorMessage_ = QStringLiteral("Choose one local Gold WAV file.");
         emit changed();
@@ -136,6 +139,7 @@ void GoldSelectionViewModel::cancelGoldSelection() noexcept
 
 void GoldSelectionViewModel::clearGold()
 {
+    if(m18GoldMutationAdmission_ &&QThread::currentThread()!=thread())return;
     const auto admission=admit_m18_gold_mutation("gold_clear");
     if(!admission) {
         errorMessage_=QString::fromStdString(admission.error()->message());
