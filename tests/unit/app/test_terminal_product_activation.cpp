@@ -3088,6 +3088,25 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 ==std::optional<std::uint64_t>{UINT64_C(42)});
         const auto original=candidates.staged();
         QVERIFY(original);
+        // The real Product session, not a forged stage pointer, now
+        // supplies an exact verified M17 snapshot for a future async
+        // worker request. No Qt object may be read by that worker.
+        const auto productStage=
+            product.capture_m18_verified_stage_for_worker(
+                *masterRate.value());
+        QCOMPARE(productStage,original);
+        QVERIFY(!product.capture_m18_verified_stage_for_worker(
+            *deviceRate.value())); // DAC rate is not MASTER rate.
+        bool workerDeniedStage=false;
+        std::thread illicitOwner([&] {
+            workerDeniedStage=
+                !product.capture_m18_verified_stage_for_worker(
+                    *masterRate.value());
+        });
+        illicitOwner.join();
+        QVERIFY(workerDeniedStage);
+        QCOMPARE(product.capture_m18_verified_stage_for_worker(
+            *masterRate.value()),original);
         // PREPRODUCTION owner-thread mutation admission: a held export
         // epoch must deny Product cancellation without clearing the true
         // M17 MASTER or changing the audible manual predecessor.
