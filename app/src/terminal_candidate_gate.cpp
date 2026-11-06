@@ -65,8 +65,17 @@ TerminalCandidateGate::capture(
             "M17 cannot capture an incomplete or unowned manual/terminal realization."));
     }
     if(ticket_>=std::numeric_limits<std::uint64_t>::max()-1) {
-        staged_.reset();
-        stagedMeasured_.reset();
+        // A finite counter may never wrap/reuse an old export identity.
+        // This rare failure must respect the same M18 worker commit
+        // lease before retiring an already verified stage.
+        if(m18MutationAdmission_) {
+            const auto retired=try_invalidate_for_m18();
+            if(!retired)
+                return core::Result<Capture>::failure(*retired.error());
+        }else {
+            staged_.reset();
+            stagedMeasured_.reset();
+        }
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_TICKET_EXHAUSTED",
             "Terminal candidate admission sequence exhausted."));
