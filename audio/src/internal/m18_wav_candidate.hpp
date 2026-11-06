@@ -192,8 +192,12 @@ struct M18WavCandidate {
         std::vector<std::uint8_t> result(
             static_cast<std::size_t>(p.plan.file_bytes),0U);
         std::copy(header.begin(),header.end(),result.begin());
+        // RIFF/RF64 pads an odd-sized data chunk with one ZERO byte.
+        // Only the logical PCM payload may enter the codec; the pad
+        // remains an untouched, zero-initialized container byte.
         const auto payload=std::span<std::uint8_t>{result}.subspan(
-            p.plan.header_bytes);
+            p.plan.header_bytes,
+            static_cast<std::size_t>(p.plan.data_bytes));
         const auto c=spec.encoding==M18WavEncoding::PCM24
             ?m18_pcm24_block(interleaved,spec.channels,
                 first_absolute_output_frame,spec.dither_seed,payload)
