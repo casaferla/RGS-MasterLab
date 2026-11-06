@@ -35,7 +35,8 @@ make_m18_checked_stage_worker_request(
     if(!id.valid() ||productTicket.epoch()==0 ||!stage
        ||!stage->prepared_owner ||!stage->rendered.manual_owner
        ||stage->original_manual_realization_id.value==0
-       ||stage->rendered.manual_chain_revision==0
+       // Zero is an admissible initial M17/MANUAL chain revision. The
+       // next equality check pins it exactly, including zero.
        ||stage->rendered.manual_chain_revision!=id.chain_revision
        ||stage->rendered.output_rate.value()!=id.master_rate_hz
        ||!stage->rendered.terminal.checked.final_check
