@@ -86,6 +86,15 @@ public:
     void set_private_m18_project_save_admission(
         M18ProjectSaveAdmission gate)
     {m18ProjectSaveAdmission_=std::move(gate);}
+    // Unlike a one-shot status admission, this Product-issued RAII token
+    // holds a real exclusive mutation epoch across snapshot serialization,
+    // file creation, postwrite verification and Project state publication.
+    // Required whenever an M18 Project-open batch has been configured.
+    using M18ProjectSaveBatchBegin=
+        std::function<core::Result<std::shared_ptr<const void>>()>;
+    void set_private_m18_project_save_batch_begin(
+        M18ProjectSaveBatchBegin begin)
+    {m18ProjectSaveBatchBegin_=std::move(begin);}
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
@@ -107,7 +116,8 @@ signals:
 private:
     [[nodiscard]] core::Status admit_m18_project_mutation(
         const char* operation) const;
-    [[nodiscard]] core::Status admit_m18_project_save() const;
+    [[nodiscard]] core::Result<std::shared_ptr<const void>>
+    begin_m18_project_save() const;
     [[nodiscard]] core::Result<project::ProjectSnapshot> current_snapshot(
         const QString& destinationStem);
     [[nodiscard]] core::Uuid next_id();
@@ -130,6 +140,7 @@ private:
     M18ProjectMutationAdmission m18ProjectMutationAdmission_;
     M18ProjectOpenBatchBegin m18ProjectOpenBatchBegin_;
     M18ProjectSaveAdmission m18ProjectSaveAdmission_;
+    M18ProjectSaveBatchBegin m18ProjectSaveBatchBegin_;
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
