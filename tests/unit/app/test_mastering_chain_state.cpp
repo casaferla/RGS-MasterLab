@@ -1,4 +1,5 @@
 #include "mastering_chain_state.hpp"
+#include "internal/m18_product_controller_binding.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_playback_frame_map.hpp"
@@ -67,6 +68,7 @@ private slots:
     void m18OptInChainEpochBlocksAllFiveEdits();
     void m18ChainRejectsForeignThreadAndProtectsGateRemoval();
     void m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner();
+    void m18ActualChainAndTerminalShareOneProductWorkerBarrier();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
@@ -392,6 +394,54 @@ m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner()
     QCOMPARE(*bypass.value(),*originalBypass.value());
     state.value()->set_private_m18_chain_mutation_admission({});
     QVERIFY(state.value()->set_gain_parameters(*alternativeGain.value()));
+}
+
+void MasteringChainStateTest::
+m18ActualChainAndTerminalShareOneProductWorkerBarrier()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e3000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e3000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e3000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e3000000-0000-4000-8000-000000000030");
+    const auto terminalId=test_instance_id(
+        "e3000000-0000-4000-8000-000000000040");
+    auto chain=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId,compId);
+    auto terminal=TerminalLimiterState::create_default(
+        *registry.value(),terminalId);
+    QVERIFY(chain&&terminal);
+    const auto updatedGain=GainParameters::create(2.5);
+    QVERIFY(updatedGain);
+    const M18ProductExportIdentity id{31U,32U,33U,0U,48000U,4U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        250U,id);
+    QVERIFY(owner->try_transition(250U,251U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout gate{owner,251U,id};
+    app::internal::M18ProductControllerBinding::bind_chain_and_terminal(
+        *chain.value(),*terminal.value(),gate);
+    const auto held=ticket.value()->commit_lease_factory()();
+    QVERIFY(held);
+    const auto deniedChain=chain.value()->set_gain_parameters(
+        *updatedGain.value());
+    QVERIFY(!deniedChain);
+    const auto deniedLimiter=terminal.value()->set_ceiling_db_tp(-4.0);
+    QVERIFY(!deniedLimiter);
+    QCOMPARE(chain.value()->gain_parameters().gain_db(),0.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+    QVERIFY(chain.value()->set_gain_parameters(*updatedGain.value()));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(terminal.value()->set_ceiling_db_tp(-4.0));
+    QCOMPARE(chain.value()->gain_parameters().gain_db(),2.5);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-4.0);
+    QVERIFY(!owner->capture(id));
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
