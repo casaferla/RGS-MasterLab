@@ -214,6 +214,20 @@ core::Status TerminalCandidateGate::accept_measured(
     return core::Status::success();
 }
 
+core::Status TerminalCandidateGate::try_invalidate_for_m18()
+{
+    if(m18MutationAdmission_) {
+        core::Status authorized=core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_GATE_ADMISSION_CALLBACK_THROWN"});
+        try {authorized=m18MutationAdmission_("invalidate_candidate");}
+        catch(...) {}
+        if(!authorized)return authorized;
+    }
+    invalidate();
+    return core::Status::success();
+}
+
 void TerminalCandidateGate::invalidate() noexcept
 {
     staged_.reset();
