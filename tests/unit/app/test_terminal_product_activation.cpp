@@ -3190,7 +3190,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                  core::ErrorCode::InvalidState);
         auto readDenied=core::ResourceReference::create(
             src.value()->provider_id(),src.value()->locator(),
-            false,false,"unreadable-source");
+            false,true,"unreadable-source");
         QVERIFY(readDenied);
         const auto unreadableRequest=
             app::internal::make_m18_checked_stage_worker_request(
