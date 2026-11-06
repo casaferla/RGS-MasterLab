@@ -162,6 +162,7 @@ class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
@@ -185,6 +186,53 @@ private slots:
     void product_default_stereo_ms_project_save_open_save_identity();
 };
 
+
+void ProjectSessionTest::
+m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
+{
+    // Optional M18 gate must refuse both GOLD paths before modifying the
+    // actual AuditionSourceSelector owner. The existing M17 Product flow
+    // remains unchanged when this gate is absent.
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m18-gold-source.wav"),7);
+    const auto goldA=wav(dir,QStringLiteral("m18-gold-a.wav"),8);
+    const auto goldB=wav(dir,QStringLiteral("m18-gold-b.wav"),9);
+    QVERIFY(!source.isEmpty()&&!goldA.isEmpty()&&!goldB.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    session.gold.selectGold(QUrl::fromLocalFile(goldA));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.gold_resource());
+    const auto original=session.gold.gold_resource()->reference().locator();
+    std::size_t denied=0;
+    session.gold.set_private_m18_gold_mutation_admission(
+        [&](const char* operation)->core::Status {
+            ++denied;
+            if(operation==nullptr)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"M18_GOLD_OPERATION_MISSING"});
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_GOLD_COMMIT_BUSY"});
+        });
+    session.gold.selectGold(QUrl::fromLocalFile(goldB));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.gold_resource());
+    QCOMPARE(session.gold.gold_resource()->reference().locator(),original);
+    QCOMPARE(denied,std::size_t{1});
+    QVERIFY(!session.gold.error_message().isEmpty());
+    session.gold.clearGold();
+    QVERIFY(session.gold.has_gold());
+    QCOMPARE(session.gold.gold_resource()->reference().locator(),original);
+    QCOMPARE(denied,std::size_t{2});
+    session.gold.set_private_m18_gold_mutation_admission({});
+    session.gold.selectGold(QUrl::fromLocalFile(goldB));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.gold_resource());
+    QVERIFY(session.gold.gold_resource()->reference().locator()!=original);
+    session.gold.clearGold();
+    QVERIFY(!session.gold.has_gold());
+}
 
 void ProjectSessionTest::
 m18ProjectMutationDeniedBeforeOpenOrSavePublication()
