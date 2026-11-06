@@ -85,6 +85,9 @@ public:
     void set_private_m18_mutation_admission(M18MutationAdmission guard)
     {m18MutationAdmission_=std::move(guard);}
     [[nodiscard]] core::Status try_invalidate_for_m18();
+    [[nodiscard]] bool m18_mutation_admission_installed() const noexcept {
+        return static_cast<bool>(m18MutationAdmission_);
+    }
     void invalidate() noexcept;
     [[nodiscard]] std::shared_ptr<const StagedMeasuredCandidate>
     staged_measured() const noexcept {return stagedMeasured_;}
