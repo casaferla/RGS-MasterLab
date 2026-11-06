@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -57,6 +58,14 @@ public:
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
 
+    // M18 PREPRODUCTION: one opt-in Product-authoritative epoch gate
+    // before the FIRST destructive Project-open or SaveAs publication.
+    // No production caller installs this until all other mutators are
+    // reconciled. This gate MUST be shared with SOURCE/MASTER admission.
+    using M18ProjectMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_project_mutation_admission(
+        M18ProjectMutationAdmission gate)
+    {m18ProjectMutationAdmission_=std::move(gate);}
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
@@ -76,6 +85,8 @@ signals:
     void changed();
 
 private:
+    [[nodiscard]] core::Status admit_m18_project_mutation(
+        const char* operation) const;
     [[nodiscard]] core::Result<project::ProjectSnapshot> current_snapshot(
         const QString& destinationStem);
     [[nodiscard]] core::Uuid next_id();
@@ -95,6 +106,7 @@ private:
     DspChainAdapterModel* adapterModel_{nullptr};
     MasteringPreviewController* previewController_{nullptr};
     MasterOutputRateState* masterOutputRateState_{nullptr};
+    M18ProjectMutationAdmission m18ProjectMutationAdmission_;
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
