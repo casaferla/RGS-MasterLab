@@ -79,6 +79,11 @@ public:
     void refresh_selection_availability() {emit selectionAvailabilityChanged();}
     void source_committed(qint64 sourceRateHz) noexcept;
     void source_cleared() noexcept;
+    // M18 PREPRODUCTION. Opt-in status-returning SOURCE identity mutations,
+    // including same-rate re-selection. All legacy void callers must be
+    // migrated before installing one Product authority for async export.
+    [[nodiscard]] bool try_source_committed_for_m18(qint64 sourceRateHz) noexcept;
+    [[nodiscard]] bool try_source_cleared_for_m18() noexcept;
     Q_INVOKABLE bool choose_master_rate(qint64 targetHz) noexcept;
     Q_INVOKABLE bool m17_candidate_rate_admissible(qint64 targetHz) const noexcept;
     Q_INVOKABLE QString final_src_path_status(qint64 targetHz) const;
@@ -94,5 +99,6 @@ private:
     bool originalQ0Ready_{false};
     TargetSelectionGuard targetSelectionGuard_;
     M18RateMutationAdmission m18RateMutationAdmission_;
+    [[nodiscard]] bool admit_m18_source_rate_mutation() noexcept;
 };
 } // namespace rgsml::app
