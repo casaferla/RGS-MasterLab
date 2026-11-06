@@ -1071,6 +1071,32 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     QVERIFY(activeStaged->rendered.terminal.checked.final_check.has_value());
     QCOMPARE(activeStaged->rendered.terminal.checked.terminal
         .applied_gain_frames.size(),std::size_t{480});
+    // M18 P0: the legacy void invalidate() must NEVER bypass an active
+    // worker commit. Only a separately authorized status-returning
+    // invalidation may retire exact verified M17 source ownership.
+    bool allowRetirement=false;
+    std::size_t retirementAttempts=0;
+    gate.set_private_m18_mutation_admission(
+        [&](const char* op)->core::Status {
+            if(!op)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_MISSING_OPERATION"});
+            ++retirementAttempts;
+            if(!allowRetirement)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_WORKER_COMMIT_BUSY"});
+            return core::Status::success();
+        });
+    gate.invalidate(); // legacy void must fail closed with NO callback
+    QVERIFY(gate.staged());
+    QCOMPARE(gate.staged().get(),activeStaged.get());
+    QCOMPARE(retirementAttempts,std::size_t{0});
+    QVERIFY(!gate.try_invalidate_for_m18());
+    QCOMPARE(retirementAttempts,std::size_t{1});
+    QVERIFY(gate.staged());
+    allowRetirement=true;
+    QVERIFY(gate.try_invalidate_for_m18());
+    QCOMPARE(retirementAttempts,std::size_t{2});
+    QVERIFY(!gate.staged());
+    gate.set_private_m18_mutation_admission({});
     gate.invalidate();
     QVERIFY(!gate.staged());
     // Even an invalid replacement request must withdraw a previously
