@@ -1,5 +1,6 @@
 #include "mastering_chain_state.hpp"
 #include "internal/m18_product_controller_binding.hpp"
+#include "internal/m18_product_terminal_candidate_binding.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_playback_frame_map.hpp"
@@ -69,6 +70,7 @@ private slots:
     void m18ChainRejectsForeignThreadAndProtectsGateRemoval();
     void m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner();
     void m18ActualChainAndTerminalShareOneProductWorkerBarrier();
+    void m18TerminalCandidateGateSharesActualProductExportCommitEpoch();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
