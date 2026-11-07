@@ -218,6 +218,59 @@ private slots:
 };
 
 void M18CandidateDeliveryValidationTest::
+fullProductGuardActivationRequiresFreshUnconsentedEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{101U,102U,103U,0U,48000U,7U};
+    const auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        30U,id);
+    M18OwnerMutationFanout fresh{owner,30U,id};
+    QVERIFY(owner->can_install_full_product_guards(30U,id));
+    QVERIFY(fresh.can_install_full_product_guards());
+    auto wrong=id;
+    ++wrong.project_generation;
+    QVERIFY(!owner->can_install_full_product_guards(30U,wrong));
+    QVERIFY(!owner->can_install_full_product_guards(31U,id));
+
+    bool foreignDenied=false;
+    std::thread worker([&] {
+        foreignDenied=!fresh.can_install_full_product_guards();
+    });
+    worker.join();
+    QVERIFY(foreignDenied);
+
+    // An explicit end-user consent MUST be issued only after all
+    // controllers are bound. No late installation is safe.
+    QVERIFY(owner->try_transition(30U,31U,id,true));
+    QVERIFY(!fresh.can_install_full_product_guards()); // stale epoch
+    M18OwnerMutationFanout consented{owner,31U,id};
+    QVERIFY(!consented.can_install_full_product_guards());
+    auto ticket=owner->capture(id);
+    QVERIFY(ticket);
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    QVERIFY(!owner->try_transition(31U,32U,id,false));
+    QVERIFY(!consented.can_install_full_product_guards());
+    QVERIFY((*lease.value())->revalidate_current());
+    lease.value()->reset();
+
+    QVERIFY(owner->try_transition(31U,32U,id,false));
+    QVERIFY(!consented.can_install_full_product_guards()); // stale snapshot
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    M18OwnerMutationFanout unconsented{owner,32U,id};
+    QVERIFY(unconsented.can_install_full_product_guards());
+    auto batch=owner->try_begin_product_mutation(
+        32U,33U,id,false);
+    QVERIFY(batch);
+    QVERIFY(!unconsented.can_install_full_product_guards());
+    batch.value()->reset();
+    M18OwnerMutationFanout afterBatch{owner,33U,id};
+    QVERIFY(afterBatch.can_install_full_product_guards());
+}
+
+void M18CandidateDeliveryValidationTest::
 sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
