@@ -15,6 +15,7 @@
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <QThread>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
