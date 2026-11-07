@@ -73,6 +73,7 @@ private slots:
     void m18TerminalCandidateGateSharesActualProductExportCommitEpoch();
     void m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch();
     void m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority();
+    void m18PrivateSessionCannotReenterOrEraseItsOwnProductGate();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
