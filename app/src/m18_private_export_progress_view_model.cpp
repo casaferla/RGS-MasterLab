@@ -108,6 +108,19 @@ bool M18PrivateExportProgressViewModel::verified_delivered() const noexcept
     return snapshot_.phase==Phase::VERIFIED_DELIVERED;
 }
 
+QString M18PrivateExportProgressViewModel::verified_encoded_sha256() const
+{
+    if(snapshot_.phase!=Phase::VERIFIED_DELIVERED)return {};
+    return QString::fromStdString(snapshot_.verified_encoded_sha256);
+}
+
+qulonglong M18PrivateExportProgressViewModel::verified_file_size_bytes() const noexcept
+{
+    if(snapshot_.phase!=Phase::VERIFIED_DELIVERED
+       ||!snapshot_.verified_file_size_bytes)return 0;
+    return static_cast<qulonglong>(*snapshot_.verified_file_size_bytes);
+}
+
 QString M18PrivateExportProgressViewModel::error_text() const
 {
     if(!snapshot_.failure_code)return {};
@@ -171,7 +184,9 @@ void M18PrivateExportProgressViewModel::poll()
     if(next.phase!=snapshot_.phase
        ||next.encoded_frames!=snapshot_.encoded_frames
        ||next.total_frames!=snapshot_.total_frames
-       ||next.failure_code!=snapshot_.failure_code) {
+       ||next.failure_code!=snapshot_.failure_code
+       ||next.verified_file_size_bytes!=snapshot_.verified_file_size_bytes
+       ||next.verified_encoded_sha256!=snapshot_.verified_encoded_sha256) {
         snapshot_=next;
         emit changed();
     }
