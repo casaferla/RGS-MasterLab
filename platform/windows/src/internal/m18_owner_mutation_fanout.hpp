@@ -269,6 +269,8 @@ public:
                     "M18_SAVE_BATCH_WRONG_OWNER_OR_REENTRANT"});
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.project_generation
                       ==std::numeric_limits<std::uint64_t>::max())
                 return R::failure(core::Error{
                     core::ErrorCode::InvalidState,
@@ -279,6 +281,9 @@ public:
                 ~Unwind(){*active=false;}
             } unwind{&state->admitting};
             auto nextIdentity=state->identity;
+            // A new Project SaveAs destination changes Project identity
+            // even if SOURCE samples and MASTER rate remain identical.
+            ++nextIdentity.project_generation;
             ++nextIdentity.master_generation;
             const auto newEpoch=state->epoch+1;
             auto lease=state->authority->try_begin_product_mutation(
