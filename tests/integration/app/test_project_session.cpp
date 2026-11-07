@@ -225,6 +225,7 @@ class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void m18FreshStartupBindsBeforeFirstSourceSelection();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
     void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
@@ -263,6 +264,125 @@ private slots:
     void product_default_stereo_ms_project_save_open_save_identity();
 };
 
+
+void ProjectSessionTest::
+m18FreshStartupBindsBeforeFirstSourceSelection()
+{
+    // Real app/main.cpp installs M18 with NO selected SOURCE and rate
+    // revision zero. The FIRST user-selected WAV must pass through the
+    // checked callback under one physical Product lease and reconcile
+    // only after that lease is released. This is distinct from all
+    // preproduction tests that bind after an existing SOURCE selection.
+    using app::internal::M18ProductCompleteBinding;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=wav(dir,QStringLiteral("m18-first-source.wav"),11);
+    const auto second=wav(dir,QStringLiteral("m18-second-source.wav"),12);
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    Session session;
+    QVERIFY(!session.source.has_source());
+    app::MasterOutputRateState rate;
+    QCOMPARE(rate.rate_revision(),UINT64_C(0));
+    session.project.set_master_output_rate_state(&rate);
+    install_m18_checked_source_dispatch(session,rate);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto id=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "ac180000-0000-4000-8000-000000000018").value());
+    QVERIFY(id);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(terminal);
+    app::TerminalCandidateGate candidates;
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&session]{return session.masteringChainState->chain();}};
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_FIRST_SOURCE_NO_VERIFIED_DEVICE"});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_FIRST_SOURCE_NO_PUBLISHED_MASTER"});
+        }};
+    app::TerminalPrivateProductSession m17{
+        renderer,publisher,candidates,session.transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+    const M18ProductExportIdentity initial{
+        1U,1U,1U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(1U,initial);
+    M18OwnerMutationFanout fanout{owner,1U,initial};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,
+        *session.masteringChainState,session.selector,session.region,
+        session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers controllers{
+        upstream,m17,candidates};
+    QVERIFY(M18ProductCompleteBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(controllers));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+    const auto initialSnapshot=fanout.current_owner_snapshot();
+    QVERIFY(initialSnapshot);
+
+    session.source.selectSource(QUrl::fromLocalFile(first));
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.display_name(),
+             QStringLiteral("m18-first-source.wav"));
+    QCOMPARE(rate.master_rate_hz(),qint64{48000});
+    QVERIFY(rate.rate_revision()>0);
+    const auto afterSource=fanout.current_owner_snapshot();
+    QVERIFY(afterSource);
+    QVERIFY(afterSource->identity.source_generation>
+            initialSnapshot->identity.source_generation);
+    QVERIFY(afterSource->epoch>initialSnapshot->epoch);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    const auto reconciled=fanout.current_owner_snapshot();
+    QVERIFY(reconciled);
+    QCOMPARE(reconciled->identity.master_rate_revision,rate.rate_revision());
+    QCOMPARE(reconciled->identity.chain_revision,
+             session.masteringChainState->chain().revision());
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        controllers,fanout,true));
+
+    // Same-rate replacement still changes SOURCE provenance. No stale
+    // epoch may be reused just because both source WAVs are 48 kHz.
+    session.source.selectSource(QUrl::fromLocalFile(second));
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.display_name(),
+             QStringLiteral("m18-second-source.wav"));
+    const auto replacement=fanout.current_owner_snapshot();
+    QVERIFY(replacement);
+    QVERIFY(replacement->epoch>reconciled->epoch);
+    QVERIFY(replacement->identity.source_generation>
+            reconciled->identity.source_generation);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+}
 
 void ProjectSessionTest::
 m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
