@@ -170,7 +170,8 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
             static_cast<std::uint32_t>(fout/g),
             static_cast<std::uint32_t>(fin/g));
         if(!pin) {
-            invalidate();
+            if(const auto retired=retire_q0_failed_candidate();!retired)
+                return retired;
             return core::Status::failure(core::Error{
                 core::ErrorCode::UnsupportedOperation,
                 "M17_FINAL_SRC_Q0_RATIO_NOT_FROZEN"});
@@ -180,7 +181,8 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
         if(!loaded) {
             // Re-authenticate the actual file per render. A changed/unsafe
             // asset never falls back to experimental or the legacy path.
-            invalidate();
+            if(const auto retired=retire_q0_failed_candidate();!retired)
+                return retired;
             return core::Status::failure(*loaded.error());
         }
         originalFir=std::move(*loaded.value());
