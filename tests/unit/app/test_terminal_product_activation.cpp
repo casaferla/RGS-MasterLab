@@ -3368,13 +3368,21 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!product.capture_m18_verified_stage_for_worker(
             *deviceRate.value())); // DAC rate is not MASTER rate.
         bool workerDeniedStage=false;
+        bool workerDeniedGateReads=false;
         std::thread illicitOwner([&] {
             workerDeniedStage=
                 !product.capture_m18_verified_stage_for_worker(
                     *masterRate.value());
+            // The candidate's shared_ptr is not an atomic worker-side
+            // getter. Only the already retained immutable original may
+            // be carried into M18 asynchronous file export.
+            workerDeniedGateReads=
+                !candidates.staged()&&!candidates.staged_measured();
         });
         illicitOwner.join();
         QVERIFY(workerDeniedStage);
+        QVERIFY(workerDeniedGateReads);
+        QCOMPARE(candidates.staged(),original);
         QCOMPARE(product.capture_m18_verified_stage_for_worker(
             *masterRate.value()),original);
         // PREPRODUCTION owner-thread mutation admission: a held export
