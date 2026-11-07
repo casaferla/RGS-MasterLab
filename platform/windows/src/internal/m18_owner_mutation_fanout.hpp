@@ -175,6 +175,62 @@ public:
         };
     }
 
+    // Exclusive Project Open must advance its source/project/master epoch
+    // ONCE and retain the physical writer lease across SOURCE, MASTER,
+    // GOLD, region, chain restoration and final Project Qt publication.
+    // Internal Product callbacks are admitted only by the allowlist above.
+    [[nodiscard]] ProjectSaveBatch project_open_batch() const {
+        return [weak=std::weak_ptr<Shared>{shared_}]()
+            ->core::Result<std::shared_ptr<const void>> {
+            using R=core::Result<std::shared_ptr<const void>>;
+            auto state=weak.lock();
+            if(!state)return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_OPEN_BATCH_PRODUCT_OWNER_RETIRED"});
+            if(std::this_thread::get_id()!=state->ownerThread
+               ||state->retired.load(std::memory_order_acquire)
+               ||!state->authority||!state->identity.valid()
+               ||state->epoch==0||state->admitting
+               ||state->projectOpenActive.load(std::memory_order_acquire))
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_OPEN_BATCH_INVALID_OWNER_OR_NESTED"});
+            if(state->epoch==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max())
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_OPEN_BATCH_EPOCH_EXHAUSTED"});
+            state->admitting=true;
+            struct Unwind final {
+                bool* active;
+                ~Unwind(){*active=false;}
+            } unwind{&state->admitting};
+            auto nextIdentity=state->identity;
+            ++nextIdentity.master_generation;
+            const auto nextEpoch=state->epoch+1;
+            auto physical=state->authority->try_begin_product_mutation(
+                state->epoch,nextEpoch,nextIdentity,false);
+            if(!physical)return R::failure(*physical.error());
+            // An aborted/partial Project may never resurrect the previous
+            // M17 export ticket or consent.
+            state->epoch=nextEpoch;
+            state->identity=nextIdentity;
+            try {
+                auto token=std::make_shared<HeldProjectOpen>(
+                    state,std::move(*physical.value()));
+                state->projectOpenActive.store(
+                    true,std::memory_order_release);
+                return R::success(
+                    std::static_pointer_cast<const void>(std::move(token)));
+            }catch(const std::bad_alloc&) {
+                return R::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "M18_OPEN_BATCH_TOKEN_ALLOCATION_FAILED"});
+            }
+        };
+    }
+
 private:
     [[nodiscard]] static bool approved_project_open_child_operation(
         std::string_view operation) noexcept
