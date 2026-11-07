@@ -209,6 +209,7 @@ private slots:
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
     void m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease();
     void m18ActualProjectOpenAndSaveUseOneSharedProductEpoch();
+    void m18AuditionGateSetterCannotSelfUninstallOrCrossThread();
     void m18ActualSourcePickerAndAuditionUseOnePhysicalProductBatch();
     void m18ActualProjectOpenCheckedSourceFailureCannotPublishReady();
     void m18SaveBatchMissingOrThrowingFailsClosed();
@@ -296,6 +297,41 @@ m18ActualProjectOpenCheckedSourceFailureCannotPublishReady()
     QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
     QCOMPARE(rate.source_rate_hz(),qint64{48000});
     QVERIFY(!ticket.value()->commit_lease_factory()());
+}
+
+void ProjectSessionTest::
+m18AuditionGateSetterCannotSelfUninstallOrCrossThread()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto path=wav(dir,QStringLiteral("m18-audition-owner.wav"),13);
+    QVERIFY(!path.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(path));
+    QVERIFY(session.source.has_source());
+    QVERIFY(session.selector.prepared_available());
+    std::size_t denied=0;
+    session.selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            // The running callback must not destroy its own closure.
+            session.selector.set_private_m18_mutation_admission({});
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_AUDITION_WORKER_COMMIT_BUSY"});
+        });
+    std::thread foreignGateRemoval([&] {
+        session.selector.set_private_m18_mutation_admission({});
+    });
+    foreignGateRemoval.join();
+    const auto first=session.selector.switch_to(app::AuditionTarget::PREPARED);
+    QVERIFY(!first);
+    QCOMPARE(denied,std::size_t{1});
+    const auto second=session.selector.switch_to(app::AuditionTarget::PREPARED);
+    QVERIFY(!second);
+    QCOMPARE(denied,std::size_t{2});
+    session.selector.set_private_m18_mutation_admission({});
+    const auto admitted=session.selector.switch_to(app::AuditionTarget::PREPARED);
+    QVERIFY(admitted);
 }
 
 void ProjectSessionTest::
