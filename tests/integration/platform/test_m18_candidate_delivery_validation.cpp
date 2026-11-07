@@ -301,6 +301,74 @@ fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
 }
 
 void M18CandidateDeliveryValidationTest::
+explicitExportConsentMintsOneExactVerifiedProductTicket()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity initial{111U,222U,333U,0U,48000U,17U};
+    auto authority=std::make_shared<M18ProductEpochTicketAuthority>(
+        100U,initial);
+    M18OwnerMutationFanout fanout{authority,100U,initial};
+
+    // Even a matching MASTER does not authorize publication until an
+    // explicit fresh Product-owned Export click has been confirmed.
+    QVERIFY(!authority->capture(initial));
+    QVERIFY(!fanout.capture_after_explicit_verified_consent(initial,false));
+    auto wrong=initial;
+    ++wrong.source_generation;
+    QVERIFY(!fanout.capture_after_explicit_verified_consent(wrong,true));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(100));
+
+    bool foreignConsentDenied=false;
+    std::thread other([&] {
+        foreignConsentDenied=
+            !fanout.capture_after_explicit_verified_consent(initial,true);
+    });
+    other.join();
+    QVERIFY(foreignConsentDenied);
+
+    const auto ticket=fanout.capture_after_explicit_verified_consent(
+        initial,true);
+    QVERIFY(ticket);
+    QCOMPARE(ticket.value()->epoch(),UINT64_C(101));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(101));
+    QVERIFY(!fanout.can_install_full_product_guards());
+    // Repeated or delayed UI confirmations must not mint new independent
+    // generations while an accepted consent already exists.
+    QVERIFY(!fanout.capture_after_explicit_verified_consent(initial,true));
+
+    auto held=ticket.value()->commit_lease_factory()();
+    QVERIFY(held);
+    QVERIFY(!fanout.status_admission()("compressor_parameters"));
+    QVERIFY(!fanout.capture_after_explicit_verified_consent(initial,true));
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+
+    // A true manual-chain mutation retires both current consent and its
+    // immutable worker ticket, even if selected SOURCE Fs is unchanged.
+    QVERIFY(fanout.status_admission()("compressor_parameters"));
+    const auto changed=fanout.current_owner_snapshot();
+    QVERIFY(changed);
+    QCOMPARE(changed->epoch,UINT64_C(102));
+    QCOMPARE(changed->identity.source_generation,UINT64_C(111));
+    QCOMPARE(changed->identity.project_generation,UINT64_C(222));
+    QCOMPARE(changed->identity.master_generation,UINT64_C(334));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!authority->capture(initial));
+    QVERIFY(!fanout.capture_after_explicit_verified_consent(initial,true));
+    QVERIFY(!fanout.capture_after_explicit_verified_consent(
+        changed->identity,false));
+    // A later reverified M17 stage and a NEW user decision would have to
+    // be proven by the complete Product binder before calling this again.
+    auto renewed=fanout.capture_after_explicit_verified_consent(
+        changed->identity,true);
+    QVERIFY(renewed);
+    QCOMPARE(renewed.value()->epoch(),UINT64_C(103));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+}
+
+void M18CandidateDeliveryValidationTest::
 fullProductGuardActivationRequiresFreshUnconsentedEpoch()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
