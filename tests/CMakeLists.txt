@@ -1837,6 +1837,19 @@ set_tests_properties(rgsml_true_peak_measurement_tests PROPERTIES
     LABELS "analysis;true_peak;public_result;unqualified;unit"
 )
 
+# L1-M20 read-only real AudioBuffer spectral/stereo analysis. Reuses
+# canonical rgsml_analysis FFT/PSD; scope/authority tested without QML.
+qt_add_executable(rgsml_tonal_stereo_analyzer_tests
+    unit/analysis/test_tonal_stereo_analyzer.cpp)
+target_link_libraries(rgsml_tonal_stereo_analyzer_tests PRIVATE
+    rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_tonal_stereo_analyzer_tests)
+add_test(NAME rgsml_tonal_stereo_analyzer_tests
+    COMMAND rgsml_tonal_stereo_analyzer_tests)
+set_tests_properties(rgsml_tonal_stereo_analyzer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;m20;tonal;stereo;scope;unit")
+
 # L1-M19 public Product-facing numerical bridge. Whole owning resource
 # invokes the existing M16 measurement, regional scopes fail closed on TP.
 qt_add_executable(rgsml_basic_level_analyzer_tests
