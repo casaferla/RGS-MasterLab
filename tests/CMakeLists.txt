@@ -39,6 +39,19 @@ set_tests_properties(rgsml_m18_output_preference_candidate_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "project;m18;preproduction;seed;schema_candidate")
 
+# M18 final Project OUTPUT format: stable keys and full uint64 TPDF
+# persistence. Kept separate from the older experimental draft codec.
+qt_add_executable(rgsml_m18_master_wav_preference_tests
+    unit/project/test_m18_master_wav_preference.cpp)
+target_link_libraries(rgsml_m18_master_wav_preference_tests
+    PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m18_master_wav_preference_tests)
+add_test(NAME rgsml_m18_master_wav_preference_tests
+    COMMAND rgsml_m18_master_wav_preference_tests)
+set_tests_properties(rgsml_m18_master_wav_preference_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;m18;output;seed;canonical")
+
 add_test(NAME rgsml_project_dependency_contract_tests
     COMMAND "${CMAKE_COMMAND}"
         "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
