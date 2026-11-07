@@ -89,11 +89,42 @@ QString M18ProductExportViewModel::error_text() const
 {
     if(!owner_thread())return {};
     if(!lastError_.isEmpty())return lastError_;
-    if(action_->snapshot().phase==
-       internal::M18PrivateAsyncExportSession::Phase::FAILED)
-        return QStringLiteral(
-            "WAV export failed. Check the destination and available space.");
-    return {};
+    const auto s=action_->snapshot();
+    if(s.phase!=internal::M18PrivateAsyncExportSession::Phase::FAILED)
+        return {};
+    // The worker exposes only the stable error category to the GUI,
+    // never an unchecked filesystem message or an unverified WAV path.
+    // These cases must remain useful even on a machine without internet.
+    if(s.failure_code) {
+        switch(*s.failure_code) {
+        case core::ErrorCode::AccessDenied:
+            return QStringLiteral(
+                "Export denied. Choose a writable folder and a new filename.");
+        case core::ErrorCode::ResourceNotFound:
+            return QStringLiteral(
+                "The destination folder or source is no longer available.");
+        case core::ErrorCode::InvalidState:
+            return QStringLiteral(
+                "Export was refused: the verified Master, output path or "
+                "Product authorization is no longer valid. "
+                "Check the filename and Prepare the Master again if needed.");
+        case core::ErrorCode::UnsupportedAudioEncoding:
+        case core::ErrorCode::UnsupportedAudioLayout:
+            return QStringLiteral(
+                "This WAV format or channel layout is not supported.");
+        case core::ErrorCode::InvalidAudioSample:
+        case core::ErrorCode::MalformedAudioContainer:
+        case core::ErrorCode::TruncatedAudioData:
+            return QStringLiteral(
+                "The exported WAV did not pass audio verification. "
+                "No verified delivery can be claimed.");
+        default:
+            break;
+        }
+    }
+    return QStringLiteral(
+        "WAV delivery failed. Check the destination, free disk space "
+        "and filename; existing files are never overwritten.");
 }
 
 QString M18ProductExportViewModel::verified_sha256() const
