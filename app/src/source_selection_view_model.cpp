@@ -306,6 +306,11 @@ core::Status SourceSelectionViewModel::adopt_probed_source(
             "M18_SOURCE_ADOPTION_REENTRANT_EPOCH_DENIED"});
     std::shared_ptr<const void> heldSourceBatch;
     if(m18SourceBatchBegin_) {
+        // Also guard the *begin callback*, before the exclusive physical
+        // lease exists. Otherwise an injected Qt listener could recurse
+        // into another selection or erase the batch while it executes.
+        M18ScopedSourcePublication admitting{&m18SourceAdmitting_};
+        (void)admitting;
         try {
             auto accepted=m18SourceBatchBegin_();
             if(!accepted)return core::Status::failure(*accepted.error());
