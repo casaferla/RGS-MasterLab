@@ -19,7 +19,12 @@ public:
     // future Product explicitly installs its single-writer epoch admission.
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_mutation_admission(M18MutationAdmission admission)
-    {m18MutationAdmission_=std::move(admission);}
+    {
+        // Owner-bound DSP authority must not be removed by a worker or
+        // by its own reentrant Product admission callback.
+        if(std::this_thread::get_id()!=ownerThread_||m18MutationAdmitting_)return;
+        m18MutationAdmission_=std::move(admission);
+    }
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
     {return static_cast<bool>(m18MutationAdmission_);}
     [[nodiscard]] static core::Result<TerminalLimiterState> create_default(
