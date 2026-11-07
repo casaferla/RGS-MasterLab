@@ -1,9 +1,9 @@
 #pragma once
-// M18 PREPRODUCTION ONLY. Product-authorized Export START/CANCEL/ACK
-// through one exact M17 current stage and one immutable worker ticket.
-// NOT Q_INVOKABLE, not registered by main.cpp, not wired into QML.
-// The Product owner must construct this AFTER the complete gate binder
-// and retain the issuer for the entire lifetime of this session.
+// M18 private Product action, constructed in app/src/main.cpp AFTER the
+// complete SOURCE/Project/M17 epoch binding. Only the typed QObject
+// ViewModel is exposed to QML: this class is not Q_INVOKABLE and never
+// grants user consent without an exact current verified M17 Master.
+// A running/finished worker keeps a single explicit ticket until ACK.
 #include "m18_product_complete_binding.hpp"
 #include "m18_private_async_export_session.hpp"
 #include "m18_export_format_policy.hpp"
