@@ -568,6 +568,21 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     Session session;
     session.source.selectSource(QUrl::fromLocalFile(source));
     QVERIFY(session.source.has_source());
+    // With a real M18 Product guard installed, clicking Clear on an
+    // already-empty GOLD cannot revoke the current verified MASTER.
+    std::size_t emptyClearAdmissions=0;
+    session.gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++emptyClearAdmissions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_EMPTY_GOLD_IS_NOT_AN_EPOCH_MUTATION"});
+        });
+    session.gold.clearGold();
+    QCOMPARE(emptyClearAdmissions,std::size_t{0});
+    QVERIFY(!session.gold.has_gold());
+    QVERIFY(session.gold.error_message().isEmpty());
+    session.gold.set_private_m18_gold_mutation_admission({});
     session.gold.selectGold(QUrl::fromLocalFile(goldA));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.gold_resource());
