@@ -42,6 +42,25 @@ authorized by this document.
 | A14 | Listen to the PCM24 and Float32 files in an independent player/editor | No clicks, cut ends, silence, channel reversal or incorrect duration; compare to M17 Master audition at matched level |
 | A15 | Choose Float32, SaveAs, reopen the Project, then select PCM24 and SaveAs again | ComboBox restores Float32 on open; subsequent file uses PCM24 TPDF. Exact uint64 seed is serialized without numeric rounding; old output keys are preserved |
 
+## SOURCE changes and future DSP presets — scope boundary
+
+L1-M18 MUST keep the existing SOURCE-selection transaction consistent:
+the current product can reset MANUAL module controls to defaults on a
+new SOURCE, so all nested parameter/bypass writes must either complete
+under the same SOURCE epoch or fail closed. M18 does NOT introduce a
+new DSP preset file format, and cannot claim that the user can already
+save/reload independent presets to protect edits before replacing SOURCE.
+
+The previously agreed independent feature is **L2-M08 — Module
+Compact/Expanded States + Basic Presets**, after L1-M24:
+(1) reusable, named presets of one Mastering DSP module from its
+expanded chain card, and (2) reusable presets of the entire Mastering
+DSP Chain from its chain-level header. These are separate from
+`.rgsml` Project persistence; neither exact file extension nor file
+format/name was frozen. This M18 test deliberately protects legacy
+SOURCE-reset consistency, not a future decision on retaining DSP
+parameters automatically across SOURCE replacement.
+
 ## Non-negotiable engineering gate
 
 1. Focused CI on the **exact candidate SHA**: Windows and Linux SUCCESS.
