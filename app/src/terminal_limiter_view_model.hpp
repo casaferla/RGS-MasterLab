@@ -3,6 +3,7 @@
 #include "terminal_limiter_state.hpp"
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <functional>
@@ -43,7 +44,12 @@ public:
     using M18ProcessingMutationAdmission=std::function<bool()>;
     void set_private_m18_processing_mutation_admission(
         M18ProcessingMutationAdmission gate)
-    {m18ProcessingMutationAdmission_=std::move(gate);}
+    {
+        // Never disarm the accepted M17 Master Product authority from
+        // another thread or inside its own synchronous admission callback.
+        if(QThread::currentThread()!=thread()||m18ViewAdmitting_)return;
+        m18ProcessingMutationAdmission_=std::move(gate);
+    }
 
     explicit TerminalLimiterViewModel(
         TerminalLimiterState* state,
@@ -136,6 +142,7 @@ private:
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
     M18ProcessingMutationAdmission m18ProcessingMutationAdmission_;
+    mutable bool m18ViewAdmitting_{false};
     QString audioStatus_{QStringLiteral("BYPASS")};
     QString verificationTrimStatus_{QStringLiteral("UNAVAILABLE · NOT VERIFIED")};
     QString verificationTrimDetails_{QStringLiteral(
