@@ -43,6 +43,13 @@
 #include <filesystem>
 #include <vector>
 #include <utility>
+#include <type_traits>
+
+static_assert(std::is_same_v<
+    decltype(&rgsml::app::internal::M18ProductCompleteBinding::bind),
+    rgsml::core::Status (*)(
+        rgsml::app::internal::M18ProductCompleteBinding::Controllers,
+        const rgsml::app::internal::M18ProductCompleteBinding::Fanout&)>);
 
 namespace rgsml::tests {
 namespace {
