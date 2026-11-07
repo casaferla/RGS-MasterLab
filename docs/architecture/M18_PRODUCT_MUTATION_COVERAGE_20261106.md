@@ -1275,3 +1275,39 @@ verified M17 Master and explicit user consent. This staging is
 **UNCOMPILED**, does not enable Export or QML, and requires a later
 exact-SHA Focused Windows/Linux gate before promotion. Still one
 final Full Qualification after M18–M22, not per milestone.
+
+### Chat #72 — Focused #1073 Windows red / Linux green: ProjectSession executable without CTest stdout
+PO reported #1073 Windows FAILED. Verified on GitHub
+https://github.com/casaferla/RGS-MasterLab/actions/runs/42309556526
+at PR #84 SHA `2b952c182eef7a40ad25b01eadffba7148d8594d`:
+Linux Portable DSP Guard SUCCESS; Windows focused **compilation SUCCESS**
+but `Run Focused DSP Tests (Release)` FAILED. Downloaded ONLY bounded
+diagnostic artifacts (NOT GitHub job logs). `rgsml_project_session_tests`
+was the sole named failed test: CTest showed command start, **0.39 sec**
+duration, `<end of output>`, `Test Failed`, without process exit code
+or QtTest method. Thus no reliable assertion-level diagnosis exists:
+could be Windows process launch/DLL status, early exception or abort.
+Do NOT call it a confirmed product-code regression or hide the test.
+
+Bounded positive evidence from the same run:
+- Direct M18 Windows: 24 PASS, 0 FAIL, process exit 0.
+- M17 terminal activation: 22 PASS, 0 FAIL, process exit 0.
+- Device SRC: 47 PASS, 0 FAIL, 6 skipped, exit 0.
+- M17 adversarial matrix: Windows Product PASS, direct grid PASS.
+- Linux Focused: SUCCESS.
+
+A temporary diagnostic-only Windows workflow step was added
+immediately before normal Focused CTest: invoke the **specific**
+ProjectSession test binary with `-v1 -o <runner temp>,txt`, record
+the signed native exit code or process launch exception, and upload
+only the bounded 16-line tail for raw QtTest, redirected stdout/stderr.
+No full QtTest, CTest or GitHub logs are uploaded. The probe deliberately
+does NOT hide a failing normal CTest and does not waive mandatory tests.
+Its output can distinguish a 0xC0000135 runtime loader failure from
+an actual named QtTest assertion or crash. Remove/reduce the temporary
+probe once root cause is proven. The following 17 commits of standalone
+M18 SOURCE full-publication Single-Writer guards remain in staging and
+are UNCOMPILED. A next exact-SHA Focused Windows/Linux run, NOT a
+Full Qualification, is required after promoting the corrected staging.
+Still no merge before explicit Product Owner approval and one shared
+FQ only after integrated M18–M22.
