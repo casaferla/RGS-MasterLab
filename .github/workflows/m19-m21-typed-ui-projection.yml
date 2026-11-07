@@ -1,0 +1,73 @@
+name: M19-M21 Typed UI Evidence Projection Focused (non-FQ)
+on:
+  push:
+    branches:
+      - staging/m19-m21-ui-typed-projection-candidate-20261108
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m19-m21-typed-ui-projection
+  cancel-in-progress: false
+jobs:
+  linux-ui-projection:
+    name: Linux - real M19/M20 into fail-closed M21 UI projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt 6.8.3 and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
+      - name: "Build typed projection and real M21 regression"
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/m21-ui-typed -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON
+          cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests
+      - name: "Run focused projection and M21 tests"
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build/m21-ui-typed --output-on-failure -R '^(rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests)$'
+  windows-ui-projection:
+    name: Windows - real M19/M20 into fail-closed M21 UI projection
+    runs-on: windows-2022
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install Qt 6.8.3 MSVC
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_QT_INSTALL_FAILED' }
+      - name: "Build typed projection and real M21 regression"
+        shell: pwsh
+        run: |
+          $qtRoot = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          cmake -S . -B build/m21-ui-typed -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES=Release -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$qtRoot"
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_WINDOWS_CONFIGURE_FAILED' }
+          cmake --build build/m21-ui-typed --config Release --parallel 4 --target rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_WINDOWS_BUILD_FAILED' }
+      - name: "Run focused projection and M21 tests"
+        shell: pwsh
+        run: |
+          ctest --test-dir build/m21-ui-typed -C Release --output-on-failure -R '^(rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests)$'
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_WINDOWS_TESTS_FAILED' }
