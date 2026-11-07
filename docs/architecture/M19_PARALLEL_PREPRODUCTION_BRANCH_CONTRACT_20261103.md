@@ -1,0 +1,299 @@
+# RGS MasterLab — M19 parallel preproduction contract (2026-11-03)
+
+> **UPDATED AUTHORITY — 2026-11-03 / MACRO-LOT #7:** The original 2026-10-04
+> M19 pre-audit's conclusion "other-rate K banks unrecovered" was superseded
+> by the later **2026-10-05 ACCEPTED/FROZEN Product Owner P01 closure**,
+> Drive `1rBiwPOz5lMGDMGuKyFNVzw9d9SIBhS3Znx3aWVr-eE4`.
+> P01 fixes exact six-rate binary64 banks, 12-double canonical little-endian
+> SHA256s and exact-rational source derivation; all were recovered into an
+> M19-only private table and independent bank oracles in macro-lot #7.
+> **MACRO-LOT #8:** the PRIVATE headless M19 loudness candidate now consumes
+> all six exact PO-frozen banks; this is preproduction numerical functionality,
+> NOT official Gate G, canonical product status or Qt integration.
+> Historical lower sections are retained as a dated record, not as present
+> authority. No merges/production changes.
+
+**Status:** DRAFT / isolated technical candidate; NOT production-integrated; NOT U/G qualified; NO main merge.
+
+## Binding dependency and single-writer sequence
+- M17 is still physical-acceptance pending on PR #61; its frozen FQ #91 parent SHA is `995e3f976f752d148847821bd33b56ce656bfbb8`.
+- M18 remains Draft PR #63, head frozen for this M19 fork at `345890bdea2c45f80e6256793b51ce2c2523f55a`. M19 is explicitly **stacked on that M18 SHA**; any future accepted M18 changes must be brought forward through a separate reviewed integration, never by touching M18.
+- M19 single-writer no-CI staging: `staging/m19-basic-level-preproduction-20261103`.
+- M19 Draft PR head: `experimental/m19-basic-level-20261103`; target PR base = `experimental/m18-dither-20261102`, NOT `main`.
+- Develop whole coherent lots on staging, CAS fast-forward PR head once per lot, run independent M19-only dual-OS tests; do not alter M17/M18 PR heads, `main`, original 16 FIR files, M17/M18 UI, AUDIO DEVICE or export.
+- **HARD RELEASE HOLD**: M19 must NOT integrate until (1) M17 physically and formally qualified, (2) mandatory post-M17 CI audit/reset completed, and (3) M18 merged/integrated and qualified. Later M19 requires its own U+G, integration with actual full-app Windows binary, and explicit PO merge authorization.
+
+## Frozen authority — RGS ContentBox
+- `RGS_MasterLab_L1-M19_Basic_Level_Analyzer_Targeted_Materialization_Delta_ACCEPTED_FROZEN_v1.0.md` (2026-09-12): EXACT five static whole-scope metrics: Integrated LUFS, full-scope RMS dBFS, Sample Peak dBFS, **L1-M16** True Peak dBTP, Sample-Peak Crest dB.
+- Frozen PO decision 2026-10-04: `ZERO_STATE_AT_LOGICAL_ANALYSIS_SCOPE_START` for BOTH K-weighting stages and all channels; carry state through chunks/blocks, no preroll/outside-scope PCM.
+- Bounded independent mathematical re-signoff: F01 PASS; broader result PASS_WITH_REQUIRED_CORRECTIONS, NOT Gate G.
+- No live LUFS/RMS/Sample Peak/Crest, Momentary/Short-term/LRA, PLR, TP-RMS, stereo/spectral metrics, DC removal, clipping diagnostics or alternative TP detector.
+- No new FeatureDefinitionRegistry, persisted analyzer schema, QML mathematics or altered RAW/PREPARED/PROCESSED/GOLD tokens.
+
+## Baseline reconnaissance / reconciliation, NOT silent fabrication
+- Current repository contains `rgsml_analysis` with spectrum and qualified-candidate M16 internal sources, but no materialized publicly callable canonical M19 feature/registry in inspected surfaces.
+- M16 currently exposes internal `measure_unqualified_true_peak_full_resource(const audio::AudioBuffer&)`, which explicitly accepts ONLY full owning resources and is **unqualified**. A narrowed AnalysisScope adapter and accepted result/status/identity mapping are NOT yet present. This candidate therefore does NOT calculate or fill the True-Peak DTO. The real M16 result MUST later be bound unchanged, including its status, support, algorithm and provenance, not recalculated in M19.
+- Current `AudioBuffer` is planar binary64 mono/stereo; full-scope vs nonzero analysis-window/target composition still must be mapped to actual APIs. The prototype accepts independent chronological spans + explicit absolute origin, without reading any PCM outside the caller-selected logical scope.
+- ErrorCode/status precedence, QTP precision/rounding/summation logarithm policy, full Phase-6 registry and fixed other-rate K banks are NOT yet reconciled. A candidate-only state enum is a private diagnostic, NOT a new canonical status schema.
+- One fixed printed-coefficient 48-kHz K bank is reproducible from BS.1770-5 M19 preaudit; the prototype deliberately reports other five MASTER sample rates as **K bank not authority-qualified**, while permitting valid RMS/Sample Peak/Crest for their PCM. Do not run 48-kHz coefficients at any other rate.
+- The prototype processes all in-scope samples (including incomplete trailing 100ms fragments), emits only complete 400-ms / 100-ms-grid blocks, strict -70/-10 gate and zero-state K recurrences. The C++ arithmetic path is diagnostic, NOT an audited production FP/QTP schedule.
+
+## Files and no-product-change guarantee
+- `analysis/src/internal/m19_basic_level_candidate.hpp`: private, header-only zero-state K, chronological full-scope level candidate; no M16 FIR.
+- `tools/qualification/m19/m19_portable_selftest.cpp`: C++20 mono/stereo, scope offset, chunk partitions, silence, impulse, +6dBFS level, non-finite, support lengths and other-rate guards.
+- `tools/qualification/m19/test_m19_independent_reference.py`: external frozen anchor / separate mathematical oracle.
+- `.github/workflows/m19-preproduction.yml`: M19-only Windows MSVC / Linux GCC Debug+Release, strict-FP, no Qt, MPFR, FQ, 16 FIR or DAC. The short lane is a **compiler/oracle smoke**, NOT real product qualification, not 5-metric completion.
+- Existing app, `analysis/CMakeLists.txt`, M17/M18 sources, `main`, shared registered tests and installed Windows artifacts intentionally unchanged.
+
+## Required NEXT gates after dependency release
+1. Reconcile Phase-6 FeatureDefinitionRegistry owner, true 48k+other-rate K profiles, scope/target/source identity, canonical status/error and actual M16 result/qualification.
+2. Reuse already frozen 35-entry independent M19 qualification ZIP and corrected F01 re-signoff instead of inventing a new formula; run official EBU/ITU test files, strict gate edge cases, extreme-range sum/log adversaries and exact QTP (Gate G + U).
+3. Bind the five static metrics through `rgsml_analysis` and the real app safely (without touching DSP/audio); M16 only for TP; no new persisted schema. Verify original PCM immutability, chunk invariance and true Windows app via full CI/FQ.
+4. Only after M17/M18 formally qualified and approved for integration, rebase/forward-integrate M19 against the accepted chain, run actual Windows/Linux product tests and obtain explicit PO merge approval.
+
+Do not mistake a green 2-minute preproduction CI for a qualified Qt/Windows build or for a release-ready M19.
+
+## Preproduction numerical macro-lot #2 — strict gate edge
+- The independent October mathematical pre-audit specifies a strict power-domain comparison for the -70 LKFS and -10 LU gates. A direct compare of rounded log-domain levels could accidentally include an exactly-equal threshold (e.g. q=[19,1]); preproduction candidate now separates a strict power-domain one-pass GATE helper with explicit absolute/final membership counts.
+- Fixed independent C++ and Python fixtures check q=[19,1] equality/exclusion, nextafter(1,+inf) inclusion, absolute power-gate equality/nextafter, silence, negative/nonfinite block power, and sum overflow. This is numerical regression evidence only, not accepted F07 range/QTP or canonical production gate.
+- Removing a misleading noexcept from the potentially growing streaming vector is a private exception-safety correction, not a new memory/performance claim. Actual production will require bounded memory and audit-qualified whole-track numerical accumulation.
+- Continue to leave M16 TP absent; do NOT replace it with limiter detector or a new M19 FIR.
+
+## M19 parallel macro-lot #3 — authoritative scope-grid and real public M16 seam (2026-11-03)
+
+This is **preproduction only**; changes are local to M19 staging until one CAS promotion and independent CI.
+
+### Reconciled facts, without feature invention
+- Live M18-base source `analysis/include/rgsml/analysis/true_peak_measurement.hpp` already exposes the **public** `TruePeakMeasurement` and `measure_true_peak_full_resource(const audio::AudioBuffer&)`. The public type has exact algorithm/version/policy/SHA metadata, per-channel and global TP, silence and a categorical `TruePeakQualificationStatus` with `SUPPORTED_UNQUALIFIED` as its current default. This supersedes the earlier discovery summary that only an internal callable M16 seam existed.
+- Public M16 is **full-owning-resource only** and explicitly `SUPPORTED_UNQUALIFIED` until its formal Gate G. It does **not** expose a qualified arbitrary regional/subview measurement. M19 therefore **does not populate its True Peak field** from those provisional values. Binding, same-realization evidence, canonical status and project scope policy remain a later cross-module qualification gate.
+- No changes whatsoever to M16 original source, coefficients, API, DSP, M17, M18 or production.
+
+### Coherent code and independent evidence
+- `analysis/src/internal/m19_scope_grid_candidate.hpp`: private pure rational geometry for frozen 400-ms blocks and independently rounded absolute-from-scope 100-ms starts, with integer ties-even, checked overflow and no cumulative rounded steps. No additional K-weighting rates are claimed qualified.
+- `tools/qualification/m19/m19_scope_grid_selftest.cpp` and `test_m19_scope_grid_reference.py`: six authorized time geometries, all exact support boundaries, true nonzero logical-scope origins, 44,105-Hz diagnostic counterexample against accumulated 4,410-frame hops, duration equality, integer ties-even and overflow.
+- `tools/qualification/m19/m19_actual_m16_dependency_selftest.cpp` links **the actual unchanged public M16 implementation** with its existing audio/core sources in a separate compiler lane; it creates canonical owning mono/stereo PCM, exercises M16 six-rate metadata/TP results and invalid audio, confirms **SUPPORTED_UNQUALIFIED**, tests M19 as an independent same-resource *whole-scope* nonzero-origin calculation, and confirms M19 does not invent a TP output. It is an API/invariant proof, not a qualified M19/M16 adapter or UI.
+- `.github/workflows/m19-preproduction.yml` now runs the old independent level reference and strict gating C++ lanes **plus** the above geometry and real-M16 lanes on Linux GCC and Windows MSVC, Debug and Release, without Qt/deploy/FQ and without triggering M17/M18 workflows.
+
+### Do not overstate
+- Prior independent mathematical M19 re-signoff remains `PASS_WITH_REQUIRED_CORRECTIONS`. Gate G/ U, QTP, all-rate K banks, Phase-6 FeatureDefinitionRegistry, truly qualified actual M16 full-scope identity, and official ITU/EBU product fixtures remain pending.
+- A dual-green **M19-only** CI is stronger preproduction evidence than the previous mock pure math, but **not** a product Gate G or release. The hard M17 physical qualification → CI reset → M18 integration & qualification → M19 separate U/G/PO approval remains unchanged.
+
+## M19 parallel macro-lot #4 — actual AudioBufferView scope, isolation, and 60-partition F01 matrix
+
+All new code remains on M19-only no-CI staging until promotion. This is **not** the app's production integration and does not change canonical Phase-6/registry/M16 ownership.
+
+- `analysis/src/internal/m19_audio_scope_adapter_candidate.hpp`: a bounded headless read-only adapter to actual `rgsml::audio::AudioBufferView`, `AudioBufferView::subview`, `FrameIndex`, `FrameCount` and `FrameDomainId`. It requires an explicit caller-selected logical scope, checks the actual SOURCE vs OUTPUT frame domain, enforces the existing six supported clocks and mono/stereo layout, and visits *only the selected sample spans*. M19 K states initialize at **the first actual scope PCM frame**, not resource frame zero; chunks preserve state. No SOURCE/MASTER/DEVICE conversion, original audio mutation, copy of whole resource, or Qt dependency.
+- `m19_actual_m16_dependency_selftest.cpp` now exercises both the **unchanged real M16 public whole-resource API** and the new M19 selected-region adapter on a real canonical AudioBuffer containing hostile out-of-scope pre/post PCM (NaN/Inf/large samples), confirming outside poison is ignored by M19 scope selection but correctly rejected by M16 whole-resource measurement. It checks identical repeated selection, exact full-scope result versus frozen zero-K-state DC anchor, original PCM untouched, wrong domain, out-of-bounds/negative/empty interval, illegal clock, and in-scope NaN rejection. True Peak remains absent for regional M19: no unapproved extrapolation of whole-resource M16.
+- The original M19 native math selftest now implements **five deterministic families × 12 feeder plans = 60 chunk/state passes**, matching the bounded F01 independent re-signoff's plan enumeration at nonzero origin 12,345. Includes 1-kHz mono tone 0.125 with independent accepted ~−21.065470226 LUFS, mono DC +1 ~−26.276870320 LUFS, impulse, signed polarity stereo and silence; bit-exact candidate chunk invariance, relocated scope origin 96,000 and a late invalid sample (after valid loudness windows). Input/oracle provenance is frozen October documentation; no official ITU/EBU WAV gate claimed.
+- Combined CI remains M19-only Windows/Linux with Debug+Release actual C++ code, real M16 compilation, separate Python reference and exact six-rate grid. Green is a diagnostic qualification step, not M19 release, U/G or PO physical FQ.
+- The adapter uses current private diagnostic result and ErrorCode mapping for preproduction only. Actual canonical status/FeatureDefinitionRegistry, qualified M16 for arbitrary declared scope, fixed K banks at other rates, full numerical QTP and UI binding remain unqualified and must be reconciled after M17+M18 dependency gate.
+
+## M19 parallel macro-lot #5 — F07 independent numerical adversaries
+
+Scope and provenance: use the **2026-10-04 accepted M19 mathematical pre-audit F07** and its preserved `PASS_WITH_REQUIRED_CORRECTIONS`, not an invented production `QTP` or numeric floor. No M16/17/18/Qt/main production code changes.
+
+- Private C++20 candidate `m19_basic_level_candidate.hpp` now uses **Neumaier-compensated, peak-normalized accumulation of nonnegative binary64 squares** for full-scope RMS: both running sum and correction rescale on a later new maximum, maintaining a chronological deterministic reduction across feeder cuts and avoiding the primitive direct `x*x` overflow/underflow. PCM is not rewritten. Definition remains `p=Σx²/(C×N)`, no DC subtraction or per-channel RMS-dB average, sample-peak Crest remains `Peak_db−RMS_db`.
+- New native `m19_f07_range_selftest.cpp` specifically checks the frozen exact dyadic adversary **1 followed by 4096×2^-30**, both increasing and reversed peak order, proving that the mathematically real **2^-48** extra square power is not lost by roundoff, comparing against a one-impulse baseline and all-in-one versus ragged chunks. Further cases include a large peak arriving late, ±2^-600, ±2^510, 2^512, minimum-subnormal, maximum-finite, mono/stereo duplication, sample-peak crest from impulse, signed exact zeros and full-span NaN/Inf rejection.
+- New *independent* `test_m19_f07_decimal_reference.py` uses 100-digit `Decimal` and exact binary64 values for the same dyadic range/mean-square and extreme-amplitude oracles; it never imports candidate C++ or its calculation. Tests are numeric regression diagnostics, NOT a substitute for accepted formal QTP.
+- M19-only Windows MSVC strict FP and Linux GCC strict FP CI compile/run the new native adversaries in both Debug/Release, plus the already existing 48k K, 60-partition, real M16 API, actual read-only AudioBufferView and independent Python geometry/gate/reference cases.
+- **Explicit residual F07 hold**: extreme 48-kHz K-filter recurrence, huge block power aggregation, gate accumulation precision close to irrational absolute threshold, exact canonical numerical floors/error support and original QTP rows are *not yet qualified*. These must not become fabricated numeric results. A green M19 private CI is not final U/G nor a Windows product build.
+
+## M19 parallel macro-lot #6 — F07 K-gate high-dynamic-range range and strict membership
+
+**Safety:** this is only a private header-level candidate, its own preproduction tests and its own dedicated dual-OS workflow. No modification to M17, M18, M16, `main`, the production Qt UI, `analysis/CMakeLists.txt`, FIR resources or Phase-6 registry. Release and M19 U/G remain OPEN.
+
+### Specific numerical defect and bounded repair
+- Previously, `gate_complete_400ms_block_powers` rejected otherwise finite mathematical LUFS when `Σ q` overflowed binary64, e.g. `[10^308,10^308]`, even though `mean(q)=10^308` is finite and `−0.691+10log10(mean(q))` is defined.
+- The private helper now calculates a **Neumaier-compensated ordinary positive-power mean** for the usual no-overflow path and a **fresh peak-normalized mean from complete input** only on accumulator overflow. This avoids changing numerical order in the existing exact near-gate diagnostic `[19,1]`, and prevents a finite mean from being discarded solely because its unnormalized sum is not representable.
+- Both stages retain the already-adopted ITU-R BS.1770-5 rules: strict absolute power >−70 LKFS, one-pass relative threshold −10 LU referenced to the **original** absolute-gated mean, strict retained power comparisons, never rounding display LUFS to make gate decisions. No epsilon, iteration, artificial energy floor, alternative K-weighting bank or new feature was introduced.
+
+### New independent tests
+- `tools/qualification/m19/m19_f07_gate_range_selftest.cpp`: C++ Debug/Release scenarios `[DBL_MAX,DBL_MAX]`, `[DBL_MAX,DBL_MAX/2]`, large repeated block vectors with overflowed sum but finite mean, one large/one low block accepted by absolute but rejected by relative, reversed-order parity, and the accepted F04 adversaries `[19,1]` vs `[19,nextafter(1,+∞)]` and `[901,99×1]` vs `[901,99×nextafter(1,+∞)]`. Covers exact strict absolute gate neighbor, silence and nonfinite/negative statistic rejection.
+- `tools/qualification/m19/test_m19_f07_gate_decimal_reference.py`: independent Python `Decimal` 100-digit oracle over exact represented binary64 q values, including membership, finite logarithmic output and permutations; no candidate C++ dependency. These are *sufficient-statistic vectors*, not evidence that an arbitrary power list is realized by a raw K-weighted overlapping audio sequence.
+- `tools/qualification/m19/m19_f07_k48_range_selftest.cpp`: actual 48-kHz mono/stereo PCM exercises zero-start K state, 400-ms block and safe-margin below/above absolute gate with amplitudes 0.006/0.007 relative to the frozen 48-kHz DC oracle; +6.0206-dB doubling, +3.0103-LU stereo and opposite-polarity channel invariance, tiny finite PCM with **defined RMS/Peak but null Integrated**, and explicit rejection of unrepresentably huge K recurrence output instead of fabricated numbers.
+- Prior F07 RMS extreme-range and Neumaier tests, 60 F01 chunk plans, canonical `AudioBufferView` selected scopes, real M16 API and exact temporal geometry stay in the same M19-only CI.
+
+### What remains unresolved
+- This improvement does not select a production FP/QTP error envelope or close F09 status/support precedence; gate membership at the exact irrational absolute boundary is still pending independent interval-based numerical qualification.
+- 48-kHz K-filter arithmetic at extreme amplitudes can reject invalid finite recurrence mathematics; the exact final feature reason/status remains canonical-authority dependent. Remaining five K-weighting coefficient banks and supported-rate declaration remain **unrecovered** and intentionally not generated at runtime.
+- Formal M19 U+G and Windows app/FQ are prohibited pending M17 qualified → post-M17 CI audit/reset → M18 integrated+qualified → specific M19 review/PO approval.
+
+## M19 parallel macro-lot #7 — independently frozen six-rate K bank recovery
+
+**Authority:**
+`RGS_MasterLab_Phase6_Residual_Semantic_Closure_P01_P06_Product_Owner_Decision_ACCEPTED_FROZEN_2026-10-05_v1.0`,
+Google Drive ID `1rBiwPOz5lMGDMGuKyFNVzw9d9SIBhS3Znx3aWVr-eE4`.
+Accepted on **October 5** — later and more specific than the October 4 M19
+math pre-audit's "P01 still absent" finding. P01 explicitly fixes K-weighting
+for **44.1, 48, 88.2, 96, 176.4 and 192 kHz**. All other rates are
+`UNSUPPORTED`; no runtime coefficient design, nearest-bank substitution,
+resampling, library-selected design or applying 48-kHz coefficients to other
+clock rates. P01 policy ID:
+`rgsml.kweight.bs1770-5.anchor48-blt.v1`.
+The non-48k banks are **RGS-derived fixed banks**, not ITU-published ones.
+
+**Immutable recovered assets:** `analysis/src/internal/m19_k_weighting_frozen_banks.hpp`
+stores the **exact PO-supplied 72 binary64 hexadecimal coefficient literals**,
+12 per member, `Shelf(b0,b1,b2,a0,a1,a2)` followed by
+`RLB(b0,b1,b2,a0,a1,a2)`. It also records six canonical member IDs and six
+SHA-256 hashes over exact little-endian 96-byte coefficient sequences.
+The original 48-kHz printed-decimal anchor remains byte-identical; the
+new constants have **not** been inserted into `analysis/CMakeLists.txt`,
+public service APIs or DSP modules.
+
+**Independent checks:**
+- `tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py` parses
+  the *actual checked-in private C++ literals*, validates the six SHA-256
+  hashes against the separately frozen PO ledger, and independently
+  **re-derives** all 72 double values from the *original printed-decimal*
+  48-kHz biquad anchor using exact `fractions.Fraction`, rational
+  (q_0=(u+vq)/(v+uq)) coefficient transformation and a **single final**
+  ties-to-even binary64 rounding. That is an independent audit, not runtime
+  coefficient design.
+- `tools/qualification/m19/m19_p01_frozen_bank_selftest.cpp` verifies the
+  private native header compiles on both compilers, supported/unsupported clock
+  guards, exact original 48-kHz decimal equality, canonical member/hash
+  identities, basic normalized pole stability and proper RLB numerator.
+  Compile for Debug and Release on Windows MSVC and Linux GCC in M19-only CI.
+
+**Next dependency:** now that the actual six canonical frozen banks are
+recovered, the next M19-only macro-lot may wire the private zero-state
+K-weighting diagnostic onto them at the six supported clocks with the frozen
+exact 400/100ms `AnalysisScope` geometry. It must then create independent
+per-rate response/startup/streaming/edge reference checks. **Do not promote
+six-rate Integrated Loudness to official qualified output** merely because
+bank SHA and derivation checks pass. Official Gate G, QTP, canonical status
+and M16 binding remain separate.
+
+**No merge:** M17 formal physical acceptance → post-M17 CI audit/reset →
+M18 merged and qualified → only then M19 product qualification/PO merge.
+
+## M19 parallel macro-lot #8 — P01 six-rate candidate execution and feature independence
+
+**PO policy** `rgsml.kweight.bs1770-5.anchor48-blt.v1` recovered in
+macro-lot #7, exact 72 frozen IEEE-binary64 values, 6 immutable SHA256s.
+Unlike the October-04-only prototype, the M19 private candidate now
+**selects the exact frozen bank by supported rate** at construction (one
+lookup, no runtime polynomial derivation), uses both fresh zero-state
+biquads per channel from the first logical scope PCM sample, computes the
+400ms/100ms integrated-gate block grid with **Fs/10 quarters** and persistent
+streaming K states at each of the six rates. It retains the same 48k literal
+coefficient values byte-for-byte and never uses 48k coefficients elsewhere.
+
+The private snapshot now records the **actual P01 member ID and canonical
+coefficient SHA256** as provenance. This metadata does not imply release
+qualification. Unrecognized sample rates remain rejected outright.
+No additional windowed/live metrics or M19 True Peak detector were introduced.
+
+**Independent checked-in evidence:**
+- `tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py`:
+  separate standard-library Python causal K recurrence on *real target-Fs
+  PCM*, using independently exact-rational-derived P01 coefficients,
+  fixed mono first-block DC, impulse and 997Hz tone references for each
+  44.1/48/88.2/96/176.4/192kHz rate. Its frozen anchors check both rate
+  dependent responses and phase/startup.
+- `tools/qualification/m19/m19_p01_six_rate_k_pcm_selftest.cpp`:
+  strict-fp native C++ diagnostic, actual six-rate PCM blocks,
+  400ms exact support/no end-padding, nonzero scope-origin independence,
+  chunked versus whole-scope comparison, original 48k DC compatibility,
+  997Hz tone, zero-start impulse, stereo opposite sign with +3.0103 LU,
+  unchanged RMS and sample peak, exact per-rate member ID/SHA; out-of-policy
+  clocks are rejected.
+- Existing earlier P01 byte-authority tests, F01 60-partition K-state,
+  F07 100-digit extreme block/range checks and actual M16 API tests run
+  on both platforms Debug/Release in the same isolated M19-only workflow.
+
+**Per-feature validity repair (F07/F09 preproduction diagnostic only):**
+A finite source may have representable Peak/RMS/Crest while the separate
+K-weighting arithmetic overflows binary64. The candidate now disables the
+K branch and reports *private* `k_numerically_undefined` with null LUFS,
+while continuing the unweighted level calculations, instead of throwing
+away other valid static features. `m19_f07_k48_range_selftest.cpp` checks
+this at magnitude 2^512. This private diagnostic is **NOT** an approved
+canonical `FeatureStatus`/reason mapping; F09/Phase-6 status precedence,
+numerical error policy, M16 identity, integrated Gate U+G and product Qt
+surface all remain to be qualified after dependencies release.
+
+**No merge / deployment:** All changes exist only on the isolated M19
+staging and Draft PR branches; no M17/M18/main/UI/analysis-CMake/source
+registration changes. M17 formal physical qualification and M18 integrated
+qualification must precede any M19 integration.
+
+## M19 parallel macro-lot #9 — final isolated pre-merge regression and HOLD checkpoint
+
+**Scope:** last pre-merge preproduction macro-lot, not official Gate G/U,
+Windows Qt application integration, FQ, PO acceptance or an authorization to
+merge. All code is still deliberately private in the M19 Draft PR tree,
+stacked on the original unmodified M18 parent SHA. No M17/M18/main/Qt
+production code or FIR resources changed by this operator.
+
+### Executed evidence / independent identity
+- `tools/qualification/m19/m19_final_six_rate_multiblock_selftest.cpp`
+  exercises **ALL six PO-frozen K rates** at actual clock-specific PCM
+  lengths of 8 complete 100ms cells plus a trailing 17-frame fragment;
+  precisely five eligible 400ms overlapping blocks, no sixth padded
+  or premature block. Five distinct feeder schedules per rate,
+  exact result equality against one contiguous pass, two absolute
+  logical-scope origins with independent zero-state K reset,
+  ×2 gain and opposite-sign two-channel K level laws,
+  no extra live/windowed metrics, and explicit absence of surrogate TP.
+  A poisonous NaN at the last *incomplete-loudness-tail* sample rejects
+  the whole scope, without partial state advance on rejected chunks.
+- Existing **actual** `audio::AudioBufferView/subview` + **unmodified
+  public M16 API** harness now repeats full-scope selected-region checks
+  at all six rates for SOURCE_PROCESSING_RATE and OUTPUT_RATE frame
+  domains. It injects NaN/Inf outside the selected interval, confirms
+  that M19 reads only real selected PCM, maintains frozen per-rate
+  bank member/hash provenance, remains repeatable and read-only,
+  rejects wrong frame domain, and refuses to substitute
+  M16 whole-resource unqualified TP as region-qualified M19 TP.
+- Runs with every earlier single-block independent 48k anchor,
+  six-rate independent Python filter/coefficients SHA256, F07 100-digit
+  dynamic-range numerics, strict F04 threshold adversaries,
+  60-partition prior F01 state matrix, exact geometric time grid,
+  and the real M16 public source C++ build on Linux GCC and
+  Windows MSVC, each Debug and Release.
+
+### Operator stop / explicit readiness boundary
+
+**Ready for later dependency-controlled integration engineering**:
+private deterministic source PCM calculator for Integrated LUFS at six
+PO-frozen K rates, full-scope RMS, Sample Peak and sample-peak Crest;
+read-only canonical resource interval adapter; independent six-rate
+mathematical/reference test harness; M16 public TP type/code integration
+proof; exact six P01 coefficient bank SHA records; M19-only CI.
+
+**NOT YET QUALIFIED OR BUILT INTO THE WINDOWS PRODUCT**:
+- M16 qualified True Peak **for the identical declared actual analysis
+  scope**, including algorithm/version/policy/silence/support/status,
+  NOT its existing `SUPPORTED_UNQUALIFIED` whole owning resource result.
+- Real Phase-6 `FeatureDefinitionRegistry`/FeatureStatus/error/reason,
+  supporting view DTO and scope provenance, numerical floor and exact
+  QTP (F09), and `rgsml_analysis` target + actual Qt GUI composition;
+  no independent invented registry or persistent schema.
+- Official ITU/EBU validation for all six physical banks, 35-entry
+  original mathematical qualification ZIP, adversarial near-boundary
+  high-precision gate intervals, original independent 2026-10-04
+  suite/2026-10-05 P01 closure synthesis, actual compiler FP tolerance
+  and independent user-level Gate U/G.
+- Full M17/M18 integrated baseline and Windows product FQ after
+  qualification; renderer/export/audio path not modified now.
+- Large-track operational memory bound (block-power vector grows
+  with scope), exception/OOM strategy, fully production-approved
+  M19 error mapping and all remaining performance qualification.
+- M19 preproduction's private diagnostic `k_numerically_undefined`
+  is not a canonical public status; neither it nor a diagnostic
+  `available` is a product acceptance claim.
+
+**Hard chain, no exceptions**:
+M17 physical FQ and PO formal qualification
+→ required post-M17 CI architecture/reset audit
+→ M18 integration and qualification
+→ rebasing/forward-integration of this private M19 candidate against
+  the **actual accepted heads** (M17 is still moving independently)
+→ M19 production API/status/feature/DSP composition
+→ official M19 Gate U+G and real Windows FQ
+→ explicit PO approval for M19 merge.
+
+No branch merge, PR undrafting, FQ dispatch or change to
+`analysis/CMakeLists.txt` is authorized by this checkpoint.
