@@ -108,6 +108,14 @@ public:
         if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
         m18ProjectSaveBatchBegin_=std::move(begin);
     }
+    [[nodiscard]] bool m18_open_batch_installed() const noexcept
+    {return static_cast<bool>(m18ProjectOpenBatchBegin_);}
+    [[nodiscard]] bool m18_save_batch_installed() const noexcept
+    {return static_cast<bool>(m18ProjectSaveBatchBegin_);}
+    [[nodiscard]] bool m18_project_one_shot_installed() const noexcept
+    {return static_cast<bool>(m18ProjectMutationAdmission_);}
+    [[nodiscard]] bool m18_save_one_shot_installed() const noexcept
+    {return static_cast<bool>(m18ProjectSaveAdmission_);}
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
