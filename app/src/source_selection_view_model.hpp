@@ -34,6 +34,11 @@ class SourceSelectionViewModel final : public QObject {
 public:
     using SourceCommittedHandler = std::function<void(
         const core::ResourceReference&)>;
+    // An M18 physical SOURCE batch MUST use a status-bearing downstream
+    // Product dispatcher. A legacy void observer cannot report BUSY or
+    // an invalid M17/Audition handoff; legacy M17 remains unchanged.
+    using M18CheckedSourceCommittedHandler = std::function<
+        core::Status(const core::ResourceReference&)>;
 
     explicit SourceSelectionViewModel(QObject* parent = nullptr);
 
@@ -74,6 +79,8 @@ public:
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
     void set_source_committed_handler(SourceCommittedHandler handler);
+    void set_private_m18_checked_source_committed_handler(
+        M18CheckedSourceCommittedHandler handler);
     Q_INVOKABLE void selectSource(const QUrl& selectedFile);
     Q_INVOKABLE void cancelSourceSelection() noexcept;
 
@@ -87,6 +94,7 @@ private:
         const char* operation) const;
     void publish_error(const QString& message);
     void publish_error(const core::Error& error);
+    void fail_closed_checked_source_commit(const core::Error& error);
 
     std::optional<audio::SourceResource> source_;
     QString displayName_;
@@ -107,6 +115,7 @@ private:
     mutable bool m18SourceAdmitting_{false};
     bool m18SourcePublishing_{false};
     SourceCommittedHandler sourceCommittedHandler_;
+    M18CheckedSourceCommittedHandler m18CheckedSourceCommittedHandler_;
 };
 
 }  // namespace rgsml::app
