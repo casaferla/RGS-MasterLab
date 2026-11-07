@@ -208,6 +208,8 @@ public:
                     "M18_SOURCE_BATCH_REENTRANT"});
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.source_generation
                       ==std::numeric_limits<std::uint64_t>::max())
                 return R::failure(core::Error{
                     core::ErrorCode::InvalidState,
@@ -218,6 +220,10 @@ public:
                 ~Unwind(){*active=false;}
             } unwind{&state->admitting};
             auto nextIdentity=state->identity;
+            // A same-file, same-rate SOURCE re-selection is still a new
+            // Product identity. This exact batch revokes once for SOURCE
+            // and once for MASTER provenance, with one physical writer.
+            ++nextIdentity.source_generation;
             ++nextIdentity.master_generation;
             const auto nextEpoch=state->epoch+1;
             auto physical=state->authority->try_begin_product_mutation(
