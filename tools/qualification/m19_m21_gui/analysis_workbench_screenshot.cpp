@@ -80,7 +80,7 @@ QVariantMap demo_data() {
         {"width","1.06"},{"P10","0.09"},{"P50","0.66"},{"P90","0.93"}});
     return data;
 }
-void display_frames(QQuickView& view) {
+void display_frames() {
     QEventLoop eventLoop;
     QTimer::singleShot(450,&eventLoop,&QEventLoop::quit);
     eventLoop.exec();
@@ -94,7 +94,7 @@ void screenshot(QQuickView& view,const QString& dir,
     require(view.rootObject()!=nullptr,"GUI_ROOT_NOT_LOADED");
     require(view.rootObject()->setProperty("activeTab",tab),"GUI_TAB_SET_FAILED");
     view.show();
-    display_frames(view);
+    display_frames();
     const auto capture=view.grabWindow();
     require(!capture.isNull(),"QT_WINDOW_GRAB_NULL");
     require(capture.width()>=w&&capture.height()>=h,
