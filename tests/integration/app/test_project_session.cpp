@@ -399,14 +399,21 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
     exportAction.cancel();
     QVERIFY(!exportAction.acknowledge());
     bool foreignStartDenied=false;
+    bool foreignStateUnreadable=false;
     std::thread rogueExport([&] {
         foreignStartDenied=!exportAction.begin(
             *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
             std::nullopt,-1.0,true);
         exportAction.cancel();
+        foreignStateUnreadable=!exportAction.can_cancel()
+            &&!exportAction.can_acknowledge()
+            &&!exportAction.has_unacknowledged_export()
+            &&exportAction.snapshot().phase==
+                app::internal::M18PrivateAsyncExportSession::Phase::FAILED;
     });
     rogueExport.join();
     QVERIFY(foreignStartDenied);
+    QVERIFY(foreignStateUnreadable);
     QCOMPARE(exportAction.snapshot().phase,
              app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
     QVERIFY(!owner->capture(initial));
