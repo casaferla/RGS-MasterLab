@@ -341,6 +341,14 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     session.project.saveProjectAs(QUrl::fromLocalFile(deliveredProject));
     QVERIFY(QFileInfo::exists(deliveredProject));
     QVERIFY(session.project.error_message().isEmpty());
+    // Full Project OPEN must re-use one exclusive epoch for its nested
+    // SOURCE, rate, audition and chain restoration callbacks. Neither
+    // child may consume an independently authorized export generation.
+    session.project.openProject(QUrl::fromLocalFile(deliveredProject));
+    QVERIFY(session.project.error_message().isEmpty());
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.display_name(),original);
+    QVERIFY(M18ProductUpstreamBinding::installed(controllers));
 }
 
 void ProjectSessionTest::
