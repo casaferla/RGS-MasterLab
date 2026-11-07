@@ -419,6 +419,43 @@ productOpenBatchUsesOneExclusiveEpochForSourceRateAndGold()
 }
 
 void M18CandidateDeliveryValidationTest::
+productOpenBatchRetiredOwnerAndForeignThreadCannotAdvanceEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{81U,82U,83U,0U,48000U,21U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        900U,id);
+    auto fanout=std::make_unique<M18OwnerMutationFanout>(
+        owner,900U,id);
+    const auto open=fanout->project_open_batch();
+    const auto save=fanout->project_save_batch();
+    const auto edit=fanout->status_admission();
+    bool deniedFromWorker=false;
+    std::thread other([&]{
+        const auto denied=open();
+        deniedFromWorker=!denied&&denied.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    other.join();
+    QVERIFY(deniedFromWorker);
+    auto token=open();QVERIFY(token);
+    QVERIFY(!save());
+    // The opaque held batch may outlive the Product binding, but no
+    // cached Qt callback may resurrect its retired authority.
+    fanout.reset();
+    const auto stale=edit("source_adopt_probed");
+    QVERIFY(!stale);
+    QCOMPARE(stale.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(!save());
+    QVERIFY(!open());
+    token.value()->reset();
+    QVERIFY(!open());
+    QVERIFY(!save());
+}
+
+void M18CandidateDeliveryValidationTest::
 realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit()
 {
     // The file worker is independent of the QObject Product. Its exact
