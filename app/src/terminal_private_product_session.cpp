@@ -2735,12 +2735,20 @@ void TerminalPrivateProductSession::cancel_pending_on_region_change()
 
 void TerminalPrivateProductSession::on_renderer_changed()
 {
-    if(!admit_m18_private_mutation("renderer_changed"))return;
-    // A measured anonymous Windows DEVICE lease is a separate owned
-    // transaction. Renderer notifications cannot revoke its return token.
-    if(installedMeasuredTicket_||measuredSourceRecovery_)return;
-    if(!pending_)return;
+    // In M18, a notification is not itself a Product mutation. Progress,
+    // idle/no-pending and measured-DEVICE notifications must not consume
+    // a new export epoch or withdraw an otherwise valid commit ticket.
+    // Enforce Qt affinity BEFORE reading any mutable Product/renderer state.
+    if(m18MutationAdmission_&&QThread::currentThread()!=thread())return;
+    if(installedMeasuredTicket_||measuredSourceRecovery_||!pending_)return;
     const QString state=renderer_->status();
+    if(state!=QStringLiteral("ERROR")
+       &&state!=QStringLiteral("STALE")
+       &&state!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")
+       &&state!=QStringLiteral("READY_PRIVATE"))return;
+    // Only an actionable state transition is a genuine Product write.
+    // A denied worker commit must leave Pending, stage and Qt unchanged.
+    if(!admit_m18_private_mutation("renderer_changed"))return;
     if(state==QStringLiteral("ERROR")) {
         // Never erase the diagnostic after a minutes-long Windows render:
         // e.g. M16 post-trim failure and verification-guard exceedance
