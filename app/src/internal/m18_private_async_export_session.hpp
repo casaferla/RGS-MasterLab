@@ -1,8 +1,9 @@
 #pragma once
-// M18 PRIVATE PREPRODUCTION — no QML exposure, no Product registration.
-// A future Qt controller can own this nonblocking, one-job state machine
-// once every authoritative upstream mutation shares ONE Product epoch.
-// Do not equate encoded frames with successful WAV publication.
+// M18 private Product-owned nonblocking export session. main.cpp owns
+// the outer action/ViewModel; this class never crosses the Qt thread.
+// One detached Qt-free worker owns immutable PCM and a revocable epoch.
+// Encoded frames are NOT successful WAV publication; only verified
+// readback, terminal status and user ACK release the export state.
 #include "m18_private_async_export_handoff.hpp"
 #include "m18_export_format_policy.hpp"
 #include <rgsml/core/error.hpp>
