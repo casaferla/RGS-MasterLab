@@ -448,6 +448,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         *rate48.value());
     QVERIFY(verified);
     QCOMPARE(verified,candidates.staged());
+    QVERIFY(ui.can_export());
+    QVERIFY(!ui.can_cancel());
+    QVERIFY(!ui.can_acknowledge());
+    QCOMPARE(ui.status_text(),QStringLiteral("IDLE"));
     QVERIFY(verified->rendered.terminal.checked.final_check);
     QCOMPARE(verified->rendered.manual_chain_revision,
              session.masteringChainState->chain().revision());
