@@ -1,5 +1,6 @@
 // Real Qt 6 Quick screenshot review of isolated M19/M20/M21 UI.
 // Every number is a labelled static DEMO fixture, never Product data.
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
