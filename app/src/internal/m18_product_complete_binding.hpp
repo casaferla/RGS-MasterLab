@@ -1,8 +1,8 @@
 #pragma once
-// M18 PREPRODUCTION. One coordinator installs all existing Product
-// mutation interlocks atomically on a single Qt owner BEFORE consent.
-// It DOES NOT expose an Export button, mint a worker Ticket, or register
-// itself in main.cpp. Installation must precede all future authorization.
+// M18 active Product guard coordinator. main.cpp installs the complete
+// SOURCE/Project/MANUAL/M17 bundle atomically before exposing Export.
+// This binder is NOT the UI: it never invents consent or launches a worker.
+// Permission requires an exact, fresh M17 verified render epoch.
 #include "m18_product_upstream_binding.hpp"
 #include "m18_product_private_session_binding.hpp"
 #include <rgsml/core/error.hpp>
@@ -83,7 +83,8 @@ struct M18ProductCompleteBinding final {
         if(!Upstream::owner_thread_current(c.upstream)
            ||QThread::currentThread()!=c.session.thread()
            ||!c.candidates.m18_owner_thread_current()
-           ||!installed(c)||!fanout.can_install_full_product_guards())
+           ||!installed(c)||!fanout.can_install_full_product_guards()
+           ||!fanout.m17_verified_epoch_current())
             return false;
         const auto snapshot=fanout.current_owner_snapshot();
         if(!snapshot||!snapshot->identity.valid())return false;
@@ -134,7 +135,7 @@ struct M18ProductCompleteBinding final {
            ||!Upstream::owner_thread_current(c.upstream)
            ||QThread::currentThread()!=c.session.thread()
            ||!c.candidates.m18_owner_thread_current()
-           ||!installed(c))
+           ||!installed(c)||!fanout.m17_verified_epoch_current())
             return R::failure(core::Error{
                 core::ErrorCode::AccessDenied,
                 "M18_EXPORT_CONSENT_REQUIRES_ONE_COMPLETE_PRODUCT_BINDING"});
