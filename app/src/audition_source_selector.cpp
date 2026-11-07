@@ -506,12 +506,15 @@ core::Status AuditionSourceSelector::set_gold(
     core::SampleRate sampleRate,
     core::FrameCount frameCount)
 {
-    if(const auto admission=admit_m18_source_mutation("set_gold");
-       !admission)return admission;
-    M18ScopedAuditionMutation lifetime{
-        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
-    (void)lifetime;
-    offlineProcessedAuthority_.reset();
+    // An invalid alias to SOURCE is not a GOLD mutation and must not
+    // withdraw a current M18 verified Master. Reject wrong-thread and
+    // nested Qt writes BEFORE looking at the SOURCE path or filesystem.
+    if(m18MutationAdmission_) {
+        if(QThread::currentThread()!=thread())
+            return unavailable("M18_GOLD_PREFLIGHT_REQUIRES_QT_OWNER_THREAD");
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)
+            return unavailable("M18_GOLD_PREFLIGHT_REENTRANT_MUTATION");
+    }
     if (source_) {
         if (source_->same_resource_identity(reference)) {
             return unavailable("Gold must be a file distinct from Source.");
@@ -524,6 +527,14 @@ core::Status AuditionSourceSelector::set_gold(
             return unavailable("Gold must not be an alias of the Source file.");
         }
     }
+    // Exact file-identity preflight is complete. Only now may the
+    // Product revoke consent and mutate GOLD or the audio handoff.
+    if(const auto admission=admit_m18_source_mutation("set_gold");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
+    offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::GOLD) {
         auto cleared = playback_->stop_and_clear();
         if (!cleared) {
