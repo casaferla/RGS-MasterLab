@@ -751,12 +751,21 @@ void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringOpenBatch()
             // Bounded fault injection: absent single-writer protection
             // would recurse only once, then the assertions fail.
             if(openBatches==1) {
+                // A callback must never destroy its own std::function
+                // while the Product's Project-open lease is being issued.
+                session.project.set_private_m18_project_open_batch_begin({});
+                session.project.set_private_m18_project_save_batch_begin({});
                 session.project.openProject(QUrl::fromLocalFile(toOpen));
                 session.project.saveProjectAs(QUrl::fromLocalFile(deniedSave));
             }
             return core::Result<std::shared_ptr<const void>>::success(
                 std::make_shared<int>(2));
         });
+    std::thread foreignOpenDisarm([&] {
+        session.project.set_private_m18_project_open_batch_begin({});
+        session.project.set_private_m18_project_save_batch_begin({});
+    });
+    foreignOpenDisarm.join();
     session.project.openProject(QUrl::fromLocalFile(toOpen));
     QCOMPARE(openBatches,std::size_t{1});
     QCOMPARE(saveBatches,std::size_t{0});
@@ -799,6 +808,10 @@ void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringSaveBatch()
     session.project.set_private_m18_project_save_batch_begin(
         [&]()->core::Result<std::shared_ptr<const void>> {
             ++saveBatches;
+            // A nested Product callback may not uninstall the SaveAs
+            // lease provider or escape the active Project epoch.
+            session.project.set_private_m18_project_save_batch_begin({});
+            session.project.set_private_m18_project_open_batch_begin({});
             // Simulate a synchronous Qt callback trying to start another
             // Project mutation while the first SaveAs lease is being issued.
             session.project.saveProjectAs(QUrl::fromLocalFile(inner));
@@ -806,6 +819,11 @@ void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringSaveBatch()
             return core::Result<std::shared_ptr<const void>>::success(
                 std::make_shared<int>(2));
         });
+    std::thread foreignSaveDisarm([&] {
+        session.project.set_private_m18_project_save_batch_begin({});
+        session.project.set_private_m18_project_open_batch_begin({});
+    });
+    foreignSaveDisarm.join();
     session.project.saveProjectAs(QUrl::fromLocalFile(outer));
     QCOMPARE(saveBatches,std::size_t{1});
     QCOMPARE(openBatches,std::size_t{0});
