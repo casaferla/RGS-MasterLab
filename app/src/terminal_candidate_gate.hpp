@@ -97,9 +97,18 @@ public:
     }
     void invalidate() noexcept;
     [[nodiscard]] std::shared_ptr<const StagedMeasuredCandidate>
-    staged_measured() const noexcept {return stagedMeasured_;}
+    staged_measured() const noexcept {
+        // std::shared_ptr stage publication is owner-thread serialized,
+        // NOT an atomic reader port. A detached M18 export worker must
+        // consume the retained immutable capture, never touch this gate.
+        if(std::this_thread::get_id()!=ownerThread_)return {};
+        return stagedMeasured_;
+    }
     [[nodiscard]] std::shared_ptr<const StagedCandidate> staged() const noexcept
-    { return staged_; }
+    {
+        if(std::this_thread::get_id()!=ownerThread_)return {};
+        return staged_;
+    }
 
 private:
     // Only the status-returning M18 path may call the actual reset while
