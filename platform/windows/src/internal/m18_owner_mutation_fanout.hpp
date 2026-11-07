@@ -29,6 +29,11 @@ class M18OwnerMutationFanout final {
         std::uint64_t epoch;
         M18ProductExportIdentity identity;
         bool admitting{false};
+        // Owner-thread-only generation of the most recent M17 terminal
+        // verification/retention event. A parameter-only MANUAL change
+        // may leave chain().revision() unchanged, so the old verified
+        // candidate MUST NOT become exportable again on a new epoch.
+        std::uint64_t verifiedM17Epoch{0};
         // Only an owner-held Project-open batch may use the approved
         // nested child calls without advancing a second Product epoch.
         std::atomic<bool> projectOpenActive{false};
@@ -114,6 +119,21 @@ public:
                 state->epoch,state->identity);
     }
 
+    // Read-only native Product proof that no admitted DSP, SOURCE, Project
+    // or terminal mutation happened after the verified M17 stage became
+    // ready. An old staged M17 shared_ptr alone cannot establish this.
+    [[nodiscard]] bool m17_verified_epoch_current() const noexcept {
+        const auto state=shared_;
+        return state
+            &&std::this_thread::get_id()==state->ownerThread
+            &&!state->retired.load(std::memory_order_acquire)
+            &&!state->admitting
+            &&!state->projectOpenActive.load(std::memory_order_acquire)
+            &&!state->sourceCommitActive.load(std::memory_order_acquire)
+            &&state->epoch!=0
+            &&state->verifiedM17Epoch==state->epoch;
+    }
+
     // Called by the Product owner after a completed/acknowledged Export
     // or a failed worker launch. Retires ONLY this exact consent Ticket,
     // never the verified M17 PCM, SOURCE or Project generation. Refuse
@@ -143,6 +163,10 @@ public:
         const auto revoked=state->authority->try_transition(
             state->epoch,nextEpoch,state->identity,false);
         if(!revoked)return revoked;
+        // ACK is not a DSP mutation. A genuinely verified, unchanged
+        // M17 Master remains eligible for the next separate user consent.
+        if(state->verifiedM17Epoch==state->epoch)
+            state->verifiedM17Epoch=nextEpoch;
         state->epoch=nextEpoch;
         return core::Status::success();
     }
@@ -191,6 +215,7 @@ public:
         if(!allowed)return allowed;
         state->epoch=nextEpoch;
         state->identity=updated;
+        state->verifiedM17Epoch=0; // A newly reconciled chain/rate needs a new render.
         return core::Status::success();
     }
 
@@ -229,6 +254,8 @@ public:
         const auto accepted=state->authority->try_transition(
             state->epoch,newEpoch,verifiedCurrentIdentity,true);
         if(!accepted)return R::failure(*accepted.error());
+        if(state->verifiedM17Epoch==state->epoch)
+            state->verifiedM17Epoch=newEpoch;
         state->epoch=newEpoch;
         return state->authority->capture(verifiedCurrentIdentity);
     }
@@ -302,6 +329,14 @@ public:
             if(!allowed)return allowed;
             state->identity=nextIdentity;
             state->epoch=nextEpoch;
+            // Only completion of a real M17 render or a M17 comparison
+            // retirement may establish a current stage again. A mere
+            // Gain/EQ/Compressor parameter write always retires it even
+            // if chain().revision() and a cached stage pointer match.
+            state->verifiedM17Epoch=(op=="renderer_changed"
+                ||op=="comparison_suspend"
+                ||op=="return_monitor_to_manual")
+                ?nextEpoch:0;
             return core::Status::success();
         };
     }
@@ -367,6 +402,7 @@ public:
             if(!physical)return R::failure(*physical.error());
             state->identity=nextIdentity;
             state->epoch=nextEpoch;
+            state->verifiedM17Epoch=0;
             try {
                 auto token=std::make_shared<HeldSourceCommit>(
                     state,std::move(*physical.value()));
@@ -430,6 +466,7 @@ public:
             // identity may be resurrected by a failed SaveAs.
             state->epoch=newEpoch;
             state->identity=nextIdentity;
+            state->verifiedM17Epoch=0;
             try {
                 std::shared_ptr<M18EpochCommitBarrier::MutationLease> held{
                     std::move(*lease.value())};
@@ -494,6 +531,7 @@ public:
             // M17 export ticket or consent.
             state->epoch=nextEpoch;
             state->identity=nextIdentity;
+            state->verifiedM17Epoch=0;
             try {
                 auto token=std::make_shared<HeldProjectOpen>(
                     state,std::move(*physical.value()));
