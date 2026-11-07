@@ -456,6 +456,9 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!QFileInfo::exists(wrongCeilingPath));
     QVERIFY(!action.has_unacknowledged_export());
 
+    const auto initialProductEpoch=fanout.current_owner_snapshot();
+    QVERIFY(initialProductEpoch);
+    std::uint64_t expectedConsentEpoch=initialProductEpoch->epoch;
     for(const auto encoding:{
             audio::WavSampleFormat::PCM_S24,
             audio::WavSampleFormat::IEEE_F32}) {
@@ -535,6 +538,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QVERIFY(action.can_acknowledge());
         QVERIFY(!action.can_cancel());
         QVERIFY(action.acknowledge());
+        expectedConsentEpoch+=2; // one user consent, one terminal ACK
+        const auto afterAck=fanout.current_owner_snapshot();
+        QVERIFY(afterAck);
+        QCOMPARE(afterAck->epoch,expectedConsentEpoch);
+        QVERIFY(afterAck->identity==initialProductEpoch->identity);
         QVERIFY(!action.has_unacknowledged_export());
         QCOMPARE(action.snapshot().phase,
                  M18PrivateAsyncExportSession::Phase::IDLE);
