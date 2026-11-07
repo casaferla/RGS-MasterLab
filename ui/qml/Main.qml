@@ -1199,7 +1199,13 @@ ApplicationWindow {
                         StudioMenuItem { objectName: "menuClearGold"; text: "Clear Gold Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuSaveProjectAs"; text: "Save Project As…"; enabled: projectSession.canSaveProject; onTriggered: projectSaveDialog.open() }
-                        StudioMenuItem { text: "Export"; enabled: false }
+                        StudioMenuItem {
+                            objectName: "menuExportMaster"
+                            text: "Export verified Master…"
+                            enabled: !!root.appM18ExportModel
+                                && root.appM18ExportModel.canExport
+                            onTriggered: m18ExportFormatDialog.open()
+                        }
                         MenuSeparator { }
                         StudioMenuItem { text: "Exit"; onTriggered: root.close() }
                     }
