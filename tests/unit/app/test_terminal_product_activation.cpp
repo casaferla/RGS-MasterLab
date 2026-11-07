@@ -3388,6 +3388,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                     core::ErrorCode::InvalidState,
                     "M18_TEST_COMMIT_BUSY_MUTATION_DENIED"});
             });
+        // A background export worker cannot silently disarm the real
+        // Product QObject authority before cancellation is admitted.
+        std::thread foreignGateRemoval([&] {
+            product.set_private_m18_mutation_admission({});
+        });
+        foreignGateRemoval.join();
         const auto cancelDenied=product.cancel();
         QVERIFY(!cancelDenied);
         QCOMPARE(cancelDenied.error()->code(),core::ErrorCode::InvalidState);
