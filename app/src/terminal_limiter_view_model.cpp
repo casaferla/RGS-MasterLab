@@ -93,7 +93,12 @@ bool TerminalLimiterViewModel::admit_m18_view_mutation() const noexcept
     if(state_->m18_mutation_admission_installed())
         return !m18ProcessingMutationAdmission_;
     if(!m18ProcessingMutationAdmission_)return true;
-    if(QThread::currentThread()!=thread())return false;
+    if(QThread::currentThread()!=thread()||m18ViewAdmitting_)return false;
+    m18ViewAdmitting_=true;
+    struct AdmissionUnwind final {
+        bool* active;
+        ~AdmissionUnwind(){*active=false;}
+    } unwind{&m18ViewAdmitting_};
     try{return m18ProcessingMutationAdmission_();}
     catch(...){return false;}
 }
