@@ -3,6 +3,7 @@
 #include "accepted_prepare_observation_policy.hpp"
 #include <limits>
 #include <stdexcept>
+#include <thread>
 #include <QSignalSpy>
 #include <QtTest>
 #include <array>
@@ -10,6 +11,33 @@ namespace rgsml::app {
 class MasterRateTest final : public QObject {
 Q_OBJECT
 private slots:
+ void m18RateAuthorityCannotSelfUninstallOrCrossThread() {
+    MasterOutputRateState rate;
+    rate.source_committed(48000);
+    const auto originalRevision=rate.rate_revision();
+    std::size_t denied=0,nestedDenied=0;
+    rate.set_private_m18_rate_mutation_admission([&] {
+        ++denied;
+        // Neither the active callback nor a nested RATE edit may
+        // withdraw the Product's shared worker commit epoch.
+        rate.set_private_m18_rate_mutation_admission({});
+        if(!rate.choose_master_rate(96000))++nestedDenied;
+        return false;
+    });
+    std::thread foreignDisarm([&] {
+        rate.set_private_m18_rate_mutation_admission({});
+    });
+    foreignDisarm.join();
+    QVERIFY(!rate.choose_master_rate(44100));
+    QVERIFY(!rate.choose_master_rate(44100));
+    QCOMPARE(denied,std::size_t{2});
+    QCOMPARE(nestedDenied,std::size_t{2});
+    QCOMPARE(rate.master_rate_hz(),qint64{48000});
+    QCOMPARE(rate.rate_revision(),originalRevision);
+    rate.set_private_m18_rate_mutation_admission({});
+    QVERIFY(rate.choose_master_rate(44100));
+    QCOMPARE(rate.rate_revision(),originalRevision+quint64{1});
+ }
  void sourceDefaultAndNoDeviceDependency(){
     MasterOutputRateState s;QSignalSpy changes(&s,&MasterOutputRateState::changed);
     QVERIFY(!s.choose_master_rate(48000));s.source_committed(44100);
