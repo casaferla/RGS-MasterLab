@@ -3780,6 +3780,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             ==m17View.channel(0U).value()->data());
         // No implicit PCM24 dither seed and no Float32 dither:
         // invalid encoding/seed combinations fail before worker dispatch.
+        // M18 is a final-delivery encoding policy, not another stage
+        // in the binary64 M17 DSP chain: integer PCM24 is the ONLY
+        // format that receives deterministic seeded TPDF dither.
+        using app::internal::validate_m18_export_format;
+        QVERIFY(validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,UINT64_C(0),-12.0));
+        QVERIFY(validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),0.0));
+        QVERIFY(validate_m18_export_format(
+            audio::WavSampleFormat::IEEE_F32,std::nullopt,-1.0));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,std::nullopt,-1.0));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::IEEE_F32,UINT64_C(1),-1.0));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,UINT64_C(1),-12.01));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::IEEE_F32,std::nullopt,0.01));
         const auto missingPcm24Seed=
             app::internal::make_m18_checked_stage_worker_request_from_live_product(
                 product,selectedSource,selectedProjectRate,candidates,
