@@ -91,12 +91,17 @@ public:
     }
 
     [[nodiscard]] bool can_cancel() const {
+        // Ticket optional is owner-thread serialized, not an atomic
+        // cross-thread permission bit. Check affinity BEFORE reading it.
+        if(QThread::currentThread()!=controllers_.session.thread())
+            return false;
         return ticket_&&session_.snapshot().phase
             ==M18PrivateAsyncExportSession::Phase::ENCODING_OR_VERIFYING;
     }
 
     [[nodiscard]] bool can_acknowledge() const {
-        if(!ticket_)return false;
+        if(QThread::currentThread()!=controllers_.session.thread()
+           ||!ticket_)return false;
         const auto phase=session_.snapshot().phase;
         return phase==M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED
             ||phase==M18PrivateAsyncExportSession::Phase::FAILED
@@ -108,6 +113,8 @@ public:
     }
 
     [[nodiscard]] bool has_unacknowledged_export() const noexcept {
+        if(QThread::currentThread()!=controllers_.session.thread())
+            return false;
         return ticket_.has_value();
     }
 
