@@ -562,8 +562,15 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
                  audio::ChannelLayout::MONO_C);
         QVERIFY((*inspected.value())->close());
         QVERIFY(action.can_acknowledge());
+        QVERIFY(ui.can_acknowledge());
         QVERIFY(!action.can_cancel());
-        QVERIFY(action.acknowledge());
+        QCOMPARE(ui.status_text(),QStringLiteral("VERIFIED DELIVERED"));
+        QCOMPARE(ui.verified_sha256().size(),qsizetype{64});
+        QCOMPARE(ui.verified_bytes(),
+                 static_cast<qulonglong>(*report.verified_file_size_bytes));
+        QVERIFY(ui.acknowledgeExport());
+        QVERIFY(!ui.can_acknowledge());
+        QVERIFY(ui.can_export());
         expectedConsentEpoch+=2; // one user consent, one terminal ACK
         const auto afterAck=fanout.current_owner_snapshot();
         QVERIFY(afterAck);
