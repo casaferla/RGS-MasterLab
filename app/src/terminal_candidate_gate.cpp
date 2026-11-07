@@ -246,6 +246,14 @@ core::Status TerminalCandidateGate::admit_m18_candidate_mutation(
     const char* operation) const
 {
     if(!m18MutationAdmission_)return core::Status::success();
+    if(m18AdmissionActive_)return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_CANDIDATE_GATE_REENTRANT_ADMISSION"});
+    m18AdmissionActive_=true;
+    struct Unwind final {
+        bool* active;
+        ~Unwind(){*active=false;}
+    } unwind{&m18AdmissionActive_};
     try{return m18MutationAdmission_(operation);}
     catch(...){return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
