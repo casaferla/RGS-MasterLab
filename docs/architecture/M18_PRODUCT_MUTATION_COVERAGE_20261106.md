@@ -1418,3 +1418,68 @@ for exactly one subsequent Focused Windows+Linux CI, then inspect only
 bounded failure artifacts if Windows remains red. Keep Draft PR #84
 and main distinct; no merge or Full Qualification (PO policy: FQ once
 after M18–M22 integrated).
+
+### Chat #72 — #1075 Focused in-flight; next isolated actual SOURCE full-batch integration
+PO reported #1074 Windows red; GitHub verified Linux SUCCESS, Windows
+ProjectSession native process exit 2 with **29 PASS / 2 FAIL**. Earlier
+probe printed only the last 16 passing QtTest lines, so exact failed
+methods were UNKNOWN; no blind assertion weakening. The diagnostic
+was upgraded to print ONLY FAIL/QFATAL lines with six bounded lines of
+context, and changed to a non-blocking step so normal focused CTest
+is always attempted. A separate Project Open regression was updated:
+real source-rate restoration AND target-rate selection are two child
+callback admissions under ONE held Project mutation epoch. The 20
+commits were fast-forwarded to Draft PR #84
+`88f931bf02cf919f42db45908b25e98c3dc585cf` and exactly one new
+Focused [#1075](https://github.com/casaferla/RGS-MasterLab/actions/runs/42350124424)
+started on that SHA. No main merge or separate FQ.
+
+The NEXT, uncompiled NO-CI staging closes a Product-level SOURCE
+transaction gap beyond the callback-only guard:
+
+- New `M18OwnerMutationFanout::source_commit_batch()` reserves a
+  **physical exclusive** `M18EpochCommitBarrier::MutationLease`
+  before SOURCE adoption, revoking export consent and increasing the
+  product generation exactly once. It holds the lease through
+  `SourceSelectionViewModel`'s source-committed handler cascade,
+  transport preparation and all synchronous Qt changed/error signals.
+  Worker file publication refuses the SOURCE batch (BUSY); conversely
+  the active batch prevents any old export ticket from committing.
+- `sourceCommitActive` is scoped by an RAII token and whitelists only
+  the expected nested SOURCE callbacks (selector prepared/processed,
+  audio-source handoff, GOLD retirement, terminal candidate retirement
+  and MASTER rate updates). Unrelated DSP/GOLD replacement is denied.
+  Source batch may not overlap Project SaveAs or another Project Open.
+- Project Open already owns a wider exclusive mutation token. When
+  SourceSelectionVM is invoked *inside that operation*, its batch
+  adapter returns a non-null shared lifetime witness of the same
+  Product state (no independent Product generation), relying on the
+  still-held Project lease to exclude workers throughout the child.
+- A new opt-in `SourceSelectionViewModel::M18SourceBatchBegin` is
+  mutually exclusive with the previous status-only callback. With
+  it installed, SOURCE adoption fails closed if no lease is returned,
+  a throwing callback fires, a worker invokes Qt, or a reentrant
+  callback attempts to commit again. The exact lease stays alive
+  until after Qt publication. Transport/callback setter and file picker
+  guard both opt-in modes. **Legacy M17 with no gates is unchanged.**
+- The typed actual SOURCE binder now uses the full physical batch
+  instead of a one-shot status callback. Native Project integration
+  tests drive real Source picker/selector and real Project
+  Open+SaveAs through the same Product authority under a simulated
+  worker commit. Real Project recovery verifies source+GOLD+MASTER
+  192 kHz state, rate revision, and output file readback; M18 backend
+  tests cover nested SOURCE under Project Open, physical worker BUSY,
+  denial of unknown nested edits, and independent next-owner action.
+- Separate SOURCE QtTests guard dual status+batch policy ambiguity,
+  denied physical lease, subsequent success and exact error clearing.
+
+BLOCKERS REMAIN: main.cpp still uses a void SOURCE committed callback
+with unguarded downstream rate/telemetry/activation paths. It must be
+converted to one status-bearing, fail-closed cross-controller SOURCE
+transaction before any Product M18 Export UI/ticket can be enabled.
+Similarly, M17 terminal cancellation/return routes must honor BUSY,
+and complete verified-M17 actual source/project identity + explicit
+user consent and physical delivery/rollback must be wired and tested.
+No unqualified inference from this isolated preproduction branch.
+Focused CIs per macrolot only, and one Full Qualification AFTER
+integrated M18–M22 per the Product Owner.
