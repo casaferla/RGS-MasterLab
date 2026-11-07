@@ -717,6 +717,14 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     QCOMPARE(calls,std::size_t{0});
     QCOMPARE(changed.count(),0);
     QCOMPARE(session.status(),QStringLiteral("IDLE"));
+    // An invalid M17 Prepare from a SOURCE-less Product is a rejected
+    // read-only preflight, never an export-epoch transition or BUSY write.
+    auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto invalidPrepare=session.request_private(*rate.value(),false);
+    QVERIFY(!invalidPrepare);
+    QCOMPARE(calls,std::size_t{0});
+    QCOMPARE(changed.count(),0);
     QVERIFY(!session.cancel());
     QVERIFY(nestedDenied);
     QCOMPARE(calls,std::size_t{1});
