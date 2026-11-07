@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Independent M19 P01/F07 numerical reference
         shell: bash
         run: |
@@ -50,7 +51,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/qualification/m22/test_m22_scope_guard.py
+          python3 tools/qualification/m22/test_m22_post_m21_product_guard.py
       - name: Install canonical Qt toolchain
         shell: bash
         run: |
@@ -89,6 +90,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -133,7 +135,7 @@ jobs:
       - name: M22 frozen scope invariants (not FQ)
         shell: pwsh
         run: |
-          python tools/qualification/m22/test_m22_scope_guard.py
+          python tools/qualification/m22/test_m22_post_m21_product_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'M22_SCOPE_GUARD_FAILED' }
       - name: Install canonical Qt MSVC toolchain
         shell: pwsh
