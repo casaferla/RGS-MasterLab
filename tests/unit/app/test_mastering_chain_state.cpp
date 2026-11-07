@@ -476,6 +476,69 @@ m18TerminalCandidateGateSharesActualProductExportCommitEpoch()
     QVERIFY(!owner->capture(id));
 }
 
+void MasteringChainStateTest::
+m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=MasteringChainState::create_default(
+        *registry.value(),
+        test_uuid("ab000000-0000-4000-8000-000000000001"),
+        test_instance_id("ab000000-0000-4000-8000-000000000010"),
+        test_instance_id("ab000000-0000-4000-8000-000000000020"),
+        test_instance_id("ab000000-0000-4000-8000-000000000030"));
+    QVERIFY(chain);
+    auto limiter=TerminalLimiterState::create_default(
+        *registry.value(),
+        test_instance_id("ab000000-0000-4000-8000-000000000040"));
+    QVERIFY(limiter);
+    TerminalCandidateGate candidates;
+    TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&]{return chain.value()->chain();}};
+    QSignalSpy changed{&renderer,&TerminalPrivateRenderController::changed};
+    const M18ProductExportIdentity id{101U,102U,103U,0U,48000U,5U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        100U,id);
+    QVERIFY(owner->try_transition(100U,101U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,101U,id};
+    app::internal::M18ProductTerminalCandidateBinding::bind(
+        candidates,fanout);
+    auto worker=ticket.value()->commit_lease_factory()();
+    QVERIFY(worker);
+
+    // Both the legacy void renderer entrypoint and the new explicit
+    // status path must reject a commit-in-progress BEFORE mutating the
+    // local serial/status, pending jobs or Qt changed() notifications.
+    renderer.invalidate();
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(renderer.status(),QStringLiteral("IDLE"));
+    const auto busy=renderer.try_invalidate_for_m18();
+    QVERIFY(!busy);
+    QCOMPARE(busy.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(changed.count(),0);
+    QVERIFY((*worker.value())->revalidate_current());
+
+    worker.value()->reset();
+    renderer.invalidate();
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(renderer.status(),QStringLiteral("IDLE"));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+
+    // An independently requested explicit invalidation uses the same
+    // Product authority and cannot resurrect obsolete M17 PCM.
+    QVERIFY(renderer.try_invalidate_for_m18());
+    QCOMPARE(changed.count(),2);
+}
+
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
 {
     auto registry = ModuleRegistry::create_dsp_package_v1();
