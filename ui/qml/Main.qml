@@ -511,6 +511,54 @@ ApplicationWindow {
         onRejected: projectSession.cancelProjectSave()
     }
 
+    // M18 Product-authorized output choice. The File menu remains
+    // disabled until the application owns the complete M18 gate bundle.
+    // No QML surface can mint a Ticket or invoke a detached worker.
+    FileDialog {
+        id: m18ExportFileDialog
+        objectName: "m18ExportFileDialog"
+        title: "Export verified Master WAV"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["WAV audio (*.wav *.wave)"]
+        onAccepted: {
+            const model = root.appM18ExportModel
+            if (!model) return
+            model.beginExport(selectedFile, root.m18ExportFormatIndex)
+            m18ExportProgressDialog.open()
+        }
+    }
+    Dialog {
+        id: m18ExportFormatDialog
+        objectName: "m18ExportFormatDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        title: "Export Master · WAV format"
+        modal: true
+        width: Math.min(420, root.width - 48)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                text: "Choose the final WAV encoding. The verified M17 Ceiling is unchanged."
+                color: root.textPrimary
+                wrapMode: Text.Wrap
+            }
+            ComboBox {
+                id: m18FormatChoice
+                objectName: "m18ExportEncoding"
+                Layout.fillWidth: true
+                model: ["24-bit PCM · TPDF dither", "32-bit Float · no dither"]
+                currentIndex: root.m18ExportFormatIndex
+                onActivated: root.m18ExportFormatIndex = currentIndex
+            }
+        }
+        onAccepted: {
+            if (root.appM18ExportModel && root.appM18ExportModel.canExport)
+                m18ExportFileDialog.open()
+        }
+    }
+
     // X/Alt+F4 is NOT permission to retry an absent Windows DEVICE.
     // Keep the in-RAM M17 MASTER or explicitly discard on shutdown.
     Dialog {
