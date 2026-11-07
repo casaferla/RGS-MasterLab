@@ -1,8 +1,8 @@
 #pragma once
-// M18 PREPRODUCTION ONLY. No Product/QML/worker registration exists.
-// A worker owns a COPY of the immutable M17 request (shared PCM owner,
-// resource value references and Qt-free epoch lease factory); never a
-// QObject*, QPointer, QString or UI event-loop callback.
+// M18 Qt-free Windows export worker, launched by the Product-owned
+// private action after explicit user consent. It retains a COPY of the
+// immutable M17 request (shared PCM owner, resource references and
+// epoch lease factory), never a QObject*, QPointer or UI callback.
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/core/error.hpp>
 #include <atomic>
