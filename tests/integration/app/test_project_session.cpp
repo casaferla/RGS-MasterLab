@@ -583,6 +583,21 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     QVERIFY(!session.gold.has_gold());
     QVERIFY(session.gold.error_message().isEmpty());
     session.gold.set_private_m18_gold_mutation_admission({});
+    // Selecting the SOURCE itself as GOLD (or its alias) must fail
+    // before the selector consumes a Product/MASTER export epoch.
+    std::size_t forbiddenAliasAdmissions=0;
+    session.selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++forbiddenAliasAdmissions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_GOLD_ALIAS_MUST_NOT_BURN_EPOCH"});
+        });
+    session.gold.selectGold(QUrl::fromLocalFile(source));
+    QCOMPARE(forbiddenAliasAdmissions,std::size_t{0});
+    QVERIFY(!session.gold.has_gold());
+    QVERIFY(!session.gold.error_message().isEmpty());
+    session.selector.set_private_m18_mutation_admission({});
     session.gold.selectGold(QUrl::fromLocalFile(goldA));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.gold_resource());
