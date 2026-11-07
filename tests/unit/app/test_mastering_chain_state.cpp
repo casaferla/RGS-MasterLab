@@ -540,6 +540,53 @@ m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch()
     QCOMPARE(changed.count(),2);
 }
 
+void MasteringChainStateTest::
+m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority()
+{
+    TerminalCandidateGate gate;
+    std::size_t calls=0;
+    bool nestedDenied=false;
+    gate.set_private_m18_mutation_admission(
+        [&](const char* operation)->core::Status {
+            ++calls;
+            QVERIFY(operation!=nullptr);
+            // A malicious or inadvertent Qt/editor callback must not
+            // unregister the current owner and gain an unguarded reset.
+            gate.set_private_m18_mutation_admission({});
+            const auto nested=gate.try_invalidate_for_m18();
+            nestedDenied=!nested&&nested.error()->code()
+                ==core::ErrorCode::InvalidState;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_CANDIDATE_WRITER_BUSY"});
+        });
+    auto denied=gate.try_invalidate_for_m18();
+    QVERIFY(!denied);
+    QVERIFY(nestedDenied);
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(gate.m18_mutation_admission_installed());
+    // Legacy M17 void API may not bypass the still-installed owner.
+    gate.invalidate();
+    QCOMPARE(calls,std::size_t{1});
+    denied=gate.try_invalidate_for_m18();
+    QVERIFY(!denied);
+    QCOMPARE(calls,std::size_t{2});
+    gate.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_CANDIDATE_ADMISSION_THROWN");
+        });
+    QVERIFY(!gate.try_invalidate_for_m18());
+    // Exception-safe unwind releases the non-reentrant flag and keeps
+    // admission reconfigurable for a subsequent explicit owner write.
+    gate.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            return core::Status::success();
+        });
+    QVERIFY(gate.try_invalidate_for_m18());
+    gate.set_private_m18_mutation_admission({});
+    QVERIFY(!gate.m18_mutation_admission_installed());
+}
+
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
 {
     auto registry = ModuleRegistry::create_dsp_package_v1();
