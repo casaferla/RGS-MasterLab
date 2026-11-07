@@ -88,11 +88,15 @@ void display_frames() {
 }
 void screenshot(QQuickView& view,const QString& dir,
                 const int w,const int h,const int tab,
-                const QString& id)
+                const QString& id,const bool standalone)
 {
     view.resize(w,h);
     require(view.rootObject()!=nullptr,"GUI_ROOT_NOT_LOADED");
     require(view.rootObject()->setProperty("activeTab",tab),"GUI_TAB_SET_FAILED");
+    require(view.rootObject()->setProperty("standaloneModuleMode",standalone),
+            "GUI_STANDALONE_MODE_SET_FAILED");
+    require(view.rootObject()->property("standaloneModuleMode").toBool()==standalone,
+            "GUI_STANDALONE_MODE_READBACK_FAILED");
     view.show();
     display_frames();
     const auto capture=view.grabWindow();
@@ -104,7 +108,8 @@ void screenshot(QQuickView& view,const QString& dir,
         for(int x=0;x<capture.width();x+=3)
             colors.insert(capture.pixel(x,y));
     require(colors.size()>=35,"QT_CAPTURE_BLANK_OR_FONT_MISSING");
-    const QString filename=dir+QStringLiteral("/analysis-")+id+
+    const QString filename=dir+
+        (standalone?QStringLiteral("/standalone-"):QStringLiteral("/analysis-"))+id+
         QStringLiteral("-")+QString::number(w)+QStringLiteral("x")+
         QString::number(h)+QStringLiteral(".png");
     require(capture.save(filename,"PNG"),"QT_CAPTURE_PNG_WRITE_FAILED");
@@ -149,10 +154,12 @@ int main(int argc,char** argv) {
             QStringLiteral("m19-levels"),QStringLiteral("m20-tonal-stereo"),
             QStringLiteral("m21-metrics-delta")};
         for(int tab=0;tab<3;++tab){
-            screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)]);
-            screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)]);
+            screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)],false);
+            screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)],false);
+            screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)],true);
+            screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)],true);
         }
-        std::cout<<"RGSML_M19_M21_GUI_6_AUTHENTIC_QT_SCREENSHOTS_PASS_NOT_PRODUCT\n";
+        std::cout<<"RGSML_M19_M21_GUI_12_UNIFIED_AND_STANDALONE_QT_SCREENSHOTS_PASS_NOT_PRODUCT\n";
         return 0;
     }catch(const std::exception& e){
         std::cerr<<"RGSML_GUI_SCREENSHOT_FAILURE "<<e.what()<<'\n';

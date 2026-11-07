@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - staging/m19-m21-analysis-gui-screenshots-20261107
+      - staging/m19-m21-analysis-standalone-gui-20261107
   workflow_dispatch:
 
 permissions:
@@ -32,7 +33,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_TOOLS_INSTALL_FAILED' }
           python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:RUNNER_TEMP/analysisqt"
           if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_QT_INSTALL_FAILED' }
-      - name: Build and capture SIX genuine QtQuick GUI states (DEMO DATA)
+      - name: Build 12 genuine QtQuick designs: unified + individual panels (DEMO DATA)
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
@@ -62,11 +63,11 @@ jobs:
           }
           Get-Content $log -Tail 8
           $pngs = @(Get-ChildItem $shots -Filter '*.png')
-          if ($pngs.Count -ne 6) { throw "ANALYSIS_UI_EXPECTED_SIX_PNG_FOUND_$($pngs.Count)" }
+          if ($pngs.Count -ne 12) { throw "ANALYSIS_UI_EXPECTED_TWELVE_PNG_FOUND_$($pngs.Count)" }
           foreach ($img in $pngs) {
             if ($img.Length -lt 14000) { throw "ANALYSIS_UI_POSSIBLY_BLANK_$($img.Name)" }
           }
-          Write-Output "M19_M20_M21_SIX_REAL_WINDOWS_QT_SCREENSHOTS_PASS_NON_FQ_DEMO_ONLY"
+          Write-Output "M19_M20_M21_TWELVE_REAL_WINDOWS_QT_SCREENSHOTS_PASS_NON_FQ_DEMO_ONLY"
       - name: Preserve bounded failure only (never full job logs)
         if: failure()
         uses: actions/upload-artifact@v4

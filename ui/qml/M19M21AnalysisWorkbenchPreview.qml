@@ -13,6 +13,12 @@ Rectangle {
     color: "#071117"
 
     property int activeTab: 0 // 0=M19, 1=M20, 2=M21
+    // Design-only alternate presentation: one module per detached/dockable shell.
+    // Does not instantiate a real Window, alter Product, or claim dock wiring.
+    property bool standaloneModuleMode: false
+    readonly property string selectedModuleTitle: activeTab === 0
+        ? "LEVELS  /  M19" : (activeTab === 1
+        ? "TONAL & STEREO  /  M20" : "METRICS / DELTA  /  M21")
     property var presentation: ({ready:false})
     property bool fixtureMode: true
     readonly property bool available: !!presentation && presentation.ready === true
@@ -34,7 +40,7 @@ Rectangle {
         id: layout
         anchors.fill: parent
         anchors.margins: 18
-        spacing: 12
+        spacing: root.standaloneModuleMode ? 8 : 12
 
         Row {
             width: parent.width
@@ -52,14 +58,16 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 3
                 Text {
-                    text: "ANALYSIS"
+                    text: root.standaloneModuleMode ? root.selectedModuleTitle : "ANALYSIS"
                     font.family: "Segoe UI"
                     font.pixelSize: 26
                     font.weight: Font.DemiBold
                     color: root.ink
                 }
                 Text {
-                    text: "RGS MasterLab  /  READ-ONLY MEASUREMENT & REFERENCE COMPARISON"
+                    text: root.standaloneModuleMode
+                        ? "RGS MasterLab  /  INDIVIDUAL PANEL DESIGN · DOCK/FLOAT NOT ACTIVE"
+                        : "RGS MasterLab  /  READ-ONLY MEASUREMENT & REFERENCE COMPARISON"
                     font.family: "Segoe UI"
                     font.pixelSize: 11
                     color: root.dim
@@ -86,7 +94,8 @@ Rectangle {
         Row {
             id: nav
             width: parent.width
-            height: 48
+            visible: !root.standaloneModuleMode
+            height: root.standaloneModuleMode ? 0 : 48
             spacing: 8
             Repeater {
                 model: [
@@ -183,7 +192,7 @@ Rectangle {
         Item {
             id: workspace
             width: parent.width
-            height: Math.max(330,layout.height - 72 - 48 - 52 - 34 - 4*layout.spacing)
+            height: Math.max(330,layout.height - 72 - nav.height - 52 - 34 - 4*layout.spacing)
 
             // M19: Five typed numeric readouts, no invented TP authorization.
             Column {
@@ -606,7 +615,9 @@ Rectangle {
             spacing:0
             Text{
                 width:parent.width/2
-                text:"RGS MASTERLAB  ·  ANALYSIS UI PROTOTYPE  ·  NOT QUALIFIED"
+                text:root.standaloneModuleMode
+                    ? "RGS MASTERLAB  ·  INDIVIDUAL PANEL PROTOTYPE  ·  NOT QUALIFIED"
+                    : "RGS MASTERLAB  ·  ANALYSIS UI PROTOTYPE  ·  NOT QUALIFIED"
                 color:root.dim;font.pixelSize:10
                 elide:Text.ElideRight
             }
