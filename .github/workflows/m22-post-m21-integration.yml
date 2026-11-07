@@ -69,8 +69,13 @@ jobs:
             -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON
           # Do not upload the full compiler trace: reduce it on the
           # runner to a bounded first-error artifact in case of red.
+          # rgsml_project_session_tests links the Windows-only
+          # rgsml_platform/transactional_audio_exporter.cpp (Win32 HANDLE,
+          # CreateFileW). Never compile that target on Linux: Windows
+          # continues to run its complete real M22 ProductSession gate.
+          # Linux runs the real portable M19/M20/M21 analyzers and M22
+          # independent scope oracle; this is NOT Linux ProductSession PASS.
           if cmake --build build/m22-product --parallel 4 --target \
-            rgsml_project_session_tests \
             rgsml_m21_real_product_metrics_port_tests \
             rgsml_tonal_stereo_analyzer_tests \
             rgsml_basic_level_analyzer_tests \
@@ -93,12 +98,14 @@ jobs:
           path: ${{ runner.temp }}/m22-linux-build-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
-      - name: Focused real M19 + existing M16 CTest
+      - name: Focused portable M21/M20/M19 + existing M16 (Windows ProductSession separate)
         shell: bash
         run: |
           set -euo pipefail
+          echo 'M22_LINUX_SCOPE=PORTABLE_M21_M20_M19_M16_PLUS_M22_PY_GUARD;WINDOWS_ONLY_PRODUCT_SESSION=NOT_RUN_ON_LINUX'
           ctest --test-dir build/m22-product --output-on-failure \
-            -R '^(rgsml_project_session_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests)$'
+            -R '^(rgsml_m21_real_product_metrics_port_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests)
+
 
   windows-m22-product:
     name: Windows · M22 checked M17 full/preview + M21–M19
