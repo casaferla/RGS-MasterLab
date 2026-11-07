@@ -40,6 +40,7 @@ authorized by this document.
 | A12 | After Cancel/FAIL/VERIFIED, acknowledge the result, then export again to a NEW filename | New independent consent accepted; no stuck Export lock or reused previous result |
 | A13 | Test one 192 kHz mono or stereo Master and one 44.1 kHz output | No unintended SRC, WAV Fs/channel count match selected MASTER; packaged original FIR assets are available |
 | A14 | Listen to the PCM24 and Float32 files in an independent player/editor | No clicks, cut ends, silence, channel reversal or incorrect duration; compare to M17 Master audition at matched level |
+| A15 | Choose Float32, SaveAs, reopen the Project, then select PCM24 and SaveAs again | ComboBox restores Float32 on open; subsequent file uses PCM24 TPDF. Exact uint64 seed is serialized without numeric rounding; old output keys are preserved |
 
 ## Non-negotiable engineering gate
 
@@ -54,8 +55,10 @@ authorized by this document.
    must share the Product Single-Writer epoch; no stale ticket, partial
    filename overwrite, second concurrent export or Qt worker-object access.
 4. Keep 24-bit TPDF with exact `uint64` seed; Float32 **without** dither;
-   no noise shaping. No fabricated M18 output-schema fields in existing
-   `.rgsml` files without an explicitly approved stable schema decision.
+   no noise shaping. Staging proposes the final Project OUTPUT keys
+   `finalMasterWavEncoding` and `finalMasterPcm24TpdfSeed`
+   (see `docs/architecture/M18_FINAL_WAV_OUTPUT_PREFERENCE_V1_20261107.md`).
+   Their exact spelling requires PO acceptance before main merge.
 5. Do not change accepted M16 B2i math/FIR evidence or M17 qualified DSP
    solely to make a red test pass.
 6. Reserve **one overall Full Qualification after M18–M22 integration**,
