@@ -781,6 +781,7 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
         foreignBindingDenied=!result;
     });
     foreignBinder.join();
+    QVERIFY(foreignPreflightDenied);
     QVERIFY(foreignBindingDenied);
     QVERIFY(!session.m18_private_mutation_admission_installed());
     QVERIFY(!candidates.m18_mutation_admission_installed());
