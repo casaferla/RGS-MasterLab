@@ -28,6 +28,8 @@
 #include "terminal_post_limiter_true_peak_coordinator.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
+#include "m18_product_export_view_model.hpp"
+#include "internal/m18_product_complete_binding.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -886,6 +888,75 @@ int main(int argc, char* argv[])
                 sourceSelection.channel_count());
             return rgsml::core::Status::success();
         });
+    // M18 Product authority: install once, before QML can issue Export.
+    // No SOURCE is selected at startup. The supported seed rate below is
+    // only a valid, UNCONSENTED identity; it grants NO right to export.
+    // The first physical SOURCE batch advances its generation, and the
+    // queued post-publication reconciliation records the real rate/revision.
+    using M18Binding=rgsml::app::internal::M18ProductCompleteBinding;
+    using M18Identity=rgsml::platform::windows::internal::M18ProductExportIdentity;
+    using M18TicketAuthority=rgsml::platform::windows::internal::
+        M18ProductEpochTicketAuthority;
+    const auto m18StartupRate=masterOutputRate.has_supported_master_rate()
+        ?static_cast<std::uint32_t>(masterOutputRate.master_rate_hz())
+        :std::uint32_t{48000};
+    const M18Identity m18InitialIdentity{
+        1U,1U,1U,masteringChainState.chain().revision(),
+        m18StartupRate,masterOutputRate.rate_revision()};
+    auto m18TicketAuthority=std::make_shared<M18TicketAuthority>(
+        1U,m18InitialIdentity);
+    rgsml::platform::windows::internal::M18OwnerMutationFanout m18Fanout{
+        m18TicketAuthority,1U,m18InitialIdentity};
+    M18Binding::Controllers m18Controllers{{
+        projectSession,sourceSelection,masterOutputRate,
+        masteringChainState,auditionSelector,auditionRegion,
+        goldSelection,terminalLimiterState},
+        privateProductSession,terminalCandidateGate};
+    const auto m18Bound=M18Binding::bind(m18Controllers,m18Fanout);
+    if(!m18Bound) {
+        std::fprintf(stderr,"M18 Product guard bootstrap refused: %s\\n",
+            m18Bound.error()->message().c_str());
+        return EXIT_FAILURE; // Fail closed: never expose an unguarded Export.
+    }
+    // A single Product action owns consent, worker and acknowledgement.
+    // Destruction order is UI -> action/cancel -> fanout -> ticket authority;
+    // the detached worker sees only immutable PCM and a revocable Qt-free
+    // lease, never the QObject or its controller references.
+    rgsml::app::internal::M18PrivateProductExportAction m18ExportAction{
+        m18Controllers,m18Fanout};
+    rgsml::app::M18ProductExportViewModel m18ExportViewModel{
+        m18ExportAction,m18Controllers};
+
+    // SOURCE and Project batches hold an exclusive physical epoch through
+    // their synchronous Qt signals. Reconcile only AFTER those RAII leases
+    // have unwound; a direct connection here would spuriously report BUSY.
+    // The binder checks the actual accepted SOURCE, chain and rate before
+    // allowing any new user-consented worker ticket.
+    const auto m18Reconcile=[&m18Controllers,&m18Fanout,
+                             &m18ExportViewModel] {
+        if(!m18Controllers.upstream.source.has_source()
+           ||!m18Controllers.upstream.rate.has_supported_master_rate())
+            return;
+        const auto reconciled=M18Binding::reconcile_after_product_mutation(
+            m18Controllers,m18Fanout);
+        // During a live export a legitimate unrelated Qt notification may
+        // arrive, but this reconciliation MUST NOT revoke its consent.
+        // All actual physical mutations remain gated by the same authority.
+        if(reconciled)m18ExportViewModel.refresh();
+    };
+    QObject::connect(&sourceSelection,
+        &rgsml::app::SourceSelectionViewModel::sourceChanged,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&masterOutputRate,
+        &rgsml::app::MasterOutputRateState::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {
             return auditionRegion.seek(position);
@@ -910,6 +981,8 @@ int main(int argc, char* argv[])
         });
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m18ProductExportViewModel"),&m18ExportViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);
