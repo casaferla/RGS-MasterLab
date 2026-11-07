@@ -346,6 +346,27 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
         entire,fanout,false));
     QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
         entire,fanout,true));
+    // Exercise the actual private Product Export action, not merely its
+    // ticket issuer. An unverified M17 stage must fail BEFORE worker
+    // launch and may not publish a WAV file or leave user consent.
+    const auto deniedWav=dir.filePath(
+        QStringLiteral("m18-no-verified-stage-export.wav"));
+    const auto exportDestination=
+        platform::windows::WindowsResourceWriter::
+            make_write_reference(
+                deniedWav.toUtf8().toStdString(),
+                "m18-no-verified-stage-export.wav");
+    QVERIFY(exportDestination);
+    app::internal::M18PrivateProductExportAction exportAction{
+        entire,fanout};
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,true));
+    QVERIFY(!exportAction.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(deniedWav));
+    QCOMPARE(exportAction.snapshot().phase,
+             app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+    QVERIFY(!exportAction.acknowledge());
     QVERIFY(!owner->capture(initial));
     QVERIFY(owner->can_install_full_product_guards(30U,initial));
     // A legitimate Region edit consumes a single shared Product
