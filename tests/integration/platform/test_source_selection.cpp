@@ -621,6 +621,49 @@ m18CheckedSourceDispatcherIsInertForLegacyM17()
     model.set_private_m18_checked_source_committed_handler({});
 }
 
+void SourceSelectionTest::
+m18ThrowingCheckedSourceDispatcherFailsClosedAndRecovers()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto file=write_file(
+        dir,QStringLiteral("m18-checked-throws-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!file.isEmpty());
+    app::SourceSelectionViewModel model;
+    std::size_t batches=0;
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<const int>(7));
+        });
+    model.set_private_m18_checked_source_committed_handler(
+        [](const core::ResourceReference&)->core::Status {
+            throw std::runtime_error("M18_CHECKED_SOURCE_FAULT");
+        });
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    model.selectSource(QUrl::fromLocalFile(file));
+    QCOMPARE(batches,std::size_t{1});
+    QVERIFY(!model.has_source());
+    QCOMPARE(model.source_state(),QStringLiteral("SOURCE_ERROR"));
+    QCOMPARE(changed.count(),1);
+    QVERIFY(!model.error_message().isEmpty());
+    // A thrown callback cannot leave a permanent BUSY flag or a
+    // partially published SOURCE. A fresh explicit retry may succeed.
+    model.set_private_m18_checked_source_committed_handler(
+        [](const core::ResourceReference&)->core::Status {
+            return core::Status::success();
+        });
+    model.selectSource(QUrl::fromLocalFile(file));
+    QCOMPARE(batches,std::size_t{2});
+    QCOMPARE(changed.count(),2);
+    QVERIFY(model.has_source());
+    QCOMPARE(model.source_state(),QStringLiteral("SOURCE_READY"));
+    QVERIFY(model.error_message().isEmpty());
+    model.set_private_m18_source_batch_begin({});
+    model.set_private_m18_checked_source_committed_handler({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
