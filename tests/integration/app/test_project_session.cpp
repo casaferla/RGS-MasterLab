@@ -377,6 +377,14 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
     QVERIFY(!exportAction.begin(
         *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
         std::nullopt,-1.0,false));
+    // A dialog cannot invent a different M17 ceiling and then report
+    // that its new WAV passed the wrong True Peak threshold.
+    const auto mismatchedCeiling=exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-2.0,true);
+    QVERIFY(!mismatchedCeiling);
+    QVERIFY(mismatchedCeiling.error()->message()
+        =="M18_PRODUCT_EXPORT_CEILING_NOT_CURRENT_M17");
     QVERIFY(!exportAction.has_unacknowledged_export());
     QVERIFY(!QFileInfo::exists(deniedWav));
     // A selected SOURCE cannot simultaneously be the new output WAV.
