@@ -540,7 +540,8 @@ ApplicationWindow {
             spacing: 10
             Label {
                 Layout.fillWidth: true
-                text: "Choose the final WAV encoding. The verified M17 Ceiling is unchanged."
+                text: "Choose the final WAV encoding. The verified M17 Ceiling is unchanged. "
+                    + "Existing files are never overwritten; use a new filename."
                 color: root.textPrimary
                 wrapMode: Text.Wrap
             }
@@ -602,6 +603,17 @@ ApplicationWindow {
                     && root.appM18ExportModel.errorText.length > 0
                 text: root.appM18ExportModel
                     ? root.appM18ExportModel.errorText : ""
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                visible: root.appM18ExportModel
+                    && root.appM18ExportModel.verifiedSha256.length === 64
+                text: root.appM18ExportModel
+                    ? "Verified delivered file: "
+                        + root.appM18ExportModel.verifiedBytes
+                        + " bytes (post-delivery readback)" : ""
                 wrapMode: Text.Wrap
             }
             Label {
