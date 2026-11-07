@@ -81,6 +81,21 @@ public:
         shared_->retired.store(true,std::memory_order_release);
     }
 
+    struct OwnerSnapshot final {
+        std::uint64_t epoch;
+        M18ProductExportIdentity identity;
+    };
+    // Diagnostic-only Product-side provenance; never a consent token.
+    // Reading the fanout's mutable epoch on a worker would be a data race.
+    [[nodiscard]] std::optional<OwnerSnapshot> current_owner_snapshot() const noexcept {
+        const auto state=shared_;
+        if(!state
+           ||std::this_thread::get_id()!=state->ownerThread
+           ||state->retired.load(std::memory_order_acquire))
+            return std::nullopt;
+        return OwnerSnapshot{state->epoch,state->identity};
+    }
+
     // Product-wide activation is legal only BEFORE consent/ticket minting.
     // The immutable authority/owner thread are checked without changing
     // epoch or touching any controller. No QObjects reach the worker.
