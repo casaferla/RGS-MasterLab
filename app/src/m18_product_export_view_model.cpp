@@ -54,6 +54,15 @@ bool M18ProductExportViewModel::can_acknowledge() const
     return owner_thread()&&action_->can_acknowledge();
 }
 
+bool M18ProductExportViewModel::export_in_progress() const
+{
+    if(!owner_thread())return false;
+    const auto phase=action_->snapshot().phase;
+    return phase==internal::M18PrivateAsyncExportSession::Phase::
+               ENCODING_OR_VERIFYING
+        ||phase==internal::M18PrivateAsyncExportSession::Phase::CANCELLING;
+}
+
 double M18ProductExportViewModel::encoded_progress() const
 {
     if(!owner_thread())return 0.0;
