@@ -527,6 +527,12 @@ m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch()
     QCOMPARE(busy.error()->code(),core::ErrorCode::InvalidState);
     QCOMPARE(changed.count(),0);
     QVERIFY((*worker.value())->revalidate_current());
+    // Even with a physically freed worker commit, a foreign-thread
+    // legacy void call must not touch QObject serial or signals.
+    std::thread foreign([&renderer] {renderer.invalidate();});
+    foreign.join();
+    QCOMPARE(changed.count(),0);
+    QVERIFY((*worker.value())->revalidate_current());
 
     worker.value()->reset();
     renderer.invalidate();
