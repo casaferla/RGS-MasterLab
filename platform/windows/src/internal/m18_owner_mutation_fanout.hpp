@@ -135,8 +135,10 @@ public:
                 core::ErrorCode::InvalidState,
                 "M18_SAVE_BATCH_PRODUCT_OWNER_RETIRED"});
             if(std::this_thread::get_id()!=state->ownerThread
+               ||state->retired.load(std::memory_order_acquire)
                ||!state->authority ||!state->identity.valid()
-               ||state->epoch==0 ||state->admitting)
+               ||state->epoch==0 ||state->admitting
+               ||state->projectOpenActive.load(std::memory_order_acquire))
                 return R::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "M18_SAVE_BATCH_WRONG_OWNER_OR_REENTRANT"});
