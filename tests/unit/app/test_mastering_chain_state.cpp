@@ -804,6 +804,27 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     QVERIFY(!authority->capture(verifiedId)); // consent irrevocably retired
     session.set_private_m18_mutation_admission({});
     candidates.set_private_m18_mutation_admission({});
+
+    // An ephemeral Product owner cannot leave callbacks that silently
+    // grant access after its fanout has been destroyed. Both independent
+    // M17 mutators must remain FAIL-CLOSED until an explicit rebind.
+    const M18ProductExportIdentity retiredId{
+        81U,82U,83U,0U,48000U,5U};
+    auto futureAuthority=std::make_shared<M18ProductEpochTicketAuthority>(
+        500U,retiredId);
+    {
+        M18OwnerMutationFanout retiredFanout{
+            futureAuthority,500U,retiredId};
+        QVERIFY(app::internal::M18ProductPrivateSessionBinding::bind(
+            session,candidates,retiredFanout));
+    }
+    QVERIFY(session.m18_private_mutation_admission_installed());
+    QVERIFY(candidates.m18_mutation_admission_installed());
+    QVERIFY(!session.cancel());
+    QVERIFY(!candidates.try_invalidate_for_m18());
+    QCOMPARE(changed.count(),0);
+    session.set_private_m18_mutation_admission({});
+    candidates.set_private_m18_mutation_admission({});
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
