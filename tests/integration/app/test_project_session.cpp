@@ -363,6 +363,8 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
         *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
         std::nullopt,-1.0,true));
     QVERIFY(!exportAction.has_unacknowledged_export());
+    QVERIFY(!exportAction.can_cancel());
+    QVERIFY(!exportAction.can_acknowledge());
     QVERIFY(!QFileInfo::exists(deniedWav));
     QCOMPARE(exportAction.snapshot().phase,
              app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
