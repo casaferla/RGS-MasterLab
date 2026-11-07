@@ -234,6 +234,8 @@ public:
         if(m18PrivateAdmitting_)return;
         m18MutationAdmission_=std::move(gate);
     }
+    [[nodiscard]] bool m18_private_mutation_admission_installed() const noexcept
+    {return static_cast<bool>(m18MutationAdmission_);}
     using M18ExplicitExportConsent=std::function<core::Status()>;
     [[nodiscard]] core::Result<
         platform::windows::M18TransactionalAudioExportRequest>
