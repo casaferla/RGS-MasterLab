@@ -20,6 +20,8 @@ class M18PrivateExportProgressViewModel final : public QObject {
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
     Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
     Q_PROPERTY(bool verifiedDelivered READ verified_delivered NOTIFY changed)
+    Q_PROPERTY(QString verifiedEncodedSha256 READ verified_encoded_sha256 NOTIFY changed)
+    Q_PROPERTY(qulonglong verifiedFileSizeBytes READ verified_file_size_bytes NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
     Q_PROPERTY(QString failureHint READ failure_hint NOTIFY changed)
 public:
@@ -47,6 +49,8 @@ public:
     [[nodiscard]] bool can_cancel() const noexcept;
     [[nodiscard]] bool can_acknowledge() const noexcept;
     [[nodiscard]] bool verified_delivered() const noexcept;
+    [[nodiscard]] QString verified_encoded_sha256() const;
+    [[nodiscard]] qulonglong verified_file_size_bytes() const noexcept;
     [[nodiscard]] QString error_text() const;
     [[nodiscard]] QString failure_hint() const;
 
