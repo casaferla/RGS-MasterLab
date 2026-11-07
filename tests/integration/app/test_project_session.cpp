@@ -162,6 +162,42 @@ struct Session final {
     }
 };
 
+// M18-only checked integration route for the native ProjectSession
+// fixture. All legacy M17 tests above continue using Session's original
+// void callback when no physical Product batch has been installed.
+void install_m18_checked_source_dispatch(
+    Session& session,app::MasterOutputRateState& outputRate)
+{
+    session.source.set_private_m18_checked_source_committed_handler(
+        [&session,&outputRate](
+            const core::ResourceReference& source)->core::Status {
+            const auto frames=core::FrameCount::create(
+                session.source.frame_count());
+            const auto sampleRate=core::SampleRate::create(
+                session.source.sample_rate_hz());
+            if(!frames||!sampleRate)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_CHECKED_SOURCE_FORMAT_NOT_VALID"});
+            if(!outputRate.try_source_committed_for_m18(
+                   session.source.sample_rate_hz()))
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_CHECKED_SOURCE_RATE_REFUSED"});
+            session.region.source_committed(
+                *frames.value(),*sampleRate.value());
+            const auto prepared=session.selector.source_committed(source);
+            if(!prepared)return prepared;
+            const auto switchStatus=session.selector.switch_to(
+                app::AuditionTarget::PREPARED);
+            if(!switchStatus)return switchStatus;
+            if(!session.project.is_committing_project_open())
+                session.adapterModel->resetForNewSource();
+            session.gold.sourceChanged();
+            return core::Status::success();
+        });
+}
+
 }  // namespace
 
 class ProjectSessionTest final : public QObject {
