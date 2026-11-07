@@ -15,6 +15,19 @@ namespace rgsml::app::internal {
 struct M18ProductPrivateSessionBinding final {
     using Fanout=platform::windows::internal::M18OwnerMutationFanout;
 
+    // This phase never reads non-atomic candidate callbacks from a
+    // foreign thread: it checks immutable ownership first. Safe to call
+    // as a precondition for a larger Product-wide two-phase bind.
+    [[nodiscard]] static bool can_bind(
+        const TerminalPrivateProductSession& session,
+        const TerminalCandidateGate& candidates) noexcept
+    {
+        return QThread::currentThread()==session.thread()
+            &&candidates.m18_owner_thread_current()
+            &&!session.m18_private_mutation_admission_installed()
+            &&!candidates.m18_mutation_admission_installed();
+    }
+
     [[nodiscard]] static core::Status bind(
         TerminalPrivateProductSession& session,
         TerminalCandidateGate& candidates,
@@ -24,9 +37,7 @@ struct M18ProductPrivateSessionBinding final {
         // never callable by a detached worker or during the Qt signal
         // cascade. Refuse any pre-existing independent authority rather
         // than silently overwriting it with a second epoch stream.
-        if(QThread::currentThread()!=session.thread()
-           ||session.m18_private_mutation_admission_installed()
-           ||candidates.m18_mutation_admission_installed())
+        if(!can_bind(session,candidates))
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "M18_PRIVATE_PRODUCT_BINDING_WRONG_OWNER_OR_ALREADY_GATED"});
