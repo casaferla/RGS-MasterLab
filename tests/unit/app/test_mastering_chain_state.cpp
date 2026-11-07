@@ -569,6 +569,20 @@ m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority()
                 core::ErrorCode::InvalidState,
                 "M18_CANDIDATE_WRITER_BUSY"});
         });
+    bool foreignDenied=false;
+    std::thread foreign([&] {
+        // The worker cannot race the owner's std::function, erase the
+        // shared commit authority, or mutate the M17 stage.
+        gate.set_private_m18_mutation_admission({});
+        const auto rejected=gate.try_invalidate_for_m18();
+        foreignDenied=!rejected&&rejected.error()->code()
+            ==core::ErrorCode::InvalidState;
+        gate.invalidate();
+    });
+    foreign.join();
+    QVERIFY(foreignDenied);
+    QVERIFY(gate.m18_mutation_admission_installed());
+    QCOMPARE(calls,std::size_t{0});
     auto denied=gate.try_invalidate_for_m18();
     QVERIFY(!denied);
     QVERIFY(nestedDenied);
