@@ -512,13 +512,25 @@ private:
     [[nodiscard]] static bool approved_source_child_operation(
         std::string_view operation) noexcept
     {
+        // The app's checked SOURCE callback invokes
+        // DspChainAdapterModel::resetForNewSource() before publishing the
+        // new source. Its Gain/EQ/Compressor/Stereo-M/S defaults and bypass
+        // writes MUST be part of this ONE already-held physical SOURCE
+        // transaction. Otherwise their Status failures are ignored by
+        // several legacy resetForNewSource() methods and the new SOURCE
+        // inherits stale DSP parameters from the previous file.
         return operation=="source_committed"
             ||operation=="switch_target"
             ||operation=="set_prepared"
             ||operation=="set_processed"
             ||operation=="clear_gold"
             ||operation=="invalidate_candidate"
-            ||operation=="master_rate_change";
+            ||operation=="master_rate_change"
+            ||operation=="gain_parameters"
+            ||operation=="eq_parameters"
+            ||operation=="compressor_parameters"
+            ||operation=="stereo_ms_parameters"
+            ||operation=="module_bypass";
     }
 
     [[nodiscard]] static bool approved_project_open_child_operation(
