@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -27,6 +28,10 @@ public:
         std::uint64_t encoded_frames{0};
         std::uint64_t total_frames{0};
         std::optional<core::ErrorCode> failure_code;
+        // Present only after the transactional Windows exporter finished
+        // WAV readback and returned a verified, published destination.
+        std::optional<std::uint64_t> verified_file_size_bytes;
+        std::string verified_encoded_sha256;
     };
 
     M18PrivateAsyncExportSession()
@@ -101,6 +106,10 @@ public:
         const auto completed=job_->result_if_finished();
         if(completed && *completed) {
             current.phase=Phase::VERIFIED_DELIVERED;
+            current.verified_file_size_bytes=
+                completed->value()->exact_file_size_bytes();
+            current.verified_encoded_sha256=
+                completed->value()->encoded_file_sha256();
         } else {
             // Cancellation is NOT permission to hide an unrelated export
             // failure. Only the specific exporter cancellation evidence
