@@ -172,7 +172,8 @@ core::Status TerminalCandidateGate::accept(
             "M17 terminal candidate no longer matches the accepted source and DSP revisions."));
     }
     staged_=std::make_shared<const StagedCandidate>(StagedCandidate{
-        std::move(candidate),job.manual_realization_id,job.prepared_owner});
+        std::move(candidate),job.manual_realization_id,job.prepared_owner,
+        job.terminal_parameter_revision,job.ceiling_db_tp});
     // A late duplicate completion with the same ticket must never replace
     // the accepted candidate or make its provenance appear new.
     if(ticket_<std::numeric_limits<std::uint64_t>::max())++ticket_;
