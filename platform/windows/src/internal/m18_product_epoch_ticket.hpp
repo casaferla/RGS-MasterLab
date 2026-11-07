@@ -139,6 +139,14 @@ public:
     M18ProductEpochTicketAuthority(const M18ProductEpochTicketAuthority&)=delete;
     M18ProductEpochTicketAuthority& operator=(const M18ProductEpochTicketAuthority&)=delete;
 
+    // Confirm that a Ticket came from THIS Product owner, not an old
+    // project with the same monotonic-looking epoch and value identity.
+    // This reads immutable shared_ptr ownership only; all mutable ticket
+    // admission and retirement still require the owner-thread epoch lock.
+    [[nodiscard]] bool owns_ticket(const Ticket& ticket) const noexcept {
+        return ticket.state_==state_;
+    }
+
     // Safe activation preflight, not an export grant. Any earlier
     // consent/ticket means installation would be too late to protect
     // the current M17 Master. Require a fresh unconsented Product owner.
