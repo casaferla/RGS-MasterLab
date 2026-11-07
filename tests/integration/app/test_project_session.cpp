@@ -580,6 +580,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!action.can_cancel());
     QVERIFY(action.can_acknowledge());
     QVERIFY(action.acknowledge());
+    expectedConsentEpoch+=2;
+    const auto afterCollision=fanout.current_owner_snapshot();
+    QVERIFY(afterCollision);
+    QCOMPARE(afterCollision->epoch,expectedConsentEpoch);
+    QVERIFY(afterCollision->identity==initialProductEpoch->identity);
     QVERIFY(!action.has_unacknowledged_export());
     QCOMPARE(product.capture_m18_verified_stage_for_worker(
                  *rate48.value()),verified);
