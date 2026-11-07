@@ -5,10 +5,12 @@
 // It does NOT mint a ticket or prove that all Product paths are covered.
 #include "m18_product_epoch_ticket.hpp"
 #include <rgsml/core/error.hpp>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -25,6 +27,10 @@ class M18OwnerMutationFanout final {
         std::uint64_t epoch;
         M18ProductExportIdentity identity;
         bool admitting{false};
+        // Only an owner-held Project-open batch may use the approved
+        // nested child calls without advancing a second Product epoch.
+        std::atomic<bool> projectOpenActive{false};
+        std::atomic<bool> retired{false};
     };
 public:
     using StatusAdmission=std::function<core::Status(const char*)>;
@@ -39,7 +45,9 @@ public:
             std::move(authority),currentEpoch,currentIdentity)){}
     M18OwnerMutationFanout(const M18OwnerMutationFanout&)=delete;
     M18OwnerMutationFanout& operator=(const M18OwnerMutationFanout&)=delete;
-    ~M18OwnerMutationFanout()=default;
+    ~M18OwnerMutationFanout() {
+        shared_->retired.store(true,std::memory_order_release);
+    }
 
     [[nodiscard]] StatusAdmission status_admission() const {
         return [weak=std::weak_ptr<Shared>{shared_}](
