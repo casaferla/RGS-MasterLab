@@ -423,12 +423,15 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
-    if(const auto admission=admit_m18_source_mutation("set_processed");
-       !admission)return admission;
-    M18ScopedAuditionMutation lifetime{
-        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
-    (void)lifetime;
-    offlineProcessedAuthority_.reset();
+    // PREPARE a candidate off to the side. Invalid/exhausted realizations
+    // cannot revoke M18 consent, even when the worker owns a commit.
+    // Validate owner affinity before reading mutable selector identities.
+    if(m18MutationAdmission_) {
+        if(QThread::currentThread()!=thread())
+            return unavailable("M18_PROCESSED_PREFLIGHT_REQUIRES_QT_OWNER_THREAD");
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)
+            return unavailable("M18_PROCESSED_PREFLIGHT_REENTRANT_MUTATION");
+    }
     if (nextRealizationIdValue_
         == std::numeric_limits<std::uint64_t>::max()) {
         return core::Status::failure(core::Error{
@@ -455,6 +458,14 @@ core::Status AuditionSourceSelector::set_processed_realization(
     auto candidate = std::make_shared<const render::RenderResult>(
         std::move(realization));
 
+    // The candidate's telemetry and exact stage provenance have been
+    // validated; the next action can actually replace Product state.
+    if(const auto admission=admit_m18_source_mutation("set_processed");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
+    offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PROCESSED) {
         const auto range = candidate->render_window();
         // PROCESSED can temporarily be OUTPUT_RATE private audio. Preserve
