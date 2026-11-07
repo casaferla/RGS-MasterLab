@@ -20,6 +20,7 @@ allowed = (
     # Explicit M19/M20/M21 Product owner binding on the M22 stack:
     # no broad app/analysis/CMake allowlist, no DSP/FIR/UI bypass.
     "app/src/internal/m21_product_owner_analysis.hpp",
+    "app/src/internal/m21_product_publication_inbox.hpp",
     "docs/architecture/M21_POST_M20_REAL_PRODUCT_OWNER_CAPTURE_20261107.md",
     "tests/CMakeLists.txt",
     "tests/integration/app/test_project_session.cpp",
