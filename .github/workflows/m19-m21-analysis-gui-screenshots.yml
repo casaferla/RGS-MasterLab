@@ -42,19 +42,39 @@ jobs:
           $qtRoot = "$env:RUNNER_TEMP/analysisqt/6.8.3/msvc2022_64"
           $build = "$env:RUNNER_TEMP/analysis-ui-build"
           $shots = "$env:RUNNER_TEMP/analysis-ui-screenshots"
-          cmake -S tools/qualification/m19_m21_gui -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$qtRoot"
-          if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_CMAKE_CONFIGURE_FAILED' }
-          cmake --build $build --parallel 3
-          if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_QT_BUILD_FAILED' }
+          $bounded = "$env:RUNNER_TEMP/analysis-ui-bounded-failure.txt"
+          $log = "$env:RUNNER_TEMP/analysis-ui-command.log"
+          cmake -S tools/qualification/m19_m21_gui -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$qtRoot" *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 55 | Set-Content $bounded
+            throw 'ANALYSIS_UI_CMAKE_CONFIGURE_FAILED'
+          }
+          cmake --build $build --parallel 3 *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 65 | Set-Content $bounded
+            throw 'ANALYSIS_UI_QT_BUILD_FAILED'
+          }
           $env:PATH = "$qtRoot/bin;$env:PATH"
-          & "$build/rgsml_analysis_workbench_screenshot.exe" $shots
-          if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_QT_CAPTURE_FAILED' }
+          & "$build/rgsml_analysis_workbench_screenshot.exe" $shots *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 65 | Set-Content $bounded
+            throw 'ANALYSIS_UI_QT_CAPTURE_FAILED'
+          }
+          Get-Content $log -Tail 8
           $pngs = @(Get-ChildItem $shots -Filter '*.png')
           if ($pngs.Count -ne 6) { throw "ANALYSIS_UI_EXPECTED_SIX_PNG_FOUND_$($pngs.Count)" }
           foreach ($img in $pngs) {
             if ($img.Length -lt 14000) { throw "ANALYSIS_UI_POSSIBLY_BLANK_$($img.Name)" }
           }
           Write-Output "M19_M20_M21_SIX_REAL_WINDOWS_QT_SCREENSHOTS_PASS_NON_FQ_DEMO_ONLY"
+      - name: Preserve bounded failure only (never full job logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-Qt-GUI-Bounded-Diagnostic
+          path: ${{ runner.temp }}/analysis-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload screenshots for Product Owner visual review
         uses: actions/upload-artifact@v4
         with:
