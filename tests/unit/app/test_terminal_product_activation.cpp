@@ -3620,6 +3620,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                  finalSessionSnapshot.total_frames);
         QVERIFY(!finalSessionSnapshot.failure_code);
         QVERIFY(QFileInfo::exists(managedPath));
+        // The session handle itself is not an atomic cross-thread pointer.
+        // A rogue worker cannot cancel it, read it or acknowledge the
+        // finished Product result while the UI owns its lifecycle.
+        bool foreignSnapshotRejected=false;
+        std::thread foreignSession([&] {
+            const auto denied=exportSession.snapshot();
+            foreignSnapshotRejected=
+                denied.phase==app::internal::M18PrivateAsyncExportSession::
+                    Phase::FAILED
+                &&denied.failure_code==core::ErrorCode::InvalidState;
+            exportSession.cancel();
+        });
+        foreignSession.join();
+        QVERIFY(foreignSnapshotRejected);
+        QCOMPARE(exportSession.snapshot().phase,
+            app::internal::M18PrivateAsyncExportSession::
+                Phase::VERIFIED_DELIVERED);
         QVERIFY(exportSession.acknowledge_finished());
         QCOMPARE(exportSession.snapshot().phase,
                  app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
