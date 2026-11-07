@@ -463,6 +463,11 @@ m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial()
     model.set_private_m18_source_batch_begin(
         [&]()->core::Result<std::shared_ptr<const void>> {
             ++batchCalls;
+            // The shared Product lease has not yet been returned. Its
+            // admission callback cannot uninstall itself or reenter
+            // the SOURCE picker before acquiring physical exclusivity.
+            model.selectSource(QUrl::fromLocalFile(file));
+            model.set_private_m18_source_batch_begin({});
             return core::Result<std::shared_ptr<const void>>::success(
                 std::make_shared<const int>(3));
         });
