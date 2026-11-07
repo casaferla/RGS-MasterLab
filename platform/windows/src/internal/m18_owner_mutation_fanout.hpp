@@ -104,6 +104,14 @@ public:
                     ?core::Status::success()
                     :reject("M18_PROJECT_OPEN_UNEXPECTED_CHILD_MUTATION");
             }
+            if(state->sourceCommitActive.load(std::memory_order_acquire)) {
+                // SOURCE replacement publishes rate, prepared/processed
+                // and GOLD retirement through synchronous Qt callbacks.
+                // Those expected children share ONE physical writer lease.
+                return approved_source_child_operation(operation)
+                    ?core::Status::success()
+                    :reject("M18_SOURCE_UNEXPECTED_CHILD_MUTATION");
+            }
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
                       ==std::numeric_limits<std::uint64_t>::max())
@@ -249,6 +257,18 @@ public:
     }
 
 private:
+    [[nodiscard]] static bool approved_source_child_operation(
+        std::string_view operation) noexcept
+    {
+        return operation=="source_committed"
+            ||operation=="switch_target"
+            ||operation=="set_prepared"
+            ||operation=="set_processed"
+            ||operation=="clear_gold"
+            ||operation=="invalidate_candidate"
+            ||operation=="master_rate_change";
+    }
+
     [[nodiscard]] static bool approved_project_open_child_operation(
         std::string_view operation) noexcept
     {
