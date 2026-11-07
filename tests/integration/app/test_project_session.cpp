@@ -313,7 +313,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     auto block=core::FrameCount::create(128);
     QVERIFY(registry&&rate48&&frames&&block);
     auto fmt=audio::AudioFormat::create(
-        *rate48.value(),audio::ChannelLayout::MONO);
+        *rate48.value(),audio::ChannelLayout::MONO_C);
     QVERIFY(fmt);
     auto samples=audio::AudioBuffer::create(
         *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
@@ -547,7 +547,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QCOMPARE((*inspected.value())->info().audio_format().sample_rate(),
                  *rate48.value());
         QCOMPARE((*inspected.value())->info().audio_format().channel_layout(),
-                 audio::ChannelLayout::MONO);
+                 audio::ChannelLayout::MONO_C);
         QVERIFY((*inspected.value())->close());
         QVERIFY(action.can_acknowledge());
         QVERIFY(!action.can_cancel());
