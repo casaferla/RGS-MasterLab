@@ -559,6 +559,91 @@ ApplicationWindow {
         }
     }
 
+    // Modeless by design: encoding and readback run on the detached M18
+    // worker; Qt retains normal responsiveness and the Product Single
+    // Writer gate prevents stale Source/Project edits during final commit.
+    Dialog {
+        id: m18ExportProgressDialog
+        objectName: "m18ExportProgressDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        title: "Master WAV delivery"
+        modal: false
+        closePolicy: Popup.NoAutoClose
+        width: Math.min(480, root.width - 48)
+        standardButtons: Dialog.NoButton
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                color: root.textPrimary
+                font.bold: true
+                text: root.appM18ExportModel
+                    ? root.appM18ExportModel.statusText : "UNAVAILABLE"
+            }
+            ProgressBar {
+                Layout.fillWidth: true
+                from: 0
+                to: 1
+                value: root.appM18ExportModel
+                    ? root.appM18ExportModel.encodedProgress : 0
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                wrapMode: Text.Wrap
+                text: "Encoded progress is not delivery confirmation. "
+                    + "The WAV is delivered only after filesystem readback."
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.error
+                visible: root.appM18ExportModel
+                    && root.appM18ExportModel.errorText.length > 0
+                text: root.appM18ExportModel
+                    ? root.appM18ExportModel.errorText : ""
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                visible: root.appM18ExportModel
+                    && root.appM18ExportModel.verifiedSha256.length === 64
+                text: root.appM18ExportModel
+                    ? "Verified WAV SHA-256: "
+                        + root.appM18ExportModel.verifiedSha256 : ""
+                wrapMode: Text.WrapAnywhere
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Button {
+                    objectName: "m18CancelExport"
+                    text: "Cancel Export"
+                    enabled: !!root.appM18ExportModel
+                        && root.appM18ExportModel.canCancel
+                    onClicked: root.appM18ExportModel.cancelExport()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    objectName: "m18AcknowledgeExport"
+                    readonly property var model: root.appM18ExportModel
+                    text: model && model.canAcknowledge
+                        ? "Acknowledge result" : "Close"
+                    enabled: !!model
+                        && (model.canAcknowledge
+                            || (model.statusText !== "EXPORTING / VERIFYING"
+                                && model.statusText !== "CANCELLING"))
+                    onClicked: {
+                        if (model && model.canAcknowledge
+                            && !model.acknowledgeExport()) return
+                        m18ExportProgressDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
     // X/Alt+F4 is NOT permission to retry an absent Windows DEVICE.
     // Keep the in-RAM M17 MASTER or explicitly discard on shutdown.
     Dialog {
