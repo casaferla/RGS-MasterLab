@@ -434,8 +434,8 @@ Rectangle {
                             anchors.centerIn: spectrumCanvas
                             width: spectrumCanvas.width * 0.85
                             text: root.stateStale
-                                ? "SPECTRUM STALE\\nREANALYSIS REQUIRED"
-                                : "SPECTRUM UNAVAILABLE\\nAUTHENTICATED PCM REQUIRED"
+                                ? "SPECTRUM STALE\nREANALYSIS REQUIRED"
+                                : "SPECTRUM UNAVAILABLE\nAUTHENTICATED PCM REQUIRED"
                             font.family: "Segoe UI"
                             font.pixelSize: 14
                             font.weight: Font.DemiBold

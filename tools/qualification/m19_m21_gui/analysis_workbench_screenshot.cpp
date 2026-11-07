@@ -154,6 +154,13 @@ void screenshot(QQuickView& view,const QString& dir,
         auto* notice=findVisualByObjectName(view.rootObject(),key);
         require(notice && notice->isVisible(),
                 "GUI_MISSING_MEASUREMENT_NOTICE_NOT_VISIBLE");
+        if(tab==1){
+            // Real line break, not the literal backslash+n seen in CI #12.
+            require(notice->property("text").toString().contains(QChar(10)),
+                    "GUI_SPECTRUM_NOTICE_MULTILINE_MISSING");
+            require(!notice->property("text").toString().contains(QStringLiteral("\\n")),
+                    "GUI_SPECTRUM_NOTICE_LITERAL_BACKSLASH_N");
+        }
         if(stale)require(notice->property("text").toString().contains("STALE"),
                          "GUI_STALE_NOTICE_MISLABELLED");
     }
