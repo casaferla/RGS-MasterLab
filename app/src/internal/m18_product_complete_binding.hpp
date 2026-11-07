@@ -43,6 +43,63 @@ struct M18ProductCompleteBinding final {
             &&c.candidates.m18_mutation_admission_installed();
     }
 
+    // A legitimate user Export click is only eligible when the EXACT
+    // immutable verified M17 Master still matches the live SOURCE, the
+    // accepted M11–15 chain, the Project output rate/revision, and all
+    // previously installed Product gates. This cannot be simulated with
+    // a synthetic ticket or initiated from a detached worker.
+    [[nodiscard]] static core::Result<
+        platform::windows::internal::M18ProductEpochTicketAuthority::Ticket>
+    authorize_verified_master_for_user(
+        const Controllers& c,const Fanout& fanout,bool explicitUserChoice)
+    {
+        using Ticket=platform::windows::internal::
+            M18ProductEpochTicketAuthority::Ticket;
+        using R=core::Result<Ticket>;
+        if(!explicitUserChoice
+           ||!Upstream::owner_thread_current(c.upstream)
+           ||QThread::currentThread()!=c.session.thread()
+           ||!c.candidates.m18_owner_thread_current()
+           ||!installed(c))
+            return R::failure(core::Error{
+                core::ErrorCode::AccessDenied,
+                "M18_EXPORT_CONSENT_REQUIRES_ONE_COMPLETE_PRODUCT_BINDING"});
+        const auto snapshot=fanout.current_owner_snapshot();
+        if(!snapshot||!snapshot->identity.valid())
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_EXPORT_MISSING_CURRENT_PRODUCT_EPOCH"});
+        const auto& id=snapshot->identity;
+        const auto& rate=c.upstream.rate;
+        const auto selected=core::SampleRate::create(rate.master_rate_hz());
+        const auto* source=c.upstream.source.source_resource();
+        if(!rate.has_supported_master_rate()||!selected
+           ||!source||!source->reference().permissions().can_read()
+           ||id.master_rate_hz!=static_cast<std::uint32_t>(
+               rate.master_rate_hz())
+           ||id.master_rate_revision!=rate.rate_revision()
+           ||id.chain_revision!=c.upstream.chain.chain().revision())
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_EXPORT_SOURCE_CHAIN_OR_RATE_NO_LONGER_CURRENT"});
+        const auto verified=c.session.capture_m18_verified_stage_for_worker(
+            *selected.value());
+        if(!verified||verified!=c.candidates.staged()
+           ||!verified->rendered.terminal.checked.final_check
+           ||verified->rendered.terminal.checked.terminal.bypassed
+           ||verified->rendered.manual_chain_revision!=id.chain_revision
+           ||verified->rendered.output_rate!=*selected.value())
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_EXPORT_NO_EXACT_CURRENT_VERIFIED_M17_MASTER"});
+        // No Qt signals or further Product writes between this verified
+        // stage proof and the owner-only atomic consent/epoch transition.
+        // The returned Ticket is immutable. A later physical SOURCE or
+        // Project mutation withdraws it through this SAME fanout.
+        return fanout.capture_after_explicit_verified_consent(
+            id,explicitUserChoice);
+    }
+
     [[nodiscard]] static core::Status bind(
         Controllers c,const Fanout& fanout)
     {
