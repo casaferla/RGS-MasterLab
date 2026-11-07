@@ -871,9 +871,26 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
 
     // A previously verified and ACKed M17 Master is NOT permission to
-    // export after a direct MANUAL DSP edit. It must lose UI eligibility
-    // immediately, before and after Product epoch reconciliation.
+    // export after a direct MANUAL DSP edit. A parameter-only Gain change
+    // deliberately leaves the chain's structural revision unchanged:
+    // the exact verified M17 Product generation must still be retired.
     QVERIFY(ui.can_export());
+    const auto revisionBeforeParam=
+        session.masteringChainState->chain().revision();
+    const auto differentGain=dsp::GainParameters::create(2.25);
+    QVERIFY(differentGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *differentGain.value()));
+    QCOMPARE(session.masteringChainState->chain().revision(),
+             revisionBeforeParam);
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(!ui.can_export());
+    const auto parameterOnlyStalePath=directory.filePath(
+        QStringLiteral("m18-stale-parameter-only-master.wav"));
+    QVERIFY(!ui.beginExport(
+        QUrl::fromLocalFile(parameterOnlyStalePath),1));
+    QVERIFY(!QFileInfo::exists(parameterOnlyStalePath));
+    QVERIFY(!action.has_unacknowledged_export());
     const auto gain=session.masteringChainState->gain_instance_id();
     const auto oldBypass=session.masteringChainState->is_bypassed(gain);
     QVERIFY(oldBypass);
