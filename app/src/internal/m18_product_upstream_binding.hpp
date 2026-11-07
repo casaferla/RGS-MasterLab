@@ -19,6 +19,9 @@
 namespace rgsml::app::internal {
 
 struct M18ProductUpstreamBinding final {
+    // Only the private complete Product binder may invoke an incomplete
+    // installation rollback. Never make this public or use it for teardown.
+    friend struct M18ProductCompleteBinding;
     using Fanout=platform::windows::internal::M18OwnerMutationFanout;
     struct Controllers {
         ProjectSessionViewModel& project;
