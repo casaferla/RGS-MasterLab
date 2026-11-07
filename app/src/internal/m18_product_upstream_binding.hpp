@@ -82,7 +82,7 @@ struct M18ProductUpstreamBinding final {
         c.region.set_private_m18_region_mutation_admission(f.status_admission());
         c.terminal.set_private_m18_mutation_admission(f.status_admission());
         if(!installed(c)) {
-            unbind(c);
+            rollback_partial(c);
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "M18_UPSTREAM_BIND_ROLLED_BACK_PARTIAL_INSTALL"});
@@ -90,10 +90,12 @@ struct M18ProductUpstreamBinding final {
         return core::Status::success();
     }
 
-    // Exact matching owner thread only. Never clear the guards while a
-    // worker holds a commit lease: unbind is for Product teardown after
-    // the external authority has been retired and workers completed.
-    static void unbind(Controllers c) {
+private:
+    // For an installation that has NOT returned a usable Product contract,
+    // no valid worker ticket may have been minted. This is the ONLY safe
+    // place to undo partial gates. A public unbind() would bypass BUSY and
+    // violate an active M18 commit lease, so no such API exists.
+    static void rollback_partial(Controllers c) {
         if(!owner_thread_current(c))return;
         c.terminal.set_private_m18_mutation_admission({});
         c.region.set_private_m18_region_mutation_admission({});
