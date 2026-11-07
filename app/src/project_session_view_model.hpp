@@ -4,6 +4,7 @@
 #include <rgsml/core/resource_reference.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QUrl>
 
@@ -66,7 +67,10 @@ public:
     using M18ProjectMutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_project_mutation_admission(
         M18ProjectMutationAdmission gate)
-    {m18ProjectMutationAdmission_=std::move(gate);}
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectMutationAdmission_=std::move(gate);
+    }
     // M18 PREPRODUCTION: optional one-shot Product batch transaction,
     // acquired BEFORE stopping the transport and kept alive until the
     // entire Project-open function has returned (including error paths).
@@ -77,7 +81,10 @@ public:
         std::function<core::Result<std::shared_ptr<const void>>()>;
     void set_private_m18_project_open_batch_begin(
         M18ProjectOpenBatchBegin begin)
-    {m18ProjectOpenBatchBegin_=std::move(begin);}
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectOpenBatchBegin_=std::move(begin);
+    }
     // A Project-open batch and a one-shot generic Project gate cannot be
     // installed together; SaveAs still needs a separate Product admission.
     // If a batch is configured without this additional SaveAs guard,
@@ -85,7 +92,10 @@ public:
     using M18ProjectSaveAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_project_save_admission(
         M18ProjectSaveAdmission gate)
-    {m18ProjectSaveAdmission_=std::move(gate);}
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectSaveAdmission_=std::move(gate);
+    }
     // Unlike a one-shot status admission, this Product-issued RAII token
     // holds a real exclusive mutation epoch across snapshot serialization,
     // file creation, postwrite verification and Project state publication.
@@ -94,7 +104,10 @@ public:
         std::function<core::Result<std::shared_ptr<const void>>()>;
     void set_private_m18_project_save_batch_begin(
         M18ProjectSaveBatchBegin begin)
-    {m18ProjectSaveBatchBegin_=std::move(begin);}
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectSaveBatchBegin_=std::move(begin);
+    }
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
