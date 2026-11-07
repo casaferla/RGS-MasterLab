@@ -2,6 +2,7 @@ add_library(rgsml_project STATIC
     src/project_snapshot.cpp
     src/master_output_rate_preference.cpp
     src/m18_output_preference_candidate.cpp
+    src/m18_master_wav_preference.cpp
     src/internal/canonical_json.cpp
     src/internal/minizip_resource_stream.cpp
     src/internal/raw_zip_validator.cpp
