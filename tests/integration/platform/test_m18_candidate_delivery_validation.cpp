@@ -866,7 +866,23 @@ sourceCommitBatchReusesSingleEpochAndCannotRaceExportWorker()
     QVERIFY(nested("clear_gold"));
     QVERIFY(rate());
     QVERIFY(!nested("set_gold")); // unrelated GOLD replacement denied
-    QVERIFY(!nested("gain_parameters")); // unrelated manual DSP edit
+    // The checked SOURCE callback resets MANUAL Gain/EQ/Compressor/MS
+    // beneath this ONE already-held physical SOURCE transaction. These
+    // are not independent user DSP edits: the old expectation that Gain
+    // must be refused silently left the new SOURCE with stale settings.
+    const auto epochInsideSource=fanout.current_owner_snapshot();
+    QVERIFY(epochInsideSource);
+    QVERIFY(nested("gain_parameters"));
+    QVERIFY(nested("eq_parameters"));
+    QVERIFY(nested("compressor_parameters"));
+    QVERIFY(nested("stereo_ms_parameters"));
+    QVERIFY(nested("module_bypass"));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,
+             epochInsideSource->epoch);
+    QVERIFY(fanout.current_owner_snapshot()->identity==
+            epochInsideSource->identity);
+    // An unrelated Project/region edit cannot borrow SOURCE's lease.
+    QVERIFY(!nested("region_set"));
     QVERIFY(!ticket.value()->commit_lease_factory()());
     held.value()->reset();
     // Physical lease released, but old consent remains revoked.
