@@ -344,7 +344,22 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     const auto initialSnapshot=fanout.current_owner_snapshot();
     QVERIFY(initialSnapshot);
 
+    // Mimic the real M17 coordinator's synchronous Selector::changed
+    // callback on the first committed SOURCE. It retires its old session
+    // inside the already-held M18 physical SOURCE batch, rather than
+    // being incorrectly rejected as a second unrelated Product write.
+    bool retirementObserved=false;
+    bool retirementAccepted=false;
+    QObject::connect(&session.selector,
+        &app::AuditionSourceSelector::changed,
+        &session.source,[&] {
+            if(retirementObserved)return;
+            retirementObserved=true;
+            retirementAccepted=static_cast<bool>(m17.cancel());
+        });
     session.source.selectSource(QUrl::fromLocalFile(first));
+    QVERIFY(retirementObserved);
+    QVERIFY(retirementAccepted);
     QVERIFY(session.source.has_source());
     QCOMPARE(session.source.display_name(),
              QStringLiteral("m18-first-source.wav"));
