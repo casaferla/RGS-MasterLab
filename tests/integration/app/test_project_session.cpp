@@ -536,6 +536,30 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
         controllers,fanout));
+
+    // Real GOLD has an independent file owner, even if it happens to
+    // have the same sample rate as SOURCE. Do not substitute PREPARED
+    // PCM, create a Processed identity or assume timeline alignment.
+    QVERIFY(!M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold));
+    session.gold.selectGold(QUrl::fromLocalFile(first));
+    QVERIFY2(session.gold.has_gold(),
+             session.gold.error_message().toUtf8().constData());
+    const auto selectedGold=M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY2(selectedGold,
+             selectedGold?"":selectedGold.error()->message().c_str());
+    QCOMPARE(selectedGold.value()->sample_rate_hz,48000U);
+    QCOMPARE(selectedGold.value()->full_frames,std::int64_t{256});
+    QCOMPARE(selectedGold.value()->channels,std::size_t{1});
+    QVERIFY(M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value()));
+    session.gold.clearGold();
+    QVERIFY(!session.gold.has_gold());
+    QVERIFY(!M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value()));
 }
 
 void ProjectSessionTest::
