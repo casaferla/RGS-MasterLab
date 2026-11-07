@@ -531,6 +531,64 @@ m18PhysicalSourceBatchNeedsCheckedProductDispatcher()
     model.set_private_m18_checked_source_committed_handler({});
 }
 
+void SourceSelectionTest::
+m18RejectedCheckedSourceCascadesFailClosedThenRecover()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto oldFile=write_file(
+        dir,QStringLiteral("m18-before-downstream-fault.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto newFile=write_file(
+        dir,QStringLiteral("m18-after-downstream-fault.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!oldFile.isEmpty()&&!newFile.isEmpty());
+    app::SourceSelectionViewModel model;
+    model.selectSource(QUrl::fromLocalFile(oldFile));
+    QVERIFY(model.has_source());
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    std::size_t batches=0,checked=0;
+    bool deny=true;
+    model.set_private_m18_checked_source_committed_handler(
+        [&](const core::ResourceReference&)->core::Status {
+            ++checked;
+            if(deny)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_DOWNSTREAM_PREPARED_HANDOFF_REFUSED"});
+            return core::Status::success();
+        });
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<const int>(2));
+        });
+    model.selectSource(QUrl::fromLocalFile(newFile));
+    QCOMPARE(batches,std::size_t{1});
+    QCOMPARE(checked,std::size_t{1});
+    // A partially accepted SOURCE cannot remain advertised as READY.
+    QVERIFY(!model.has_source());
+    QCOMPARE(model.source_state(),QStringLiteral("SOURCE_ERROR"));
+    QCOMPARE(model.source_rate_hz(),qint64{0});
+    QCOMPARE(model.frame_count(),qint64{0});
+    QCOMPARE(model.channel_count(),0);
+    QVERIFY(model.display_name().isEmpty());
+    QVERIFY(!model.read_only());
+    QVERIFY(!model.error_message().isEmpty());
+    QCOMPARE(changed.count(),1);
+    deny=false;
+    model.selectSource(QUrl::fromLocalFile(newFile));
+    QCOMPARE(batches,std::size_t{2});
+    QCOMPARE(checked,std::size_t{2});
+    QVERIFY(model.has_source());
+    QCOMPARE(model.display_name(),
+             QStringLiteral("m18-after-downstream-fault.wav"));
+    QCOMPARE(model.source_state(),QStringLiteral("SOURCE_READY"));
+    QVERIFY(model.error_message().isEmpty());
+    QCOMPARE(changed.count(),2);
+    model.set_private_m18_source_batch_begin({});
+    model.set_private_m18_checked_source_committed_handler({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
