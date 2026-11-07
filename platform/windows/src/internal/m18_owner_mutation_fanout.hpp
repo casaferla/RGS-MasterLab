@@ -30,6 +30,7 @@ class M18OwnerMutationFanout final {
         // Only an owner-held Project-open batch may use the approved
         // nested child calls without advancing a second Product epoch.
         std::atomic<bool> projectOpenActive{false};
+        std::atomic<bool> sourceCommitActive{false};
         std::atomic<bool> retired{false};
     };
     // The typed token owns BOTH the exclusive physical Product lease and
