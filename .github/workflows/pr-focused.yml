@@ -379,6 +379,7 @@ jobs:
             rgsml_m18_counter_dither_philox_tests \
             rgsml_m18_master_owner_bridge_tests \
             rgsml_m18_output_preference_candidate_tests \
+            rgsml_m18_master_wav_preference_tests \
             rgsml_m18_core_resource_sink_tests \
             rgsml_m18_canonical_wav_writer_tests \
             rgsml_m18_decoded_delivery_verifier_tests \
@@ -746,6 +747,7 @@ jobs:
             rgsml_m18_counter_dither_philox_tests `
             rgsml_m18_master_owner_bridge_tests `
             rgsml_m18_output_preference_candidate_tests `
+            rgsml_m18_master_wav_preference_tests `
             rgsml_m18_core_resource_sink_tests `
             rgsml_m18_canonical_wav_writer_tests `
             rgsml_m18_decoded_delivery_verifier_tests `
