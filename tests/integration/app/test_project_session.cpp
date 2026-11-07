@@ -443,6 +443,18 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(owner->can_install_full_product_guards(
         fanout.current_owner_snapshot()->epoch,
         fanout.current_owner_snapshot()->identity));
+    // The Product dialog cannot create a new "export only" dBTP Ceiling
+    // unrelated to the actually accepted M17 limiter parameters.
+    const auto wrongCeilingPath=directory.filePath(
+        QStringLiteral("m18-unverified-ceiling.wav"));
+    auto wrongCeilingRef=platform::windows::WindowsResourceWriter::
+        make_write_reference(wrongCeilingPath.toUtf8().toStdString(),
+                             "m18-unverified-ceiling.wav");
+    QVERIFY(wrongCeilingRef);
+    QVERIFY(!action.begin(*wrongCeilingRef.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,-2.0,true));
+    QVERIFY(!QFileInfo::exists(wrongCeilingPath));
+    QVERIFY(!action.has_unacknowledged_export());
 
     for(const auto encoding:{
             audio::WavSampleFormat::PCM_S24,
