@@ -4,6 +4,7 @@
 #include "internal/m18_product_upstream_binding.hpp"
 #include "internal/m18_product_complete_binding.hpp"
 #include "internal/m18_private_product_export_action.hpp"
+#include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
