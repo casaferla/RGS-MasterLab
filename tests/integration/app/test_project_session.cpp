@@ -202,6 +202,54 @@ private slots:
 
 
 void ProjectSessionTest::
+m18ActualSourcePickerAndAuditionUseOnePhysicalProductBatch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto sourcePath=wav(
+        dir,QStringLiteral("m18-physical-batch-source.wav"),15,48000U);
+    QVERIFY(!sourcePath.isEmpty());
+    Session target;
+    app::MasterOutputRateState targetRate;
+    const M18ProductExportIdentity id{411U,412U,413U,0U,48000U,3U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        2000U,id);
+    QVERIFY(owner->try_transition(2000U,2001U,id,true));
+    auto ticket=owner->capture(id);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,2001U,id};
+    app::internal::M18ProductControllerBinding::bind_source_chain_rate(
+        target.source,*target.masteringChainState,targetRate,fanout);
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        target.selector,target.region,target.gold,fanout);
+    auto commit=ticket.value()->commit_lease_factory()();
+    QVERIFY(commit);
+
+    // The real picker must fail BEFORE updating SOURCE or entering the
+    // synchronous AuditionSourceSelector's source_committed cascade.
+    target.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(!target.source.has_source());
+    QVERIFY(!target.selector.prepared_available());
+    QVERIFY((*commit.value())->revalidate_current());
+    commit.value()->reset();
+
+    // Exactly one Product SOURCE lease includes Prepared construction,
+    // playback stop/handoff, selector Qt listeners and GOLD retirement.
+    target.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(target.source.has_source());
+    QVERIFY(target.selector.prepared_available());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+    // Subsequent manual DSP edits are a different Product action.
+    const auto gain=dsp::GainParameters::create(2.0);
+    QVERIFY(gain);
+    QVERIFY(target.masteringChainState->set_gain_parameters(*gain.value()));
+}
+
+void ProjectSessionTest::
 m18ActualProjectOpenAndSaveUseOneSharedProductEpoch()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
