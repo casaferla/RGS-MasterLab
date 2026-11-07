@@ -336,6 +336,11 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
         gainId,!(*gainState.value())));
     QCOMPARE(session.masteringChainState->chain().revision(),
              originalChainRevision);
+    const auto oldRateRevision=rate.rate_revision();
+    // A same-Fs SOURCE reselection is a fresh Product identity too.
+    // Neither the selected rate nor its revision may change under BUSY.
+    QVERIFY(!rate.try_source_committed_for_m18(48000));
+    QCOMPARE(rate.rate_revision(),oldRateRevision);
     const auto candidate=core::FrameRange::create(
         core::FrameIndex{7},core::FrameIndex{19});
     QVERIFY(candidate);
