@@ -243,6 +243,85 @@ private slots:
 
 
 void ProjectSessionTest::
+m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
+{
+    using app::internal::M18ProductUpstreamBinding;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("m18-bound-src.wav"),17);
+    const auto other=wav(dir,QStringLiteral("m18-bound-next-src.wav"),23);
+    QVERIFY(!src.isEmpty()&&!other.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(session.source.has_source());
+    const auto original=session.source.display_name();
+    app::MasterOutputRateState rate;
+    rate.source_committed(session.source.sample_rate_hz());
+    install_m18_checked_source_dispatch(session,rate);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto id=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "ac000000-0000-4000-8000-000000000018").value());
+    QVERIFY(id);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(terminal);
+    const M18ProductExportIdentity identity{
+        51U,61U,71U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        90U,identity);
+    QVERIFY(owner->try_transition(90U,91U,identity,true));
+    auto ticket=owner->capture(identity);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,91U,identity};
+    M18ProductUpstreamBinding::Controllers controllers{
+        session.project,session.source,rate,*session.masteringChainState,
+        session.selector,session.region,session.gold,*terminal.value()};
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    bool workerBindingDenied=false;
+    std::thread forbiddenWorker([&] {
+        workerBindingDenied=
+            !M18ProductUpstreamBinding::bind(controllers,fanout);
+    });
+    forbiddenWorker.join();
+    QVERIFY(workerBindingDenied);
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    QVERIFY(M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductUpstreamBinding::installed(controllers));
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    session.source.selectSource(QUrl::fromLocalFile(other));
+    QCOMPARE(session.source.display_name(),original);
+    QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
+    const auto blockedProject=dir.filePath(
+        QStringLiteral("m18-blocked-project.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(blockedProject));
+    QVERIFY(!QFileInfo::exists(blockedProject));
+    QVERIFY(!terminal.value()->set_ceiling_db_tp(-2.0));
+    const auto candidate=core::FrameRange::create(
+        core::FrameIndex{7},core::FrameIndex{19});
+    QVERIFY(candidate);
+    QVERIFY(!session.region.set_region(*candidate.value()));
+    QVERIFY(!session.region.region());
+    QVERIFY((*lease.value())->revalidate_current());
+
+    // After release, one genuine region change consumes exactly the
+    // shared generation and revokes the old asynchronous export consent.
+    lease.value()->reset();
+    QVERIFY(session.region.set_region(*candidate.value()));
+    QVERIFY(session.region.region());
+    QVERIFY(!owner->capture(identity));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(M18ProductUpstreamBinding::installed(controllers));
+}
+
+void ProjectSessionTest::
 m18ActualProjectOpenCheckedSourceFailureCannotPublishReady()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
