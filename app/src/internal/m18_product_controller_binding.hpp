@@ -39,8 +39,11 @@ struct M18ProductControllerBinding final {
         MasterOutputRateState& rate,
         const Fanout& fanout)
     {
-        source.set_private_m18_source_mutation_admission(
-            fanout.status_admission());
+        // SOURCE adoption invokes multiple nested Product controllers.
+        // One physical batch holds exclusivity through their Qt callbacks;
+        // a one-shot status grant would leave a commit race between them.
+        source.set_private_m18_source_batch_begin(
+            fanout.source_commit_batch());
         chain.set_private_m18_chain_mutation_admission(
             fanout.status_admission());
         rate.set_private_m18_rate_mutation_admission(
