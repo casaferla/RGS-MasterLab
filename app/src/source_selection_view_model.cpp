@@ -217,11 +217,11 @@ void SourceSelectionViewModel::
 set_private_m18_checked_source_committed_handler(
     M18CheckedSourceCommittedHandler handler)
 {
-    // Changing the dispatcher while its own std::function is executing
-    // would destroy the closure and undermine the held Product epoch.
+    // The private M18 dispatcher is QObject-owned even while inert.
+    // Check affinity FIRST; a worker must not race its guard flags or
+    // destroy the std::function during a Product callback.
+    if(QThread::currentThread()!=thread())return;
     if(m18SourcePublishing_||m18SourceAdmitting_)return;
-    if((m18SourceBatchBegin_||m18SourceMutationAdmission_)
-       &&QThread::currentThread()!=thread())return;
     m18CheckedSourceCommittedHandler_=std::move(handler);
 }
 
