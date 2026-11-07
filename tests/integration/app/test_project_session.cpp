@@ -290,6 +290,16 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     forbiddenWorker.join();
     QVERIFY(workerBindingDenied);
     QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    // An independently installed GOLD ViewModel admission would double
+    // charge the shared epoch: refuse the bundle until GOLD delegates
+    // solely to the Audition selector.
+    session.gold.set_private_m18_gold_mutation_admission(
+        fanout.status_admission());
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(!session.project.m18_open_batch_installed());
+    QVERIFY(!session.source.m18_source_batch_installed());
+    session.gold.set_private_m18_gold_mutation_admission({});
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
     QVERIFY(M18ProductUpstreamBinding::bind(controllers,fanout));
     QVERIFY(M18ProductUpstreamBinding::installed(controllers));
     QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
