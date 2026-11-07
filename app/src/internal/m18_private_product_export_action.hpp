@@ -99,19 +99,22 @@ public:
            &&finished.phase!=Phase::FAILED
            &&finished.phase!=Phase::CANCELLED)
             return deny("M18_PRODUCT_EXPORT_WORKER_NOT_TERMINAL");
-        const auto ack=session_.acknowledge_finished();
-        if(!ack)return ack;
+        // Revoke consent BEFORE discarding the verified result. If a
+        // deferred commit lease is still active, fail the ACK without
+        // losing the terminal evidence and allow a later safe retry.
         const auto released=fanout_->withdraw_completed_export_consent(
             *ticket_);
         if(!released) {
-            // Another accepted upstream Product mutation may have
-            // already retired the exact ticket. Such a newer epoch is
-            // sufficient evidence that the OLD export cannot restart.
+            // An already accepted newer Product mutation irrevocably
+            // withdrew the previous ticket. A stale Ticket cannot be
+            // used for a second worker, even after acknowledgement.
             const auto current=fanout_->current_owner_snapshot();
             if(!current ||(current->epoch==ticket_->epoch()
                            &&current->identity==ticket_->identity()))
                 return released;
         }
+        const auto ack=session_.acknowledge_finished();
+        if(!ack)return ack;
         ticket_.reset();
         return core::Status::success();
     }
