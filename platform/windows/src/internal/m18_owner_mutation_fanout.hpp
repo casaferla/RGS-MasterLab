@@ -249,6 +249,7 @@ private:
             ||operation=="region_set"
             ||operation=="region_clear"
             ||operation=="loop_toggle"
+            ||operation=="invalidate_candidate"
             ||operation=="master_rate_change";
     }
 
