@@ -1,6 +1,7 @@
 #include "project_session_view_model.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
+#include "internal/m18_product_upstream_binding.hpp"
 #include "source_selection_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
@@ -205,6 +206,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
+    void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
     void m18RegionGateCannotSelfUninstallOrCrossThread();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
