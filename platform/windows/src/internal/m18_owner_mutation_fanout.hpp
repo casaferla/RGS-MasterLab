@@ -330,6 +330,10 @@ public:
                     "M18_OPEN_BATCH_INVALID_OWNER_OR_NESTED"});
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.project_generation
+                      ==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.source_generation
                       ==std::numeric_limits<std::uint64_t>::max())
                 return R::failure(core::Error{
                     core::ErrorCode::InvalidState,
@@ -340,6 +344,11 @@ public:
                 ~Unwind(){*active=false;}
             } unwind{&state->admitting};
             auto nextIdentity=state->identity;
+            // Even if the project reopens the same path and same SOURCE,
+            // its accepted Project/SOURCE owner epoch is new. The nested
+            // SOURCE child reuses THIS writer lease and does not advance.
+            ++nextIdentity.project_generation;
+            ++nextIdentity.source_generation;
             ++nextIdentity.master_generation;
             const auto nextEpoch=state->epoch+1;
             auto physical=state->authority->try_begin_product_mutation(
