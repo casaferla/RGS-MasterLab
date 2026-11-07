@@ -303,6 +303,64 @@ fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
 }
 
 void M18CandidateDeliveryValidationTest::
+exportConsentReleaseRequiresItsIssuingProductAndNoHeldCommit()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{301U,302U,303U,0U,48000U,12U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(20U,id);
+    M18OwnerMutationFanout fanout{owner,20U,id};
+    auto issued=fanout.capture_after_explicit_verified_consent(id,true);
+    QVERIFY(issued);
+    QCOMPARE(issued.value()->epoch(),UINT64_C(21));
+
+    // A different Product can have the exact SAME epoch and identity
+    // numbers, but it cannot withdraw consent from this owner.
+    auto other=std::make_shared<M18ProductEpochTicketAuthority>(20U,id);
+    QVERIFY(other->try_transition(20U,21U,id,true));
+    auto foreignTicket=other->capture(id);
+    QVERIFY(foreignTicket);
+    QVERIFY(!owner->owns_ticket(*foreignTicket.value()));
+    QVERIFY(owner->owns_ticket(*issued.value()));
+    QVERIFY(!fanout.withdraw_completed_export_consent(
+        *foreignTicket.value()));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(21));
+
+    bool workerDenied=false;
+    std::thread foreign([&] {
+        workerDenied=!fanout.withdraw_completed_export_consent(
+            *issued.value());
+    });
+    foreign.join();
+    QVERIFY(workerDenied);
+    auto held=issued.value()->commit_lease_factory()();
+    QVERIFY(held);
+    QVERIFY(!fanout.withdraw_completed_export_consent(*issued.value()));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(21));
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+
+    // An ACK after verified WAV readback retires only permission. It does
+    // not increment a SOURCE, Project or M17 verified PCM generation.
+    QVERIFY(fanout.withdraw_completed_export_consent(*issued.value()));
+    const auto withdrawn=fanout.current_owner_snapshot();
+    QVERIFY(withdrawn);
+    QCOMPARE(withdrawn->epoch,UINT64_C(22));
+    QVERIFY(withdrawn->identity==id);
+    QVERIFY(!owner->capture(id));
+    QVERIFY(!issued.value()->commit_lease_factory()());
+    QVERIFY(!fanout.withdraw_completed_export_consent(*issued.value()));
+    // The same immutable Master may be exported again only after a NEW
+    // explicit user action issues a new, non-reusable Ticket.
+    auto next=fanout.capture_after_explicit_verified_consent(id,true);
+    QVERIFY(next);
+    QCOMPARE(next.value()->epoch,UINT64_C(23));
+    QVERIFY(!issued.value()->commit_lease_factory()());
+    QVERIFY(fanout.withdraw_completed_export_consent(*next.value()));
+}
+
+void M18CandidateDeliveryValidationTest::
 productModelRateChainReconciliationCannotRestoreOldConsent()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
