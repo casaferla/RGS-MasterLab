@@ -827,11 +827,12 @@ int main(int argc, char* argv[])
                 static_cast<double>(sourceSelection.sample_rate_hz()),
                 sourceSelection.channel_count());
         });
-    // M18 Product wiring PREPARED, deliberately NOT activated.
-    // The legacy void SOURCE callback above is retained unchanged while
-    // the real M18 owner/verified-M17 export ticket remains unregistered.
-    // Once the physical SOURCE batch is installed, this checked route
-    // becomes mandatory and reports denied downstream controller edits.
+    // M18 active Product wiring. The M17 legacy void SOURCE callback above
+    // remains for compatibility with unguarded tests and historical paths;
+    // after the complete M18 binder is installed below, this checked
+    // status-returning route exclusively handles real SOURCE commits.
+    // The physical SOURCE batch spans all nested Product resets, including
+    // M17 terminal retirement and M11–15 reset-to-default operations.
     sourceSelection.set_private_m18_checked_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel,
