@@ -1,6 +1,7 @@
 #include "mastering_chain_state.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_terminal_candidate_binding.hpp"
+#include "internal/m18_product_private_session_binding.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_playback_frame_map.hpp"
@@ -743,6 +744,51 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     QCOMPARE(changed.count(),0);
     // Admission-unwind makes a subsequent external owner replacement legal.
     session.set_private_m18_mutation_admission({});
+
+    // The real typed M18 Product binding must protect session AND
+    // renderer/candidate stage with one and the SAME revocable epoch.
+    // This remains isolated; no GUI export action is activated.
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity verifiedId{
+        71U,72U,73U,0U,48000U,5U};
+    auto authority=std::make_shared<M18ProductEpochTicketAuthority>(
+        100U,verifiedId);
+    QVERIFY(authority->try_transition(100U,101U,verifiedId,true));
+    auto ticket=authority->capture(verifiedId);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{authority,101U,verifiedId};
+    bool foreignBindingDenied=false;
+    std::thread foreignBinder([&] {
+        const auto result=app::internal::M18ProductPrivateSessionBinding::bind(
+            session,candidates,fanout);
+        foreignBindingDenied=!result;
+    });
+    foreignBinder.join();
+    QVERIFY(foreignBindingDenied);
+    QVERIFY(!session.m18_private_mutation_admission_installed());
+    QVERIFY(!candidates.m18_mutation_admission_installed());
+    QVERIFY(app::internal::M18ProductPrivateSessionBinding::bind(
+        session,candidates,fanout));
+    QVERIFY(session.m18_private_mutation_admission_installed());
+    QVERIFY(candidates.m18_mutation_admission_installed());
+    QVERIFY(!app::internal::M18ProductPrivateSessionBinding::bind(
+        session,candidates,fanout)); // no silent independent rebind
+    auto held=ticket.value()->commit_lease_factory()();
+    QVERIFY(held);
+    const auto blockedProductCancel=session.cancel();
+    QVERIFY(!blockedProductCancel);
+    QVERIFY(!candidates.try_invalidate_for_m18());
+    QVERIFY(!renderer.try_invalidate_for_m18());
+    QCOMPARE(session.status(),QStringLiteral("IDLE"));
+    QCOMPARE(changed.count(),0);
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+    QVERIFY(candidates.try_invalidate_for_m18());
+    QVERIFY(!authority->capture(verifiedId)); // consent irrevocably retired
+    session.set_private_m18_mutation_admission({});
+    candidates.set_private_m18_mutation_admission({});
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
