@@ -479,6 +479,33 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
         controllers,fanout));
+
+    // A normal Project SaveAs/Open exercises the OTHER physical batch
+    // admission. The synchronous M17 retirement callback is still allowed
+    // as the selected SOURCE is republished from the saved Project.
+    const auto projectPath=dir.filePath(
+        QStringLiteral("m18-startup-project.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QVERIFY2(QFileInfo::exists(projectPath),
+             session.project.error_message().toUtf8().constData());
+    const auto beforeOpen=fanout.current_owner_snapshot();
+    QVERIFY(beforeOpen);
+    retirementObserved=false;
+    retirementAccepted=false;
+    session.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY2(session.source.has_source(),
+             session.project.error_message().toUtf8().constData());
+    QVERIFY(retirementObserved);
+    QVERIFY(retirementAccepted);
+    QVERIFY(!session.project.degraded());
+    const auto afterOpen=fanout.current_owner_snapshot();
+    QVERIFY(afterOpen);
+    QVERIFY(afterOpen->identity.project_generation>
+            beforeOpen->identity.project_generation);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
 }
 
 void ProjectSessionTest::
