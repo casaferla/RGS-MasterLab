@@ -219,6 +219,87 @@ private slots:
 };
 
 void M18CandidateDeliveryValidationTest::
+fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{11U,21U,31U,0U,48000U,5U};
+    const auto owner=std::make_shared<M18ProductEpochTicketAuthority>(40U,id);
+    M18OwnerMutationFanout fanout{owner,40U,id};
+    auto snap=fanout.current_owner_snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap->epoch,UINT64_C(40));
+    QCOMPARE(snap->identity,id);
+
+    auto source=fanout.source_commit_batch()();
+    QVERIFY(source);
+    snap=fanout.current_owner_snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap->epoch,UINT64_C(41));
+    QCOMPARE(snap->identity.source_generation,UINT64_C(12));
+    QCOMPARE(snap->identity.project_generation,UINT64_C(21));
+    QCOMPARE(snap->identity.master_generation,UINT64_C(32));
+    // PREPARED and GOLD retirement are children of the SAME physical
+    // SOURCE mutation. No second Source generation or export consent.
+    QVERIFY(fanout.status_admission()("set_prepared"));
+    QVERIFY(fanout.status_admission()("clear_gold"));
+    QCOMPARE(fanout.current_owner_snapshot()->identity,snap->identity);
+    source.value()->reset();
+
+    auto save=fanout.project_save_batch()();
+    QVERIFY(save);
+    snap=fanout.current_owner_snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap->epoch,UINT64_C(42));
+    QCOMPARE(snap->identity.source_generation,UINT64_C(12));
+    QCOMPARE(snap->identity.project_generation,UINT64_C(22));
+    QCOMPARE(snap->identity.master_generation,UINT64_C(33));
+    save.value()->reset();
+
+    auto open=fanout.project_open_batch()();
+    QVERIFY(open);
+    snap=fanout.current_owner_snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap->epoch,UINT64_C(43));
+    QCOMPARE(snap->identity.source_generation,UINT64_C(13));
+    QCOMPARE(snap->identity.project_generation,UINT64_C(23));
+    QCOMPARE(snap->identity.master_generation,UINT64_C(34));
+    auto nested=fanout.source_commit_batch()();
+    QVERIFY(nested);
+    QVERIFY(fanout.status_admission()("source_committed"));
+    QVERIFY(fanout.status_admission()("set_gold"));
+    QCOMPARE(fanout.current_owner_snapshot()->identity,snap->identity);
+    nested.value()->reset();
+    open.value()->reset();
+
+    QVERIFY(fanout.rate_admission()());
+    snap=fanout.current_owner_snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap->epoch,UINT64_C(44));
+    QCOMPARE(snap->identity.source_generation,UINT64_C(13));
+    QCOMPARE(snap->identity.project_generation,UINT64_C(23));
+    QCOMPARE(snap->identity.master_generation,UINT64_C(35));
+
+    // A direct status-only SOURCE/Project change still revokes that
+    // exact identity, never just a later MASTER stage generation.
+    QVERIFY(fanout.status_admission()("source_committed"));
+    QCOMPARE(fanout.current_owner_snapshot()->identity.source_generation,
+             UINT64_C(14));
+    QVERIFY(fanout.status_admission()("project_save"));
+    QCOMPARE(fanout.current_owner_snapshot()->identity.project_generation,
+             UINT64_C(24));
+
+    bool foreignNoSnapshot=false;
+    std::thread foreign([&] {
+        foreignNoSnapshot=!fanout.current_owner_snapshot();
+    });
+    foreign.join();
+    QVERIFY(foreignNoSnapshot);
+    QVERIFY(!owner->capture(id)); // no permission ever issued by a batch
+}
+
+void M18CandidateDeliveryValidationTest::
 fullProductGuardActivationRequiresFreshUnconsentedEpoch()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
