@@ -168,11 +168,21 @@ bool M18ProductExportViewModel::beginExport(
         emit changed();
         return false;
     }
+    // Store the explicit WAV choice in the Project's canonical output
+    // preference. This may NOT mint an M18 epoch ticket or silently
+    // coerce the complete uint64 PCM24 TPDF seed through QML Number.
+    if(!controllers_.upstream.project.chooseM18WavEncoding(formatIndex)) {
+        lastError_=QStringLiteral(
+            "The Project is busy; WAV format selection was not accepted.");
+        emit changed();
+        return false;
+    }
     const auto format=formatIndex==0
         ?audio::WavSampleFormat::PCM_S24
         :audio::WavSampleFormat::IEEE_F32;
     const auto seed=formatIndex==0
-        ?std::optional<std::uint64_t>{UINT64_C(0x5247534d31380001)}
+        ?std::optional<std::uint64_t>{
+            controllers_.upstream.project.m18_pcm24_seed()}
         :std::nullopt;
     const auto ceiling=
         controllers_.upstream.terminal.parameters().ceiling_db_tp();
