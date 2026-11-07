@@ -41,6 +41,10 @@ TerminalCandidateGate::capture(
     const TerminalLimiterState& terminal,
     core::SampleRate rate)
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Result<Capture>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_CAPTURE_REQUIRES_OWNER_THREAD"});
     if(!prepared||!manual||!manual_id||manual_id->value==0
        ||manual_chain.context().stage!=dsp::ProcessingStage::MASTER
        ||manual_chain.context().segment!=dsp::ChainSegment::MANUAL
@@ -111,6 +115,10 @@ core::Status TerminalCandidateGate::accept(
     const dsp::ProcessingChain& manual_chain,
     const TerminalLimiterState& terminal)
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_ACCEPT_REQUIRES_OWNER_THREAD"});
     if(job.ticket!=ticket_)
         return core::Status::failure(reject(
             "M17_STALE_TICKET","Terminal candidate has been superseded."));
@@ -181,6 +189,10 @@ core::Status TerminalCandidateGate::accept_measured(
     const dsp::ProcessingChain& manual_chain,
     const TerminalLimiterState& terminal)
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_MEASURED_ACCEPT_REQUIRES_OWNER_THREAD"});
     if(job.ticket!=ticket_)
         return core::Status::failure(reject(
             "M17_NONCONFORMING_STALE_TICKET",
@@ -245,6 +257,10 @@ core::Status TerminalCandidateGate::accept_measured(
 core::Status TerminalCandidateGate::admit_m18_candidate_mutation(
     const char* operation) const
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_ADMISSION_REQUIRES_OWNER_THREAD"});
     if(!m18MutationAdmission_)return core::Status::success();
     if(m18AdmissionActive_)return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
@@ -275,6 +291,7 @@ void TerminalCandidateGate::invalidate() noexcept
     // An installed Product epoch gate must never be bypassed by them.
     // All such call sites MUST use try_invalidate_for_m18 before
     // activating export; otherwise they fail closed.
+    if(std::this_thread::get_id()!=ownerThread_)return;
     if(m18MutationAdmission_)return;
     invalidate_unchecked();
 }
