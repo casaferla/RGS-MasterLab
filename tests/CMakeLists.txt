@@ -1837,6 +1837,19 @@ set_tests_properties(rgsml_true_peak_measurement_tests PROPERTIES
     LABELS "analysis;true_peak;public_result;unqualified;unit"
 )
 
+# L1-M19 public Product-facing numerical bridge. Whole owning resource
+# invokes the existing M16 measurement, regional scopes fail closed on TP.
+qt_add_executable(rgsml_basic_level_analyzer_tests
+    unit/analysis/test_basic_level_analyzer.cpp)
+target_link_libraries(rgsml_basic_level_analyzer_tests PRIVATE
+    rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_basic_level_analyzer_tests)
+add_test(NAME rgsml_basic_level_analyzer_tests
+    COMMAND rgsml_basic_level_analyzer_tests)
+set_tests_properties(rgsml_basic_level_analyzer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;m19;basic_level;real_m16;scope;unit")
+
 qt_add_executable(rgsml_true_peak_gate_g_edge_tests
     unit/analysis/test_true_peak_gate_g_edges.cpp
 )
