@@ -204,6 +204,7 @@ private slots:
     void productDestroyedDuringProjectMutationCannotReviveWorkerExport();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void fullProductGuardActivationRequiresFreshUnconsentedEpoch();
+    void explicitExportConsentMintsOneExactVerifiedProductTicket();
     void fullProductSourceProjectGenerationsAdvanceWithSingleWriter();
     void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
     void retiredProductMutationFanoutRejectsCachedControllerCallbacks();
