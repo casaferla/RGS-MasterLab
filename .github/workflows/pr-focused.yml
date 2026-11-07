@@ -885,6 +885,52 @@ jobs:
       # windows-full-qualification.yml for the exact candidate SHA. The
       # release GUI smoke above remains a per-PR Focused gate.
 
+      # Bounded ProjectSession startup test after #1073 Windows passed
+      # compilation but CTest exited without QtTest output. The probe is
+      # intentionally diagnostic-only and never suppresses the normal CTest.
+      - name: Probe bounded Windows ProjectSession startup and QtTest method
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $exe = Join-Path $env:GITHUB_WORKSPACE "build/windows-ninja-cache/Release/rgsml_project_session_tests.exe"
+          $raw = Join-Path $env:RUNNER_TEMP "m18-project-session-raw-qtest.txt"
+          $stdout = Join-Path $env:RUNNER_TEMP "m18-project-session-stdout.txt"
+          $stderrFile = Join-Path $env:RUNNER_TEMP "m18-project-session-stderr.txt"
+          $bounded = Join-Path $env:RUNNER_TEMP "m18-project-session-bounded.txt"
+          $lines = [System.Collections.Generic.List[string]]::new()
+          $lines.Add("M18 PROJECT SESSION WINDOWS STARTUP -- BOUNDED DIAGNOSTIC")
+          $lines.Add("NO FULL CTEST/GITHUB/QTTEST LOG IS UPLOADED")
+          if (-not (Test-Path $exe)) {
+            $lines.Add("EXECUTABLE_MISSING")
+          } else {
+            try {
+              & $exe -v1 -o "$raw,txt" 1> $stdout 2> $stderrFile
+              $lines.Add("PROCESS_EXIT_CODE=$LASTEXITCODE")
+            } catch {
+              $lines.Add("PROCESS_START_EXCEPTION=" + $_.Exception.GetType().FullName)
+              $lines.Add("EXCEPTION_MESSAGE=" + $_.Exception.Message.Substring(0, [math]::Min(240, $_.Exception.Message.Length)))
+            }
+            foreach ($file in @($raw,$stdout,$stderrFile)) {
+              $lines.Add("FILE=" + [IO.Path]::GetFileName($file) + " PRESENT=" + (Test-Path $file))
+              if (Test-Path $file) {
+                Get-Content $file -Tail 16 -ErrorAction SilentlyContinue | ForEach-Object {
+                  $lines.Add($_.Substring(0,[math]::Min(220,$_.Length)))
+                }
+              }
+            }
+          }
+          $lines | Set-Content -Path $bounded -Encoding utf8
+          Get-Content $bounded
+
+      - name: Upload bounded Windows ProjectSession diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-ProjectSession-Bounded-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-project-session-bounded.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Run Focused DSP Tests (Release)
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
