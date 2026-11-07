@@ -710,6 +710,13 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
                 core::ErrorCode::InvalidState,
                 "M18_PRIVATE_SESSION_WORKER_COMMIT_BUSY"});
         });
+    // A real renderer notification while the M17 Product has NO
+    // pending render must never revoke a Product export generation:
+    // no operation was committed and no source owner changed.
+    renderer.invalidate();
+    QCOMPARE(calls,std::size_t{0});
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(session.status(),QStringLiteral("IDLE"));
     QVERIFY(!session.cancel());
     QVERIFY(nestedDenied);
     QCOMPARE(calls,std::size_t{1});
