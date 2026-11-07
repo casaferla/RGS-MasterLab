@@ -8,6 +8,7 @@
 #include "m18_product_complete_binding.hpp"
 #include "m21_real_product_metrics_port.hpp"
 #include "audition_source_selector.hpp"
+#include "gold_selection_view_model.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/core/error.hpp>
@@ -107,6 +108,75 @@ public:
             &&current->identity.master_rate_hz
                 ==static_cast<std::uint32_t>(
                     product.upstream.rate.master_rate_hz());
+    }
+
+    struct GoldCapture final {
+        Fanout::OwnerSnapshot owner;
+        core::ResourceReference gold;
+        std::uint32_t sample_rate_hz{0};
+        std::int64_t full_frames{0};
+        std::size_t channels{0};
+    };
+
+    // GOLD is an INDEPENDENT, read-only WAV resource owned by the
+    // actual GoldSelectionViewModel. It is never a processed alias,
+    // a SOURCE-derived replica or an implicitly time-aligned region.
+    // Project-open GOLD which has not been reified by this ViewModel is
+    // explicitly unavailable until a separate resource owner is bound.
+    [[nodiscard]] static core::Result<GoldCapture> capture_gold(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold)
+    {
+        using R=core::Result<GoldCapture>;
+        if(QThread::currentThread()!=gold.thread()
+           ||QThread::currentThread()!=selector.thread()
+           ||!Binding::installed(product)
+           ||!Binding::Upstream::owner_thread_current(product.upstream)
+           ||!fanout.can_install_full_product_guards()
+           ||!selector.gold_available())
+            return R::failure(failed("M21_GOLD_CAPTURE_REQUIRES_AUTHENTIC_QT_OWNER"));
+        const auto* resource=gold.gold_resource();
+        const auto productEpoch=fanout.current_owner_snapshot();
+        if(!resource||!productEpoch||!productEpoch->identity.valid()
+           ||!resource->reference().permissions().can_read())
+            return R::failure(failed("M21_GOLD_NO_INDEPENDENT_READ_OWNER"));
+        const auto& info=resource->wav_info();
+        const auto fs=info.audio_format().sample_rate().value();
+        const auto frames=info.frame_count().value();
+        const auto channels=info.audio_format().channel_count();
+        if(fs<=0||frames<=0||(channels!=1U&&channels!=2U))
+            return R::failure(failed("M21_GOLD_INVALID_NATIVE_WAV_SCOPE"));
+        return R::success(GoldCapture{
+            *productEpoch,resource->reference(),
+            static_cast<std::uint32_t>(fs),frames,channels});
+    }
+
+    [[nodiscard]] static bool gold_still_current(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,
+        const GoldCapture& expected) noexcept
+    {
+        if(QThread::currentThread()!=gold.thread()
+           ||QThread::currentThread()!=selector.thread()
+           ||!Binding::installed(product)
+           ||!Binding::Upstream::owner_thread_current(product.upstream)
+           ||!fanout.can_install_full_product_guards()
+           ||!selector.gold_available())
+            return false;
+        const auto current=fanout.current_owner_snapshot();
+        const auto* resource=gold.gold_resource();
+        if(!current||!resource
+           ||current->epoch!=expected.owner.epoch
+           ||current->identity!=expected.owner.identity
+           ||!resource->reference().same_resource_identity(expected.gold))
+            return false;
+        const auto& info=resource->wav_info();
+        return info.frame_count().value()==expected.full_frames
+            &&info.audio_format().sample_rate().value()
+                ==static_cast<std::int64_t>(expected.sample_rate_hz)
+            &&info.audio_format().channel_count()==expected.channels;
     }
 
     // Synchronous, owner-thread-only real PCM analysis for now. No
