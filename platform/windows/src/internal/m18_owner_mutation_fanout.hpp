@@ -145,6 +145,68 @@ public:
             return static_cast<bool>(same("master_rate_change"));
         };
     }
+    // External SOURCE picker: ONE physical mutation lease spans the
+    // entire SOURCE callback cascade. During a nested Project Open, the
+    // already-held Project lease is reused without a second epoch.
+    [[nodiscard]] ProjectSaveBatch source_commit_batch() const {
+        return [weak=std::weak_ptr<Shared>{shared_}]()
+            ->core::Result<std::shared_ptr<const void>> {
+            using R=core::Result<std::shared_ptr<const void>>;
+            auto state=weak.lock();
+            if(!state)return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_SOURCE_BATCH_PRODUCT_OWNER_RETIRED"});
+            if(std::this_thread::get_id()!=state->ownerThread
+               ||state->retired.load(std::memory_order_acquire)
+               ||!state->authority||!state->identity.valid()
+               ||state->epoch==0||state->admitting)
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SOURCE_BATCH_INVALID_OWNER_OR_REENTRANT"});
+            if(state->projectOpenActive.load(std::memory_order_acquire)) {
+                // ProjectSession owns the exact exclusive lease until
+                // the child SOURCE adoption and its Qt callback return.
+                return R::success(
+                    std::static_pointer_cast<const void>(state));
+            }
+            if(state->sourceCommitActive.load(std::memory_order_acquire))
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SOURCE_BATCH_REENTRANT"});
+            if(state->epoch==std::numeric_limits<std::uint64_t>::max()
+               ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max())
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SOURCE_BATCH_EPOCH_EXHAUSTED"});
+            state->admitting=true;
+            struct Unwind final {
+                bool* active;
+                ~Unwind(){*active=false;}
+            } unwind{&state->admitting};
+            auto nextIdentity=state->identity;
+            ++nextIdentity.master_generation;
+            const auto nextEpoch=state->epoch+1;
+            auto physical=state->authority->try_begin_product_mutation(
+                state->epoch,nextEpoch,nextIdentity,false);
+            if(!physical)return R::failure(*physical.error());
+            state->identity=nextIdentity;
+            state->epoch=nextEpoch;
+            try {
+                auto token=std::make_shared<HeldSourceCommit>(
+                    state,std::move(*physical.value()));
+                state->sourceCommitActive.store(
+                    true,std::memory_order_release);
+                return R::success(
+                    std::static_pointer_cast<const void>(std::move(token)));
+            }catch(const std::bad_alloc&) {
+                return R::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "M18_SOURCE_BATCH_TOKEN_ALLOCATION_FAILED"});
+            }
+        };
+    }
+
     // Project SaveAs requires a physical exclusive mutation lease from
     // before snapshot capture through file readback and Qt publication.
     // It cannot use a one-shot status callback. Project OPEN remains
