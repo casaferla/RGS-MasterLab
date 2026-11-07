@@ -210,6 +210,62 @@ int main(int argc,char** argv) {
                 && individualWindows[1].get()!=individualWindows[2].get()
                 && individualWindows[0].get()!=individualWindows[2].get(),
                 "GUI_QQUICKVIEW_OBJECT_REUSED");
+        // Rehost each analysis QML panel without cloning the module.
+        // This validates Preview-only Qt layout transfers; Main.qml remains idle.
+        std::array<std::unique_ptr<QQuickView>,3> lifecycleHosts;
+        for(int tab=0;tab<3;++tab){
+            auto host=std::make_unique<QQuickView>();
+            host->setResizeMode(QQuickView::SizeRootObjectToView);
+            host->setSource(QUrl::fromLocalFile(
+                qmlFolder.filePath(QStringLiteral("AnalysisModuleDockHostPreview.qml"))));
+            if(host->status()!=QQuickView::Ready){
+                for(const auto& err:host->errors())
+                    std::cerr<<err.toString().toStdString()<<'\n';
+                throw std::runtime_error("ANALYSIS_DOCK_HOST_QML_LOAD_FAILED");
+            }
+            auto* const hostRoot=host->rootObject();
+            require(hostRoot!=nullptr,"ANALYSIS_DOCK_HOST_MISSING");
+            require(hostRoot->setProperty("moduleIndex",tab),
+                    "ANALYSIS_DOCK_MODULE_SELECTION_FAILED");
+            require(hostRoot->setProperty("fixtureMode",false),
+                    "ANALYSIS_DOCK_MUST_HAVE_NO_FAKE_DATA");
+            host->resize(1184,688);
+            host->show();
+            display_frames();
+            const auto* const module=hostRoot->findChild<QObject*>(
+                expectedRoots[static_cast<std::size_t>(tab)]);
+            require(module!=nullptr,"ANALYSIS_DOCK_REAL_PANEL_MISSING");
+            require(module->property("fixtureMode").toBool()==false,
+                    "ANALYSIS_DOCK_FIXTURE_DATA_LEAK");
+            require(hostRoot->property("detached").toBool()==false,
+                    "ANALYSIS_DOCK_INITIAL_STATE_WRONG");
+            require(QMetaObject::invokeMethod(hostRoot,"requestUndock"),
+                    "ANALYSIS_UNDOCK_METHOD_MISSING");
+            display_frames();
+            auto* const floating=hostRoot->findChild<QQuickWindow*>(
+                "analysisNativeFloatingWindow");
+            require(floating!=nullptr && floating->isVisible(),
+                    "ANALYSIS_NATIVE_FLOATING_WINDOW_NOT_VISIBLE");
+            require(floating->minimumWidth()>=1184
+                    && floating->minimumHeight()>=688,
+                    "ANALYSIS_NATIVE_WINDOW_BELOW_MIN_SIZE");
+            require(hostRoot->findChild<QObject*>(
+                expectedRoots[static_cast<std::size_t>(tab)])==module,
+                "ANALYSIS_UNDOCK_DUPLICATED_PANEL");
+            require(QMetaObject::invokeMethod(hostRoot,"requestDock"),
+                    "ANALYSIS_DOCK_METHOD_MISSING");
+            display_frames();
+            require(hostRoot->property("detached").toBool()==false
+                    && !floating->isVisible(),
+                    "ANALYSIS_REDOCK_DID_NOT_HIDE_NATIVE_WINDOW");
+            require(hostRoot->findChild<QObject*>(
+                expectedRoots[static_cast<std::size_t>(tab)])==module,
+                "ANALYSIS_REDOCK_RECREATED_PANEL");
+            require(hostRoot->property("transitionEpoch").toInt()==2,
+                    "ANALYSIS_REDOCK_TRANSITION_EPOCH_WRONG");
+            lifecycleHosts[static_cast<std::size_t>(tab)]=std::move(host);
+        }
+        std::cout<<"RGSML_M19_M21_THREE_DOCK_UNDOCK_NATIVE_QT_LIFECYCLES_PASS_NO_PRODUCT_BINDING\n";
         std::cout<<"RGSML_M19_M21_GUI_12_WINDOWS_3_DISTINCT_QML_ROOTS_PASS_NOT_PRODUCT\n";
         return 0;
     }catch(const std::exception& e){

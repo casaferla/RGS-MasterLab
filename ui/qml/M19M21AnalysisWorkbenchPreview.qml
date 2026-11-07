@@ -21,7 +21,10 @@ Rectangle {
         ? "TONAL & STEREO  /  M20" : "METRICS / DELTA  /  M21")
     property var presentation: ({ready:false})
     property bool fixtureMode: true
-    readonly property bool available: !!presentation && presentation.ready === true
+    // This QML remains a DEMO-only visualization until real, authenticated
+    // typed Product presenters are bound. Never display an unverified result.
+    readonly property bool available: root.fixtureMode
+        && !!presentation && presentation.ready === true
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -78,15 +81,15 @@ Rectangle {
                 height: 32
                 anchors.verticalCenter: parent.verticalCenter
                 radius: 5
-                color: root.fixtureMode ? "#3A2C1B" : "#15352F"
-                border.color: root.fixtureMode ? root.amber : "#3C9D8B"
+                color: root.fixtureMode ? "#3A2C1B" : "#302523"
+                border.color: root.fixtureMode ? root.amber : "#A56B56"
                 Text {
                     anchors.centerIn: parent
-                    text: root.fixtureMode ? "DEMO DATA · DESIGN" : "ACTUAL PRODUCT DATA"
+                    text: root.fixtureMode ? "DEMO DATA · DESIGN" : "DATA UNAVAILABLE"
                     font.family: "Segoe UI"
                     font.bold: true
                     font.pixelSize: 10
-                    color: root.fixtureMode ? root.amber : "#7CE5C6"
+                    color: root.fixtureMode ? root.amber : "#F2B632"
                 }
             }
         }
@@ -180,7 +183,8 @@ Rectangle {
                     }
                 }
                 Text {
-                    text: "FULL TRACK · 48 kHz · STEREO"
+                    text: root.fixtureMode
+                        ? "FULL TRACK · 48 kHz · STEREO" : "SCOPE UNAVAILABLE"
                     anchors.verticalCenter: parent.verticalCenter
                     color: root.dim
                     font.family: "Segoe UI"
@@ -322,7 +326,9 @@ Rectangle {
                                 }
                             }
                             Text {
-                                text: "Reference values and bars are illustrative in this screenshot only."
+                                text: root.fixtureMode
+                                    ? "Reference values and bars are illustrative in this screenshot only."
+                                    : "No authenticated Product measurements; reference comparison disabled."
                                 font.pixelSize: 10
                                 color: root.amber
                                 wrapMode: Text.WordWrap
@@ -340,7 +346,10 @@ Rectangle {
                             anchors.margins: 18
                             spacing: 11
                             Text {text:"MEASUREMENT STATUS";color:root.ink;font.bold:true;font.pixelSize:13}
-                            Text {text:"CURRENT · INTEGRATED";color:"#7CDDC8";font.bold:true;font.pixelSize:11}
+                            Text {text:root.available ? "DEMO · INTEGRATED"
+                                        : "UNAVAILABLE · PRODUCT BINDING PENDING"
+                                color:root.available ? "#7CDDC8" : root.amber
+                                font.bold:true;font.pixelSize:11}
                             Text {
                                 text:"Measured LUFS, RMS, Sample Peak and Crest are available only with valid authenticated PCM."
                                 color:root.dim;wrapMode:Text.WordWrap
@@ -465,7 +474,9 @@ Rectangle {
                             Rectangle{width:parent.width;height:1;color:root.edge}
                             Text{
                                 width:parent.width
-                                text:"Mono: NOT APPLICABLE · Low support: UNAVAILABLE"
+                                text: root.fixtureMode
+                                    ? "Mono: NOT APPLICABLE · Low support: UNAVAILABLE"
+                                    : "Stereo support and channel status unavailable"
                                 color:root.amber;font.pixelSize:11
                                 wrapMode:Text.WordWrap
                             }
@@ -623,7 +634,9 @@ Rectangle {
             }
             Text{
                 width:parent.width/2
-                text:"DESIGN REVIEW  ·  NO PRODUCT WRITE / NO M18 MERGE"
+                text: root.fixtureMode
+                    ? "DESIGN REVIEW  ·  NO PRODUCT WRITE / NO M18 MERGE"
+                    : "READ-ONLY PREVIEW · NO PRODUCT RESULTS AVAILABLE"
                 color:root.amber;font.pixelSize:10
                 horizontalAlignment:Text.AlignRight
                 elide:Text.ElideLeft

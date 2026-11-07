@@ -1,0 +1,9 @@
+# M19–M21 independent dock/float prototype gate · 7 November 2026
+
+PO design decision: THREE INDEPENDENT PANELS. Retain M19 Levels, M20 Tonal & Stereo and M21 Metrics/Delta as separately owned QML panel objects. The grouped ANALYSIS tabs are not the selected default.
+
+Code adds AnalysisModuleDockHostPreview.qml, a design-only, unregistered QML host with one persistent Loader and mutually exclusive docked/floating LayoutItemProxy. Undock creates no extra editor or C++ analyzer; redock keeps exact QObject identity and Window.close means redock, not destroying panel. The three screenshot-harness native QQuickViews continue as independent panels, and an additional smoke loop tests each dock/undock/redock lifecycle without recording misleading real-Product claims. Fixed minimum floating geometry 1184×688; final production editor geometry must be reviewed for screen fit and no clipping.
+
+Integrity: no Main.qml registration, no Product QML context, no real M19/M20/M21 owner/status wiring. The visual prototype explicitly suppresses all numeric data whenever fixtureMode=false (including a false 48 kHz stereo scope and misleading ACTUAL PRODUCT DATA badge). It can display fictional demo values only when explicitly fixtureMode=true in the screenshot harness. No DSP, PCM, FIR, M16/M17, M18 exporter, default branch, or Full Qualification affected.
+
+Required next gate: reuse the persistent panel ownership in a real Main-owned analysis workspace; make all three panels accessible without fabricating data, implement independent project/source lifecycle invalidation, connect typed real M19/M20/M21 presenters only after authority/scope/epoch checks, validate native multi-monitor 4K+FHD, and complete all deferred physical Windows cases. This is design scaffolding, NOT production docking acceptance.
