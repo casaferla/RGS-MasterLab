@@ -61,9 +61,10 @@ namespace rgsml::tests {
 namespace {
 
 [[nodiscard]] QString wav(QTemporaryDir& dir, const QString& name, int seed,
-    std::uint32_t sampleRate = 48'000U)
+    std::uint32_t sampleRate = 48'000U,
+    std::size_t frameCount = 256U)
 {
-    std::vector<std::int64_t> samples(256U);
+    std::vector<std::int64_t> samples(frameCount);
     for (std::size_t i = 0; i < samples.size(); ++i)
         samples[i] = (static_cast<std::int64_t>(i) + seed) % 100;
     const auto data = wav_support::make_wav(1U, 16U, 1U, sampleRate,
