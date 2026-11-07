@@ -8,6 +8,7 @@
 #include <rgsml/render/render_result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <cstdint>
@@ -102,7 +103,13 @@ public:
     // chain, output rate, terminal gate and every other Source mutator.
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_mutation_admission(M18MutationAdmission guard)
-    {m18MutationAdmission_=std::move(guard);}
+    {
+        // Guard installation/removal is an owner-thread Product mutation.
+        // A callback or Qt observer must never erase its active closure.
+        if(QThread::currentThread()!=thread())return;
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)return;
+        m18MutationAdmission_=std::move(guard);
+    }
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
     {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
