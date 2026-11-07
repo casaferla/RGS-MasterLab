@@ -1,9 +1,9 @@
 #pragma once
-// M18 ISOLATED PREPRODUCTION. A single owner-thread installation of the
-// existing Project/SOURCE/MASTER/chain/GOLD/Region/terminal Product gates.
-// Not invoked by main.cpp. Does NOT mint an export ticket or authorize
-// the UI. M17 ProductSession/CandidateGate require their separate binding
-// before an exporter may be activated.
+// M18 Product upstream gates installed by the COMPLETE binder in main.cpp.
+// SOURCE/Project physical batches and direct MASTER/chain/terminal edits
+// share one owner-thread mutation fanout. This binder alone cannot mint
+// export consent: the M17 ProductSession/CandidateGate guards must also
+// be installed atomically by M18ProductCompleteBinding.
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "master_output_rate_state.hpp"
