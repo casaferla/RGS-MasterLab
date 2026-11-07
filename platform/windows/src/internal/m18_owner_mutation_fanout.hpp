@@ -223,7 +223,8 @@ public:
                ||state->retired.load(std::memory_order_acquire)
                ||!state->authority ||!state->identity.valid()
                ||state->epoch==0 ||state->admitting
-               ||state->projectOpenActive.load(std::memory_order_acquire))
+               ||state->projectOpenActive.load(std::memory_order_acquire)
+               ||state->sourceCommitActive.load(std::memory_order_acquire))
                 return R::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "M18_SAVE_BATCH_WRONG_OWNER_OR_REENTRANT"});
@@ -278,7 +279,8 @@ public:
                ||state->retired.load(std::memory_order_acquire)
                ||!state->authority||!state->identity.valid()
                ||state->epoch==0||state->admitting
-               ||state->projectOpenActive.load(std::memory_order_acquire))
+               ||state->projectOpenActive.load(std::memory_order_acquire)
+               ||state->sourceCommitActive.load(std::memory_order_acquire))
                 return R::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "M18_OPEN_BATCH_INVALID_OWNER_OR_NESTED"});
