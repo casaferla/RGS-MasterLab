@@ -418,6 +418,64 @@ m18DirectSourceAdoptionBlockedDuringOuterPublication()
     model.set_private_m18_source_mutation_admission({});
 }
 
+void SourceSelectionTest::
+m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto file=write_file(dir,QStringLiteral("m18-batch-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!file.isEmpty());
+    app::SourceSelectionViewModel model;
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    std::size_t statusCalls=0,batchCalls=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++statusCalls;
+            return core::Status::success();
+        });
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batchCalls;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<const int>(1));
+        });
+    model.selectSource(QUrl::fromLocalFile(file));
+    QVERIFY(!model.has_source());
+    QCOMPARE(statusCalls,std::size_t{0});
+    QCOMPARE(batchCalls,std::size_t{0});
+    QCOMPARE(changed.count(),0);
+    QVERIFY(!model.error_message().isEmpty());
+    // Even an allowed status callback cannot be stacked with an
+    // independent batch authorizer: choose ONE Product epoch authority.
+    model.set_private_m18_source_mutation_admission({});
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batchCalls;
+            return core::Result<std::shared_ptr<const void>>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_WORKER_COMMIT_LEASE_HELD"});
+        });
+    model.selectSource(QUrl::fromLocalFile(file));
+    QVERIFY(!model.has_source());
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(batchCalls,std::size_t{1});
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batchCalls;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<const int>(3));
+        });
+    model.selectSource(QUrl::fromLocalFile(file));
+    QVERIFY(model.has_source());
+    QCOMPARE(batchCalls,std::size_t{2});
+    QCOMPARE(statusCalls,std::size_t{0});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(model.display_name(),QStringLiteral("m18-batch-source.wav"));
+    QVERIFY(model.error_message().isEmpty());
+    model.set_private_m18_source_batch_begin({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
