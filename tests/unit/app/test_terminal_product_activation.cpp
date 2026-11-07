@@ -18,6 +18,7 @@
 #include "internal/m18_checked_stage_worker_bridge.hpp"
 #include "internal/m18_private_async_export_handoff.hpp"
 #include "internal/m18_private_async_export_session.hpp"
+#include "internal/m18_export_format_policy.hpp"
 #include "m18_private_export_progress_view_model.hpp"
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include "terminal_monitor_view_model.hpp"
