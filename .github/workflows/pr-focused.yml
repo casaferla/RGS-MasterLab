@@ -919,8 +919,29 @@ jobs:
               }
             }
           }
+          # Capture ONLY the failing method and the next few assertion
+          # lines; never upload or print the entire QtTest output.
+          if (Test-Path $raw) {
+            $rawLines = @(Get-Content -Path $raw -ErrorAction SilentlyContinue)
+            $counted = 0
+            for ($i = 0; $i -lt $rawLines.Count; ++$i) {
+              if ($rawLines[$i] -match '^(FAIL!|QFATAL|QWARN|Totals:)') {
+                $lines.Add("DIAGNOSTIC_LINE=$i")
+                $last = [math]::Min($rawLines.Count - 1, $i + 5)
+                for ($j = $i; $j -le $last; ++$j) {
+                  $lineText = [string]$rawLines[$j]
+                  $lines.Add($lineText.Substring(0,[math]::Min(240,$lineText.Length)))
+                }
+                $counted += 1
+                if ($counted -ge 8) { break }
+              }
+            }
+          }
           $lines | Set-Content -Path $bounded -Encoding utf8
           Get-Content $bounded
+          # Probe is diagnostic-only: normal mandatory Focused CTest
+          # must run and own the Windows gate rather than being skipped.
+          exit 0
 
       - name: Upload bounded Windows ProjectSession diagnostic
         if: always()
