@@ -62,7 +62,13 @@ ApplicationWindow {
     // has installed all epoch guards and retained an exact verified M17 Master.
     readonly property var appM18ExportModel: typeof m18ProductExportViewModel !== "undefined"
         ? m18ProductExportViewModel : null
-    property int m18ExportFormatIndex: 0
+    // Native Project owns the current explicit WAV encoding preference.
+    // Loading another project restores the combo without a sticky
+    // QML-only choice; TPDF uint64 seed never traverses QML Number.
+    readonly property var appM18ProjectSession: typeof projectSession !== "undefined"
+        ? projectSession : null
+    readonly property int m18ExportFormatIndex: root.appM18ProjectSession
+        ? root.appM18ProjectSession.m18WavEncodingIndex : 0
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
     readonly property var appPrivateFirLibrary:
@@ -551,7 +557,10 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 model: ["24-bit PCM · TPDF dither", "32-bit Float · no dither"]
                 currentIndex: root.m18ExportFormatIndex
-                onActivated: root.m18ExportFormatIndex = currentIndex
+                onActivated: {
+                    if (root.appM18ProjectSession)
+                        root.appM18ProjectSession.chooseM18WavEncoding(currentIndex)
+                }
             }
         }
         onAccepted: {
