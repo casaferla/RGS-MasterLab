@@ -874,6 +874,10 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Fail-closed preflight before transport/Source/chain mutation.
     auto rate = project::MasterOutputRatePreference::read(doc.output);
     if (!rate) { publish_error(*rate.error()); return; }
+    // A malformed or partially persisted M18 format/seed is a Project
+    // preflight error, BEFORE any source, playback or DSP mutation.
+    auto m18Choice=project::M18MasterWavPreferenceCodec::read(doc.output);
+    if(!m18Choice) {publish_error(*m18Choice.error());return;}
     auto sourceRef = external_reference(doc, doc.sourceResourceId);
     if (!sourceRef) { publish_error(*sourceRef.error()); return; }
     auto sourceCandidate = probe(*sourceRef.value());
@@ -1068,6 +1072,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         std::optional<core::Uuid>{doc.timeSelections.auditionRegions.front().regionId};
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
+    // Publish the validated WAV preference only after the entire
+    // Project/source/chain commit succeeded under the M18 physical lease.
+    m18OutputPreference_=std::move(*m18Choice.value());
     opened_.emplace(std::move(*opened.value()));
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
