@@ -30,6 +30,15 @@ public:
     M18PrivateProductExportAction&
     operator=(const M18PrivateProductExportAction&)=delete;
 
+    // Read-only Product-to-UI eligibility, without minting consent.
+    // Keep the visible Export affordance as strict as the actual
+    // SOURCE/chain/Project/M17 authorizer, including an unconsented epoch.
+    [[nodiscard]] bool can_begin_verified_export() const {
+        return QThread::currentThread()==controllers_.session.thread()
+            &&!ticket_
+            &&Binder::can_offer_verified_master(controllers_,*fanout_);
+    }
+
     // A real user choice is a single event, NOT a sticky global boolean.
     // Reject invalid formats before revoking Product export consent.
     // SOURCE is obtained exclusively from the guarded Product selector,
