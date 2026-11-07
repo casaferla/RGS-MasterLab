@@ -209,6 +209,7 @@ private slots:
     void actualProductSaveBatchBlocksWorkerAndOtherEditorCallbacks();
     void productOpenBatchUsesOneExclusiveEpochForSourceRateAndGold();
     void productOpenBatchRetiredOwnerAndForeignThreadCannotAdvanceEpoch();
+    void sourceCommitBatchReusesSingleEpochAndCannotRaceExportWorker();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
