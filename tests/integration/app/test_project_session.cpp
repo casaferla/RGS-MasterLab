@@ -256,6 +256,7 @@ m18ActualSourcePickerAndAuditionUseOnePhysicalProductBatch()
     auto ticket=owner->capture(id);
     QVERIFY(ticket);
     M18OwnerMutationFanout fanout{owner,2001U,id};
+    install_m18_checked_source_dispatch(target,targetRate);
     app::internal::M18ProductControllerBinding::bind_source_chain_rate(
         target.source,*target.masteringChainState,targetRate,fanout);
     app::internal::M18ProductControllerBinding::bind_audition_region_gold(
@@ -319,6 +320,7 @@ m18ActualProjectOpenAndSaveUseOneSharedProductEpoch()
     auto ticket=owner->capture(id);
     QVERIFY(ticket);
     M18OwnerMutationFanout fanout{owner,501U,id};
+    install_m18_checked_source_dispatch(target,targetRate);
     app::internal::M18ProductControllerBinding::bind_source_chain_rate(
         target.source,*target.masteringChainState,targetRate,fanout);
     app::internal::M18ProductControllerBinding::bind_audition_region_gold(
