@@ -516,11 +516,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             terminal.value()->parameters().ceiling_db_tp(),false));
         QVERIFY(!QFileInfo::exists(output));
         QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
-        const auto accepted=action.begin(
-            *destination.value(),encoding,seedForPcm,
-            terminal.value()->parameters().ceiling_db_tp(),true);
-        QVERIFY2(accepted,accepted?"":accepted.error()->message().c_str());
+        const bool accepted=ui.beginExport(QUrl::fromLocalFile(output),
+            encoding==audio::WavSampleFormat::PCM_S24?0:1);
+        QVERIFY2(accepted,ui.error_text().toUtf8().constData());
         QVERIFY(action.has_unacknowledged_export());
+        QVERIFY(!ui.can_export()); // one unacknowledged Product job
         // The first worker might finish before the next Qt instruction.
         // Do not make a timing-dependent false "still encoding" claim.
         // Irrespective of timing, an unacknowledged result must prohibit
