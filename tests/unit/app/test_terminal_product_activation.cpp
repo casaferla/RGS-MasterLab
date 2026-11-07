@@ -3677,6 +3677,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 viewOutputPath.toUtf8().toStdString(),
                 "viewmodel-m18-verified.wav");
         QVERIFY(viewOutputRef);
+        QVERIFY(!exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            UINT64_C(42),0.0));
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(!exportView.export_in_progress());
+        QVERIFY(!QFileInfo::exists(viewOutputPath));
         QVERIFY(exportView.begin_private_export(
             product,selectedSource,selectedProjectRate,candidates,
             *boundTicket.value(),liveSource->reference(),
