@@ -38,6 +38,37 @@ snapshots must refuse publication. Independent GOLD can only come from
 its own authenticated read-only WAV owner; `Column::gold` is denied
 until that independent decoder/binding exists.
 
+## Worker computation and safe Product publication (post-#11 staging)
+The native PREPARED/PROCESSED analyzer now has two explicit halves:
+`measure_render_worker(Capture, Column)` accepts ONLY retained immutable
+RenderResult owners and stored frame-domain / SOURCE provenance, and never
+touches Qt; `measure_current(...)` remains a synchronous **test-only**
+reference path checking `still_current` both before and after the
+calculation. The independent GOLD worker decodes the selected read-only
+WAV, not the SOURCE or PROCESSED buffer.
+
+`M21ProductPublicationInbox` is an owner-thread-only private result
+inbox, not yet a QML component. It accepts fresh worker snapshots only
+when their exact generation, immutable owner identity, scope and
+revalidated Product epoch match the capture. It rejects duplicate
+same-generation publications. Its `view_current` always rechecks the
+live M18 + GOLD owner state and returns STALE columns if a previous
+valid-looking result has become outdated. That means the UI MUST NOT
+read the private `PrivatePublicationGuard` directly.
+
+The native Windows ProjectSession regression now tests actual current
+PREPARED/PROCESSED owners, equality of worker/reference results,
+unpublished GOLD semantics, GOLD reader provenance, physical metadata
+replacement, rejected over-budget decode, duplicate-epoch refusal,
+SOURCE replacement and DSP parameter-only invalidation, including the
+stale presentation after accepting a previous worker result.
+
+This is **not** yet asynchronous job scheduling or public Qt/QML
+presentation. The current synchronous reference must NEVER be called
+from GUI callbacks on full-length songs; scheduling, cancellation,
+thread-safe completion delivery and Phase-6 official FeatureStatus
+remain required implementation work.
+
 ## Limitations to close
 - GOLD now has an independent read-only **Windows** WAV decoder worker
   operation `measure_gold_worker(GoldCapture)`: no QObjects on the
