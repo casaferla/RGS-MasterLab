@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QVariantList>
 #include <QtGlobal>
@@ -68,6 +69,9 @@ public:
     using M18RateMutationAdmission=std::function<bool()>;
     void set_private_m18_rate_mutation_admission(
         M18RateMutationAdmission gate) {
+        // A Qt worker and the running admission callback cannot replace
+        // the very Product authority that guards a rate revision.
+        if(QThread::currentThread()!=thread()||m18RateAdmitting_)return;
         m18RateMutationAdmission_=std::move(gate);
     }
     [[nodiscard]] bool m18_rate_mutation_admission_installed() const noexcept {
@@ -102,6 +106,7 @@ private:
     bool originalQ0Ready_{false};
     TargetSelectionGuard targetSelectionGuard_;
     M18RateMutationAdmission m18RateMutationAdmission_;
+    bool m18RateAdmitting_{false};
     [[nodiscard]] bool admit_m18_source_rate_mutation() noexcept;
     // Internal application of an already-authorized source epoch.
     // Legacy void entrypoints must NOT bypass the M18 Product gate.
