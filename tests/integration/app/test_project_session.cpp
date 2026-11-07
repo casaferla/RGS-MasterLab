@@ -724,6 +724,46 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QCOMPARE(std::bit_cast<std::uint64_t>((*segmentChannel.value())[i]),
                  std::bit_cast<std::uint64_t>((*wholeChannel.value())[i+731U]));
     }
+
+    // M22 absolute full-history parity boundary matrix: the preview
+    // MUST be an actual zero-copy slice of the original checked M17
+    // full programme at the exact OUTPUT_RATE origin, including the
+    // very first and last frame. No local DSP state reset, no alternate
+    // regional True Peak, and no one-frame off-by-one at EOS.
+    constexpr std::array<std::pair<qint64,qint64>,5> kPreviewWindows{{
+        {0,static_cast<qint64>(n)}, // entire verified programme
+        {0,1},                     // first output sample
+        {static_cast<qint64>(n)-1,static_cast<qint64>(n)}, // EOS
+        {125,128},                 // short interior segment
+        {3719,3857},               // non-aligned final region
+    }};
+    for(const auto& [begin,end]:kPreviewWindows) {
+        const auto requested=core::FrameRange::create(
+            core::FrameIndex{begin},core::FrameIndex{end});
+        QVERIFY(requested);
+        const auto actual=app::internal::m22_verified_master_preview_crop(
+            controllers,fanout,verified,*requested.value());
+        QVERIFY2(actual,actual?"":actual.error()->message().c_str());
+        QCOMPARE(actual.value()->absolute_start_frame().value(),begin);
+        QCOMPARE(actual.value()->frame_count().value(),end-begin);
+        QCOMPARE(actual.value()->timebase().frame_domain_id(),
+                 audio::FrameDomainId::OUTPUT_RATE);
+        for(std::size_t ch=0;ch<fullMaster.format().channel_count();++ch) {
+            const auto allSamples=fullMaster.channel(ch);
+            const auto previewSamples=actual.value()->channel(ch);
+            QVERIFY(allSamples&&previewSamples);
+            // Verify aliasing, not merely numerical equality: no copy,
+            // resampling, re-quantization or second render is permitted.
+            QCOMPARE(previewSamples.value()->data(),
+                     allSamples.value()->data()+begin);
+            for(std::size_t i=0;i<previewSamples.value()->size();++i) {
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                             (*previewSamples.value())[i]),
+                         std::bit_cast<std::uint64_t>(
+                             (*allSamples.value())[i+begin]));
+            }
+        }
+    }
     const auto illegalWindow=core::FrameRange::create(
         core::FrameIndex{731},core::FrameIndex{4097});
     QVERIFY(illegalWindow);
