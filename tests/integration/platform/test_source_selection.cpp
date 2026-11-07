@@ -570,7 +570,7 @@ m18RejectedCheckedSourceCascadesFailClosedThenRecover()
     // A partially accepted SOURCE cannot remain advertised as READY.
     QVERIFY(!model.has_source());
     QCOMPARE(model.source_state(),QStringLiteral("SOURCE_ERROR"));
-    QCOMPARE(model.source_rate_hz(),qint64{0});
+    QCOMPARE(model.sample_rate_hz(),qint64{0});
     QCOMPARE(model.frame_count(),qint64{0});
     QCOMPARE(model.channel_count(),0);
     QVERIFY(model.display_name().isEmpty());
