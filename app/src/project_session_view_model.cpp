@@ -20,6 +20,7 @@
 #include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 #include <QUuid>
 
 #include <algorithm>
@@ -29,6 +30,19 @@
 
 namespace rgsml::app {
 namespace {
+
+// Only the Qt owner enters a Product-gated Project operation. The local
+// scope rejects nested Open/Save commands (including reentrant signals)
+// without blocking the event loop or leaking a held Product epoch.
+struct M18ScopedProjectOperation final {
+    explicit M18ScopedProjectOperation(bool* active) noexcept
+        :active_(active) {if(active_)*active_=true;}
+    M18ScopedProjectOperation(const M18ScopedProjectOperation&)=delete;
+    M18ScopedProjectOperation& operator=(const M18ScopedProjectOperation&)=delete;
+    ~M18ScopedProjectOperation() {if(active_)*active_=false;}
+private:
+    bool* active_;
+};
 
 [[nodiscard]] core::Error invalid(std::string_view field)
 {
@@ -469,6 +483,25 @@ void ProjectSessionViewModel::clear_error()
     emit changed();
 }
 
+bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
+{
+    // A format change is an OUTPUT preference, not permission to write
+    // a file or to reuse an old M17 MASTER. Keep uint64 seed entirely
+    // in native C++; QML never conveys it as an imprecise JS Number.
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_
+       ||(index!=0 &&index!=1))return false;
+    project::M18MasterWavPreference next{
+        index==0?project::M18MasterWavEncoding::PCM24_TPDF
+                :project::M18MasterWavEncoding::IEEE_FLOAT32,
+        index==0
+            ?std::optional<std::uint64_t>{m18_pcm24_seed()}
+            :std::nullopt};
+    if(m18OutputPreference_&&*m18OutputPreference_==next)return true;
+    m18OutputPreference_=next;
+    emit changed();
+    return true;
+}
+
 void ProjectSessionViewModel::on_source_changed()
 {
     const auto* source = source_->source_resource();
@@ -724,11 +757,113 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                     invalid("output.targetMasterOutputRateHz/source"));
         }
     }
+    // User-chosen M18 WAV settings are a canonical Project OUTPUT
+    // preference, not proof of a completed WAV delivery. Legacy projects
+    // without an explicit choice remain unchanged on ordinary SaveAs.
+    if(m18OutputPreference_) {
+        auto updated=project::M18MasterWavPreferenceCodec::with_choice(
+            doc.output,*m18OutputPreference_);
+        if(!updated)
+            return core::Result<project::ProjectSnapshot>::failure(
+                *updated.error());
+        doc.output=std::move(*updated.value());
+    }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
+}
+
+core::Status ProjectSessionViewModel::admit_m18_project_mutation(
+    const char* operation) const
+{
+    if(!m18ProjectMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18ProjectMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_PROJECT_MUTATION_ADMISSION_THROWN"});}
+}
+
+core::Result<std::shared_ptr<const void>>
+ProjectSessionViewModel::begin_m18_project_save() const
+{
+    using R=core::Result<std::shared_ptr<const void>>;
+    // The future Product must keep a real exclusive epoch through the
+    // entire .rgsml publication, not just grant a one-shot status.
+    if(m18ProjectSaveBatchBegin_) {
+        if(m18ProjectSaveAdmission_||m18ProjectMutationAdmission_)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_ADMISSION_AMBIGUOUS"});
+        if(QThread::currentThread()!=thread())
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_WRONG_OWNER_THREAD"});
+        try {
+            auto lease=m18ProjectSaveBatchBegin_();
+            if(!lease)return lease;
+            if(!*lease.value())
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PROJECT_SAVE_BATCH_NO_EXCLUSIVE_LEASE"});
+            return lease;
+        }catch(...){
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_ADMISSION_THROWN"});
+        }
+    }
+    // Installing a Product batch for Open forbids status-only SaveAs:
+    // the worker might commit after admission but before SaveAs finishes.
+    if(m18ProjectOpenBatchBegin_)
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_REQUIRES_EXCLUSIVE_BATCH"});
+    if(m18ProjectSaveAdmission_ &&m18ProjectMutationAdmission_)
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_ADMISSION_MODES_AMBIGUOUS"});
+    const auto admit=[&]()->core::Status {
+        if(!m18ProjectSaveAdmission_)
+            return admit_m18_project_mutation("save_project_as");
+        if(QThread::currentThread()!=thread())
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_REQUIRES_QT_OWNER_THREAD"});
+        try{return m18ProjectSaveAdmission_("save_project_as");}
+        catch(...){return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_ADMISSION_THROWN"});}
+    }();
+    if(!admit)return R::failure(*admit.error());
+    // No M18 Product registration is installed today. Legacy M17 stays
+    // unchanged; this empty token is never permission for async export.
+    return R::success(std::shared_ptr<const void>{});
 }
 
 void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 {
+    // With any M18 Product policy, even invalid-file diagnostics must
+    // remain on the owning Qt thread. Never probe disk or emit errors
+    // from a foreign worker before an eventual epoch admission.
+    const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
+        ||m18ProjectMutationAdmission_||m18ProjectSaveAdmission_
+        ||m18ProjectSaveBatchBegin_);
+    if(m18Guarded &&QThread::currentThread()!=thread())return;
+    if(m18Guarded &&m18ProjectOperationActive_)return;
+    M18ScopedProjectOperation singleWriter{
+        m18Guarded?&m18ProjectOperationActive_:nullptr};
+    Q_UNUSED(singleWriter);
+    // A Product that installed only the SaveAs epoch cannot permit an
+    // unguarded Open Project to retire SOURCE/MASTER during M18 export.
+    if((m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
+       &&!m18ProjectOpenBatchBegin_&&!m18ProjectMutationAdmission_) {
+        publish_error(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_OPEN_REQUIRES_OWN_MUTATION_ADMISSION"});
+        return;
+    }
     auto reference = read_reference(selectedFile);
     if (!reference) { publish_error(*reference.error()); return; }
     auto reader = platform::windows::WindowsResourceReader::open_read_only(*reference.value());
@@ -739,6 +874,10 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Fail-closed preflight before transport/Source/chain mutation.
     auto rate = project::MasterOutputRatePreference::read(doc.output);
     if (!rate) { publish_error(*rate.error()); return; }
+    // A malformed or partially persisted M18 format/seed is a Project
+    // preflight error, BEFORE any source, playback or DSP mutation.
+    auto m18Choice=project::M18MasterWavPreferenceCodec::read(doc.output);
+    if(!m18Choice) {publish_error(*m18Choice.error());return;}
     auto sourceRef = external_reference(doc, doc.sourceResourceId);
     if (!sourceRef) { publish_error(*sourceRef.error()); return; }
     auto sourceCandidate = probe(*sourceRef.value());
@@ -788,6 +927,43 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     auto chainCandidate = validate_mastering_chain(doc, *registryRes.value(), uuidFactory_);
     if (!chainCandidate) { publish_error(*chainCandidate.error()); return; }
 
+    // Source/Gold/MASTER/chain/project identity all change below this
+    // boundary. Product epoch admission must happen BEFORE stopping any
+    // current sink or adopting the newly opened Project.
+    // If a future Product supplies a genuine cross-controller batch,
+    // keep its RAII owner through ALL the source/rate/Gold/chain writes,
+    // including early error returns. A worker must not acquire commit
+    // authority halfway through the Project replacement.
+    std::shared_ptr<const void> projectMutationBatch;
+    if(m18ProjectOpenBatchBegin_) {
+        if(m18ProjectMutationAdmission_
+           ||QThread::currentThread()!=thread()) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_BATCH_AMBIGUOUS_OR_WRONG_OWNER_THREAD"});
+            return;
+        }
+        try {
+            auto token=m18ProjectOpenBatchBegin_();
+            if(!token) {publish_error(*token.error());return;}
+            if(!*token.value()) {
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PROJECT_BATCH_MISSING_EXCLUSIVE_LEASE"});
+                return;
+            }
+            projectMutationBatch=std::move(*token.value());
+        } catch(...) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_BATCH_ADMISSION_THROWN"});
+            return;
+        }
+    } else {
+        const auto admission=admit_m18_project_mutation("open_project");
+        if(!admission) {publish_error(*admission.error());return;}
+    }
+    Q_UNUSED(projectMutationBatch); // RAII lifetime extends to function exit.
     isCommittingProjectOpen_ = true;
 
     auto stopped = playback_->stop_and_clear();
@@ -797,17 +973,51 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         return;
     }
 
-    source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    const auto adoptedSource=
+        source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    if(!adoptedSource) {
+        isCommittingProjectOpen_=false;
+        publish_error(*adoptedSource.error());
+        return;
+    }
     if (masterOutputRateState_) {
         // The production SOURCE callback reset the authority on commit.
         // Standalone ProjectSession clients may have no such callback.
-        if (masterOutputRateState_->source_rate_hz() != source_->sample_rate_hz())
-            masterOutputRateState_->source_committed(source_->sample_rate_hz());
+        if (masterOutputRateState_->source_rate_hz()
+            !=source_->sample_rate_hz()) {
+            // The old void SOURCE-rate setter deliberately fails closed
+            // once M18 admission is installed. Project Open already owns
+            // the shared exclusive mutation batch, so use the explicit
+            // status-bearing child API, never bypass the Product epoch.
+            const bool committed=
+                masterOutputRateState_->m18_rate_mutation_admission_installed()
+                ?masterOutputRateState_->try_source_committed_for_m18(
+                    source_->sample_rate_hz())
+                :(masterOutputRateState_->source_committed(
+                    source_->sample_rate_hz()),true);
+            if(!committed) {
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "PROJECT_SOURCE_RATE_EPOCH_MUTATION_REFUSED"});
+                return;
+            }
+        }
         if (rate.value()->has_value()) {
             const bool accepted = masterOutputRateState_->choose_master_rate(
                 rate.value()->value());
-            Q_ASSERT(accepted);
-            Q_UNUSED(accepted);
+            // M18 Product epoch admission is allowed to refuse the
+            // requested MASTER rate while a worker owns a commit lease.
+            // Never assert/crash in a debug build or silently continue a
+            // partially restored Project in a release build. The outer
+            // Project batch remains consent-revoked on every error path.
+            if(!accepted) {
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "PROJECT_MASTER_RATE_MUTATION_REFUSED"});
+                return;
+            }
         }
     }
     if (goldCandidate) {
@@ -831,7 +1041,11 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
 
     if (masteringChainState_ && chainCandidate.value()->chainState) {
-        *masteringChainState_ = std::move(*chainCandidate.value()->chainState);
+        // This Project open was pre-admitted before all destructive changes.
+        // Retain the Product's M18 epoch gate; ordinary assignment would
+        // silently erase it with the newly deserialized chain snapshot.
+        masteringChainState_->adopt_chain_after_authorized_project_open(
+            std::move(*chainCandidate.value()->chainState));
     }
 
     if (adapterModel_) {
@@ -858,6 +1072,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         std::optional<core::Uuid>{doc.timeSelections.auditionRegions.front().regionId};
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
+    // Publish the validated WAV preference only after the entire
+    // Project/source/chain commit succeeded under the M18 physical lease.
+    m18OutputPreference_=std::move(*m18Choice.value());
     opened_.emplace(std::move(*opened.value()));
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
@@ -879,10 +1096,27 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
 {
+    const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
+        ||m18ProjectMutationAdmission_||m18ProjectSaveAdmission_
+        ||m18ProjectSaveBatchBegin_);
+    if(m18Guarded &&QThread::currentThread()!=thread())return;
+    if(m18Guarded &&m18ProjectOperationActive_)return;
+    M18ScopedProjectOperation singleWriter{
+        m18Guarded?&m18ProjectOperationActive_:nullptr};
+    Q_UNUSED(singleWriter);
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
     }
+    // Before reading even the draft Project snapshot, refuse an M18
+    // worker-owned epoch. This also covers an Open-batch-only policy,
+    // which otherwise could allow an unguarded Project SaveAs.
+    auto saveBatch=begin_m18_project_save();
+    if(!saveBatch) {publish_error(*saveBatch.error());return;}
+    // The opaque Product lease remains alive across physical output write,
+    // checksum/readback and final in-memory Project metadata publication.
+    std::shared_ptr<const void> heldSaveBatch=std::move(*saveBatch.value());
+    Q_UNUSED(heldSaveBatch);
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }

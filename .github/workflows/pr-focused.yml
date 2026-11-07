@@ -376,6 +376,15 @@ jobs:
             rgsml_dsp_processing_chain_tests \
             rgsml_dsp_structural_integration_tests \
             rgsml_gain_tests \
+            rgsml_m18_counter_dither_philox_tests \
+            rgsml_m18_master_owner_bridge_tests \
+            rgsml_m18_output_preference_candidate_tests \
+            rgsml_m18_master_wav_preference_tests \
+            rgsml_m18_core_resource_sink_tests \
+            rgsml_m18_canonical_wav_writer_tests \
+            rgsml_m18_decoded_delivery_verifier_tests \
+            rgsml_m18_decoded_wav_candidate_tests \
+            rgsml_m18_delivered_true_peak_candidate_tests \
             rgsml_true_peak_itu4x_coefficients_tests \
             rgsml_true_peak_itu4x_channel_stream_tests \
             rgsml_true_peak_full_resource_tests \
@@ -448,7 +457,7 @@ jobs:
           RGS_M17_LOOKAHEAD_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lookahead-linux.csv
           RGS_M17_BOUND_PROBE_FILE: ${{ runner.temp }}/rgs-m17-bound-linux.csv
         run: |
-          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_master_output_rate_state_tests|rgsml_master_output_rate_codec_tests|rgsml_terminal_private_gr_projection_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_src_tests|rgsml_external_playback_fir_assets_tests|rgsml_playback_engine_portable_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_|audio_forbidden_include_contract)" --output-on-failure
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_m18_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_master_output_rate_state_tests|rgsml_master_output_rate_codec_tests|rgsml_terminal_private_gr_projection_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_src_tests|rgsml_external_playback_fir_assets_tests|rgsml_playback_engine_portable_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_|audio_forbidden_include_contract)" --output-on-failure
 
       # These four REAL private canaries were generated and SHA-checked
       # earlier in this same Linux runner. CTest alone does not prove that
@@ -735,6 +744,16 @@ jobs:
             rgsml_dsp_processing_chain_tests `
             rgsml_dsp_structural_integration_tests `
             rgsml_gain_tests `
+            rgsml_m18_counter_dither_philox_tests `
+            rgsml_m18_master_owner_bridge_tests `
+            rgsml_m18_output_preference_candidate_tests `
+            rgsml_m18_master_wav_preference_tests `
+            rgsml_m18_core_resource_sink_tests `
+            rgsml_m18_canonical_wav_writer_tests `
+            rgsml_m18_decoded_delivery_verifier_tests `
+            rgsml_m18_decoded_wav_candidate_tests `
+            rgsml_m18_delivered_true_peak_candidate_tests `
+            rgsml_m18_windows_candidate_delivery_tests `
             rgsml_true_peak_itu4x_coefficients_tests `
             rgsml_true_peak_itu4x_channel_stream_tests `
             rgsml_true_peak_full_resource_tests `
@@ -772,6 +791,8 @@ jobs:
             rgsml_compressor_view_model_tests `
             rgsml_mastering_chain_state_tests `
             rgsml_master_output_rate_state_tests `
+            rgsml_source_selection_tests `
+            rgsml_audition_region_tests `
             rgsml_master_output_rate_codec_tests `
             rgsml_terminal_private_gr_projection_tests `
             rgsml_terminal_product_activation_tests `
@@ -866,6 +887,73 @@ jobs:
       # windows-full-qualification.yml for the exact candidate SHA. The
       # release GUI smoke above remains a per-PR Focused gate.
 
+      # Bounded ProjectSession startup test after #1073 Windows passed
+      # compilation but CTest exited without QtTest output. The probe is
+      # intentionally diagnostic-only and never suppresses the normal CTest.
+      - name: Probe bounded Windows ProjectSession startup and QtTest method
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $exe = Join-Path $env:GITHUB_WORKSPACE "build/windows-ninja-cache/Release/rgsml_project_session_tests.exe"
+          $raw = Join-Path $env:RUNNER_TEMP "m18-project-session-raw-qtest.txt"
+          $stdout = Join-Path $env:RUNNER_TEMP "m18-project-session-stdout.txt"
+          $stderrFile = Join-Path $env:RUNNER_TEMP "m18-project-session-stderr.txt"
+          $bounded = Join-Path $env:RUNNER_TEMP "m18-project-session-bounded.txt"
+          $lines = [System.Collections.Generic.List[string]]::new()
+          $lines.Add("M18 PROJECT SESSION WINDOWS STARTUP -- BOUNDED DIAGNOSTIC")
+          $lines.Add("NO FULL CTEST/GITHUB/QTTEST LOG IS UPLOADED")
+          if (-not (Test-Path $exe)) {
+            $lines.Add("EXECUTABLE_MISSING")
+          } else {
+            try {
+              & $exe -v1 -o "$raw,txt" 1> $stdout 2> $stderrFile
+              $lines.Add("PROCESS_EXIT_CODE=$LASTEXITCODE")
+            } catch {
+              $lines.Add("PROCESS_START_EXCEPTION=" + $_.Exception.GetType().FullName)
+              $lines.Add("EXCEPTION_MESSAGE=" + $_.Exception.Message.Substring(0, [math]::Min(240, $_.Exception.Message.Length)))
+            }
+            foreach ($file in @($raw,$stdout,$stderrFile)) {
+              $lines.Add("FILE=" + [IO.Path]::GetFileName($file) + " PRESENT=" + (Test-Path $file))
+              if (Test-Path $file) {
+                Get-Content $file -Tail 16 -ErrorAction SilentlyContinue | ForEach-Object {
+                  $lines.Add($_.Substring(0,[math]::Min(220,$_.Length)))
+                }
+              }
+            }
+          }
+          # Capture ONLY the failing method and the next few assertion
+          # lines; never upload or print the entire QtTest output.
+          if (Test-Path $raw) {
+            $rawLines = @(Get-Content -Path $raw -ErrorAction SilentlyContinue)
+            $counted = 0
+            for ($i = 0; $i -lt $rawLines.Count; ++$i) {
+              if ($rawLines[$i] -match '^(FAIL!|QFATAL|QWARN|Totals:)') {
+                $lines.Add("DIAGNOSTIC_LINE=$i")
+                $last = [math]::Min($rawLines.Count - 1, $i + 5)
+                for ($j = $i; $j -le $last; ++$j) {
+                  $lineText = [string]$rawLines[$j]
+                  $lines.Add($lineText.Substring(0,[math]::Min(240,$lineText.Length)))
+                }
+                $counted += 1
+                if ($counted -ge 8) { break }
+              }
+            }
+          }
+          $lines | Set-Content -Path $bounded -Encoding utf8
+          Get-Content $bounded
+          # Probe is diagnostic-only: normal mandatory Focused CTest
+          # must run and own the Windows gate rather than being skipped.
+          exit 0
+
+      - name: Upload bounded Windows ProjectSession diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-ProjectSession-Bounded-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-project-session-bounded.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Run Focused DSP Tests (Release)
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
@@ -876,7 +964,85 @@ jobs:
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
-          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_master_output_rate_state_tests|rgsml_master_output_rate_codec_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_external_playback_fir_assets_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_|audio_forbidden_include_contract)" --output-on-failure --verbose
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_m18_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_master_output_rate_state_tests|rgsml_source_selection_tests|rgsml_audition_region_tests|rgsml_master_output_rate_codec_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_external_playback_fir_assets_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_|audio_forbidden_include_contract)" --output-on-failure --verbose
+
+      # M18 physical Gate candidate — NOT a Full Qualification and never
+      # grounds an automated merge. Reuse the Windows executable already
+      # built in THIS focused job, including the production Qt deploy script.
+      # Keep the complete pinned FIR bank beside bin/RGSMasterLab.exe.
+      - name: Package M18 Product Windows for PO physical smoke (non-FQ)
+        if: ${{ success() && startsWith(github.head_ref, 'staging/m18-') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/m18-po-physical'
+          cmake --install build/windows-ninja-cache --config Release --prefix "$stage"
+          if ($LASTEXITCODE -ne 0) { throw 'M18_PO_WINDOWS_INSTALL_FAILED' }
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $qwindows = Join-Path $stage 'plugins/platforms/qwindows.dll'
+          $fir = Join-Path $stage 'bin/resources/fir'
+          foreach ($required in @($exe, $qwindows)) {
+            if (-not (Test-Path -LiteralPath $required)) {
+              throw "M18_PO_WINDOWS_MISSING_DEPLOY_FILE_$required"
+            }
+          }
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$fir"
+          if ($LASTEXITCODE -ne 0) { throw 'M18_PO_WINDOWS_FIR_SHA_OR_INVENTORY_FAILED' }
+          # The staged executable, not the developer's source-tree app,
+          # must load its own Qt plugins + original Q0 assets without a
+          # private override, GUI interaction or an external FIR path.
+          Remove-Item Env:RGSML_FINAL_SRC_Q0_PRIVATE_DIR -ErrorAction SilentlyContinue
+          $stdout = Join-Path $env:RUNNER_TEMP 'm18-po-physical-smoke.out'
+          $stderrFile = Join-Path $env:RUNNER_TEMP 'm18-po-physical-smoke.err'
+          $smoke = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderrFile
+          if ($smoke.ExitCode -ne 0) {
+            foreach ($small in @($stdout,$stderrFile)) {
+              if (Test-Path -LiteralPath $small) {
+                Get-Content -LiteralPath $small -Tail 14 | ForEach-Object {
+                  Write-Host $_.Substring(0,[Math]::Min(220,$_.Length))
+                }
+              }
+            }
+            throw "M18_PO_WINDOWS_STANDALONE_SMOKE_FAILED_$($smoke.ExitCode)"
+          }
+          Write-Host 'M18_PO_WINDOWS_STANDALONE_SMOKE_PASS__PO_PHYSICAL_GATE_PENDING'
+
+      - name: Upload M18 Product Windows candidate for PO (non-FQ)
+        if: ${{ success() && startsWith(github.head_ref, 'staging/m18-') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-Windows-PO-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: build/m18-po-physical/**
+          retention-days: 14
+          if-no-files-found: error
+
+      # M18 Windows first native transaction CTest failed in #1043 with
+      # no assertion emitted. Diagnostic only when any focused step failed;
+      # rerun ONLY the M18 QtTest binary, filter to <= 4KiB. No full logs.
+      - name: Produce bounded M18 Windows direct QtTest diagnostic
+        if: failure()
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $exe = "build/windows-ninja-cache/Release/rgsml_m18_windows_candidate_delivery_tests.exe"
+          $raw = "$env:RUNNER_TEMP/rgsml-m18-windows-direct-local.txt"
+          $out = "$env:RUNNER_TEMP/rgsml-m18-windows-direct-bounded.txt"
+          $code = 127
+          if (Test-Path $exe) {
+            & $exe -v1 -o "$raw,txt" 2>&1 | Out-Null
+            $code = $LASTEXITCODE
+          }
+          python tools/ci/summarize_m18_windows_direct.py --log "$raw" --output "$out" --exit-code $code
+          if ($LASTEXITCODE -ne 0) { throw 'M18_BOUNDED_TEST_DIAGNOSTIC_FAILED' }
+
+      - name: Attach bounded M18 Windows direct QtTest diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-Direct-Errors-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-m18-windows-direct-bounded.txt
+          retention-days: 7
+          if-no-files-found: warn
 
       # Windows may crash before CTest can collect QtTest stdout. Only
       # on failure, re-run this *one* test executable directly to create a

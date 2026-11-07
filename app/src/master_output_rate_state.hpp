@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QVariantList>
 #include <QtGlobal>
@@ -61,6 +62,21 @@ public:
         targetSelectionGuard_=std::move(guard);
         emit selectionAvailabilityChanged();
     }
+    // Separate M18 Product epoch mutation admission. This is NOT a QML
+    // availability predicate: it is invoked only on a requested real rate
+    // edit, before rateRevision_ or any observable state changes. Optional
+    // and uninstalled in production until upstream mutation coverage exists.
+    using M18RateMutationAdmission=std::function<bool()>;
+    void set_private_m18_rate_mutation_admission(
+        M18RateMutationAdmission gate) {
+        // A Qt worker and the running admission callback cannot replace
+        // the very Product authority that guards a rate revision.
+        if(QThread::currentThread()!=thread()||m18RateAdmitting_)return;
+        m18RateMutationAdmission_=std::move(gate);
+    }
+    [[nodiscard]] bool m18_rate_mutation_admission_installed() const noexcept {
+        return static_cast<bool>(m18RateMutationAdmission_);
+    }
     [[nodiscard]] bool can_edit_target() const noexcept {
         return has_supported_master_rate()
             &&(!targetSelectionGuard_||targetSelectionGuard_());
@@ -70,6 +86,11 @@ public:
     void refresh_selection_availability() {emit selectionAvailabilityChanged();}
     void source_committed(qint64 sourceRateHz) noexcept;
     void source_cleared() noexcept;
+    // M18 PREPRODUCTION. Opt-in status-returning SOURCE identity mutations,
+    // including same-rate re-selection. All legacy void callers must be
+    // migrated before installing one Product authority for async export.
+    [[nodiscard]] bool try_source_committed_for_m18(qint64 sourceRateHz) noexcept;
+    [[nodiscard]] bool try_source_cleared_for_m18() noexcept;
     Q_INVOKABLE bool choose_master_rate(qint64 targetHz) noexcept;
     Q_INVOKABLE bool m17_candidate_rate_admissible(qint64 targetHz) const noexcept;
     Q_INVOKABLE QString final_src_path_status(qint64 targetHz) const;
@@ -84,5 +105,12 @@ private:
     quint64 rateRevision_{0};
     bool originalQ0Ready_{false};
     TargetSelectionGuard targetSelectionGuard_;
+    M18RateMutationAdmission m18RateMutationAdmission_;
+    bool m18RateAdmitting_{false};
+    [[nodiscard]] bool admit_m18_source_rate_mutation() noexcept;
+    // Internal application of an already-authorized source epoch.
+    // Legacy void entrypoints must NOT bypass the M18 Product gate.
+    void commit_source_rate_unchecked(qint64 hz) noexcept;
+    void clear_source_rate_unchecked() noexcept;
 };
 } // namespace rgsml::app

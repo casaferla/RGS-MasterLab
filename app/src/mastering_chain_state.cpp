@@ -460,10 +460,69 @@ Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find
     return registry_->find_descriptor(type_id);
 }
 
+void MasteringChainState::set_private_m18_chain_mutation_admission(
+    M18MutationAdmission gate)
+{
+    // Only the Product's original writer may replace or remove an active
+    // gate. Callback reentrancy must not be allowed to uninstall itself.
+    if(m18MutationAdmission_.admitting)return;
+    if(m18MutationAdmission_.callback
+       &&std::this_thread::get_id()!=m18MutationAdmission_.ownerThread)
+        return;
+    if(gate) {
+        m18MutationAdmission_.ownerThread=std::this_thread::get_id();
+        m18MutationAdmission_.callback=
+            std::make_shared<M18MutationAdmission>(std::move(gate));
+    } else {
+        m18MutationAdmission_.callback.reset();
+        m18MutationAdmission_.ownerThread={};
+    }
+}
+
+void MasteringChainState::adopt_chain_after_authorized_project_open(
+    MasteringChainState replacement)
+{
+    // Keep the active Product epoch policy when replacing the authoritative
+    // chain from an already-admitted Project transaction. The restored
+    // project's private runtime guard must never overwrite Product policy.
+    auto existing=std::move(m18MutationAdmission_);
+    *this=std::move(replacement);
+    m18MutationAdmission_=std::move(existing);
+}
+
+Status MasteringChainState::admit_m18_chain_mutation(
+    const char* operation) const
+{
+    if(!m18MutationAdmission_.callback
+       ||!(*m18MutationAdmission_.callback))
+        return Status::success();
+    if(std::this_thread::get_id()!=m18MutationAdmission_.ownerThread)
+        return Status::failure(Error{
+            ErrorCode::InvalidState,
+            "M18_CHAIN_MUTATION_WRONG_OWNER_THREAD"});
+    if(m18MutationAdmission_.admitting)
+        return Status::failure(Error{
+            ErrorCode::InvalidState,
+            "M18_CHAIN_MUTATION_REENTRANT_ADMISSION"});
+    m18MutationAdmission_.admitting=true;
+    struct Reset final {
+        bool* flag;
+        ~Reset(){*flag=false;}
+    } reset{&m18MutationAdmission_.admitting};
+    try {return (*m18MutationAdmission_.callback)(operation);}
+    catch(...) {
+        return Status::failure(Error{
+            ErrorCode::InvalidState,
+            "M18_CHAIN_MUTATION_ADMISSION_THROWN"});
+    }
+}
+
 const GainParameters& MasteringChainState::gain_parameters() const noexcept { return gain_params_; }
 
 Status MasteringChainState::set_gain_parameters(const GainParameters& params)
 {
+    if(const auto allowed=admit_m18_chain_mutation("gain_parameters");
+       !allowed)return allowed;
     gain_params_ = params;
     return Status::success();
 }
@@ -472,6 +531,8 @@ const ParametricEqParameters& MasteringChainState::parametric_eq_parameters() co
 
 Status MasteringChainState::set_parametric_eq_parameters(const ParametricEqParameters& params)
 {
+    if(const auto allowed=admit_m18_chain_mutation("eq_parameters");
+       !allowed)return allowed;
     eq_params_ = params;
     return Status::success();
 }
@@ -480,6 +541,8 @@ const CompressorParameters& MasteringChainState::compressor_parameters() const n
 
 Status MasteringChainState::set_compressor_parameters(const CompressorParameters& params)
 {
+    if(const auto allowed=admit_m18_chain_mutation("compressor_parameters");
+       !allowed)return allowed;
     compressor_params_ = params;
     return Status::success();
 }
@@ -495,6 +558,8 @@ Status MasteringChainState::set_stereo_ms_parameters(const StereoMsParameters& p
         return Status::failure(chain_state_error(ErrorCode::InvalidState,
             "STEREO_MS_NOT_PRESENT", "Cannot edit absent Stereo/M-S module."));
     }
+    if(const auto allowed=admit_m18_chain_mutation("stereo_ms_parameters");
+       !allowed)return allowed;
     stereo_ms_params_ = params;
     return Status::success();
 }
@@ -510,6 +575,8 @@ Result<bool> MasteringChainState::is_bypassed(const ModuleInstanceId& instance_i
 
 Status MasteringChainState::set_user_bypass(const ModuleInstanceId& instance_id, bool bypassed)
 {
+    if(const auto allowed=admit_m18_chain_mutation("module_bypass");
+       !allowed)return allowed;
     return chain_.set_user_bypass(instance_id, bypassed);
 }
 

@@ -5,11 +5,23 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 
 #include <string_view>
 #include <utility>
 
 namespace rgsml::app {
+namespace {
+struct M18GoldPublicationScope final {
+    explicit M18GoldPublicationScope(bool* active) noexcept
+        :active_(active) {if(active_)*active_=true;}
+    M18GoldPublicationScope(const M18GoldPublicationScope&)=delete;
+    M18GoldPublicationScope& operator=(const M18GoldPublicationScope&)=delete;
+    ~M18GoldPublicationScope(){if(active_)*active_=false;}
+private:
+    bool* active_;
+};
+} // namespace
 
 GoldSelectionViewModel::GoldSelectionViewModel(
     AuditionSourceSelector* selector,
@@ -46,6 +58,11 @@ const audio::SourceResource* GoldSelectionViewModel::gold_resource() const noexc
 
 void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
 {
+    // Once the private Product gate is installed, reject foreign-thread
+    // calls before reading or modifying Qt-owned state, including errors.
+    if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
+       &&QThread::currentThread()!=thread())return;
+    if(m18GoldAdmitting_ ||m18GoldPublicationActive_)return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         errorMessage_ = QStringLiteral("Choose one local Gold WAV file.");
         emit changed();
@@ -77,11 +94,64 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
         emit changed();
         return;
     }
-    (void)adopt_probed_gold(std::move(*candidate.value()));
+    const auto accepted=adopt_probed_gold(std::move(*candidate.value()));
+    if(!accepted) {
+        const auto message=QString::fromStdString(accepted.error()->message());
+        if(errorMessage_!=message) {
+            errorMessage_=message;
+            emit changed();
+        }
+    }
+}
+
+core::Status GoldSelectionViewModel::admit_m18_gold_mutation(
+    const char* operation) const
+{
+    // Exactly one component may advance the authoritative Product epoch.
+    // If the selector has its own M18 gate, the GOLD ViewModel must
+    // delegate to it rather than issue a second independent grant.
+    if(selector_->m18_mutation_admission_installed()
+       &&m18GoldMutationAdmission_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_MUTATION_DOUBLE_EPOCH_AMBIGUOUS"});
+    if(!m18GoldMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18GoldAdmitting_||m18GoldPublicationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_MUTATION_REENTRANT_EPOCH_DENIED"});
+    m18GoldAdmitting_=true;
+    struct Reset final {
+        bool* active;
+        ~Reset(){*active=false;}
+    } reset{&m18GoldAdmitting_};
+    try{return m18GoldMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_GOLD_MUTATION_ADMISSION_THROWN"});}
 }
 
 core::Status GoldSelectionViewModel::adopt_probed_gold(audio::SourceResource candidate)
 {
+    const bool guarded=static_cast<bool>(
+        m18GoldMutationAdmission_||selector_->m18_mutation_admission_installed());
+    if(guarded &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_ADOPT_REQUIRES_QT_OWNER_THREAD"});
+    if(guarded &&(m18GoldAdmitting_||m18GoldPublicationActive_))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_ADOPT_REENTRANT_PUBLICATION"});
+    const auto admission=admit_m18_gold_mutation("gold_adopt_probed");
+    if(!admission)return admission;
+    M18GoldPublicationScope scope{
+        guarded?&m18GoldPublicationActive_:nullptr};
+    (void)scope;
     const auto& info = candidate.wav_info();
     auto committed = selector_->set_gold(
         candidate.reference(),
@@ -112,6 +182,33 @@ void GoldSelectionViewModel::cancelGoldSelection() noexcept
 
 void GoldSelectionViewModel::clearGold()
 {
+    const bool guarded=static_cast<bool>(
+        m18GoldMutationAdmission_||selector_->m18_mutation_admission_installed());
+    if(guarded &&QThread::currentThread()!=thread())return;
+    if(guarded &&(m18GoldAdmitting_||m18GoldPublicationActive_))return;
+    // Clearing an already-empty GOLD is not a SOURCE/MASTER revision.
+    // Do not revoke explicit M18 export consent for a no-op UI click.
+    // Check BOTH owners: a Project-open may have populated the selector
+    // directly while this file-picker's local GOLD is still absent.
+    if(guarded&&!gold_&&!selector_->gold_available()) {
+        if(!displayName_.isEmpty()||!metadata_.isEmpty()
+           ||!errorMessage_.isEmpty()) {
+            displayName_.clear();
+            metadata_.clear();
+            errorMessage_.clear();
+            emit changed();
+        }
+        return;
+    }
+    const auto admission=admit_m18_gold_mutation("gold_clear");
+    if(!admission) {
+        errorMessage_=QString::fromStdString(admission.error()->message());
+        emit changed();
+        return;
+    }
+    M18GoldPublicationScope scope{
+        guarded?&m18GoldPublicationActive_:nullptr};
+    (void)scope;
     auto cleared = selector_->clear_gold();
     if (!cleared) {
         errorMessage_ = QString::fromStdString(cleared.error()->message());
@@ -127,6 +224,11 @@ void GoldSelectionViewModel::clearGold()
 
 void GoldSelectionViewModel::sourceChanged()
 {
+    if((m18GoldMutationAdmission_ ||selector_->m18_mutation_admission_installed())
+       &&QThread::currentThread()!=thread())return;
+    // Derived SOURCE invalidation: the Product must admit the SOURCE
+    // mutation before it changes the selector; GOLD cannot retroactively
+    // refuse that already-published outer transaction.
     if (!selector_->gold_available()) {
         gold_.reset();
         displayName_.clear();

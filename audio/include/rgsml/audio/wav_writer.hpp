@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace rgsml::audio {
@@ -21,13 +22,20 @@ struct WavWriteSpec final {
     friend bool operator==(const WavWriteSpec&, const WavWriteSpec&) = default;
 };
 
-// Deterministic same-rate IEEE_F64 RIFF/RF64 writer over the frozen core byte
-// port. It owns the destination and publishes no filesystem policy.
+// Canonical RIFF/RF64 byte writer over the frozen core IResourceWriter port.
+// The existing open() remains legacy IEEE_F64-only. M18 codecs require
+// EXPLICIT open_m18() and do NOT confer filesystem publication authority.
 class WavWriter final {
 public:
     [[nodiscard]] static core::Result<std::unique_ptr<WavWriter>> open(
         std::unique_ptr<core::IResourceWriter> destination,
         WavWriteSpec spec);
+    // Opt-in M18 output-stage writer. PCM24 requires exact uint64 seed;
+    // Float32 forbids a seed. Not called by legacy Windows exporter/GUI.
+    [[nodiscard]] static core::Result<std::unique_ptr<WavWriter>> open_m18(
+        std::unique_ptr<core::IResourceWriter> destination,
+        WavWriteSpec spec,
+        std::optional<std::uint64_t> ditherSeed);
 
     WavWriter(WavWriter&&) = delete;
     WavWriter& operator=(WavWriter&&) = delete;
@@ -56,19 +64,26 @@ private:
     };
 
     [[nodiscard]] static core::Result<Layout> make_layout(
-        const WavWriteSpec& spec);
+        const WavWriteSpec& spec, bool m18Mode);
     [[nodiscard]] static std::vector<std::byte> make_header(
         const WavWriteSpec& spec,
-        const Layout& layout);
+        const Layout& layout, bool m18Mode);
+    [[nodiscard]] static core::Result<std::unique_ptr<WavWriter>> open_impl(
+        std::unique_ptr<core::IResourceWriter> destination,
+        WavWriteSpec spec, bool m18Mode,
+        std::optional<std::uint64_t> ditherSeed);
 
     WavWriter(
         std::unique_ptr<core::IResourceWriter> destination,
         WavWriteSpec spec,
-        Layout layout) noexcept;
+        Layout layout, bool m18Mode,
+        std::optional<std::uint64_t> ditherSeed) noexcept;
 
     std::unique_ptr<core::IResourceWriter> destination_;
     WavWriteSpec spec_;
     Layout layout_;
+    bool m18_mode_{false};
+    std::optional<std::uint64_t> m18_dither_seed_;
     std::int64_t frames_written_{0};
     bool finalized_{false};
     bool closed_{false};

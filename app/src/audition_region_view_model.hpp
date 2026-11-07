@@ -4,9 +4,12 @@
 #include <rgsml/core/result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <optional>
+#include <functional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -54,6 +57,21 @@ public:
     [[nodiscard]] QString end_frame_text() const;
     [[nodiscard]] QString error_message() const;
 
+    // M18 PREPRODUCTION: SOURCE and Project changes must own one
+    // Product epoch across all Region/Loop mutations. Do not install
+    // this callback until the common cross-controller authority is wired.
+    using M18RegionMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_region_mutation_admission(
+        M18RegionMutationAdmission gate)
+    {
+        // The current callback and synchronous Qt publication own this
+        // Region/Loop epoch. Worker or listener disarm is refused.
+        if(QThread::currentThread()!=thread())return;
+        if(m18RegionAdmitting_||m18RegionOperationActive_)return;
+        m18RegionMutationAdmission_=std::move(gate);
+    }
+    [[nodiscard]] bool m18_region_admission_installed() const noexcept
+    {return static_cast<bool>(m18RegionMutationAdmission_);}
     [[nodiscard]] core::Status set_region(core::FrameRange candidate);
     [[nodiscard]] core::Status set_start(core::FrameIndex start);
     [[nodiscard]] core::Status set_end_exclusive(core::FrameIndex end);
@@ -94,6 +112,9 @@ private:
         QString fraction;
     };
 
+    [[nodiscard]] core::Status admit_m18_region_mutation(
+        const char* operation) const;
+    [[nodiscard]] bool m18_foreign_owner_thread() const noexcept;
     [[nodiscard]] core::Status validate(core::FrameRange candidate) const;
     [[nodiscard]] core::Status reposition_if_outside(
         core::FrameRange activeLoop,
@@ -111,6 +132,12 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_{nullptr};
+    M18RegionMutationAdmission m18RegionMutationAdmission_;
+    mutable bool m18RegionAdmitting_{false};
+    // Scoped across playback I/O and synchronous changed() notifications.
+    // A callback may not recursively commit a second Region/Loop edit
+    // while the first Product-authorized edit is still publishing.
+    bool m18RegionOperationActive_{false};
     std::optional<core::FrameRange> region_;
     std::int64_t sourceFrames_{0};
     std::int64_t sampleRate_{0};

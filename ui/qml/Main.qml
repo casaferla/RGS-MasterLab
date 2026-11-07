@@ -58,6 +58,17 @@ ApplicationWindow {
         ? terminalProductActivation : null
     readonly property var appMasterRateState: typeof masterOutputRateState !== "undefined"
         ? masterOutputRateState : null
+    // M18 Export becomes available only when the native Product owner
+    // has installed all epoch guards and retained an exact verified M17 Master.
+    readonly property var appM18ExportModel: typeof m18ProductExportViewModel !== "undefined"
+        ? m18ProductExportViewModel : null
+    // Native Project owns the current explicit WAV encoding preference.
+    // Loading another project restores the combo without a sticky
+    // QML-only choice; TPDF uint64 seed never traverses QML Number.
+    readonly property var appM18ProjectSession: typeof projectSession !== "undefined"
+        ? projectSession : null
+    readonly property int m18ExportFormatIndex: root.appM18ProjectSession
+        ? root.appM18ProjectSession.m18WavEncodingIndex : 0
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
     readonly property var appPrivateFirLibrary:
@@ -506,6 +517,154 @@ ApplicationWindow {
         onRejected: projectSession.cancelProjectSave()
     }
 
+    // M18 Product-authorized output choice. The File menu remains
+    // disabled until the application owns the complete M18 gate bundle.
+    // No QML surface can mint a Ticket or invoke a detached worker.
+    FileDialog {
+        id: m18ExportFileDialog
+        objectName: "m18ExportFileDialog"
+        title: "Export verified Master WAV"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["WAV audio (*.wav *.wave)"]
+        onAccepted: {
+            const model = root.appM18ExportModel
+            if (!model) return
+            model.beginExport(selectedFile, root.m18ExportFormatIndex)
+            m18ExportProgressDialog.open()
+        }
+    }
+    Dialog {
+        id: m18ExportFormatDialog
+        objectName: "m18ExportFormatDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        title: "Export Master · WAV format"
+        modal: true
+        width: Math.min(420, root.width - 48)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                text: "Choose the final WAV encoding. The verified M17 Ceiling is unchanged. "
+                    + "Existing files are never overwritten; use a new filename."
+                color: root.textPrimary
+                wrapMode: Text.Wrap
+            }
+            ComboBox {
+                id: m18FormatChoice
+                objectName: "m18ExportEncoding"
+                Layout.fillWidth: true
+                model: ["24-bit PCM · TPDF dither", "32-bit Float · no dither"]
+                currentIndex: root.m18ExportFormatIndex
+                onActivated: {
+                    if (root.appM18ProjectSession)
+                        root.appM18ProjectSession.chooseM18WavEncoding(currentIndex)
+                }
+            }
+        }
+        onAccepted: {
+            if (root.appM18ExportModel && root.appM18ExportModel.canExport)
+                m18ExportFileDialog.open()
+        }
+    }
+
+    // Modeless by design: encoding and readback run on the detached M18
+    // worker; Qt retains normal responsiveness and the Product Single
+    // Writer gate prevents stale Source/Project edits during final commit.
+    Dialog {
+        id: m18ExportProgressDialog
+        objectName: "m18ExportProgressDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        title: "Master WAV delivery"
+        modal: false
+        closePolicy: Popup.NoAutoClose
+        width: Math.min(480, root.width - 48)
+        standardButtons: Dialog.NoButton
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                color: root.textPrimary
+                font.bold: true
+                text: root.appM18ExportModel
+                    ? root.appM18ExportModel.statusText : "UNAVAILABLE"
+            }
+            ProgressBar {
+                Layout.fillWidth: true
+                from: 0
+                to: 1
+                value: root.appM18ExportModel
+                    ? root.appM18ExportModel.encodedProgress : 0
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                wrapMode: Text.Wrap
+                text: "Encoded progress is not delivery confirmation. "
+                    + "The WAV is delivered only after filesystem readback."
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.error
+                visible: root.appM18ExportModel
+                    && root.appM18ExportModel.errorText.length > 0
+                text: root.appM18ExportModel
+                    ? root.appM18ExportModel.errorText : ""
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                visible: root.appM18ExportModel
+                    && root.appM18ExportModel.verifiedSha256.length === 64
+                text: root.appM18ExportModel
+                    ? "Verified delivered file: "
+                        + root.appM18ExportModel.verifiedBytes
+                        + " bytes (post-delivery readback)" : ""
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                visible: root.appM18ExportModel
+                    && root.appM18ExportModel.verifiedSha256.length === 64
+                text: root.appM18ExportModel
+                    ? "Verified WAV SHA-256: "
+                        + root.appM18ExportModel.verifiedSha256 : ""
+                wrapMode: Text.WrapAnywhere
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Button {
+                    objectName: "m18CancelExport"
+                    text: "Cancel Export"
+                    enabled: !!root.appM18ExportModel
+                        && root.appM18ExportModel.canCancel
+                    onClicked: root.appM18ExportModel.cancelExport()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    objectName: "m18AcknowledgeExport"
+                    readonly property var model: root.appM18ExportModel
+                    text: model && model.canAcknowledge
+                        ? "Acknowledge result" : "Close"
+                    enabled: !!model
+                        && (model.canAcknowledge
+                            || (model.statusText !== "EXPORTING / VERIFYING"
+                                && model.statusText !== "CANCELLING"))
+                    onClicked: {
+                        if (model && model.canAcknowledge
+                            && !model.acknowledgeExport()) return
+                        m18ExportProgressDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
     // X/Alt+F4 is NOT permission to retry an absent Windows DEVICE.
     // Keep the in-RAM M17 MASTER or explicitly discard on shutdown.
     Dialog {
@@ -556,6 +715,17 @@ ApplicationWindow {
     }
 
     onClosing: function(close) {
+        // An async WAV candidate must never outlive a normal Product exit.
+        // Cancel is nonblocking; keep the UI alive until the worker is
+        // terminal and its transactional writer has finished rollback.
+        // This takes precedence over the M17 discard-recovery exit.
+        if (root.appM18ExportModel && root.appM18ExportModel.exportInProgress) {
+            close.accepted = false
+            root.appM18ExportModel.cancelExport()
+            if (!m18ExportProgressDialog.opened)
+                m18ExportProgressDialog.open()
+            return
+        }
         if (root.m17ConfirmedDiscardExit) {
             close.accepted = true
             Qt.quit()
@@ -1061,7 +1231,13 @@ ApplicationWindow {
                         StudioMenuItem { objectName: "menuClearGold"; text: "Clear Gold Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuSaveProjectAs"; text: "Save Project As…"; enabled: projectSession.canSaveProject; onTriggered: projectSaveDialog.open() }
-                        StudioMenuItem { text: "Export"; enabled: false }
+                        StudioMenuItem {
+                            objectName: "menuExportMaster"
+                            text: "Export verified Master…"
+                            enabled: !!root.appM18ExportModel
+                                && root.appM18ExportModel.canExport
+                            onTriggered: m18ExportFormatDialog.open()
+                        }
                         MenuSeparator { }
                         StudioMenuItem { text: "Exit"; onTriggered: root.close() }
                     }

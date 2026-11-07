@@ -1,5 +1,6 @@
 #include "master_output_rate_state.hpp"
 #include "final_src_candidate_policy.hpp"
+#include <QThread>
 namespace rgsml::app {
 bool MasterOutputRateState::m17_candidate_rate_admissible(qint64 hz) const noexcept {
     return m17_final_src_candidate_admissible(sourceRateHz_,hz,originalQ0Ready_);
@@ -17,14 +18,49 @@ QString MasterOutputRateState::final_src_path_status(qint64 hz) const {
     }
 }
 
+bool MasterOutputRateState::admit_m18_source_rate_mutation() noexcept {
+    if(!m18RateMutationAdmission_)return true;
+    if(QThread::currentThread()!=thread())return false;
+    if(m18RateAdmitting_)return false;
+    m18RateAdmitting_=true;
+    struct AdmissionUnwind final {
+        bool* active;
+        ~AdmissionUnwind(){*active=false;}
+    } unwind{&m18RateAdmitting_};
+    try{return m18RateMutationAdmission_();}
+    catch(...){return false;}
+}
+bool MasterOutputRateState::try_source_committed_for_m18(
+    qint64 hz) noexcept {
+    if(!admit_m18_source_rate_mutation())return false;
+    commit_source_rate_unchecked(hz);
+    return true;
+}
+bool MasterOutputRateState::try_source_cleared_for_m18() noexcept {
+    if(sourceRateHz_==0 &&masterRateHz_==0)return true;
+    if(!admit_m18_source_rate_mutation())return false;
+    clear_source_rate_unchecked();
+    return true;
+}
 void MasterOutputRateState::source_committed(qint64 hz) noexcept {
+    // M17's legacy void caller cannot report BUSY. Once a genuine M18
+    // gate is installed, fail closed instead of silently bypassing it.
+    // Product must migrate the outer SOURCE transaction to the bool API.
+    if(m18RateMutationAdmission_)return;
+    commit_source_rate_unchecked(hz);
+}
+void MasterOutputRateState::source_cleared() noexcept {
+    if(m18RateMutationAdmission_)return;
+    clear_source_rate_unchecked();
+}
+void MasterOutputRateState::commit_source_rate_unchecked(qint64 hz) noexcept {
     sourceRateHz_=hz>0?hz:0;
     masterRateHz_=supported(sourceRateHz_)?sourceRateHz_:0;
     ++rateRevision_; // different SOURCE identity invalidates even at same Fs
     emit changed();
     emit selectionAvailabilityChanged();
 }
-void MasterOutputRateState::source_cleared() noexcept {
+void MasterOutputRateState::clear_source_rate_unchecked() noexcept {
     if(sourceRateHz_==0&&masterRateHz_==0)return;
     sourceRateHz_=0;masterRateHz_=0;++rateRevision_;
     emit changed();
@@ -36,6 +72,10 @@ bool MasterOutputRateState::choose_master_rate(qint64 hz) noexcept {
     // A requested *change* during an exact DEVICE monitor is refused
     // without invalidating either the Project or the M17 render epoch.
     if(!can_edit_target())return false;
+    // Gate a *real* rate mutation, not the canEditTarget QML query.
+    // A foreign worker cannot query Qt-owned mutation admission.
+    // A throwing/denied epoch transition cannot change the revision.
+    if(!admit_m18_source_rate_mutation())return false;
     masterRateHz_=hz;++rateRevision_;
     emit changed();
     // The current MASTER admission and observable six-rate list share the

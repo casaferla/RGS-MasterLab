@@ -1,6 +1,7 @@
 #include "audition_source_selector.hpp"
 
 #include "playback_transport_view_model.hpp"
+#include <QThread>
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -42,7 +43,39 @@ constexpr std::int64_t kRealizationBlockFrames = 4096;
         core::ErrorCode::InvalidState, message});
 }
 
+// Owner-thread only. The scoped flag persists through playback handoffs
+// and synchronous Qt signals; no worker thread is ever blocked on it.
+struct M18ScopedAuditionMutation final {
+    explicit M18ScopedAuditionMutation(bool* state) noexcept
+        : state_(state) {if(state_)*state_=true;}
+    M18ScopedAuditionMutation(const M18ScopedAuditionMutation&)=delete;
+    M18ScopedAuditionMutation& operator=(const M18ScopedAuditionMutation&)=delete;
+    ~M18ScopedAuditionMutation(){if(state_)*state_=false;}
+private:
+    bool* state_;
+};
+
 }  // namespace
+
+core::Status AuditionSourceSelector::admit_m18_source_mutation(
+    const char* operation) const
+{
+    if(!m18MutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18SourceAdmissionActive_||m18SourcePublicationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_MUTATION_REENTRANT_EPOCH_DENIED"});
+    m18SourceAdmissionActive_=true;
+    M18ScopedAuditionMutation scoped{&m18SourceAdmissionActive_};
+    try{return m18MutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_SOURCE_MUTATION_ADMISSION_THROWN"});}
+}
 
 AuditionSourceSelector::AuditionSourceSelector(
     PlaybackTransportViewModel* playback,
@@ -155,6 +188,11 @@ bool AuditionSourceSelector::offline_processed_selected_for_final_master() const
 
 core::Status AuditionSourceSelector::authorize_offline_processed_for_final_master()
 {
+    if(const auto admission=admit_m18_source_mutation("authorize_offline");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||!playback_
        ||!prepared_ ||!processed_ ||!processedRealizationId_
@@ -315,6 +353,11 @@ void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provide
 core::Status AuditionSourceSelector::source_committed(
     const core::ResourceReference& source)
 {
+    if(const auto admission=admit_m18_source_mutation("source_committed");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if(sourceEpoch_==std::numeric_limits<std::uint64_t>::max())
         return unavailable("OFFLINE_MASTER_SOURCE_EPOCH_EXHAUSTED");
@@ -359,6 +402,11 @@ core::Status AuditionSourceSelector::source_committed(
 core::Status AuditionSourceSelector::set_prepared_realization(
     render::RenderResult realization)
 {
+    if(const auto admission=admit_m18_source_mutation("set_prepared");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PREPARED) {
         auto cleared = playback_->stop_and_clear();
@@ -375,7 +423,15 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
-    offlineProcessedAuthority_.reset();
+    // PREPARE a candidate off to the side. Invalid/exhausted realizations
+    // cannot revoke M18 consent, even when the worker owns a commit.
+    // Validate owner affinity before reading mutable selector identities.
+    if(m18MutationAdmission_) {
+        if(QThread::currentThread()!=thread())
+            return unavailable("M18_PROCESSED_PREFLIGHT_REQUIRES_QT_OWNER_THREAD");
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)
+            return unavailable("M18_PROCESSED_PREFLIGHT_REENTRANT_MUTATION");
+    }
     if (nextRealizationIdValue_
         == std::numeric_limits<std::uint64_t>::max()) {
         return core::Status::failure(core::Error{
@@ -402,20 +458,47 @@ core::Status AuditionSourceSelector::set_processed_realization(
     auto candidate = std::make_shared<const render::RenderResult>(
         std::move(realization));
 
+    // M18 real Product preflight: a stale DEVICE/SOURCE cue outside the
+    // replacement PCM is a rejected request, not an export-epoch change.
+    // Compute the rebased cue without touching Product/Qt state; keep M17
+    // legacy UI errors when the optional epoch controller is uninstalled.
+    std::optional<core::FrameIndex> m18ValidatedCue;
+    if(m18MutationAdmission_&&activeTarget_==AuditionTarget::PROCESSED) {
+        const auto range=candidate->render_window();
+        auto snapshot=playback_->source_display_snapshot();
+        auto cue=snapshot?snapshot.value()->position:sourceDerivedCue_;
+        if(cue==range.end())cue=range.begin();
+        if(cue<range.begin()||cue>range.end())
+            return unavailable("Source cue is outside the available realization range.");
+        m18ValidatedCue=cue;
+    }
+
+    // The candidate's telemetry and exact stage provenance have been
+    // validated; the next action can actually replace Product state.
+    if(const auto admission=admit_m18_source_mutation("set_processed");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
+    offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PROCESSED) {
         const auto range = candidate->render_window();
         // PROCESSED can temporarily be OUTPUT_RATE private audio. Preserve
         // the original SOURCE playhead, never store an output-rate cursor.
-        auto snapshot = playback_->source_display_snapshot();
-        if (snapshot) {
-            sourceDerivedCue_ = snapshot.value()->position;
-        }
-        if (sourceDerivedCue_.value() == range.end().value()) {
-            sourceDerivedCue_ = range.begin();
-        }
-        if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
-            publish_error(QStringLiteral("Source cue is outside the available realization range."));
-            return unavailable("Source cue is outside the available realization range.");
+        if(m18ValidatedCue) {
+            sourceDerivedCue_=*m18ValidatedCue;
+        } else {
+            auto snapshot = playback_->source_display_snapshot();
+            if (snapshot) {
+                sourceDerivedCue_ = snapshot.value()->position;
+            }
+            if (sourceDerivedCue_.value() == range.end().value()) {
+                sourceDerivedCue_ = range.begin();
+            }
+            if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
+                publish_error(QStringLiteral("Source cue is outside the available realization range."));
+                return unavailable("Source cue is outside the available realization range.");
+            }
         }
 
         playback_->set_source_derived_active(true);
@@ -453,7 +536,15 @@ core::Status AuditionSourceSelector::set_gold(
     core::SampleRate sampleRate,
     core::FrameCount frameCount)
 {
-    offlineProcessedAuthority_.reset();
+    // An invalid alias to SOURCE is not a GOLD mutation and must not
+    // withdraw a current M18 verified Master. Reject wrong-thread and
+    // nested Qt writes BEFORE looking at the SOURCE path or filesystem.
+    if(m18MutationAdmission_) {
+        if(QThread::currentThread()!=thread())
+            return unavailable("M18_GOLD_PREFLIGHT_REQUIRES_QT_OWNER_THREAD");
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)
+            return unavailable("M18_GOLD_PREFLIGHT_REENTRANT_MUTATION");
+    }
     if (source_) {
         if (source_->same_resource_identity(reference)) {
             return unavailable("Gold must be a file distinct from Source.");
@@ -466,6 +557,14 @@ core::Status AuditionSourceSelector::set_gold(
             return unavailable("Gold must not be an alias of the Source file.");
         }
     }
+    // Exact file-identity preflight is complete. Only now may the
+    // Product revoke consent and mutate GOLD or the audio handoff.
+    if(const auto admission=admit_m18_source_mutation("set_gold");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
+    offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::GOLD) {
         auto cleared = playback_->stop_and_clear();
         if (!cleared) {
@@ -484,6 +583,19 @@ core::Status AuditionSourceSelector::set_gold(
 
 core::Status AuditionSourceSelector::clear_gold()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_GOLD_CLEAR_WRONG_OWNER_THREAD"});
+    // Already-empty GOLD cannot revoke a retained M18 verified master.
+    if(m18MutationAdmission_ &&!gold_
+       &&activeTarget_!=AuditionTarget::GOLD)
+        return core::Status::success();
+    if(const auto admission=admit_m18_source_mutation("clear_gold");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     offlineProcessedAuthority_.reset();
     const bool wasGold = activeTarget_ == AuditionTarget::GOLD;
     if (wasGold) {
@@ -505,10 +617,10 @@ core::Status AuditionSourceSelector::clear_gold()
         return core::Status::success();
     }
     if (prepared_) {
-        return switch_to(AuditionTarget::PREPARED);
+        return switch_to_after_authorized_mutation(AuditionTarget::PREPARED);
     }
     if (processed_) {
-        return switch_to(AuditionTarget::PROCESSED);
+        return switch_to_after_authorized_mutation(AuditionTarget::PROCESSED);
     }
     playback_->set_source_derived_active(false);
     emit changed();
@@ -516,6 +628,30 @@ core::Status AuditionSourceSelector::clear_gold()
 }
 
 core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
+{
+    // The optional M18 Product gate has one owner thread. No listener may
+    // publish Qt errors from a worker, and a true no-op cannot burn an epoch.
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_AUDITION_SWITCH_WRONG_OWNER_THREAD"});
+    if(m18MutationAdmission_) {
+        if(activeTarget_==target)return core::Status::success();
+        if((target==AuditionTarget::PREPARED &&!prepared_)
+           ||(target==AuditionTarget::PROCESSED &&!processed_)
+           ||(target==AuditionTarget::GOLD &&!gold_))
+            return unavailable("The requested audition target has no authoritative realization.");
+    }
+    if(const auto admission=admit_m18_source_mutation("switch_target");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
+    return switch_to_after_authorized_mutation(target);
+}
+
+core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(
+    AuditionTarget target)
 {
     offlineProcessedAuthority_.reset();
     if ((target == AuditionTarget::PREPARED && !prepared_)
@@ -591,6 +727,11 @@ core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
     std::shared_ptr<const render::RenderResult> expectedManual,
     core::RealizationId expectedManualId, core::FrameIndex sourceCue)
 {
+    if(const auto admission=admit_m18_source_mutation("restore_manual");
+       !admission)return admission;
+    M18ScopedAuditionMutation lifetime{
+        m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
     auto refuse=[](const char* message) -> core::Status {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,message});
@@ -659,18 +800,21 @@ core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
 
 void AuditionSourceSelector::selectPrepared()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())return;
     auto result = switch_to(AuditionTarget::PREPARED);
     if (!result) publish_error(QString::fromStdString(result.error()->message()));
 }
 
 void AuditionSourceSelector::selectProcessed()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())return;
     auto result = switch_to(AuditionTarget::PROCESSED);
     if (!result) publish_error(QString::fromStdString(result.error()->message()));
 }
 
 void AuditionSourceSelector::selectGold()
 {
+    if(m18MutationAdmission_ &&QThread::currentThread()!=thread())return;
     auto result = switch_to(AuditionTarget::GOLD);
     if (!result) publish_error(QString::fromStdString(result.error()->message()));
 }

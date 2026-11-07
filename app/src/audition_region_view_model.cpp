@@ -1,6 +1,7 @@
 #include "audition_region_view_model.hpp"
 
 #include "playback_transport_view_model.hpp"
+#include <QThread>
 
 #include <rgsml/core/checked_integer.hpp>
 
@@ -12,6 +13,19 @@
 
 namespace rgsml::app {
 namespace {
+
+// Retains exclusive owner-thread publication scope through synchronous
+// playback operations, Qt changed() signals and every early return.
+// This is an opt-in M18 safeguard; legacy M17 callers do not install it.
+struct M18RegionPublicationScope final {
+    explicit M18RegionPublicationScope(bool* active) noexcept
+        : active_(active) {if(active_)*active_=true;}
+    M18RegionPublicationScope(const M18RegionPublicationScope&)=delete;
+    M18RegionPublicationScope& operator=(const M18RegionPublicationScope&)=delete;
+    ~M18RegionPublicationScope(){if(active_)*active_=false;}
+private:
+    bool* active_;
+};
 
 [[nodiscard]] core::Status invalid_region(const char* message)
 {
@@ -240,13 +254,60 @@ core::Status AuditionRegionViewModel::validate(core::FrameRange candidate) const
     return core::Status::success();
 }
 
+bool AuditionRegionViewModel::m18_foreign_owner_thread() const noexcept
+{
+    return m18RegionMutationAdmission_
+        &&QThread::currentThread()!=thread();
+}
+
+core::Status AuditionRegionViewModel::admit_m18_region_mutation(
+    const char* operation) const
+{
+    if(!m18RegionMutationAdmission_)return core::Status::success();
+    if(m18_foreign_owner_thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionAdmitting_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_MUTATION_REENTRANT_ADMISSION"});
+    m18RegionAdmitting_=true;
+    struct Reset final {
+        bool* active;
+        ~Reset(){*active=false;}
+    } reset{&m18RegionAdmitting_};
+    try{return m18RegionMutationAdmission_(operation);}
+    catch(...) {return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_REGION_MUTATION_ADMISSION_THROWN"});}
+}
+
 core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
 {
+    if(m18_foreign_owner_thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&m18RegionOperationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_NESTED_PUBLICATION_DENIED"});
+    M18RegionPublicationScope scope{
+        m18RegionMutationAdmission_?&m18RegionOperationActive_:nullptr};
+    (void)scope;
+    // Invalid and identical selections cannot advance Product export epoch.
+    // Legacy M17 re-evaluation of an unchanged loop is preserved when
+    // optional M18 admission is not configured.
     const auto valid = validate(candidate);
     if (!valid) {
         publish_error(*valid.error());
         return valid;
     }
+    if(m18RegionMutationAdmission_ &&region_ &&*region_==candidate)
+        return core::Status::success();
+    if(const auto admission=admit_m18_region_mutation("region_set");
+       !admission)return admission;
     if (loopEnabled_) {
         if (!playback_) {
             const auto failure = core::Status::failure(core::Error{
@@ -276,6 +337,9 @@ core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
 
 core::Status AuditionRegionViewModel::set_start(core::FrameIndex start)
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
     if (!region_) {
         return invalid_region("Create an Audition Region before editing its start.");
     }
@@ -288,6 +352,9 @@ core::Status AuditionRegionViewModel::set_start(core::FrameIndex start)
 
 core::Status AuditionRegionViewModel::set_end_exclusive(core::FrameIndex end)
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
     if (!region_) {
         return invalid_region("Create an Audition Region before editing its end.");
     }
@@ -300,9 +367,21 @@ core::Status AuditionRegionViewModel::set_end_exclusive(core::FrameIndex end)
 
 core::Status AuditionRegionViewModel::clear_region()
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&m18RegionOperationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_NESTED_PUBLICATION_DENIED"});
+    M18RegionPublicationScope scope{
+        m18RegionMutationAdmission_?&m18RegionOperationActive_:nullptr};
+    (void)scope;
     if (!region_) {
         return core::Status::success();
     }
+    if(const auto admission=admit_m18_region_mutation("region_clear");
+       !admission)return admission;
     if (loopEnabled_) {
         if (!playback_) {
             return invalid_region("Playback transport is unavailable.");
@@ -319,6 +398,19 @@ core::Status AuditionRegionViewModel::clear_region()
 
 core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
 {
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18RegionMutationAdmission_ &&m18RegionOperationActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_REGION_NESTED_PUBLICATION_DENIED"});
+    M18RegionPublicationScope scope{
+        m18RegionMutationAdmission_?&m18RegionOperationActive_:nullptr};
+    (void)scope;
+    if(m18RegionMutationAdmission_ &&loopEnabled_==enabled)
+        return core::Status::success();
+    // An invalid request cannot revoke an already verified M18 Master.
     if (enabled && (!region_ || !playback_ || !playback_->playback_available())) {
         const auto failure = core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
@@ -333,6 +425,8 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
         publish_error(*failure.error());
         return failure;
     }
+    if(const auto admission=admit_m18_region_mutation("loop_toggle");
+       !admission)return admission;
     std::optional<core::FrameIndex> positionBeforeLoopUpdate;
     if (enabled) {
         const auto snapshot = playback_->source_display_snapshot();
@@ -360,6 +454,11 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
 
 core::Status AuditionRegionViewModel::seek(core::FrameIndex position)
 {
+    // SEEK changes only transport navigation, never M18 export identity.
+    // It remains available to the Qt owner during encoding and commit.
+    if(m18_foreign_owner_thread())return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,
+                    "M18_REGION_SEEK_REQUIRES_QT_OWNER_THREAD"});
     if (!playback_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
@@ -379,6 +478,9 @@ void AuditionRegionViewModel::source_committed(
     core::FrameCount frameCount,
     core::SampleRate sampleRate)
 {
+    // Derived from the already authorized SOURCE/Project transaction.
+    // It may not advance its own nested Product epoch.
+    if(m18_foreign_owner_thread())return;
     sourceFrames_ = frameCount.value();
     sampleRate_ = sampleRate.value();
     waveformReady_ = false;
@@ -391,6 +493,7 @@ void AuditionRegionViewModel::source_committed(
 
 void AuditionRegionViewModel::set_waveform_ready(bool ready)
 {
+    if(m18_foreign_owner_thread())return;
     if (waveformReady_ == ready) {
         return;
     }
@@ -401,6 +504,7 @@ void AuditionRegionViewModel::set_waveform_ready(bool ready)
 
 void AuditionRegionViewModel::synchronize_playback()
 {
+    if(m18_foreign_owner_thread())return;
     if (!playback_) {
         return;
     }
@@ -601,6 +705,7 @@ void AuditionRegionViewModel::commitStartSegments(
     const QString& seconds,
     const QString& fraction)
 {
+    if(m18_foreign_owner_thread())return;
     const auto parsed = parse_segmented_time(
         hours, minutes, seconds, fraction);
     if (!parsed || !region_) {
@@ -625,6 +730,7 @@ void AuditionRegionViewModel::commitEndSegments(
     const QString& seconds,
     const QString& fraction)
 {
+    if(m18_foreign_owner_thread())return;
     const auto parsed = parse_segmented_time(
         hours, minutes, seconds, fraction);
     if (!parsed || !region_) {
@@ -655,12 +761,14 @@ void AuditionRegionViewModel::requestClearRegion()
 
 void AuditionRegionViewModel::nudgeStartBackward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         static_cast<void>(set_start(core::FrameIndex{region_->begin().value() - 1}));
     }
 }
 void AuditionRegionViewModel::nudgeStartForward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         const auto incremented = core::checked_increment(region_->begin().value());
         if (incremented) {
@@ -670,12 +778,14 @@ void AuditionRegionViewModel::nudgeStartForward()
 }
 void AuditionRegionViewModel::nudgeEndBackward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         static_cast<void>(set_end_exclusive(core::FrameIndex{region_->end().value() - 1}));
     }
 }
 void AuditionRegionViewModel::nudgeEndForward()
 {
+    if(m18_foreign_owner_thread())return;
     if (region_) {
         const auto incremented = core::checked_increment(region_->end().value());
         if (incremented) {

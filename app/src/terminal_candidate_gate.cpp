@@ -41,6 +41,10 @@ TerminalCandidateGate::capture(
     const TerminalLimiterState& terminal,
     core::SampleRate rate)
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Result<Capture>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_CAPTURE_REQUIRES_OWNER_THREAD"});
     if(!prepared||!manual||!manual_id||manual_id->value==0
        ||manual_chain.context().stage!=dsp::ProcessingStage::MASTER
        ||manual_chain.context().segment!=dsp::ChainSegment::MANUAL
@@ -51,20 +55,41 @@ TerminalCandidateGate::capture(
        ||terminal.chain().instances().size()!=1
        ||terminal.chain().instances()[0].instance_id()!=terminal.instance_id()
        ||terminal.chain().instances()[0].module_type_id()!="rgsml.dsp.true-peak-limiter") {
-        // Even a failed replacement attempt must withdraw an older staged
-        // output, never leave seemingly-current PCM available for promotion.
-        invalidate();
+        // An invalid replacement must withdraw a stale stage, but a
+        // worker-owned M18 commit MUST NOT be invalidated by the old void
+        // API. If the shared epoch denies retirement, preserve its owner
+        // and still refuse to capture the malformed replacement.
+        if(m18MutationAdmission_) {
+            const auto retired=try_invalidate_for_m18();
+            if(!retired)
+                return core::Result<Capture>::failure(*retired.error());
+        } else invalidate();
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_INVALID_AUTHORITY",
             "M17 cannot capture an incomplete or unowned manual/terminal realization."));
     }
     if(ticket_>=std::numeric_limits<std::uint64_t>::max()-1) {
-        staged_.reset();
-        stagedMeasured_.reset();
+        // A finite counter may never wrap/reuse an old export identity.
+        // This rare failure must respect the same M18 worker commit
+        // lease before retiring an already verified stage.
+        if(m18MutationAdmission_) {
+            const auto retired=try_invalidate_for_m18();
+            if(!retired)
+                return core::Result<Capture>::failure(*retired.error());
+        }else {
+            staged_.reset();
+            stagedMeasured_.reset();
+        }
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_TICKET_EXHAUSTED",
             "Terminal candidate admission sequence exhausted."));
     }
+    // The next M17 candidate replaces the same exportable stage.
+    // An active M18 file commit must refuse the replacement BEFORE
+    // changing a ticket, stage pointer or any observable owner.
+    if(const auto allowed=admit_m18_candidate_mutation(
+           "candidate_capture");!allowed)
+        return core::Result<Capture>::failure(*allowed.error());
     // Evaluate non-owning metadata BEFORE moving the owner pointers.
     // C++ aggregate initializer evaluation is left-to-right: using
     // manual->view() after std::move(manual) would dereference null.
@@ -90,9 +115,15 @@ core::Status TerminalCandidateGate::accept(
     const dsp::ProcessingChain& manual_chain,
     const TerminalLimiterState& terminal)
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_ACCEPT_REQUIRES_OWNER_THREAD"});
     if(job.ticket!=ticket_)
         return core::Status::failure(reject(
             "M17_STALE_TICKET","Terminal candidate has been superseded."));
+    if(const auto allowed=admit_m18_candidate_mutation(
+           "candidate_accept");!allowed)return allowed;
     const auto& check=candidate.terminal.checked;
     const auto& pcm=check.terminal.compensated_pcm;
     const auto pcmView=pcm.view();
@@ -133,13 +164,16 @@ core::Status TerminalCandidateGate::accept(
                ||check.terminal.applied_gain_frames.size()
                     !=static_cast<std::size_t>(pcmView.frame_count().value())));
     if(isStale) {
-        invalidate();
+        // The M18 admission was granted above: do not request a second
+        // epoch merely to retire this invalid accepted candidate.
+        invalidate_unchecked();
         return core::Status::failure(reject(
             "M17_STALE_OR_INVALID_TERMINAL",
             "M17 terminal candidate no longer matches the accepted source and DSP revisions."));
     }
     staged_=std::make_shared<const StagedCandidate>(StagedCandidate{
-        std::move(candidate),job.manual_realization_id,job.prepared_owner});
+        std::move(candidate),job.manual_realization_id,job.prepared_owner,
+        job.terminal_parameter_revision,job.ceiling_db_tp});
     // A late duplicate completion with the same ticket must never replace
     // the accepted candidate or make its provenance appear new.
     if(ticket_<std::numeric_limits<std::uint64_t>::max())++ticket_;
@@ -156,10 +190,16 @@ core::Status TerminalCandidateGate::accept_measured(
     const dsp::ProcessingChain& manual_chain,
     const TerminalLimiterState& terminal)
 {
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_MEASURED_ACCEPT_REQUIRES_OWNER_THREAD"});
     if(job.ticket!=ticket_)
         return core::Status::failure(reject(
             "M17_NONCONFORMING_STALE_TICKET",
             "Measured PCM cannot replace a newer M17 job."));
+    if(const auto allowed=admit_m18_candidate_mutation(
+           "candidate_accept_measured");!allowed)return allowed;
     const auto& measured=candidate.terminal;
     const auto pcm=measured.terminal.compensated_pcm.view();
     const bool invalid =
@@ -200,7 +240,8 @@ core::Status TerminalCandidateGate::accept_measured(
         ||measured.terminal.applied_gain_frames.size()
              !=static_cast<std::size_t>(pcm.frame_count().value());
     if(invalid) {
-        invalidate();
+        // Same already-granted epoch; no independent nested retirement.
+        invalidate_unchecked();
         return core::Status::failure(reject(
             "M17_NONCONFORMING_STALE_OR_UNSAFE",
             "Measured PCM does not match current Manual/output-rate authority."));
@@ -214,7 +255,49 @@ core::Status TerminalCandidateGate::accept_measured(
     return core::Status::success();
 }
 
+core::Status TerminalCandidateGate::admit_m18_candidate_mutation(
+    const char* operation) const
+{
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_CANDIDATE_ADMISSION_REQUIRES_OWNER_THREAD"});
+    if(!m18MutationAdmission_)return core::Status::success();
+    if(m18AdmissionActive_)return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_CANDIDATE_GATE_REENTRANT_ADMISSION"});
+    m18AdmissionActive_=true;
+    struct Unwind final {
+        bool* active;
+        ~Unwind(){*active=false;}
+    } unwind{&m18AdmissionActive_};
+    try{return m18MutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_CANDIDATE_GATE_ADMISSION_CALLBACK_THROWN"});}
+}
+
+core::Status TerminalCandidateGate::try_invalidate_for_m18()
+{
+    const auto authorized=admit_m18_candidate_mutation(
+        "invalidate_candidate");
+    if(!authorized)return authorized;
+    invalidate_unchecked();
+    return core::Status::success();
+}
+
 void TerminalCandidateGate::invalidate() noexcept
+{
+    // Existing M17 callers return void and cannot acknowledge BUSY.
+    // An installed Product epoch gate must never be bypassed by them.
+    // All such call sites MUST use try_invalidate_for_m18 before
+    // activating export; otherwise they fail closed.
+    if(std::this_thread::get_id()!=ownerThread_)return;
+    if(m18MutationAdmission_)return;
+    invalidate_unchecked();
+}
+
+void TerminalCandidateGate::invalidate_unchecked() noexcept
 {
     staged_.reset();
     stagedMeasured_.reset();

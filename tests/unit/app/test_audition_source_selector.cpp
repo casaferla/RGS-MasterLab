@@ -1,4 +1,5 @@
 #include "audition_region_view_model.hpp"
+#include "internal/m18_product_controller_binding.hpp"
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
@@ -19,6 +20,7 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QSignalSpy>
 #include <QUrl>
 
 #include <algorithm>
@@ -26,6 +28,8 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace rgsml::tests {
@@ -179,6 +183,16 @@ class AuditionSourceSelectorTest final : public QObject {
 
 private slots:
     void availabilityCuesSwitchingAndFallbackAreTruthful();
+    void m18GoldClearFallbackRequiresSingleMutationAdmission();
+    void m18GoldClearFallbackToProcessedUsesOneAdmission();
+    void m18SelectorAdmissionAndPublicationAreNonReentrant();
+    void m18SelectorThrowingAdmissionPreservesAuditionAndCanRecover();
+    void m18GoldClearQtChangedCannotReinstallGoldDuringPublication();
+    void m18GoldViewModelAndSelectorUseOneProductAdmission();
+    void m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection();
+    void m18GoldOwnGateRejectsReentrantCallbackAndCanRecover();
+    void m18RealAuditionGoldRegionControllersShareOneProductEpoch();
+    void m18InvalidProcessedCueDoesNotConsumeEpoch();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -303,6 +317,455 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     QVERIFY(!selector.offline_processed_provenance_current());
     QVERIFY(!selector.offline_processed_selected_for_final_master());
     QVERIFY(!selector.processed_realization_snapshot());
+}
+
+void AuditionSourceSelectorTest::
+m18GoldClearFallbackRequiresSingleMutationAdmission()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,200)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    const auto gold=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/m18-once.wav",
+        true,false,"m18-once.wav");
+    QVERIFY(gold);
+    QVERIFY(selector.set_gold(
+        *gold.value(),*core::SampleRate::create(48000).value(),
+        *core::FrameCount::create(200).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(selector.gold_active());
+    std::size_t accepted=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char* op)->core::Status {
+            if(op==nullptr)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_AUDITION_OPERATION_MISSING"});
+            ++accepted;
+            if(accepted>1)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_AUDITION_SECOND_EPOCH_FORBIDDEN"});
+            return core::Status::success();
+        });
+    QSignalSpy changed{&selector,&app::AuditionSourceSelector::changed};
+    // One GOLD clear must include its PREPARED fallback under the SAME
+    // Product epoch, not request a second independent authorization.
+    QVERIFY(selector.clear_gold());
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    QVERIFY(!selector.gold_available());
+    QCOMPARE(changed.count(),1);
+    // True no-ops and unavailable targets never consume another epoch.
+    QVERIFY(selector.clear_gold());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(!selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    // QML wrappers must not publish error messages from a foreign thread.
+    std::thread worker([&] {
+        selector.selectGold();
+        selector.selectProcessed();
+        selector.selectPrepared();
+    });
+    worker.join();
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    selector.set_private_m18_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldClearFallbackToProcessedUsesOneAdmission()
+{
+    auto fake=std::make_unique<FakePlaybackService>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_processed_realization(realization(0,140)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto gold=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/m18-processed.wav",
+        true,false,"m18-processed.wav");
+    QVERIFY(gold);
+    QVERIFY(selector.set_gold(
+        *gold.value(),*core::SampleRate::create(48000).value(),
+        *core::FrameCount::create(140).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    std::size_t admits=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            if(admits>1)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SECOND_ADMISSION"});
+            return core::Status::success();
+        });
+    QVERIFY(selector.clear_gold());
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(!selector.gold_available());
+    QVERIFY(selector.processed_available());
+}
+
+void AuditionSourceSelectorTest::
+m18SelectorAdmissionAndPublicationAreNonReentrant()
+{
+    auto fake=std::make_unique<FakePlaybackService>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,180)));
+    QVERIFY(selector.set_processed_realization(realization(0,180)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    std::size_t admissionCount=0;
+    bool reentrantAdmissionDenied=false;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCount;
+            if(admissionCount==1) {
+                // The callback itself cannot recursively approve another
+                // Product epoch while the outer one is still pending.
+                const auto nested=selector.switch_to(app::AuditionTarget::PROCESSED);
+                reentrantAdmissionDenied=!nested
+                    &&nested.error()->code()==core::ErrorCode::InvalidState;
+            }
+            return core::Status::success();
+        });
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(reentrantAdmissionDenied);
+    QCOMPARE(admissionCount,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+
+    std::size_t publicationAttempts=0,publicationDenied=0;
+    QObject::connect(&selector,&app::AuditionSourceSelector::changed,
+        &selector,[&] {
+            ++publicationAttempts;
+            const auto alternate=selector.active_target()
+                ==app::AuditionTarget::PREPARED
+                ?app::AuditionTarget::PROCESSED
+                :app::AuditionTarget::PREPARED;
+            const auto nested=selector.switch_to(alternate);
+            if(!nested &&nested.error()->code()
+               ==core::ErrorCode::InvalidState)++publicationDenied;
+        });
+    // An accepted visible switch emits changed() before the outer
+    // publication has left its Single-Writer scope. Its listeners
+    // cannot switch again (and cannot start a second worker epoch).
+    QVERIFY(!selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(admissionCount,std::size_t{1}); // unavailable is epoch-neutral
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(admissionCount,std::size_t{2});
+    QCOMPARE(publicationAttempts,std::size_t{1});
+    QCOMPARE(publicationDenied,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    // An independent edit after the scope is released is permitted.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(admissionCount,std::size_t{3});
+    QCOMPARE(publicationAttempts,std::size_t{2});
+    QCOMPARE(publicationDenied,std::size_t{2});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+}
+void AuditionSourceSelectorTest::
+m18SelectorThrowingAdmissionPreservesAuditionAndCanRecover()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,175)));
+    QVERIFY(selector.set_processed_realization(realization(0,175)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QSignalSpy changed{&selector,&app::AuditionSourceSelector::changed};
+    selector.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_SIMULATED_PRODUCT_CALLBACK_FAILURE");
+        });
+    const auto denied=selector.switch_to(app::AuditionTarget::PROCESSED);
+    QVERIFY(!denied);
+    QCOMPARE(denied.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    QCOMPARE(changed.count(),0);
+    // The fail-closed callback guard is scoped, not a permanent BUSY.
+    std::size_t admits=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            return core::Status::success();
+        });
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(changed.count(),1);
+    selector.set_private_m18_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldClearQtChangedCannotReinstallGoldDuringPublication()
+{
+    auto fake=std::make_unique<FakePlaybackService>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,125)));
+    const auto first=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/m18-clear-original.wav",
+        true,false,"m18-clear-original.wav");
+    const auto replacement=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/m18-clear-reentrant.wav",
+        true,false,"m18-clear-reentrant.wav");
+    QVERIFY(first&&replacement);
+    const auto rate=*core::SampleRate::create(48000).value();
+    const auto frames=*core::FrameCount::create(125).value();
+    QVERIFY(selector.set_gold(*first.value(),rate,frames));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+
+    std::size_t accepted=0,nestedDenied=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++accepted;
+            return core::Status::success();
+        });
+    QObject::connect(&selector,&app::AuditionSourceSelector::changed,
+        &selector,[&]{
+            // During the true Qt publication callback, another Product
+            // mutation must not rebind GOLD or advance a second epoch.
+            const auto nested=selector.set_gold(
+                *replacement.value(),rate,frames);
+            if(!nested &&nested.error()->code()
+               ==core::ErrorCode::InvalidState)++nestedDenied;
+        });
+    QVERIFY(selector.clear_gold());
+    QCOMPARE(accepted,std::size_t{1});
+    QCOMPARE(nestedDenied,std::size_t{1});
+    QVERIFY(!selector.gold_available());
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PREPARED});
+    // The following independent operation succeeds after RAII unwind.
+    QVERIFY(selector.set_gold(*replacement.value(),rate,frames));
+    QCOMPARE(accepted,std::size_t{2});
+    QCOMPARE(nestedDenied,std::size_t{2});
+    QVERIFY(selector.gold_available());
+}
+
+void AuditionSourceSelectorTest::
+m18GoldViewModelAndSelectorUseOneProductAdmission()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=write_valid_wav(dir,QStringLiteral("m18-gold-one.wav"),1);
+    const auto second=write_valid_wav(dir,QStringLiteral("m18-gold-two.wav"),2);
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    auto fake=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionSourceSelector selector{&transport};
+    app::GoldSelectionViewModel model{&selector};
+    std::size_t selectorCalls=0,modelCalls=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++selectorCalls;
+            return core::Status::success();
+        });
+    model.selectGold(QUrl::fromLocalFile(first));
+    QVERIFY(model.has_gold());
+    QCOMPARE(model.display_name(),QStringLiteral("m18-gold-one.wav"));
+    QCOMPARE(selectorCalls,std::size_t{1});
+
+    model.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++modelCalls;
+            return core::Status::success();
+        });
+    model.selectGold(QUrl::fromLocalFile(second));
+    QCOMPARE(selectorCalls,std::size_t{1});
+    QCOMPARE(modelCalls,std::size_t{0});
+    QVERIFY(!model.error_message().isEmpty());
+    QCOMPARE(model.display_name(),QStringLiteral("m18-gold-one.wav"));
+    model.clearGold();
+    QCOMPARE(selectorCalls,std::size_t{1});
+    QCOMPARE(modelCalls,std::size_t{0});
+    QVERIFY(model.has_gold());
+
+    // Selector-only gate handles physical GOLD mutation exactly once.
+    model.set_private_m18_gold_mutation_admission({});
+    model.selectGold(QUrl::fromLocalFile(second));
+    QCOMPARE(selectorCalls,std::size_t{2});
+    QCOMPARE(modelCalls,std::size_t{0});
+    QCOMPARE(model.display_name(),QStringLiteral("m18-gold-two.wav"));
+    model.clearGold();
+    QCOMPARE(selectorCalls,std::size_t{3});
+    QVERIFY(!model.has_gold());
+    selector.set_private_m18_mutation_admission({});
+
+    // A standalone GOLD ViewModel gate remains supported when there is
+    // no independent selector gate, without changing legacy M17.
+    model.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++modelCalls;
+            return core::Status::success();
+        });
+    model.selectGold(QUrl::fromLocalFile(first));
+    QCOMPARE(modelCalls,std::size_t{1});
+    QVERIFY(model.has_gold());
+    model.clearGold();
+    QCOMPARE(modelCalls,std::size_t{2});
+    QVERIFY(!model.has_gold());
+    model.set_private_m18_gold_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto path=write_valid_wav(
+        dir,QStringLiteral("m18-gold-qt-reentry.wav"),14);
+    QVERIFY(!path.isEmpty());
+    auto fake=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionSourceSelector selector{&transport};
+    app::GoldSelectionViewModel gold{&selector};
+    std::size_t admissions=0,observerCalls=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::success();
+        });
+    QObject::connect(&gold,&app::GoldSelectionViewModel::changed,
+        &gold,[&] {
+            ++observerCalls;
+            // The selector has finished its own nested set_gold(), but
+            // this Gold VM still owns the outer publication epoch.
+            // A synchronous listener must not clear or reload GOLD.
+            gold.clearGold();
+        });
+    gold.selectGold(QUrl::fromLocalFile(path));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(observerCalls,std::size_t{1});
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),
+             QStringLiteral("m18-gold-qt-reentry.wav"));
+    // After RAII publication unwind, an independent clear is permitted.
+    gold.clearGold();
+    QCOMPARE(admissions,std::size_t{2});
+    QCOMPARE(observerCalls,std::size_t{2});
+    QVERIFY(!gold.has_gold());
+    selector.set_private_m18_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18GoldOwnGateRejectsReentrantCallbackAndCanRecover()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto path=write_valid_wav(
+        dir,QStringLiteral("m18-gold-reentrant-callback.wav"),21);
+    QVERIFY(!path.isEmpty());
+    auto fake=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionSourceSelector selector{&transport};
+    app::GoldSelectionViewModel gold{&selector};
+    std::size_t authorized=0;
+    gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++authorized;
+            // A Product callback cannot nest a second GOLD mutation
+            // before authorizing the first one.
+            gold.clearGold();
+            return core::Status::success();
+        });
+    gold.selectGold(QUrl::fromLocalFile(path));
+    QCOMPARE(authorized,std::size_t{1});
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),
+             QStringLiteral("m18-gold-reentrant-callback.wav"));
+    gold.set_private_m18_gold_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_GOLD_ADMISSION_FAULT");
+        });
+    const auto priorName=gold.display_name();
+    gold.clearGold();
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),priorName);
+    QVERIFY(!gold.error_message().isEmpty());
+    // A thrown gate cannot leave the original Product forever BUSY.
+    gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++authorized;
+            return core::Status::success();
+        });
+    gold.clearGold();
+    QCOMPARE(authorized,std::size_t{2});
+    QVERIFY(!gold.has_gold());
+    QVERIFY(gold.error_message().isEmpty());
+    gold.set_private_m18_gold_mutation_admission({});
+}
+
+void AuditionSourceSelectorTest::
+m18RealAuditionGoldRegionControllersShareOneProductEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto goldFile=write_valid_wav(
+        dir,QStringLiteral("m18-shared-owner-gold.wav"),5);
+    QVERIFY(!goldFile.isEmpty());
+    auto service=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel playback{std::move(service)};
+    app::AuditionRegionViewModel region{&playback};
+    app::AuditionSourceSelector audition{&playback};
+    app::GoldSelectionViewModel gold{&audition};
+    region.source_committed(
+        *core::FrameCount::create(64).value(),
+        *core::SampleRate::create(48000).value());
+    region.set_waveform_ready(true);
+    const auto selection=core::FrameRange::create(
+        core::FrameIndex{2},core::FrameIndex{48});
+    QVERIFY(selection);
+    const M18ProductExportIdentity id{11U,12U,13U,0U,48000U,2U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        150U,id);
+    QVERIFY(owner->try_transition(150U,151U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,151U,id};
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        audition,region,gold,fanout);
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    // Same held commit excludes *both* actual Qt editor surfaces:
+    // a Region edit and file-probed GOLD replacement.
+    QVERIFY(!region.set_region(*selection.value()));
+    gold.selectGold(QUrl::fromLocalFile(goldFile));
+    QVERIFY(!gold.has_gold());
+    QVERIFY(!region.has_region());
+    QVERIFY((*lease.value())->revalidate_current());
+    lease.value()->reset();
+
+    QVERIFY(region.set_region(*selection.value()));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    gold.selectGold(QUrl::fromLocalFile(goldFile));
+    QVERIFY(gold.has_gold());
+    QCOMPARE(gold.display_name(),
+        QStringLiteral("m18-shared-owner-gold.wav"));
+    QVERIFY(region.clear_region());
+    gold.clearGold();
+    QVERIFY(!gold.has_gold());
+    // No GUI export action or consent was installed by this binding.
+    QVERIFY(!owner->capture(id));
 }
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -629,6 +1092,47 @@ void AuditionSourceSelectorTest::seamlessProcessedHandoffPreservesStateAndTarget
     QCOMPARE(observed->position.value(), std::int64_t{80});
     QVERIFY(selector.processed_available());
     QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(), std::int64_t{200});
+}
+
+void AuditionSourceSelectorTest::m18InvalidProcessedCueDoesNotConsumeEpoch()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0,200)));
+    QVERIFY(selector.set_processed_realization(realization(0,200)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto currentId=observed->audibleRealization.realizationId;
+    QVERIFY(currentId);
+    std::size_t admissions=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_WORKER_COMMIT_BUSY"});
+        });
+    observed->position=core::FrameIndex{150};
+    const auto invalid=selector.set_processed_realization(realization(0,100));
+    QVERIFY(!invalid);
+    QCOMPARE(admissions,std::size_t{0});
+    QCOMPARE(observed->audibleRealization.realizationId,currentId);
+    QVERIFY(selector.processed_available());
+    QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(),
+             std::int64_t{200});
+    // A genuine next PROCESSED candidate must still be checked by the
+    // same installed M18 owner gate, and denial leaves the old PCM.
+    observed->position=core::FrameIndex{50};
+    QVERIFY(!selector.set_processed_realization(realization(0,200)));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(observed->audibleRealization.realizationId,currentId);
+    selector.set_private_m18_mutation_admission({});
+    QVERIFY(selector.set_processed_realization(realization(0,200)));
+    QVERIFY(observed->audibleRealization.realizationId);
+    QVERIFY(observed->audibleRealization.realizationId->value>currentId->value);
 }
 
 void AuditionSourceSelectorTest::processedRealizationIdentityIsMonotonicAndFailureAtomic()

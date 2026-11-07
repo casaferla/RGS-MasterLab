@@ -1,4 +1,15 @@
 #include "project_session_view_model.hpp"
+#include "internal/m18_product_project_save_binding.hpp"
+#include "internal/m18_product_controller_binding.hpp"
+#include "internal/m18_product_upstream_binding.hpp"
+#include "internal/m18_product_complete_binding.hpp"
+#include "internal/m18_private_product_export_action.hpp"
+#include "m18_product_export_view_model.hpp"
+#include "terminal_audio_session_gate.hpp"
+#include "terminal_private_publication_coordinator.hpp"
+#include "terminal_private_render_controller.hpp"
+#include "terminal_private_product_session.hpp"
+#include "terminal_candidate_gate.hpp"
 #include "source_selection_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
@@ -12,6 +23,10 @@
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/wav_reader.hpp>
+#include <rgsml/render/render_request.hpp>
+#include <rgsml/render/render_preview.hpp>
 #include <rgsml/project/project_repository.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -21,6 +36,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include "master_output_rate_state.hpp"
@@ -31,18 +47,29 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <stdexcept>
+#include <thread>
 #include <optional>
 #include <filesystem>
 #include <vector>
 #include <utility>
+#include <type_traits>
+
+static_assert(std::is_same_v<
+    decltype(&rgsml::app::internal::M18ProductCompleteBinding::bind),
+    rgsml::core::Status (*)(
+        rgsml::app::internal::M18ProductCompleteBinding::Controllers,
+        const rgsml::app::internal::M18ProductCompleteBinding::Fanout&)>);
 
 namespace rgsml::tests {
 namespace {
 
 [[nodiscard]] QString wav(QTemporaryDir& dir, const QString& name, int seed,
-    std::uint32_t sampleRate = 48'000U)
+    std::uint32_t sampleRate = 48'000U,
+    std::size_t frameCount = 256U)
 {
-    std::vector<std::int64_t> samples(256U);
+    std::vector<std::int64_t> samples(frameCount);
     for (std::size_t i = 0; i < samples.size(); ++i)
         samples[i] = (static_cast<std::int64_t>(i) + seed) % 100;
     const auto data = wav_support::make_wav(1U, 16U, 1U, sampleRate,
@@ -156,12 +183,67 @@ struct Session final {
     }
 };
 
+// M18-only checked integration route for the native ProjectSession
+// fixture. All legacy M17 tests above continue using Session's original
+// void callback when no physical Product batch has been installed.
+void install_m18_checked_source_dispatch(
+    Session& session,app::MasterOutputRateState& outputRate)
+{
+    session.source.set_private_m18_checked_source_committed_handler(
+        [&session,&outputRate](
+            const core::ResourceReference& source)->core::Status {
+            const auto frames=core::FrameCount::create(
+                session.source.frame_count());
+            const auto sampleRate=core::SampleRate::create(
+                session.source.sample_rate_hz());
+            if(!frames||!sampleRate)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_CHECKED_SOURCE_FORMAT_NOT_VALID"});
+            if(!outputRate.try_source_committed_for_m18(
+                   session.source.sample_rate_hz()))
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_CHECKED_SOURCE_RATE_REFUSED"});
+            session.region.source_committed(
+                *frames.value(),*sampleRate.value());
+            const auto prepared=session.selector.source_committed(source);
+            if(!prepared)return prepared;
+            const auto switchStatus=session.selector.switch_to(
+                app::AuditionTarget::PREPARED);
+            if(!switchStatus)return switchStatus;
+            if(!session.project.is_committing_project_open())
+                session.adapterModel->resetForNewSource();
+            session.gold.sourceChanged();
+            return core::Status::success();
+        });
+}
+
 }  // namespace
 
 class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void m18FreshStartupBindsBeforeFirstSourceSelection();
+    void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
+    void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
+    void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
+    void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
+    void m18RealProductVerifiedMasterToPcm24AndFloat32WavAck();
+    void m18RegionGateCannotSelfUninstallOrCrossThread();
+    void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
+    void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
+    void m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease();
+    void m18ActualProjectOpenAndSaveUseOneSharedProductEpoch();
+    void m18AuditionGateSetterCannotSelfUninstallOrCrossThread();
+    void m18ActualSourcePickerAndAuditionUseOnePhysicalProductBatch();
+    void m18ActualProjectOpenCheckedSourceFailureCannotPublishReady();
+    void m18SaveBatchMissingOrThrowingFailsClosed();
+    void m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch();
+    void m18NestedProjectCommandsRefusedDuringSaveBatch();
+    void m18NestedProjectCommandsRefusedDuringOpenBatch();
+    void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
     void missing_source_preflight_preserves_live_session();
@@ -183,6 +265,2004 @@ private slots:
     void product_default_stereo_ms_project_save_open_save_identity();
 };
 
+
+void ProjectSessionTest::
+m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen()
+{
+    using project::M18MasterWavPreferenceCodec;
+    using project::M18MasterWavEncoding;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto sourcePath=wav(dir,QStringLiteral("m18-preference-source.wav"),41);
+    QVERIFY(!sourcePath.isEmpty());
+    const auto firstPath=dir.filePath(QStringLiteral("m18-f32.rgsml"));
+    const auto secondPath=dir.filePath(QStringLiteral("m18-pcm24.rgsml"));
+    Session original;
+    original.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(original.source.has_source());
+    QCOMPARE(original.project.m18_wav_encoding_index(),0);
+    QVERIFY(original.project.chooseM18WavEncoding(1));
+    QCOMPARE(original.project.m18_wav_encoding_index(),1);
+    original.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QVERIFY2(QFileInfo::exists(firstPath),
+             original.project.error_message().toUtf8().constData());
+    auto saved=load_project(firstPath);
+    QVERIFY(saved);
+    auto format=M18MasterWavPreferenceCodec::read(
+        saved.value()->document().output);
+    QVERIFY(format);
+    QVERIFY(format.value()->has_value());
+    QCOMPARE(format.value()->value().encoding,
+             M18MasterWavEncoding::IEEE_FLOAT32);
+    QVERIFY(!format.value()->value().pcm24_dither_seed);
+    QVERIFY(project::MasterOutputRatePreference::only_known_fields(
+        saved.value()->document().output));
+
+    Session reopened;
+    reopened.project.openProject(QUrl::fromLocalFile(firstPath));
+    QVERIFY2(reopened.source.has_source(),
+             reopened.project.error_message().toUtf8().constData());
+    QVERIFY(!reopened.project.degraded());
+    QCOMPARE(reopened.project.m18_wav_encoding_index(),1);
+    // New confirmed PCM24 setting must restore an exact native uint64
+    // seed, not an imprecise JSON floating-point or leftover Float32 seed.
+    QVERIFY(reopened.project.chooseM18WavEncoding(0));
+    QCOMPARE(reopened.project.m18_wav_encoding_index(),0);
+    QCOMPARE(reopened.project.m18_pcm24_seed(),
+             M18MasterWavPreferenceCodec::default_pcm24_seed());
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QVERIFY2(QFileInfo::exists(secondPath),
+             reopened.project.error_message().toUtf8().constData());
+    auto persisted=load_project(secondPath);
+    QVERIFY(persisted);
+    const auto pcm=M18MasterWavPreferenceCodec::read(
+        persisted.value()->document().output);
+    QVERIFY(pcm);
+    QVERIFY(pcm.value()->has_value());
+    QCOMPARE(pcm.value()->value().encoding,
+             M18MasterWavEncoding::PCM24_TPDF);
+    QCOMPARE(pcm.value()->value().pcm24_dither_seed.value(),
+             M18MasterWavPreferenceCodec::default_pcm24_seed());
+    QVERIFY(project::MasterOutputRatePreference::only_known_fields(
+        persisted.value()->document().output));
+}
+
+void ProjectSessionTest::
+m18FreshStartupBindsBeforeFirstSourceSelection()
+{
+    // Real app/main.cpp installs M18 with NO selected SOURCE and rate
+    // revision zero. The FIRST user-selected WAV must pass through the
+    // checked callback under one physical Product lease and reconcile
+    // only after that lease is released. This is distinct from all
+    // preproduction tests that bind after an existing SOURCE selection.
+    using app::internal::M18ProductCompleteBinding;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto first=wav(dir,QStringLiteral("m18-first-source.wav"),11);
+    const auto second=wav(dir,QStringLiteral("m18-second-source.wav"),12);
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    Session session;
+    QVERIFY(!session.source.has_source());
+    app::MasterOutputRateState rate;
+    QCOMPARE(rate.rate_revision(),UINT64_C(0));
+    session.project.set_master_output_rate_state(&rate);
+    install_m18_checked_source_dispatch(session,rate);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto id=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "ac180000-0000-4000-8000-000000000018").value());
+    QVERIFY(id);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(terminal);
+    app::TerminalCandidateGate candidates;
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&session]{return session.masteringChainState->chain();}};
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_FIRST_SOURCE_NO_VERIFIED_DEVICE"});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_FIRST_SOURCE_NO_PUBLISHED_MASTER"});
+        }};
+    app::TerminalPrivateProductSession m17{
+        renderer,publisher,candidates,session.transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+    const M18ProductExportIdentity initial{
+        1U,1U,1U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(1U,initial);
+    M18OwnerMutationFanout fanout{owner,1U,initial};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,
+        *session.masteringChainState,session.selector,session.region,
+        session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers controllers{
+        upstream,m17,candidates};
+    QVERIFY(M18ProductCompleteBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(controllers));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+    const auto initialSnapshot=fanout.current_owner_snapshot();
+    QVERIFY(initialSnapshot);
+
+    // Mimic the real M17 coordinator's synchronous Selector::changed
+    // callback on the first committed SOURCE. It retires its old session
+    // inside the already-held M18 physical SOURCE batch, rather than
+    // being incorrectly rejected as a second unrelated Product write.
+    bool retirementObserved=false;
+    bool retirementAccepted=false;
+    QObject::connect(&session.selector,
+        &app::AuditionSourceSelector::changed,
+        &session.source,[&] {
+            if(retirementObserved)return;
+            retirementObserved=true;
+            retirementAccepted=static_cast<bool>(m17.cancel());
+        });
+    session.source.selectSource(QUrl::fromLocalFile(first));
+    QVERIFY(retirementObserved);
+    QVERIFY(retirementAccepted);
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.display_name(),
+             QStringLiteral("m18-first-source.wav"));
+    QCOMPARE(rate.master_rate_hz(),qint64{48000});
+    QVERIFY(rate.rate_revision()>0);
+    const auto afterSource=fanout.current_owner_snapshot();
+    QVERIFY(afterSource);
+    QVERIFY(afterSource->identity.source_generation>
+            initialSnapshot->identity.source_generation);
+    QVERIFY(afterSource->epoch>initialSnapshot->epoch);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    const auto reconciled=fanout.current_owner_snapshot();
+    QVERIFY(reconciled);
+    QCOMPARE(reconciled->identity.master_rate_revision,rate.rate_revision());
+    QCOMPARE(reconciled->identity.chain_revision,
+             session.masteringChainState->chain().revision());
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        controllers,fanout,true));
+
+    // Set real nondefault MANUAL state first. The next SOURCE must
+    // atomically restore Gain defaults under its ONE physical SOURCE
+    // lease, not silently skip the nested setter through M18 admission.
+    const auto modifiedGain=dsp::GainParameters::create(3.0);
+    QVERIFY(modifiedGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *modifiedGain.value()));
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        session.masteringChainState->gain_instance_id(),true));
+    QCOMPARE(session.masteringChainState->gain_parameters().gain_db(),3.0);
+    const auto gainBypassed=session.masteringChainState->is_bypassed(
+        session.masteringChainState->gain_instance_id());
+    QVERIFY(gainBypassed);
+    QVERIFY(*gainBypassed.value());
+
+    // Same-rate replacement still changes SOURCE provenance. No stale
+    // epoch may be reused just because both source WAVs are 48 kHz.
+    session.source.selectSource(QUrl::fromLocalFile(second));
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.display_name(),
+             QStringLiteral("m18-second-source.wav"));
+    QCOMPARE(session.masteringChainState->gain_parameters().gain_db(),0.0);
+    const auto resetBypassed=session.masteringChainState->is_bypassed(
+        session.masteringChainState->gain_instance_id());
+    QVERIFY(resetBypassed);
+    QVERIFY(!*resetBypassed.value());
+    const auto replacement=fanout.current_owner_snapshot();
+    QVERIFY(replacement);
+    QVERIFY(replacement->epoch>reconciled->epoch);
+    QVERIFY(replacement->identity.source_generation>
+            reconciled->identity.source_generation);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+
+    // A normal Project SaveAs/Open exercises the OTHER physical batch
+    // admission. The synchronous M17 retirement callback is still allowed
+    // as the selected SOURCE is republished from the saved Project.
+    const auto projectPath=dir.filePath(
+        QStringLiteral("m18-startup-project.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QVERIFY2(QFileInfo::exists(projectPath),
+             session.project.error_message().toUtf8().constData());
+    const auto beforeOpen=fanout.current_owner_snapshot();
+    QVERIFY(beforeOpen);
+    retirementObserved=false;
+    retirementAccepted=false;
+    session.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY2(session.source.has_source(),
+             session.project.error_message().toUtf8().constData());
+    QVERIFY(retirementObserved);
+    QVERIFY(retirementAccepted);
+    QVERIFY(!session.project.degraded());
+    const auto afterOpen=fanout.current_owner_snapshot();
+    QVERIFY(afterOpen);
+    QVERIFY(afterOpen->identity.project_generation>
+            beforeOpen->identity.project_generation);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+}
+
+void ProjectSessionTest::
+m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
+{
+    // M18 EXIT GATE A: one real Project/SOURCE/Qt M17 Product and ONE
+    // complete guard authority, followed by two actual transactional
+    // Windows WAV deliveries with separate explicit user consent tickets.
+    using app::internal::M18ProductCompleteBinding;
+    using app::internal::M18PrivateProductExportAction;
+    using app::internal::M18PrivateAsyncExportSession;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    constexpr int seed=27;
+    constexpr std::size_t n=4096;
+    const auto sourcePath=wav(directory,
+        QStringLiteral("m18-positive-real-source.wav"),seed,48000U,n);
+    QVERIFY(!sourcePath.isEmpty());
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.frame_count(),qint64{4096});
+    QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
+    // The synthetic Device remains a REAL Qt PlaybackTransport
+    // predecessor. It must hold the exact published MANUAL identity;
+    // no terminal Master or WAV result is ever installed on the device.
+    session.transport.set_pcm_prepare_handler(
+        [&session](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease||!id||view.frame_count().value()<=0)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_REAL_PRODUCT_DEVICE_REQUIRES_MANUAL_OWNER"});
+            session.observed->state=core::PlaybackState::STOPPED;
+            session.observed->position=view.absolute_start_frame();
+            session.observed->duration=view.frame_count();
+            session.observed->loop.reset();
+            session.observed->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto rate48=core::SampleRate::create(48000);
+    auto frames=core::FrameCount::create(static_cast<std::int64_t>(n));
+    auto block=core::FrameCount::create(128);
+    QVERIFY(registry&&rate48&&frames&&block);
+    auto fmt=audio::AudioFormat::create(
+        *rate48.value(),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    auto samples=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(samples);
+    // The MANUAL RenderResult must consume the ACTUAL decoded selected
+    // SOURCE bytes, not a numerical approximation recreated by the test.
+    auto sourceRef=platform::windows::WindowsResourceReader::
+        make_read_reference(sourcePath.toUtf8().toStdString(),
+                             "m18-positive-real-source.wav");
+    QVERIFY(sourceRef);
+    auto sourceHandle=platform::windows::WindowsResourceReader::
+        open_read_only(*sourceRef.value());
+    QVERIFY(sourceHandle);
+    auto sourceDecoder=audio::WavReader::open(
+        std::move(*sourceHandle.value()));
+    QVERIFY(sourceDecoder);
+    QCOMPARE((*sourceDecoder.value())->info().frame_count(),*frames.value());
+    QCOMPARE((*sourceDecoder.value())->info().audio_format(),*fmt.value());
+    auto decoded=(*sourceDecoder.value())->read_frames(
+        core::FrameIndex{0},samples.value()->mutable_view());
+    QVERIFY(decoded);
+    QCOMPARE(*decoded.value(),*frames.value());
+    QVERIFY((*sourceDecoder.value())->close());
+    auto emptyManual=dsp::ProcessingChain::create(
+        *registry.value(),{dsp::ProcessingStage::MASTER,
+                           dsp::ChainSegment::MANUAL});
+    QVERIFY(emptyManual);
+    auto renderManual=[&](const dsp::ProcessingChain& chain,
+        std::vector<dsp::ModuleExecutionBinding> bindings)
+        ->core::Result<render::RenderResult> {
+        auto request=render::RenderRequest::create(
+            samples.value()->view(),
+            samples.value()->view().absolute_range(),
+            chain,std::move(bindings),*block.value());
+        if(!request)return core::Result<render::RenderResult>::failure(
+            *request.error());
+        return render::render_preview(*request.value(),*registry.value());
+    };
+    auto prepared=renderManual(*emptyManual.value(),{});
+    QVERIFY2(prepared,prepared?"":prepared.error()->message().c_str());
+    auto processed=renderManual(
+        session.masteringChainState->chain(),
+        session.masteringChainState->execution_bindings());
+    QVERIFY2(processed,processed?"":processed.error()->message().c_str());
+    QVERIFY(session.selector.set_prepared_realization(
+        std::move(*prepared.value())));
+    QVERIFY(session.selector.set_processed_realization(
+        std::move(*processed.value())));
+    QVERIFY(session.selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto manualId=session.selector.processed_realization_id();
+    QVERIFY(manualId);
+    const auto acceptedManual=session.selector.processed_realization_snapshot();
+    QVERIFY(acceptedManual);
+    QCOMPARE(acceptedManual->view().frame_count(),*frames.value());
+    QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+
+    app::MasterOutputRateState rate;
+    rate.source_committed(48000);
+    session.project.set_master_output_rate_state(&rate);
+    install_m18_checked_source_dispatch(session,rate);
+    auto limiterId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "c3000000-0000-4000-8000-000000000018").value());
+    QVERIFY(limiterId);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(terminal);
+    QVERIFY(terminal.value()->set_user_bypass(false));
+    app::TerminalCandidateGate candidates;
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_VERIFIED_MASTER_MAY_NOT_INSTALL_DEVICE"});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [&session](auto p,auto m,auto id) {
+            return session.selector.reserve_private_terminal_realization_id(
+                std::move(p),std::move(m),id);
+        }};
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        [&session]{return session.selector.prepared_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_id();},
+        [&session]{return session.masteringChainState->chain();}};
+    app::TerminalPrivateProductSession product{
+        renderer,publisher,candidates,session.transport,
+        [&session]{return session.selector.prepared_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_id();},
+        [&session]{return session.region.region();},
+        [&session] {
+            return session.selector.active_target()
+                ==app::AuditionTarget::PROCESSED;
+        }};
+    const M18ProductExportIdentity identity{
+        901U,902U,903U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        17U,identity);
+    M18OwnerMutationFanout fanout{owner,17U,identity};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,
+        *session.masteringChainState,session.selector,session.region,
+        session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers controllers{
+        upstream,product,candidates};
+    QVERIFY(M18ProductCompleteBinding::preflight(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(controllers));
+    QVERIFY(!owner->capture(identity));
+    M18PrivateProductExportAction action{controllers,fanout};
+    // The very same QObject adapter intended for the GUI must observe
+    // Product readiness, and it must NOT offer Export before M17 has
+    // completed its M16 checked terminal render.
+    app::M18ProductExportViewModel ui{action,controllers};
+    QVERIFY(!ui.can_export());
+    QVERIFY(!ui.can_cancel());
+    QVERIFY(!ui.can_acknowledge());
+
+    const auto preparedOk=product.request_private(*rate48.value(),true);
+    QVERIFY2(preparedOk,preparedOk?"":preparedOk.error()->message().c_str());
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),30000);
+    const auto verified=product.capture_m18_verified_stage_for_worker(
+        *rate48.value());
+    QVERIFY(verified);
+    QCOMPARE(verified,candidates.staged());
+    QVERIFY(ui.can_export());
+    QVERIFY(!ui.can_cancel());
+    QVERIFY(!ui.can_acknowledge());
+    QCOMPARE(ui.status_text(),QStringLiteral("IDLE"));
+    QVERIFY(verified->rendered.terminal.checked.final_check);
+    QCOMPARE(verified->rendered.manual_chain_revision,
+             session.masteringChainState->chain().revision());
+    QCOMPARE(verified->rendered.terminal.checked.terminal
+                 .compensated_pcm.view().frame_count(),*frames.value());
+    QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
+    QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+    // The accepted M17 stage must not be enough to republish onto the
+    // original SOURCE path, even with a matching physical file identity.
+    const auto originalSourceRef=session.source.source_resource()->reference();
+    QVERIFY(!action.begin(originalSourceRef,
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!action.has_unacknowledged_export());
+    QVERIFY(owner->can_install_full_product_guards(
+        fanout.current_owner_snapshot()->epoch,
+        fanout.current_owner_snapshot()->identity));
+    // The Product dialog cannot create a new "export only" dBTP Ceiling
+    // unrelated to the actually accepted M17 limiter parameters.
+    const auto wrongCeilingPath=directory.filePath(
+        QStringLiteral("m18-unverified-ceiling.wav"));
+    auto wrongCeilingRef=platform::windows::WindowsResourceWriter::
+        make_write_reference(wrongCeilingPath.toUtf8().toStdString(),
+                             "m18-unverified-ceiling.wav");
+    QVERIFY(wrongCeilingRef);
+    QVERIFY(!action.begin(*wrongCeilingRef.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,-2.0,true));
+    QVERIFY(!QFileInfo::exists(wrongCeilingPath));
+    QVERIFY(!action.has_unacknowledged_export());
+
+    const auto initialProductEpoch=fanout.current_owner_snapshot();
+    QVERIFY(initialProductEpoch);
+    std::uint64_t expectedConsentEpoch=initialProductEpoch->epoch;
+    for(const auto encoding:{
+            audio::WavSampleFormat::PCM_S24,
+            audio::WavSampleFormat::IEEE_F32}) {
+        const auto filename=QStringLiteral("m18-product-authorized-%1.wav")
+            .arg(static_cast<int>(encoding));
+        const auto output=directory.filePath(filename);
+        auto destination=platform::windows::WindowsResourceWriter::
+            make_write_reference(output.toUtf8().toStdString(),
+                                 filename.toUtf8().toStdString());
+        QVERIFY(destination);
+        const auto seedForPcm=encoding==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(1234567)}
+            :std::nullopt;
+        QVERIFY(!action.has_unacknowledged_export());
+        // Invalid PCM24 seed or a dithered Float32 dialog choice cannot
+        // consume consent, create partial output or start the M18 worker.
+        const auto malformedSeed=encoding==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{}
+            :std::optional<std::uint64_t>{UINT64_C(17)};
+        QVERIFY(!action.begin(
+            *destination.value(),encoding,malformedSeed,
+            terminal.value()->parameters().ceiling_db_tp(),true));
+        QVERIFY(!QFileInfo::exists(output));
+        QVERIFY(!action.has_unacknowledged_export());
+        // The same Product, verified stage and valid output format are
+        // insufficient without a NEW explicit user confirmation.
+        QVERIFY(!action.begin(
+            *destination.value(),encoding,seedForPcm,
+            terminal.value()->parameters().ceiling_db_tp(),false));
+        QVERIFY(!QFileInfo::exists(output));
+        QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
+        const bool accepted=ui.beginExport(QUrl::fromLocalFile(output),
+            encoding==audio::WavSampleFormat::PCM_S24?0:1);
+        QVERIFY2(accepted,ui.error_text().toUtf8().constData());
+        QVERIFY(action.has_unacknowledged_export());
+        QVERIFY(!ui.can_export()); // one unacknowledged Product job
+        // The first worker might finish before the next Qt instruction.
+        // Do not make a timing-dependent false "still encoding" claim.
+        // Irrespective of timing, an unacknowledged result must prohibit
+        // any second Product worker or replacement of the output path.
+        QVERIFY(!action.begin(
+            *destination.value(),encoding,seedForPcm,
+            terminal.value()->parameters().ceiling_db_tp(),true));
+        QTRY_VERIFY_WITH_TIMEOUT(
+            action.snapshot().phase==
+                M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
+            30000);
+        const auto report=action.snapshot();
+        QCOMPARE(report.encoded_frames,report.total_frames);
+        QCOMPARE(report.total_frames,static_cast<std::uint64_t>(n));
+        QVERIFY(!report.failure_code);
+        QVERIFY(report.verified_file_size_bytes);
+        QVERIFY(*report.verified_file_size_bytes>0);
+        QCOMPARE(report.verified_encoded_sha256.size(),std::size_t{64});
+        QVERIFY(QFileInfo::exists(output));
+        QCOMPARE(static_cast<std::uint64_t>(QFileInfo{output}.size()),
+                 *report.verified_file_size_bytes);
+        // Verify the actual user-visible WAV with a second independent
+        // decoder path; an encoded checksum alone is not PCM format proof.
+        auto outputRef=platform::windows::WindowsResourceReader::
+            make_read_reference(output.toUtf8().toStdString(),
+                                filename.toUtf8().toStdString());
+        QVERIFY(outputRef);
+        auto readerResource=platform::windows::WindowsResourceReader::
+            open_read_only(*outputRef.value());
+        QVERIFY(readerResource);
+        auto inspected=audio::WavReader::open(
+            std::move(*readerResource.value()));
+        QVERIFY2(inspected,inspected?"":inspected.error()->message().c_str());
+        QCOMPARE((*inspected.value())->info().encoded_sample_format(),encoding);
+        QCOMPARE((*inspected.value())->info().frame_count(),*frames.value());
+        QCOMPARE((*inspected.value())->info().audio_format().sample_rate(),
+                 *rate48.value());
+        QCOMPARE((*inspected.value())->info().audio_format().channel_layout(),
+                 audio::ChannelLayout::MONO_C);
+        QVERIFY((*inspected.value())->close());
+        QVERIFY(action.can_acknowledge());
+        QVERIFY(ui.can_acknowledge());
+        QVERIFY(!action.can_cancel());
+        QCOMPARE(ui.status_text(),QStringLiteral("VERIFIED DELIVERED"));
+        QCOMPARE(ui.verified_sha256().size(),qsizetype{64});
+        QCOMPARE(ui.verified_bytes(),
+                 static_cast<qulonglong>(*report.verified_file_size_bytes));
+        QVERIFY(ui.acknowledgeExport());
+        QVERIFY(!ui.can_acknowledge());
+        QVERIFY(ui.can_export());
+        expectedConsentEpoch+=2; // one user consent, one terminal ACK
+        const auto afterAck=fanout.current_owner_snapshot();
+        QVERIFY(afterAck);
+        QCOMPARE(afterAck->epoch,expectedConsentEpoch);
+        QVERIFY(afterAck->identity==initialProductEpoch->identity);
+        QVERIFY(!action.has_unacknowledged_export());
+        QCOMPARE(action.snapshot().phase,
+                 M18PrivateAsyncExportSession::Phase::IDLE);
+        QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
+        QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+        QCOMPARE(product.capture_m18_verified_stage_for_worker(
+                     *rate48.value()),verified);
+        QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+        QCOMPARE(session.source.frame_count(),qint64{4096});
+        QCOMPARE(session.source.display_name(),
+                 QStringLiteral("m18-positive-real-source.wav"));
+    }
+    // A fresh confirmed Export into an already-published WAV must fail
+    // without overwriting the first verified output or losing the M17
+    // Master. A failed job still requires explicit ACK to release consent.
+    const auto collisionPath=directory.filePath(
+        QStringLiteral("m18-product-authorized-%1.wav")
+            .arg(static_cast<int>(audio::WavSampleFormat::IEEE_F32)));
+    const auto originalBytes=QFileInfo{collisionPath}.size();
+    QVERIFY(originalBytes>0);
+    auto collisionRef=platform::windows::WindowsResourceWriter::
+        make_write_reference(collisionPath.toUtf8().toStdString(),
+                             "m18-f32-verified-existing.wav");
+    QVERIFY(collisionRef);
+    QVERIFY(ui.beginExport(QUrl::fromLocalFile(collisionPath),1));
+    QVERIFY(!ui.can_export());
+    QTRY_VERIFY_WITH_TIMEOUT(
+        action.snapshot().phase==M18PrivateAsyncExportSession::Phase::FAILED,
+        30000);
+    QVERIFY(action.snapshot().failure_code);
+    QVERIFY(!action.snapshot().verified_file_size_bytes);
+    QVERIFY(action.snapshot().verified_encoded_sha256.empty());
+    QCOMPARE(QFileInfo{collisionPath}.size(),originalBytes);
+    QVERIFY(!action.can_cancel());
+    QVERIFY(action.can_acknowledge());
+    QVERIFY(ui.can_acknowledge());
+    QCOMPARE(ui.status_text(),QStringLiteral("FAILED"));
+    QVERIFY(!ui.error_text().isEmpty());
+    QVERIFY(ui.acknowledgeExport());
+    QVERIFY(ui.can_export());
+    expectedConsentEpoch+=2;
+    const auto afterCollision=fanout.current_owner_snapshot();
+    QVERIFY(afterCollision);
+    QCOMPARE(afterCollision->epoch,expectedConsentEpoch);
+    QVERIFY(afterCollision->identity==initialProductEpoch->identity);
+    QVERIFY(!action.has_unacknowledged_export());
+    QCOMPARE(product.capture_m18_verified_stage_for_worker(
+                 *rate48.value()),verified);
+    QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+
+    // A previously verified and ACKed M17 Master is NOT permission to
+    // export after a direct MANUAL DSP edit. A parameter-only Gain change
+    // deliberately leaves the chain's structural revision unchanged:
+    // the exact verified M17 Product generation must still be retired.
+    QVERIFY(ui.can_export());
+    const auto revisionBeforeParam=
+        session.masteringChainState->chain().revision();
+    const auto differentGain=dsp::GainParameters::create(2.25);
+    QVERIFY(differentGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *differentGain.value()));
+    QCOMPARE(session.masteringChainState->chain().revision(),
+             revisionBeforeParam);
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(!ui.can_export());
+    const auto parameterOnlyStalePath=directory.filePath(
+        QStringLiteral("m18-stale-parameter-only-master.wav"));
+    QVERIFY(!ui.beginExport(
+        QUrl::fromLocalFile(parameterOnlyStalePath),1));
+    QVERIFY(!QFileInfo::exists(parameterOnlyStalePath));
+    QVERIFY(!action.has_unacknowledged_export());
+    const auto gain=session.masteringChainState->gain_instance_id();
+    const auto oldBypass=session.masteringChainState->is_bypassed(gain);
+    QVERIFY(oldBypass);
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        gain,!(*oldBypass.value())));
+    QVERIFY(!ui.can_export());
+    const auto stalePath=directory.filePath(
+        QStringLiteral("m18-stale-manual-revision.wav"));
+    QVERIFY(!ui.beginExport(QUrl::fromLocalFile(stalePath),1));
+    QVERIFY(!action.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(stalePath));
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    QVERIFY(!ui.can_export());
+    QVERIFY(!ui.beginExport(QUrl::fromLocalFile(stalePath),0));
+    QVERIFY(!action.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(stalePath));
+}
+
+void ProjectSessionTest::
+m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
+{
+    using app::internal::M18ProductCompleteBinding;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("m18-complete-source.wav"),37);
+    QVERIFY(!src.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(session.source.has_source());
+    app::MasterOutputRateState rate;
+    rate.source_committed(session.source.sample_rate_hz());
+    session.project.set_master_output_rate_state(&rate);
+    install_m18_checked_source_dispatch(session,rate);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto terminalId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "be000000-0000-4000-8000-000000000018").value());
+    QVERIFY(terminalId);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*terminalId.value());
+    QVERIFY(terminal);
+
+    // These are the REAL M17 production classes from the existing
+    // mastering-chain test target: neither fake authority nor standalone
+    // stub may be substituted for a verified terminal Product owner.
+    app::TerminalCandidateGate candidates;
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&] {return session.masteringChainState->chain();}};
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::success();
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_TEST_NO_PRIVATE_REALIZATION_TO_PUBLISH"});
+        }};
+    app::TerminalPrivateProductSession m17{
+        renderer,publisher,candidates,session.transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+
+    const M18ProductExportIdentity initial{
+        201U,202U,203U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        30U,initial);
+    M18OwnerMutationFanout fanout{owner,30U,initial};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,*session.masteringChainState,
+        session.selector,session.region,session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers entire{
+        upstream,m17,candidates};
+    QVERIFY(M18ProductCompleteBinding::preflight(entire,fanout));
+    bool workerRejected=false;
+    std::thread foreign([&] {
+        workerRejected=
+            !M18ProductCompleteBinding::bind(entire,fanout);
+    });
+    foreign.join();
+    QVERIFY(workerRejected);
+    QVERIFY(M18ProductCompleteBinding::preflight(entire,fanout));
+    QVERIFY(M18ProductCompleteBinding::bind(entire,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(entire));
+    QVERIFY(!M18ProductCompleteBinding::preflight(entire,fanout));
+    QVERIFY(!M18ProductCompleteBinding::bind(entire,fanout));
+
+    // Even a genuine Qt SOURCE and a fully wired Product do NOT
+    // authorize WAV export in the absence of a real verified M17 Master.
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,false));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,true));
+    // Exercise the actual private Product Export action, not merely its
+    // ticket issuer. An unverified M17 stage must fail BEFORE worker
+    // launch and may not publish a WAV file or leave user consent.
+    const auto deniedWav=dir.filePath(
+        QStringLiteral("m18-no-verified-stage-export.wav"));
+    const auto exportDestination=
+        platform::windows::WindowsResourceWriter::
+            make_write_reference(
+                deniedWav.toUtf8().toStdString(),
+                "m18-no-verified-stage-export.wav");
+    QVERIFY(exportDestination);
+    app::internal::M18PrivateProductExportAction exportAction{
+        entire,fanout};
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,true));
+    QVERIFY(!exportAction.has_unacknowledged_export());
+    QVERIFY(!exportAction.can_cancel());
+    QVERIFY(!exportAction.can_acknowledge());
+    QVERIFY(!QFileInfo::exists(deniedWav));
+    QCOMPARE(exportAction.snapshot().phase,
+             app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+    // Invalid output requests are pure preflight: no ticket or worker
+    // may be minted before a valid format and a real user decision.
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::PCM_S24,
+        std::nullopt,-1.0,true));
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::optional<std::uint64_t>{42U},-1.0,true));
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,false));
+    // A dialog cannot invent a different M17 ceiling and then report
+    // that its new WAV passed the wrong True Peak threshold.
+    const auto mismatchedCeiling=exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-2.0,true);
+    QVERIFY(!mismatchedCeiling);
+    QVERIFY(mismatchedCeiling.error()->message()
+        =="M18_PRODUCT_EXPORT_CEILING_NOT_CURRENT_M17");
+    QVERIFY(!exportAction.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(deniedWav));
+    // A selected SOURCE cannot simultaneously be the new output WAV.
+    // Reject the direct identity alias before any consent transition.
+    QVERIFY(session.source.source_resource());
+    QVERIFY(!exportAction.begin(
+        session.source.source_resource()->reference(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,-1.0,true));
+    QVERIFY(!exportAction.has_unacknowledged_export());
+    exportAction.cancel();
+    QVERIFY(!exportAction.acknowledge());
+    bool foreignStartDenied=false;
+    bool foreignStateUnreadable=false;
+    std::thread rogueExport([&] {
+        foreignStartDenied=!exportAction.begin(
+            *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,-1.0,true);
+        exportAction.cancel();
+        foreignStateUnreadable=!exportAction.can_cancel()
+            &&!exportAction.can_acknowledge()
+            &&!exportAction.has_unacknowledged_export()
+            &&exportAction.snapshot().phase==
+                app::internal::M18PrivateAsyncExportSession::Phase::FAILED;
+    });
+    rogueExport.join();
+    QVERIFY(foreignStartDenied);
+    QVERIFY(foreignStateUnreadable);
+    QCOMPARE(exportAction.snapshot().phase,
+             app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+    QVERIFY(!owner->capture(initial));
+    QVERIFY(owner->can_install_full_product_guards(30U,initial));
+    // A legitimate Region edit consumes a single shared Product
+    // generation but still cannot invent a freshly verified M17 stage.
+    const auto region=core::FrameRange::create(
+        core::FrameIndex{5},core::FrameIndex{23});
+    QVERIFY(region);
+    QVERIFY(session.region.set_region(*region.value()));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(31));
+    QVERIFY(!owner->capture(initial));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,true));
+
+    // An accepted manual edit invalidates M17 but changes the real
+    // M11–15 revision. Reconcile that accepted model revision before
+    // any future verified Master is eligible for a fresh consent.
+    const auto gainId=session.masteringChainState->gain_instance_id();
+    const auto bypass=session.masteringChainState->is_bypassed(gainId);
+    QVERIFY(bypass);
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        gainId,!(*bypass.value())));
+    const auto afterEdit=fanout.current_owner_snapshot();
+    QVERIFY(afterEdit);
+    QCOMPARE(afterEdit->epoch,UINT64_C(32));
+    QVERIFY(afterEdit->identity.chain_revision!=
+            session.masteringChainState->chain().revision());
+
+    bool workerReconcileDenied=false;
+    std::thread worker([&] {
+        workerReconcileDenied=
+            !M18ProductCompleteBinding::reconcile_after_product_mutation(
+                entire,fanout);
+    });
+    worker.join();
+    QVERIFY(workerReconcileDenied);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        entire,fanout));
+    const auto reconciled=fanout.current_owner_snapshot();
+    QVERIFY(reconciled);
+    QCOMPARE(reconciled->epoch,UINT64_C(33));
+    QCOMPARE(reconciled->identity.source_generation,UINT64_C(201));
+    QCOMPARE(reconciled->identity.project_generation,UINT64_C(202));
+    QCOMPARE(reconciled->identity.master_generation,UINT64_C(205));
+    QCOMPARE(reconciled->identity.chain_revision,
+             session.masteringChainState->chain().revision());
+    QCOMPARE(reconciled->identity.master_rate_revision,rate.rate_revision());
+    // Reconciliation never grants an export ticket or silently revives
+    // the now-obsolete M17 Master.
+    QVERIFY(!owner->capture(reconciled->identity));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,true));
+    QVERIFY(M18ProductCompleteBinding::installed(entire));
+}
+
+void ProjectSessionTest::
+m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
+{
+    using app::internal::M18ProductUpstreamBinding;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("m18-bound-src.wav"),17);
+    const auto other=wav(dir,QStringLiteral("m18-bound-next-src.wav"),23);
+    QVERIFY(!src.isEmpty()&&!other.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(session.source.has_source());
+    const auto original=session.source.display_name();
+    app::MasterOutputRateState rate;
+    rate.source_committed(session.source.sample_rate_hz());
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto id=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "ac000000-0000-4000-8000-000000000018").value());
+    QVERIFY(id);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(terminal);
+    const M18ProductExportIdentity identity{
+        51U,61U,71U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        90U,identity);
+    QVERIFY(owner->try_transition(90U,91U,identity,true));
+    auto ticket=owner->capture(identity);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,91U,identity};
+    M18ProductUpstreamBinding::Controllers controllers{
+        session.project,session.source,rate,*session.masteringChainState,
+        session.selector,session.region,session.gold,*terminal.value()};
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    // A source picker's old void callback must not be accepted as an
+    // epoch-safe commit: require the checked Product dispatcher first.
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    install_m18_checked_source_dispatch(session,rate);
+    QVERIFY(session.source.m18_checked_source_committed_installed());
+    bool workerBindingDenied=false;
+    std::thread forbiddenWorker([&] {
+        workerBindingDenied=
+            !M18ProductUpstreamBinding::bind(controllers,fanout);
+    });
+    forbiddenWorker.join();
+    QVERIFY(workerBindingDenied);
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    // An independently installed GOLD ViewModel admission would double
+    // charge the shared epoch: refuse the bundle until GOLD delegates
+    // solely to the Audition selector.
+    session.gold.set_private_m18_gold_mutation_admission(
+        fanout.status_admission());
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(!session.project.m18_open_batch_installed());
+    QVERIFY(!session.source.m18_source_batch_installed());
+    session.gold.set_private_m18_gold_mutation_admission({});
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    // Mixing an older one-shot Project policy with the new Project-open
+    // physical batch would allow partial, separately admitted writes.
+    session.project.set_private_m18_project_mutation_admission(
+        fanout.status_admission());
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(!session.source.m18_source_batch_installed());
+    session.project.set_private_m18_project_mutation_admission({});
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    QVERIFY(M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductUpstreamBinding::installed(controllers));
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    auto beforeCommit=fanout.current_owner_snapshot();
+    QVERIFY(beforeCommit);
+    QCOMPARE(beforeCommit->epoch,UINT64_C(91));
+    QCOMPARE(beforeCommit->identity.source_generation,UINT64_C(51));
+    QCOMPARE(beforeCommit->identity.project_generation,UINT64_C(61));
+    QCOMPARE(beforeCommit->identity.master_generation,UINT64_C(71));
+
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    session.source.selectSource(QUrl::fromLocalFile(other));
+    QCOMPARE(session.source.display_name(),original);
+    QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
+    const auto blockedProject=dir.filePath(
+        QStringLiteral("m18-blocked-project.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(blockedProject));
+    QVERIFY(!QFileInfo::exists(blockedProject));
+    QVERIFY(!terminal.value()->set_ceiling_db_tp(-2.0));
+    const auto originalChainRevision=
+        session.masteringChainState->chain().revision();
+    const auto gainId=session.masteringChainState->gain_instance_id();
+    const auto gainState=session.masteringChainState->is_bypassed(gainId);
+    QVERIFY(gainState);
+    QVERIFY(!session.masteringChainState->set_user_bypass(
+        gainId,!(*gainState.value())));
+    QCOMPARE(session.masteringChainState->chain().revision(),
+             originalChainRevision);
+    const auto oldRateRevision=rate.rate_revision();
+    // A same-Fs SOURCE reselection is a fresh Product identity too.
+    // Neither the selected rate nor its revision may change under BUSY.
+    QVERIFY(!rate.try_source_committed_for_m18(48000));
+    QCOMPARE(rate.rate_revision(),oldRateRevision);
+    const auto candidate=core::FrameRange::create(
+        core::FrameIndex{7},core::FrameIndex{19});
+    QVERIFY(candidate);
+    QVERIFY(!session.region.set_region(*candidate.value()));
+    QVERIFY(!session.region.region());
+    QVERIFY((*lease.value())->revalidate_current());
+
+    // After release, one genuine region change consumes exactly the
+    // shared generation and revokes the old asynchronous export consent.
+    lease.value()->reset();
+    QVERIFY(session.region.set_region(*candidate.value()));
+    QVERIFY(session.region.region());
+    auto afterRegion=fanout.current_owner_snapshot();
+    QVERIFY(afterRegion);
+    QCOMPARE(afterRegion->epoch,UINT64_C(92));
+    QCOMPARE(afterRegion->identity.source_generation,UINT64_C(51));
+    QCOMPARE(afterRegion->identity.project_generation,UINT64_C(61));
+    QCOMPARE(afterRegion->identity.master_generation,UINT64_C(72));
+    QVERIFY(!owner->capture(identity));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(M18ProductUpstreamBinding::installed(controllers));
+    // After worker release, the real .rgsml SaveAs must own ONE physical
+    // writer batch through serialization, file commit and readback.
+    const auto deliveredProject=dir.filePath(
+        QStringLiteral("m18-bound-delivered-project.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(deliveredProject));
+    QVERIFY(QFileInfo::exists(deliveredProject));
+    QVERIFY(session.project.error_message().isEmpty());
+    auto afterSave=fanout.current_owner_snapshot();
+    QVERIFY(afterSave);
+    QCOMPARE(afterSave->epoch,UINT64_C(93));
+    QCOMPARE(afterSave->identity.source_generation,UINT64_C(51));
+    QCOMPARE(afterSave->identity.project_generation,UINT64_C(62));
+    QCOMPARE(afterSave->identity.master_generation,UINT64_C(73));
+    // Full Project OPEN must re-use one exclusive epoch for its nested
+    // SOURCE, rate, audition and chain restoration callbacks. Neither
+    // child may consume an independently authorized export generation.
+    session.project.openProject(QUrl::fromLocalFile(deliveredProject));
+    QVERIFY(session.project.error_message().isEmpty());
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.display_name(),original);
+    auto afterOpen=fanout.current_owner_snapshot();
+    QVERIFY(afterOpen);
+    QCOMPARE(afterOpen->epoch,UINT64_C(94));
+    QCOMPARE(afterOpen->identity.source_generation,UINT64_C(52));
+    QCOMPARE(afterOpen->identity.project_generation,UINT64_C(63));
+    QCOMPARE(afterOpen->identity.master_generation,UINT64_C(74));
+    QVERIFY(M18ProductUpstreamBinding::installed(controllers));
+}
+
+void ProjectSessionTest::
+m18ActualProjectOpenCheckedSourceFailureCannotPublishReady()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(
+        dir,QStringLiteral("m18-project-downstream-fault.wav"),21,48000U);
+    QVERIFY(!source.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(author.source.has_source());
+    const auto projectFile=dir.filePath(
+        QStringLiteral("m18-project-downstream-fault.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(projectFile));
+    QVERIFY(QFileInfo::exists(projectFile));
+
+    Session target;
+    app::MasterOutputRateState rate;
+    target.project.set_master_output_rate_state(&rate);
+    const M18ProductExportIdentity id{711U,712U,713U,0U,48000U,7U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        401U,id);
+    QVERIFY(owner->try_transition(401U,402U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,402U,id};
+    app::internal::M18ProductControllerBinding::bind_source_chain_rate(
+        target.source,*target.masteringChainState,rate,fanout);
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        target.selector,target.region,target.gold,fanout);
+    app::internal::M18ProductProjectSaveBinding::bind_project_open_and_save(
+        target.project,fanout);
+    target.source.set_private_m18_checked_source_committed_handler(
+        [](const core::ResourceReference&)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_VERIFIED_SOURCE_PREPARED_HANDOFF_REFUSED"});
+        });
+    target.project.openProject(QUrl::fromLocalFile(projectFile));
+    QVERIFY(!target.project.error_message().isEmpty());
+    QVERIFY(!target.source.has_source());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{0});
+    QCOMPARE(rate.rate_revision(),std::uint64_t{0});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+
+    // The physical failed batch released its writer lease. A fresh
+    // explicitly checked SOURCE dispatch may successfully open the
+    // same Project without reviving old verified-M17 consent.
+    install_m18_checked_source_dispatch(target,rate);
+    target.project.openProject(QUrl::fromLocalFile(projectFile));
+    QCOMPARE(target.project.error_message(),QString());
+    QVERIFY(target.source.has_source());
+    QVERIFY(target.selector.prepared_available());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
+    QCOMPARE(rate.source_rate_hz(),qint64{48000});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+}
+
+void ProjectSessionTest::
+m18AuditionGateSetterCannotSelfUninstallOrCrossThread()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto path=wav(dir,QStringLiteral("m18-audition-owner.wav"),13);
+    QVERIFY(!path.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(path));
+    QVERIFY(session.source.has_source());
+    QVERIFY(session.selector.prepared_available());
+    // The initial SOURCE callback already selected PREPARED. Repeating
+    // that selection is correctly a no-op, so prepare a distinct GOLD
+    // target to exercise a REAL Product-authorized owner mutation.
+    const auto goldPath=wav(dir,QStringLiteral("m18-audition-gold.wav"),15);
+    QVERIFY(!goldPath.isEmpty());
+    session.gold.selectGold(QUrl::fromLocalFile(goldPath));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.selector.gold_available());
+    QCOMPARE(session.selector.active_target(),
+             std::optional{app::AuditionTarget::PREPARED});
+    std::size_t denied=0;
+    session.selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            // The running callback must not destroy its own closure.
+            session.selector.set_private_m18_mutation_admission({});
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_AUDITION_WORKER_COMMIT_BUSY"});
+        });
+    std::thread foreignGateRemoval([&] {
+        session.selector.set_private_m18_mutation_admission({});
+    });
+    foreignGateRemoval.join();
+    const auto first=session.selector.switch_to(app::AuditionTarget::GOLD);
+    QVERIFY(!first);
+    QCOMPARE(denied,std::size_t{1});
+    const auto second=session.selector.switch_to(app::AuditionTarget::GOLD);
+    QVERIFY(!second);
+    QCOMPARE(denied,std::size_t{2});
+    session.selector.set_private_m18_mutation_admission({});
+    const auto admitted=session.selector.switch_to(app::AuditionTarget::GOLD);
+    QVERIFY(admitted);
+}
+
+void ProjectSessionTest::
+m18ActualSourcePickerAndAuditionUseOnePhysicalProductBatch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto sourcePath=wav(
+        dir,QStringLiteral("m18-physical-batch-source.wav"),15,48000U);
+    QVERIFY(!sourcePath.isEmpty());
+    Session target;
+    app::MasterOutputRateState targetRate;
+    const M18ProductExportIdentity id{411U,412U,413U,0U,48000U,3U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        2000U,id);
+    QVERIFY(owner->try_transition(2000U,2001U,id,true));
+    auto ticket=owner->capture(id);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,2001U,id};
+    install_m18_checked_source_dispatch(target,targetRate);
+    app::internal::M18ProductControllerBinding::bind_source_chain_rate(
+        target.source,*target.masteringChainState,targetRate,fanout);
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        target.selector,target.region,target.gold,fanout);
+    auto commit=ticket.value()->commit_lease_factory()();
+    QVERIFY(commit);
+
+    // The real picker must fail BEFORE updating SOURCE or entering the
+    // synchronous AuditionSourceSelector's source_committed cascade.
+    target.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(!target.source.has_source());
+    QVERIFY(!target.selector.prepared_available());
+    QVERIFY((*commit.value())->revalidate_current());
+    commit.value()->reset();
+
+    // Exactly one Product SOURCE lease includes Prepared construction,
+    // playback stop/handoff, selector Qt listeners and GOLD retirement.
+    target.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(target.source.has_source());
+    QVERIFY(target.selector.prepared_available());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+    // Subsequent manual DSP edits are a different Product action.
+    const auto gain=dsp::GainParameters::create(2.0);
+    QVERIFY(gain);
+    QVERIFY(target.masteringChainState->set_gain_parameters(*gain.value()));
+}
+
+void ProjectSessionTest::
+m18ActualProjectOpenAndSaveUseOneSharedProductEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("m18-actual-source.wav"),13,48000U);
+    const auto goldFile=wav(dir,QStringLiteral("m18-actual-gold.wav"),21,48000U);
+    QVERIFY(!src.isEmpty()&&!goldFile.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(author.source.has_source());
+    author.gold.selectGold(QUrl::fromLocalFile(goldFile));
+    QVERIFY(author.gold.has_gold());
+    app::MasterOutputRateState authorRate;
+    authorRate.source_committed(48000);
+    QVERIFY(authorRate.choose_master_rate(192000));
+    author.project.set_master_output_rate_state(&authorRate);
+    const auto path=dir.filePath(QStringLiteral("m18-actual-open.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(path));
+    QVERIFY(QFileInfo::exists(path));
+    QCOMPARE(author.project.error_message(),QString());
+
+    Session target;
+    app::MasterOutputRateState targetRate;
+    target.project.set_master_output_rate_state(&targetRate);
+    const M18ProductExportIdentity id{191U,192U,193U,0U,48000U,11U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        500U,id);
+    QVERIFY(owner->try_transition(500U,501U,id,true));
+    auto ticket=owner->capture(id);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,501U,id};
+    install_m18_checked_source_dispatch(target,targetRate);
+    app::internal::M18ProductControllerBinding::bind_source_chain_rate(
+        target.source,*target.masteringChainState,targetRate,fanout);
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        target.selector,target.region,target.gold,fanout);
+    app::internal::M18ProductProjectSaveBinding::bind_project_open_and_save(
+        target.project,fanout);
+
+    // Real worker lease prevents even the first transport/SOURCE change.
+    auto committing=ticket.value()->commit_lease_factory()();
+    QVERIFY(committing);
+    target.project.openProject(QUrl::fromLocalFile(path));
+    QVERIFY(!target.project.error_message().isEmpty());
+    QVERIFY(!target.source.has_source());
+    QVERIFY(!target.gold.has_gold());
+    QCOMPARE(targetRate.rate_revision(),quint64{0});
+    QVERIFY((*committing.value())->revalidate_current());
+    committing.value()->reset();
+
+    // Exactly one Project batch owns all nested real controller writes.
+    target.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(target.project.error_message(),QString());
+    QVERIFY(target.source.has_source());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
+    QVERIFY(target.gold.has_gold());
+    QCOMPARE(targetRate.source_rate_hz(),qint64{48000});
+    QCOMPARE(targetRate.master_rate_hz(),qint64{192000});
+    QCOMPARE(targetRate.rate_revision(),quint64{2});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+
+    const auto saved=dir.filePath(QStringLiteral("m18-actual-save.rgsml"));
+    target.project.saveProjectAs(QUrl::fromLocalFile(saved));
+    QVERIFY(QFileInfo::exists(saved));
+    QCOMPARE(target.project.error_message(),QString());
+    const auto loaded=load_project(saved);
+    QVERIFY(loaded);
+}
+
+void ProjectSessionTest::
+m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(
+        dir,QStringLiteral("m18-shared-save-source.wav"),36);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto original=dir.filePath(
+        QStringLiteral("m18-shared-before.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(original));
+    QVERIFY(QFileInfo::exists(original));
+    QCOMPARE(session.project.error_message(),QString());
+    const auto target=dir.filePath(
+        QStringLiteral("m18-shared-after.rgsml"));
+    const M18ProductExportIdentity id{41U,42U,43U,0U,48000U,5U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        600U,id);
+    QVERIFY(owner->try_transition(600U,601U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,601U,id};
+    app::internal::M18ProductProjectSaveBinding::bind_project_save_only(
+        session.project,fanout);
+    auto worker=ticket.value()->commit_lease_factory()();
+    QVERIFY(worker);
+    session.project.saveProjectAs(QUrl::fromLocalFile(target));
+    QVERIFY(!QFileInfo::exists(target));
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY((*worker.value())->revalidate_current());
+    worker.value()->reset();
+    session.project.saveProjectAs(QUrl::fromLocalFile(target));
+    QVERIFY(QFileInfo::exists(target));
+    QCOMPARE(session.project.error_message(),QString());
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(fanout.status_admission()("source_edit_after_save"));
+    // Open Project remains fail-closed until its full, distinct nested
+    // SOURCE/MASTER/GOLD exclusive transaction is also bound.
+    session.project.openProject(QUrl::fromLocalFile(original));
+    QVERIFY(!session.project.error_message().isEmpty());
+    session.project.set_private_m18_project_save_batch_begin({});
+}
+
+void ProjectSessionTest::
+m18RegionGateCannotSelfUninstallOrCrossThread()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m18-region-owner.wav"),0);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto first=core::FrameRange::create(
+        core::FrameIndex{7},core::FrameIndex{19});
+    QVERIFY(first);
+    const auto nested=core::FrameRange::create(
+        core::FrameIndex{8},core::FrameIndex{18});
+    QVERIFY(nested);
+    std::size_t denied=0,nestedDenied=0;
+    session.region.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            session.region.set_private_m18_region_mutation_admission({});
+            const auto inner=session.region.set_region(*nested.value());
+            if(!inner)++nestedDenied;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_REGION_WORKER_BUSY"});
+        });
+    std::thread foreign([&] {
+        session.region.set_private_m18_region_mutation_admission({});
+    });
+    foreign.join();
+    QVERIFY(!session.region.set_region(*first.value()));
+    QVERIFY(!session.region.set_region(*first.value()));
+    QCOMPARE(denied,std::size_t{2});
+    QCOMPARE(nestedDenied,std::size_t{2});
+    QVERIFY(!session.region.region());
+    session.region.set_private_m18_region_mutation_admission({});
+    QVERIFY(session.region.set_region(*first.value()));
+    QVERIFY(session.region.region());
+    QCOMPARE(session.region.region()->begin().value(),std::int64_t{7});
+}
+
+void ProjectSessionTest::
+m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
+{
+    // Optional M18 gate must refuse both GOLD paths before modifying the
+    // actual AuditionSourceSelector owner. The existing M17 Product flow
+    // remains unchanged when this gate is absent.
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m18-gold-source.wav"),7);
+    const auto goldA=wav(dir,QStringLiteral("m18-gold-a.wav"),8);
+    const auto goldB=wav(dir,QStringLiteral("m18-gold-b.wav"),9);
+    QVERIFY(!source.isEmpty()&&!goldA.isEmpty()&&!goldB.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    // With a real M18 Product guard installed, clicking Clear on an
+    // already-empty GOLD cannot revoke the current verified MASTER.
+    std::size_t emptyClearAdmissions=0;
+    session.gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++emptyClearAdmissions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_EMPTY_GOLD_IS_NOT_AN_EPOCH_MUTATION"});
+        });
+    session.gold.clearGold();
+    QCOMPARE(emptyClearAdmissions,std::size_t{0});
+    QVERIFY(!session.gold.has_gold());
+    QVERIFY(session.gold.error_message().isEmpty());
+    session.gold.set_private_m18_gold_mutation_admission({});
+    // Selecting the SOURCE itself as GOLD (or its alias) must fail
+    // before the selector consumes a Product/MASTER export epoch.
+    std::size_t forbiddenAliasAdmissions=0;
+    session.selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++forbiddenAliasAdmissions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_GOLD_ALIAS_MUST_NOT_BURN_EPOCH"});
+        });
+    session.gold.selectGold(QUrl::fromLocalFile(source));
+    QCOMPARE(forbiddenAliasAdmissions,std::size_t{0});
+    QVERIFY(!session.gold.has_gold());
+    QVERIFY(!session.gold.error_message().isEmpty());
+    session.selector.set_private_m18_mutation_admission({});
+    session.gold.selectGold(QUrl::fromLocalFile(goldA));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.gold_resource());
+    const std::string original{session.gold.gold_resource()->reference().locator()};
+    std::size_t denied=0;
+    session.gold.set_private_m18_gold_mutation_admission(
+        [&](const char* operation)->core::Status {
+            ++denied;
+            // A synchronous callback cannot destroy its own Product gate.
+            session.gold.set_private_m18_gold_mutation_admission({});
+            if(operation==nullptr)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"M18_GOLD_OPERATION_MISSING"});
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_GOLD_COMMIT_BUSY"});
+        });
+    std::thread foreignGateRemoval([&session] {
+        session.gold.set_private_m18_gold_mutation_admission({});
+    });
+    foreignGateRemoval.join();
+    session.gold.selectGold(QUrl::fromLocalFile(goldB));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.gold_resource());
+    QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}==original);
+    QCOMPARE(denied,std::size_t{1});
+    QVERIFY(!session.gold.error_message().isEmpty());
+    session.gold.clearGold();
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}==original);
+    QCOMPARE(denied,std::size_t{2});
+    // The foreign worker is NEVER permitted to mutate or even publish a
+    // Qt-owned GOLD error; the Product owner remains the only writer.
+    std::thread foreignClear([&session]{session.gold.clearGold();});
+    foreignClear.join();
+    QCOMPARE(denied,std::size_t{2});
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(std::string{session.gold.gold_resource()->reference().display_name()}
+            ==std::string{"m18-gold-a.wav"});
+    session.gold.set_private_m18_gold_mutation_admission({});
+    session.gold.selectGold(QUrl::fromLocalFile(goldB));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.gold_resource());
+    QVERIFY(std::string{session.gold.gold_resource()->reference().locator()}!=original);
+    session.gold.clearGold();
+    QVERIFY(!session.gold.has_gold());
+}
+
+
+void ProjectSessionTest::m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("batch-save-source.wav"),27,48000U);
+    QVERIFY(!src.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(session.source.has_source());
+    const auto initial=dir.filePath(QStringLiteral("batch-save-initial.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(initial));
+    QVERIFY(QFileInfo::exists(initial));
+    // Installing only an Open Project batch cannot grant an unrelated
+    // SaveAs permission: the new output must not be created.
+    session.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    const auto proposed=dir.filePath(QStringLiteral("batch-save-denied.rgsml"));
+    // No Project API may be entered from a foreign worker once a Product
+    // M18 gate is installed, including premature error QObjects/signals.
+    QSignalSpy foreignSignals{&session.project,&app::ProjectSessionViewModel::changed};
+    std::thread foreign([&session,&proposed,&initial] {
+        session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+        session.project.openProject(QUrl::fromLocalFile(initial));
+    });
+    foreign.join();
+    QCOMPARE(foreignSignals.count(),0);
+    QVERIFY(!QFileInfo::exists(proposed));
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    std::size_t saveCalls=0;
+    session.project.set_private_m18_project_save_admission(
+        [&](const char* op)->core::Status {
+            if(op==nullptr)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_SAVE_MISSING_OP"});
+            ++saveCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_SAVE_WORKER_BUSY"});
+        });
+    // A status-only callback cannot protect an Open-batch Project SaveAs
+    // over a long synchronous write. Refuse without invoking the callback.
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{0});
+    QVERIFY(!QFileInfo::exists(proposed));
+    // The legacy one-shot admission is still a supported isolated policy
+    // when no Project-wide M18 batch is enabled (no background Product).
+    session.project.set_private_m18_project_open_batch_begin({});
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{1});
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    // A throw from an installed save gate fails closed before any file
+    // allocation; it cannot be mistaken for an empty successful policy.
+    session.project.set_private_m18_project_save_admission(
+        [&](const char*)->core::Status {
+            ++saveCalls;
+            throw std::runtime_error("M18_PROJECT_SAVE_ADMISSION_THROWN");
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    // Installing two competing SaveAs admission modes must be rejected:
+    // the Project cannot choose the more permissive callback.
+    session.project.set_private_m18_project_save_admission(
+        [&](const char*)->core::Status {
+            ++saveCalls;return core::Status::success();
+        });
+    session.project.set_private_m18_project_mutation_admission(
+        [](const char*)->core::Status {return core::Status::success();});
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(saveCalls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(proposed));
+
+    // A genuine M18 Product must furnish one real exclusive RAII batch
+    // for both Open and SaveAs; a mere status callback is insufficient.
+    session.project.set_private_m18_project_mutation_admission({});
+    session.project.set_private_m18_project_save_admission({});
+    session.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    bool batchHeld=false;
+    std::size_t batchesStarted=0,batchesReleased=0;
+    struct SaveScope final {
+        SaveScope(bool* a,std::size_t* r):active(a),released(r){}
+        SaveScope(const SaveScope&)=delete;
+        SaveScope& operator=(const SaveScope&)=delete;
+        bool* active;std::size_t* released;
+        ~SaveScope(){*active=false;++*released;}
+    };
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            if(batchHeld)
+                return core::Result<std::shared_ptr<const void>>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                                "M18_PROJECT_SAVE_ALREADY_BUSY"});
+            batchHeld=true;++batchesStarted;
+            std::shared_ptr<const void> lease=
+                std::make_shared<SaveScope>(
+                    &batchHeld,&batchesReleased);
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::move(lease));
+        });
+    bool observedFinalPublicationInsideLease=false;
+    QObject::connect(&session.project,&app::ProjectSessionViewModel::changed,
+        &session.project,[&] {
+            if(session.project.status_text()==
+               QStringLiteral("Project saved and verified."))
+                observedFinalPublicationInsideLease=batchHeld;
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QVERIFY(observedFinalPublicationInsideLease);
+    QCOMPARE(batchesStarted,std::size_t{1});
+    QCOMPARE(batchesReleased,std::size_t{1});
+    QVERIFY(!batchHeld);
+    QVERIFY(QFileInfo::exists(proposed));
+    QCOMPARE(session.project.error_message(),QString());
+    // A collision after admission is a failed transaction, not a
+    // permanently held Single-Writer epoch or permission to overwrite.
+    QFile published{proposed};
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    const auto originalBytes=published.readAll();
+    published.close();
+    session.project.saveProjectAs(QUrl::fromLocalFile(proposed));
+    QCOMPARE(batchesStarted,std::size_t{2});
+    QCOMPARE(batchesReleased,std::size_t{2});
+    QVERIFY(!batchHeld);
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    QCOMPARE(published.readAll(),originalBytes);
+    published.close();
+    session.project.set_private_m18_project_save_batch_begin({});
+    session.project.set_private_m18_project_open_batch_begin({});
+}
+
+void ProjectSessionTest::m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto oldSource=wav(dir,QStringLiteral("old-open-source.wav"),19);
+    const auto newSource=wav(dir,QStringLiteral("new-open-source.wav"),31);
+    QVERIFY(!oldSource.isEmpty()&&!newSource.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(newSource));
+    QVERIFY(author.source.has_source());
+    const auto projectPath=dir.filePath(QStringLiteral("new-project.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(author.project.error_message(),QString());
+
+    Session reopened;
+    reopened.source.selectSource(QUrl::fromLocalFile(oldSource));
+    QVERIFY(reopened.source.has_source());
+    const std::string originalLocator{
+        reopened.source.source_resource()->reference().locator()};
+    std::size_t saveBatches=0,openBatches=0;
+    reopened.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++saveBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QCOMPARE(openBatches,std::size_t{0});
+    QCOMPARE(saveBatches,std::size_t{0});
+    QVERIFY(reopened.source.has_source());
+    QVERIFY(std::string{reopened.source.source_resource()->reference().locator()}
+        ==originalLocator);
+
+    // A separately installed SaveAs status callback still cannot protect
+    // destructive Open Project without its own exclusive admission.
+    reopened.project.set_private_m18_project_save_batch_begin({});
+    reopened.project.set_private_m18_project_save_admission(
+        [](const char*)->core::Status {return core::Status::success();});
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QVERIFY(std::string{reopened.source.source_resource()->reference().locator()}
+        ==originalLocator);
+
+    reopened.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++openBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QCOMPARE(openBatches,std::size_t{1});
+    QVERIFY(reopened.source.has_source());
+    QVERIFY(std::string{reopened.source.source_resource()->reference().locator()}
+        !=originalLocator);
+    reopened.project.set_private_m18_project_open_batch_begin({});
+    reopened.project.set_private_m18_project_save_admission({});
+}
+
+void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringOpenBatch()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto oldSource=wav(dir,QStringLiteral("nested-old.wav"),14);
+    const auto newSource=wav(dir,QStringLiteral("nested-new.wav"),17);
+    QVERIFY(!oldSource.isEmpty()&&!newSource.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(newSource));
+    const auto toOpen=dir.filePath(QStringLiteral("nested-project.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(toOpen));
+    QVERIFY(QFileInfo::exists(toOpen));
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(oldSource));
+    QVERIFY(session.source.has_source());
+    const auto deniedSave=dir.filePath(QStringLiteral("nested-open-save.rgsml"));
+    std::size_t openBatches=0,saveBatches=0;
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++saveBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    session.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++openBatches;
+            // Bounded fault injection: absent single-writer protection
+            // would recurse only once, then the assertions fail.
+            if(openBatches==1) {
+                // A callback must never destroy its own std::function
+                // while the Product's Project-open lease is being issued.
+                session.project.set_private_m18_project_open_batch_begin({});
+                session.project.set_private_m18_project_save_batch_begin({});
+                session.project.openProject(QUrl::fromLocalFile(toOpen));
+                session.project.saveProjectAs(QUrl::fromLocalFile(deniedSave));
+            }
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    std::thread foreignOpenDisarm([&] {
+        session.project.set_private_m18_project_open_batch_begin({});
+        session.project.set_private_m18_project_save_batch_begin({});
+    });
+    foreignOpenDisarm.join();
+    session.project.openProject(QUrl::fromLocalFile(toOpen));
+    QCOMPARE(openBatches,std::size_t{1});
+    QCOMPARE(saveBatches,std::size_t{0});
+    QVERIFY(!QFileInfo::exists(deniedSave));
+    QCOMPARE(session.project.error_message(),QString());
+    QVERIFY(session.source.has_source());
+    QVERIFY(std::string{session.source.source_resource()->reference().display_name()}
+        ==std::string{"nested-new.wav"});
+
+    // The same initial Project may be opened again after the scope is
+    // released: outer epoch ownership must not become permanently BUSY.
+    session.project.openProject(QUrl::fromLocalFile(toOpen));
+    QCOMPARE(openBatches,std::size_t{2});
+    QCOMPARE(saveBatches,std::size_t{0});
+    QCOMPARE(session.project.error_message(),QString());
+}
+
+void ProjectSessionTest::m18NestedProjectCommandsRefusedDuringSaveBatch()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("nested-save-source.wav"),21);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto first=dir.filePath(QStringLiteral("nested-first.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(first));
+    QVERIFY(QFileInfo::exists(first));
+
+    const auto outer=dir.filePath(QStringLiteral("nested-outer.rgsml"));
+    const auto inner=dir.filePath(QStringLiteral("nested-must-not-create.rgsml"));
+    const auto second=dir.filePath(QStringLiteral("nested-after-return.rgsml"));
+    std::size_t saveBatches=0,openBatches=0;
+    session.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++openBatches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++saveBatches;
+            // A nested Product callback may not uninstall the SaveAs
+            // lease provider or escape the active Project epoch.
+            session.project.set_private_m18_project_save_batch_begin({});
+            session.project.set_private_m18_project_open_batch_begin({});
+            // Simulate a synchronous Qt callback trying to start another
+            // Project mutation while the first SaveAs lease is being issued.
+            session.project.saveProjectAs(QUrl::fromLocalFile(inner));
+            session.project.openProject(QUrl::fromLocalFile(first));
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    std::thread foreignSaveDisarm([&] {
+        session.project.set_private_m18_project_save_batch_begin({});
+        session.project.set_private_m18_project_open_batch_begin({});
+    });
+    foreignSaveDisarm.join();
+    session.project.saveProjectAs(QUrl::fromLocalFile(outer));
+    QCOMPARE(saveBatches,std::size_t{1});
+    QCOMPARE(openBatches,std::size_t{0});
+    QVERIFY(QFileInfo::exists(outer));
+    QVERIFY(!QFileInfo::exists(inner));
+    QCOMPARE(session.project.error_message(),QString());
+
+    // The owner sentinel is RAII: no stale BUSY remains after returning.
+    session.project.saveProjectAs(QUrl::fromLocalFile(second));
+    QCOMPARE(saveBatches,std::size_t{2});
+    QCOMPARE(openBatches,std::size_t{0});
+    QVERIFY(QFileInfo::exists(second));
+    QVERIFY(!QFileInfo::exists(inner));
+}
+
+void ProjectSessionTest::m18SaveBatchMissingOrThrowingFailsClosed()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m18-save-fail-source.wav"),11);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto initial=dir.filePath(QStringLiteral("m18-save-initial.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(initial));
+    QCOMPARE(session.project.error_message(),QString());
+    const auto priorName=session.project.project_display_name();
+
+    session.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(1));
+        });
+    const auto destination=dir.filePath(QStringLiteral("m18-save-attempt.rgsml"));
+    std::size_t calls=0;
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++calls;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::shared_ptr<const void>{});
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(!QFileInfo::exists(destination));
+    QCOMPARE(session.project.project_display_name(),priorName);
+
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++calls;
+            throw std::runtime_error("M18_SAVE_BATCH_FAULT");
+        });
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(destination));
+    QCOMPARE(session.project.project_display_name(),priorName);
+
+    // Two independently granting callbacks are not one coherent epoch.
+    session.project.set_private_m18_project_save_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++calls;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<int>(2));
+        });
+    session.project.set_private_m18_project_save_admission(
+        [](const char*)->core::Status {return core::Status::success();});
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{2});
+    QVERIFY(!QFileInfo::exists(destination));
+    QCOMPARE(session.project.project_display_name(),priorName);
+
+    session.project.set_private_m18_project_save_admission({});
+    session.project.saveProjectAs(QUrl::fromLocalFile(destination));
+    QCOMPARE(calls,std::size_t{3});
+    QCOMPARE(session.project.error_message(),QString());
+    QVERIFY(QFileInfo::exists(destination));
+    session.project.set_private_m18_project_save_batch_begin({});
+    session.project.set_private_m18_project_open_batch_begin({});
+}
+
+void ProjectSessionTest::
+m18ProjectMutationDeniedBeforeOpenOrSavePublication()
+{
+    // Opt-in PREPRODUCTION Product epoch BUSY: denied Project open/save
+    // must not replace a SOURCE, rate, chain, or publish a new project.
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("current.wav"),4,48000U);
+    QVERIFY(!src.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(author.source.has_source());
+    const auto initial=dir.filePath(QStringLiteral("good.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(initial));
+    QCOMPARE(author.project.error_message(),QString());
+    QVERIFY(QFileInfo::exists(initial));
+    std::size_t blockedWrites=0;
+    author.project.set_private_m18_project_mutation_admission(
+        [&](const char*)->core::Status {
+            ++blockedWrites;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_COMMIT_BUSY"});
+        });
+    const auto deniedOutput=dir.filePath(QStringLiteral("blocked.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(deniedOutput));
+    QVERIFY(!author.project.error_message().isEmpty());
+    QVERIFY(!QFileInfo::exists(deniedOutput));
+    QCOMPARE(blockedWrites,std::size_t{1});
+    author.project.set_private_m18_project_mutation_admission({});
+
+    Session reopened;
+    std::size_t blockedOpens=0;
+    std::size_t attemptedSourceAdoptions=0;
+    // Shared busy policy: project must stop BEFORE entering any Source
+    // adoption callback. No Qt event-loop pumping or half-open session.
+    reopened.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++attemptedSourceAdoptions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SOURCE_COMMIT_BUSY"});
+        });
+    reopened.project.set_private_m18_project_mutation_admission(
+        [&](const char*)->core::Status {
+            ++blockedOpens;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_PROJECT_COMMIT_BUSY"});
+        });
+    reopened.project.openProject(QUrl::fromLocalFile(initial));
+    QCOMPARE(blockedOpens,std::size_t{1});
+    QCOMPARE(attemptedSourceAdoptions,std::size_t{0});
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QVERIFY(!reopened.source.has_source());
+    reopened.project.set_private_m18_project_mutation_admission({});
+    reopened.source.set_private_m18_source_mutation_admission({});
+    reopened.project.openProject(QUrl::fromLocalFile(initial));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(reopened.source.has_source());
+    QCOMPARE(reopened.source.sample_rate_hz(),qint64{48000});
+}
+
+void ProjectSessionTest::
+m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("batch-source.wav"),4,48000U);
+    const auto goldPath=wav(dir,QStringLiteral("batch-gold.wav"),7,48000U);
+    QVERIFY(!src.isEmpty()&&!goldPath.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(author.source.has_source());
+    author.gold.selectGold(QUrl::fromLocalFile(goldPath));
+    QVERIFY(author.gold.has_gold());
+    app::MasterOutputRateState selectedMaster;
+    selectedMaster.source_committed(author.source.sample_rate_hz());
+    QVERIFY(selectedMaster.choose_master_rate(192000));
+    author.project.set_master_output_rate_state(&selectedMaster);
+    const auto projectPath=dir.filePath(QStringLiteral("batch.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QVERIFY(QFileInfo::exists(projectPath));
+
+    // One exclusive Product mutation batch surrounds every synchronous
+    // Qt controller update in Project open, including Source adoption.
+    struct Scope final {
+        Scope(bool* active,std::size_t* released)
+            :active_(active),released_(released) {}
+        ~Scope(){*active_=false;++*released_;}
+        bool* active_;
+        std::size_t* released_;
+    };
+    Session reopened;
+    app::MasterOutputRateState reopenedMaster;
+    reopened.project.set_master_output_rate_state(&reopenedMaster);
+    bool mutationActive=false;
+    std::size_t batchesStarted=0,batchesReleased=0,sourceAdoptions=0;
+    std::size_t goldAdoptions=0,rateAdoptions=0;
+    reopened.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batchesStarted;
+            mutationActive=true;
+            std::shared_ptr<const void> token=
+                std::make_shared<Scope>(&mutationActive,&batchesReleased);
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::move(token));
+        });
+    reopened.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++sourceAdoptions;
+            if(mutationActive)return core::Status::success();
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_SOURCE_MUTATION_WITHOUT_PROJECT_BATCH"});
+        });
+    reopened.gold.set_private_m18_gold_mutation_admission(
+        [&](const char*)->core::Status {
+            ++goldAdoptions;
+            return mutationActive?core::Status::success()
+                :core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_GOLD_MUTATION_OUTSIDE_PROJECT_BATCH"});
+        });
+    reopenedMaster.set_private_m18_rate_mutation_admission([&] {
+        ++rateAdoptions;
+        return mutationActive;
+    });
+    reopened.project.openProject(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(reopened.source.has_source());
+    QVERIFY(reopened.gold.has_gold());
+    QCOMPARE(reopenedMaster.master_rate_hz(),qint64{192000});
+    QCOMPARE(goldAdoptions,std::size_t{1});
+    // M18 now explicitly admits BOTH nested SOURCE-rate adoption and
+    // persisted MASTER target selection through the same held Project
+    // lease. Previously the void SOURCE-rate reset bypassed the epoch
+    // and this test counted only the final target edit.
+    QCOMPARE(rateAdoptions,std::size_t{2});
+    QCOMPARE(batchesStarted,std::size_t{1});
+    QCOMPARE(sourceAdoptions,std::size_t{1});
+    QCOMPARE(batchesReleased,std::size_t{1});
+    QVERIFY(!mutationActive); // Product batch closed at function exit.
+
+    // A denied batch must fail BEFORE transport stop and Source adoption.
+    Session denied;
+    std::size_t deniedSourceAdoptions=0;
+    denied.project.set_private_m18_project_open_batch_begin(
+        []()->core::Result<std::shared_ptr<const void>> {
+            return core::Result<std::shared_ptr<const void>>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_PRODUCT_PROJECT_COMMIT_ALREADY_BUSY"});
+        });
+    denied.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++deniedSourceAdoptions;
+            return core::Status::success();
+        });
+    denied.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!denied.project.error_message().isEmpty());
+    QVERIFY(!denied.source.has_source());
+    QCOMPARE(deniedSourceAdoptions,std::size_t{0});
+
+    // An inner Source admission can fail *after* the outer Product batch
+    // was acquired. Its RAII ownership must still be released on this
+    // early return, so a subsequent legal Project open cannot inherit a
+    // permanently busy Product epoch.
+    Session failedInner;
+    bool innerBatchActive=false;
+    std::size_t innerBatches=0,innerReleases=0,innerAttempts=0;
+    failedInner.project.set_private_m18_project_open_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            if(innerBatchActive)
+                return core::Result<std::shared_ptr<const void>>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                                "M18_BATCH_ALREADY_ACTIVE_AFTER_ERROR"});
+            ++innerBatches;
+            innerBatchActive=true;
+            std::shared_ptr<const void> owner=
+                std::make_shared<Scope>(&innerBatchActive,&innerReleases);
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::move(owner));
+        });
+    failedInner.source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++innerAttempts;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_NESTED_SOURCE_ADMISSION_REJECTED"});
+        });
+    failedInner.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(!failedInner.project.error_message().isEmpty());
+    QVERIFY(!failedInner.source.has_source());
+    QCOMPARE(innerBatches,std::size_t{1});
+    QCOMPARE(innerReleases,std::size_t{1});
+    QCOMPARE(innerAttempts,std::size_t{1});
+    QVERIFY(!innerBatchActive);
+    failedInner.source.set_private_m18_source_mutation_admission({});
+    failedInner.project.openProject(QUrl::fromLocalFile(projectPath));
+    QVERIFY(failedInner.source.has_source());
+    QCOMPARE(innerBatches,std::size_t{2});
+    QCOMPARE(innerReleases,std::size_t{2});
+    QVERIFY(!innerBatchActive);
+}
 
 void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
 {
@@ -220,6 +2300,36 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
     QVERIFY(!reopened.project.degraded()); // recognized known output schema
     QCOMPARE(restored.source_rate_hz(),qint64{44100});
     QCOMPARE(restored.master_rate_hz(),qint64{192000});
+
+    // M18 preproduction: Project open must fail closed if an outer worker
+    // commit denies its nested MASTER mutation. Never Q_ASSERT/crash in
+    // debug or continue saving metadata with the wrong 44.1k target.
+    Session deniedRate;
+    app::MasterOutputRateState deniedMaster;
+    deniedRate.project.set_master_output_rate_state(&deniedMaster);
+    std::size_t deniedRateEdits=0;
+    deniedMaster.set_private_m18_rate_mutation_admission([&] {
+        ++deniedRateEdits;
+        return false;
+    });
+    deniedRate.project.openProject(QUrl::fromLocalFile(path));
+    QVERIFY(!deniedRate.project.error_message().isEmpty());
+    QCOMPARE(deniedRateEdits,std::size_t{1});
+    // The first denied M18 gate now applies to SOURCE-rate restoration
+    // itself, before any MASTER rate is published. The former expectation
+    // (44.1k/44.1k) relied on an unsafe legacy void-rate bypass.
+    QCOMPARE(deniedMaster.source_rate_hz(),qint64{0});
+    QCOMPARE(deniedMaster.master_rate_hz(),qint64{0});
+    QCOMPARE(deniedMaster.rate_revision(),std::uint64_t{0});
+    // SOURCE adoption may already have occurred under this deliberately
+    // incomplete per-controller test setup; the real Product requires a
+    // Project-wide exclusive mutation batch and revoked export consent.
+    QVERIFY(deniedRate.source.has_source());
+    deniedMaster.set_private_m18_rate_mutation_admission({});
+    deniedRate.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(deniedRate.project.error_message(),QString());
+    QCOMPARE(deniedMaster.master_rate_hz(),qint64{192000});
+
     const auto second=dir.filePath(QStringLiteral("master192-again.rgsml"));
     reopened.project.saveProjectAs(QUrl::fromLocalFile(second));
     QCOMPARE(reopened.project.error_message(),QString());

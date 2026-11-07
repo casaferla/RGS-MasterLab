@@ -9,11 +9,22 @@
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <QUrl>
 #include "terminal_private_product_session.hpp"
+#include "internal/m18_product_epoch_ticket.hpp"
+#include "internal/m18_checked_stage_worker_bridge.hpp"
+#include "internal/m18_private_async_export_handoff.hpp"
+#include "internal/m18_private_async_export_session.hpp"
+#include "internal/m18_export_format_policy.hpp"
+#include "m18_private_export_progress_view_model.hpp"
+#include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "master_output_rate_state.hpp"
+#include "source_selection_view_model.hpp"
 #include "mastering_preview_controller.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
@@ -32,6 +43,7 @@
 #include <QDebug>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -125,6 +137,10 @@ private slots:
     void rejectedCeilingCannotAlterAuthority_data();
     void rejectedCeilingCannotAlterAuthority();
     void unchangedCeilingLeavesRevisionAndConsentUntouched();
+    void m18DirectTerminalStateMutationRequiresProductEpoch();
+    void m18TerminalDirectMutationUsesRealCommitLease();
+    void m18DirectTerminalMutationRejectsReentrantEpochCallback();
+    void m18TerminalViewModelUsesSingleDirectStateEpochAuthority();
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
     void firstPrepareLiveEtaConvergesFromActualStagesWithoutHistory();
 };
@@ -344,6 +360,263 @@ verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners()
     vm.clearVerificationTrim(); // invalidated SOURCE or MASTER owner
     QCOMPARE(vm.verification_trim_status(),
         QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+}
+
+void TerminalActivationIntegrationTest::
+m18DirectTerminalStateMutationRequiresProductEpoch()
+{
+    // A direct TerminalLimiterState writer must not bypass the ViewModel
+    // admission while an M18 commit holds the immutable M17 owner.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a1").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    QVERIFY(state.value()->bypassed());
+    const auto chainRevision=state.value()->chain().revision();
+    const auto paramsRevision=state.value()->parameter_revision();
+    std::size_t calls=0;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char* name)->core::Status {
+            ++calls;
+            if(!name)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TERMINAL_OPERATION_MISSING"});
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TERMINAL_COMMIT_BUSY"});
+        });
+    QVERIFY(state.value()->m18_mutation_admission_installed());
+    const auto deniedCeiling=state.value()->set_ceiling_db_tp(-3.0);
+    QVERIFY(!deniedCeiling);
+    QCOMPARE(deniedCeiling.error()->code(),core::ErrorCode::InvalidState);
+    const auto deniedBypass=state.value()->set_user_bypass(false);
+    QVERIFY(!deniedBypass);
+    QCOMPARE(deniedBypass.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    QCOMPARE(state.value()->chain().revision(),chainRevision);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY(state.value()->bypassed());
+    // True no-ops do not manufacture a new Product generation.
+    QVERIFY(state.value()->set_ceiling_db_tp(-1.0));
+    QVERIFY(state.value()->set_user_bypass(true));
+    QCOMPARE(calls,std::size_t{2});
+    // A foreign worker is rejected BEFORE its callback can mutate state.
+    bool deniedForeign=false;
+    std::thread worker([&] {
+        const auto outcome=state.value()->set_ceiling_db_tp(-4.0);
+        deniedForeign=!outcome &&outcome.error()->code()
+            ==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(deniedForeign);
+    QCOMPARE(calls,std::size_t{2});
+    state.value()->set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_TERMINAL_ADMISSION_THROWN");
+        });
+    QVERIFY(!state.value()->set_ceiling_db_tp(-5.0));
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy published{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
+    // Direct state guard sees the same denied operation when the VM
+    // callback is not installed; no accepted render signal is emitted.
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.validation_message(),
+        QStringLiteral("Limiter change blocked by active export"));
+    QCOMPARE(published.count(),0);
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    std::size_t ambiguousVmCalls=0;
+    vm.set_private_m18_processing_mutation_admission([&] {
+        ++ambiguousVmCalls;
+        return true;
+    });
+    // Concurrently installed status callbacks are not "two approvals":
+    // their product epochs might differ. Fail closed before calling either.
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(ambiguousVmCalls,std::size_t{0});
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    vm.setBypass(false);
+    QVERIFY(state.value()->bypassed());
+    QCOMPARE(ambiguousVmCalls,std::size_t{0});
+    QCOMPARE(published.count(),0);
+    vm.set_private_m18_processing_mutation_admission({});
+    // Every Qt-bound editor path, including draft-only changes, refuses a
+    // foreign thread once the Product's terminal epoch is installed.
+    QSignalSpy observedUi{&vm,&app::TerminalLimiterViewModel::changed};
+    const auto beforeDraft=vm.draft_ceiling_db_tp();
+    bool foreignDraftDenied=false,foreignCommitDenied=false;
+    std::thread illegalEditor([&] {
+        foreignDraftDenied=!vm.setDraftFieldValue(
+            QStringLiteral("ceilingDbTp"),-4.0);
+        foreignCommitDenied=!vm.commitDraft();
+        vm.resetToDefault();
+        vm.setBypass(false);
+        vm.cancelDraft();
+    });
+    illegalEditor.join();
+    QVERIFY(foreignDraftDenied);
+    QVERIFY(foreignCommitDenied);
+    QCOMPARE(vm.draft_ceiling_db_tp(),beforeDraft);
+    QCOMPARE(observedUi.count(),0);
+    QCOMPARE(published.count(),0);
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision);
+    QVERIFY(state.value()->bypassed());
+    // Legacy unguarded M17 functionality remains intact when the
+    // preproduction gate is not installed.
+    state.value()->set_private_m18_mutation_admission({});
+    QVERIFY(state.value()->set_ceiling_db_tp(-3.0));
+    QVERIFY(state.value()->set_user_bypass(false));
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-3.0);
+    QCOMPARE(state.value()->parameter_revision(),paramsRevision+1);
+    QVERIFY(!state.value()->bypassed());
+}
+
+void TerminalActivationIntegrationTest::
+m18TerminalDirectMutationUsesRealCommitLease()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    const M18ProductExportIdentity id{41U,42U,43U,0U,48000U};
+    M18ProductEpochTicketAuthority authority{600U,id};
+    QVERIFY(authority.try_transition(600U,601U,id,true));
+    const auto ticket=authority.capture(id);
+    QVERIFY(ticket);
+    auto lease=ticket.value()->commit_lease_factory()();
+    QVERIFY(lease);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto limiterId=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a2").value());
+    QVERIFY(limiterId);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(state);
+    std::size_t attempted=0;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++attempted;
+            return authority.try_transition(601U,602U,id,false);
+        });
+    const auto initialChain=state.value()->chain().revision();
+    const auto initialParam=state.value()->parameter_revision();
+    QVERIFY(!state.value()->set_user_bypass(false));
+    QVERIFY(!state.value()->set_ceiling_db_tp(-3.0));
+    QCOMPARE(attempted,std::size_t{2});
+    QCOMPARE(state.value()->chain().revision(),initialChain);
+    QCOMPARE(state.value()->parameter_revision(),initialParam);
+    QVERIFY(state.value()->bypassed());
+    QVERIFY((*lease.value())->revalidate_current());
+    lease.value()->reset();
+    // After physical commit is finished, exactly one authoritative edit
+    // can advance the Product epoch and revoke the old M18 worker ticket.
+    QVERIFY(state.value()->set_ceiling_db_tp(-3.0));
+    QCOMPARE(attempted,std::size_t{3});
+    QCOMPARE(state.value()->parameter_revision(),initialParam+1);
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    // A stale expected epoch cannot subsequently toggle BYPASS.
+    QVERIFY(!state.value()->set_user_bypass(false));
+    QVERIFY(state.value()->bypassed());
+    QCOMPARE(attempted,std::size_t{4});
+    state.value()->set_private_m18_mutation_admission({});
+}
+
+void TerminalActivationIntegrationTest::
+m18DirectTerminalMutationRejectsReentrantEpochCallback()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a3").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    std::size_t calls=0;
+    bool nestedDenied=false;
+    const auto initialCeilingRevision=state.value()->parameter_revision();
+    const auto initialChainRevision=state.value()->chain().revision();
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++calls;
+            if(calls==1) {
+                // A malicious/synchronous Product callback must not
+                // change Ceiling underneath the outer BYPASS admission.
+                auto nested=state.value()->set_ceiling_db_tp(-6.0);
+                nestedDenied=!nested &&nested.error()->code()
+                    ==core::ErrorCode::InvalidState;
+            }
+            return core::Status::success();
+        });
+    QVERIFY(state.value()->set_user_bypass(false));
+    QVERIFY(nestedDenied);
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(!state.value()->bypassed());
+    QCOMPARE(state.value()->parameter_revision(),initialCeilingRevision);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY(state.value()->chain().revision()>initialChainRevision);
+    // The guard has been released: a second genuine, non-reentrant
+    // edit may be admitted normally instead of staying permanently busy.
+    QVERIFY(state.value()->set_ceiling_db_tp(-4.0));
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(state.value()->parameter_revision(),initialCeilingRevision+1);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-4.0);
+    state.value()->set_private_m18_mutation_admission({});
+}
+
+void TerminalActivationIntegrationTest::
+m18TerminalViewModelUsesSingleDirectStateEpochAuthority()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-0000000007a4").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    std::size_t admitted=0;
+    bool available=true;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char* operation)->core::Status {
+            if(!operation ||!available)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"M18_TERMINAL_EPOCH_BUSY"});
+            ++admitted;
+            return core::Status::success();
+        });
+    QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(admitted,std::size_t{1});
+    QCOMPARE(accepted.count(),1);
+    QVERIFY(vm.commitDraft()); // no-op must not revoke Product epoch
+    QCOMPARE(admitted,std::size_t{1});
+    QCOMPARE(accepted.count(),1);
+    vm.setBypass(false);
+    QCOMPARE(admitted,std::size_t{2});
+    QCOMPARE(accepted.count(),2);
+    QVERIFY(!vm.bypass());
+    // A denied real reset leaves both canonical M17 parameter and UI
+    // accepted-signal sequence intact.
+    available=false;
+    vm.resetToDefault();
+    QCOMPARE(vm.validation_message(),
+        QStringLiteral("Limiter reset blocked by active export"));
+    QCOMPARE(admitted,std::size_t{2});
+    QCOMPARE(accepted.count(),2);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-2.0);
+    available=true;
+    vm.resetToDefault();
+    QVERIFY(vm.validation_message().isEmpty());
+    QCOMPARE(admitted,std::size_t{3});
+    QCOMPARE(accepted.count(),3);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    state.value()->set_private_m18_mutation_admission({});
 }
 
 void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority_data()
@@ -2822,6 +3095,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         QStringLiteral("READY_TO_INSTALL"),12000);
     const auto firstProjectMaster=candidates.staged();
     QVERIFY(firstProjectMaster);
+    QCOMPARE(firstProjectMaster->accepted_terminal_parameter_revision,
+             limiter.value()->parameter_revision());
+    QCOMPARE(firstProjectMaster->accepted_ceiling_db_tp,
+             limiter.value()->parameters().ceiling_db_tp());
     QCOMPARE(firstProjectMaster->rendered.output_rate,*masterRate.value());
     QCOMPARE(vm.audio_status(),
         QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
@@ -2863,6 +3140,20 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(candidates.staged()->rendered.output_rate,*deviceRate.value());
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     vm.setBypass(true);
+    // Exact M17 acceptance provenance is monotonic even when a user
+    // returns Ceiling A->B->A. Same floating-point value is NOT proof
+    // that the accepted terminal PCM came from the latest parameters.
+    const auto originallyAcceptedCeiling=
+        firstProjectMaster->accepted_ceiling_db_tp;
+    const auto capturedRevision=
+        firstProjectMaster->accepted_terminal_parameter_revision;
+    QVERIFY(limiter.value()->set_ceiling_db_tp(-2.0));
+    QVERIFY(limiter.value()->set_ceiling_db_tp(originallyAcceptedCeiling));
+    QCOMPARE(limiter.value()->parameters().ceiling_db_tp(),
+             originallyAcceptedCeiling);
+    QVERIFY(limiter.value()->parameter_revision()!=capturedRevision);
+    QCOMPARE(firstProjectMaster->accepted_terminal_parameter_revision,
+             capturedRevision); // immutable accepted SOURCE stage
 }
 
 void TerminalActivationIntegrationTest::
@@ -3042,6 +3333,857 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.verified_master_rate_for_monitoring());
     QCOMPARE(*product.verified_master_rate_for_monitoring(),
         *masterRate.value());
+
+    // M18 PRIVATE PRODUCT authority: exact M17 owner and explicit consent.
+    // Never writes an actual WAV or grants a GUI export permission.
+    {
+        auto src=core::ResourceReference::create(
+            "test.memory","m18-product-source",true,false,
+            "Synthetic M18 source identity");
+        auto dst=core::ResourceReference::create(
+            "test.memory","m18-product-destination",false,true,
+            "Synthetic M18 destination identity");
+        QVERIFY(src && dst);
+        bool consentCurrent=true;
+        std::size_t consentChecks=0;
+        const auto approve=[&]()->core::Status {
+            ++consentChecks;
+            if(!consentCurrent)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::AccessDenied,
+                    "M18_TEST_EXPLICIT_CONSENT_REVOKED"});
+            return core::Status::success();
+        };
+        auto noConsent=product.make_private_m18_synchronous_export_request(
+            *masterRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,{});
+        QVERIFY(!noConsent);
+        QCOMPARE(noConsent.error()->code(),core::ErrorCode::AccessDenied);
+        auto wrongRate=product.make_private_m18_synchronous_export_request(
+            *deviceRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,approve);
+        QVERIFY(!wrongRate);
+        auto wrongSeed=product.make_private_m18_synchronous_export_request(
+            *masterRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,std::nullopt,-1.0,approve);
+        QVERIFY(!wrongSeed);
+        const auto authorized=product.make_private_m18_synchronous_export_request(
+            *masterRate.value(),*src.value(),*dst.value(),
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,approve);
+        QVERIFY2(authorized,authorized?"":authorized.error()->message().c_str());
+        QCOMPARE(authorized.value()->sample_format(),
+                 audio::WavSampleFormat::PCM_S24);
+        QVERIFY(authorized.value()->dither_seed()
+                ==std::optional<std::uint64_t>{UINT64_C(42)});
+        const auto original=candidates.staged();
+        QVERIFY(original);
+        // The real Product session, not a forged stage pointer, now
+        // supplies an exact verified M17 snapshot for a future async
+        // worker request. No Qt object may be read by that worker.
+        const auto productStage=
+            product.capture_m18_verified_stage_for_worker(
+                *masterRate.value());
+        QCOMPARE(productStage,original);
+        QVERIFY(!product.capture_m18_verified_stage_for_worker(
+            *deviceRate.value())); // DAC rate is not MASTER rate.
+        bool workerDeniedStage=false;
+        bool workerDeniedGateReads=false;
+        std::thread illicitOwner([&] {
+            workerDeniedStage=
+                !product.capture_m18_verified_stage_for_worker(
+                    *masterRate.value());
+            // The candidate's shared_ptr is not an atomic worker-side
+            // getter. Only the already retained immutable original may
+            // be carried into M18 asynchronous file export.
+            workerDeniedGateReads=
+                !candidates.staged()&&!candidates.staged_measured();
+        });
+        illicitOwner.join();
+        QVERIFY(workerDeniedStage);
+        QVERIFY(workerDeniedGateReads);
+        QCOMPARE(candidates.staged(),original);
+        QCOMPARE(product.capture_m18_verified_stage_for_worker(
+            *masterRate.value()),original);
+        // PREPRODUCTION owner-thread mutation admission: a held export
+        // epoch must deny Product cancellation without clearing the true
+        // M17 MASTER or changing the audible manual predecessor.
+        std::size_t deniedMutations=0;
+        product.set_private_m18_mutation_admission(
+            [&](const char* operation)->core::Status {
+                if(operation &&*operation)++deniedMutations;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_TEST_COMMIT_BUSY_MUTATION_DENIED"});
+            });
+        // A background export worker cannot silently disarm the real
+        // Product QObject authority before cancellation is admitted.
+        std::thread foreignGateRemoval([&] {
+            product.set_private_m18_mutation_admission({});
+        });
+        foreignGateRemoval.join();
+        const auto cancelDenied=product.cancel();
+        QVERIFY(!cancelDenied);
+        QCOMPARE(cancelDenied.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(candidates.staged()==original);
+        QVERIFY(!product.adopt_pending_source_loop_without_rerender());
+        QVERIFY(candidates.staged()==original);
+        QCOMPARE(deniedMutations,std::size_t{2});
+        // Clear the inert seam: the existing M17 product test must then
+        // continue with exact old behavior and no new M18 UI activation.
+        product.set_private_m18_mutation_admission({});
+        std::size_t deniedUpstreamMutations=0;
+        selector.set_private_m18_mutation_admission(
+            [&](const char* operation)->core::Status {
+                if(operation &&*operation)++deniedUpstreamMutations;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_TEST_UPSTREAM_SOURCE_BUSY"});
+            });
+        const auto switchDenied=selector.switch_to(
+            app::AuditionTarget::PREPARED);
+        QVERIFY(!switchDenied);
+        QCOMPARE(switchDenied.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(selector.active_target()
+                ==std::optional{app::AuditionTarget::PROCESSED});
+        QVERIFY(candidates.staged()==original);
+        QCOMPARE(deniedUpstreamMutations,std::size_t{1});
+        selector.set_private_m18_mutation_admission({});
+        // Rate edits use a separate mutation-only Product admission, not
+        // a side-effecting query from the QML canEditTarget property.
+        app::MasterOutputRateState guardedRate;
+        guardedRate.source_committed(48000);
+        const auto oldRevision=guardedRate.rate_revision();
+        std::size_t deniedRateChanges=0;
+        guardedRate.set_private_m18_rate_mutation_admission([&] {
+            ++deniedRateChanges;
+            return false;
+        });
+        QVERIFY(!guardedRate.choose_master_rate(44100));
+        QCOMPARE(guardedRate.master_rate_hz(),qint64{48000});
+        QCOMPARE(guardedRate.rate_revision(),oldRevision);
+        QCOMPARE(deniedRateChanges,std::size_t{1});
+        guardedRate.set_private_m18_rate_mutation_admission({});
+        QVERIFY(guardedRate.choose_master_rate(44100));
+        QCOMPARE(guardedRate.rate_revision(),oldRevision+1);
+
+        // One real Qt-free M18 epoch authority serves all THREE dormant
+        // Product mutation ports: terminal cancellation, upstream SOURCE
+        // selection and Project MASTER-rate choice. No callback is wired
+        // into the production application by this regression.
+        using platform::windows::internal::M18ProductEpochTicketAuthority;
+        using platform::windows::internal::M18ProductExportIdentity;
+        const M18ProductExportIdentity verifiedId{
+            1101U,1102U,1103U,
+            original->rendered.manual_chain_revision,
+            static_cast<std::uint32_t>(masterRate.value()->value())};
+        // M17 initial MANUAL revision can legitimately be zero; it
+        // remains a concrete identity, not an unset generation marker.
+        QCOMPARE(verifiedId.chain_revision,
+                 original->rendered.manual_chain_revision);
+        QVERIFY(verifiedId.valid());
+        M18ProductEpochTicketAuthority sharedEpoch{777U,verifiedId};
+        QVERIFY(sharedEpoch.try_transition(777U,778U,verifiedId,true));
+        auto masterTicket=sharedEpoch.capture(verifiedId);
+        QVERIFY(masterTicket);
+        // Exercise the REAL future Product-facing seam against an actual
+        // SourceSelectionViewModel, a genuine disk WAV and the current M17
+        // Product session, without QML, exporter invocation or device.
+        const auto m17View=original->rendered.terminal.checked.terminal
+            .compensated_pcm.view();
+        auto sourceBytes=std::make_shared<MatrixWavBytes>();
+        const audio::WavWriteSpec realSourceSpec{
+            m17View.format(),m17View.frame_count(),
+            audio::WavSampleFormat::IEEE_F64};
+        auto sourceWriter=audio::WavWriter::open(
+            std::make_unique<MatrixWavSink>(sourceBytes),realSourceSpec);
+        QVERIFY(sourceWriter);
+        QVERIFY((*sourceWriter.value())->write_frames(m17View));
+        QVERIFY((*sourceWriter.value())->finalize());
+        QVERIFY((*sourceWriter.value())->close());
+        QTemporaryDir m18ProductSourceDir;QVERIFY(m18ProductSourceDir.isValid());
+        const auto selectedSourcePath=m18ProductSourceDir.filePath(
+            QStringLiteral("selected-source-master.wav"));
+        QFile selectedSourceFile{selectedSourcePath};
+        QVERIFY(selectedSourceFile.open(
+            QIODevice::WriteOnly|QIODevice::NewOnly));
+        const auto sourceLength=
+            static_cast<qint64>(sourceBytes->bytes.size());
+        QCOMPARE(selectedSourceFile.write(
+            reinterpret_cast<const char*>(sourceBytes->bytes.data()),
+            sourceLength),sourceLength);
+        selectedSourceFile.close();
+        app::SourceSelectionViewModel selectedSource;
+        selectedSource.selectSource(QUrl::fromLocalFile(selectedSourcePath));
+        QVERIFY(selectedSource.has_source());
+        const auto* liveSource=selectedSource.source_resource();
+        QVERIFY(liveSource);
+        app::MasterOutputRateState selectedProjectRate;
+        selectedProjectRate.source_committed(
+            selectedSource.sample_rate_hz());
+        QCOMPARE(selectedProjectRate.master_rate_hz(),
+                 static_cast<qint64>(masterRate.value()->value()));
+        // Product live handoff additionally binds the exact monotonic
+        // SOURCE/MASTER selector revision. The legacy standalone ticket
+        // remains usable only by the isolated pure request builder.
+        auto boundIdentity=verifiedId;
+        boundIdentity.master_rate_revision=
+            selectedProjectRate.rate_revision();
+        M18ProductEpochTicketAuthority boundOwner{900U,boundIdentity};
+        QVERIFY(boundOwner.try_transition(
+            900U,901U,boundIdentity,true));
+        auto boundTicket=boundOwner.capture(boundIdentity);
+        QVERIFY(boundTicket);
+        const auto deniedUnboundRevision=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *masterTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedUnboundRevision);
+        const auto correctProductWorkerRequest=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(correctProductWorkerRequest);
+        // M18 private vertical slice: use the REAL M17 Product session and
+        // SOURCE selection, freeze the exact stage on Qt owner thread, then
+        // run the actual Windows transactional export on a detached worker.
+        // No QML/export menu is enabled. Test-owned Product ticket is
+        // explicit and the source/destination are real local filesystem
+        // references; worker never dereferences a QObject.
+        for(const auto targetFormat:{
+                audio::WavSampleFormat::PCM_S24,
+                audio::WavSampleFormat::IEEE_F32}) {
+            const auto filename=QStringLiteral("product-m18-%1.wav")
+                .arg(static_cast<int>(targetFormat));
+            const auto path=m18ProductSourceDir.filePath(filename);
+            const auto destination=
+                platform::windows::WindowsResourceWriter::
+                    make_write_reference(
+                        path.toUtf8().toStdString(),
+                        filename.toUtf8().toStdString());
+            QVERIFY(destination);
+            const auto ditherSeed=
+                targetFormat==audio::WavSampleFormat::PCM_S24
+                    ?std::optional<std::uint64_t>{UINT64_C(42)}
+                    :std::nullopt;
+            auto worker=app::internal::
+                launch_m18_async_export_from_live_product(
+                    product,selectedSource,selectedProjectRate,candidates,
+                    *boundTicket.value(),liveSource->reference(),
+                    *destination.value(),targetFormat,ditherSeed,0.0);
+            QVERIFY(worker);
+            QCOMPARE((*worker.value())->total_frames(),
+                     static_cast<std::uint64_t>(
+                         m17View.frame_count().value()));
+            QTRY_VERIFY_WITH_TIMEOUT(
+                (*worker.value())->finished(),30000);
+            const auto done=(*worker.value())->result_if_finished();
+            QVERIFY(done);
+            QVERIFY2(static_cast<bool>(*done),
+                done->error()?done->error()->message().c_str()
+                             :"no Product export evidence");
+            QCOMPARE(done->value()->sample_format(),targetFormat);
+            QCOMPARE(done->value()->frame_count().value(),
+                     m17View.frame_count().value());
+            QCOMPARE(done->value()->encoded_file_sha256().size(),
+                     std::size_t{64});
+            QVERIFY(QFileInfo::exists(path));
+            const auto before=QFileInfo{path}.size();
+            QVERIFY(before>0);
+            // The live Product pipeline never authorizes overwriting its
+            // own previous verified export, even on a second click.
+            const auto duplicate=app::internal::
+                launch_m18_async_export_from_live_product(
+                    product,selectedSource,selectedProjectRate,candidates,
+                    *boundTicket.value(),liveSource->reference(),
+                    *destination.value(),targetFormat,ditherSeed,0.0);
+            QVERIFY(duplicate);
+            QTRY_VERIFY_WITH_TIMEOUT(
+                (*duplicate.value())->finished(),30000);
+            const auto duplicateResult=
+                (*duplicate.value())->result_if_finished();
+            QVERIFY(duplicateResult);
+            QVERIFY(!*duplicateResult);
+            QCOMPARE(QFileInfo{path}.size(),before);
+        }
+        // The preproduction Product lifecycle admits exactly ONE async
+        // export until its terminal result is acknowledged. No lost WAV
+        // evidence, accidental parallel export or UI-thread blocking.
+        app::internal::M18PrivateAsyncExportSession exportSession;
+        auto managedPath=m18ProductSourceDir.filePath(
+            QStringLiteral("managed-session-master.wav"));
+        const auto managedDestination=
+            platform::windows::WindowsResourceWriter::
+                make_write_reference(
+                    managedPath.toUtf8().toStdString(),
+                    "managed-session-master.wav");
+        QVERIFY(managedDestination);
+        // Neither a missing PCM24 TPDF seed nor a seeded float32 choice
+        // may capture Product state, open a file or reserve a worker slot.
+        QVERIFY(!exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::PCM_S24,
+            std::nullopt,0.0));
+        QCOMPARE(exportSession.snapshot().phase,
+                 app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+        QVERIFY(!QFileInfo::exists(managedPath));
+        QVERIFY(!exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            UINT64_C(42),0.0));
+        QVERIFY(!QFileInfo::exists(managedPath));
+        QVERIFY(exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QVERIFY(!exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QTRY_VERIFY_WITH_TIMEOUT(
+            exportSession.snapshot().phase
+                ==app::internal::M18PrivateAsyncExportSession::
+                    Phase::VERIFIED_DELIVERED,
+            30000);
+        const auto finalSessionSnapshot=exportSession.snapshot();
+        QCOMPARE(finalSessionSnapshot.encoded_frames,
+                 finalSessionSnapshot.total_frames);
+        QVERIFY(!finalSessionSnapshot.failure_code);
+        QVERIFY(QFileInfo::exists(managedPath));
+        // The session handle itself is not an atomic cross-thread pointer.
+        // A rogue worker cannot cancel it, read it or acknowledge the
+        // finished Product result while the UI owns its lifecycle.
+        bool foreignSnapshotRejected=false;
+        std::thread foreignSession([&] {
+            const auto denied=exportSession.snapshot();
+            foreignSnapshotRejected=
+                denied.phase==app::internal::M18PrivateAsyncExportSession::
+                    Phase::FAILED
+                &&denied.failure_code==core::ErrorCode::InvalidState;
+            exportSession.cancel();
+        });
+        foreignSession.join();
+        QVERIFY(foreignSnapshotRejected);
+        QCOMPARE(exportSession.snapshot().phase,
+            app::internal::M18PrivateAsyncExportSession::
+                Phase::VERIFIED_DELIVERED);
+        QVERIFY(exportSession.acknowledge_finished());
+        QCOMPARE(exportSession.snapshot().phase,
+                 app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+        QVERIFY(!exportSession.acknowledge_finished());
+
+        // A dormant but genuine Qt ViewModel observes ONLY atomic worker
+        // progress and a post-readback verified result. No Product/GUI
+        // registration, and no worker callback may enter the QML thread.
+        app::M18PrivateExportProgressViewModel exportView;
+        QSignalSpy exportChanges{
+            &exportView,&app::M18PrivateExportProgressViewModel::changed};
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(!exportView.export_in_progress());
+        QVERIFY(!exportView.can_cancel());
+        QVERIFY(!exportView.can_acknowledge());
+        QVERIFY(!exportView.verified_delivered());
+        QVERIFY(exportView.verified_encoded_sha256().isEmpty());
+        QCOMPARE(exportView.verified_file_size_bytes(),qulonglong{0});
+        const auto viewOutputPath=m18ProductSourceDir.filePath(
+            QStringLiteral("viewmodel-m18-verified.wav"));
+        auto viewOutputRef=platform::windows::WindowsResourceWriter::
+            make_write_reference(
+                viewOutputPath.toUtf8().toStdString(),
+                "viewmodel-m18-verified.wav");
+        QVERIFY(viewOutputRef);
+        QVERIFY(!exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            UINT64_C(42),0.0));
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(!exportView.export_in_progress());
+        QVERIFY(exportView.failure_hint().isEmpty());
+        QCOMPARE(exportChanges.count(),0); // no false progress or result
+        QVERIFY(!QFileInfo::exists(viewOutputPath));
+        QVERIFY(exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QVERIFY(!exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QTRY_VERIFY_WITH_TIMEOUT(exportView.verified_delivered(),30000);
+        QCOMPARE(exportView.status_text(),
+                 QStringLiteral("VERIFIED_DELIVERED"));
+        QCOMPARE(exportView.encoded_progress(),1.0);
+        QVERIFY(!exportView.export_in_progress());
+        QVERIFY(!exportView.can_cancel());
+        QVERIFY(exportView.can_acknowledge());
+        QVERIFY(exportView.error_text().isEmpty());
+        // A direct stale UI Cancel click after successful WAV readback
+        // must not relabel or revoke the already verified delivery.
+        exportView.cancelExport();
+        QCOMPARE(exportView.status_text(),
+                 QStringLiteral("VERIFIED_DELIVERED"));
+        QVERIFY(exportView.verified_delivered());
+        QCOMPARE(exportView.verified_encoded_sha256().size(),qsizetype{64});
+        QVERIFY(exportView.verified_file_size_bytes()>0);
+        QVERIFY(exportView.can_acknowledge());
+        QVERIFY(exportChanges.count()>=2);
+        QVERIFY(QFileInfo::exists(viewOutputPath));
+        QVERIFY(exportView.acknowledgeExport());
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(exportView.failure_hint().isEmpty());
+        QVERIFY(exportView.verified_encoded_sha256().isEmpty());
+        QCOMPARE(exportView.verified_file_size_bytes(),qulonglong{0});
+        QVERIFY(!exportView.can_acknowledge());
+        QVERIFY(!exportView.can_cancel());
+        QVERIFY(!exportView.acknowledgeExport());
+
+        // A second attempt to use the same published filename must
+        // surface a FAILED state and retain the previous WAV untouched.
+        // Pressing Cancel afterward must NOT relabel that verification/
+        // collision failure as a successful user cancellation.
+        QVERIFY(exportView.begin_private_export(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0));
+        QTRY_VERIFY_WITH_TIMEOUT(
+            exportView.status_text()==QStringLiteral("FAILED"),30000);
+        QVERIFY(!exportView.error_text().isEmpty());
+        QVERIFY(!exportView.failure_hint().isEmpty());
+        QVERIFY(!exportView.failure_hint().contains(viewOutputPath));
+        QVERIFY(exportView.verified_encoded_sha256().isEmpty());
+        QCOMPARE(exportView.verified_file_size_bytes(),qulonglong{0});
+        QVERIFY(exportView.can_acknowledge());
+        QVERIFY(!exportView.can_cancel());
+        exportView.cancelExport();
+        QCOMPARE(exportView.status_text(),QStringLiteral("FAILED"));
+        QVERIFY(exportView.acknowledgeExport());
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+
+        // A denied preflight does not start a worker, emit a phantom
+        // export result or occupy the one-job lifecycle state.
+        app::SourceSelectionViewModel emptyViewSource;
+        const auto deniedWithoutSource=exportView.begin_private_export(
+            product,emptyViewSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *viewOutputRef.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,0.0);
+        QVERIFY(!deniedWithoutSource);
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+
+        // Worker threads may only see the immutable M18 request and
+        // atomic progress, never ask the live Qt ViewModel to mint a
+        // new Product export or acknowledge a prior terminal outcome.
+        const auto ownerSourceRef=liveSource->reference();
+        const auto ownerDestinationRef=*viewOutputRef.value();
+        bool refusedCrossThreadStart=false;
+        bool refusedCrossThreadAck=false;
+        std::thread rogueExportCaller([&] {
+            const auto denied=exportView.begin_private_export(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),ownerSourceRef,ownerDestinationRef,
+                audio::WavSampleFormat::IEEE_F32,std::nullopt,0.0);
+            refusedCrossThreadStart=!denied
+                &&denied.error()->code()==core::ErrorCode::InvalidState;
+            refusedCrossThreadAck=!exportView.acknowledgeExport();
+        });
+        rogueExportCaller.join();
+        QVERIFY(refusedCrossThreadStart);
+        QVERIFY(refusedCrossThreadAck);
+        QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+
+        // A ticket and verified M17 MASTER do not authorize export while
+        // the Product has NO real current SOURCE selected in its QObject.
+        app::SourceSelectionViewModel noCurrentProductSource;
+        const auto deniedMissingCurrentSource=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,noCurrentProductSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedMissingCurrentSource);
+        app::MasterOutputRateState noCurrentProductRate;
+        const auto deniedMissingCurrentRate=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,noCurrentProductRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedMissingCurrentRate);
+        QVERIFY(correctProductWorkerRequest.value()->payload()
+                .channel(0U).value()->data()
+            ==m17View.channel(0U).value()->data());
+        // Float32 is a second valid delivery encoding from the SAME
+        // immutable final M17 MASTER: never dither Float32 or re-render.
+        const auto float32ProductWorkerRequest=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::IEEE_F32,std::nullopt,-1.0);
+        QVERIFY(float32ProductWorkerRequest);
+        QCOMPARE(float32ProductWorkerRequest.value()->sample_format(),
+                 audio::WavSampleFormat::IEEE_F32);
+        QVERIFY(!float32ProductWorkerRequest.value()->dither_seed());
+        QVERIFY(float32ProductWorkerRequest.value()->payload()
+                .channel(0U).value()->data()
+            ==m17View.channel(0U).value()->data());
+        // No implicit PCM24 dither seed and no Float32 dither:
+        // invalid encoding/seed combinations fail before worker dispatch.
+        // M18 is a final-delivery encoding policy, not another stage
+        // in the binary64 M17 DSP chain: integer PCM24 is the ONLY
+        // format that receives deterministic seeded TPDF dither.
+        using app::internal::validate_m18_export_format;
+        QVERIFY(validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,UINT64_C(0),-12.0));
+        QVERIFY(validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,UINT64_C(42),0.0));
+        QVERIFY(validate_m18_export_format(
+            audio::WavSampleFormat::IEEE_F32,std::nullopt,-1.0));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,std::nullopt,-1.0));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::IEEE_F32,UINT64_C(1),-1.0));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::PCM_S24,UINT64_C(1),-12.01));
+        QVERIFY(!validate_m18_export_format(
+            audio::WavSampleFormat::IEEE_F32,std::nullopt,0.01));
+        const auto missingPcm24Seed=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,std::nullopt,-1.0);
+        QVERIFY(!missingPcm24Seed);
+        const auto forbiddenFloat32Seed=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::IEEE_F32,UINT64_C(42),-1.0);
+        QVERIFY(!forbiddenFloat32Seed);
+        const auto falseProductSource=core::ResourceReference::create(
+            liveSource->reference().provider_id(),
+            liveSource->reference().locator()+".stale",
+            true,false,"stale-product-source");
+        QVERIFY(falseProductSource);
+        const auto deniedWrongProductSource=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),*falseProductSource.value(),
+                *dst.value(),audio::WavSampleFormat::PCM_S24,
+                UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongProductSource);
+        app::MasterOutputRateState differentProjectMaster;
+        differentProjectMaster.source_committed(48000);
+        const auto deniedWrongProjectMaster=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,differentProjectMaster,candidates,
+                *boundTicket.value(),liveSource->reference(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongProjectMaster);
+        // UI-only Product stage/rate/SOURCE lookup must be denied before
+        // any QObject access when invoked from an export worker.
+        const auto verifiedCurrentSource=liveSource->reference();
+        bool workerRejectedLiveProduct=false;
+        std::thread illicitExportWorker([&] {
+            const auto denied=
+                app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                    product,selectedSource,selectedProjectRate,candidates,
+                    *boundTicket.value(),verifiedCurrentSource,*dst.value(),
+                    audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+            workerRejectedLiveProduct=!denied
+                &&denied.error()->code()==core::ErrorCode::InvalidState;
+        });
+        illicitExportWorker.join();
+        QVERIFY(workerRejectedLiveProduct);
+        // Re-selecting SOURCE at the same sample rate is still a new
+        // Product identity. The old ticket must not be able to publish
+        // the retained old M17 buffer even if Fs and locator match.
+        const auto previousRevision=selectedProjectRate.rate_revision();
+        selectedProjectRate.source_committed(
+            selectedSource.sample_rate_hz());
+        QCOMPARE(selectedProjectRate.rate_revision(),previousRevision+1);
+        const auto staleSameRateProduct=
+            app::internal::make_m18_checked_stage_worker_request_from_live_product(
+                product,selectedSource,selectedProjectRate,candidates,
+                *boundTicket.value(),verifiedCurrentSource,*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!staleSameRateProduct);
+        QCOMPARE(staleSameRateProduct.error()->code(),
+                 core::ErrorCode::InvalidState);
+        // The preproduction typed handoff consumes a REAL checked M17
+        // Product candidate plus the Qt-free worker epoch Ticket. It may
+        // never copy Master PCM or forge a new terminal realization.
+        const auto ownerBoundRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,
+                UINT64_C(42),-1.0);
+        QVERIFY(ownerBoundRequest);
+        // Exact current-Source provenance is distinct from a worker's
+        // asserted file path. Even a real M17 stage and valid Product epoch
+        // cannot authorize writing PCM for a different current SOURCE.
+        auto otherSource=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator()+".other",
+            true,false,"other-source");
+        QVERIFY(otherSource);
+        const auto wrongSourceRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *otherSource.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!wrongSourceRequest);
+        QCOMPARE(wrongSourceRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
+        // Same opaque locator but a different provider is NOT identical
+        // SOURCE provenance (nor a license to reinterpret local paths).
+        auto foreignProvider=core::ResourceReference::create(
+            "test.other-provider",src.value()->locator(),true,false,
+            "foreign-provider-source");
+        QVERIFY(foreignProvider);
+        const auto foreignProviderRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *foreignProvider.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!foreignProviderRequest);
+        QCOMPARE(foreignProviderRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
+        auto readDenied=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator(),
+            false,true,"unreadable-source");
+        QVERIFY(readDenied);
+        const auto unreadableRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *readDenied.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!unreadableRequest);
+        QCOMPARE(unreadableRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
+        auto unreadableWorkerSource=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator(),
+            false,true,"unreadable-worker-source");
+        QVERIFY(unreadableWorkerSource);
+        const auto deniedWorkerSource=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*unreadableWorkerSource.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWorkerSource);
+        QCOMPARE(deniedWorkerSource.error()->code(),
+                 core::ErrorCode::InvalidState);
+        // A write-authorized reference still may not alias the exact
+        // SOURCE provider/locator. Physical aliases are checked by Windows
+        // again at commit time.
+        auto sameFileDest=core::ResourceReference::create(
+            src.value()->provider_id(),src.value()->locator(),
+            false,true,"forbidden-alias");
+        QVERIFY(sameFileDest);
+        const auto aliasDestination=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*src.value(),*sameFileDest.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!aliasDestination);
+        QCOMPARE(aliasDestination.error()->code(),
+                 core::ErrorCode::InvalidState);
+        auto noWriteDest=core::ResourceReference::create(
+            dst.value()->provider_id(),dst.value()->locator(),
+            true,false,"forbidden-read-only-destination");
+        QVERIFY(noWriteDest);
+        const auto unwritableDestination=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*masterTicket.value(),
+                *src.value(),*src.value(),*noWriteDest.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!unwritableDestination);
+        QCOMPARE(unwritableDestination.error()->code(),
+                 core::ErrorCode::InvalidState);
+        // A retained M17 stage from another/retired Product candidate gate
+        // can never use a current ticket to publish a different MASTER.
+        app::TerminalCandidateGate detachedGate;
+        const auto detachedRequest=
+            app::internal::make_m18_checked_stage_worker_request(
+                detachedGate,original,*masterTicket.value(),
+                *src.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,
+                UINT64_C(42),-1.0);
+        QVERIFY(!detachedRequest);
+        QCOMPARE(detachedRequest.error()->code(),
+                 core::ErrorCode::InvalidState);
+        const auto aliasView=ownerBoundRequest.value()->payload();
+        const auto originalStageView=original->rendered.terminal.checked
+            .terminal.compensated_pcm.view();
+        QCOMPARE(aliasView.frame_count(),originalStageView.frame_count());
+        const auto ownerBoundLeft=aliasView.channel(0U);
+        const auto originalLeftBefore=originalStageView.channel(0U);
+        QVERIFY(ownerBoundLeft&&originalLeftBefore);
+        QVERIFY(ownerBoundLeft.value()->data()
+                ==originalLeftBefore.value()->data());
+        // A ticket for the DEVICE rate must NEVER borrow a separately
+        // verified final MASTER at a different chosen output rate.
+        auto wrongMasterIdentity=verifiedId;
+        wrongMasterIdentity.master_rate_hz=48000U;
+        M18ProductEpochTicketAuthority wrongRateOwner{
+            888U,wrongMasterIdentity};
+        QVERIFY(wrongRateOwner.try_transition(
+            888U,889U,wrongMasterIdentity,true));
+        auto wrongRateTicket=wrongRateOwner.capture(wrongMasterIdentity);
+        QVERIFY(wrongRateTicket);
+        const auto deniedWrongRate=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*wrongRateTicket.value(),
+                *src.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongRate);
+        QCOMPARE(deniedWrongRate.error()->code(),
+                 core::ErrorCode::InvalidState);
+        // Same output Fs, different chain revision: never alias PCM.
+        auto wrongChainIdentity=verifiedId;
+        ++wrongChainIdentity.chain_revision;
+        M18ProductEpochTicketAuthority wrongChainOwner{
+            890U,wrongChainIdentity};
+        QVERIFY(wrongChainOwner.try_transition(
+            890U,891U,wrongChainIdentity,true));
+        auto wrongChainTicket=wrongChainOwner.capture(wrongChainIdentity);
+        QVERIFY(wrongChainTicket);
+        const auto deniedWrongChain=
+            app::internal::make_m18_checked_stage_worker_request(
+                candidates,original,*wrongChainTicket.value(),
+                *src.value(),*src.value(),*dst.value(),
+                audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0);
+        QVERIFY(!deniedWrongChain);
+        QCOMPARE(deniedWrongChain.error()->code(),
+                 core::ErrorCode::InvalidState);
+        const auto workerFactory=masterTicket.value()->commit_lease_factory();
+        auto heldCommit=workerFactory();
+        QVERIFY(heldCommit);
+        std::size_t interlockedAttempts=0;
+        const auto commonAdmission=[&](const char*)->core::Status {
+            ++interlockedAttempts;
+            return sharedEpoch.try_transition(
+                778U,779U,verifiedId,false);
+        };
+        product.set_private_m18_mutation_admission(commonAdmission);
+        candidates.set_private_m18_mutation_admission(commonAdmission);
+        selector.set_private_m18_mutation_admission(commonAdmission);
+        guardedRate.set_private_m18_rate_mutation_admission([&] {
+            return static_cast<bool>(commonAdmission("master_rate_edit"));
+        });
+        app::TerminalLimiterViewModel guardedLimiter{limiter.value()};
+        guardedLimiter.set_private_m18_processing_mutation_admission([&] {
+            return static_cast<bool>(commonAdmission("m17_limiter_edit"));
+        });
+        const auto originalBypass=guardedLimiter.bypass();
+        guardedLimiter.setBypass(!originalBypass);
+        QCOMPARE(guardedLimiter.bypass(),originalBypass);
+        const auto blockedCandidateInvalidation=
+            candidates.try_invalidate_for_m18();
+        const auto rendererStatusBefore=renderer.status();
+        const auto renderCountBefore=renderer.render_invocation_count();
+        const auto blockedRendererInvalidation=
+            renderer.try_invalidate_for_m18();
+        // A second M17 Prepare while a verified M18 worker owns the
+        // file-commit epoch must ALSO refuse before clearing the MASTER.
+        const auto blockedSecondPrepare=
+            renderer.request_private(*masterRate.value());
+        const auto blockedProductCancel=product.cancel();
+        const auto blockedUpstreamSource=selector.switch_to(
+            app::AuditionTarget::PREPARED);
+        const auto selectedRateBefore=guardedRate.master_rate_hz();
+        const auto blockedProjectRate=guardedRate.choose_master_rate(48000);
+        QVERIFY(!blockedCandidateInvalidation);
+        QVERIFY(!blockedRendererInvalidation);
+        QVERIFY(!blockedSecondPrepare);
+        QCOMPARE(blockedSecondPrepare.error()->code(),
+                 core::ErrorCode::InvalidState);
+        QCOMPARE(renderer.status(),rendererStatusBefore);
+        QCOMPARE(renderer.render_invocation_count(),renderCountBefore);
+        QVERIFY(!blockedProductCancel);
+        QVERIFY(!blockedUpstreamSource);
+        QVERIFY(!blockedProjectRate);
+        QCOMPARE(interlockedAttempts,std::size_t{7});
+        QVERIFY(candidates.staged()==original);
+        QCOMPARE(guardedRate.master_rate_hz(),selectedRateBefore);
+        QVERIFY((*heldCommit.value())->revalidate_current());
+        heldCommit.value()->reset();
+        QVERIFY(sharedEpoch.try_transition(778U,779U,verifiedId,false));
+        QVERIFY(!workerFactory()); // no re-admission after revocation
+        product.set_private_m18_mutation_admission({});
+        candidates.set_private_m18_mutation_admission({});
+        selector.set_private_m18_mutation_admission({});
+        guardedRate.set_private_m18_rate_mutation_admission({});
+        guardedLimiter.set_private_m18_processing_mutation_admission({});
+
+        // A foreign export worker or a reentrant callback cannot disarm
+        // the limiter Product guard and mutate the verified M17 stage.
+        std::size_t limiterGuardCalls=0,limiterNestedDenied=0;
+        guardedLimiter.set_private_m18_processing_mutation_admission([&] {
+            ++limiterGuardCalls;
+            guardedLimiter.set_private_m18_processing_mutation_admission({});
+            const auto bypassBeforeNested=guardedLimiter.bypass();
+            guardedLimiter.setBypass(!bypassBeforeNested);
+            if(guardedLimiter.bypass()==bypassBeforeNested)
+                ++limiterNestedDenied;
+            return false;
+        });
+        std::thread foreignLimiterDisarm([&] {
+            guardedLimiter.set_private_m18_processing_mutation_admission({});
+        });
+        foreignLimiterDisarm.join();
+        guardedLimiter.setBypass(!originalBypass);
+        guardedLimiter.setBypass(!originalBypass);
+        QCOMPARE(guardedLimiter.bypass(),originalBypass);
+        QCOMPARE(limiterGuardCalls,std::size_t{2});
+        QCOMPARE(limiterNestedDenied,std::size_t{2});
+        guardedLimiter.set_private_m18_processing_mutation_admission({});
+
+        const auto originalPcm=original->rendered.terminal.checked.terminal
+            .compensated_pcm.view();
+        const auto requestedPcm=authorized.value()->payload();
+        QCOMPARE(requestedPcm.frame_count(),originalPcm.frame_count());
+        QVERIFY(requestedPcm.format()==originalPcm.format());
+        const auto originalLeft=originalPcm.channel(0U);
+        const auto requestedLeft=requestedPcm.channel(0U);
+        QVERIFY(originalLeft && requestedLeft);
+        // Alias retention of EXACT original M17 Master; never copy/render.
+        QVERIFY(originalLeft.value()->data()==requestedLeft.value()->data());
+        const auto commitLease=authorized.value()->commit_lease_factory()();
+        QVERIFY(commitLease);
+        QVERIFY((*commitLease.value())->revalidate_current());
+        // A caller on a worker thread MUST NOT obtain a Product export
+        // request or revalidate the existing lease: Qt owner affinity is
+        // a hard contract, not a silent post-consent race.
+        bool workerDenied=false;
+        std::thread worker([&] {
+            const auto offThread=
+                product.make_private_m18_synchronous_export_request(
+                    *masterRate.value(),*src.value(),*dst.value(),
+                    audio::WavSampleFormat::PCM_S24,UINT64_C(42),-1.0,approve);
+            const auto offThreadLease=
+                (*commitLease.value())->revalidate_current();
+            workerDenied=!offThread
+                &&offThread.error()->code()==core::ErrorCode::InvalidState
+                &&!offThreadLease
+                &&offThreadLease.error()->code()==core::ErrorCode::InvalidState;
+        });
+        worker.join();
+        QVERIFY(workerDenied);
+        consentCurrent=false;
+        // Product permission is checked again AT COMMIT, not merely at
+        // request capture. The held lease may no longer authorize file IO.
+        const auto revoked=(*commitLease.value())->revalidate_current();
+        QVERIFY(!revoked);
+        QCOMPARE(revoked.error()->code(),core::ErrorCode::AccessDenied);
+        QVERIFY(!authorized.value()->commit_lease_factory()());
+        QVERIFY(consentChecks>=5U);
+    }
     QCOMPARE(monitorUi.master_rate_hz(),int{192000});
     QVERIFY(monitorUi.can_install());
     QSignalSpy installEligibility{&monitorUi,&app::TerminalMonitorViewModel::changed};

@@ -28,6 +28,8 @@
 #include "terminal_post_limiter_true_peak_coordinator.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
+#include "m18_product_export_view_model.hpp"
+#include "internal/m18_product_complete_binding.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -825,6 +827,158 @@ int main(int argc, char* argv[])
                 static_cast<double>(sourceSelection.sample_rate_hz()),
                 sourceSelection.channel_count());
         });
+    // M18 active Product wiring. The M17 legacy void SOURCE callback above
+    // remains for compatibility with unguarded tests and historical paths;
+    // after the complete M18 binder is installed below, this checked
+    // status-returning route exclusively handles real SOURCE commits.
+    // The physical SOURCE batch spans all nested Product resets, including
+    // M17 terminal retirement and M11–15 reset-to-default operations.
+    sourceSelection.set_private_m18_checked_source_committed_handler(
+        [&sourceWaveform, &sourceSelection, &auditionRegion,
+         &auditionSelector, &goldSelection, &dspChainAdapterModel,
+         &projectSession, &stereoMsViewModel, &compressorViewModel,
+         &staticTruePeak, &liveTruePeak, &terminalProductActivation,
+         &masterOutputRate](
+            const rgsml::core::ResourceReference& source)
+                ->rgsml::core::Status {
+            liveTruePeak.invalidate();
+            staticTruePeak.invalidate_source();
+            const auto frameCount=rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            if(!frameCount)
+                return rgsml::core::Status::failure(*frameCount.error());
+            const auto rate=rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            if(!rate)
+                return rgsml::core::Status::failure(*rate.error());
+            // The old void rate reset would be silently ignored under an
+            // installed M18 gate. The bool child admission shares SOURCE's
+            // already-held physical epoch and must fail closed on BUSY.
+            if(!masterOutputRate.try_source_committed_for_m18(
+                    sourceSelection.sample_rate_hz()))
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "M18_PRODUCT_SOURCE_RATE_MUTATION_REFUSED"});
+            auditionRegion.source_committed(*frameCount.value(),*rate.value());
+            auto prepared=auditionSelector.source_committed(source);
+            if(!prepared)return prepared;
+            // The terminal M17 device handoff and QML displays may only
+            // observe an accepted fresh SOURCE. Consent is never minted here.
+            terminalProductActivation.source_committed_successfully();
+            const int channels=sourceSelection.channel_count();
+            if(channels==1 ||channels==2) {
+                staticTruePeak.source_committed(
+                    source,rgsml::app::TruePeakExpectedSource{
+                        *frameCount.value(),*rate.value(),
+                        channels==1?rgsml::audio::ChannelLayout::MONO_C
+                                   :rgsml::audio::ChannelLayout::STEREO_LR});
+                staticTruePeak.processed_changed(
+                    auditionSelector.processed_realization_snapshot(),
+                    auditionSelector.processed_realization_id());
+            }
+            compressorViewModel.resetTelemetryForNewSource();
+            const auto switched=auditionSelector.switch_to(
+                rgsml::app::AuditionTarget::PREPARED);
+            if(!switched)return switched;
+            if(!projectSession.is_committing_project_open())
+                dspChainAdapterModel.resetForNewSource();
+            goldSelection.sourceChanged();
+            sourceWaveform.source_committed(source);
+            stereoMsViewModel.setSignalFormat(
+                static_cast<double>(sourceSelection.sample_rate_hz()),
+                sourceSelection.channel_count());
+            return rgsml::core::Status::success();
+        });
+    // M18 Product authority: install once, before QML can issue Export.
+    // No SOURCE is selected at startup. The supported seed rate below is
+    // only a valid, UNCONSENTED identity; it grants NO right to export.
+    // The first physical SOURCE batch advances its generation, and the
+    // queued post-publication reconciliation records the real rate/revision.
+    using M18Binding=rgsml::app::internal::M18ProductCompleteBinding;
+    using M18Identity=rgsml::platform::windows::internal::M18ProductExportIdentity;
+    using M18TicketAuthority=rgsml::platform::windows::internal::
+        M18ProductEpochTicketAuthority;
+    const auto m18StartupRate=masterOutputRate.has_supported_master_rate()
+        ?static_cast<std::uint32_t>(masterOutputRate.master_rate_hz())
+        :std::uint32_t{48000};
+    const M18Identity m18InitialIdentity{
+        1U,1U,1U,masteringChainState.chain().revision(),
+        m18StartupRate,masterOutputRate.rate_revision()};
+    auto m18TicketAuthority=std::make_shared<M18TicketAuthority>(
+        1U,m18InitialIdentity);
+    rgsml::platform::windows::internal::M18OwnerMutationFanout m18Fanout{
+        m18TicketAuthority,1U,m18InitialIdentity};
+    M18Binding::Controllers m18Controllers{{
+        projectSession,sourceSelection,masterOutputRate,
+        masteringChainState,auditionSelector,auditionRegion,
+        goldSelection,terminalLimiterState},
+        privateProductSession,terminalCandidateGate};
+    const auto m18Bound=M18Binding::bind(m18Controllers,m18Fanout);
+    if(!m18Bound) {
+        std::fprintf(stderr,"M18 Product guard bootstrap refused: %s\\n",
+            m18Bound.error()->message().c_str());
+        return EXIT_FAILURE; // Fail closed: never expose an unguarded Export.
+    }
+    // A single Product action owns consent, worker and acknowledgement.
+    // Destruction order is UI -> action/cancel -> fanout -> ticket authority;
+    // the detached worker sees only immutable PCM and a revocable Qt-free
+    // lease, never the QObject or its controller references.
+    rgsml::app::internal::M18PrivateProductExportAction m18ExportAction{
+        m18Controllers,m18Fanout};
+    rgsml::app::M18ProductExportViewModel m18ExportViewModel{
+        m18ExportAction,m18Controllers};
+
+    // Invalidate the *visible* Export affordance whenever a Product
+    // signal can retire the current verified M17 stage. The real Product
+    // consent gate remains the source of truth; these are UI refreshes
+    // only and cannot mint a ticket or advance an epoch.
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+
+    // SOURCE and Project batches hold an exclusive physical epoch through
+    // their synchronous Qt signals. Reconcile only AFTER those RAII leases
+    // have unwound; a direct connection here would spuriously report BUSY.
+    // The binder checks the actual accepted SOURCE, chain and rate before
+    // allowing any new user-consented worker ticket.
+    const auto m18Reconcile=[&m18Controllers,&m18Fanout,
+                             &m18ExportViewModel] {
+        if(!m18Controllers.upstream.source.has_source()
+           ||!m18Controllers.upstream.rate.has_supported_master_rate())
+            return;
+        const auto reconciled=M18Binding::reconcile_after_product_mutation(
+            m18Controllers,m18Fanout);
+        // During a live export a legitimate unrelated Qt notification may
+        // arrive, but this reconciliation MUST NOT revoke its consent.
+        // All actual physical mutations remain gated by the same authority.
+        if(reconciled)m18ExportViewModel.refresh();
+    };
+    QObject::connect(&sourceSelection,
+        &rgsml::app::SourceSelectionViewModel::sourceChanged,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&masterOutputRate,
+        &rgsml::app::MasterOutputRateState::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {
             return auditionRegion.seek(position);
@@ -849,6 +1003,8 @@ int main(int argc, char* argv[])
         });
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m18ProductExportViewModel"),&m18ExportViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);
