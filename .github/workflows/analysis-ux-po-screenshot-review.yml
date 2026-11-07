@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 23
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/.rgsml-uxqt/6.8.3/msvc2022_64
-      RGSML_ANALYSIS_SCREENSHOT_DIR: ${{ github.workspace }}/.rgsml-analysis-review
+      RGSML_ANALYSIS_SCREENSHOT_DIR: ${{ github.workspace }}/rgsml-analysis-review
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
     steps:
@@ -67,6 +67,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M19-M20-M21-REAL-Qt-Windows-UX-Review-DEMO
-          path: ${{ github.workspace }}/.rgsml-analysis-review/*.png
+          path: ${{ github.workspace }}/rgsml-analysis-review/*.png
           if-no-files-found: error
           retention-days: 20
