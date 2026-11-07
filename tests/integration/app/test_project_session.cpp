@@ -792,7 +792,11 @@ m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit()
     QVERIFY(reopened.gold.has_gold());
     QCOMPARE(reopenedMaster.master_rate_hz(),qint64{192000});
     QCOMPARE(goldAdoptions,std::size_t{1});
-    QCOMPARE(rateAdoptions,std::size_t{1});
+    // M18 now explicitly admits BOTH nested SOURCE-rate adoption and
+    // persisted MASTER target selection through the same held Project
+    // lease. Previously the void SOURCE-rate reset bypassed the epoch
+    // and this test counted only the final target edit.
+    QCOMPARE(rateAdoptions,std::size_t{2});
     QCOMPARE(batchesStarted,std::size_t{1});
     QCOMPARE(sourceAdoptions,std::size_t{1});
     QCOMPARE(batchesReleased,std::size_t{1});
