@@ -927,6 +927,27 @@ int main(int argc, char* argv[])
     rgsml::app::M18ProductExportViewModel m18ExportViewModel{
         m18ExportAction,m18Controllers};
 
+    // Invalidate the *visible* Export affordance whenever a Product
+    // signal can retire the current verified M17 stage. The real Product
+    // consent gate remains the source of truth; these are UI refreshes
+    // only and cannot mint a ticket or advance an epoch.
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+
     // SOURCE and Project batches hold an exclusive physical epoch through
     // their synchronous Qt signals. Reconcile only AFTER those RAII leases
     // have unwound; a direct connection here would spuriously report BUSY.
