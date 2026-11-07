@@ -117,6 +117,15 @@ struct M18ProductCompleteBinding final {
            ||!verified->rendered.terminal.checked.final_check
            ||verified->rendered.terminal.checked.terminal.bypassed
            ||verified->rendered.manual_chain_revision!=id.chain_revision
+           ||verified->rendered.terminal.terminal_chain_revision
+                !=c.upstream.terminal.chain().revision()
+           ||verified->rendered.terminal.limiter_instance_id
+                !=c.upstream.terminal.instance_id()
+           ||verified->accepted_terminal_parameter_revision
+                !=c.upstream.terminal.parameter_revision()
+           ||verified->accepted_ceiling_db_tp
+                !=c.upstream.terminal.parameters().ceiling_db_tp()
+           ||c.upstream.terminal.bypassed()
            ||verified->rendered.output_rate!=*selected.value())
             return R::failure(core::Error{
                 core::ErrorCode::InvalidState,
