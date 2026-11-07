@@ -549,7 +549,9 @@ m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority()
     gate.set_private_m18_mutation_admission(
         [&](const char* operation)->core::Status {
             ++calls;
-            QVERIFY(operation!=nullptr);
+            if(!operation)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_CANDIDATE_OPERATION_MISSING"});
             // A malicious or inadvertent Qt/editor callback must not
             // unregister the current owner and gain an unguarded reset.
             gate.set_private_m18_mutation_admission({});
