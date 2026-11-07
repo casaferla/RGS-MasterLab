@@ -39,7 +39,19 @@ its own authenticated read-only WAV owner; `Column::gold` is denied
 until that independent decoder/binding exists.
 
 ## Limitations to close
-- No genuine GOLD `SourceResource` decoder / immutable PCM owner yet.
+- GOLD now has an independent read-only **Windows** WAV decoder worker
+  operation `measure_gold_worker(GoldCapture)`: no QObjects on the
+  worker, exact WAV Fs/layout/length revalidation on open, canonical
+  `WavReader` decoding, real M19+M20 analysis and typed M21 GOLD import.
+  The completion MUST be checked with `gold_still_current()` on the
+  Qt owner before any presentation. No source/processed alias or
+  automatically inferred GOLD timeline exists.
+- GOLD full-resource decode currently has a hard **128 MiB decoded PCM
+  cap** because the current M16 whole-resource API needs an owning
+  `AudioBuffer`. Large programme support still requires a genuine
+  bounded streaming solution; do NOT claim all-duration GOLD support.
+  A changed WAV that retains exactly the same metadata needs stronger
+  file-content/version proof before final canonical publication.
 - No asynchronous worker scheduling, revision-tagged completion queue,
   retained-block Phase-6 status/registry, M20 qualified band support,
   public GUI result publisher or independent inter-column Gold scopes.
