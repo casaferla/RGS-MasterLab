@@ -399,6 +399,11 @@ productOpenBatchUsesOneExclusiveEpochForSourceRateAndGold()
     QVERIFY(batch.value()->get()!=nullptr);
     QVERIFY(!open()); // nested Project open is never allowed
     QVERIFY(!fanout.project_save_batch()());
+    // The real SourceSelectionViewModel batch adapter detects this
+    // already-held Project lease and must not allocate a second epoch.
+    auto nestedSource=fanout.source_commit_batch()();
+    QVERIFY(nestedSource);
+    QVERIFY(nestedSource.value()->get()!=nullptr);
     QVERIFY(source("source_adopt_probed"));
     QVERIFY(source("source_committed"));
     QVERIFY(rate());
