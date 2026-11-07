@@ -63,6 +63,7 @@ class SourceSelectionTest final : public QObject {
 
 private slots:
     void initialSuccessCancelFailureRetry();
+    void m18SourceAuthoritySettersRejectForeignThreadRemoval();
     void m18SourceMutationDeniedBeforeSelectionAndAcrossThreads();
     void m18SourceGateCannotUninstallOrNestedSelectDuringAdmission();
     void m18SourcePublicationRejectsReentrantQtListeners();
@@ -146,6 +147,65 @@ void SourceSelectionTest::initialSuccessCancelFailureRetry()
     QCOMPARE(model.container_label(), QStringLiteral("RF64/WAVE"));
     QCOMPARE(model.sample_format_label(), QStringLiteral("IEEE float 64-bit"));
     QVERIFY(model.error_message().isEmpty());
+}
+
+void SourceSelectionTest::m18SourceAuthoritySettersRejectForeignThreadRemoval()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto first=write_file(
+        directory,QStringLiteral("m18-owner-thread-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    const auto second=write_file(
+        directory,QStringLiteral("m18-owner-thread-replacement.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!first.isEmpty()&&!second.isEmpty());
+    app::SourceSelectionViewModel model;
+    std::size_t admissions=0;
+    model.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::success();
+        });
+    // A foreign worker must not uninstall the authority before the
+    // SOURCE picker commits or race against an executing Product gate.
+    std::thread foreignStatus([&] {
+        model.set_private_m18_source_mutation_admission({});
+    });
+    foreignStatus.join();
+    model.selectSource(QUrl::fromLocalFile(first));
+    QVERIFY(model.has_source());
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(model.display_name(),
+             QStringLiteral("m18-owner-thread-source.wav"));
+    model.set_private_m18_source_mutation_admission({});
+
+    std::size_t batches=0,checked=0;
+    model.set_private_m18_checked_source_committed_handler(
+        [&](const core::ResourceReference&)->core::Status {
+            ++checked;
+            return core::Status::success();
+        });
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<const int>(17));
+        });
+    std::thread foreignBatch([&] {
+        model.set_private_m18_source_batch_begin({});
+        model.set_private_m18_checked_source_committed_handler({});
+    });
+    foreignBatch.join();
+    model.selectSource(QUrl::fromLocalFile(second));
+    QCOMPARE(batches,std::size_t{1});
+    QCOMPARE(checked,std::size_t{1});
+    QVERIFY(model.has_source());
+    QCOMPARE(model.display_name(),
+             QStringLiteral("m18-owner-thread-replacement.wav"));
+    QVERIFY(model.error_message().isEmpty());
+    model.set_private_m18_source_batch_begin({});
+    model.set_private_m18_checked_source_committed_handler({});
 }
 
 void SourceSelectionTest::m18SourceMutationDeniedBeforeSelectionAndAcrossThreads()
