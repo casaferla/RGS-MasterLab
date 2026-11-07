@@ -381,6 +381,17 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
     QVERIFY(!QFileInfo::exists(deniedWav));
     exportAction.cancel();
     QVERIFY(!exportAction.acknowledge());
+    bool foreignStartDenied=false;
+    std::thread rogueExport([&] {
+        foreignStartDenied=!exportAction.begin(
+            *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            std::nullopt,-1.0,true);
+        exportAction.cancel();
+    });
+    rogueExport.join();
+    QVERIFY(foreignStartDenied);
+    QCOMPARE(exportAction.snapshot().phase,
+             app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
     QVERIFY(!owner->capture(initial));
     QVERIFY(owner->can_install_full_product_guards(30U,initial));
     // A legitimate Region edit consumes a single shared Product
