@@ -324,6 +324,12 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     QVERIFY(M18ProductUpstreamBinding::bind(controllers,fanout));
     QVERIFY(M18ProductUpstreamBinding::installed(controllers));
     QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    auto beforeCommit=fanout.current_owner_snapshot();
+    QVERIFY(beforeCommit);
+    QCOMPARE(beforeCommit->epoch,UINT64_C(91));
+    QCOMPARE(beforeCommit->identity.source_generation,UINT64_C(51));
+    QCOMPARE(beforeCommit->identity.project_generation,UINT64_C(61));
+    QCOMPARE(beforeCommit->identity.master_generation,UINT64_C(71));
 
     auto lease=ticket.value()->commit_lease_factory()();
     QVERIFY(lease);
