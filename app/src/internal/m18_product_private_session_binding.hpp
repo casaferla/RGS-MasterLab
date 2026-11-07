@@ -34,10 +34,16 @@ struct M18ProductPrivateSessionBinding final {
             fanout.status_admission());
         M18ProductTerminalCandidateBinding::bind(candidates,fanout);
         if(!session.m18_private_mutation_admission_installed()
-           ||!candidates.m18_mutation_admission_installed())
+           ||!candidates.m18_mutation_admission_installed()) {
+            // The session may be on this Qt thread while a separately
+            // constructed candidate gate still belongs to another thread.
+            // Never leave a half-installed Product authority in that case.
+            session.set_private_m18_mutation_admission({});
+            candidates.set_private_m18_mutation_admission({});
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "M18_PRIVATE_PRODUCT_BINDING_COULD_NOT_INSTALL_BOTH_GATES"});
+        }
         return core::Status::success();
     }
 };
