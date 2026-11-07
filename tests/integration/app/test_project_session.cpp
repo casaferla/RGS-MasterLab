@@ -205,6 +205,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
+    void m18RegionGateCannotSelfUninstallOrCrossThread();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
     void m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease();
@@ -501,6 +502,46 @@ m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease()
     session.project.openProject(QUrl::fromLocalFile(original));
     QVERIFY(!session.project.error_message().isEmpty());
     session.project.set_private_m18_project_save_batch_begin({});
+}
+
+void ProjectSessionTest::
+m18RegionGateCannotSelfUninstallOrCrossThread()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m18-region-owner.wav"),0);
+    QVERIFY(!source.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    const auto first=core::FrameRange::create(
+        core::FrameIndex{7},core::FrameIndex{19});
+    QVERIFY(first);
+    const auto nested=core::FrameRange::create(
+        core::FrameIndex{8},core::FrameIndex{18});
+    QVERIFY(nested);
+    std::size_t denied=0,nestedDenied=0;
+    session.region.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            session.region.set_private_m18_region_mutation_admission({});
+            const auto inner=session.region.set_region(*nested.value());
+            if(!inner)++nestedDenied;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_REGION_WORKER_BUSY"});
+        });
+    std::thread foreign([&] {
+        session.region.set_private_m18_region_mutation_admission({});
+    });
+    foreign.join();
+    QVERIFY(!session.region.set_region(*first.value()));
+    QVERIFY(!session.region.set_region(*first.value()));
+    QCOMPARE(denied,std::size_t{2});
+    QCOMPARE(nestedDenied,std::size_t{2});
+    QVERIFY(!session.region.region());
+    session.region.set_private_m18_region_mutation_admission({});
+    QVERIFY(session.region.set_region(*first.value()));
+    QVERIFY(session.region.region());
+    QCOMPARE(session.region.region()->begin().value(),std::int64_t{7});
 }
 
 void ProjectSessionTest::
