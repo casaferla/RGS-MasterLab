@@ -1,8 +1,9 @@
 #pragma once
-// M18 PRIVATE PREPRODUCTION — one Qt-free product-epoch admission callback
-// shared by independent Product controllers. NOT INSTALLED IN main.cpp.
-// The callback revokes export consent BEFORE a permitted mutation begins.
-// It does NOT mint a ticket or prove that all Product paths are covered.
+// M18 Product-wide epoch admission fanout, installed through the complete
+// Qt Product binder in main.cpp. Revokes user export consent BEFORE a
+// permitted SOURCE/Project/MANUAL mutation, and retains physical batch
+// exclusivity through nested synchronous controller operations. The
+// worker never calls this Qt-owner mutation interface.
 #include "m18_product_epoch_ticket.hpp"
 #include <rgsml/core/error.hpp>
 #include <atomic>
