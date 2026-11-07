@@ -5,6 +5,7 @@
 #include <rgsml/core/result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QUrl>
 
@@ -63,6 +64,7 @@ public:
     {
         // A synchronous Product callback or Qt publication listener
         // cannot silently unregister its own shared mutation authority.
+        if(QThread::currentThread()!=thread())return;
         if(m18SourceAdmitting_||m18SourcePublishing_)return;
         m18SourceMutationAdmission_=std::move(gate);
     }
@@ -72,6 +74,7 @@ public:
     using M18SourceBatchBegin=std::function<
         core::Result<std::shared_ptr<const void>>()>;
     void set_private_m18_source_batch_begin(M18SourceBatchBegin begin) {
+        if(QThread::currentThread()!=thread())return;
         if(m18SourceAdmitting_||m18SourcePublishing_)return;
         m18SourceBatchBegin_=std::move(begin);
     }
