@@ -1037,11 +1037,15 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
     deniedRate.project.openProject(QUrl::fromLocalFile(path));
     QVERIFY(!deniedRate.project.error_message().isEmpty());
     QCOMPARE(deniedRateEdits,std::size_t{1});
-    QCOMPARE(deniedMaster.source_rate_hz(),qint64{44100});
-    QCOMPARE(deniedMaster.master_rate_hz(),qint64{44100});
-    // The SOURCE may already have been adopted; this is why real Product
-    // activation also needs an exclusive Project-wide batch and revoked
-    // export consent, not just a late per-rate admission callback.
+    // The first denied M18 gate now applies to SOURCE-rate restoration
+    // itself, before any MASTER rate is published. The former expectation
+    // (44.1k/44.1k) relied on an unsafe legacy void-rate bypass.
+    QCOMPARE(deniedMaster.source_rate_hz(),qint64{0});
+    QCOMPARE(deniedMaster.master_rate_hz(),qint64{0});
+    QCOMPARE(deniedMaster.rate_revision(),std::uint64_t{0});
+    // SOURCE adoption may already have occurred under this deliberately
+    // incomplete per-controller test setup; the real Product requires a
+    // Project-wide exclusive mutation batch and revoked export consent.
     QVERIFY(deniedRate.source.has_source());
     deniedMaster.set_private_m18_rate_mutation_admission({});
     deniedRate.project.openProject(QUrl::fromLocalFile(path));
