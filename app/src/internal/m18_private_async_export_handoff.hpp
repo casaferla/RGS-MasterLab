@@ -1,9 +1,9 @@
 #pragma once
-// M18 PREPRODUCTION ONLY — NOT REGISTERED IN app/src/main.cpp OR QML.
-// This is the exact one-shot Product-OWNER-thread to Qt-free WORKER
-// boundary. Enabling it in production requires one verified single-writer
-// epoch for ALL upstream mutations, explicit end-user export consent,
-// and a complete UI lifecycle/state machine. No QObject crosses threads.
+// M18 Product-owner-thread to Qt-free Windows WORKER handoff.
+// Invoked through the main.cpp-owned private action and UI ViewModel,
+// never directly from QML. All SOURCE/Project/MASTER mutation gates
+// MUST share one epoch, and explicit user consent must be current.
+// No QObject, QPointer or mutable Product session crosses threads.
 #include "m18_checked_stage_worker_bridge.hpp"
 #include "internal/m18_async_export_worker.hpp"
 
