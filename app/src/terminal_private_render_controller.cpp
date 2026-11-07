@@ -29,8 +29,16 @@ TerminalPrivateRenderController::~TerminalPrivateRenderController() {
     if(worker_.joinable())worker_.join();
 }
 void TerminalPrivateRenderController::invalidate() {
-    // Legacy M17 path: keep its cancellation and candidate-gate ordering
-    // unchanged until all synchronous callers honor BUSY admission.
+    // A legacy void caller cannot report BUSY. Once the M18 Product
+    // candidate authority is installed, the entire renderer withdrawal
+    // must be admitted FIRST. Silently changing the render serial while
+    // the candidate gate refuses to retire a worker-owned PCM would
+    // break the verified-M17/worker single-writer invariant.
+    if(gate_->m18_mutation_admission_installed()) {
+        static_cast<void>(try_invalidate_for_m18());
+        return;
+    }
+    // Without M18 enrollment, preserve all M17 cancel/return behavior.
     invalidate_local_after_candidate_gate(false);
 }
 core::Status TerminalPrivateRenderController::try_invalidate_for_m18() {
