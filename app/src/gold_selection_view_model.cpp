@@ -186,6 +186,20 @@ void GoldSelectionViewModel::clearGold()
         m18GoldMutationAdmission_||selector_->m18_mutation_admission_installed());
     if(guarded &&QThread::currentThread()!=thread())return;
     if(guarded &&(m18GoldAdmitting_||m18GoldPublicationActive_))return;
+    // Clearing an already-empty GOLD is not a SOURCE/MASTER revision.
+    // Do not revoke explicit M18 export consent for a no-op UI click.
+    // Check BOTH owners: a Project-open may have populated the selector
+    // directly while this file-picker's local GOLD is still absent.
+    if(guarded&&!gold_&&!selector_->gold_available()) {
+        if(!displayName_.isEmpty()||!metadata_.isEmpty()
+           ||!errorMessage_.isEmpty()) {
+            displayName_.clear();
+            metadata_.clear();
+            errorMessage_.clear();
+            emit changed();
+        }
+        return;
+    }
     const auto admission=admit_m18_gold_mutation("gold_clear");
     if(!admission) {
         errorMessage_=QString::fromStdString(admission.error()->message());
