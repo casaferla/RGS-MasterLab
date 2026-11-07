@@ -383,6 +383,12 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     session.project.saveProjectAs(QUrl::fromLocalFile(deliveredProject));
     QVERIFY(QFileInfo::exists(deliveredProject));
     QVERIFY(session.project.error_message().isEmpty());
+    auto afterSave=fanout.current_owner_snapshot();
+    QVERIFY(afterSave);
+    QCOMPARE(afterSave->epoch,UINT64_C(93));
+    QCOMPARE(afterSave->identity.source_generation,UINT64_C(51));
+    QCOMPARE(afterSave->identity.project_generation,UINT64_C(62));
+    QCOMPARE(afterSave->identity.master_generation,UINT64_C(73));
     // Full Project OPEN must re-use one exclusive epoch for its nested
     // SOURCE, rate, audition and chain restoration callbacks. Neither
     // child may consume an independently authorized export generation.
