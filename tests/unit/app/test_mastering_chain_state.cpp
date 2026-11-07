@@ -794,6 +794,8 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     });
     foreignCandidateOwner.join();
     QVERIFY(alienCandidate);
+    QVERIFY(!app::internal::M18ProductPrivateSessionBinding::can_bind(
+        session,*alienCandidate));
     const auto mismatchedOwner=app::internal::
         M18ProductPrivateSessionBinding::bind(
             session,*alienCandidate,fanout);
