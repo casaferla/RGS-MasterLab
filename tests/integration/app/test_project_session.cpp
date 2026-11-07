@@ -334,6 +334,13 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     QVERIFY(!owner->capture(identity));
     QVERIFY(!ticket.value()->commit_lease_factory()());
     QVERIFY(M18ProductUpstreamBinding::installed(controllers));
+    // After worker release, the real .rgsml SaveAs must own ONE physical
+    // writer batch through serialization, file commit and readback.
+    const auto deliveredProject=dir.filePath(
+        QStringLiteral("m18-bound-delivered-project.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(deliveredProject));
+    QVERIFY(QFileInfo::exists(deliveredProject));
+    QVERIFY(session.project.error_message().isEmpty());
 }
 
 void ProjectSessionTest::
