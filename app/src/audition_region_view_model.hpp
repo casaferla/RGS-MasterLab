@@ -70,6 +70,8 @@ public:
         if(m18RegionAdmitting_||m18RegionOperationActive_)return;
         m18RegionMutationAdmission_=std::move(gate);
     }
+    [[nodiscard]] bool m18_region_admission_installed() const noexcept
+    {return static_cast<bool>(m18RegionMutationAdmission_);}
     [[nodiscard]] core::Status set_region(core::FrameRange candidate);
     [[nodiscard]] core::Status set_start(core::FrameIndex start);
     [[nodiscard]] core::Status set_end_exclusive(core::FrameIndex end);
