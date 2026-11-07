@@ -78,6 +78,13 @@ public:
         if(m18SourceAdmitting_||m18SourcePublishing_)return;
         m18SourceBatchBegin_=std::move(begin);
     }
+    // Owner-thread-only readback for atomic Product-wide activation.
+    [[nodiscard]] bool m18_source_batch_installed() const noexcept
+    {return static_cast<bool>(m18SourceBatchBegin_);}
+    [[nodiscard]] bool m18_checked_source_committed_installed() const noexcept
+    {return static_cast<bool>(m18CheckedSourceCommittedHandler_);}
+    [[nodiscard]] bool m18_source_one_shot_installed() const noexcept
+    {return static_cast<bool>(m18SourceMutationAdmission_);}
     [[nodiscard]] core::Status adopt_probed_source(audio::SourceResource candidate);
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
