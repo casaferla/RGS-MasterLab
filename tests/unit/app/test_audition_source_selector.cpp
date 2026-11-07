@@ -192,6 +192,7 @@ private slots:
     void m18GoldSelectorOnlyGateRejectsQtReentryAfterSelection();
     void m18GoldOwnGateRejectsReentrantCallbackAndCanRecover();
     void m18RealAuditionGoldRegionControllersShareOneProductEpoch();
+    void m18InvalidProcessedCueDoesNotConsumeEpoch();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
@@ -1091,6 +1092,47 @@ void AuditionSourceSelectorTest::seamlessProcessedHandoffPreservesStateAndTarget
     QCOMPARE(observed->position.value(), std::int64_t{80});
     QVERIFY(selector.processed_available());
     QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(), std::int64_t{200});
+}
+
+void AuditionSourceSelectorTest::m18InvalidProcessedCueDoesNotConsumeEpoch()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0,200)));
+    QVERIFY(selector.set_processed_realization(realization(0,200)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto currentId=observed->audibleRealization.realizationId;
+    QVERIFY(currentId);
+    std::size_t admissions=0;
+    selector.set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissions;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRODUCT_WORKER_COMMIT_BUSY"});
+        });
+    observed->position=core::FrameIndex{150};
+    const auto invalid=selector.set_processed_realization(realization(0,100));
+    QVERIFY(!invalid);
+    QCOMPARE(admissions,std::size_t{0});
+    QCOMPARE(observed->audibleRealization.realizationId,currentId);
+    QVERIFY(selector.processed_available());
+    QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(),
+             std::int64_t{200});
+    // A genuine next PROCESSED candidate must still be checked by the
+    // same installed M18 owner gate, and denial leaves the old PCM.
+    observed->position=core::FrameIndex{50};
+    QVERIFY(!selector.set_processed_realization(realization(0,200)));
+    QCOMPARE(admissions,std::size_t{1});
+    QCOMPARE(observed->audibleRealization.realizationId,currentId);
+    selector.set_private_m18_mutation_admission({});
+    QVERIFY(selector.set_processed_realization(realization(0,200)));
+    QVERIFY(observed->audibleRealization.realizationId);
+    QVERIFY(observed->audibleRealization.realizationId->value>currentId->value);
 }
 
 void AuditionSourceSelectorTest::processedRealizationIdentityIsMonotonicAndFailureAtomic()
