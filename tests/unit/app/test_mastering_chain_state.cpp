@@ -531,8 +531,17 @@ m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch()
     QVERIFY((*worker.value())->revalidate_current());
     // Even with a physically freed worker commit, a foreign-thread
     // legacy void call must not touch QObject serial or signals.
-    std::thread foreign([&renderer] {renderer.invalidate();});
+    auto requestedFs=core::SampleRate::create(48000);
+    QVERIFY(requestedFs);
+    bool foreignPrepareDenied=false;
+    std::thread foreign([&] {
+        renderer.invalidate();
+        const auto denied=renderer.request_private(*requestedFs.value());
+        foreignPrepareDenied=!denied
+            &&denied.error()->code()==core::ErrorCode::InvalidState;
+    });
     foreign.join();
+    QVERIFY(foreignPrepareDenied);
     QCOMPARE(changed.count(),0);
     QVERIFY((*worker.value())->revalidate_current());
 
