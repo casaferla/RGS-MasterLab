@@ -73,6 +73,7 @@ private slots:
     void m18TerminalCandidateGateSharesActualProductExportCommitEpoch();
     void m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch();
     void m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority();
+void m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread();
     void m18PrivateSessionCannotReenterOrEraseItsOwnProductGate();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
@@ -545,6 +546,42 @@ m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch()
     // Product authority and cannot resurrect obsolete M17 PCM.
     QVERIFY(renderer.try_invalidate_for_m18());
     QCOMPARE(changed.count(),2);
+}
+
+void MasteringChainStateTest::
+m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=test_instance_id("7e000000-0000-4000-8000-000000000017");
+    auto state=TerminalLimiterState::create_default(*registry.value(),id);
+    QVERIFY(state);
+    const auto oldRevision=state.value()->parameter_revision();
+    const auto oldBypass=state.value()->bypassed();
+    std::size_t calls=0,nestedRejected=0;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++calls;
+            state.value()->set_private_m18_mutation_admission({});
+            const auto nested=state.value()->set_user_bypass(!oldBypass);
+            if(!nested)++nestedRejected;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TERMINAL_WORKER_BUSY"});
+        });
+    std::thread foreign([&] {
+        state.value()->set_private_m18_mutation_admission({});
+    });
+    foreign.join();
+    QVERIFY(state.value()->m18_mutation_admission_installed());
+    QVERIFY(!state.value()->set_ceiling_db_tp(-2.0));
+    QVERIFY(!state.value()->set_ceiling_db_tp(-2.0));
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(nestedRejected,std::size_t{2});
+    QCOMPARE(state.value()->parameter_revision(),oldRevision);
+    QCOMPARE(state.value()->bypassed(),oldBypass);
+    state.value()->set_private_m18_mutation_admission({});
+    QVERIFY(state.value()->set_ceiling_db_tp(-2.0));
+    QCOMPARE(state.value()->parameter_revision(),oldRevision+1U);
 }
 
 void MasteringChainStateTest::
