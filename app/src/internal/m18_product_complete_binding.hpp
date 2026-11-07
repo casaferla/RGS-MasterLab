@@ -72,6 +72,51 @@ struct M18ProductCompleteBinding final {
             rate.rate_revision());
     }
 
+    // Read-only UI eligibility. This must prove the SAME Product identity
+    // and immutable M17 verification as the actual consent path; merely
+    // having a READY_TO_INSTALL stage does not make an old MASTER current.
+    // In particular, never offer Export during a previous unacknowledged
+    // ticket, an active physical mutation or a stale Project/chain rate.
+    [[nodiscard]] static bool can_offer_verified_master(
+        const Controllers& c,const Fanout& fanout)
+    {
+        if(!Upstream::owner_thread_current(c.upstream)
+           ||QThread::currentThread()!=c.session.thread()
+           ||!c.candidates.m18_owner_thread_current()
+           ||!installed(c)||!fanout.can_install_full_product_guards())
+            return false;
+        const auto snapshot=fanout.current_owner_snapshot();
+        if(!snapshot||!snapshot->identity.valid())return false;
+        const auto& id=snapshot->identity;
+        const auto& rate=c.upstream.rate;
+        if(!rate.has_supported_master_rate())return false;
+        const auto selected=core::SampleRate::create(rate.master_rate_hz());
+        const auto* source=c.upstream.source.source_resource();
+        if(!selected||!source
+           ||!source->reference().permissions().can_read()
+           ||id.master_rate_hz!=static_cast<std::uint32_t>(
+               rate.master_rate_hz())
+           ||id.master_rate_revision!=rate.rate_revision()
+           ||id.chain_revision!=c.upstream.chain.chain().revision())
+            return false;
+        const auto verified=c.session.capture_m18_verified_stage_for_worker(
+            *selected.value());
+        return verified&&verified==c.candidates.staged()
+            &&verified->rendered.terminal.checked.final_check
+            &&!verified->rendered.terminal.checked.terminal.bypassed
+            &&verified->rendered.manual_chain_revision==id.chain_revision
+            &&verified->rendered.terminal.terminal_chain_revision
+                ==c.upstream.terminal.chain().revision()
+            &&verified->rendered.terminal.limiter_instance_id
+                ==c.upstream.terminal.instance_id()
+            &&verified->accepted_terminal_parameter_revision
+                ==c.upstream.terminal.parameter_revision()
+            &&verified->accepted_ceiling_db_tp
+                ==c.upstream.terminal.parameters().ceiling_db_tp()
+            &&!c.upstream.terminal.bypassed()
+            &&verified->rendered.output_rate==*selected.value();
+    }
+
     // A legitimate user Export click is only eligible when the EXACT
     // immutable verified M17 Master still matches the live SOURCE, the
     // accepted M11–15 chain, the Project output rate/revision, and all
