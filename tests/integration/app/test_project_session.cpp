@@ -226,6 +226,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
+    void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
     void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
@@ -264,6 +265,67 @@ private slots:
     void product_default_stereo_ms_project_save_open_save_identity();
 };
 
+
+void ProjectSessionTest::
+m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen()
+{
+    using project::M18MasterWavPreferenceCodec;
+    using project::M18MasterWavEncoding;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto sourcePath=wav(dir,QStringLiteral("m18-preference-source.wav"),41);
+    QVERIFY(!sourcePath.isEmpty());
+    const auto firstPath=dir.filePath(QStringLiteral("m18-f32.rgsml"));
+    const auto secondPath=dir.filePath(QStringLiteral("m18-pcm24.rgsml"));
+    Session original;
+    original.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(original.source.has_source());
+    QCOMPARE(original.project.m18_wav_encoding_index(),0);
+    QVERIFY(original.project.chooseM18WavEncoding(1));
+    QCOMPARE(original.project.m18_wav_encoding_index(),1);
+    original.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QVERIFY2(QFileInfo::exists(firstPath),
+             original.project.error_message().toUtf8().constData());
+    auto saved=load_project(firstPath);
+    QVERIFY(saved);
+    auto format=M18MasterWavPreferenceCodec::read(
+        saved.value()->document().output);
+    QVERIFY(format);
+    QVERIFY(format.value()->has_value());
+    QCOMPARE(format.value()->value().encoding,
+             M18MasterWavEncoding::IEEE_FLOAT32);
+    QVERIFY(!format.value()->value().pcm24_dither_seed);
+    QVERIFY(project::MasterOutputRatePreference::only_known_fields(
+        saved.value()->document().output));
+
+    Session reopened;
+    reopened.project.openProject(QUrl::fromLocalFile(firstPath));
+    QVERIFY2(reopened.source.has_source(),
+             reopened.project.error_message().toUtf8().constData());
+    QVERIFY(!reopened.project.degraded());
+    QCOMPARE(reopened.project.m18_wav_encoding_index(),1);
+    // New confirmed PCM24 setting must restore an exact native uint64
+    // seed, not an imprecise JSON floating-point or leftover Float32 seed.
+    QVERIFY(reopened.project.chooseM18WavEncoding(0));
+    QCOMPARE(reopened.project.m18_wav_encoding_index(),0);
+    QCOMPARE(reopened.project.m18_pcm24_seed(),
+             M18MasterWavPreferenceCodec::default_pcm24_seed());
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QVERIFY2(QFileInfo::exists(secondPath),
+             reopened.project.error_message().toUtf8().constData());
+    auto persisted=load_project(secondPath);
+    QVERIFY(persisted);
+    const auto pcm=M18MasterWavPreferenceCodec::read(
+        persisted.value()->document().output);
+    QVERIFY(pcm);
+    QVERIFY(pcm.value()->has_value());
+    QCOMPARE(pcm.value()->value().encoding,
+             M18MasterWavEncoding::PCM24_TPDF);
+    QCOMPARE(pcm.value()->value().pcm24_dither_seed.value(),
+             M18MasterWavPreferenceCodec::default_pcm24_seed());
+    QVERIFY(project::MasterOutputRatePreference::only_known_fields(
+        persisted.value()->document().output));
+}
 
 void ProjectSessionTest::
 m18FreshStartupBindsBeforeFirstSourceSelection()
