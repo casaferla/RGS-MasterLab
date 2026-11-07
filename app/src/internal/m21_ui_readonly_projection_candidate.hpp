@@ -110,7 +110,13 @@ struct ReadOnlyProjection final {
         result.numeric=false;
         return result;
     }
-    if(!usable(cell) || !valid_cell_storage(cell)) {
+    if(!valid_cell_storage(cell)) {
+        result.value_text="INVALID";
+        result.quality_text="INVALID";
+        result.reason="Invalid numeric/status storage";
+        return result;
+    }
+    if(!usable(cell)) {
         result.value_text=result.quality_text;
         return result;
     }
