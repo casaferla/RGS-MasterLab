@@ -86,7 +86,21 @@ public:
     // releases the owner ticket after the worker reports terminal state.
     void cancel() noexcept {
         if(QThread::currentThread()!=controllers_.session.thread())return;
-        if(ticket_)session_.cancel();
+        if(!can_cancel())return;
+        session_.cancel();
+    }
+
+    [[nodiscard]] bool can_cancel() const {
+        return ticket_&&session_.snapshot().phase
+            ==M18PrivateAsyncExportSession::Phase::ENCODING_OR_VERIFYING;
+    }
+
+    [[nodiscard]] bool can_acknowledge() const {
+        if(!ticket_)return false;
+        const auto phase=session_.snapshot().phase;
+        return phase==M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED
+            ||phase==M18PrivateAsyncExportSession::Phase::FAILED
+            ||phase==M18PrivateAsyncExportSession::Phase::CANCELLED;
     }
 
     [[nodiscard]] M18PrivateAsyncExportSession::Snapshot snapshot() const {
