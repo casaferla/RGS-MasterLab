@@ -145,9 +145,22 @@ public:
                     ?core::Status::success()
                     :reject("M18_SOURCE_UNEXPECTED_CHILD_MUTATION");
             }
+            // Direct one-shot SOURCE/Project operations must also retire
+            // their own owner identity, not merely the M17 Master stage.
+            // Physical SOURCE/Project batches do this once at the outer
+            // lease and their nested child operations bypass this path.
+            const std::string_view op{operation};
+            const bool changesSource=op=="source_selection"
+                ||op=="source_committed"||op=="source_adopt_probed";
+            const bool changesProject=op=="project_open"
+                ||op=="project_save";
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
+                      ==std::numeric_limits<std::uint64_t>::max()
+               ||(changesSource&&state->identity.source_generation
                       ==std::numeric_limits<std::uint64_t>::max())
+               ||(changesProject&&state->identity.project_generation
+                      ==std::numeric_limits<std::uint64_t>::max()))
                 return reject("M18_FANOUT_EPOCH_EXHAUSTED");
             state->admitting=true;
             struct Unwind final {
@@ -159,6 +172,8 @@ public:
             // retires its prior verified-M17 export generation. The real
             // source/project/chain identity MUST be reconciled by Product
             // before it is ever permitted to mint a NEW worker ticket.
+            if(changesSource)++nextIdentity.source_generation;
+            if(changesProject)++nextIdentity.project_generation;
             ++nextIdentity.master_generation;
             const auto nextEpoch=state->epoch+1;
             const auto allowed=state->authority->try_transition(
