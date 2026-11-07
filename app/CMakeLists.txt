@@ -35,6 +35,8 @@ qt_add_executable(rgsml_app
     src/terminal_private_render_controller.hpp
     src/terminal_private_product_session.cpp
     src/m18_private_export_authority.cpp
+    src/m18_product_export_view_model.cpp
+    src/m18_product_export_view_model.hpp
     src/terminal_private_product_session.hpp
     src/terminal_monitor_view_model.cpp
     src/terminal_monitor_view_model.hpp
