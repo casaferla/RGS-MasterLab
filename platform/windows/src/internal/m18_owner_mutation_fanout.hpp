@@ -59,10 +59,20 @@ public:
             if(!state->authority ||!state->identity.valid()
                ||state->epoch==0)
                 return reject("M18_FANOUT_INVALID_PRODUCT_AUTHORITY");
+            if(state->retired.load(std::memory_order_acquire))
+                return reject("M18_FANOUT_PRODUCT_OWNER_RETIRED");
             if(state->admitting)
                 return reject("M18_FANOUT_REENTRANT_MUTATION");
             if(!operation ||!*operation)
                 return reject("M18_FANOUT_OPERATION_REQUIRED");
+            if(state->projectOpenActive.load(std::memory_order_acquire)) {
+                // The external Project operation already owns the single
+                // exclusive barrier. Do not advance or withdraw a second
+                // generation for its carefully enumerated child writes.
+                return approved_project_open_child_operation(operation)
+                    ?core::Status::success()
+                    :reject("M18_PROJECT_OPEN_UNEXPECTED_CHILD_MUTATION");
+            }
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
                       ==std::numeric_limits<std::uint64_t>::max())
@@ -150,6 +160,24 @@ public:
     }
 
 private:
+    [[nodiscard]] static bool approved_project_open_child_operation(
+        std::string_view operation) noexcept
+    {
+        // This list is intentionally narrow. A user edit or an unrelated
+        // callback must not be smuggled through the Project batch.
+        return operation=="source_adopt_probed"
+            ||operation=="source_committed"
+            ||operation=="switch_target"
+            ||operation=="set_prepared"
+            ||operation=="set_processed"
+            ||operation=="set_gold"
+            ||operation=="clear_gold"
+            ||operation=="region_set"
+            ||operation=="region_clear"
+            ||operation=="loop_toggle"
+            ||operation=="master_rate_change";
+    }
+
     [[nodiscard]] static core::Status reject(const char* message) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,message});
