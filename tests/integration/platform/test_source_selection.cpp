@@ -72,6 +72,8 @@ private slots:
     void m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial();
     void m18PhysicalSourceBatchNeedsCheckedProductDispatcher();
     void m18RejectedCheckedSourceCascadesFailClosedThenRecover();
+    void m18CheckedSourceDispatcherIsInertForLegacyM17();
+    void m18ThrowingCheckedSourceDispatcherFailsClosedAndRecovers();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
