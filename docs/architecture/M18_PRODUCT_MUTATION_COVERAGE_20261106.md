@@ -1611,3 +1611,63 @@ installed; default M17 remains legacy and unchanged. The real
 test target must compile this full candidate on Windows and Linux
 before claiming success. No main merge; NO individual M18 FQ.
 One combined Full Qualification after M18–M22 integration.
+
+### Chat #72 — #1076 Windows C2039 compiler red, #1077 focused dispatched; renderer/candidate/session void bypass hardening
+PO reported #1076 red. GitHub verified Linux SUCCESS, Windows
+**Build Focused DSP Targets** failure on the precise PR #84 SHA
+`e1be47cc22c060b117b1628dac30c2608713cc40`. Only the
+656-byte bounded compiler artifact was inspected, not a full log.
+MSVC C2039 in `tests/integration/platform/test_m18_candidate_delivery_validation.cpp`
+line 504 used `next.value()` on the function returned by
+`fanout.project_open_batch()` instead of on the Result obtained by
+**invoking** the function. Corrected to
+`auto next=fanout.project_open_batch()();`. The 20-commit isolated
+macrolot was promoted by exact-SHA fast-forward into Draft PR #84
+`82c928212e9a5d5a5062c6fe4dbe5f3fac0fae8f`; only
+[Focused #1077](https://github.com/casaferla/RGS-MasterLab/actions/runs/42353228168)
+was started. Main unchanged. The new checked main.cpp SOURCE callback
+and Qt integration on this candidate have NOT been qualified by the
+previous #1076 Windows build.
+
+NEXT NO-CI, uncompiled macrolot addresses a separate P0:
+- `TerminalPrivateRenderController::invalidate()` is legacy `void`.
+  Previously it called `invalidate_local_after_candidate_gate(false)`
+  first, incrementing the render serial, clearing progress and pending
+  jobs, and sending Qt `changed()`, then called
+  `TerminalCandidateGate::invalidate()`. Once an M18 Product epoch was
+  installed, the candidate gate correctly refused legacy void
+  invalidation, but the renderer had ALREADY changed its serial and
+  state. This split the M17 stage/candidate owner from the renderer
+  during an exact export worker commit. Now, when the M18 gate is
+  installed, renderer `invalidate()` delegates to its existing
+  status-returning `try_invalidate_for_m18()` BEFORE any local
+  mutation. BUSY and foreign thread return without Qt changes;
+  M17 with NO M18 gate retains its legacy behavior.
+- Original Q0 FIR ratio-not-frozen and FIR-load error branches in
+  `request_private()` now use a scoped status-returning candidate
+  retirement before publishing their error; BUSY preserves the
+  worker-owned M17 identity rather than performing a local-only
+  `invalidate()`.
+- `TerminalCandidateGate` and `TerminalPrivateProductSession`
+  now prevent a Product callback from uninstalling its own M18
+  authority while admission is pending, reject nested admission,
+  and restore admission state on callback exception. Uninstalled
+  default M17 behavior is unchanged. The shared authority's final
+  activation still requires a fully audited Product-wide lifecycle;
+  this localized guard is NOT alone sufficient for worker consent.
+- Native Windows `rgsml_mastering_chain_state_tests` now includes
+  real M17 renderer and M18 commit-lease checks: legacy void and
+  status invalidation both refuse BUSY before changing the renderer,
+  foreign Qt thread cannot withdraw a worker-owned stage, and one
+  independent authorized retirement after release succeeds. Candidate
+  and private session regressions exercise callback self-uninstall,
+  recursive M18 admission, throwing callback and recovery. No test
+  target was removed or weakened.
+
+Remaining: M17 private Product session still has many status-ignoring
+legacy cancel/return paths and synchronous device handoffs. Audit and
+migrate them before INSTALLING any M18 Product export authority,
+then wire exact verified M17 MASTER identity, stable File/Project
+SOURCE provenance, explicit user consent and bounded async PCM
+export GUI. NO parallel CI; no merge in main without PO authorization;
+one combined Full Qualification AFTER M18-M22 are all integrated.
