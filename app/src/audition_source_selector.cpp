@@ -458,6 +458,21 @@ core::Status AuditionSourceSelector::set_processed_realization(
     auto candidate = std::make_shared<const render::RenderResult>(
         std::move(realization));
 
+    // M18 real Product preflight: a stale DEVICE/SOURCE cue outside the
+    // replacement PCM is a rejected request, not an export-epoch change.
+    // Compute the rebased cue without touching Product/Qt state; keep M17
+    // legacy UI errors when the optional epoch controller is uninstalled.
+    std::optional<core::FrameIndex> m18ValidatedCue;
+    if(m18MutationAdmission_&&activeTarget_==AuditionTarget::PROCESSED) {
+        const auto range=candidate->render_window();
+        auto snapshot=playback_->source_display_snapshot();
+        auto cue=snapshot?snapshot.value()->position:sourceDerivedCue_;
+        if(cue==range.end())cue=range.begin();
+        if(cue<range.begin()||cue>range.end())
+            return unavailable("Source cue is outside the available realization range.");
+        m18ValidatedCue=cue;
+    }
+
     // The candidate's telemetry and exact stage provenance have been
     // validated; the next action can actually replace Product state.
     if(const auto admission=admit_m18_source_mutation("set_processed");
@@ -470,16 +485,20 @@ core::Status AuditionSourceSelector::set_processed_realization(
         const auto range = candidate->render_window();
         // PROCESSED can temporarily be OUTPUT_RATE private audio. Preserve
         // the original SOURCE playhead, never store an output-rate cursor.
-        auto snapshot = playback_->source_display_snapshot();
-        if (snapshot) {
-            sourceDerivedCue_ = snapshot.value()->position;
-        }
-        if (sourceDerivedCue_.value() == range.end().value()) {
-            sourceDerivedCue_ = range.begin();
-        }
-        if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
-            publish_error(QStringLiteral("Source cue is outside the available realization range."));
-            return unavailable("Source cue is outside the available realization range.");
+        if(m18ValidatedCue) {
+            sourceDerivedCue_=*m18ValidatedCue;
+        } else {
+            auto snapshot = playback_->source_display_snapshot();
+            if (snapshot) {
+                sourceDerivedCue_ = snapshot.value()->position;
+            }
+            if (sourceDerivedCue_.value() == range.end().value()) {
+                sourceDerivedCue_ = range.begin();
+            }
+            if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
+                publish_error(QStringLiteral("Source cue is outside the available realization range."));
+                return unavailable("Source cue is outside the available realization range.");
+            }
         }
 
         playback_->set_source_derived_active(true);
