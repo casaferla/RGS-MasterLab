@@ -3686,6 +3686,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             UINT64_C(42),0.0));
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
         QVERIFY(!exportView.export_in_progress());
+        QVERIFY(exportView.failure_hint().isEmpty());
+        QCOMPARE(exportChanges.count(),0); // no false progress or result
         QVERIFY(!QFileInfo::exists(viewOutputPath));
         QVERIFY(exportView.begin_private_export(
             product,selectedSource,selectedProjectRate,candidates,
