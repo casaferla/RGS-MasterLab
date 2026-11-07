@@ -396,6 +396,12 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     QVERIFY(session.project.error_message().isEmpty());
     QVERIFY(session.source.has_source());
     QCOMPARE(session.source.display_name(),original);
+    auto afterOpen=fanout.current_owner_snapshot();
+    QVERIFY(afterOpen);
+    QCOMPARE(afterOpen->epoch,UINT64_C(94));
+    QCOMPARE(afterOpen->identity.source_generation,UINT64_C(52));
+    QCOMPARE(afterOpen->identity.project_generation,UINT64_C(63));
+    QCOMPARE(afterOpen->identity.master_generation,UINT64_C(74));
     QVERIFY(M18ProductUpstreamBinding::installed(controllers));
 }
 
