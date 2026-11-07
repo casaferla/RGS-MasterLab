@@ -10,6 +10,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <thread>
 #include <utility>
