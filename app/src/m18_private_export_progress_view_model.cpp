@@ -116,6 +116,32 @@ QString M18PrivateExportProgressViewModel::error_text() const
         token.data(),static_cast<qsizetype>(token.size()));
 }
 
+QString M18PrivateExportProgressViewModel::failure_hint() const
+{
+    // UI copy is deliberately categorical. Never expose arbitrary
+    // filesystem paths, untrusted provider details or raw worker errors.
+    if(snapshot_.phase!=Phase::FAILED ||!snapshot_.failure_code)return {};
+    switch(*snapshot_.failure_code) {
+    case core::ErrorCode::AccessDenied:
+        return QStringLiteral("Export permission or Product consent was denied.");
+    case core::ErrorCode::ResourceNotFound:
+        return QStringLiteral("The source or output location is unavailable.");
+    case core::ErrorCode::IoFailure:
+        return QStringLiteral("The output could not be written or verified.");
+    case core::ErrorCode::MalformedAudioContainer:
+    case core::ErrorCode::TruncatedAudioData:
+    case core::ErrorCode::InvalidAudioSample:
+        return QStringLiteral("The delivered WAV failed audio verification.");
+    case core::ErrorCode::InvalidArgument:
+    case core::ErrorCode::OutOfRange:
+    case core::ErrorCode::UnsupportedAudioEncoding:
+    case core::ErrorCode::UnsupportedOperation:
+        return QStringLiteral("The export format or parameter choice is not supported.");
+    default:
+        return QStringLiteral("The Master, export authority or destination is no longer current.");
+    }
+}
+
 void M18PrivateExportProgressViewModel::cancelExport()
 {
     if(QThread::currentThread()!=thread())return;
