@@ -1483,3 +1483,39 @@ user consent and physical delivery/rollback must be wired and tested.
 No unqualified inference from this isolated preproduction branch.
 Focused CIs per macrolot only, and one Full Qualification AFTER
 integrated M18–M22 per the Product Owner.
+
+### Chat #72 — #1075 Windows red: one obsolete master-rate denial assertion, corrected without weakening Product epoch
+PO reported Windows RED on [Focused #1075](https://github.com/casaferla/RGS-MasterLab/actions/runs/42350124424)
+SHA `88f931bf02cf919f42db45908b25e98c3dc585cf`.
+GitHub verifies Linux SUCCESS, Windows compilation and all direct
+M18/M17 tests SUCCESS, but mandatory Windows CTest red:
+`rgsml_project_session_tests`. **Only bounded artifacts inspected.**
+New fail-only ProjectSession probe identifies:
+`ProjectSessionTest::master_rate_save_open_and_invalid_atomic`,
+`tests/integration/app/test_project_session.cpp` (original #1075
+line 917); actual `deniedMaster.source_rate_hz()==0`, test expected
+44100. QtTest 30 PASS/1 FAIL, exit 1, 414ms. The source is correct:
+when the rate Product gate is deliberately BUSY, the new
+`try_source_committed_for_m18` refuses the initial SOURCE rate
+adoption BEFORE the persisted MASTER-rate selection. Former 44.1k
+fixture expectation depended on the legacy M17 void setter bypass.
+Staging test is corrected to assert SOURCE rate 0, MASTER rate 0 and
+`rate_revision()==0` after the denied operation, still allowing
+ordinary subsequent retry after the external gate is uninstalled.
+No production guard is relaxed; no test skipped or suppressed.
+
+The next uncompiled M18 macrolot also includes physical SOURCE commit
+batch, real Project Open/SaveAs same-epoch integration, actual Qt
+regressions and export worker collision tests. A further nested
+SOURCE batch-begin callback hole was closed: a scoped admission flag
+now exists BEFORE an injected physical-batch callback returns its
+lease. Recursive SOURCE selection, attempted callback self-removal,
+and foreign-thread Qt mutation are denied from that point. Native
+`rgsml_source_selection_tests` attempts a nested picker and callback
+self-removal inside its batch-begin callback, then verifies exactly
+one successful outer SOURCE publication.
+
+The exact SHA is still staging-only and UNCOMPILED. PO has reported
+Linux green for #1075. Promote a single 15–25-commit candidate for
+Focused Windows+Linux qualification and wait for PO verdict; no merge
+in main. ONE combined Full Qualification only after M18–M22.
