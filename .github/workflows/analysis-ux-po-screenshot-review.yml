@@ -23,8 +23,8 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 23
     env:
-      RGSML_QT_ROOT: ${{ runner.temp }}/rgsml-uxqt/6.8.3/msvc2022_64
-      RGSML_ANALYSIS_SCREENSHOT_DIR: ${{ runner.temp }}/rgsml-analysis-review
+      RGSML_QT_ROOT: ${{ github.workspace }}/.rgsml-uxqt/6.8.3/msvc2022_64
+      RGSML_ANALYSIS_SCREENSHOT_DIR: ${{ github.workspace }}/.rgsml-analysis-review
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
     steps:
@@ -42,7 +42,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
           if ($LASTEXITCODE -ne 0) { throw "ANALYSIS_UX_INSTALL_TOOLCHAIN_FAILED" }
-          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:RUNNER_TEMP/rgsml-uxqt"
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:GITHUB_WORKSPACE/.rgsml-uxqt"
           if ($LASTEXITCODE -ne 0) { throw "ANALYSIS_UX_INSTALL_QT_FAILED" }
       - name: Compile isolated QtQuick screenshot harness
         shell: pwsh
@@ -67,6 +67,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M19-M20-M21-REAL-Qt-Windows-UX-Review-DEMO
-          path: ${{ runner.temp }}/rgsml-analysis-review/*.png
+          path: ${{ github.workspace }}/.rgsml-analysis-review/*.png
           if-no-files-found: error
           retention-days: 20
