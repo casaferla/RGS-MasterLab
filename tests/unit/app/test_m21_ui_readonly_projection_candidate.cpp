@@ -53,10 +53,10 @@ static ExpectedOwnerReceipt receipt(const Snapshot& s) {
             s.scope_frames,s.sample_rate_hz,true,true};
 }
 void M21UiReadonlyProjectionCandidateTest::missingReceiptsHideAllNumbers() {
-    Slots slots{};
-    slots[0]=example(Column::prepared,7,"prepared-7",-18.0);
-    slots[1]=example(Column::gold,3,"gold-3",-13.0);
-    const auto view=project_readonly(compose(slots),{});
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"prepared-7",-18.0);
+    snapshots[1]=example(Column::gold,3,"gold-3",-13.0);
+    const auto view=project_readonly(compose(snapshots),{});
     QVERIFY(!view.production_authorized);
     QVERIFY(!view.columns[0].candidate_matched);
     QVERIFY(!view.columns[1].candidate_matched);
@@ -68,13 +68,13 @@ void M21UiReadonlyProjectionCandidateTest::missingReceiptsHideAllNumbers() {
 }
 void M21UiReadonlyProjectionCandidateTest::
 matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease() {
-    Slots slots{};
-    slots[0]=example(Column::prepared,7,"prepared-7",-18.0);
-    slots[1]=example(Column::gold,3,"independent-gold-3",-13.0);
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"prepared-7",-18.0);
+    snapshots[1]=example(Column::gold,3,"independent-gold-3",-13.0);
     Receipts owner{};
-    owner[0]=receipt(*slots[0]);
-    owner[1]=receipt(*slots[1]);
-    const auto view=project_readonly(compose(slots),owner);
+    owner[0]=receipt(*snapshots[0]);
+    owner[1]=receipt(*snapshots[1]);
+    const auto view=project_readonly(compose(snapshots),owner);
     QVERIFY(!view.production_authorized);
     QVERIFY(view.gold_independent_scope);
     QVERIFY(view.columns[0].candidate_matched);
@@ -92,7 +92,7 @@ matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease() {
     // A claimed owner token is not a canonical owner; mismatch must
     // suppress the whole selected column and its Gold-minus-Current delta.
     owner[0]->exact_realization_id="wrong-owner";
-    const auto mismatch=project_readonly(compose(slots),owner);
+    const auto mismatch=project_readonly(compose(snapshots),owner);
     QVERIFY(mismatch.columns[0].state=="STALE");
     QVERIFY(!mismatch.columns[0].candidate_matched);
     QVERIFY(!mismatch.columns[0].values[1].numeric);
@@ -100,32 +100,32 @@ matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease() {
     QVERIFY(!mismatch.prepared_to_gold[1].numeric);
     QVERIFY(mismatch.prepared_to_gold[1].value_text=="STALE");
 
-    owner[0]=receipt(*slots[0]);
+    owner[0]=receipt(*snapshots[0]);
     owner[0]->frame_domain_checked_at_source=false;
-    const auto unchecked=project_readonly(compose(slots),owner);
+    const auto unchecked=project_readonly(compose(snapshots),owner);
     QVERIFY(!unchecked.columns[0].candidate_matched);
     QVERIFY(!unchecked.prepared_to_gold[1].numeric);
 
     // Invalid storage cannot show a numeric or masquerade as CURRENT.
-    owner[0]=receipt(*slots[0]);
-    slots[0]->metrics[1]={std::nullopt,Quality::present,{}};
-    const auto poison=project_readonly(compose(slots),owner);
+    owner[0]=receipt(*snapshots[0]);
+    snapshots[0]->metrics[1]={std::nullopt,Quality::present,{}};
+    const auto poison=project_readonly(compose(snapshots),owner);
     QVERIFY(!poison.columns[0].values[1].numeric);
     QVERIFY(poison.columns[0].values[1].quality_text=="INVALID");
 }
 void M21UiReadonlyProjectionCandidateTest::
 changedSourceDoesNotInvalidateIndependentGold() {
-    Slots slots{};
-    slots[0]=example(Column::prepared,7,"prepared-7",-18.0);
-    slots[1]=example(Column::gold,3,"gold-3",-13.0);
-    slots[2]=example(Column::processed,2,"processed-2",-14.0);
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"prepared-7",-18.0);
+    snapshots[1]=example(Column::gold,3,"gold-3",-13.0);
+    snapshots[2]=example(Column::processed,2,"processed-2",-14.0);
     Receipts owner{};
-    for(std::size_t i=0;i<3;++i)owner[i]=receipt(*slots[i]);
-    const auto before=project_readonly(compose(slots),owner);
+    for(std::size_t i=0;i<3;++i)owner[i]=receipt(*snapshots[i]);
+    const auto before=project_readonly(compose(snapshots),owner);
     QVERIFY(before.prepared_to_gold[1].numeric);
     QVERIFY(before.processed_to_gold[1].numeric);
-    slots[0]->lifecycle=Lifecycle::stale;
-    const auto after=project_readonly(compose(slots),owner);
+    snapshots[0]->lifecycle=Lifecycle::stale;
+    const auto after=project_readonly(compose(snapshots),owner);
     QVERIFY(after.columns[0].state=="STALE");
     QVERIFY(!after.columns[0].candidate_matched);
     QVERIFY(!after.prepared_to_gold[1].numeric);
@@ -163,11 +163,11 @@ realM19M20DataCanBeProjectedOnlyAsPreproduction() {
         {Column::prepared,11,"real-m19m20-owner-claim","Full Track",true});
     QVERIFY(imported.snapshot);
     QVERIFY(imported.problem==RealProductPortProblem::none);
-    Slots slots{};
-    slots[0]=*imported.snapshot;
+    Slots snapshots{};
+    snapshots[0]=*imported.snapshot;
     Receipts refs{};
-    refs[0]=receipt(*slots[0]);
-    const auto view=project_readonly(compose(slots),refs);
+    refs[0]=receipt(*snapshots[0]);
+    const auto view=project_readonly(compose(snapshots),refs);
     QVERIFY(view.columns[0].candidate_matched);
     QVERIFY(view.columns[0].values[1].numeric); // Actual M19 RMS
     QVERIFY(!view.columns[0].values[3].numeric); // M16 TP not qualified
