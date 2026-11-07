@@ -32,16 +32,9 @@ bool M18ProductExportViewModel::owner_thread() const noexcept
 
 bool M18ProductExportViewModel::can_export() const
 {
-    if(!owner_thread()||action_->has_unacknowledged_export()
-       ||!internal::M18ProductCompleteBinding::installed(controllers_)
-       ||!controllers_.upstream.source.has_source()
-       ||!controllers_.upstream.rate.has_supported_master_rate())
-        return false;
-    const auto rate=core::SampleRate::create(
-        controllers_.upstream.rate.master_rate_hz());
-    return rate &&static_cast<bool>(
-        controllers_.session.capture_m18_verified_stage_for_worker(
-            *rate.value()));
+    // This MUST agree with Product consent authority. M17 READY alone
+    // cannot prove that the chain, source or rate still owns its stage.
+    return owner_thread()&&action_->can_begin_verified_export();
 }
 
 bool M18ProductExportViewModel::can_cancel() const
