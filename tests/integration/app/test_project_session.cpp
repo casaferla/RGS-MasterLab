@@ -806,6 +806,26 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         preparedMetrics?"":preparedMetrics.error()->message().c_str());
     QVERIFY2(processedMetrics,
         processedMetrics?"":processedMetrics.error()->message().c_str());
+    // This worker-side computation uses ONLY retained immutable PCM.
+    // Its numeric results agree with the guarded synchronous Product
+    // reference; neither operation copies QObject state to a worker.
+    const auto workerPrepared=M21Owners::measure_render_worker(
+        *analysisOwners.value(),app::m21_private::Column::prepared);
+    const auto workerProcessed=M21Owners::measure_render_worker(
+        *analysisOwners.value(),app::m21_private::Column::processed);
+    QVERIFY(workerPrepared&&workerProcessed);
+    QCOMPARE(workerPrepared.value()->resource_identity,
+             preparedMetrics.value()->resource_identity);
+    QCOMPARE(workerProcessed.value()->resource_identity,
+             processedMetrics.value()->resource_identity);
+    for(std::size_t k=0;k<9U;++k) {
+        QCOMPARE(workerPrepared.value()->metrics[k].quality,
+                 preparedMetrics.value()->metrics[k].quality);
+        QCOMPARE(workerPrepared.value()->metrics[k].unrounded,
+                 preparedMetrics.value()->metrics[k].unrounded);
+        QCOMPARE(workerProcessed.value()->metrics[k].unrounded,
+                 processedMetrics.value()->metrics[k].unrounded);
+    }
     QCOMPARE(preparedMetrics.value()->scope_frames,
              static_cast<std::uint64_t>(n));
     QCOMPARE(processedMetrics.value()->scope_frames,
@@ -1092,6 +1112,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!M21Owners::measure_current(
         controllers,fanout,session.selector,*analysisOwners.value(),
         app::m21_private::Column::prepared));
+    // A completed worker may still hold its old valid-looking numbers;
+    // the owning Qt context MUST refuse publication of this capture.
+    QVERIFY(workerPrepared.value()->metrics[2].unrounded);
+    QVERIFY(!M21Owners::still_current(
+        controllers,fanout,session.selector,*analysisOwners.value()));
     // The stale M17 shared_ptr is still in memory, but M22 Preview may
     // not expose it after even a parameter-only accepted Gain edit.
     QVERIFY(!app::internal::m22_verified_master_preview_crop(
