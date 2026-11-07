@@ -302,6 +302,86 @@ fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
 }
 
 void M18CandidateDeliveryValidationTest::
+productModelRateChainReconciliationCannotRestoreOldConsent()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{2U,3U,4U,0U,48000U,7U};
+    auto authority=std::make_shared<M18ProductEpochTicketAuthority>(51U,id);
+    M18OwnerMutationFanout fanout{authority,51U,id};
+    auto prior=fanout.current_owner_snapshot();
+    QVERIFY(prior);
+    QVERIFY(!fanout.reconcile_current_rate_and_chain(
+        *prior,1U,12345U,8U));
+    QVERIFY(!fanout.reconcile_current_rate_and_chain(
+        *prior,1U,96000U,0U));
+    auto stale=*prior;
+    ++stale.epoch;
+    QVERIFY(!fanout.reconcile_current_rate_and_chain(
+        stale,1U,96000U,8U));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(51));
+    // Exact same model needs no transition, never fake-increments the
+    // verified Master generation or consumes a new Product epoch.
+    QVERIFY(fanout.reconcile_current_rate_and_chain(
+        *prior,0U,48000U,7U));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(51));
+
+    auto source=fanout.source_commit_batch()();
+    QVERIFY(source);
+    QVERIFY(!fanout.reconcile_current_rate_and_chain(
+        *fanout.current_owner_snapshot(),9U,96000U,8U));
+    source.value()->reset();
+    auto afterSource=fanout.current_owner_snapshot();
+    QVERIFY(afterSource);
+    QCOMPARE(afterSource->epoch,UINT64_C(52));
+    QCOMPARE(afterSource->identity.source_generation,UINT64_C(3));
+    QCOMPARE(afterSource->identity.project_generation,UINT64_C(3));
+    QCOMPARE(afterSource->identity.master_generation,UINT64_C(5));
+    bool workerDenied=false;
+    std::thread foreign([&] {
+        workerDenied=!fanout.reconcile_current_rate_and_chain(
+            *afterSource,9U,96000U,8U);
+    });
+    foreign.join();
+    QVERIFY(workerDenied);
+
+    // The actual Project MASTER and M11–15 revision are published only
+    // after the old physical SOURCE batch has returned. The reconciliation
+    // keeps SOURCE, Project and Master generation IDs exactly unchanged.
+    QVERIFY(fanout.reconcile_current_rate_and_chain(
+        *afterSource,9U,96000U,8U));
+    auto aligned=fanout.current_owner_snapshot();
+    QVERIFY(aligned);
+    QCOMPARE(aligned->epoch,UINT64_C(53));
+    QCOMPARE(aligned->identity.source_generation,UINT64_C(3));
+    QCOMPARE(aligned->identity.project_generation,UINT64_C(3));
+    QCOMPARE(aligned->identity.master_generation,UINT64_C(5));
+    QCOMPARE(aligned->identity.chain_revision,UINT64_C(9));
+    QCOMPARE(aligned->identity.master_rate_hz,UINT32_C(96000));
+    QCOMPARE(aligned->identity.master_rate_revision,UINT64_C(8));
+    QVERIFY(!authority->capture(aligned->identity)); // no consent
+
+    // The private Product adapter may grant new consent only AFTER an
+    // independently verified M17 Master and a fresh UI confirmation.
+    auto ticket=fanout.capture_after_explicit_verified_consent(
+        aligned->identity,true);
+    QVERIFY(ticket);
+    QVERIFY(!fanout.reconcile_current_rate_and_chain(
+        *fanout.current_owner_snapshot(),9U,96000U,9U));
+    auto held=ticket.value()->commit_lease_factory()();
+    QVERIFY(held);
+    QVERIFY(!fanout.status_admission()("gain_parameters"));
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+    QVERIFY(fanout.status_admission()("gain_parameters"));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!authority->capture(aligned->identity));
+    QVERIFY(!fanout.reconcile_current_rate_and_chain(
+        stale,10U,96000U,9U)); // old SOURCE generation never revives
+}
+
+void M18CandidateDeliveryValidationTest::
 explicitExportConsentMintsOneExactVerifiedProductTicket()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
