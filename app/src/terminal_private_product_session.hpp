@@ -7,6 +7,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <cstdint>
 #include <functional>
@@ -225,6 +226,9 @@ public:
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_mutation_admission(M18MutationAdmission gate)
     {
+        // A foreign worker must not uninstall the Product's shared
+        // authority or read its non-atomic reentrancy flag.
+        if(QThread::currentThread()!=thread())return;
         // The callback that owns the shared epoch cannot remove itself
         // while it is deciding whether the Product write is admitted.
         if(m18PrivateAdmitting_)return;
