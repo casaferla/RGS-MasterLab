@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/project/project_snapshot.hpp>
+#include <rgsml/project/m18_master_wav_preference.hpp>
 #include <rgsml/core/resource_reference.hpp>
 
 #include <QObject>
@@ -33,6 +34,7 @@ class ProjectSessionViewModel final : public QObject {
     Q_PROPERTY(bool degraded READ degraded NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(QString projectDisplayName READ project_display_name NOTIFY changed)
+    Q_PROPERTY(int m18WavEncodingIndex READ m18_wav_encoding_index NOTIFY changed)
 
 public:
     using UuidFactory = std::function<core::Uuid()>;
@@ -126,6 +128,24 @@ public:
     [[nodiscard]] QString status_text() const { return statusText_; }
     [[nodiscard]] QString project_display_name() const { return projectDisplayName_; }
 
+    // Persist only an explicit user choice. This is NOT WAV publication,
+    // a DSP change or a Master epoch authorization. It is read by the
+    // Product Export action on the Qt owner thread at consent time.
+    [[nodiscard]] int m18_wav_encoding_index() const noexcept {
+        return m18OutputPreference_
+            &&m18OutputPreference_->encoding
+                ==project::M18MasterWavEncoding::IEEE_FLOAT32?1:0;
+    }
+    [[nodiscard]] std::uint64_t m18_pcm24_seed() const noexcept {
+        return m18OutputPreference_
+            &&m18OutputPreference_->encoding
+                ==project::M18MasterWavEncoding::PCM24_TPDF
+            &&m18OutputPreference_->pcm24_dither_seed
+            ?*m18OutputPreference_->pcm24_dither_seed
+            :project::M18MasterWavPreferenceCodec::default_pcm24_seed();
+    }
+    Q_INVOKABLE bool chooseM18WavEncoding(int index);
+
     Q_INVOKABLE void openProject(const QUrl& selectedFile);
     Q_INVOKABLE void saveProjectAs(const QUrl& selectedFile);
     Q_INVOKABLE void cancelProjectOpen() noexcept;
@@ -158,6 +178,7 @@ private:
     DspChainAdapterModel* adapterModel_{nullptr};
     MasteringPreviewController* previewController_{nullptr};
     MasterOutputRateState* masterOutputRateState_{nullptr};
+    std::optional<project::M18MasterWavPreference> m18OutputPreference_;
     M18ProjectMutationAdmission m18ProjectMutationAdmission_;
     M18ProjectOpenBatchBegin m18ProjectOpenBatchBegin_;
     M18ProjectSaveAdmission m18ProjectSaveAdmission_;
