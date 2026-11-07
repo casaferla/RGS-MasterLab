@@ -483,6 +483,25 @@ void ProjectSessionViewModel::clear_error()
     emit changed();
 }
 
+bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
+{
+    // A format change is an OUTPUT preference, not permission to write
+    // a file or to reuse an old M17 MASTER. Keep uint64 seed entirely
+    // in native C++; QML never conveys it as an imprecise JS Number.
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_
+       ||(index!=0 &&index!=1))return false;
+    project::M18MasterWavPreference next{
+        index==0?project::M18MasterWavEncoding::PCM24_TPDF
+                :project::M18MasterWavEncoding::IEEE_FLOAT32,
+        index==0
+            ?std::optional<std::uint64_t>{m18_pcm24_seed()}
+            :std::nullopt};
+    if(m18OutputPreference_&&*m18OutputPreference_==next)return true;
+    m18OutputPreference_=next;
+    emit changed();
+    return true;
+}
+
 void ProjectSessionViewModel::on_source_changed()
 {
     const auto* source = source_->source_resource();
