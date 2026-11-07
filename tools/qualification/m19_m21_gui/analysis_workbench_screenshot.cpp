@@ -1,10 +1,12 @@
 // Real Qt 6 Quick screenshot review of isolated M19/M20/M21 UI.
 // Every number is a labelled static DEMO fixture, never Product data.
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
 #include <QFont>
 #include <QFontDatabase>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QQuickItem>
@@ -19,12 +21,24 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 namespace {
 void require(bool condition,const char* message) {
     if(!condition)throw std::runtime_error(message);
 }
+// Visual QQuickItem parenting may differ from QObject ownership after a
+// LayoutItemProxy handoff; findChild<QObject*> can miss valid Repeater delegates.
+QQuickItem* findVisualByObjectName(QQuickItem* root, const QString& name) {
+    if(!root)return nullptr;
+    if(root->objectName()==name)return root;
+    for(auto* item:root->childItems()) {
+        if(auto* match=findVisualByObjectName(item,name))return match;
+    }
+    return nullptr;
+}
+
 QVariantMap metrics_fixture() {
     QVariantList rows;
     const auto add=[&](const QString& label,const QString& prep,
@@ -88,11 +102,26 @@ void display_frames() {
 }
 void screenshot(QQuickView& view,const QString& dir,
                 const int w,const int h,const int tab,
-                const QString& id)
+                const QString& id,const bool standalone,
+                const bool withoutProductData=false, const bool stale=false)
 {
     view.resize(w,h);
     require(view.rootObject()!=nullptr,"GUI_ROOT_NOT_LOADED");
     require(view.rootObject()->setProperty("activeTab",tab),"GUI_TAB_SET_FAILED");
+    require(view.rootObject()->setProperty("standaloneModuleMode",standalone),
+            "GUI_STANDALONE_MODE_SET_FAILED");
+    require(view.rootObject()->property("standaloneModuleMode").toBool()==standalone,
+            "GUI_STANDALONE_MODE_READBACK_FAILED");
+    require(!stale || withoutProductData,"GUI_STALE_MUST_BE_NON_DEMO");
+    require(view.rootObject()->setProperty("analysisStatus",
+            stale ? QStringLiteral("STALE")
+                  : withoutProductData ? QStringLiteral("MISSING")
+                                       : QStringLiteral("CURRENT")),
+            "GUI_ANALYSIS_STATUS_SET_FAILED");
+    require(view.rootObject()->setProperty("fixtureMode",!withoutProductData),
+            "GUI_FIXTURE_TOGGLE_FAILED");
+    require(view.rootObject()->property("available").toBool()==!withoutProductData,
+            "GUI_UNAUTHENTICATED_FIXTURE_GUARD_FAILED");
     view.show();
     display_frames();
     const auto capture=view.grabWindow();
@@ -104,7 +133,42 @@ void screenshot(QQuickView& view,const QString& dir,
         for(int x=0;x<capture.width();x+=3)
             colors.insert(capture.pixel(x,y));
     require(colors.size()>=35,"QT_CAPTURE_BLANK_OR_FONT_MISSING");
-    const QString filename=dir+QStringLiteral("/analysis-")+id+
+    if(withoutProductData){
+        auto* scope=findVisualByObjectName(view.rootObject(),
+                                          QStringLiteral("analysisScopeStatusText"));
+        require(scope!=nullptr && scope->property("text").toString()
+                ==(stale ? QStringLiteral("STALE · REANALYZE")
+                        : QStringLiteral("SCOPE UNAVAILABLE")),
+                "GUI_SCOPE_STATUS_MISLABELLED");
+        auto* goldBadge=findVisualByObjectName(view.rootObject(),
+                                              QStringLiteral("analysisScopeBadge_GOLD"));
+        require(goldBadge!=nullptr
+                && goldBadge->property("color").value<QColor>()
+                      ==QColor(QStringLiteral("#16232D")),
+                "GUI_UNAUTHORIZED_SCOPE_BADGE_HIGHLIGHTED");
+    }
+    if(withoutProductData && tab>0){
+        const QString key=tab==1
+            ? QStringLiteral("m20MissingSpectrumNotice")
+            : QStringLiteral("m21MissingComparisonNotice");
+        auto* notice=findVisualByObjectName(view.rootObject(),key);
+        require(notice && notice->isVisible(),
+                "GUI_MISSING_MEASUREMENT_NOTICE_NOT_VISIBLE");
+        if(tab==1){
+            // Real line break, not the literal backslash+n seen in CI #12.
+            require(notice->property("text").toString().contains(QChar(10)),
+                    "GUI_SPECTRUM_NOTICE_MULTILINE_MISSING");
+            require(!notice->property("text").toString().contains(QStringLiteral("\\n")),
+                    "GUI_SPECTRUM_NOTICE_LITERAL_BACKSLASH_N");
+        }
+        if(stale)require(notice->property("text").toString().contains("STALE"),
+                         "GUI_STALE_NOTICE_MISLABELLED");
+    }
+    const QString filename=dir+
+        (stale?QStringLiteral("/stale-")
+             : withoutProductData?QStringLiteral("/unavailable-")
+             : standalone?QStringLiteral("/standalone-")
+                         :QStringLiteral("/analysis-"))+id+
         QStringLiteral("-")+QString::number(w)+QStringLiteral("x")+
         QString::number(h)+QStringLiteral(".png");
     require(capture.save(filename,"PNG"),"QT_CAPTURE_PNG_WRITE_FAILED");
@@ -149,10 +213,147 @@ int main(int argc,char** argv) {
             QStringLiteral("m19-levels"),QStringLiteral("m20-tonal-stereo"),
             QStringLiteral("m21-metrics-delta")};
         for(int tab=0;tab<3;++tab){
-            screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)]);
-            screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)]);
+            screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)],false);
+            screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)],false);
         }
-        std::cout<<"RGSML_M19_M21_GUI_6_AUTHENTIC_QT_SCREENSHOTS_PASS_NOT_PRODUCT\n";
+
+        // Each individual analysis panel is a distinct native top-level QQuickView.
+        // Product docking and authenticated data are NOT wired by this design harness.
+        const std::array<QString,3> components{
+            QStringLiteral("M19LevelsPanelPreview.qml"),
+            QStringLiteral("M20TonalStereoPanelPreview.qml"),
+            QStringLiteral("M21MetricsDeltaPanelPreview.qml")};
+        const std::array<QString,3> expectedRoots{
+            QStringLiteral("m19IndividualPanelPreview"),
+            QStringLiteral("m20IndividualPanelPreview"),
+            QStringLiteral("m21IndividualPanelPreview")};
+        const QDir qmlFolder(QFileInfo(
+            QString::fromUtf8(RGSML_ANALYSIS_QML_SOURCE)).absolutePath());
+        std::array<std::unique_ptr<QQuickView>,3> individualWindows;
+        for(int tab=0;tab<3;++tab){
+            const auto index=static_cast<std::size_t>(tab);
+            auto panel=std::make_unique<QQuickView>();
+            panel->setResizeMode(QQuickView::SizeRootObjectToView);
+            panel->setSource(QUrl::fromLocalFile(qmlFolder.filePath(components[index])));
+            if(panel->status()!=QQuickView::Ready){
+                for(const auto& err:panel->errors())
+                    std::cerr<<err.toString().toStdString()<<'\n';
+                throw std::runtime_error("GUI_INDIVIDUAL_QML_COMPONENT_NOT_READY");
+            }
+            require(panel->rootObject()!=nullptr,"GUI_INDIVIDUAL_ROOT_MISSING");
+            require(panel->rootObject()->objectName()==expectedRoots[index],
+                    "GUI_INDIVIDUAL_ROOT_ID_MISMATCH");
+            require(panel->rootObject()->property("activeTab").toInt()==tab,
+                    "GUI_INDIVIDUAL_SELECTED_MODULE_WRONG");
+            require(panel->rootObject()->property("standaloneModuleMode").toBool(),
+                    "GUI_INDIVIDUAL_MODE_INACTIVE");
+            require(panel->rootObject()->setProperty("fixtureMode",true),
+                    "GUI_INDIVIDUAL_FIXTURE_BADGE_MISSING");
+            require(panel->rootObject()->setProperty("presentation",demo_data()),
+                    "GUI_INDIVIDUAL_FIXTURE_BINDING_FAILED");
+            screenshot(*panel,dir,1440,900,tab,names[index],true);
+            screenshot(*panel,dir,1184,688,tab,names[index],true);
+            // Explicitly verify that the SAME demo-ready presentation cannot
+            // leak as real data when fixtureMode is switched off.
+            screenshot(*panel,dir,1440,900,tab,names[index],true,true);
+            screenshot(*panel,dir,1184,688,tab,names[index],true,true);
+            screenshot(*panel,dir,1440,900,tab,names[index],true,true,true);
+            screenshot(*panel,dir,1184,688,tab,names[index],true,true,true);
+            individualWindows[index]=std::move(panel);
+        }
+        for(int tab=0;tab<3;++tab){
+            const auto index=static_cast<std::size_t>(tab);
+            require(individualWindows[index]!=nullptr
+                    && individualWindows[index]->isVisible(),
+                    "GUI_THREE_INDIVIDUAL_WINDOWS_NOT_SIMULTANEOUS");
+            require(individualWindows[index]->rootObject()->objectName()
+                    ==expectedRoots[index],"GUI_INDIVIDUAL_ROOT_CHANGED");
+        }
+        require(individualWindows[0].get()!=individualWindows[1].get()
+                && individualWindows[1].get()!=individualWindows[2].get()
+                && individualWindows[0].get()!=individualWindows[2].get(),
+                "GUI_QQUICKVIEW_OBJECT_REUSED");
+        // Rehost each analysis QML panel without cloning the module.
+        // This validates Preview-only Qt layout transfers; Main.qml remains idle.
+        std::array<std::unique_ptr<QQuickView>,3> lifecycleHosts;
+        for(int tab=0;tab<3;++tab){
+            auto host=std::make_unique<QQuickView>();
+            host->setResizeMode(QQuickView::SizeRootObjectToView);
+            host->setSource(QUrl::fromLocalFile(
+                qmlFolder.filePath(QStringLiteral("AnalysisModuleDockHostPreview.qml"))));
+            if(host->status()!=QQuickView::Ready){
+                for(const auto& err:host->errors())
+                    std::cerr<<err.toString().toStdString()<<'\n';
+                throw std::runtime_error("ANALYSIS_DOCK_HOST_QML_LOAD_FAILED");
+            }
+            auto* const hostRoot=host->rootObject();
+            require(hostRoot!=nullptr,"ANALYSIS_DOCK_HOST_MISSING");
+            require(hostRoot->setProperty("moduleIndex",tab),
+                    "ANALYSIS_DOCK_MODULE_SELECTION_FAILED");
+            require(hostRoot->setProperty("fixtureMode",false),
+                    "ANALYSIS_DOCK_MUST_HAVE_NO_FAKE_DATA");
+            host->resize(1184,688);
+            host->show();
+            display_frames();
+            const auto* const module=hostRoot->findChild<QObject*>(
+                expectedRoots[static_cast<std::size_t>(tab)]);
+            require(module!=nullptr,"ANALYSIS_DOCK_REAL_PANEL_MISSING");
+            require(module->property("fixtureMode").toBool()==false,
+                    "ANALYSIS_DOCK_FIXTURE_DATA_LEAK");
+            require(hostRoot->property("detached").toBool()==false,
+                    "ANALYSIS_DOCK_INITIAL_STATE_WRONG");
+            require(QMetaObject::invokeMethod(hostRoot,"requestUndock"),
+                    "ANALYSIS_UNDOCK_METHOD_MISSING");
+            display_frames();
+            auto* const floating=hostRoot->findChild<QQuickWindow*>(
+                "analysisNativeFloatingWindow");
+            require(floating!=nullptr && floating->isVisible(),
+                    "ANALYSIS_NATIVE_FLOATING_WINDOW_NOT_VISIBLE");
+            require(floating->minimumWidth()>=1184
+                    && floating->minimumHeight()>=688,
+                    "ANALYSIS_NATIVE_WINDOW_BELOW_MIN_SIZE");
+            require(hostRoot->findChild<QObject*>(
+                expectedRoots[static_cast<std::size_t>(tab)])==module,
+                "ANALYSIS_UNDOCK_DUPLICATED_PANEL");
+            require(QMetaObject::invokeMethod(hostRoot,"requestDock"),
+                    "ANALYSIS_DOCK_METHOD_MISSING");
+            display_frames();
+            require(hostRoot->property("detached").toBool()==false
+                    && !floating->isVisible(),
+                    "ANALYSIS_REDOCK_DID_NOT_HIDE_NATIVE_WINDOW");
+            require(hostRoot->findChild<QObject*>(
+                expectedRoots[static_cast<std::size_t>(tab)])==module,
+                "ANALYSIS_REDOCK_RECREATED_PANEL");
+            require(hostRoot->property("transitionEpoch").toInt()==2,
+                    "ANALYSIS_REDOCK_TRANSITION_EPOCH_WRONG");
+            auto* undock=hostRoot->findChild<QObject*>("analysisUndockButton");
+            auto* redock=hostRoot->findChild<QObject*>("analysisRedockButton");
+            require(undock && redock,"ANALYSIS_SHARED_BUTTONS_MISSING");
+            require(undock->property("tone").toString()=="secondary"
+                    && redock->property("tone").toString()=="secondary",
+                    "ANALYSIS_SHARED_BUTTON_STYLE_MISSING");
+            if(tab < 2){
+                const QString target=tab==0
+                    ? QStringLiteral("m19MetricValue_lufs")
+                    : QStringLiteral("m20StereoWidthReadout");
+                auto* visualRoot=qobject_cast<QQuickItem*>(hostRoot);
+                auto* value=findVisualByObjectName(visualRoot,target);
+                require(value!=nullptr,"ANALYSIS_VISUAL_READOUT_MISSING");
+                require(value->property("readOnly").toBool(),
+                        "ANALYSIS_READOUT_MUST_BE_READ_ONLY");
+                require(!value->property("dataAvailable").toBool(),
+                        "ANALYSIS_UNAUTHENTICATED_MEASUREMENT_LEAK");
+                if(tab==0){
+                    require(value->property("heroReadout").toBool(),
+                            "ANALYSIS_M19_INPUT_GAIN_STYLE_MISSING");
+                    require(value->property("numericPixelSize").toInt()==36,
+                            "ANALYSIS_M19_INPUT_GAIN_FONT_SIZE_WRONG");
+                }
+            }
+            lifecycleHosts[static_cast<std::size_t>(tab)]=std::move(host);
+        }
+        std::cout<<"RGSML_M19_M21_THREE_DOCK_UNDOCK_NATIVE_QT_LIFECYCLES_PASS_NO_PRODUCT_BINDING\n";
+        std::cout<<"RGSML_M19_M21_GUI_24_DEMO_MISSING_STALE_STATES_QT_PASS_NOT_PRODUCT\n";
         return 0;
     }catch(const std::exception& e){
         std::cerr<<"RGSML_GUI_SCREENSHOT_FAILURE "<<e.what()<<'\n';

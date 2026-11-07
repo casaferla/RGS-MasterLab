@@ -13,17 +13,36 @@ Rectangle {
     color: "#071117"
 
     property int activeTab: 0 // 0=M19, 1=M20, 2=M21
+    // Design-only alternate presentation: one module per detached/dockable shell.
+    // Does not instantiate a real Window, alter Product, or claim dock wiring.
+    property bool standaloneModuleMode: false
+    readonly property string selectedModuleTitle: activeTab === 0
+        ? "LEVELS  /  M19" : (activeTab === 1
+        ? "TONAL & STEREO  /  M20" : "METRICS / DELTA  /  M21")
     property var presentation: ({ready:false})
     property bool fixtureMode: true
-    readonly property bool available: !!presentation && presentation.ready === true
+    // Display-only lifecycle label. Never authorizes Product data.
+    // The future typed owner bridge must supply this; the preview harness
+    // uses CURRENT exclusively with explicitly labelled DEMO fixtures.
+    property string analysisStatus: "MISSING"
+    readonly property bool stateCurrent: analysisStatus === "CURRENT"
+    readonly property bool stateStale: analysisStatus === "STALE"
+    readonly property string stateDescription: stateStale ? "STALE · REANALYZE"
+        : analysisStatus === "INVALID" ? "INVALID · REANALYZE"
+        : "DATA UNAVAILABLE"
+    // This QML remains a DEMO-only visualization until real, authenticated
+    // typed Product presenters are bound. Never display an unverified result.
+    readonly property bool available: root.fixtureMode && root.stateCurrent
+        && !!presentation && presentation.ready === true
+    onAvailableChanged: spectrumCanvas.requestPaint()
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
     readonly property color copper: "#D19562"
     readonly property color amber: "#F2B632"
-    readonly property color edge: "#2A3947"
-    readonly property color panel: "#0F1820"
-    readonly property color raised: "#142634"
+    readonly property color edge: "#2C5A78"
+    readonly property color panel: "#0E1A24"
+    readonly property color raised: "#12243F"
 
     function valueOr(value, unavailable) {
         return root.available && value !== undefined && value !== null
@@ -34,7 +53,7 @@ Rectangle {
         id: layout
         anchors.fill: parent
         anchors.margins: 18
-        spacing: 12
+        spacing: root.standaloneModuleMode ? 8 : 12
 
         Row {
             width: parent.width
@@ -52,14 +71,16 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 3
                 Text {
-                    text: "ANALYSIS"
+                    text: root.standaloneModuleMode ? root.selectedModuleTitle : "ANALYSIS"
                     font.family: "Segoe UI"
                     font.pixelSize: 26
                     font.weight: Font.DemiBold
                     color: root.ink
                 }
                 Text {
-                    text: "RGS MasterLab  /  READ-ONLY MEASUREMENT & REFERENCE COMPARISON"
+                    text: root.standaloneModuleMode
+                        ? "RGS MasterLab  /  INDIVIDUAL PANEL DESIGN · DOCK/FLOAT NOT ACTIVE"
+                        : "RGS MasterLab  /  READ-ONLY MEASUREMENT & REFERENCE COMPARISON"
                     font.family: "Segoe UI"
                     font.pixelSize: 11
                     color: root.dim
@@ -70,15 +91,15 @@ Rectangle {
                 height: 32
                 anchors.verticalCenter: parent.verticalCenter
                 radius: 5
-                color: root.fixtureMode ? "#3A2C1B" : "#15352F"
-                border.color: root.fixtureMode ? root.amber : "#3C9D8B"
+                color: root.fixtureMode ? "#3A2C1B" : "#302523"
+                border.color: root.fixtureMode ? root.amber : "#A56B56"
                 Text {
                     anchors.centerIn: parent
-                    text: root.fixtureMode ? "DEMO DATA · DESIGN" : "ACTUAL PRODUCT DATA"
+                    text: root.available ? "DEMO DATA · DESIGN" : root.stateDescription
                     font.family: "Segoe UI"
                     font.bold: true
                     font.pixelSize: 10
-                    color: root.fixtureMode ? root.amber : "#7CE5C6"
+                    color: root.fixtureMode ? root.amber : "#F2B632"
                 }
             }
         }
@@ -86,7 +107,8 @@ Rectangle {
         Row {
             id: nav
             width: parent.width
-            height: 48
+            visible: !root.standaloneModuleMode
+            height: root.standaloneModuleMode ? 0 : 48
             spacing: 8
             Repeater {
                 model: [
@@ -157,8 +179,10 @@ Rectangle {
                         height: 29
                         anchors.verticalCenter: parent.verticalCenter
                         radius: 4
-                        color: modelData.name === "GOLD" ? "#30261E" : "#152937"
-                        border.color: modelData.color
+                        objectName: "analysisScopeBadge_" + modelData.name
+                        color: !root.available ? "#16232D"
+                            : modelData.name === "GOLD" ? "#30261E" : "#152937"
+                        border.color: root.available ? modelData.color : "#3A4B58"
                         border.width: 1
                         Text {
                             anchors.centerIn: parent
@@ -166,12 +190,15 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.bold: true
                             font.pixelSize: 11
-                            color: modelData.color
+                            color: root.available ? modelData.color : "#7A8996"
                         }
                     }
                 }
                 Text {
-                    text: "FULL TRACK · 48 kHz · STEREO"
+                    objectName: "analysisScopeStatusText"
+                    text: root.available ? "FULL TRACK · 48 kHz · STEREO"
+                        : root.stateStale ? "STALE · REANALYZE"
+                        : "SCOPE UNAVAILABLE"
                     anchors.verticalCenter: parent.verticalCenter
                     color: root.dim
                     font.family: "Segoe UI"
@@ -183,7 +210,7 @@ Rectangle {
         Item {
             id: workspace
             width: parent.width
-            height: Math.max(330,layout.height - 72 - 48 - 52 - 34 - 4*layout.spacing)
+            height: Math.max(330,layout.height - 72 - nav.height - 52 - 34 - 4*layout.spacing)
 
             // M19: Five typed numeric readouts, no invented TP authorization.
             Column {
@@ -196,7 +223,7 @@ Rectangle {
                 Row {
                     id: levelTiles
                     width: parent.width
-                    height: Math.min(165,Math.max(125,parent.height*0.30))
+                    height: Math.min(180,Math.max(162,parent.height*0.33))
                     spacing: 10
                     Repeater {
                         model: [
@@ -216,40 +243,23 @@ Rectangle {
                                 anchors.fill: parent
                                 anchors.margins: 13
                                 spacing: 8
-                                Text {
-                                    text: modelData.label
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: root.dim
-                                }
-                                Row {
-                                    spacing: 6
-                                    Text {
-                                        objectName: "m19MetricValue_" + modelData.key
-                                        text: root.valueOr(
-                                            root.presentation.levels
-                                                ? root.presentation.levels[modelData.key] : null,
-                                            "—")
-                                        font.family: "Segoe UI"
-                                        font.pixelSize: Math.max(21,Math.min(33,levelTiles.width/42))
-                                        font.weight: Font.DemiBold
-                                        color: modelData.key==="truePeak" ? root.amber : root.ink
-                                    }
-                                    Text {
-                                        text: modelData.unit
-                                        anchors.bottom: parent.bottom
-                                        color: root.dim
-                                        font.family: "Segoe UI"
-                                        font.pixelSize: 11
-                                    }
+                                StudioReadOnlyMeasurement {
+                                    objectName: "m19MetricValue_" + modelData.key
+                                    width: parent.width
+                                    heroReadout: true
+                                    labelText: modelData.label
+                                    unitText: modelData.unit
+                                    rawText: root.valueOr(root.presentation.levels
+                                        ? root.presentation.levels[modelData.key] : null)
+                                    dataAvailable: root.available && modelData.key!=="truePeak"
+                                    accentColor: modelData.key==="truePeak" ? root.amber : root.cyan
                                 }
                                 Text {
                                     width: parent.width
                                     text: modelData.hint
                                     color: modelData.key==="truePeak" ? root.amber : "#7995A6"
                                     font.family: "Segoe UI"
-                                    font.pixelSize: 9
+                                    font.pixelSize: 10
                                     wrapMode: Text.WordWrap
                                 }
                             }
@@ -313,7 +323,9 @@ Rectangle {
                                 }
                             }
                             Text {
-                                text: "Reference values and bars are illustrative in this screenshot only."
+                                text: root.fixtureMode
+                                    ? "Reference values and bars are illustrative in this screenshot only."
+                                    : "No authenticated Product measurements; reference comparison disabled."
                                 font.pixelSize: 10
                                 color: root.amber
                                 wrapMode: Text.WordWrap
@@ -331,7 +343,11 @@ Rectangle {
                             anchors.margins: 18
                             spacing: 11
                             Text {text:"MEASUREMENT STATUS";color:root.ink;font.bold:true;font.pixelSize:13}
-                            Text {text:"CURRENT · INTEGRATED";color:"#7CDDC8";font.bold:true;font.pixelSize:11}
+                            Text {text:root.available ? "DEMO · INTEGRATED"
+                                        : root.stateStale ? "STALE · REANALYZE"
+                                        : "UNAVAILABLE · PRODUCT BINDING PENDING"
+                                color:root.available ? "#7CDDC8" : root.amber
+                                font.bold:true;font.pixelSize:11}
                             Text {
                                 text:"Measured LUFS, RMS, Sample Peak and Crest are available only with valid authenticated PCM."
                                 color:root.dim;wrapMode:Text.WordWrap
@@ -412,6 +428,20 @@ Rectangle {
                                 ctx.stroke()
                             }
                         }
+                        Text {
+                            objectName: "m20MissingSpectrumNotice"
+                            visible: !root.available
+                            anchors.centerIn: spectrumCanvas
+                            width: spectrumCanvas.width * 0.85
+                            text: root.stateStale
+                                ? "SPECTRUM STALE\nREANALYSIS REQUIRED"
+                                : "SPECTRUM UNAVAILABLE\nAUTHENTICATED PCM REQUIRED"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                            horizontalAlignment: Text.AlignHCenter
+                            color: root.amber
+                        }
                         Repeater {
                             model:[
                                 {t:"20 Hz",x:0.0},
@@ -438,25 +468,34 @@ Rectangle {
                         Column{
                             anchors.fill:parent;anchors.margins:12;spacing:8
                             Text{text:"STEREO IMAGE";color:root.ink;font.bold:true;font.pixelSize:13}
-                            Row{
-                                spacing:10
-                                Text{text:"WIDTH";width:110;color:root.dim;font.pixelSize:11}
-                                Text{text:root.valueOr(root.presentation.stereo?root.presentation.stereo.width:null);color:root.cyan;font.pixelSize:24;font.bold:true}
+                            StudioReadOnlyMeasurement {
+                                objectName: "m20StereoWidthReadout"
+                                width: parent.width
+                                labelText: "WIDTH"
+                                rawText: root.valueOr(root.presentation.stereo
+                                    ? root.presentation.stereo.width : null)
+                                dataAvailable: root.available
                             }
                             Rectangle{width:parent.width;height:1;color:root.edge}
                             Text{text:"CORRELATION · WINDOWED";color:root.dim;font.pixelSize:11;font.bold:true}
                             Repeater{
                                 model:[{k:"P10",c:"#D19562"},{k:"P50",c:"#00C8FF"},{k:"P90",c:"#7CDDC8"}]
-                                delegate:Row{
-                                    spacing:10
-                                    Text{text:modelData.k;width:65;color:root.dim;font.pixelSize:12}
-                                    Text{text:root.valueOr(root.presentation.stereo?root.presentation.stereo[modelData.k]:null);color:modelData.c;font.pixelSize:19;font.bold:true}
+                                delegate:StudioReadOnlyMeasurement {
+                                    objectName: "m20StereoCorrelation_" + modelData.k
+                                    width: parent.width
+                                    labelText: modelData.k
+                                    rawText: root.valueOr(root.presentation.stereo
+                                        ? root.presentation.stereo[modelData.k] : null)
+                                    dataAvailable: root.available
+                                    accentColor: modelData.c
                                 }
                             }
                             Rectangle{width:parent.width;height:1;color:root.edge}
                             Text{
                                 width:parent.width
-                                text:"Mono: NOT APPLICABLE · Low support: UNAVAILABLE"
+                                text: root.fixtureMode
+                                    ? "Mono: NOT APPLICABLE · Low support: UNAVAILABLE"
+                                    : "Stereo support and channel status unavailable"
                                 color:root.amber;font.pixelSize:11
                                 wrapMode:Text.WordWrap
                             }
@@ -473,6 +512,17 @@ Rectangle {
                             Text{text:"TONAL PROFILE";color:root.ink;font.bold:true;font.pixelSize:13}
                             Text{text:"1/12 OCTAVE BANDS";color:root.dim;font.pixelSize:10}
                             Text{text:"SUPPORTED ONLY";color:root.amber;font.pixelSize:10}
+                        }
+                        Text {
+                            objectName: "m20MissingProfileNotice"
+                            visible: !root.available
+                            text: root.stateStale
+                                ? "TONAL PROFILE STALE" : "TONAL PROFILE UNAVAILABLE"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: root.amber
+                            anchors.verticalCenter: parent.verticalCenter
                         }
                         Repeater {
                             model:root.available?(root.presentation.bands||[]):[]
@@ -559,6 +609,22 @@ Rectangle {
                                 }
                             }
                         }
+                        Text {
+                            objectName: "m21MissingComparisonNotice"
+                            visible: !root.available
+                            width: parent.width
+                            height: 64
+                            text: root.stateStale
+                                ? "METRICS STALE — REANALYZE PREPARED / GOLD / PROCESSED"
+                                : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: root.amber
+                            verticalAlignment: Text.AlignVCenter
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                        }
                         Repeater{
                             model:root.available?(root.presentation.metrics||[]):[]
                             delegate:Rectangle{
@@ -575,7 +641,7 @@ Rectangle {
                                             width:parent.width/6
                                             height:parent.height
                                             text:modelData
-                                            font.family:"Segoe UI"
+                                            font.family:index===0 ? "Segoe UI" : "Consolas"
                                             font.pixelSize:11
                                             font.bold:index===0
                                             color:String(modelData).indexOf("UNAVAILABLE")>=0?root.amber:
@@ -606,13 +672,17 @@ Rectangle {
             spacing:0
             Text{
                 width:parent.width/2
-                text:"RGS MASTERLAB  ·  ANALYSIS UI PROTOTYPE  ·  NOT QUALIFIED"
+                text:root.standaloneModuleMode
+                    ? "RGS MASTERLAB  ·  INDIVIDUAL PANEL PROTOTYPE  ·  NOT QUALIFIED"
+                    : "RGS MASTERLAB  ·  ANALYSIS UI PROTOTYPE  ·  NOT QUALIFIED"
                 color:root.dim;font.pixelSize:10
                 elide:Text.ElideRight
             }
             Text{
                 width:parent.width/2
-                text:"DESIGN REVIEW  ·  NO PRODUCT WRITE / NO M18 MERGE"
+                text: root.fixtureMode
+                    ? "DESIGN REVIEW  ·  NO PRODUCT WRITE / NO M18 MERGE"
+                    : "READ-ONLY PREVIEW · NO PRODUCT RESULTS AVAILABLE"
                 color:root.amber;font.pixelSize:10
                 horizontalAlignment:Text.AlignRight
                 elide:Text.ElideLeft

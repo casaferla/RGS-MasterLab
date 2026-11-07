@@ -1,0 +1,11 @@
+# RGS M19–M21 gated lifecycle UI · CI #12
+
+PO chose three standalone dock/float panels and consistent Input Gain typography for M19. CI #11, run 42423045584, completed SUCCESS on Windows and delivered 18 Qt6 screenshots. The six no-data screenshots at 1184x688 and 1440x900 were visually examined: M19 displays em dashes; M20 spectrum and tonal bands have explicit no-data messages; M21 has an explicit missing comparison. However PREPARED/GOLD/PROCESSED headers were still saturated even when no Product owner had supplied a measurement.
+
+Candidate #12 introduces an **illustrative display lifecycle state** MISSING, CURRENT, STALE (and INVALID display fallback). It has no authority to declare real PCM valid. Only fixtureMode=true AND presentation.ready=true AND analysisStatus=CURRENT may display DEMO numbers. No fixtureMode=false state, even with a demo-ready object, may display a numeric value. It is NOT a Product ViewModel.
+
+When missing or stale, analysis source badges are visually muted rather than falsely selected; M19/M20/M21 provide explicit absence/staleness messaging; the static PSD re-paints when measurement availability changes. Six more Qt6 screenshots are created for STALE (three modules x 2 sizes), making 24 total per focused Windows CI. The capture harness verifies scope text, muted GOLD badge, status-specific M20/M21 notices, screenshot count and nonblank image size; original 18 scenarios stay intact.
+
+Prerequisite for real Product: compare exact epoch/generation + realization ID + domain + scope + sample rate + channel count from independently authorized PREPARED/GOLD/PROCESSED owners. M21 m21_real_product_metrics_port.hpp has an external owner CLAIM and must NOT be mistaken for canonical release authorization. Never synthesize GOLD or True Peak, never infer tonal shape dB from normalized linear fractions. The future typed C++ adapter must provide per-column and per-cell quality, not just this provisional panel-wide illustrative state.
+
+No Main.qml or underlying analyzers modified, no automatic merge, no Full Qualification and no real-device Windows PO acceptance. The CI #12 screenshot gate does not replace M18 A01–A15, numerical M19–M22 tests, multi-screen physical tests or final FQ.
