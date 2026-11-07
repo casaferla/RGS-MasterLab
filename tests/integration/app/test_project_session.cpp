@@ -23,6 +23,7 @@
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/project/project_repository.hpp>
