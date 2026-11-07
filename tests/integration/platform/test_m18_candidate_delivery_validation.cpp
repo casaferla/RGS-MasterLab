@@ -205,6 +205,7 @@ private slots:
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
     void fullProductGuardActivationRequiresFreshUnconsentedEpoch();
     void explicitExportConsentMintsOneExactVerifiedProductTicket();
+    void productModelRateChainReconciliationCannotRestoreOldConsent();
     void fullProductSourceProjectGenerationsAdvanceWithSingleWriter();
     void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
     void retiredProductMutationFanoutRejectsCachedControllerCallbacks();
