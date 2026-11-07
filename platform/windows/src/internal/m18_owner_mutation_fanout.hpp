@@ -113,6 +113,45 @@ public:
                 state->epoch,state->identity);
     }
 
+    // PRIVATE Product-only consent step. This is NOT a UI command and
+    // MUST be called only after the COMPLETE binder proves all installed
+    // guards and a fresh exact M16-verified M17 stage. The verified identity
+    // is not inferred from a filename or the worker. Consent takes one new
+    // epoch without changing the already accepted SOURCE/Project/MASTER.
+    [[nodiscard]] core::Result<M18ProductEpochTicketAuthority::Ticket>
+    capture_after_explicit_verified_consent(
+        M18ProductExportIdentity verifiedCurrentIdentity,
+        bool confirmedByUser) const
+    {
+        using R=core::Result<M18ProductEpochTicketAuthority::Ticket>;
+        const auto state=shared_;
+        if(!state||std::this_thread::get_id()!=state->ownerThread
+           ||state->retired.load(std::memory_order_acquire)
+           ||state->admitting||!confirmedByUser
+           ||state->projectOpenActive.load(std::memory_order_acquire)
+           ||state->sourceCommitActive.load(std::memory_order_acquire)
+           ||!state->authority||state->epoch==0
+           ||state->epoch==std::numeric_limits<std::uint64_t>::max()
+           ||!verifiedCurrentIdentity.valid()
+           ||verifiedCurrentIdentity!=state->identity
+           ||!state->authority->can_install_full_product_guards(
+               state->epoch,state->identity))
+            return R::failure(core::Error{
+                core::ErrorCode::AccessDenied,
+                "M18_EXPORT_NEW_USER_CONSENT_REQUIRES_EXACT_CURRENT_PRODUCT"});
+        state->admitting=true;
+        struct Unwind final {
+            bool* active;
+            ~Unwind(){*active=false;}
+        } unwind{&state->admitting};
+        const auto newEpoch=state->epoch+1;
+        const auto accepted=state->authority->try_transition(
+            state->epoch,newEpoch,verifiedCurrentIdentity,true);
+        if(!accepted)return R::failure(*accepted.error());
+        state->epoch=newEpoch;
+        return state->authority->capture(verifiedCurrentIdentity);
+    }
+
     [[nodiscard]] StatusAdmission status_admission() const {
         return [weak=std::weak_ptr<Shared>{shared_}](
             const char* operation)->core::Status {
