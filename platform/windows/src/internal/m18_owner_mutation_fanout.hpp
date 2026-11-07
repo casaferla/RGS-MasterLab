@@ -32,6 +32,22 @@ class M18OwnerMutationFanout final {
         std::atomic<bool> projectOpenActive{false};
         std::atomic<bool> retired{false};
     };
+    // The typed token owns BOTH the exclusive physical Product lease and
+    // its nested-child-mode lifetime. Destroy lease before dropping mode.
+    struct HeldProjectOpen final {
+        HeldProjectOpen(std::shared_ptr<Shared> owner,
+            std::unique_ptr<M18EpochCommitBarrier::MutationLease> lease)
+            :state(std::move(owner)),held(std::move(lease)) {}
+        ~HeldProjectOpen(){
+            held.reset();
+            state->projectOpenActive.store(
+                false,std::memory_order_release);
+        }
+        HeldProjectOpen(const HeldProjectOpen&)=delete;
+        HeldProjectOpen& operator=(const HeldProjectOpen&)=delete;
+        std::shared_ptr<Shared> state;
+        std::unique_ptr<M18EpochCommitBarrier::MutationLease> held;
+    };
 public:
     using StatusAdmission=std::function<core::Status(const char*)>;
     using RateAdmission=std::function<bool()>;
