@@ -30,8 +30,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S . -B build/m21-ui-typed -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON
-          cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests
+          cfg="$RUNNER_TEMP/rgs-ui-configure.log"
+          buildlog="$RUNNER_TEMP/rgs-ui-build.log"
+          bounded="$RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          if ! cmake -S . -B build/m21-ui-typed -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON >"$cfg" 2>&1; then
+            tail -n 50 "$cfg" >"$bounded"
+            exit 1
+          fi
+          if ! cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests >"$buildlog" 2>&1; then
+            tail -n 60 "$buildlog" >"$bounded"
+            exit 1
+          fi
+          tail -n 5 "$buildlog"
+      - name: Upload bounded Linux failure (no complete logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-UI-Bounded-Linux
+          path: ${{ runner.temp }}/rgs-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: "Run focused projection and M21 tests"
         shell: bash
         run: |
@@ -62,10 +80,28 @@ jobs:
         shell: pwsh
         run: |
           $qtRoot = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
-          cmake -S . -B build/m21-ui-typed -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES=Release -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$qtRoot"
-          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_WINDOWS_CONFIGURE_FAILED' }
-          cmake --build build/m21-ui-typed --config Release --parallel 4 --target rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests
-          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_WINDOWS_BUILD_FAILED' }
+          $cfg = "$env:RUNNER_TEMP/rgs-ui-configure.log"
+          $buildlog = "$env:RUNNER_TEMP/rgs-ui-build.log"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          cmake -S . -B build/m21-ui-typed -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES=Release -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$qtRoot" *> $cfg
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $cfg -Tail 50 | Set-Content $bounded
+            throw 'UI_PROJECTION_WINDOWS_CONFIGURE_FAILED'
+          }
+          cmake --build build/m21-ui-typed --config Release --parallel 4 --target rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests *> $buildlog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $buildlog -Tail 60 | Set-Content $bounded
+            throw 'UI_PROJECTION_WINDOWS_BUILD_FAILED'
+          }
+          Get-Content $buildlog -Tail 5
+      - name: Upload bounded Windows failure (no complete logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-UI-Bounded-Windows
+          path: ${{ runner.temp }}/rgs-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: "Run focused projection and M21 tests"
         shell: pwsh
         run: |
