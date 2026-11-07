@@ -305,6 +305,14 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     QVERIFY(!session.source.m18_source_batch_installed());
     session.gold.set_private_m18_gold_mutation_admission({});
     QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    // Mixing an older one-shot Project policy with the new Project-open
+    // physical batch would allow partial, separately admitted writes.
+    session.project.set_private_m18_project_mutation_admission(
+        fanout.status_admission());
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(!session.source.m18_source_batch_installed());
+    session.project.set_private_m18_project_mutation_admission({});
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
     QVERIFY(M18ProductUpstreamBinding::bind(controllers,fanout));
     QVERIFY(M18ProductUpstreamBinding::installed(controllers));
     QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
