@@ -3,6 +3,7 @@
 #include <rgsml/audio/source_resource.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QUrl>
 
@@ -37,7 +38,13 @@ public:
     // epoch transaction, because the selector may already be invalidated.
     using M18GoldMutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_gold_mutation_admission(M18GoldMutationAdmission gate)
-    {m18GoldMutationAdmission_=std::move(gate);}
+    {
+        // Only the QObject owner may configure the private Product gate.
+        // Keep its callback installed across admission and Qt publication.
+        if(QThread::currentThread()!=thread())return;
+        if(m18GoldAdmitting_||m18GoldPublicationActive_)return;
+        m18GoldMutationAdmission_=std::move(gate);
+    }
     [[nodiscard]] core::Status adopt_probed_gold(audio::SourceResource candidate);
 
     Q_INVOKABLE void selectGold(const QUrl& selectedFile);
