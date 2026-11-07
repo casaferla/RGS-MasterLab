@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace rgsml::app {
@@ -86,6 +87,7 @@ public:
     {
         // A callback cannot erase the very authority whose epoch is
         // being consumed, then recursively mutate a checked M17 stage.
+        if(std::this_thread::get_id()!=ownerThread_)return;
         if(m18AdmissionActive_)return;
         m18MutationAdmission_=std::move(guard);
     }
@@ -106,6 +108,7 @@ private:
     void invalidate_unchecked() noexcept;
     [[nodiscard]] core::Status admit_m18_candidate_mutation(
         const char* operation) const;
+    const std::thread::id ownerThread_{std::this_thread::get_id()};
     M18MutationAdmission m18MutationAdmission_;
     mutable bool m18AdmissionActive_{false};
     std::uint64_t ticket_{0};
