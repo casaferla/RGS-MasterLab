@@ -4015,6 +4015,29 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         guardedRate.set_private_m18_rate_mutation_admission({});
         guardedLimiter.set_private_m18_processing_mutation_admission({});
 
+        // A foreign export worker or a reentrant callback cannot disarm
+        // the limiter Product guard and mutate the verified M17 stage.
+        std::size_t limiterGuardCalls=0,limiterNestedDenied=0;
+        guardedLimiter.set_private_m18_processing_mutation_admission([&] {
+            ++limiterGuardCalls;
+            guardedLimiter.set_private_m18_processing_mutation_admission({});
+            const auto bypassBeforeNested=guardedLimiter.bypass();
+            guardedLimiter.setBypass(!bypassBeforeNested);
+            if(guardedLimiter.bypass()==bypassBeforeNested)
+                ++limiterNestedDenied;
+            return false;
+        });
+        std::thread foreignLimiterDisarm([&] {
+            guardedLimiter.set_private_m18_processing_mutation_admission({});
+        });
+        foreignLimiterDisarm.join();
+        guardedLimiter.setBypass(!originalBypass);
+        guardedLimiter.setBypass(!originalBypass);
+        QCOMPARE(guardedLimiter.bypass(),originalBypass);
+        QCOMPARE(limiterGuardCalls,std::size_t{2});
+        QCOMPARE(limiterNestedDenied,std::size_t{2});
+        guardedLimiter.set_private_m18_processing_mutation_admission({});
+
         const auto originalPcm=original->rendered.terminal.checked.terminal
             .compensated_pcm.view();
         const auto requestedPcm=authorized.value()->payload();
