@@ -263,6 +263,228 @@ private slots:
 
 
 void ProjectSessionTest::
+m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
+{
+    // M18 EXIT GATE A: one real Project/SOURCE/Qt M17 Product and ONE
+    // complete guard authority, followed by two actual transactional
+    // Windows WAV deliveries with separate explicit user consent tickets.
+    using app::internal::M18ProductCompleteBinding;
+    using app::internal::M18PrivateProductExportAction;
+    using app::internal::M18PrivateAsyncExportSession;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    constexpr int seed=27;
+    constexpr std::size_t n=4096;
+    const auto sourcePath=wav(directory,
+        QStringLiteral("m18-positive-real-source.wav"),seed,48000U,n);
+    QVERIFY(!sourcePath.isEmpty());
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.frame_count(),qint64{4096});
+    QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
+    // The synthetic Device remains a REAL Qt PlaybackTransport
+    // predecessor. It must hold the exact published MANUAL identity;
+    // no terminal Master or WAV result is ever installed on the device.
+    session.transport.set_pcm_prepare_handler(
+        [&session](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease||!id||view.frame_count().value()<=0)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_REAL_PRODUCT_DEVICE_REQUIRES_MANUAL_OWNER"});
+            session.observed->state=core::PlaybackState::STOPPED;
+            session.observed->position=view.absolute_start_frame();
+            session.observed->duration=view.frame_count();
+            session.observed->loop.reset();
+            session.observed->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto rate48=core::SampleRate::create(48000);
+    auto frames=core::FrameCount::create(static_cast<std::int64_t>(n));
+    auto block=core::FrameCount::create(128);
+    QVERIFY(registry&&rate48&&frames&&block);
+    auto fmt=audio::AudioFormat::create(
+        *rate48.value(),audio::ChannelLayout::MONO);
+    QVERIFY(fmt);
+    auto samples=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(samples);
+    auto lane=samples.value()->mutable_view().channel(0);
+    QVERIFY(lane);
+    for(std::size_t i=0;i<n;++i)
+        (*lane.value())[i]=static_cast<double>(
+            (static_cast<std::int64_t>(i)+seed)%100)/32768.0;
+    auto emptyManual=dsp::ProcessingChain::create(
+        *registry.value(),{dsp::ProcessingStage::MASTER,
+                           dsp::ChainSegment::MANUAL});
+    QVERIFY(emptyManual);
+    auto renderManual=[&](const dsp::ProcessingChain& chain,
+        std::vector<dsp::ModuleExecutionBinding> bindings)
+        ->core::Result<render::RenderResult> {
+        auto request=render::RenderRequest::create(
+            samples.value()->view(),
+            samples.value()->view().absolute_range(),
+            chain,std::move(bindings),*block.value());
+        if(!request)return core::Result<render::RenderResult>::failure(
+            *request.error());
+        return render::render_preview(*request.value(),*registry.value());
+    };
+    auto prepared=renderManual(*emptyManual.value(),{});
+    QVERIFY2(prepared,prepared?"":prepared.error()->message().c_str());
+    auto processed=renderManual(
+        session.masteringChainState->chain(),
+        session.masteringChainState->execution_bindings());
+    QVERIFY2(processed,processed?"":processed.error()->message().c_str());
+    QVERIFY(session.selector.set_prepared_realization(
+        std::move(*prepared.value())));
+    QVERIFY(session.selector.set_processed_realization(
+        std::move(*processed.value())));
+    QVERIFY(session.selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto manualId=session.selector.processed_realization_id();
+    QVERIFY(manualId);
+    const auto acceptedManual=session.selector.processed_realization_snapshot();
+    QVERIFY(acceptedManual);
+    QCOMPARE(acceptedManual->view().frame_count(),*frames.value());
+    QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+
+    app::MasterOutputRateState rate;
+    rate.source_committed(48000);
+    session.project.set_master_output_rate_state(&rate);
+    install_m18_checked_source_dispatch(session,rate);
+    auto limiterId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "c3000000-0000-4000-8000-000000000018").value());
+    QVERIFY(limiterId);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(terminal);
+    QVERIFY(terminal.value()->set_user_bypass(false));
+    app::TerminalCandidateGate candidates;
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_VERIFIED_MASTER_MAY_NOT_INSTALL_DEVICE"});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [&session](auto p,auto m,auto id) {
+            return session.selector.reserve_private_terminal_realization_id(
+                std::move(p),std::move(m),id);
+        }};
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        [&session]{return session.selector.prepared_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_id();},
+        [&session]{return session.masteringChainState->chain();}};
+    app::TerminalPrivateProductSession product{
+        renderer,publisher,candidates,session.transport,
+        [&session]{return session.selector.prepared_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_id();},
+        [&session]{return session.region.region();},
+        [&session] {
+            return session.selector.active_target()
+                ==app::AuditionTarget::PROCESSED;
+        }};
+    const M18ProductExportIdentity identity{
+        901U,902U,903U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        17U,identity);
+    M18OwnerMutationFanout fanout{owner,17U,identity};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,
+        *session.masteringChainState,session.selector,session.region,
+        session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers controllers{
+        upstream,product,candidates};
+    QVERIFY(M18ProductCompleteBinding::preflight(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(controllers));
+    QVERIFY(!owner->capture(identity));
+    M18PrivateProductExportAction action{controllers,fanout};
+
+    const auto preparedOk=product.request_private(*rate48.value(),true);
+    QVERIFY2(preparedOk,preparedOk?"":preparedOk.error()->message().c_str());
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),30000);
+    const auto verified=product.capture_m18_verified_stage_for_worker(
+        *rate48.value());
+    QVERIFY(verified);
+    QCOMPARE(verified,candidates.staged());
+    QVERIFY(verified->rendered.terminal.checked.final_check);
+    QCOMPARE(verified->rendered.manual_chain_revision,
+             session.masteringChainState->chain().revision());
+    QCOMPARE(verified->rendered.terminal.checked.terminal
+                 .compensated_pcm.view().frame_count(),*frames.value());
+    QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
+    QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+
+    for(const auto encoding:{
+            audio::WavSampleFormat::PCM_S24,
+            audio::WavSampleFormat::IEEE_F32}) {
+        const auto filename=QStringLiteral("m18-product-authorized-%1.wav")
+            .arg(static_cast<int>(encoding));
+        const auto output=directory.filePath(filename);
+        auto destination=platform::windows::WindowsResourceWriter::
+            make_write_reference(output.toUtf8().toStdString(),
+                                 filename.toUtf8().toStdString());
+        QVERIFY(destination);
+        const auto seedForPcm=encoding==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(1234567)}
+            :std::nullopt;
+        QVERIFY(!action.has_unacknowledged_export());
+        const auto accepted=action.begin(
+            *destination.value(),encoding,seedForPcm,
+            terminal.value()->parameters().ceiling_db_tp(),true);
+        QVERIFY2(accepted,accepted?"":accepted.error()->message().c_str());
+        QVERIFY(action.has_unacknowledged_export());
+        QVERIFY(!action.can_acknowledge()); // not 100% until readback
+        QTRY_VERIFY_WITH_TIMEOUT(
+            action.snapshot().phase==
+                M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
+            30000);
+        const auto report=action.snapshot();
+        QCOMPARE(report.encoded_frames,report.total_frames);
+        QCOMPARE(report.total_frames,static_cast<std::uint64_t>(n));
+        QVERIFY(!report.failure_code);
+        QVERIFY(report.verified_file_size_bytes);
+        QVERIFY(*report.verified_file_size_bytes>0);
+        QCOMPARE(report.verified_encoded_sha256.size(),std::size_t{64});
+        QVERIFY(QFileInfo::exists(output));
+        QCOMPARE(static_cast<std::uint64_t>(QFileInfo{output}.size()),
+                 *report.verified_file_size_bytes);
+        QVERIFY(action.can_acknowledge());
+        QVERIFY(!action.can_cancel());
+        QVERIFY(action.acknowledge());
+        QVERIFY(!action.has_unacknowledged_export());
+        QCOMPARE(action.snapshot().phase,
+                 M18PrivateAsyncExportSession::Phase::IDLE);
+        QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
+        QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+        QCOMPARE(product.capture_m18_verified_stage_for_worker(
+                     *rate48.value()),verified);
+        QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+        QCOMPARE(session.source.frame_count(),qint64{4096});
+        QCOMPARE(session.source.display_name(),
+                 QStringLiteral("m18-positive-real-source.wav"));
+    }
+}
+
+void ProjectSessionTest::
 m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
 {
     using app::internal::M18ProductCompleteBinding;
