@@ -92,6 +92,11 @@ public:
         m18MutationAdmission_=std::move(guard);
     }
     [[nodiscard]] core::Status try_invalidate_for_m18();
+    [[nodiscard]] bool m18_owner_thread_current() const noexcept {
+        // This identity test is safe on another thread because the owner
+        // thread ID is immutable for this candidate's entire lifetime.
+        return std::this_thread::get_id()==ownerThread_;
+    }
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept {
         return static_cast<bool>(m18MutationAdmission_);
     }
