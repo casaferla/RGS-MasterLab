@@ -457,6 +457,49 @@ productOpenBatchRetiredOwnerAndForeignThreadCannotAdvanceEpoch()
 }
 
 void M18CandidateDeliveryValidationTest::
+sourceCommitBatchReusesSingleEpochAndCannotRaceExportWorker()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{301U,302U,303U,0U,48000U,9U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(1000U,id);
+    QVERIFY(owner->try_transition(1000U,1001U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,1001U,id};
+    const auto source=fanout.source_commit_batch();
+    const auto nested=fanout.status_admission();
+    const auto rate=fanout.rate_admission();
+    auto worker=ticket.value()->commit_lease_factory()();
+    QVERIFY(worker);
+    // SOURCE may not publish even its first metadata mutation while the
+    // real Windows exporter owns the current verified commit epoch.
+    QVERIFY(!source());
+    QVERIFY((*worker.value())->revalidate_current());
+    worker.value()->reset();
+    auto held=source();QVERIFY(held);
+    QVERIFY(held.value()->get()!=nullptr);
+    QVERIFY(!source());
+    QVERIFY(!fanout.project_open_batch()());
+    QVERIFY(!fanout.project_save_batch()());
+    QVERIFY(nested("source_committed"));
+    QVERIFY(nested("set_prepared"));
+    QVERIFY(nested("switch_target"));
+    QVERIFY(nested("clear_gold"));
+    QVERIFY(rate());
+    QVERIFY(!nested("set_gold")); // unrelated GOLD replacement denied
+    QVERIFY(!nested("gain_parameters")); // unrelated manual DSP edit
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    held.value()->reset();
+    // Physical lease released, but old consent remains revoked.
+    QVERIFY(nested("gain_parameters"));
+    QVERIFY(!owner->capture(id));
+    auto next=fanout.project_open_batch();
+    QVERIFY(next); // a new independent, authorized Product action
+    next.value()->reset();
+}
+
+void M18CandidateDeliveryValidationTest::
 realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit()
 {
     // The file worker is independent of the QObject Product. Its exact
