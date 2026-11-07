@@ -490,6 +490,47 @@ m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial()
     model.set_private_m18_source_batch_begin({});
 }
 
+void SourceSelectionTest::
+m18PhysicalSourceBatchNeedsCheckedProductDispatcher()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto path=write_file(
+        dir,QStringLiteral("m18-requires-checked-source.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!path.isEmpty());
+    app::SourceSelectionViewModel model;
+    std::size_t batches=0,checked=0;
+    model.set_private_m18_source_batch_begin(
+        [&]()->core::Result<std::shared_ptr<const void>> {
+            ++batches;
+            return core::Result<std::shared_ptr<const void>>::success(
+                std::make_shared<const int>(1));
+        });
+    QSignalSpy changed{&model,&app::SourceSelectionViewModel::sourceChanged};
+    model.selectSource(QUrl::fromLocalFile(path));
+    QVERIFY(!model.has_source());
+    QCOMPARE(batches,std::size_t{0});
+    QCOMPARE(changed.count(),0);
+    QVERIFY(!model.error_message().isEmpty());
+    // A legacy void handler is never sufficient proof of completed M18
+    // cascaded Product writes, even if a physical batch was installed.
+    model.set_private_m18_checked_source_committed_handler(
+        [&](const core::ResourceReference&)->core::Status {
+            ++checked;
+            return core::Status::success();
+        });
+    model.selectSource(QUrl::fromLocalFile(path));
+    QCOMPARE(batches,std::size_t{1});
+    QCOMPARE(checked,std::size_t{1});
+    QVERIFY(model.has_source());
+    QCOMPARE(model.display_name(),
+             QStringLiteral("m18-requires-checked-source.wav"));
+    QVERIFY(model.error_message().isEmpty());
+    QCOMPARE(changed.count(),1);
+    model.set_private_m18_source_batch_begin({});
+    model.set_private_m18_checked_source_committed_handler({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
