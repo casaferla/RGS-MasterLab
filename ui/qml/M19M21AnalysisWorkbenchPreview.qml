@@ -209,7 +209,7 @@ Rectangle {
                 Row {
                     id: levelTiles
                     width: parent.width
-                    height: Math.min(165,Math.max(125,parent.height*0.30))
+                    height: Math.min(180,Math.max(162,parent.height*0.33))
                     spacing: 10
                     Repeater {
                         model: [
@@ -232,6 +232,7 @@ Rectangle {
                                 StudioReadOnlyMeasurement {
                                     objectName: "m19MetricValue_" + modelData.key
                                     width: parent.width
+                                    heroReadout: true
                                     labelText: modelData.label
                                     unitText: modelData.unit
                                     rawText: root.valueOr(root.presentation.levels
@@ -244,7 +245,7 @@ Rectangle {
                                     text: modelData.hint
                                     color: modelData.key==="truePeak" ? root.amber : "#7995A6"
                                     font.family: "Segoe UI"
-                                    font.pixelSize: 9
+                                    font.pixelSize: 10
                                     wrapMode: Text.WordWrap
                                 }
                             }

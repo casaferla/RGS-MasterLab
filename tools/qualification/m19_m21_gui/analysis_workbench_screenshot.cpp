@@ -27,6 +27,17 @@ namespace {
 void require(bool condition,const char* message) {
     if(!condition)throw std::runtime_error(message);
 }
+// Visual QQuickItem parenting may differ from QObject ownership after a
+// LayoutItemProxy handoff; findChild<QObject*> can miss valid Repeater delegates.
+QQuickItem* findVisualByObjectName(QQuickItem* root, const QString& name) {
+    if(!root)return nullptr;
+    if(root->objectName()==name)return root;
+    for(auto* item:root->childItems()) {
+        if(auto* match=findVisualByObjectName(item,name))return match;
+    }
+    return nullptr;
+}
+
 QVariantMap metrics_fixture() {
     QVariantList rows;
     const auto add=[&](const QString& label,const QString& prep,
@@ -270,13 +281,22 @@ int main(int argc,char** argv) {
                     && redock->property("tone").toString()=="secondary",
                     "ANALYSIS_SHARED_BUTTON_STYLE_MISSING");
             if(tab < 2){
-                const auto* value=hostRoot->findChild<QObject*>(
-                    tab==0 ? "m19MetricValue_lufs" : "m20StereoWidthReadout");
-                require(value!=nullptr,"ANALYSIS_STUDIO_READOUT_MISSING");
+                const QString target=tab==0
+                    ? QStringLiteral("m19MetricValue_lufs")
+                    : QStringLiteral("m20StereoWidthReadout");
+                auto* visualRoot=qobject_cast<QQuickItem*>(hostRoot);
+                auto* value=findVisualByObjectName(visualRoot,target);
+                require(value!=nullptr,"ANALYSIS_VISUAL_READOUT_MISSING");
                 require(value->property("readOnly").toBool(),
                         "ANALYSIS_READOUT_MUST_BE_READ_ONLY");
                 require(!value->property("dataAvailable").toBool(),
                         "ANALYSIS_UNAUTHENTICATED_MEASUREMENT_LEAK");
+                if(tab==0){
+                    require(value->property("heroReadout").toBool(),
+                            "ANALYSIS_M19_INPUT_GAIN_STYLE_MISSING");
+                    require(value->property("numericPixelSize").toInt()==36,
+                            "ANALYSIS_M19_INPUT_GAIN_FONT_SIZE_WRONG");
+                }
             }
             lifecycleHosts[static_cast<std::size_t>(tab)]=std::move(host);
         }
