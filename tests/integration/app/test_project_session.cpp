@@ -257,6 +257,109 @@ private slots:
 
 
 void ProjectSessionTest::
+m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
+{
+    using app::internal::M18ProductCompleteBinding;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("m18-complete-source.wav"),37);
+    QVERIFY(!src.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(session.source.has_source());
+    app::MasterOutputRateState rate;
+    rate.source_committed(session.source.sample_rate_hz());
+    install_m18_checked_source_dispatch(session,rate);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto terminalId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "be000000-0000-4000-8000-000000000018").value());
+    QVERIFY(terminalId);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*terminalId.value());
+    QVERIFY(terminal);
+
+    // These are the REAL M17 production classes from the existing
+    // mastering-chain test target: neither fake authority nor standalone
+    // stub may be substituted for a verified terminal Product owner.
+    app::TerminalCandidateGate candidates;
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&] {return session.masteringChainState->chain();}};
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::success();
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_TEST_NO_PRIVATE_REALIZATION_TO_PUBLISH"});
+        }};
+    app::TerminalPrivateProductSession m17{
+        renderer,publisher,candidates,session.transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+
+    const M18ProductExportIdentity initial{
+        201U,202U,203U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        30U,initial);
+    M18OwnerMutationFanout fanout{owner,30U,initial};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,*session.masteringChainState,
+        session.selector,session.region,session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers entire{
+        upstream,m17,candidates};
+    QVERIFY(M18ProductCompleteBinding::preflight(entire,fanout));
+    bool workerRejected=false;
+    std::thread foreign([&] {
+        workerRejected=
+            !M18ProductCompleteBinding::bind(entire,fanout);
+    });
+    foreign.join();
+    QVERIFY(workerRejected);
+    QVERIFY(M18ProductCompleteBinding::preflight(entire,fanout));
+    QVERIFY(M18ProductCompleteBinding::bind(entire,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(entire));
+    QVERIFY(!M18ProductCompleteBinding::preflight(entire,fanout));
+    QVERIFY(!M18ProductCompleteBinding::bind(entire,fanout));
+
+    // Even a genuine Qt SOURCE and a fully wired Product do NOT
+    // authorize WAV export in the absence of a real verified M17 Master.
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,false));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,true));
+    QVERIFY(!owner->capture(initial));
+    QVERIFY(owner->can_install_full_product_guards(30U,initial));
+    // A legitimate Region edit consumes a single shared Product
+    // generation but still cannot invent a freshly verified M17 stage.
+    const auto region=core::FrameRange::create(
+        core::FrameIndex{5},core::FrameIndex{23});
+    QVERIFY(region);
+    QVERIFY(session.region.set_region(*region.value()));
+    QCOMPARE(fanout.current_owner_snapshot()->epoch,UINT64_C(31));
+    QVERIFY(!owner->capture(initial));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,true));
+    QVERIFY(M18ProductCompleteBinding::installed(entire));
+}
+
+void ProjectSessionTest::
 m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
 {
     using app::internal::M18ProductUpstreamBinding;
