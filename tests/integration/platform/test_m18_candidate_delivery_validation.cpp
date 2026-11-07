@@ -461,6 +461,20 @@ productMutationFanoutRejectsOverflowAndInvalidOperations()
         max,valid);
     M18OwnerMutationFanout last{exhausted,max,valid};
     QVERIFY(!last.status_admission()("source_committed"));
+
+    // SOURCE identity is 64-bit monotonic even when only a single batch
+    // from the real picker can update it. Never wrap back to generation 0.
+    const M18ProductExportIdentity maxSource{
+        max,15U,16U,0U,48000U,0U};
+    auto sourceOwner=std::make_shared<M18ProductEpochTicketAuthority>(
+        73U,maxSource);
+    M18OwnerMutationFanout sourceFanout{sourceOwner,73U,maxSource};
+    QVERIFY(!sourceFanout.source_commit_batch()());
+    QVERIFY(!sourceFanout.project_open_batch()());
+    QVERIFY(!sourceFanout.status_admission()("source_committed"));
+    QCOMPARE(sourceFanout.current_owner_snapshot()->epoch,UINT64_C(73));
+    QCOMPARE(sourceFanout.current_owner_snapshot()->identity.source_generation,
+             max);
 }
 
 void M18CandidateDeliveryValidationTest::
