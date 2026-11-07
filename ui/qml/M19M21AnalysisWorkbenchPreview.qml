@@ -394,9 +394,11 @@ Rectangle {
                                     ctx.beginPath();ctx.moveTo(0,i*height/4)
                                     ctx.lineTo(width,i*height/4);ctx.stroke()
                                 }
-                                for(let i=0;i<=8;i++){
-                                    ctx.beginPath();ctx.moveTo(i*width/8,0)
-                                    ctx.lineTo(i*width/8,height);ctx.stroke()
+                                const logTicks=[0.0,0.233,0.566,0.899,1.0]
+                                for(let i=0;i<logTicks.length;i++){
+                                    const tickX=logTicks[i]*width
+                                    ctx.beginPath();ctx.moveTo(tickX,0)
+                                    ctx.lineTo(tickX,height);ctx.stroke()
                                 }
                                 const pts=root.available?root.presentation.spectrum:[]
                                 ctx.strokeStyle="#00C8FF";ctx.lineWidth=2.3
@@ -410,11 +412,23 @@ Rectangle {
                                 ctx.stroke()
                             }
                         }
-                        Text {
-                            text:"20 Hz         100 Hz           1 kHz               10 kHz        20 kHz"
-                            anchors.bottom:parent.bottom
-                            anchors.bottomMargin:12;anchors.horizontalCenter:parent.horizontalCenter
-                            color:root.dim;font.pixelSize:10
+                        Repeater {
+                            model:[
+                                {t:"20 Hz",x:0.0},
+                                {t:"100 Hz",x:0.233},
+                                {t:"1 kHz",x:0.566},
+                                {t:"10 kHz",x:0.899},
+                                {t:"20 kHz",x:1.0}
+                            ]
+                            delegate:Text {
+                                width:60
+                                x:Math.max(16,Math.min(parent.width-width-16,
+                                    spectrumCanvas.x+modelData.x*spectrumCanvas.width-width/2))
+                                y:spectrumCanvas.y+spectrumCanvas.height+8
+                                text:modelData.t
+                                horizontalAlignment:Text.AlignHCenter
+                                color:root.dim;font.pixelSize:10
+                            }
                         }
                     }
                     Rectangle {
@@ -422,7 +436,7 @@ Rectangle {
                         height:parent.height
                         radius:7;color:root.panel;border.color:root.edge
                         Column{
-                            anchors.fill:parent;anchors.margins:17;spacing:12
+                            anchors.fill:parent;anchors.margins:12;spacing:8
                             Text{text:"STEREO IMAGE";color:root.ink;font.bold:true;font.pixelSize:13}
                             Row{
                                 spacing:10
