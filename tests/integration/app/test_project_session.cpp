@@ -3,6 +3,7 @@
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
 #include "internal/m18_product_complete_binding.hpp"
+#include "internal/m22_verified_master_preview_parity.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -44,6 +45,7 @@
 #include <QUrl>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -699,6 +701,35 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(verified->rendered.terminal.checked.final_check);
     QCOMPARE(verified->rendered.manual_chain_revision,
              session.masteringChainState->chain().revision());
+    // M22 Product parity: PREVIEW must borrow the EXACT already checked
+    // immutable FULL M17 MASTER. Its binary64 selected samples equal the
+    // absolute full-programme crop bit-for-bit, without resetting M11–17
+    // DSP state or re-running a region-local limiter/M16 measurement.
+    const auto selectedWindow=core::FrameRange::create(
+        core::FrameIndex{731},core::FrameIndex{2831});
+    QVERIFY(selectedWindow);
+    const auto fullMaster=verified->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    const auto preview=app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*selectedWindow.value());
+    QVERIFY2(preview,preview?"":preview.error()->message().c_str());
+    QCOMPARE(preview.value()->frame_count().value(),qint64{2100});
+    QCOMPARE(preview.value()->absolute_start_frame().value(),qint64{731});
+    QCOMPARE(preview.value()->timebase().frame_domain_id(),
+             audio::FrameDomainId::OUTPUT_RATE);
+    auto wholeChannel=fullMaster.channel(0);
+    auto segmentChannel=preview.value()->channel(0);
+    QVERIFY(wholeChannel&&segmentChannel);
+    for(std::size_t i=0;i<segmentChannel.value()->size();++i) {
+        QCOMPARE(std::bit_cast<std::uint64_t>((*segmentChannel.value())[i]),
+                 std::bit_cast<std::uint64_t>((*wholeChannel.value())[i+731U]));
+    }
+    const auto illegalWindow=core::FrameRange::create(
+        core::FrameIndex{731},core::FrameIndex{4097});
+    QVERIFY(illegalWindow);
+    QVERIFY(!app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*illegalWindow.value()));
+
     QCOMPARE(verified->rendered.terminal.checked.terminal
                  .compensated_pcm.view().frame_count(),*frames.value());
     QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
@@ -885,6 +916,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              revisionBeforeParam);
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(!ui.can_export());
+    // The stale M17 shared_ptr is still in memory, but M22 Preview may
+    // not expose it after even a parameter-only accepted Gain edit.
+    QVERIFY(!app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*selectedWindow.value()));
     const auto parameterOnlyStalePath=directory.filePath(
         QStringLiteral("m18-stale-parameter-only-master.wav"));
     QVERIFY(!ui.beginExport(
