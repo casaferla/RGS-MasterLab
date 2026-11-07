@@ -447,6 +447,26 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
         controllers,fanout,true));
 
+    // M19/20/21 first SOURCE analysis borrows the REAL prepared owner;
+    // it must not fabricate an absent processed or GOLD resource.
+    using M21Owners=app::internal::M21ProductOwnerAnalysis;
+    const auto firstAnalysisOwner=M21Owners::capture(
+        controllers,fanout,session.selector);
+    QVERIFY2(firstAnalysisOwner,
+        firstAnalysisOwner?"":firstAnalysisOwner.error()->message().c_str());
+    QVERIFY(firstAnalysisOwner.value()->prepared);
+    QVERIFY(!firstAnalysisOwner.value()->processed);
+    QVERIFY(M21Owners::still_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value()));
+    const auto firstAnalysis=M21Owners::measure_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value(),
+        app::m21_private::Column::prepared);
+    QVERIFY2(firstAnalysis,
+        firstAnalysis?"":firstAnalysis.error()->message().c_str());
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value(),
+        app::m21_private::Column::processed));
+
     // Set real nondefault MANUAL state first. The next SOURCE must
     // atomically restore Gain defaults under its ONE physical SOURCE
     // lease, not silently skip the nested setter through M18 admission.
@@ -478,6 +498,13 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(replacement->epoch>reconciled->epoch);
     QVERIFY(replacement->identity.source_generation>
             reconciled->identity.source_generation);
+    // Same-rate SOURCE replacement retires both the old resource
+    // identity and all of its M19/20/M21 derived metric snapshots.
+    QVERIFY(!M21Owners::still_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value()));
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value(),
+        app::m21_private::Column::prepared));
     QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
         controllers,fanout));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
