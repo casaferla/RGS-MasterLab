@@ -11,12 +11,16 @@
 #include "gold_selection_view_model.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/wav_reader.hpp>
+#include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <QThread>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -178,6 +182,90 @@ public:
             &&info.audio_format().sample_rate().value()
                 ==static_cast<std::int64_t>(expected.sample_rate_hz)
             &&info.audio_format().channel_count()==expected.channels;
+    }
+
+    // Pure I/O + numerical worker operation: NEVER touches Qt, SOURCE,
+    // Project, a current M18 epoch, or the GUI. The GoldCapture was
+    // obtained earlier under the real Qt owner. Its exact WAV identity,
+    // sample rate, frame count and layout are checked again on OPEN.
+    // This intentionally uses the existing WindowsResourceReader,
+    // canonical WavReader, M19 and M20. It does not call the renderer,
+    // create a Gold playback identity, or substitute SOURCE PCM.
+    //
+    // The current whole-resource M16 API requires an owning AudioBuffer:
+    // until a bounded block-streaming implementation exists, refuse any
+    // decode over 128 MiB rather than allocating unbounded track storage.
+    // Never schedule this function on the UI thread for real programmes.
+    // After worker completion the Qt owner MUST call gold_still_current
+    // before publishing the returned Snapshot.
+    [[nodiscard]] static core::Result<m21_private::Snapshot>
+    measure_gold_worker(const GoldCapture& captured)
+    {
+        using R=core::Result<m21_private::Snapshot>;
+        constexpr std::uint64_t kMaxDecodedPcmBytes=128ULL*1024ULL*1024ULL;
+        const auto frameCount=captured.full_frames;
+        const auto channels=captured.channels;
+        if(!captured.gold.permissions().can_read()
+           ||captured.owner.epoch==0
+           ||!captured.owner.identity.valid()
+           ||frameCount<=0||(channels!=1U&&channels!=2U)
+           ||(captured.sample_rate_hz!=44100U
+              &&captured.sample_rate_hz!=48000U
+              &&captured.sample_rate_hz!=88200U
+              &&captured.sample_rate_hz!=96000U
+              &&captured.sample_rate_hz!=176400U
+              &&captured.sample_rate_hz!=192000U)
+           ||static_cast<std::uint64_t>(frameCount)>
+                kMaxDecodedPcmBytes/(sizeof(double)*channels))
+            return R::failure(failed("M21_GOLD_WHOLE_PCM_MEMORY_OR_FORMAT_LIMIT"));
+
+        auto endpoint=platform::windows::WindowsResourceReader::
+            open_read_only(captured.gold);
+        if(!endpoint)return R::failure(*endpoint.error());
+        std::unique_ptr<core::IResourceReader> reader=
+            std::move(*endpoint.value());
+        auto opened=audio::WavReader::open(std::move(reader));
+        if(!opened)return R::failure(*opened.error());
+        auto& wave=**opened.value();
+        const auto& info=wave.info();
+        if(info.frame_count().value()!=frameCount
+           ||info.audio_format().sample_rate().value()!=
+                static_cast<std::int64_t>(captured.sample_rate_hz)
+           ||info.audio_format().channel_count()!=channels)
+            return R::failure(failed("M21_GOLD_WAV_CHANGED_SINCE_OWNER_CAPTURE"));
+        auto pcm=audio::AudioBuffer::create(
+            info.audio_format(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},info.frame_count());
+        if(!pcm)return R::failure(*pcm.error());
+        const auto decoded=wave.read_frames(
+            core::FrameIndex{0},pcm.value()->mutable_view());
+        if(!decoded)return R::failure(*decoded.error());
+        if(*decoded.value()!=info.frame_count())
+            return R::failure(failed("M21_GOLD_WAV_SHORT_OR_PARTIAL_DECODE"));
+        const auto closed=wave.close();
+        if(!closed)return R::failure(*closed.error());
+        const auto level=analysis::measure_basic_level_full_resource(
+            *pcm.value());
+        if(!level)return R::failure(*level.error());
+        const auto view=pcm.value()->view();
+        const auto stereo=analysis::measure_tonal_stereo_scope(
+            view,view.absolute_start_frame(),view.frame_count(),
+            view.timebase().frame_domain_id());
+        if(!stereo)return R::failure(*stereo.error());
+
+        m21_private::ProductMetricsOwnerClaim claim;
+        claim.column=Column::gold;
+        claim.generation_token=captured.owner.epoch;
+        claim.exact_realization_id="gold-file-generation:"+
+            std::to_string(captured.owner.epoch)+"|"+
+            captured.gold.provider_id()+"|"+captured.gold.locator();
+        claim.scope_label="Full Track";
+        claim.external_product_owner_confirmed=true;
+        auto imported=m21_private::import_real_product_metrics(
+            *level.value(),*stereo.value(),claim);
+        if(!imported.snapshot)
+            return R::failure(failed("M21_GOLD_TYPED_IMPORT_REFUSED"));
+        return R::success(std::move(*imported.snapshot));
     }
 
     // Synchronous, owner-thread-only real PCM analysis for now. No
