@@ -1287,7 +1287,9 @@ foreach(_m18_source IN LISTS _m18_m17_closure)
 endforeach()
 list(REMOVE_DUPLICATES _m18_full_product_extras)
 target_sources(rgsml_project_session_tests
-    PRIVATE ${_m18_full_product_extras})
+    PRIVATE ${_m18_full_product_extras}
+    ${CMAKE_SOURCE_DIR}/app/src/m18_product_export_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/m18_product_export_view_model.hpp)
 target_include_directories(rgsml_project_session_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/audio/src
     ${CMAKE_SOURCE_DIR}/platform/windows/include
