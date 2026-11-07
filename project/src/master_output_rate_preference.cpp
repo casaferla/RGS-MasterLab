@@ -1,4 +1,5 @@
 #include <rgsml/project/master_output_rate_preference.hpp>
+#include <rgsml/project/m18_master_wav_preference.hpp>
 #include <rgsml/core/error.hpp>
 #include <nlohmann/json.hpp>
 
@@ -59,8 +60,17 @@ bool MasterOutputRatePreference::only_known_fields(
     try {
         const auto j=Json::parse(output.canonical_utf8());
         if(!j.is_object())return false;
-        return j.empty() || (j.size()==1 && j.contains(kTarget)
-                             && recognized(j.at(kTarget)));
+        if(j.contains(kTarget)&&!recognized(j.at(kTarget)))return false;
+        // The Product knows the FINAL M18 output fields without treating
+        // old m18Draft* experimental keys or arbitrary future extensions
+        // as executable semantics. Any incomplete seed/format fails closed.
+        const auto m18=M18MasterWavPreferenceCodec::read(output);
+        if(!m18)return false;
+        std::size_t recognizedCount=j.contains(kTarget)?1U:0U;
+        if(m18.value()->has_value())
+            recognizedCount+=m18.value()->value().encoding
+                ==M18MasterWavEncoding::PCM24_TPDF?2U:1U;
+        return j.size()==recognizedCount;
     } catch(const Json::exception&) {
         return false;
     }
