@@ -549,7 +549,7 @@ Rectangle {
                             model:root.available?(root.presentation.metrics||[]):[]
                             delegate:Rectangle{
                                 width:parent.width
-                                height:Math.max(36,Math.min(49,(comparison.height-120)/9))
+                                height:Math.max(23,Math.min(48,Math.floor((parent.height-100)/9)))
                                 color:index%2===0?"#14232F":"#0E1C26"
                                 Row{
                                     anchors.fill:parent
@@ -589,10 +589,20 @@ Rectangle {
         Row{
             width:parent.width
             height:22
-            spacing:8
-            Text{text:"RGS MASTERLAB  ·  ANALYSIS UI PROTOTYPE  ·  NOT QUALIFIED";color:root.dim;font.pixelSize:10}
-            Item{width:parent.width-720;height:1}
-            Text{text:"DESIGN REVIEW  ·  NO PRODUCT WRITE / NO M18 MERGE";color:root.amber;font.pixelSize:10}
+            spacing:0
+            Text{
+                width:parent.width/2
+                text:"RGS MASTERLAB  ·  ANALYSIS UI PROTOTYPE  ·  NOT QUALIFIED"
+                color:root.dim;font.pixelSize:10
+                elide:Text.ElideRight
+            }
+            Text{
+                width:parent.width/2
+                text:"DESIGN REVIEW  ·  NO PRODUCT WRITE / NO M18 MERGE"
+                color:root.amber;font.pixelSize:10
+                horizontalAlignment:Text.AlignRight
+                elide:Text.ElideLeft
+            }
         }
     }
 }
