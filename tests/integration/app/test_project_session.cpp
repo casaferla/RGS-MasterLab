@@ -515,6 +515,35 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QCOMPARE(session.source.display_name(),
                  QStringLiteral("m18-positive-real-source.wav"));
     }
+    // A fresh confirmed Export into an already-published WAV must fail
+    // without overwriting the first verified output or losing the M17
+    // Master. A failed job still requires explicit ACK to release consent.
+    const auto collisionPath=directory.filePath(
+        QStringLiteral("m18-product-authorized-%1.wav")
+            .arg(static_cast<int>(audio::WavSampleFormat::IEEE_F32)));
+    const auto originalBytes=QFileInfo{collisionPath}.size();
+    QVERIFY(originalBytes>0);
+    auto collisionRef=platform::windows::WindowsResourceWriter::
+        make_write_reference(collisionPath.toUtf8().toStdString(),
+                             "m18-f32-verified-existing.wav");
+    QVERIFY(collisionRef);
+    QVERIFY(action.begin(*collisionRef.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        action.snapshot().phase==M18PrivateAsyncExportSession::Phase::FAILED,
+        30000);
+    QVERIFY(action.snapshot().failure_code);
+    QVERIFY(!action.snapshot().verified_file_size_bytes);
+    QVERIFY(action.snapshot().verified_encoded_sha256.empty());
+    QCOMPARE(QFileInfo{collisionPath}.size(),originalBytes);
+    QVERIFY(!action.can_cancel());
+    QVERIFY(action.can_acknowledge());
+    QVERIFY(action.acknowledge());
+    QVERIFY(!action.has_unacknowledged_export());
+    QCOMPARE(product.capture_m18_verified_stage_for_worker(
+                 *rate48.value()),verified);
+    QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
 }
 
 void ProjectSessionTest::
