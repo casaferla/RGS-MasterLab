@@ -591,6 +591,36 @@ m18RejectedCheckedSourceCascadesFailClosedThenRecover()
     model.set_private_m18_checked_source_committed_handler({});
 }
 
+void SourceSelectionTest::
+m18CheckedSourceDispatcherIsInertForLegacyM17()
+{
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto file=write_file(
+        dir,QStringLiteral("m17-normal-source-still-works.wav"),
+        to_byte_array(audio_golden::kRiffPcm16Mono));
+    QVERIFY(!file.isEmpty());
+    app::SourceSelectionViewModel model;
+    std::size_t legacy=0,checked=0;
+    model.set_source_committed_handler(
+        [&](const core::ResourceReference&){++legacy;});
+    model.set_private_m18_checked_source_committed_handler(
+        [&](const core::ResourceReference&)->core::Status {
+            ++checked;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_UNACTIVATED_DISPATCHER_MUST_NOT_RUN"});
+        });
+    // Installing only the future checked hook in main is entirely
+    // inert while M18's physical SOURCE epoch is not installed.
+    model.selectSource(QUrl::fromLocalFile(file));
+    QVERIFY(model.has_source());
+    QCOMPARE(model.source_state(),QStringLiteral("SOURCE_READY"));
+    QCOMPARE(legacy,std::size_t{1});
+    QCOMPARE(checked,std::size_t{0});
+    QVERIFY(model.error_message().isEmpty());
+    model.set_private_m18_checked_source_committed_handler({});
+}
+
 void SourceSelectionTest::acceptedFormatMappings_data()
 {
     QTest::addColumn<QByteArray>("wav");
