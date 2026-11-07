@@ -458,6 +458,16 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             ?std::optional<std::uint64_t>{UINT64_C(1234567)}
             :std::nullopt;
         QVERIFY(!action.has_unacknowledged_export());
+        // Invalid PCM24 seed or a dithered Float32 dialog choice cannot
+        // consume consent, create partial output or start the M18 worker.
+        const auto malformedSeed=encoding==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{}
+            :std::optional<std::uint64_t>{UINT64_C(17)};
+        QVERIFY(!action.begin(
+            *destination.value(),encoding,malformedSeed,
+            terminal.value()->parameters().ceiling_db_tp(),true));
+        QVERIFY(!QFileInfo::exists(output));
+        QVERIFY(!action.has_unacknowledged_export());
         // The same Product, verified stage and valid output format are
         // insufficient without a NEW explicit user confirmation.
         QVERIFY(!action.begin(
