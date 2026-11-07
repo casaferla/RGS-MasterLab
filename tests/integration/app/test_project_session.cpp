@@ -22,6 +22,9 @@
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/render/render_request.hpp>
+#include <rgsml/render/render_preview.hpp>
 #include <rgsml/project/project_repository.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -223,6 +226,7 @@ private slots:
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
     void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
+    void m18RealProductVerifiedMasterToPcm24AndFloat32WavAck();
     void m18RegionGateCannotSelfUninstallOrCrossThread();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
