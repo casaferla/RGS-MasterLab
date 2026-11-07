@@ -113,6 +113,53 @@ public:
                 state->epoch,state->identity);
     }
 
+    // After an accepted SOURCE/Project/MANUAL mutation, the true rate
+    // and chain revision may differ from the earlier terminal stage.
+    // Reconcile ONLY these model-derived fields. Never let a caller
+    // rewrite SOURCE/Project/Master generation IDs or restore consent.
+    // The complete Qt Product binder is responsible for gathering
+    // these values from its actual bound controllers.
+    [[nodiscard]] core::Status reconcile_current_rate_and_chain(
+        OwnerSnapshot expected,
+        std::uint64_t currentChainRevision,
+        std::uint32_t currentMasterRateHz,
+        std::uint64_t currentRateRevision) const
+    {
+        const auto state=shared_;
+        if(!state||std::this_thread::get_id()!=state->ownerThread
+           ||state->retired.load(std::memory_order_acquire)
+           ||state->admitting
+           ||state->projectOpenActive.load(std::memory_order_acquire)
+           ||state->sourceCommitActive.load(std::memory_order_acquire)
+           ||!state->authority||state->epoch!=expected.epoch
+           ||state->identity!=expected.identity
+           ||!state->authority->can_install_full_product_guards(
+               state->epoch,state->identity)
+           ||currentRateRevision==0)
+            return reject("M18_RECONCILE_REQUIRES_FRESH_UNCONSENTED_PRODUCT");
+        auto updated=state->identity;
+        updated.chain_revision=currentChainRevision;
+        updated.master_rate_hz=currentMasterRateHz;
+        updated.master_rate_revision=currentRateRevision;
+        if(!updated.valid())
+            return reject("M18_RECONCILE_UNSUPPORTED_MASTER_RATE");
+        if(updated==state->identity)return core::Status::success();
+        if(state->epoch==std::numeric_limits<std::uint64_t>::max())
+            return reject("M18_RECONCILE_EPOCH_EXHAUSTED");
+        state->admitting=true;
+        struct Unwind final {
+            bool* active;
+            ~Unwind(){*active=false;}
+        } unwind{&state->admitting};
+        const auto nextEpoch=state->epoch+1;
+        const auto allowed=state->authority->try_transition(
+            state->epoch,nextEpoch,updated,false);
+        if(!allowed)return allowed;
+        state->epoch=nextEpoch;
+        state->identity=updated;
+        return core::Status::success();
+    }
+
     // PRIVATE Product-only consent step. This is NOT a UI command and
     // MUST be called only after the COMPLETE binder proves all installed
     // guards and a fresh exact M16-verified M17 stage. The verified identity
