@@ -259,7 +259,6 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     const auto original=session.source.display_name();
     app::MasterOutputRateState rate;
     rate.source_committed(session.source.sample_rate_hz());
-    install_m18_checked_source_dispatch(session,rate);
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
     auto id=dsp::ModuleInstanceId::from_uuid(
@@ -282,6 +281,12 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
         session.project,session.source,rate,*session.masteringChainState,
         session.selector,session.region,session.gold,*terminal.value()};
     QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    // A source picker's old void callback must not be accepted as an
+    // epoch-safe commit: require the checked Product dispatcher first.
+    QVERIFY(!M18ProductUpstreamBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductUpstreamBinding::unbound(controllers));
+    install_m18_checked_source_dispatch(session,rate);
+    QVERIFY(session.source.m18_checked_source_committed_installed());
     bool workerBindingDenied=false;
     std::thread forbiddenWorker([&] {
         workerBindingDenied=
