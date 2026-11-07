@@ -625,6 +625,28 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(product.capture_m18_verified_stage_for_worker(
                  *rate48.value()),verified);
     QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+
+    // A previously verified and ACKed M17 Master is NOT permission to
+    // export after a direct MANUAL DSP edit. It must lose UI eligibility
+    // immediately, before and after Product epoch reconciliation.
+    QVERIFY(ui.can_export());
+    const auto gain=session.masteringChainState->gain_instance_id();
+    const auto oldBypass=session.masteringChainState->is_bypassed(gain);
+    QVERIFY(oldBypass);
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        gain,!(*oldBypass.value())));
+    QVERIFY(!ui.can_export());
+    const auto stalePath=directory.filePath(
+        QStringLiteral("m18-stale-manual-revision.wav"));
+    QVERIFY(!ui.beginExport(QUrl::fromLocalFile(stalePath),1));
+    QVERIFY(!action.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(stalePath));
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        controllers,fanout));
+    QVERIFY(!ui.can_export());
+    QVERIFY(!ui.beginExport(QUrl::fromLocalFile(stalePath),0));
+    QVERIFY(!action.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(stalePath));
 }
 
 void ProjectSessionTest::
