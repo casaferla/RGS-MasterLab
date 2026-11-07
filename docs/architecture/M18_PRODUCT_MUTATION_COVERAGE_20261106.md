@@ -1372,3 +1372,49 @@ IMPORTANT REMAINING P0:
   ticket is minted by this new Project adapter.
 * No Full Qualification until all M18–M22 are integrated, per PO.
   Never merge to main without PO authorization.
+
+### Chat #72 — #1074 Windows project-test two-assertion failure and bounded probe correction
+PO reported #1074 Windows FAILED. GitHub verified
+[Focused #1074](https://github.com/casaferla/RGS-MasterLab/actions/runs/42348334420)
+on exact SHA `f5ccbb6d59e12703698172af2485e49e46e7279e`:
+Linux SUCCESS, Windows FAILURE in the *diagnostic ProjectSession probe*,
+which erroneously caused subsequent mandatory Focused CTest to be
+SKIPPED. Windows **compilation succeeded**, and bounded artifacts
+reported direct M18 QtTests 24 PASS/0 FAIL and M17 terminal activation
+22 PASS/0 FAIL.
+
+The new ProjectSession bounded diagnostic resolves the prior mystery:
+the executable DID launch successfully and reported
+`PROCESS_EXIT_CODE=2`; 29 tests PASS and **2 tests FAIL** in 375 ms.
+The first probe only preserved its last 16 QtTest lines (all PASS)
+rather than FAIL assertions, so no exact failed-method attribution is
+yet available. Do not falsely claim runtime loader/DLL failure or
+declare either application behavior correct before the detailed check.
+
+The staging workflow fixes the diagnostic-only probe:
+- collect only the `FAIL!` / `QFATAL` line and at most five following
+  assertion-context lines (maximum eight bounded matches), plus the
+  existing last-16-line tail, no raw QtTest/CTest/job logs;
+- force the probe step to complete with `exit 0` after recording the
+  REAL native exit code, so the mandatory Windows Focused CTest
+  executes and owns the actual qualification gate. A failing
+  ProjectSession test will still make CTest red.
+
+One definite semantic mismatch was identified independently:
+`ProjectSessionViewModel::openProject` now correctly routes SOURCE rate
+restoration through `try_source_committed_for_m18` inside the exclusive
+Project-open batch, rather than silently ignoring the M18 gate using
+legacy `void source_committed`. The existing regression
+`m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit` expected
+one rate callback, which counted only MASTER rate selection. It must
+now expect **two separate child admissions under ONE physical Project
+mutation lease** (SOURCE rate and selected MASTER rate). This
+assertion was updated, maintaining the strict one-batch/one-lease and
+readback checks. Since the previous probe did not disclose failures'
+names, do not assume this accounts for both red assertions.
+
+This new staging remains UNCOMPILED. Promote as one coherent macrolot
+for exactly one subsequent Focused Windows+Linux CI, then inspect only
+bounded failure artifacts if Windows remains red. Keep Draft PR #84
+and main distinct; no merge or Full Qualification (PO policy: FQ once
+after M18–M22 integrated).
