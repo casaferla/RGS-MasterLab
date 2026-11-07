@@ -379,6 +379,13 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
         std::nullopt,-1.0,false));
     QVERIFY(!exportAction.has_unacknowledged_export());
     QVERIFY(!QFileInfo::exists(deniedWav));
+    // A selected SOURCE cannot simultaneously be the new output WAV.
+    // Reject the direct identity alias before any consent transition.
+    QVERIFY(session.source.source_resource());
+    QVERIFY(!exportAction.begin(
+        session.source.source_resource()->reference(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,-1.0,true));
+    QVERIFY(!exportAction.has_unacknowledged_export());
     exportAction.cancel();
     QVERIFY(!exportAction.acknowledge());
     bool foreignStartDenied=false;
