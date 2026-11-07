@@ -4,6 +4,7 @@
 #include <rgsml/core/result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <optional>
@@ -62,7 +63,13 @@ public:
     using M18RegionMutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_region_mutation_admission(
         M18RegionMutationAdmission gate)
-    {m18RegionMutationAdmission_=std::move(gate);}
+    {
+        // The current callback and synchronous Qt publication own this
+        // Region/Loop epoch. Worker or listener disarm is refused.
+        if(QThread::currentThread()!=thread())return;
+        if(m18RegionAdmitting_||m18RegionOperationActive_)return;
+        m18RegionMutationAdmission_=std::move(gate);
+    }
     [[nodiscard]] core::Status set_region(core::FrameRange candidate);
     [[nodiscard]] core::Status set_start(core::FrameIndex start);
     [[nodiscard]] core::Status set_end_exclusive(core::FrameIndex end);
