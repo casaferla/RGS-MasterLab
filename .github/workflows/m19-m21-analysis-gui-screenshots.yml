@@ -33,7 +33,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_TOOLS_INSTALL_FAILED' }
           python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:RUNNER_TEMP/analysisqt"
           if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_QT_INSTALL_FAILED' }
-      - name: Build 12 genuine QtQuick designs: unified + individual panels (DEMO DATA)
+      - name: "Build 12 genuine QtQuick designs - unified + individual panels (DEMO DATA)"
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
