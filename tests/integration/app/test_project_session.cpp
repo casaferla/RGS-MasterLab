@@ -220,6 +220,7 @@ private slots:
     void source_save_open_existing_fail();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
+    void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
     void m18RegionGateCannotSelfUninstallOrCrossThread();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
