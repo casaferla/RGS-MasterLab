@@ -475,6 +475,20 @@ productMutationFanoutRejectsOverflowAndInvalidOperations()
     QCOMPARE(sourceFanout.current_owner_snapshot()->epoch,UINT64_C(73));
     QCOMPARE(sourceFanout.current_owner_snapshot()->identity.source_generation,
              max);
+
+    // Project generation cannot silently wrap during a new SaveAs
+    // destination or an Open of the same file identity.
+    const M18ProductExportIdentity maxProject{
+        14U,max,16U,0U,48000U,0U};
+    auto projectOwner=std::make_shared<M18ProductEpochTicketAuthority>(
+        74U,maxProject);
+    M18OwnerMutationFanout projectFanout{projectOwner,74U,maxProject};
+    QVERIFY(!projectFanout.project_save_batch()());
+    QVERIFY(!projectFanout.project_open_batch()());
+    QVERIFY(!projectFanout.status_admission()("project_save"));
+    QCOMPARE(projectFanout.current_owner_snapshot()->epoch,UINT64_C(74));
+    QCOMPARE(projectFanout.current_owner_snapshot()->identity.project_generation,
+             max);
 }
 
 void M18CandidateDeliveryValidationTest::
