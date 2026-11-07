@@ -29,6 +29,10 @@ public:
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_chain_mutation_admission(
         M18MutationAdmission gate);
+    [[nodiscard]] bool m18_chain_admission_installed() const noexcept {
+        return m18MutationAdmission_.callback
+            &&static_cast<bool>(*m18MutationAdmission_.callback);
+    }
     // Project open has its own preflight epoch admission BEFORE stopping
     // playback / replacing SOURCE. Preserve this runtime guard across the
     // once-authorized replacement of the project DSP snapshot.
