@@ -769,6 +769,21 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     QVERIFY(foreignBindingDenied);
     QVERIFY(!session.m18_private_mutation_admission_installed());
     QVERIFY(!candidates.m18_mutation_admission_installed());
+    // A candidate gate constructed on another thread must not lead to
+    // a half-installed Product authority on the Qt session. Roll back
+    // the first setter if the second refuses to bind its owner.
+    std::unique_ptr<TerminalCandidateGate> alienCandidate;
+    std::thread foreignCandidateOwner([&] {
+        alienCandidate=std::make_unique<TerminalCandidateGate>();
+    });
+    foreignCandidateOwner.join();
+    QVERIFY(alienCandidate);
+    const auto mismatchedOwner=app::internal::
+        M18ProductPrivateSessionBinding::bind(
+            session,*alienCandidate,fanout);
+    QVERIFY(!mismatchedOwner);
+    QVERIFY(!session.m18_private_mutation_admission_installed());
+    QVERIFY(!alienCandidate->m18_mutation_admission_installed());
     QVERIFY(app::internal::M18ProductPrivateSessionBinding::bind(
         session,candidates,fanout));
     QVERIFY(session.m18_private_mutation_admission_installed());
