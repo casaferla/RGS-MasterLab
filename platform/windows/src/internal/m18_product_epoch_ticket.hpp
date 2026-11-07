@@ -139,6 +139,17 @@ public:
     M18ProductEpochTicketAuthority(const M18ProductEpochTicketAuthority&)=delete;
     M18ProductEpochTicketAuthority& operator=(const M18ProductEpochTicketAuthority&)=delete;
 
+    // Safe activation preflight, not an export grant. Any earlier
+    // consent/ticket means installation would be too late to protect
+    // the current M17 Master. Require a fresh unconsented Product owner.
+    [[nodiscard]] bool can_install_full_product_guards() const noexcept {
+        if(std::this_thread::get_id()!=owner_thread_)return false;
+        std::lock_guard guard{state_->mutex};
+        return state_->owner_alive &&state_->epoch>0
+            &&state_->identity.valid() &&!state_->explicit_consent
+            &&!state_->barrier.product_mutation_active();
+    }
+
     // Product-owner-thread only. Call BEFORE ANY real source/project/chain
     // mutation, consent change or M17 candidate retirement. A failed
     // transition MUST leave the actual Product state unchanged.
