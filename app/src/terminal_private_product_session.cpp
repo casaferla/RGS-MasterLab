@@ -122,8 +122,12 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
 core::Status TerminalPrivateProductSession::request_private_impl(
     core::SampleRate rate, bool deferred, bool masterOnly)
 {
-    if(const auto gate=admit_m18_private_mutation("request_private");
-       !gate)return gate;
+    // Pure preflight must not revoke verified-M17 export consent: a rejected
+    // Prepare has not changed Product identity. Admit exactly once at the
+    // first real Pending/renderer write, after all source/rate/device checks.
+    if(m18MutationAdmission_&&QThread::currentThread()!=thread())
+        return core::Status::failure(rejected(
+            "M18_PRIVATE_PREPARE_REQUIRES_PRODUCT_QT_OWNER_THREAD"));
     if(pending_ || privateId_ ||installedMonitor_ ||monitorTransitioning_)
         return core::Status::failure(rejected(
             "A private M17 transaction is already pending or installed."));
@@ -181,6 +185,10 @@ core::Status TerminalPrivateProductSession::request_private_impl(
        ||loop->end()>manual->view().absolute_range().end()))
         return core::Status::failure(rejected(
             "M17 SOURCE loop lies outside the full manual programme."));
+    // M18 Single-Writer: the first Product mutation follows a complete
+    // read-only preflight and precedes Pending, renderer and Qt publication.
+    if(const auto gate=admit_m18_private_mutation("request_private");
+       !gate)return gate;
     // request_private internally invalidates the gate, then emits RENDERING;
     // pending ownership is captured before any queued worker completion.
     pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,
