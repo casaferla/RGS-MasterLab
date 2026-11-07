@@ -289,11 +289,45 @@ core::Status SourceSelectionViewModel::adopt_probed_source(
 {
     // The direct Project-open path must not bypass owner-thread or
     // publication-level exclusion provided to the native SOURCE picker.
-    const auto gate=admit_m18_source_mutation("source_adopt_probed");
-    if(!gate)return gate;
+    const bool guarded=static_cast<bool>(
+        m18SourceMutationAdmission_||m18SourceBatchBegin_);
+    if(guarded &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18SourceMutationAdmission_&&m18SourceBatchBegin_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_TWO_ADMISSION_MODES_AMBIGUOUS"});
+    if(guarded&&(m18SourceAdmitting_||m18SourcePublishing_))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REENTRANT_EPOCH_DENIED"});
+    std::shared_ptr<const void> heldSourceBatch;
+    if(m18SourceBatchBegin_) {
+        try {
+            auto accepted=m18SourceBatchBegin_();
+            if(!accepted)return core::Status::failure(*accepted.error());
+            if(!*accepted.value())
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SOURCE_BATCH_MISSING_EXCLUSIVE_LEASE"});
+            heldSourceBatch=std::move(*accepted.value());
+        }catch(...) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_SOURCE_BATCH_BEGIN_THROWN"});
+        }
+    } else {
+        const auto gate=admit_m18_source_mutation("source_adopt_probed");
+        if(!gate)return gate;
+    }
+    // Both full batch and legacy opt-in status gate hold publication
+    // until all nested application callbacks and Qt observers return.
     M18ScopedSourcePublication publication{
-        m18SourceMutationAdmission_?&m18SourcePublishing_:nullptr};
+        guarded?&m18SourcePublishing_:nullptr};
     (void)publication;
+    (void)heldSourceBatch;
     const auto& info = candidate.wav_info();
     const auto sampleRate = info.audio_format().sample_rate().value();
     const auto frames = info.frame_count().value();
