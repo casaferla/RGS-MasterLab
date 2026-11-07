@@ -481,6 +481,25 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QVERIFY(QFileInfo::exists(output));
         QCOMPARE(static_cast<std::uint64_t>(QFileInfo{output}.size()),
                  *report.verified_file_size_bytes);
+        // Verify the actual user-visible WAV with a second independent
+        // decoder path; an encoded checksum alone is not PCM format proof.
+        auto outputRef=platform::windows::WindowsResourceReader::
+            make_read_reference(output.toUtf8().toStdString(),
+                                filename.toUtf8().toStdString());
+        QVERIFY(outputRef);
+        auto readerResource=platform::windows::WindowsResourceReader::
+            open_read_only(*outputRef.value());
+        QVERIFY(readerResource);
+        auto inspected=audio::WavReader::open(
+            std::move(*readerResource.value()));
+        QVERIFY2(inspected,inspected?"":inspected.error()->message().c_str());
+        QCOMPARE((*inspected.value())->info().encoded_sample_format(),encoding);
+        QCOMPARE((*inspected.value())->info().frame_count(),*frames.value());
+        QCOMPARE((*inspected.value())->info().audio_format().sample_rate(),
+                 *rate48.value());
+        QCOMPARE((*inspected.value())->info().audio_format().channel_layout(),
+                 audio::ChannelLayout::MONO);
+        QVERIFY((*inspected.value())->close());
         QVERIFY(action.can_acknowledge());
         QVERIFY(!action.can_cancel());
         QVERIFY(action.acknowledge());
