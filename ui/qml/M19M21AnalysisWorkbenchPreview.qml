@@ -25,6 +25,7 @@ Rectangle {
     // typed Product presenters are bound. Never display an unverified result.
     readonly property bool available: root.fixtureMode
         && !!presentation && presentation.ready === true
+    onAvailableChanged: spectrumCanvas.requestPaint()
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -413,6 +414,18 @@ Rectangle {
                                 ctx.stroke()
                             }
                         }
+                        Text {
+                            objectName: "m20MissingSpectrumNotice"
+                            visible: !root.available
+                            anchors.centerIn: spectrumCanvas
+                            width: spectrumCanvas.width * 0.85
+                            text: "SPECTRUM UNAVAILABLE\nAUTHENTICATED PCM REQUIRED"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                            horizontalAlignment: Text.AlignHCenter
+                            color: root.amber
+                        }
                         Repeater {
                             model:[
                                 {t:"20 Hz",x:0.0},
@@ -483,6 +496,16 @@ Rectangle {
                             Text{text:"TONAL PROFILE";color:root.ink;font.bold:true;font.pixelSize:13}
                             Text{text:"1/12 OCTAVE BANDS";color:root.dim;font.pixelSize:10}
                             Text{text:"SUPPORTED ONLY";color:root.amber;font.pixelSize:10}
+                        }
+                        Text {
+                            objectName: "m20MissingProfileNotice"
+                            visible: !root.available
+                            text: "TONAL PROFILE UNAVAILABLE"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: root.amber
+                            anchors.verticalCenter: parent.verticalCenter
                         }
                         Repeater {
                             model:root.available?(root.presentation.bands||[]):[]
@@ -568,6 +591,20 @@ Rectangle {
                                     }
                                 }
                             }
+                        }
+                        Text {
+                            objectName: "m21MissingComparisonNotice"
+                            visible: !root.available
+                            width: parent.width
+                            height: 64
+                            text: "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: root.amber
+                            verticalAlignment: Text.AlignVCenter
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
                         }
                         Repeater{
                             model:root.available?(root.presentation.metrics||[]):[]
