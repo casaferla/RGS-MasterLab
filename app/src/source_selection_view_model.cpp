@@ -213,6 +213,18 @@ void SourceSelectionViewModel::set_source_committed_handler(
     sourceCommittedHandler_ = std::move(handler);
 }
 
+void SourceSelectionViewModel::
+set_private_m18_checked_source_committed_handler(
+    M18CheckedSourceCommittedHandler handler)
+{
+    // Changing the dispatcher while its own std::function is executing
+    // would destroy the closure and undermine the held Product epoch.
+    if(m18SourcePublishing_||m18SourceAdmitting_)return;
+    if((m18SourceBatchBegin_||m18SourceMutationAdmission_)
+       &&QThread::currentThread()!=thread())return;
+    m18CheckedSourceCommittedHandler_=std::move(handler);
+}
+
 core::Status SourceSelectionViewModel::admit_m18_source_mutation(
     const char* operation) const
 {
