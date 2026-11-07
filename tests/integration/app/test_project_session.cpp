@@ -172,6 +172,7 @@ private slots:
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
     void m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease();
+    void m18ActualProjectOpenAndSaveUseOneSharedProductEpoch();
     void m18SaveBatchMissingOrThrowingFailsClosed();
     void m18SaveOnlyPolicyCannotOpenProjectWithoutEpoch();
     void m18NestedProjectCommandsRefusedDuringSaveBatch();
