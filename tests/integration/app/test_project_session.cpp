@@ -201,6 +201,78 @@ private slots:
 
 
 void ProjectSessionTest::
+m18ActualProjectOpenAndSaveUseOneSharedProductEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto src=wav(dir,QStringLiteral("m18-actual-source.wav"),13,48000U);
+    const auto goldFile=wav(dir,QStringLiteral("m18-actual-gold.wav"),21,48000U);
+    QVERIFY(!src.isEmpty()&&!goldFile.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(src));
+    QVERIFY(author.source.has_source());
+    author.gold.selectGold(QUrl::fromLocalFile(goldFile));
+    QVERIFY(author.gold.has_gold());
+    app::MasterOutputRateState authorRate;
+    authorRate.source_committed(48000);
+    QVERIFY(authorRate.choose_master_rate(192000));
+    author.project.set_master_output_rate_state(&authorRate);
+    const auto path=dir.filePath(QStringLiteral("m18-actual-open.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(path));
+    QVERIFY(QFileInfo::exists(path));
+    QCOMPARE(author.project.error_message(),QString());
+
+    Session target;
+    app::MasterOutputRateState targetRate;
+    target.project.set_master_output_rate_state(&targetRate);
+    const M18ProductExportIdentity id{191U,192U,193U,0U,48000U,11U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        500U,id);
+    QVERIFY(owner->try_transition(500U,501U,id,true));
+    auto ticket=owner->capture(id);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,501U,id};
+    app::internal::M18ProductControllerBinding::bind_source_chain_rate(
+        target.source,*target.masteringChainState,targetRate,fanout);
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        target.selector,target.region,target.gold,fanout);
+    app::internal::M18ProductProjectSaveBinding::bind_project_open_and_save(
+        target.project,fanout);
+
+    // Real worker lease prevents even the first transport/SOURCE change.
+    auto committing=ticket.value()->commit_lease_factory()();
+    QVERIFY(committing);
+    target.project.openProject(QUrl::fromLocalFile(path));
+    QVERIFY(!target.project.error_message().isEmpty());
+    QVERIFY(!target.source.has_source());
+    QVERIFY(!target.gold.has_gold());
+    QCOMPARE(targetRate.rate_revision(),quint64{0});
+    QVERIFY((*committing.value())->revalidate_current());
+    committing.value()->reset();
+
+    // Exactly one Project batch owns all nested real controller writes.
+    target.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(target.project.error_message(),QString());
+    QVERIFY(target.source.has_source());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
+    QVERIFY(target.gold.has_gold());
+    QCOMPARE(targetRate.source_rate_hz(),qint64{48000});
+    QCOMPARE(targetRate.master_rate_hz(),qint64{192000});
+    QCOMPARE(targetRate.rate_revision(),quint64{2});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+
+    const auto saved=dir.filePath(QStringLiteral("m18-actual-save.rgsml"));
+    target.project.saveProjectAs(QUrl::fromLocalFile(saved));
+    QVERIFY(QFileInfo::exists(saved));
+    QCOMPARE(target.project.error_message(),QString());
+    const auto loaded=load_project(saved);
+    QVERIFY(loaded);
+}
+
+void ProjectSessionTest::
 m18ProductSharedEpochSaveAsHoldsActualFilePublicationLease()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
