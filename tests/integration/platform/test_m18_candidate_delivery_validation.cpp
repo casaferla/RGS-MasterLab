@@ -499,7 +499,7 @@ sourceCommitBatchReusesSingleEpochAndCannotRaceExportWorker()
     // Physical lease released, but old consent remains revoked.
     QVERIFY(nested("gain_parameters"));
     QVERIFY(!owner->capture(id));
-    auto next=fanout.project_open_batch();
+    auto next=fanout.project_open_batch()();
     QVERIFY(next); // a new independent, authorized Product action
     next.value()->reset();
 }
