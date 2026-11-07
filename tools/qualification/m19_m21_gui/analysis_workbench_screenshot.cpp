@@ -102,7 +102,7 @@ void display_frames() {
 void screenshot(QQuickView& view,const QString& dir,
                 const int w,const int h,const int tab,
                 const QString& id,const bool standalone,
-                const bool withoutProductData=false)
+                const bool withoutProductData=false, const bool stale=false)
 {
     view.resize(w,h);
     require(view.rootObject()!=nullptr,"GUI_ROOT_NOT_LOADED");
@@ -111,6 +111,12 @@ void screenshot(QQuickView& view,const QString& dir,
             "GUI_STANDALONE_MODE_SET_FAILED");
     require(view.rootObject()->property("standaloneModuleMode").toBool()==standalone,
             "GUI_STANDALONE_MODE_READBACK_FAILED");
+    require(!stale || withoutProductData,"GUI_STALE_MUST_BE_NON_DEMO");
+    require(view.rootObject()->setProperty("analysisStatus",
+            stale ? QStringLiteral("STALE")
+                  : withoutProductData ? QStringLiteral("MISSING")
+                                       : QStringLiteral("CURRENT")),
+            "GUI_ANALYSIS_STATUS_SET_FAILED");
     require(view.rootObject()->setProperty("fixtureMode",!withoutProductData),
             "GUI_FIXTURE_TOGGLE_FAILED");
     require(view.rootObject()->property("available").toBool()==!withoutProductData,
@@ -126,6 +132,20 @@ void screenshot(QQuickView& view,const QString& dir,
         for(int x=0;x<capture.width();x+=3)
             colors.insert(capture.pixel(x,y));
     require(colors.size()>=35,"QT_CAPTURE_BLANK_OR_FONT_MISSING");
+    if(withoutProductData){
+        auto* scope=findVisualByObjectName(view.rootObject(),
+                                          QStringLiteral("analysisScopeStatusText"));
+        require(scope!=nullptr && scope->property("text").toString()
+                ==(stale ? QStringLiteral("STALE · REANALYZE")
+                        : QStringLiteral("SCOPE UNAVAILABLE")),
+                "GUI_SCOPE_STATUS_MISLABELLED");
+        auto* goldBadge=findVisualByObjectName(view.rootObject(),
+                                              QStringLiteral("analysisScopeBadge_GOLD"));
+        require(goldBadge!=nullptr
+                && goldBadge->property("color").value<QColor>()
+                      ==QColor(QStringLiteral("#16232D")),
+                "GUI_UNAUTHORIZED_SCOPE_BADGE_HIGHLIGHTED");
+    }
     if(withoutProductData && tab>0){
         const QString key=tab==1
             ? QStringLiteral("m20MissingSpectrumNotice")
@@ -133,9 +153,12 @@ void screenshot(QQuickView& view,const QString& dir,
         auto* notice=findVisualByObjectName(view.rootObject(),key);
         require(notice && notice->isVisible(),
                 "GUI_MISSING_MEASUREMENT_NOTICE_NOT_VISIBLE");
+        if(stale)require(notice->property("text").toString().contains("STALE"),
+                         "GUI_STALE_NOTICE_MISLABELLED");
     }
     const QString filename=dir+
-        (withoutProductData?QStringLiteral("/unavailable-")
+        (stale?QStringLiteral("/stale-")
+             : withoutProductData?QStringLiteral("/unavailable-")
              : standalone?QStringLiteral("/standalone-")
                          :QStringLiteral("/analysis-"))+id+
         QStringLiteral("-")+QString::number(w)+QStringLiteral("x")+
@@ -226,6 +249,8 @@ int main(int argc,char** argv) {
             // leak as real data when fixtureMode is switched off.
             screenshot(*panel,dir,1440,900,tab,names[index],true,true);
             screenshot(*panel,dir,1184,688,tab,names[index],true,true);
+            screenshot(*panel,dir,1440,900,tab,names[index],true,true,true);
+            screenshot(*panel,dir,1184,688,tab,names[index],true,true,true);
             individualWindows[index]=std::move(panel);
         }
         for(int tab=0;tab<3;++tab){
@@ -320,7 +345,7 @@ int main(int argc,char** argv) {
             lifecycleHosts[static_cast<std::size_t>(tab)]=std::move(host);
         }
         std::cout<<"RGSML_M19_M21_THREE_DOCK_UNDOCK_NATIVE_QT_LIFECYCLES_PASS_NO_PRODUCT_BINDING\n";
-        std::cout<<"RGSML_M19_M21_GUI_18_STATES_DEMO_VS_UNAVAILABLE_QT_PASS_NOT_PRODUCT\n";
+        std::cout<<"RGSML_M19_M21_GUI_24_DEMO_MISSING_STALE_STATES_QT_PASS_NOT_PRODUCT\n";
         return 0;
     }catch(const std::exception& e){
         std::cerr<<"RGSML_GUI_SCREENSHOT_FAILURE "<<e.what()<<'\n';

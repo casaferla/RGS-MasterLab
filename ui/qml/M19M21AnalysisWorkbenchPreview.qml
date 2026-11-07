@@ -21,9 +21,18 @@ Rectangle {
         ? "TONAL & STEREO  /  M20" : "METRICS / DELTA  /  M21")
     property var presentation: ({ready:false})
     property bool fixtureMode: true
+    // Display-only lifecycle label. Never authorizes Product data.
+    // The future typed owner bridge must supply this; the preview harness
+    // uses CURRENT exclusively with explicitly labelled DEMO fixtures.
+    property string analysisStatus: "MISSING"
+    readonly property bool stateCurrent: analysisStatus === "CURRENT"
+    readonly property bool stateStale: analysisStatus === "STALE"
+    readonly property string stateDescription: stateStale ? "STALE · REANALYZE"
+        : analysisStatus === "INVALID" ? "INVALID · REANALYZE"
+        : "DATA UNAVAILABLE"
     // This QML remains a DEMO-only visualization until real, authenticated
     // typed Product presenters are bound. Never display an unverified result.
-    readonly property bool available: root.fixtureMode
+    readonly property bool available: root.fixtureMode && root.stateCurrent
         && !!presentation && presentation.ready === true
     onAvailableChanged: spectrumCanvas.requestPaint()
     readonly property color ink: "#E6EEF0"
@@ -86,7 +95,7 @@ Rectangle {
                 border.color: root.fixtureMode ? root.amber : "#A56B56"
                 Text {
                     anchors.centerIn: parent
-                    text: root.fixtureMode ? "DEMO DATA · DESIGN" : "DATA UNAVAILABLE"
+                    text: root.available ? "DEMO DATA · DESIGN" : root.stateDescription
                     font.family: "Segoe UI"
                     font.bold: true
                     font.pixelSize: 10
@@ -170,8 +179,10 @@ Rectangle {
                         height: 29
                         anchors.verticalCenter: parent.verticalCenter
                         radius: 4
-                        color: modelData.name === "GOLD" ? "#30261E" : "#152937"
-                        border.color: modelData.color
+                        objectName: "analysisScopeBadge_" + modelData.name
+                        color: !root.available ? "#16232D"
+                            : modelData.name === "GOLD" ? "#30261E" : "#152937"
+                        border.color: root.available ? modelData.color : "#3A4B58"
                         border.width: 1
                         Text {
                             anchors.centerIn: parent
@@ -179,13 +190,15 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.bold: true
                             font.pixelSize: 11
-                            color: modelData.color
+                            color: root.available ? modelData.color : "#7A8996"
                         }
                     }
                 }
                 Text {
-                    text: root.fixtureMode
-                        ? "FULL TRACK · 48 kHz · STEREO" : "SCOPE UNAVAILABLE"
+                    objectName: "analysisScopeStatusText"
+                    text: root.available ? "FULL TRACK · 48 kHz · STEREO"
+                        : root.stateStale ? "STALE · REANALYZE"
+                        : "SCOPE UNAVAILABLE"
                     anchors.verticalCenter: parent.verticalCenter
                     color: root.dim
                     font.family: "Segoe UI"
@@ -331,6 +344,7 @@ Rectangle {
                             spacing: 11
                             Text {text:"MEASUREMENT STATUS";color:root.ink;font.bold:true;font.pixelSize:13}
                             Text {text:root.available ? "DEMO · INTEGRATED"
+                                        : root.stateStale ? "STALE · REANALYZE"
                                         : "UNAVAILABLE · PRODUCT BINDING PENDING"
                                 color:root.available ? "#7CDDC8" : root.amber
                                 font.bold:true;font.pixelSize:11}
@@ -419,7 +433,9 @@ Rectangle {
                             visible: !root.available
                             anchors.centerIn: spectrumCanvas
                             width: spectrumCanvas.width * 0.85
-                            text: "SPECTRUM UNAVAILABLE\nAUTHENTICATED PCM REQUIRED"
+                            text: root.stateStale
+                                ? "SPECTRUM STALE\\nREANALYSIS REQUIRED"
+                                : "SPECTRUM UNAVAILABLE\\nAUTHENTICATED PCM REQUIRED"
                             font.family: "Segoe UI"
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
@@ -500,7 +516,8 @@ Rectangle {
                         Text {
                             objectName: "m20MissingProfileNotice"
                             visible: !root.available
-                            text: "TONAL PROFILE UNAVAILABLE"
+                            text: root.stateStale
+                                ? "TONAL PROFILE STALE" : "TONAL PROFILE UNAVAILABLE"
                             font.family: "Segoe UI"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -597,7 +614,9 @@ Rectangle {
                             visible: !root.available
                             width: parent.width
                             height: 64
-                            text: "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
+                            text: root.stateStale
+                                ? "METRICS STALE — REANALYZE PREPARED / GOLD / PROCESSED"
+                                : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
                             font.family: "Segoe UI"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
