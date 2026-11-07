@@ -9,6 +9,7 @@
 #include <QUrl>
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -60,6 +61,15 @@ public:
         if(m18SourceAdmitting_||m18SourcePublishing_)return;
         m18SourceMutationAdmission_=std::move(gate);
     }
+    // Real Product SOURCE commits need a physical writer lease spanning
+    // the synchronous committed-handler + transport + Qt signals. Mutually
+    // exclusive with the older one-shot status admission when installed.
+    using M18SourceBatchBegin=std::function<
+        core::Result<std::shared_ptr<const void>>()>;
+    void set_private_m18_source_batch_begin(M18SourceBatchBegin begin) {
+        if(m18SourceAdmitting_||m18SourcePublishing_)return;
+        m18SourceBatchBegin_=std::move(begin);
+    }
     [[nodiscard]] core::Status adopt_probed_source(audio::SourceResource candidate);
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
@@ -90,6 +100,7 @@ private:
     int channelCount_{0};
     PlaybackTransportViewModel* playbackTransport_{nullptr};
     M18SourceMutationAdmission m18SourceMutationAdmission_;
+    M18SourceBatchBegin m18SourceBatchBegin_;
     // Scoped across the Product admission and the SOURCE committed
     // handler, audio transport preparation and Qt NOTIFY publication.
     // Inert until a shared M18 owner gate is explicitly installed.
