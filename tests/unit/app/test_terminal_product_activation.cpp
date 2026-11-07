@@ -3140,6 +3140,20 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(candidates.staged()->rendered.output_rate,*deviceRate.value());
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     vm.setBypass(true);
+    // Exact M17 acceptance provenance is monotonic even when a user
+    // returns Ceiling A->B->A. Same floating-point value is NOT proof
+    // that the accepted terminal PCM came from the latest parameters.
+    const auto originallyAcceptedCeiling=
+        firstProjectMaster->accepted_ceiling_db_tp;
+    const auto capturedRevision=
+        firstProjectMaster->accepted_terminal_parameter_revision;
+    QVERIFY(limiter.value()->set_ceiling_db_tp(-2.0));
+    QVERIFY(limiter.value()->set_ceiling_db_tp(originallyAcceptedCeiling));
+    QCOMPARE(limiter.value()->parameters().ceiling_db_tp(),
+             originallyAcceptedCeiling);
+    QVERIFY(limiter.value()->parameter_revision()!=capturedRevision);
+    QCOMPARE(firstProjectMaster->accepted_terminal_parameter_revision,
+             capturedRevision); // immutable accepted SOURCE stage
 }
 
 void TerminalActivationIntegrationTest::
