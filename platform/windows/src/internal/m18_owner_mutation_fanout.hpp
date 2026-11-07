@@ -80,6 +80,22 @@ public:
         shared_->retired.store(true,std::memory_order_release);
     }
 
+    // Product-wide activation is legal only BEFORE consent/ticket minting.
+    // The immutable authority/owner thread are checked without changing
+    // epoch or touching any controller. No QObjects reach the worker.
+    [[nodiscard]] bool can_install_full_product_guards() const noexcept {
+        const auto state=shared_;
+        return state
+            &&std::this_thread::get_id()==state->ownerThread
+            &&!state->retired.load(std::memory_order_acquire)
+            &&!state->admitting
+            &&!state->projectOpenActive.load(std::memory_order_acquire)
+            &&!state->sourceCommitActive.load(std::memory_order_acquire)
+            &&state->authority &&state->identity.valid()
+            &&state->epoch>0
+            &&state->authority->can_install_full_product_guards();
+    }
+
     [[nodiscard]] StatusAdmission status_admission() const {
         return [weak=std::weak_ptr<Shared>{shared_}](
             const char* operation)->core::Status {
