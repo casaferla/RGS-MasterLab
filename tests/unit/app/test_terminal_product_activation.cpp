@@ -3601,6 +3601,22 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                     managedPath.toUtf8().toStdString(),
                     "managed-session-master.wav");
         QVERIFY(managedDestination);
+        // Neither a missing PCM24 TPDF seed nor a seeded float32 choice
+        // may capture Product state, open a file or reserve a worker slot.
+        QVERIFY(!exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::PCM_S24,
+            std::nullopt,0.0));
+        QCOMPARE(exportSession.snapshot().phase,
+                 app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+        QVERIFY(!QFileInfo::exists(managedPath));
+        QVERIFY(!exportSession.begin(
+            product,selectedSource,selectedProjectRate,candidates,
+            *boundTicket.value(),liveSource->reference(),
+            *managedDestination.value(),audio::WavSampleFormat::IEEE_F32,
+            UINT64_C(42),0.0));
+        QVERIFY(!QFileInfo::exists(managedPath));
         QVERIFY(exportSession.begin(
             product,selectedSource,selectedProjectRate,candidates,
             *boundTicket.value(),liveSource->reference(),
