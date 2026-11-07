@@ -4,6 +4,7 @@
 #include "internal/m18_product_upstream_binding.hpp"
 #include "internal/m18_product_complete_binding.hpp"
 #include "internal/m22_verified_master_preview_parity.hpp"
+#include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -694,6 +695,49 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         *rate48.value());
     QVERIFY(verified);
     QCOMPARE(verified,candidates.staged());
+    // Actual PREPARED and PROCESSED Product analysis, not fixture-provided
+    // DTOs. The captured immutable RenderResult owners and accepted
+    // RealizationId MUST match the real Qt AuditionSourceSelector.
+    using M21Owners=app::internal::M21ProductOwnerAnalysis;
+    auto analysisOwners=M21Owners::capture(
+        controllers,fanout,session.selector);
+    QVERIFY2(analysisOwners,
+        analysisOwners?"":analysisOwners.error()->message().c_str());
+    QCOMPARE(analysisOwners.value()->prepared,
+             session.selector.prepared_realization_snapshot());
+    QCOMPARE(analysisOwners.value()->processed,
+             session.selector.processed_realization_snapshot());
+    QCOMPARE(analysisOwners.value()->processed_realization_id,
+             session.selector.processed_realization_id());
+    QVERIFY(M21Owners::still_current(
+        controllers,fanout,session.selector,*analysisOwners.value()));
+    const auto preparedMetrics=M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::prepared);
+    const auto processedMetrics=M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::processed);
+    QVERIFY2(preparedMetrics,
+        preparedMetrics?"":preparedMetrics.error()->message().c_str());
+    QVERIFY2(processedMetrics,
+        processedMetrics?"":processedMetrics.error()->message().c_str());
+    QCOMPARE(preparedMetrics.value()->scope_frames,
+             static_cast<std::uint64_t>(n));
+    QCOMPARE(processedMetrics.value()->scope_frames,
+             static_cast<std::uint64_t>(n));
+    QCOMPARE(preparedMetrics.value()->sample_rate_hz,48000U);
+    QCOMPARE(processedMetrics.value()->sample_rate_hz,48000U);
+    QCOMPARE(preparedMetrics.value()->column,
+             app::m21_private::Column::prepared);
+    QCOMPARE(processedMetrics.value()->column,
+             app::m21_private::Column::processed);
+    QVERIFY(preparedMetrics.value()->resource_identity
+            !=processedMetrics.value()->resource_identity);
+    // GOLD is a separately selected immutable file and must never be
+    // invented by re-tagging PREPARED or PROCESSED PCM.
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::gold));
     QVERIFY(ui.can_export());
     QVERIFY(!ui.can_cancel());
     QVERIFY(!ui.can_acknowledge());
@@ -956,6 +1000,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              revisionBeforeParam);
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(!ui.can_export());
+    // M21 must reject an earlier real-PCM result after this very same
+    // accepted DSP change, even when chain().revision() did not move.
+    QVERIFY(!M21Owners::still_current(
+        controllers,fanout,session.selector,*analysisOwners.value()));
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::prepared));
     // The stale M17 shared_ptr is still in memory, but M22 Preview may
     // not expose it after even a parameter-only accepted Gain edit.
     QVERIFY(!app::internal::m22_verified_master_preview_crop(
