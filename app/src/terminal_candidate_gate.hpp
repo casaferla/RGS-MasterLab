@@ -40,6 +40,11 @@ public:
         render::TruePeakLimiterOwnedSourceCandidate rendered;
         core::RealizationId original_manual_realization_id;
         std::shared_ptr<const render::RenderResult> prepared_owner;
+        // Captured from the *accepted* M17 job, not reconstructed from the
+        // current UI. Ceiling A->B->A still advances this revision and
+        // must NOT re-authorize an older binary64 terminal MASTER.
+        std::uint64_t accepted_terminal_parameter_revision{0};
+        double accepted_ceiling_db_tp{0.0};
     };
 
     struct StagedMeasuredCandidate final {
