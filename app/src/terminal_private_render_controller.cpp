@@ -29,6 +29,10 @@ TerminalPrivateRenderController::~TerminalPrivateRenderController() {
     if(worker_.joinable())worker_.join();
 }
 void TerminalPrivateRenderController::invalidate() {
+    // This is a QObject-owned mutation. Check affinity BEFORE reading the
+    // candidate's non-atomic M18 std::function installation state; a
+    // detached worker may not race guard changes or retire M17 PCM.
+    if(QThread::currentThread()!=thread())return;
     // A legacy void caller cannot report BUSY. Once the M18 Product
     // candidate authority is installed, the entire renderer withdrawal
     // must be admitted FIRST. Silently changing the render serial while
@@ -127,6 +131,12 @@ bool TerminalPrivateRenderController::remember_existing_original_q0_folder(
     return privateOriginalFirFamilyReady_;
 }
 core::Status TerminalPrivateRenderController::request_private(core::SampleRate rate) {
+    // The worker never starts a new M17 prepare nor reads gate internals.
+    // Check QObject affinity before querying non-atomic Product guard.
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_RENDER_PREPARE_REQUIRES_QT_OWNER_THREAD"});
     // First authorization BEFORE clearing the M17 stage, advancing the
     // renderer serial or touching any pending job. In an M18-aware Product,
     // BUSY means no mutation whatsoever. Unconfigured M17 keeps the exact
