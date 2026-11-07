@@ -9,6 +9,7 @@
 #include <QString>
 #include <QUrl>
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <memory>
