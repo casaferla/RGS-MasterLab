@@ -1271,6 +1271,34 @@ set_tests_properties(rgsml_mastering_chain_state_tests PROPERTIES
     LABELS "app;mastering_chain"
 )
 
+# M18 isolated Product composition: reuse the EXACT M17 Qt implementation
+# closure in the real ProjectSession test. No parallel duplicate source,
+# synthetic M17 class, GUI export activation or additional CI run.
+get_target_property(_m18_m17_closure rgsml_mastering_chain_state_tests SOURCES)
+get_target_property(_m18_project_closure rgsml_project_session_tests SOURCES)
+set(_m18_full_product_extras)
+foreach(_m18_source IN LISTS _m18_m17_closure)
+    if(_m18_source MATCHES "test_mastering_chain_state\\.cpp$")
+        continue()
+    endif()
+    if(NOT _m18_source IN_LIST _m18_project_closure)
+        list(APPEND _m18_full_product_extras "${_m18_source}")
+    endif()
+endforeach()
+list(REMOVE_DUPLICATES _m18_full_product_extras)
+target_sources(rgsml_project_session_tests
+    PRIVATE ${_m18_full_product_extras})
+target_include_directories(rgsml_project_session_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/audio/src
+    ${CMAKE_SOURCE_DIR}/platform/windows/include
+    ${CMAKE_SOURCE_DIR}/platform/windows/src)
+target_link_libraries(rgsml_project_session_tests PRIVATE
+    rgsml_audio rgsml_dsp)
+unset(_m18_source)
+unset(_m18_m17_closure)
+unset(_m18_project_closure)
+unset(_m18_full_product_extras)
+
 qt_add_executable(rgsml_eq_view_model_tests
     unit/app/test_eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
