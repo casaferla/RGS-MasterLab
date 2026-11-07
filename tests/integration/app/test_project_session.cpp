@@ -357,6 +357,45 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
     QVERIFY(!owner->capture(initial));
     QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
         entire,fanout,true));
+
+    // An accepted manual edit invalidates M17 but changes the real
+    // M11–15 revision. Reconcile that accepted model revision before
+    // any future verified Master is eligible for a fresh consent.
+    const auto gainId=session.masteringChainState->gain_instance_id();
+    const auto bypass=session.masteringChainState->is_bypassed(gainId);
+    QVERIFY(bypass);
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        gainId,!(*bypass.value())));
+    const auto afterEdit=fanout.current_owner_snapshot();
+    QVERIFY(afterEdit);
+    QCOMPARE(afterEdit->epoch,UINT64_C(32));
+    QVERIFY(afterEdit->identity.chain_revision!=
+            session.masteringChainState->chain().revision());
+
+    bool workerReconcileDenied=false;
+    std::thread worker([&] {
+        workerReconcileDenied=
+            !M18ProductCompleteBinding::reconcile_after_product_mutation(
+                entire,fanout);
+    });
+    worker.join();
+    QVERIFY(workerReconcileDenied);
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        entire,fanout));
+    const auto reconciled=fanout.current_owner_snapshot();
+    QVERIFY(reconciled);
+    QCOMPARE(reconciled->epoch,UINT64_C(33));
+    QCOMPARE(reconciled->identity.source_generation,UINT64_C(201));
+    QCOMPARE(reconciled->identity.project_generation,UINT64_C(202));
+    QCOMPARE(reconciled->identity.master_generation,UINT64_C(205));
+    QCOMPARE(reconciled->identity.chain_revision,
+             session.masteringChainState->chain().revision());
+    QCOMPARE(reconciled->identity.master_rate_revision,rate.rate_revision());
+    // Reconciliation never grants an export ticket or silently revives
+    // the now-obsolete M17 Master.
+    QVERIFY(!owner->capture(reconciled->identity));
+    QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
+        entire,fanout,true));
     QVERIFY(M18ProductCompleteBinding::installed(entire));
 }
 
