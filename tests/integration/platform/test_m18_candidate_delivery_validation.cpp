@@ -230,7 +230,7 @@ fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
     auto snap=fanout.current_owner_snapshot();
     QVERIFY(snap);
     QCOMPARE(snap->epoch,UINT64_C(40));
-    QCOMPARE(snap->identity,id);
+    QVERIFY(snap->identity==id);
 
     auto source=fanout.source_commit_batch()();
     QVERIFY(source);
@@ -244,7 +244,7 @@ fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
     // SOURCE mutation. No second Source generation or export consent.
     QVERIFY(fanout.status_admission()("set_prepared"));
     QVERIFY(fanout.status_admission()("clear_gold"));
-    QCOMPARE(fanout.current_owner_snapshot()->identity,snap->identity);
+    QVERIFY(fanout.current_owner_snapshot()->identity==snap->identity);
     source.value()->reset();
 
     auto save=fanout.project_save_batch()();
@@ -269,7 +269,7 @@ fullProductSourceProjectGenerationsAdvanceWithSingleWriter()
     QVERIFY(nested);
     QVERIFY(fanout.status_admission()("source_committed"));
     QVERIFY(fanout.status_admission()("set_gold"));
-    QCOMPARE(fanout.current_owner_snapshot()->identity,snap->identity);
+    QVERIFY(fanout.current_owner_snapshot()->identity==snap->identity);
     nested.value()->reset();
     open.value()->reset();
 
