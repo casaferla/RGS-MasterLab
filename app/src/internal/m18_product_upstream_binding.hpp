@@ -48,6 +48,7 @@ struct M18ProductUpstreamBinding final {
             &&!c.rate.m18_rate_mutation_admission_installed()
             &&!c.chain.m18_chain_admission_installed()
             &&!c.selector.m18_mutation_admission_installed()
+            &&!c.gold.m18_gold_admission_installed()
             &&!c.region.m18_region_admission_installed()
             &&!c.terminal.m18_mutation_admission_installed();
     }
@@ -59,6 +60,7 @@ struct M18ProductUpstreamBinding final {
             &&c.rate.m18_rate_mutation_admission_installed()
             &&c.chain.m18_chain_admission_installed()
             &&c.selector.m18_mutation_admission_installed()
+            &&!c.gold.m18_gold_admission_installed()
             &&c.region.m18_region_admission_installed()
             &&c.terminal.m18_mutation_admission_installed();
     }
