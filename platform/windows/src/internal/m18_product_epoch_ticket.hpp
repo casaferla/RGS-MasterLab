@@ -142,11 +142,15 @@ public:
     // Safe activation preflight, not an export grant. Any earlier
     // consent/ticket means installation would be too late to protect
     // the current M17 Master. Require a fresh unconsented Product owner.
-    [[nodiscard]] bool can_install_full_product_guards() const noexcept {
+    [[nodiscard]] bool can_install_full_product_guards(
+        std::uint64_t expectedEpoch,
+        M18ProductExportIdentity expectedIdentity) const noexcept {
         if(std::this_thread::get_id()!=owner_thread_)return false;
         std::lock_guard guard{state_->mutex};
-        return state_->owner_alive &&state_->epoch>0
-            &&state_->identity.valid() &&!state_->explicit_consent
+        return state_->owner_alive &&expectedEpoch>0
+            &&state_->epoch==expectedEpoch
+            &&state_->identity==expectedIdentity
+            &&expectedIdentity.valid() &&!state_->explicit_consent
             &&!state_->barrier.product_mutation_active();
     }
 
