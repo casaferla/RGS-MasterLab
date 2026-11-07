@@ -525,12 +525,18 @@ m18GoldReplacementAndClearDeniedBeforeSelectorMutation()
     session.gold.set_private_m18_gold_mutation_admission(
         [&](const char* operation)->core::Status {
             ++denied;
+            // A synchronous callback cannot destroy its own Product gate.
+            session.gold.set_private_m18_gold_mutation_admission({});
             if(operation==nullptr)
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,"M18_GOLD_OPERATION_MISSING"});
             return core::Status::failure(core::Error{
                 core::ErrorCode::InvalidState,"M18_GOLD_COMMIT_BUSY"});
         });
+    std::thread foreignGateRemoval([&session] {
+        session.gold.set_private_m18_gold_mutation_admission({});
+    });
+    foreignGateRemoval.join();
     session.gold.selectGold(QUrl::fromLocalFile(goldB));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.gold_resource());
