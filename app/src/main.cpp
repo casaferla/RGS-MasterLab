@@ -825,6 +825,67 @@ int main(int argc, char* argv[])
                 static_cast<double>(sourceSelection.sample_rate_hz()),
                 sourceSelection.channel_count());
         });
+    // M18 Product wiring PREPARED, deliberately NOT activated.
+    // The legacy void SOURCE callback above is retained unchanged while
+    // the real M18 owner/verified-M17 export ticket remains unregistered.
+    // Once the physical SOURCE batch is installed, this checked route
+    // becomes mandatory and reports denied downstream controller edits.
+    sourceSelection.set_private_m18_checked_source_committed_handler(
+        [&sourceWaveform, &sourceSelection, &auditionRegion,
+         &auditionSelector, &goldSelection, &dspChainAdapterModel,
+         &projectSession, &stereoMsViewModel, &compressorViewModel,
+         &staticTruePeak, &liveTruePeak, &terminalProductActivation,
+         &masterOutputRate](
+            const rgsml::core::ResourceReference& source)
+                ->rgsml::core::Status {
+            liveTruePeak.invalidate();
+            staticTruePeak.invalidate_source();
+            const auto frameCount=rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            if(!frameCount)
+                return rgsml::core::Status::failure(*frameCount.error());
+            const auto rate=rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            if(!rate)
+                return rgsml::core::Status::failure(*rate.error());
+            // The old void rate reset would be silently ignored under an
+            // installed M18 gate. The bool child admission shares SOURCE's
+            // already-held physical epoch and must fail closed on BUSY.
+            if(!masterOutputRate.try_source_committed_for_m18(
+                    sourceSelection.sample_rate_hz()))
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "M18_PRODUCT_SOURCE_RATE_MUTATION_REFUSED"});
+            auditionRegion.source_committed(*frameCount.value(),*rate.value());
+            auto prepared=auditionSelector.source_committed(source);
+            if(!prepared)return prepared;
+            // The terminal M17 device handoff and QML displays may only
+            // observe an accepted fresh SOURCE. Consent is never minted here.
+            terminalProductActivation.source_committed_successfully();
+            const int channels=sourceSelection.channel_count();
+            if(channels==1 ||channels==2) {
+                staticTruePeak.source_committed(
+                    source,rgsml::app::TruePeakExpectedSource{
+                        *frameCount.value(),*rate.value(),
+                        channels==1?rgsml::audio::ChannelLayout::MONO_C
+                                   :rgsml::audio::ChannelLayout::STEREO_LR});
+                staticTruePeak.processed_changed(
+                    auditionSelector.processed_realization_snapshot(),
+                    auditionSelector.processed_realization_id());
+            }
+            compressorViewModel.resetTelemetryForNewSource();
+            const auto switched=auditionSelector.switch_to(
+                rgsml::app::AuditionTarget::PREPARED);
+            if(!switched)return switched;
+            if(!projectSession.is_committing_project_open())
+                dspChainAdapterModel.resetForNewSource();
+            goldSelection.sourceChanged();
+            sourceWaveform.source_committed(source);
+            stereoMsViewModel.setSignalFormat(
+                static_cast<double>(sourceSelection.sample_rate_hz()),
+                sourceSelection.channel_count());
+            return rgsml::core::Status::success();
+        });
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {
             return auditionRegion.seek(position);

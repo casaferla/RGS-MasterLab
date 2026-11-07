@@ -4,10 +4,13 @@
 #include <rgsml/core/audio_playback_service.hpp>
 
 #include <QTest>
+#include <QSignalSpy>
 
 #include <array>
 #include <memory>
 #include <optional>
+#include <thread>
+#include <stdexcept>
 
 namespace rgsml::tests {
 namespace {
@@ -106,7 +109,212 @@ private slots:
     void explicitSeekIsSingleAndPositionExactAcrossLoopStates();
     void loopTransactionsAndRepositioning();
     void failureAndSourceReplacementRemainTruthful();
+    void m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate();
+    void m18InvalidOrUnchangedRegionNeverConsumesProductEpoch();
+    void m18NestedRegionMutationDuringChangedSignalIsRejected();
 };
+
+void AuditionRegionViewModelTest::
+m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate()
+{
+    auto service=std::make_unique<RegionPlaybackFake>();
+    auto* observed=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    app::AuditionRegionViewModel model{&transport};
+    model.source_committed(
+        *core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    model.set_waveform_ready(true);
+    const auto original=range(10,100);
+    const auto replacement=range(20,90);
+    QVERIFY(model.set_region(original));
+    QVERIFY(model.set_loop_enabled(true));
+    QCOMPARE(model.region(),std::optional{original});
+    const auto priorLoopCalls=observed->setLoopCalls;
+    const auto priorSeekCalls=observed->seekCalls;
+    QSignalSpy changed{&model,&app::AuditionRegionViewModel::changed};
+    std::size_t attempts=0;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char* name)->core::Status {
+            if(name)++attempts;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_REGION_EPOCH_BUSY"});
+        });
+    QVERIFY(!model.set_region(replacement));
+    QVERIFY(!model.set_start(core::FrameIndex{15}));
+    QVERIFY(!model.set_end_exclusive(core::FrameIndex{95}));
+    QVERIFY(!model.set_loop_enabled(false));
+    QVERIFY(!model.clear_region());
+    QCOMPARE(attempts,std::size_t{5});
+    QCOMPARE(model.region(),std::optional{original});
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(observed->setLoopCalls,priorLoopCalls);
+    QCOMPARE(observed->seekCalls,priorSeekCalls);
+    QCOMPARE(changed.count(),0);
+    // Same-loop no-op doesn't burn an epoch or disturb playback.
+    QVERIFY(model.set_loop_enabled(true));
+    QCOMPARE(attempts,std::size_t{5});
+    // A foreign worker may not touch any Qt playback/Region field.
+    bool deniedForeign=false;
+    std::thread worker([&] {
+        const auto r=model.set_region(replacement);
+        deniedForeign=!r &&r.error()->code()==core::ErrorCode::InvalidState;
+        model.nudgeStartForward();
+        model.requestClearRegion();
+        model.requestLoopEnabled(false);
+        model.commitEndSegments(
+            QStringLiteral("00"),QStringLiteral("00"),
+            QStringLiteral("00"),QStringLiteral("100000000"));
+    });
+    worker.join();
+    QVERIFY(deniedForeign);
+    QCOMPARE(model.region(),std::optional{original});
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(attempts,std::size_t{5});
+    QCOMPARE(changed.count(),0);
+    // A source-relative seek is not a Project, Region, loop or PCM
+    // identity change; owner-thread navigation remains usable during M18.
+    QVERIFY(model.seek(core::FrameIndex{42}));
+    QCOMPARE(observed->seekCalls,priorSeekCalls+1);
+    QCOMPARE(observed->position.value(),std::int64_t{42});
+    QCOMPARE(attempts,std::size_t{5});
+
+    bool nestedDenied=false;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            const auto nested=model.clear_region();
+            nestedDenied=!nested
+                &&nested.error()->code()==core::ErrorCode::InvalidState;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_REGION_OUTER_DENIED"});
+        });
+    QVERIFY(!model.set_region(replacement));
+    QVERIFY(nestedDenied);
+    QCOMPARE(model.region(),std::optional{original});
+    QCOMPARE(changed.count(),0);
+    model.set_private_m18_region_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_REGION_CALLBACK_THROW");
+        });
+    QVERIFY(!model.clear_region());
+    QCOMPARE(observed->setLoopCalls,priorLoopCalls);
+    QCOMPARE(model.region(),std::optional{original});
+    // Future Product gate uninstalled: frozen M17 behavior is unchanged.
+    model.set_private_m18_region_mutation_admission({});
+    QVERIFY(model.set_loop_enabled(false));
+    QVERIFY(model.set_region(replacement));
+    QCOMPARE(model.region(),std::optional{replacement});
+    QVERIFY(model.clear_region());
+    QVERIFY(!model.has_region());
+}
+
+void AuditionRegionViewModelTest::
+m18InvalidOrUnchangedRegionNeverConsumesProductEpoch()
+{
+    auto fake=std::make_unique<RegionPlaybackFake>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionRegionViewModel model{&transport};
+    model.source_committed(
+        *core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    model.set_waveform_ready(true);
+    const auto current=range(10,200);
+    QVERIFY(model.set_region(current));
+    QVERIFY(model.set_loop_enabled(true));
+    const auto loopBefore=observed->setLoopCalls;
+    std::size_t admissionCalls=0;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_BUSY"});
+        });
+    // Same region and same loop state are true no-ops in M18 mode.
+    QVERIFY(model.set_region(current));
+    QVERIFY(model.set_loop_enabled(true));
+    QCOMPARE(admissionCalls,std::size_t{0});
+    QCOMPARE(observed->setLoopCalls,loopBefore);
+    QCOMPARE(model.region(),std::optional{current});
+    const auto invalid=range(900,1200);
+    QVERIFY(!model.set_region(invalid));
+    QCOMPARE(admissionCalls,std::size_t{0});
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(model.region(),std::optional{current});
+    // A different valid selection must ask exactly once and be rejected.
+    QVERIFY(!model.set_region(range(20,190)));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QCOMPARE(model.region(),std::optional{current});
+    // No REGION operation is needed for a source-relative playback seek.
+    QVERIFY(model.seek(core::FrameIndex{44}));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QCOMPARE(observed->position.value(),std::int64_t{44});
+    // An unavailable loop cannot consume a Product epoch just to report
+    // invalid selection, even while a worker owns the immutable Master.
+    model.set_private_m18_region_mutation_admission({});
+    QVERIFY(model.set_loop_enabled(false));
+    QVERIFY(model.clear_region());
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_BUSY"});
+        });
+    QVERIFY(!model.set_loop_enabled(true));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QVERIFY(!model.loop_enabled());
+    QVERIFY(!model.has_region());
+}
+
+void AuditionRegionViewModelTest::
+m18NestedRegionMutationDuringChangedSignalIsRejected()
+{
+    auto fake=std::make_unique<RegionPlaybackFake>();
+    auto* observed=fake.get();
+    app::PlaybackTransportViewModel transport{std::move(fake)};
+    app::AuditionRegionViewModel model{&transport};
+    model.source_committed(
+        *core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    model.set_waveform_ready(true);
+    QVERIFY(model.set_region(range(20,120)));
+    std::size_t admitted=0;
+    model.set_private_m18_region_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admitted;
+            return core::Status::success();
+        });
+    std::size_t callbacks=0;
+    std::size_t nestedDenied=0;
+    QObject::connect(&model,&app::AuditionRegionViewModel::changed,
+        &model,[&] {
+            ++callbacks;
+            // A synchronous listener cannot change the Region again
+            // until the originally admitted publication is complete.
+            const auto attempt=model.clear_region();
+            if(!attempt &&attempt.error()->code()
+                ==core::ErrorCode::InvalidState)++nestedDenied;
+        });
+    QVERIFY(model.set_region(range(30,110)));
+    QCOMPARE(model.region(),std::optional{range(30,110)});
+    QCOMPARE(admitted,std::size_t{1});
+    QVERIFY(callbacks>=1);
+    QCOMPARE(nestedDenied,callbacks);
+    QCOMPARE(observed->setLoopCalls,0);
+    QVERIFY(model.set_loop_enabled(true));
+    QVERIFY(model.loop_enabled());
+    QCOMPARE(admitted,std::size_t{2});
+    QCOMPARE(nestedDenied,callbacks);
+    QVERIFY(model.clear_region());
+    QVERIFY(!model.has_region());
+    QCOMPARE(admitted,std::size_t{3});
+    QCOMPARE(nestedDenied,callbacks);
+    // RAII sentinel is released after every operation, so the new
+    // independent edit can still be admitted on the same owner thread.
+    QVERIFY(model.set_region(range(40,100)));
+    QCOMPARE(admitted,std::size_t{4});
+    QCOMPARE(model.region(),std::optional{range(40,100)});
+}
 
 void AuditionRegionViewModelTest::exactRegionAndTimeEditing()
 {

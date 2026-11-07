@@ -2,6 +2,8 @@
 #include "prepare_memory_advice_source_policy.hpp"
 #include "accepted_prepare_observation_policy.hpp"
 #include <limits>
+#include <stdexcept>
+#include <thread>
 #include <QSignalSpy>
 #include <QtTest>
 #include <array>
@@ -9,6 +11,33 @@ namespace rgsml::app {
 class MasterRateTest final : public QObject {
 Q_OBJECT
 private slots:
+ void m18RateAuthorityCannotSelfUninstallOrCrossThread() {
+    MasterOutputRateState rate;
+    rate.source_committed(48000);
+    const auto originalRevision=rate.rate_revision();
+    std::size_t denied=0,nestedDenied=0;
+    rate.set_private_m18_rate_mutation_admission([&] {
+        ++denied;
+        // Neither the active callback nor a nested RATE edit may
+        // withdraw the Product's shared worker commit epoch.
+        rate.set_private_m18_rate_mutation_admission({});
+        if(!rate.choose_master_rate(96000))++nestedDenied;
+        return false;
+    });
+    std::thread foreignDisarm([&] {
+        rate.set_private_m18_rate_mutation_admission({});
+    });
+    foreignDisarm.join();
+    QVERIFY(!rate.choose_master_rate(44100));
+    QVERIFY(!rate.choose_master_rate(44100));
+    QCOMPARE(denied,std::size_t{2});
+    QCOMPARE(nestedDenied,std::size_t{2});
+    QCOMPARE(rate.master_rate_hz(),qint64{48000});
+    QCOMPARE(rate.rate_revision(),originalRevision);
+    rate.set_private_m18_rate_mutation_admission({});
+    QVERIFY(rate.choose_master_rate(44100));
+    QCOMPARE(rate.rate_revision(),originalRevision+quint64{1});
+ }
  void sourceDefaultAndNoDeviceDependency(){
     MasterOutputRateState s;QSignalSpy changes(&s,&MasterOutputRateState::changed);
     QVERIFY(!s.choose_master_rate(48000));s.source_committed(44100);
@@ -563,6 +592,83 @@ private slots:
     QCOMPARE(s.rate_revision(),priorRevision+2);
     QCOMPARE(changes.count(),2);
     QCOMPARE(availability.count(),4); // new SOURCE invalidates six QML rows
+ }
+ void m18LegacyVoidSourceRateCannotBypassProductEpoch(){
+    MasterOutputRateState state;
+    state.source_committed(44100);
+    QVERIFY(state.choose_master_rate(192000));
+    const auto revision=state.rate_revision();
+    QSignalSpy changed{&state,&MasterOutputRateState::changed};
+    std::size_t callbacks=0;
+    bool busy=true;
+    state.set_private_m18_rate_mutation_admission([&] {
+        ++callbacks;
+        return !busy;
+    });
+    // These historically void APIs cannot report admission failure:
+    // with M18 installed, they MUST NOT mutate or bypass its gate.
+    state.source_committed(96000);
+    state.source_cleared();
+    QCOMPARE(callbacks,std::size_t{0});
+    QCOMPARE(state.source_rate_hz(),qint64{44100});
+    QCOMPARE(state.master_rate_hz(),qint64{192000});
+    QCOMPARE(state.rate_revision(),revision);
+    QCOMPARE(changed.count(),0);
+    QVERIFY(!state.try_source_committed_for_m18(96000));
+    QVERIFY(!state.try_source_cleared_for_m18());
+    QCOMPARE(callbacks,std::size_t{2});
+    QCOMPARE(state.rate_revision(),revision);
+    busy=false;
+    QVERIFY(state.try_source_committed_for_m18(96000));
+    QCOMPARE(state.source_rate_hz(),qint64{96000});
+    QCOMPARE(state.master_rate_hz(),qint64{96000});
+    QCOMPARE(state.rate_revision(),revision+1);
+    QVERIFY(state.try_source_cleared_for_m18());
+    QCOMPARE(state.source_rate_hz(),qint64{0});
+    QCOMPARE(state.rate_revision(),revision+2);
+    QCOMPARE(callbacks,std::size_t{4});
+    QCOMPARE(changed.count(),2);
+    state.set_private_m18_rate_mutation_admission({});
+    state.source_committed(48000);
+    QCOMPARE(state.source_rate_hz(),qint64{48000});
+ }
+ void m18GuardedSourceRateIdentityAndClearCannotBypassWorkerEpoch(){
+    MasterOutputRateState state;
+    state.source_committed(48000);
+    QVERIFY(state.choose_master_rate(192000));
+    const auto previous=state.rate_revision();
+    QSignalSpy changed{&state,&MasterOutputRateState::changed};
+    std::size_t deniedCalls=0;
+    state.set_private_m18_rate_mutation_admission([&] {
+        ++deniedCalls;
+        return false;
+    });
+    // Same rate but new SOURCE is still a destructive MASTER identity.
+    QVERIFY(!state.try_source_committed_for_m18(48000));
+    QVERIFY(!state.try_source_committed_for_m18(44100));
+    QVERIFY(!state.try_source_cleared_for_m18());
+    QCOMPARE(deniedCalls,std::size_t{3});
+    QCOMPARE(state.source_rate_hz(),qint64{48000});
+    QCOMPARE(state.master_rate_hz(),qint64{192000});
+    QCOMPARE(state.rate_revision(),previous);
+    QCOMPARE(changed.count(),0);
+    state.set_private_m18_rate_mutation_admission([]()->bool {
+        throw std::runtime_error("admission denied");
+    });
+    QVERIFY(!state.try_source_committed_for_m18(48000));
+    QCOMPARE(state.rate_revision(),previous);
+    state.set_private_m18_rate_mutation_admission({});
+    QVERIFY(state.try_source_committed_for_m18(48000));
+    QCOMPARE(state.source_rate_hz(),qint64{48000});
+    QCOMPARE(state.master_rate_hz(),qint64{48000});
+    QCOMPARE(state.rate_revision(),previous+1);
+    QVERIFY(state.try_source_cleared_for_m18());
+    QCOMPARE(state.master_rate_hz(),qint64{0});
+    QCOMPARE(state.source_rate_hz(),qint64{0});
+    QCOMPARE(state.rate_revision(),previous+2);
+    QVERIFY(state.try_source_cleared_for_m18());
+    QCOMPARE(state.rate_revision(),previous+2);
+    QCOMPARE(changed.count(),2);
  }
  void sourceChangeInvalidatesAndUnsupportedFailsClosed(){
     MasterOutputRateState s;s.source_committed(48000);

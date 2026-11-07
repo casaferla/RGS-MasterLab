@@ -2,6 +2,7 @@ add_library(rgsml_platform STATIC
     windows/src/internal/playback_support.cpp
     windows/src/internal/sha256.cpp
     windows/src/transactional_audio_exporter.cpp
+    windows/src/m18_candidate_delivery_validation.cpp
     windows/src/windows_resource_writer.cpp
     windows/src/windows_resource_reader.cpp
     windows/src/windows_audio_playback_service.cpp

@@ -26,6 +26,19 @@ set_tests_properties(rgsml_master_output_rate_codec_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "project;master_rate;finalization;codec")
 
+# M18 candidate preference: exact 64-bit dither seed and format.
+# Draft-only, NOT a recognized .rgsmaster output field or release gate.
+qt_add_executable(rgsml_m18_output_preference_candidate_tests
+    unit/project/test_m18_output_preference_candidate.cpp)
+target_link_libraries(rgsml_m18_output_preference_candidate_tests
+    PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m18_output_preference_candidate_tests)
+add_test(NAME rgsml_m18_output_preference_candidate_tests
+    COMMAND rgsml_m18_output_preference_candidate_tests)
+set_tests_properties(rgsml_m18_output_preference_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;m18;preproduction;seed;schema_candidate")
+
 add_test(NAME rgsml_project_dependency_contract_tests
     COMMAND "${CMAKE_COMMAND}"
         "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
@@ -236,6 +249,32 @@ qt_add_executable(rgsml_audio_wav_writer_tests
 qt_add_executable(rgsml_export_checksum_tests
     unit/platform/test_export_checksums.cpp
 )
+
+# M18 PREPRODUCTION Windows candidate evidence gate: real WAV decode,
+# exact PCM24/Float32 quantized match, canonical decoded SHA and frozen
+# M16 full-programme True Peak, WITHOUT any filesystem commit.
+if(WIN32)
+    qt_add_executable(rgsml_m18_windows_candidate_delivery_tests
+        integration/platform/test_m18_candidate_delivery_validation.cpp
+    )
+    target_include_directories(rgsml_m18_windows_candidate_delivery_tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/platform/windows/src
+            ${CMAKE_SOURCE_DIR}/audio/src/internal
+            ${CMAKE_SOURCE_DIR}/tests/unit/audio
+    )
+    target_link_libraries(rgsml_m18_windows_candidate_delivery_tests
+        PRIVATE rgsml_platform rgsml_audio rgsml_analysis Qt6::Core Qt6::Test
+    )
+    rgsml_apply_project_warnings(rgsml_m18_windows_candidate_delivery_tests)
+    add_test(NAME rgsml_m18_windows_candidate_delivery_tests
+        COMMAND rgsml_m18_windows_candidate_delivery_tests
+    )
+    set_tests_properties(rgsml_m18_windows_candidate_delivery_tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "m18;windows;delivered_wav;true_peak;preproduction"
+    )
+endif()
 
 qt_add_executable(rgsml_transactional_audio_export_tests
     integration/platform/test_transactional_audio_exporter.cpp
@@ -1215,6 +1254,7 @@ qt_add_executable(rgsml_mastering_chain_state_tests
 target_include_directories(rgsml_mastering_chain_state_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_SOURCE_DIR}/audio/src
         ${CMAKE_SOURCE_DIR}/platform/windows/include
 )
 target_link_libraries(rgsml_mastering_chain_state_tests
@@ -1941,6 +1981,148 @@ foreach(_rgsml_m17_consumer IN ITEMS
         endif()
     endforeach()
 endforeach()
+
+# M18 PREPRODUCTION only: corrected Philox RNG and counter-addressed
+# TPDF tests. This new standalone QtTest target links no M17, Windows
+# DEVICE, WavWriter or final delivery pipeline. Gate G remains pending.
+qt_add_executable(rgsml_m18_counter_dither_philox_tests
+    unit/audio/test_m18_counter_dither_philox.cpp
+)
+target_include_directories(rgsml_m18_counter_dither_philox_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_counter_dither_philox_tests
+    PRIVATE Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_counter_dither_philox_tests)
+add_test(NAME rgsml_m18_counter_dither_philox_tests
+    COMMAND rgsml_m18_counter_dither_philox_tests
+)
+set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;preproduction;dither;philox"
+)
+
+# M18 delivered decoded-WAV True Peak: same M16 frozen FIR, 11 EOS.
+# New wrapper is explicitly SUPPORTED_UNQUALIFIED until Gate G/FQ.
+qt_add_executable(rgsml_m18_delivered_true_peak_candidate_tests
+    unit/analysis/test_m18_delivered_true_peak_candidate.cpp
+)
+target_include_directories(rgsml_m18_delivered_true_peak_candidate_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_m18_delivered_true_peak_candidate_tests
+    PRIVATE rgsml_analysis rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_delivered_true_peak_candidate_tests)
+add_test(NAME rgsml_m18_delivered_true_peak_candidate_tests
+    COMMAND rgsml_m18_delivered_true_peak_candidate_tests
+)
+set_tests_properties(rgsml_m18_delivered_true_peak_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;m18;decoded_delivery;true_peak;nonqualifying"
+)
+
+# M18 bounded real WAV readback: canonical WavWriter -> WavReader
+# -> exact decoded POST-QUANT comparison; no platform publisher.
+qt_add_executable(rgsml_m18_decoded_wav_candidate_tests
+    unit/audio/test_m18_decoded_wav_candidate.cpp
+)
+target_include_directories(rgsml_m18_decoded_wav_candidate_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_decoded_wav_candidate_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_decoded_wav_candidate_tests)
+add_test(NAME rgsml_m18_decoded_wav_candidate_tests
+    COMMAND rgsml_m18_decoded_wav_candidate_tests
+)
+set_tests_properties(rgsml_m18_decoded_wav_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;real_wav_readback;decoded_delivery;preproduction"
+)
+
+# M18 true delivered-PCM oracle: compare decoded PCM against post-quant
+# deterministic samples, not the former immutable binary64 master.
+qt_add_executable(rgsml_m18_decoded_delivery_verifier_tests
+    unit/audio/test_m18_decoded_delivery_verifier.cpp
+)
+target_include_directories(rgsml_m18_decoded_delivery_verifier_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_decoded_delivery_verifier_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_decoded_delivery_verifier_tests)
+add_test(NAME rgsml_m18_decoded_delivery_verifier_tests
+    COMMAND rgsml_m18_decoded_delivery_verifier_tests
+)
+set_tests_properties(rgsml_m18_decoded_delivery_verifier_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;decoded_delivery;pcm24;float32;preproduction"
+)
+
+# M18 canonical WavWriter opt-in: 6 rates x 2 layouts x 2 encodings,
+# exact whole-byte oracle, partition invariance, seed, RF64 and failures.
+# Existing WavWriter::open() and Windows export remain F64-only.
+qt_add_executable(rgsml_m18_canonical_wav_writer_tests
+    unit/audio/test_m18_canonical_wav_writer.cpp
+)
+target_include_directories(rgsml_m18_canonical_wav_writer_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_canonical_wav_writer_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_canonical_wav_writer_tests)
+add_test(NAME rgsml_m18_canonical_wav_writer_tests
+    COMMAND rgsml_m18_canonical_wav_writer_tests
+)
+set_tests_properties(rgsml_m18_canonical_wav_writer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;canonical_writer;pcm24;float32;preproduction"
+)
+
+# M18 core ResourceWriter seam: short-write and failure regression,
+# plus actual PCM24 WAV bytes through the canonical byte port.
+# Windows' TransactionalAudioExporter still owns all publication policy.
+qt_add_executable(rgsml_m18_core_resource_sink_tests
+    unit/audio/test_m18_core_resource_byte_sink.cpp
+)
+target_include_directories(rgsml_m18_core_resource_sink_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_core_resource_sink_tests
+    PRIVATE rgsml_core rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_core_resource_sink_tests)
+add_test(NAME rgsml_m18_core_resource_sink_tests
+    COMMAND rgsml_m18_core_resource_sink_tests
+)
+set_tests_properties(rgsml_m18_core_resource_sink_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;streaming;resource_writer;preproduction"
+)
+
+# M18 exact binary64 Master-owner bridge: real AudioBuffer, no publisher.
+qt_add_executable(rgsml_m18_master_owner_bridge_tests
+    unit/audio/test_m18_owned_master_frame_provider.cpp
+)
+target_include_directories(rgsml_m18_master_owner_bridge_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_master_owner_bridge_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_master_owner_bridge_tests)
+add_test(NAME rgsml_m18_master_owner_bridge_tests
+    COMMAND rgsml_m18_master_owner_bridge_tests
+)
+set_tests_properties(rgsml_m18_master_owner_bridge_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;owner_bridge;preproduction"
+)
 
 # External playback FIR assets must be available to every existing native
 # SRC/Windows/Qt test, not only the newly introduced negative tests.

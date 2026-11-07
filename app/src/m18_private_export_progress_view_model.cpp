@@ -1,0 +1,199 @@
+#include "m18_private_export_progress_view_model.hpp"
+#include <rgsml/core/error.hpp>
+#include <QThread>
+#include <algorithm>
+#include <utility>
+
+namespace rgsml::app {
+
+namespace {
+using Phase=internal::M18PrivateAsyncExportSession::Phase;
+}
+M18PrivateExportProgressViewModel::M18PrivateExportProgressViewModel(
+    QObject* parent)
+    :QObject(parent)
+{
+    pollTimer_.setInterval(80);
+    pollTimer_.setSingleShot(false);
+    connect(&pollTimer_,&QTimer::timeout,this,
+            &M18PrivateExportProgressViewModel::poll);
+}
+
+M18PrivateExportProgressViewModel::~M18PrivateExportProgressViewModel()
+{
+    // The worker holds its own immutable MASTER, value references and
+    // Qt-free epoch factory; cancel without blocking Qt shutdown.
+    pollTimer_.stop();
+    session_.cancel();
+}
+
+core::Status M18PrivateExportProgressViewModel::begin_private_export(
+    const TerminalPrivateProductSession& sourceSession,
+    const SourceSelectionViewModel& source,
+    const MasterOutputRateState& rate,
+    const TerminalCandidateGate& gate,
+    const platform::windows::internal::
+        M18ProductEpochTicketAuthority::Ticket& ticket,
+    core::ResourceReference selectedSource,
+    core::ResourceReference destination,
+    audio::WavSampleFormat format,
+    std::optional<std::uint64_t> seed,
+    double ceilingDbTp)
+{
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_EXPORT_VIEWMODEL_START_REQUIRES_QT_OWNER_THREAD"});
+    // The UI cannot sneak in a seeded FLOAT or undithered PCM24 choice.
+    // Reject without changing progress and before touching Product state.
+    const auto formatStatus=internal::validate_m18_export_format(
+        format,seed,ceilingDbTp);
+    if(!formatStatus)return formatStatus;
+    const auto started=session_.begin(
+        sourceSession,source,rate,gate,ticket,
+        std::move(selectedSource),std::move(destination),format,
+        seed,ceilingDbTp);
+    if(!started)return started;
+    snapshot_=session_.snapshot();
+    pollTimer_.start();
+    emit changed();
+    return core::Status::success();
+}
+
+QString M18PrivateExportProgressViewModel::status_text() const
+{
+    switch(snapshot_.phase) {
+    case Phase::IDLE:return QStringLiteral("IDLE");
+    case Phase::ENCODING_OR_VERIFYING:
+        return snapshot_.total_frames>0
+            &&snapshot_.encoded_frames>=snapshot_.total_frames
+                ?QStringLiteral("VERIFYING")
+                :QStringLiteral("ENCODING");
+    case Phase::CANCELLING:return QStringLiteral("CANCELLING");
+    case Phase::VERIFIED_DELIVERED:
+        return QStringLiteral("VERIFIED_DELIVERED");
+    case Phase::FAILED:return QStringLiteral("FAILED");
+    case Phase::CANCELLED:return QStringLiteral("CANCELLED");
+    }
+    return QStringLiteral("FAILED");
+}
+
+double M18PrivateExportProgressViewModel::encoded_progress() const noexcept
+{
+    if(snapshot_.total_frames==0)return 0.0;
+    return std::min(1.0,static_cast<double>(snapshot_.encoded_frames)/
+        static_cast<double>(snapshot_.total_frames));
+}
+
+bool M18PrivateExportProgressViewModel::export_in_progress() const noexcept
+{
+    return snapshot_.phase==Phase::ENCODING_OR_VERIFYING
+        ||snapshot_.phase==Phase::CANCELLING;
+}
+
+bool M18PrivateExportProgressViewModel::can_cancel() const noexcept
+{
+    return snapshot_.phase==Phase::ENCODING_OR_VERIFYING;
+}
+
+bool M18PrivateExportProgressViewModel::can_acknowledge() const noexcept
+{
+    return snapshot_.phase==Phase::VERIFIED_DELIVERED
+        ||snapshot_.phase==Phase::FAILED
+        ||snapshot_.phase==Phase::CANCELLED;
+}
+
+bool M18PrivateExportProgressViewModel::verified_delivered() const noexcept
+{
+    return snapshot_.phase==Phase::VERIFIED_DELIVERED;
+}
+
+QString M18PrivateExportProgressViewModel::verified_encoded_sha256() const
+{
+    if(snapshot_.phase!=Phase::VERIFIED_DELIVERED)return {};
+    return QString::fromStdString(snapshot_.verified_encoded_sha256);
+}
+
+qulonglong M18PrivateExportProgressViewModel::verified_file_size_bytes() const noexcept
+{
+    if(snapshot_.phase!=Phase::VERIFIED_DELIVERED
+       ||!snapshot_.verified_file_size_bytes)return 0;
+    return static_cast<qulonglong>(*snapshot_.verified_file_size_bytes);
+}
+
+QString M18PrivateExportProgressViewModel::error_text() const
+{
+    if(!snapshot_.failure_code)return {};
+    const auto token=core::error_code_token(*snapshot_.failure_code);
+    return QString::fromLatin1(
+        token.data(),static_cast<qsizetype>(token.size()));
+}
+
+QString M18PrivateExportProgressViewModel::failure_hint() const
+{
+    // UI copy is deliberately categorical. Never expose arbitrary
+    // filesystem paths, untrusted provider details or raw worker errors.
+    if(snapshot_.phase!=Phase::FAILED ||!snapshot_.failure_code)return {};
+    switch(*snapshot_.failure_code) {
+    case core::ErrorCode::AccessDenied:
+        return QStringLiteral("Export permission or Product consent was denied.");
+    case core::ErrorCode::ResourceNotFound:
+        return QStringLiteral("The source or output location is unavailable.");
+    case core::ErrorCode::IoFailure:
+        return QStringLiteral("The output could not be written or verified.");
+    case core::ErrorCode::MalformedAudioContainer:
+    case core::ErrorCode::TruncatedAudioData:
+    case core::ErrorCode::InvalidAudioSample:
+        return QStringLiteral("The delivered WAV failed audio verification.");
+    case core::ErrorCode::InvalidArgument:
+    case core::ErrorCode::OutOfRange:
+    case core::ErrorCode::UnsupportedAudioEncoding:
+    case core::ErrorCode::UnsupportedOperation:
+        return QStringLiteral("The export format or parameter choice is not supported.");
+    default:
+        return QStringLiteral("The Master, export authority or destination is no longer current.");
+    }
+}
+
+void M18PrivateExportProgressViewModel::cancelExport()
+{
+    if(QThread::currentThread()!=thread())return;
+    // A direct QML/C++ call must respect the same enabled state as the UI.
+    // Once a file has been verified, failed, cancelled or acknowledged,
+    // there is no active encoder left to cancel or relabel as CANCELLED.
+    if(!can_cancel())return;
+    session_.cancel();
+    poll();
+}
+
+bool M18PrivateExportProgressViewModel::acknowledgeExport()
+{
+    if(QThread::currentThread()!=thread())return false;
+    const auto acknowledged=session_.acknowledge_finished();
+    if(!acknowledged)return false;
+    pollTimer_.stop();
+    snapshot_=session_.snapshot();
+    emit changed();
+    return true;
+}
+
+void M18PrivateExportProgressViewModel::poll()
+{
+    if(QThread::currentThread()!=thread())return;
+    const auto next=session_.snapshot();
+    if(next.phase!=snapshot_.phase
+       ||next.encoded_frames!=snapshot_.encoded_frames
+       ||next.total_frames!=snapshot_.total_frames
+       ||next.failure_code!=snapshot_.failure_code
+       ||next.verified_file_size_bytes!=snapshot_.verified_file_size_bytes
+       ||next.verified_encoded_sha256!=snapshot_.verified_encoded_sha256) {
+        snapshot_=next;
+        emit changed();
+    }
+    if(snapshot_.phase==Phase::VERIFIED_DELIVERED
+       ||snapshot_.phase==Phase::FAILED
+       ||snapshot_.phase==Phase::CANCELLED)
+        pollTimer_.stop();
+}
+
+} // namespace rgsml::app

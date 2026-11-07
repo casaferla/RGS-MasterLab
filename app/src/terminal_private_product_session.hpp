@@ -5,7 +5,9 @@
 #include "terminal_measured_device_audition_ticket.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
+#include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <cstdint>
 #include <functional>
@@ -16,6 +18,8 @@ namespace rgsml::audio {
 struct MonitoringPcmCandidate;
 struct MonitoringPcmPreallocationAdvice;
 }
+namespace rgsml::audio::internal { class M18OwnedMasterFrameProvider; }
+
 namespace rgsml::app {
 
 // Product-owned but PRIVATE orchestration: render -> accepted output candidate
@@ -196,6 +200,54 @@ public:
     // independently guard later DEVICE allocation/transport.
     [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
     borrow_verified_m17_master_for_device(core::SampleRate selectedMasterRate) const;
+    // Private, nonpublishing M18 read lease of current M16-verified MASTER.
+    // Session and output identity must be rechecked before any file commit.
+    [[nodiscard]] std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
+    capture_m18_verified_master_for_read(core::SampleRate selectedMasterRate) const;
+    // M18 private, owner-thread-only immutable M17 STAGE snapshot.
+    // Unlike a PCM-only provider, this preserves the exact checked M16
+    // terminal candidate and original MANUAL identity for worker ticket
+    // admission. Never grants an export right or changes audible state.
+    [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+    capture_m18_verified_stage_for_worker(
+        core::SampleRate selectedMasterRate) const;
+    // PREPRODUCTION synchronous Product->M18 authorizer, no Q_INVOKABLE/UI.
+    // Must be invoked on this QObject's owning thread. Caller supplies an
+    // explicit, non-reentrant Product consent predicate. The transaction
+    // MUST run synchronously on the SAME thread: the UI event loop must not
+    // be pumped, since thread serialization pins the live stage across
+    // last commit check+rename+postcommit readback. Not a scalable product
+    // export API; async export requires a separately designed epoch lock.
+    // PREPRODUCTION ONLY: optional Product-owned epoch mutation admission.
+    // If unconfigured, ALL M17 behavior stays byte-for-byte equivalent.
+    // The real Product must install an admission which advances the SAME
+    // epoch BEFORE every Source/Project/MASTER mutation; other upstream
+    // controllers and TerminalCandidateGate are not yet covered.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_mutation_admission(M18MutationAdmission gate)
+    {
+        // A foreign worker must not uninstall the Product's shared
+        // authority or read its non-atomic reentrancy flag.
+        if(QThread::currentThread()!=thread())return;
+        // The callback that owns the shared epoch cannot remove itself
+        // while it is deciding whether the Product write is admitted.
+        if(m18PrivateAdmitting_)return;
+        m18MutationAdmission_=std::move(gate);
+    }
+    [[nodiscard]] bool m18_private_mutation_admission_installed() const noexcept
+    {return static_cast<bool>(m18MutationAdmission_);}
+    using M18ExplicitExportConsent=std::function<core::Status()>;
+    [[nodiscard]] core::Result<
+        platform::windows::M18TransactionalAudioExportRequest>
+    make_private_m18_synchronous_export_request(
+        core::SampleRate selectedMasterRate,
+        core::ResourceReference source,
+        core::ResourceReference destination,
+        audio::WavSampleFormat format,
+        std::optional<std::uint64_t> seed,
+        double ceilingDbTp,
+        const M18ExplicitExportConsent& explicitConsent) const;
+
     // SECOND P0 PRIVATE BRIDGE: derive DEVICE PCM from the very same
     // verified M17 owner, with exact rate/owner recheck after a potentially
     // long SRC. This never installs a sink, runs another M17/M16 Prepare,
@@ -377,12 +429,18 @@ private:
     [[nodiscard]] core::Status install_accepted_candidate();
     [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
     current_verified_private_master() const;
+    [[nodiscard]] core::Status admit_m18_private_mutation(
+        const char* operation) const;
     void failed(const core::Error& error);
     void stale();
     TerminalPrivateRenderController* renderer_;
     TerminalPrivatePublicationCoordinator* publisher_;
     TerminalCandidateGate* candidates_;
     PlaybackTransportViewModel* transport_;
+    // Opt-in isolated safety seam. NO production use until every upstream
+    // mutation and candidate-gate invalidation participates in the epoch.
+    M18MutationAdmission m18MutationAdmission_;
+    mutable bool m18PrivateAdmitting_{false};
     Snapshot prepared_;
     Snapshot manual_;
     ManualId manualId_;

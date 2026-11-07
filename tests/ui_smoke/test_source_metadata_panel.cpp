@@ -22,6 +22,7 @@
 #include "project_session_view_model.hpp"
 #include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "internal/m18_owner_source_snapshot.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
@@ -60,6 +61,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace rgsml::tests {
@@ -515,6 +517,7 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 private slots:
     void childNameLookupVisitsQObjectOnce();
     void hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm();
+    void m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly();
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsProductDefaultDockedStartup();
@@ -531,6 +534,75 @@ private slots:
 
 
 
+
+void SourceMetadataPanelSmokeTest::
+m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly()
+{
+    app::SourceSelectionViewModel source;
+    const auto missing=
+        app::internal::capture_m18_current_source_on_product_owner(source);
+    QVERIFY(!missing);
+    QCOMPARE(missing.error()->code(),core::ErrorCode::AccessDenied);
+
+    const auto bytes=valid_wav();
+    wav_support::Bytes binary;
+    binary.reserve(static_cast<std::size_t>(bytes.size()));
+    for(const auto octet:bytes)
+        binary.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(octet)));
+    auto control=std::make_shared<wav_support::ReaderControl>();
+    auto probed=audio::SourceResource::probe(
+        wav_support::memory_reader(std::move(binary),control));
+    QVERIFY(probed);
+    QVERIFY(source.adopt_probed_source(std::move(*probed.value())));
+    const auto* current=source.source_resource();
+    QVERIFY(current);
+    const auto exact=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(exact);
+    QVERIFY(exact.value()->same_resource_identity(current->reference()));
+    QVERIFY(exact.value()->permissions().can_read());
+    // A worker must not read a QObject-held current SOURCE. Thread
+    // affinity is checked before accessing even the source pointer.
+    bool rejectedWrongThread=false;
+    std::thread worker([&] {
+        const auto forbidden=app::internal::
+            capture_m18_current_source_on_product_owner(source);
+        rejectedWrongThread=!forbidden
+            &&forbidden.error()->code()==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(rejectedWrongThread);
+    // The owner can still snapshot the same current SOURCE afterward.
+    const auto stillCurrent=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(stillCurrent);
+    QVERIFY(stillCurrent.value()->same_resource_identity(
+        current->reference()));
+
+    // Two real filesystem SOURCE selections with the exact same WAV
+    // format, frame count and samples are still different Product inputs.
+    // A bridge may never reuse a previous SOURCE snapshot by Fs alone.
+    QTemporaryDir directory;QVERIFY(directory.isValid());
+    const auto firstPath=write_file(
+        directory,QStringLiteral("m18-source-A.wav"),valid_wav());
+    const auto secondPath=write_file(
+        directory,QStringLiteral("m18-source-B.wav"),valid_wav());
+    QVERIFY(!firstPath.isEmpty()&&!secondPath.isEmpty());
+    source.selectSource(QUrl::fromLocalFile(firstPath));
+    QVERIFY(source.has_source());
+    const auto first=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(first);
+    source.selectSource(QUrl::fromLocalFile(secondPath));
+    QVERIFY(source.has_source());
+    const auto second=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(second);
+    QVERIFY(!first.value()->same_resource_identity(*second.value()));
+    QVERIFY(second.value()->same_resource_identity(
+        source.source_resource()->reference()));
+}
 
 void SourceMetadataPanelSmokeTest::
 sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
@@ -558,11 +630,25 @@ sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
         auto found=audio::SourceResource::probe(
             wav_support::memory_reader(std::move(binary),control));
         if(!found)return false;
-        source.adopt_probed_source(std::move(*found.value()));
-        return source.has_source();
+        const auto adopted=source.adopt_probed_source(
+            std::move(*found.value()));
+        return static_cast<bool>(adopted)&&source.has_source();
     };
     QVERIFY(load());
     QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    // The direct probe-to-Source adoption seam (also used by Project open)
+    // must not bypass a worker-held M18 commit epoch.
+    std::size_t deniedSourceReplacements=0;
+    source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++deniedSourceReplacements;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SOURCE_BUSY_TEST"});
+        });
+    QVERIFY(!load());
+    QCOMPARE(deniedSourceReplacements,std::size_t{1});
+    QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    source.set_private_m18_source_mutation_admission({});
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};
     auto table=advisor.prepare_time_rows();
@@ -654,7 +740,7 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     auto probed=audio::SourceResource::probe(
         wav_support::memory_reader(std::move(binary),control));
     QVERIFY(probed);
-    source.adopt_probed_source(std::move(*probed.value()));
+    QVERIFY(source.adopt_probed_source(std::move(*probed.value())));
     QVERIFY(source.has_source());
     // RAM/DEVICE rows from an earlier SOURCE must be cleared as soon as
     // this real source is committed, even before a manual popup refresh.
@@ -748,7 +834,7 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
         wav_support::memory_reader(
             std::move(replacement),replacementControl));
     QVERIFY(replacementSource);
-    source.adopt_probed_source(std::move(*replacementSource.value()));
+    QVERIFY(source.adopt_probed_source(std::move(*replacementSource.value())));
     QCOMPARE(adviceNotifications.count(),1); // second SOURCE, same geometry
     QCOMPARE(advisor.status_text(),
         QStringLiteral("SOURCE changed · refresh memory"));
@@ -5846,11 +5932,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     observedPlayback->state = core::PlaybackState::PLAYING;
     QVERIFY(auditionSelector.switch_to(
         app::AuditionTarget::PREPARED));
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(
+    // The resolver is refreshed by a 33 ms Qt timer. A fixed 50 ms
+    // sleep may not include even one timer tick on a loaded Windows CI
+    // runner, retaining the prior PAUSED status (#1069). Require the
+    // SAME strict NOT AUDITIONED state, but allow bounded convergence.
+    QTRY_COMPARE_WITH_TIMEOUT(
         compressorViewModel.telemetry_status(),
-        QStringLiteral("NOT AUDITIONED"));
+        QStringLiteral("NOT AUDITIONED"),
+        1000);
     QCOMPARE(
         compressorViewModel.telemetry_history_lanes(),
         liveHistory);

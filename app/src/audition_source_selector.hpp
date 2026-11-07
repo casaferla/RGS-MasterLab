@@ -8,6 +8,7 @@
 #include <rgsml/render/render_result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <cstdint>
@@ -97,6 +98,20 @@ public:
         std::shared_ptr<const render::RenderResult> manual_owner,
         std::optional<core::RealizationId> manual_id);
 
+    // PREPRODUCTION M18. The actual Product has NOT installed this
+    // admission and must coordinate the SAME epoch across selectors,
+    // chain, output rate, terminal gate and every other Source mutator.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_mutation_admission(M18MutationAdmission guard)
+    {
+        // Guard installation/removal is an owner-thread Product mutation.
+        // A callback or Qt observer must never erase its active closure.
+        if(QThread::currentThread()!=thread())return;
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)return;
+        m18MutationAdmission_=std::move(guard);
+    }
+    [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
+    {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
         const core::ResourceReference& source);
@@ -130,6 +145,12 @@ signals:
     void changed();
 
 private:
+    // A GOLD clear is one Product epoch; its fallback to PREPARED or
+    // PROCESSED must not request a second independent admission.
+    [[nodiscard]] core::Status switch_to_after_authorized_mutation(
+        AuditionTarget target);
+    [[nodiscard]] core::Status admit_m18_source_mutation(
+        const char* operation) const;
     [[nodiscard]] core::Status store_active_cue();
     [[nodiscard]] core::Status prepare_realization(
         const render::RenderResult& realization,
@@ -141,6 +162,11 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_;
+    M18MutationAdmission m18MutationAdmission_;
+    // Owner-thread scoped: every public selector mutation must complete
+    // playback handoff and changed() callbacks before reentry is allowed.
+    mutable bool m18SourceAdmissionActive_{false};
+    bool m18SourcePublicationActive_{false};
     SourceLoopProvider sourceLoopProvider_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;

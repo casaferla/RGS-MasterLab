@@ -4,11 +4,14 @@
 #include <rgsml/core/resource_reference.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QUrl>
 
 #include <functional>
 #include <optional>
+#include <memory>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -57,6 +60,62 @@ public:
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
 
+    // M18 PREPRODUCTION: one opt-in Product-authoritative epoch gate
+    // before the FIRST destructive Project-open or SaveAs publication.
+    // No production caller installs this until all other mutators are
+    // reconciled. This gate MUST be shared with SOURCE/MASTER admission.
+    using M18ProjectMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_project_mutation_admission(
+        M18ProjectMutationAdmission gate)
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectMutationAdmission_=std::move(gate);
+    }
+    // M18 PREPRODUCTION: optional one-shot Product batch transaction,
+    // acquired BEFORE stopping the transport and kept alive until the
+    // entire Project-open function has returned (including error paths).
+    // Product may install this INSTEAD of a per-step open admission.
+    // This opaque RAII token must itself own the genuine exclusive epoch
+    // batch lease and is never sent to a worker. No GUI caller sets it.
+    using M18ProjectOpenBatchBegin=
+        std::function<core::Result<std::shared_ptr<const void>>()>;
+    void set_private_m18_project_open_batch_begin(
+        M18ProjectOpenBatchBegin begin)
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectOpenBatchBegin_=std::move(begin);
+    }
+    // A Project-open batch and a one-shot generic Project gate cannot be
+    // installed together; SaveAs still needs a separate Product admission.
+    // If a batch is configured without this additional SaveAs guard,
+    // SaveAs MUST fail closed (never write an unguarded .rgsml file).
+    using M18ProjectSaveAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_project_save_admission(
+        M18ProjectSaveAdmission gate)
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectSaveAdmission_=std::move(gate);
+    }
+    // Unlike a one-shot status admission, this Product-issued RAII token
+    // holds a real exclusive mutation epoch across snapshot serialization,
+    // file creation, postwrite verification and Project state publication.
+    // Required whenever an M18 Project-open batch has been configured.
+    using M18ProjectSaveBatchBegin=
+        std::function<core::Result<std::shared_ptr<const void>>()>;
+    void set_private_m18_project_save_batch_begin(
+        M18ProjectSaveBatchBegin begin)
+    {
+        if(QThread::currentThread()!=thread()||m18ProjectOperationActive_)return;
+        m18ProjectSaveBatchBegin_=std::move(begin);
+    }
+    [[nodiscard]] bool m18_open_batch_installed() const noexcept
+    {return static_cast<bool>(m18ProjectOpenBatchBegin_);}
+    [[nodiscard]] bool m18_save_batch_installed() const noexcept
+    {return static_cast<bool>(m18ProjectSaveBatchBegin_);}
+    [[nodiscard]] bool m18_project_one_shot_installed() const noexcept
+    {return static_cast<bool>(m18ProjectMutationAdmission_);}
+    [[nodiscard]] bool m18_save_one_shot_installed() const noexcept
+    {return static_cast<bool>(m18ProjectSaveAdmission_);}
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
@@ -76,6 +135,10 @@ signals:
     void changed();
 
 private:
+    [[nodiscard]] core::Status admit_m18_project_mutation(
+        const char* operation) const;
+    [[nodiscard]] core::Result<std::shared_ptr<const void>>
+    begin_m18_project_save() const;
     [[nodiscard]] core::Result<project::ProjectSnapshot> current_snapshot(
         const QString& destinationStem);
     [[nodiscard]] core::Uuid next_id();
@@ -95,6 +158,14 @@ private:
     DspChainAdapterModel* adapterModel_{nullptr};
     MasteringPreviewController* previewController_{nullptr};
     MasterOutputRateState* masterOutputRateState_{nullptr};
+    M18ProjectMutationAdmission m18ProjectMutationAdmission_;
+    M18ProjectOpenBatchBegin m18ProjectOpenBatchBegin_;
+    M18ProjectSaveAdmission m18ProjectSaveAdmission_;
+    M18ProjectSaveBatchBegin m18ProjectSaveBatchBegin_;
+    // Owner-thread only, scoped to one Open/Save command including
+    // synchronous signals and filesystem readback. With any M18 policy
+    // installed, nested Project operations fail before another admission.
+    bool m18ProjectOperationActive_{false};
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;

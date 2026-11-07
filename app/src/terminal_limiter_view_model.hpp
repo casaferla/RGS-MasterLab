@@ -3,10 +3,12 @@
 #include "terminal_limiter_state.hpp"
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -36,6 +38,18 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
 public:
     using AcceptedStateChange = std::function<void()>;
+    // M18 PREPRODUCTION: true committed Ceiling/BYPASS edits invalidate
+    // the exact M17 export source identity. No callback is set in the app
+    // until every other Product/Project/Source mutator is epoch-protected.
+    using M18ProcessingMutationAdmission=std::function<bool()>;
+    void set_private_m18_processing_mutation_admission(
+        M18ProcessingMutationAdmission gate)
+    {
+        // Never disarm the accepted M17 Master Product authority from
+        // another thread or inside its own synchronous admission callback.
+        if(QThread::currentThread()!=thread()||m18ViewAdmitting_)return;
+        m18ProcessingMutationAdmission_=std::move(gate);
+    }
 
     explicit TerminalLimiterViewModel(
         TerminalLimiterState* state,
@@ -116,6 +130,10 @@ signals:
     void previewNonconformingRequested();
 
 private:
+    // Exactly one Product mutation authority: installing both ViewModel
+    // and direct TerminalLimiterState guards is ambiguous and fail closed.
+    [[nodiscard]] bool admit_m18_view_mutation() const noexcept;
+    [[nodiscard]] bool m18_foreign_owner_thread() const noexcept;
     void set_validation(const QString& message);
     void clear_validation();
     TerminalLimiterState* state_{nullptr};
@@ -123,6 +141,8 @@ private:
     QString validationField_;
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
+    M18ProcessingMutationAdmission m18ProcessingMutationAdmission_;
+    mutable bool m18ViewAdmitting_{false};
     QString audioStatus_{QStringLiteral("BYPASS")};
     QString verificationTrimStatus_{QStringLiteral("UNAVAILABLE · NOT VERIFIED")};
     QString verificationTrimDetails_{QStringLiteral(

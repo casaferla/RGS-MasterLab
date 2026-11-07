@@ -2,13 +2,17 @@
 
 #include <rgsml/audio/source_resource.hpp>
 #include <rgsml/core/error.hpp>
+#include <rgsml/core/result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 #include <QUrl>
 
 #include <functional>
+#include <memory>
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -31,6 +35,11 @@ class SourceSelectionViewModel final : public QObject {
 public:
     using SourceCommittedHandler = std::function<void(
         const core::ResourceReference&)>;
+    // An M18 physical SOURCE batch MUST use a status-bearing downstream
+    // Product dispatcher. A legacy void observer cannot report BUSY or
+    // an invalid M17/Audition handoff; legacy M17 remains unchanged.
+    using M18CheckedSourceCommittedHandler = std::function<
+        core::Status(const core::ResourceReference&)>;
 
     explicit SourceSelectionViewModel(QObject* parent = nullptr);
 
@@ -47,10 +56,41 @@ public:
     [[nodiscard]] bool read_only() const noexcept;
     [[nodiscard]] QString error_message() const;
     [[nodiscard]] const audio::SourceResource* source_resource() const noexcept;
-    void adopt_probed_source(audio::SourceResource candidate);
+    // Source replacement is a commit-like mutation, even when invoked by
+    // Project open rather than by the native SOURCE file picker.
+    using M18SourceMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_source_mutation_admission(
+        M18SourceMutationAdmission gate)
+    {
+        // A synchronous Product callback or Qt publication listener
+        // cannot silently unregister its own shared mutation authority.
+        if(QThread::currentThread()!=thread())return;
+        if(m18SourceAdmitting_||m18SourcePublishing_)return;
+        m18SourceMutationAdmission_=std::move(gate);
+    }
+    // Real Product SOURCE commits need a physical writer lease spanning
+    // the synchronous committed-handler + transport + Qt signals. Mutually
+    // exclusive with the older one-shot status admission when installed.
+    using M18SourceBatchBegin=std::function<
+        core::Result<std::shared_ptr<const void>>()>;
+    void set_private_m18_source_batch_begin(M18SourceBatchBegin begin) {
+        if(QThread::currentThread()!=thread())return;
+        if(m18SourceAdmitting_||m18SourcePublishing_)return;
+        m18SourceBatchBegin_=std::move(begin);
+    }
+    // Owner-thread-only readback for atomic Product-wide activation.
+    [[nodiscard]] bool m18_source_batch_installed() const noexcept
+    {return static_cast<bool>(m18SourceBatchBegin_);}
+    [[nodiscard]] bool m18_checked_source_committed_installed() const noexcept
+    {return static_cast<bool>(m18CheckedSourceCommittedHandler_);}
+    [[nodiscard]] bool m18_source_one_shot_installed() const noexcept
+    {return static_cast<bool>(m18SourceMutationAdmission_);}
+    [[nodiscard]] core::Status adopt_probed_source(audio::SourceResource candidate);
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
     void set_source_committed_handler(SourceCommittedHandler handler);
+    void set_private_m18_checked_source_committed_handler(
+        M18CheckedSourceCommittedHandler handler);
     Q_INVOKABLE void selectSource(const QUrl& selectedFile);
     Q_INVOKABLE void cancelSourceSelection() noexcept;
 
@@ -60,8 +100,11 @@ signals:
     void errorChanged();
 
 private:
+    [[nodiscard]] core::Status admit_m18_source_mutation(
+        const char* operation) const;
     void publish_error(const QString& message);
     void publish_error(const core::Error& error);
+    void fail_closed_checked_source_commit(const core::Error& error);
 
     std::optional<audio::SourceResource> source_;
     QString displayName_;
@@ -74,7 +117,15 @@ private:
     qint64 frameCount_{0};
     int channelCount_{0};
     PlaybackTransportViewModel* playbackTransport_{nullptr};
+    M18SourceMutationAdmission m18SourceMutationAdmission_;
+    M18SourceBatchBegin m18SourceBatchBegin_;
+    // Scoped across the Product admission and the SOURCE committed
+    // handler, audio transport preparation and Qt NOTIFY publication.
+    // Inert until a shared M18 owner gate is explicitly installed.
+    mutable bool m18SourceAdmitting_{false};
+    bool m18SourcePublishing_{false};
     SourceCommittedHandler sourceCommittedHandler_;
+    M18CheckedSourceCommittedHandler m18CheckedSourceCommittedHandler_;
 };
 
 }  // namespace rgsml::app

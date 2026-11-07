@@ -9,6 +9,10 @@ endif()
 list(FILTER _rgsml_act_a EXCLUDE REGEX "test_audition_source_selector\\.cpp$")
 list(FILTER _rgsml_act_b EXCLUDE REGEX "test_mastering_chain_state\\.cpp$")
 set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
+    # M18 Product owner-backed SOURCE snapshot is compiled and tested
+    # using the same genuine SourceSelectionViewModel as the application.
+    "${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp"
     # M17's coordinator now depends on the authoritative Project MASTER
     # Q_OBJECT. Both implementation and header must participate in this
     # executable's link/AUTOMOC closure, not just the production app.
@@ -16,6 +20,14 @@ set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
     "${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.hpp"
+    # M18 private M17 Product session-to-commit authority method is
+    # a separate app translation unit. Exercise the REAL owner/consent
+    # bridge in this existing Windows M17 activation test closure.
+    "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_authority.cpp"
+    # M18 preproduction GUI status is a real Q_OBJECT, not registered
+    # in the app. Test closure must compile the same Qt signals/slots.
+    "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_progress_view_model.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/m18_private_export_progress_view_model.hpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.hpp"
     # Real MasteringPreviewController signal/worker regression uses the
@@ -40,7 +52,11 @@ qt_add_executable(rgsml_terminal_product_activation_tests
 target_include_directories(rgsml_terminal_product_activation_tests
     PRIVATE
         "${CMAKE_SOURCE_DIR}/app/src"
+        "${CMAKE_SOURCE_DIR}/audio/src"
         "${CMAKE_SOURCE_DIR}/platform/windows/include"
+        # PREPRODUCTION: exercise the same Qt-free epoch ticket compiled
+        # by the existing Windows M18 real-filesystem integration target.
+        "${CMAKE_SOURCE_DIR}/platform/windows/src"
         "${CMAKE_SOURCE_DIR}/analysis/src")
 target_link_libraries(rgsml_terminal_product_activation_tests
     PRIVATE
