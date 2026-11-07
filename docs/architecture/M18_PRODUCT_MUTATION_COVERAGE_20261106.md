@@ -1519,3 +1519,65 @@ The exact SHA is still staging-only and UNCOMPILED. PO has reported
 Linux green for #1075. Promote a single 15–25-commit candidate for
 Focused Windows+Linux qualification and wait for PO verdict; no merge
 in main. ONE combined Full Qualification only after M18–M22.
+
+### Chat #72 — #1075 single Windows failed assertion fixed, #1076 started, next checked Product SOURCE dispatcher staging
+After PO's Windows-red report for Focused #1075, the bounded
+ProjectSession diagnostic isolated ONE failing test out of 31:
+`master_rate_save_open_and_invalid_atomic` incorrectly expected the
+SOURCE rate to remain 44.1 kHz after an M18 rate BUSY denial.
+The prior unsafe legacy void setter had set 44.1 kHz even when the
+controller refused the selected MASTER rate. New explicit
+`try_source_committed_for_m18` correctly leaves both SOURCE and MASTER
+rate unset, revision 0; the test asserts this fail-closed invariant.
+The PO's #1075 Linux gate was verified SUCCESS, Windows direct M18
+26/26 PASS and M17 limiter 22/22 PASS. One coherent 24-commit
+fast-forward promoted Draft PR #84 to
+`e1be47cc22c060b117b1628dac30c2608713cc40`.
+[Focused #1076](https://github.com/casaferla/RGS-MasterLab/actions/runs/42351825360)
+was triggered on that SHA. The PO checks Windows/Linux; no next CI
+may start before its verdict.
+
+NEXT isolated NO-CI macrolot: **status-bearing real SOURCE Product
+dispatcher**, with M17 behavior untouched until export activation.
+- A physical M18 SOURCE batch now requires a separate
+  `M18CheckedSourceCommittedHandler` before it can acquire/revoke an
+  epoch; the old `void SourceCommittedHandler` can no longer claim
+  that rate/selector/handoff mutations succeeded just because it
+  returned without reporting a status. Status-only M18 admission and
+  legacy unguarded M17 remain on their existing void callback.
+- The checked callback runs WITH the physical lease still held. A
+  returned failure or thrown exception prevents false SOURCE_READY
+  publication and clears the provisional source/format metadata.
+  Transport is asked to stop/clear, source Qt state is invalidated,
+  and the Product authority's withdrawn consent is **never restored**
+  by an early error or retry. The explicit user retry may only
+  continue on a new lease.
+- A typed setter refuses changes to the checked std::function while
+  an M18 callback is executing or Qt publication is in progress.
+  Qt native tests cover missing checked dispatcher, legacy M17
+  inertness, physical lease BEGIN reentrancy, error/throw recovery
+  and stale READY withdrawal. The real ProjectSession fixture
+  installs a checked callback that actually returns results from
+  MasterOutputRateState and AuditionSourceSelector under a single
+  shared epoch, including real Project Open error + subsequent retry.
+- `app/src/main.cpp` now PREPARES the real checked SOURCE callback
+  using all the actual SOURCE waveform, MASTER rate, audition/GR,
+  M17 device, GOLD and stereo controls, returning explicit failure
+  on denied Master rate or prepared/audition handoff. This setter is
+  **inert for M17**: main.cpp still does NOT install the shared M18
+  physical batch, export ticket, async output control or QML
+  Export button. Existing legacy void SOURCE callback remains
+  unchanged and continues serving M17 until complete Product
+  activation. The new checked dispatcher is NOT proof that every
+  downstream UI side effect has atomic rollback; failed callbacks
+  are fail-closed but may require a further clean SOURCE selection.
+
+CRITICAL REMAINING BEFORE M18 ACTIVATION: full Product registration
+of a single authority across main.cpp, M17 terminal candidate
+invalidation/cancellation, session open/save operations and
+export/consent identity; verified PCM output owner, PCM24 Float32
+format/dither seed selection, worker lifecycle/progress and Qt UI.
+Do not enable Product export until the end-to-end M17 identity and
+Single-Writer integration are verified on Windows/Linux.
+No main merge without explicit PO authorization. ONE combined FQ
+after integrated M18–M22, not per individual milestone.
