@@ -4,6 +4,7 @@
 // once every authoritative upstream mutation shares ONE Product epoch.
 // Do not equate encoded frames with successful WAV publication.
 #include "m18_private_async_export_handoff.hpp"
+#include "m18_export_format_policy.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <cstdint>
@@ -55,6 +56,10 @@ public:
         if(job_)return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_ASYNC_SESSION_ONE_EXPORT_AT_A_TIME"});
+        // Refuse an invalid PCM24/F32 delivery choice before obtaining a
+        // Product source snapshot or spawning an unbounded file worker.
+        const auto choice=validate_m18_export_format(format,seed,ceilingDbTp);
+        if(!choice)return choice;
         auto launched=launch_m18_async_export_from_live_product(
             session,source,rate,gate,ticket,
             std::move(selectedSource),std::move(destination),
