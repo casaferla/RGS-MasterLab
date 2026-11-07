@@ -6,6 +6,7 @@
 #include "../terminal_private_product_session.hpp"
 #include "../master_output_rate_state.hpp"
 #include "m18_owner_source_snapshot.hpp"
+#include "m18_export_format_policy.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/core/error.hpp>
@@ -40,6 +41,11 @@ make_m18_checked_stage_worker_request(
 {
     using Request=platform::windows::M18TransactionalAudioExportRequest;
     using R=core::Result<Request>;
+    // An invalid encoding, missing PCM24 TPDF seed or unauthorized
+    // ceiling must fail before touching the live M17 stage pointer.
+    if(const auto format=validate_m18_export_format(
+        targetFormat,pcm24Seed,ceilingDbTp);!format)
+        return R::failure(*format.error());
     const auto id=productTicket.identity();
     if(!id.valid() ||productTicket.epoch()==0 ||!stage
        // The Qt Product owner must provide the current SOURCE identity
