@@ -3670,6 +3670,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!exportView.can_cancel());
         QVERIFY(!exportView.can_acknowledge());
         QVERIFY(!exportView.verified_delivered());
+        QVERIFY(exportView.verified_encoded_sha256().isEmpty());
+        QCOMPARE(exportView.verified_file_size_bytes(),qulonglong{0});
         const auto viewOutputPath=m18ProductSourceDir.filePath(
             QStringLiteral("viewmodel-m18-verified.wav"));
         auto viewOutputRef=platform::windows::WindowsResourceWriter::
@@ -3709,12 +3711,16 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QCOMPARE(exportView.status_text(),
                  QStringLiteral("VERIFIED_DELIVERED"));
         QVERIFY(exportView.verified_delivered());
+        QCOMPARE(exportView.verified_encoded_sha256().size(),qsizetype{64});
+        QVERIFY(exportView.verified_file_size_bytes()>0);
         QVERIFY(exportView.can_acknowledge());
         QVERIFY(exportChanges.count()>=2);
         QVERIFY(QFileInfo::exists(viewOutputPath));
         QVERIFY(exportView.acknowledgeExport());
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
         QVERIFY(exportView.failure_hint().isEmpty());
+        QVERIFY(exportView.verified_encoded_sha256().isEmpty());
+        QCOMPARE(exportView.verified_file_size_bytes(),qulonglong{0});
         QVERIFY(!exportView.can_acknowledge());
         QVERIFY(!exportView.can_cancel());
         QVERIFY(!exportView.acknowledgeExport());
