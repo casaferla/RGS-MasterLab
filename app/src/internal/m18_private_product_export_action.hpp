@@ -46,6 +46,13 @@ public:
         const auto formatCheck=validate_m18_export_format(
             format,pcm24DitherSeed,ceilingDbTp);
         if(!formatCheck)return formatCheck;
+        // The verifier's dBTP ceiling is the EXACT accepted M17 limiter
+        // control. An independent export-dialog value would silently
+        // certify a different master, even if the encoded WAV is valid.
+        if(controllers_.upstream.terminal.bypassed()
+           ||controllers_.upstream.terminal.parameters().ceiling_db_tp()
+                 !=ceilingDbTp)
+            return deny("M18_PRODUCT_EXPORT_CEILING_NOT_CURRENT_M17");
         // Check destination before minting a consent Ticket: a bad output
         // path or same-source logical alias is not an export transaction.
         const auto* source=controllers_.upstream.source.source_resource();
