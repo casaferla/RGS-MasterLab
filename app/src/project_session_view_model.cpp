@@ -949,8 +949,26 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     if (masterOutputRateState_) {
         // The production SOURCE callback reset the authority on commit.
         // Standalone ProjectSession clients may have no such callback.
-        if (masterOutputRateState_->source_rate_hz() != source_->sample_rate_hz())
-            masterOutputRateState_->source_committed(source_->sample_rate_hz());
+        if (masterOutputRateState_->source_rate_hz()
+            !=source_->sample_rate_hz()) {
+            // The old void SOURCE-rate setter deliberately fails closed
+            // once M18 admission is installed. Project Open already owns
+            // the shared exclusive mutation batch, so use the explicit
+            // status-bearing child API, never bypass the Product epoch.
+            const bool committed=
+                masterOutputRateState_->m18_rate_mutation_admission_installed()
+                ?masterOutputRateState_->try_source_committed_for_m18(
+                    source_->sample_rate_hz())
+                :(masterOutputRateState_->source_committed(
+                    source_->sample_rate_hz()),true);
+            if(!committed) {
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "PROJECT_SOURCE_RATE_EPOCH_MUTATION_REFUSED"});
+                return;
+            }
+        }
         if (rate.value()->has_value()) {
             const bool accepted = masterOutputRateState_->choose_master_rate(
                 rate.value()->value());
