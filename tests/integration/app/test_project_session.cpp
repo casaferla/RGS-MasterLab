@@ -319,11 +319,25 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
         core::FrameIndex{0},*frames.value());
     QVERIFY(samples);
-    auto lane=samples.value()->mutable_view().channel(0);
-    QVERIFY(lane);
-    for(std::size_t i=0;i<n;++i)
-        (*lane.value())[i]=static_cast<double>(
-            (static_cast<std::int64_t>(i)+seed)%100)/32768.0;
+    // The MANUAL RenderResult must consume the ACTUAL decoded selected
+    // SOURCE bytes, not a numerical approximation recreated by the test.
+    auto sourceRef=platform::windows::WindowsResourceReader::
+        make_read_reference(sourcePath.toUtf8().toStdString(),
+                             "m18-positive-real-source.wav");
+    QVERIFY(sourceRef);
+    auto sourceHandle=platform::windows::WindowsResourceReader::
+        open_read_only(*sourceRef.value());
+    QVERIFY(sourceHandle);
+    auto sourceDecoder=audio::WavReader::open(
+        std::move(*sourceHandle.value()));
+    QVERIFY(sourceDecoder);
+    QCOMPARE((*sourceDecoder.value())->info().frame_count(),*frames.value());
+    QCOMPARE((*sourceDecoder.value())->info().audio_format(),*fmt.value());
+    auto decoded=(*sourceDecoder.value())->read_frames(
+        core::FrameIndex{0},samples.value()->mutable_view());
+    QVERIFY(decoded);
+    QCOMPARE(*decoded.value(),*frames.value());
+    QVERIFY((*sourceDecoder.value())->close());
     auto emptyManual=dsp::ProcessingChain::create(
         *registry.value(),{dsp::ProcessingStage::MASTER,
                            dsp::ChainSegment::MANUAL});
