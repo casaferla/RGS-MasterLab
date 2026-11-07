@@ -768,6 +768,8 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     auto ticket=authority->capture(verifiedId);
     QVERIFY(ticket);
     M18OwnerMutationFanout fanout{authority,101U,verifiedId};
+    QVERIFY(app::internal::M18ProductPrivateSessionBinding::can_bind(
+        session,candidates));
     bool foreignBindingDenied=false;
     std::thread foreignBinder([&] {
         const auto result=app::internal::M18ProductPrivateSessionBinding::bind(
