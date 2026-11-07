@@ -310,6 +310,16 @@ m18AuditionGateSetterCannotSelfUninstallOrCrossThread()
     session.source.selectSource(QUrl::fromLocalFile(path));
     QVERIFY(session.source.has_source());
     QVERIFY(session.selector.prepared_available());
+    // The initial SOURCE callback already selected PREPARED. Repeating
+    // that selection is correctly a no-op, so prepare a distinct GOLD
+    // target to exercise a REAL Product-authorized owner mutation.
+    const auto goldPath=wav(dir,QStringLiteral("m18-audition-gold.wav"),15);
+    QVERIFY(!goldPath.isEmpty());
+    session.gold.selectGold(QUrl::fromLocalFile(goldPath));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.selector.gold_available());
+    QCOMPARE(session.selector.active_target(),
+             std::optional{app::AuditionTarget::PREPARED});
     std::size_t denied=0;
     session.selector.set_private_m18_mutation_admission(
         [&](const char*)->core::Status {
@@ -324,14 +334,14 @@ m18AuditionGateSetterCannotSelfUninstallOrCrossThread()
         session.selector.set_private_m18_mutation_admission({});
     });
     foreignGateRemoval.join();
-    const auto first=session.selector.switch_to(app::AuditionTarget::PREPARED);
+    const auto first=session.selector.switch_to(app::AuditionTarget::GOLD);
     QVERIFY(!first);
     QCOMPARE(denied,std::size_t{1});
-    const auto second=session.selector.switch_to(app::AuditionTarget::PREPARED);
+    const auto second=session.selector.switch_to(app::AuditionTarget::GOLD);
     QVERIFY(!second);
     QCOMPARE(denied,std::size_t{2});
     session.selector.set_private_m18_mutation_admission({});
-    const auto admitted=session.selector.switch_to(app::AuditionTarget::PREPARED);
+    const auto admitted=session.selector.switch_to(app::AuditionTarget::GOLD);
     QVERIFY(admitted);
 }
 
