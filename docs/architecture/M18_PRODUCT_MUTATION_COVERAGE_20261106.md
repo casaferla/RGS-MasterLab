@@ -1581,3 +1581,33 @@ Do not enable Product export until the end-to-end M17 identity and
 Single-Writer integration are verified on Windows/Linux.
 No main merge without explicit PO authorization. ONE combined FQ
 after integrated M18–M22, not per individual milestone.
+
+### Chat #72 — #1076 Windows compile red, Linux green; single MSVC test typo
+PO reported #1076 red. GitHub verified
+[Focused #1076](https://github.com/casaferla/RGS-MasterLab/actions/runs/42351825360)
+on Draft PR #84 SHA `e1be47cc22c060b117b1628dac30c2608713cc40`:
+Linux Portable DSP Guard SUCCESS; Windows Focused DSP FAILED at
+**Build Focused DSP Targets (Release) — Ninja + sccache**. No focused
+Windows test results are qualified by that run. Only tiny bounded
+compile/test artifacts were inspected, **not full GitHub logs**.
+
+Windows compiler summary (one error):
+`tests/integration/platform/test_m18_candidate_delivery_validation.cpp(504):
+error C2039: 'value' is not a member of
+'std::function<core::Result<std::shared_ptr<const void>>(void)>'`.
+The test `sourceCommitBatchReusesSingleEpochAndCannotRaceExportWorker`
+assigned the Project-open callback *factory* via
+`auto next=fanout.project_open_batch();`, then called
+`next.value()` as if it were the returned Result. Corrected isolated
+staging to `auto next=fanout.project_open_batch()();` so the factory
+is invoked and the returned Result owns the RAII token before
+`next.value()->reset()`. No production SOURCE, rendering, audio,
+authority or FQ gating was weakened for this compiler fix.
+
+The next staging macrolot also includes the **still uncompiled**
+private real Product checked SOURCE dispatcher in main.cpp, replacing
+void-only callbacks only when an M18 physical SOURCE batch is
+installed; default M17 remains legacy and unchanged. The real
+test target must compile this full candidate on Windows and Linux
+before claiming success. No main merge; NO individual M18 FQ.
+One combined Full Qualification after M18–M22 integration.
