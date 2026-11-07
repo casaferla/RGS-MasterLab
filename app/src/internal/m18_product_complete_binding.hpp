@@ -43,6 +43,35 @@ struct M18ProductCompleteBinding final {
             &&c.candidates.m18_mutation_admission_installed();
     }
 
+    // SOURCE/Project mutations may change Fs, accepted MANUAL chain
+    // revision and Project rate revision. Bind these current model values
+    // to the single Product authority AFTER the physical writer batch has
+    // completed. This is NOT consent and never permits an old M17 ticket.
+    [[nodiscard]] static core::Status reconcile_after_product_mutation(
+        const Controllers& c,const Fanout& fanout)
+    {
+        if(!Upstream::owner_thread_current(c.upstream)
+           ||QThread::currentThread()!=c.session.thread()
+           ||!c.candidates.m18_owner_thread_current()
+           ||!installed(c))
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_RECONCILE_REQUIRES_COMPLETE_QT_PRODUCT"});
+        const auto* source=c.upstream.source.source_resource();
+        const auto& rate=c.upstream.rate;
+        const auto snapshot=fanout.current_owner_snapshot();
+        if(!source||!source->reference().permissions().can_read()
+           ||!snapshot||!rate.has_supported_master_rate()
+           ||rate.rate_revision()==0)
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_RECONCILE_NEEDS_CURRENT_SOURCE_AND_PROJECT_MASTER"});
+        return fanout.reconcile_current_rate_and_chain(
+            *snapshot,c.upstream.chain.chain().revision(),
+            static_cast<std::uint32_t>(rate.master_rate_hz()),
+            rate.rate_revision());
+    }
+
     // A legitimate user Export click is only eligible when the EXACT
     // immutable verified M17 Master still matches the live SOURCE, the
     // accepted M11–15 chain, the Project output rate/revision, and all
