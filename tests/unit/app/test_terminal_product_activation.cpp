@@ -3714,6 +3714,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(QFileInfo::exists(viewOutputPath));
         QVERIFY(exportView.acknowledgeExport());
         QCOMPARE(exportView.status_text(),QStringLiteral("IDLE"));
+        QVERIFY(exportView.failure_hint().isEmpty());
         QVERIFY(!exportView.can_acknowledge());
         QVERIFY(!exportView.can_cancel());
         QVERIFY(!exportView.acknowledgeExport());
@@ -3730,6 +3731,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QTRY_VERIFY_WITH_TIMEOUT(
             exportView.status_text()==QStringLiteral("FAILED"),30000);
         QVERIFY(!exportView.error_text().isEmpty());
+        QVERIFY(!exportView.failure_hint().isEmpty());
+        QVERIFY(!exportView.failure_hint().contains(viewOutputPath));
         QVERIFY(exportView.can_acknowledge());
         QVERIFY(!exportView.can_cancel());
         exportView.cancelExport();
