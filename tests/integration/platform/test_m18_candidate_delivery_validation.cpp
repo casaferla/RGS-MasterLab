@@ -208,6 +208,7 @@ private slots:
     void productMutationFanoutRejectsOverflowAndInvalidOperations();
     void actualProductSaveBatchBlocksWorkerAndOtherEditorCallbacks();
     void productOpenBatchUsesOneExclusiveEpochForSourceRateAndGold();
+    void productOpenBatchRetiredOwnerAndForeignThreadCannotAdvanceEpoch();
     void realWorkerTicketExportsOnlyWithCurrentConsentAndSource();
     void realWindowsExportDeniedAfterAbortedProductProjectBatch();
     void realWindowsFinalAuthorityRevocationRollsBackBothFormats();
