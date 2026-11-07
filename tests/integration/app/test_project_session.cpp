@@ -447,6 +447,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             ?std::optional<std::uint64_t>{UINT64_C(1234567)}
             :std::nullopt;
         QVERIFY(!action.has_unacknowledged_export());
+        // The same Product, verified stage and valid output format are
+        // insufficient without a NEW explicit user confirmation.
+        QVERIFY(!action.begin(
+            *destination.value(),encoding,seedForPcm,
+            terminal.value()->parameters().ceiling_db_tp(),false));
+        QVERIFY(!QFileInfo::exists(output));
+        QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
         const auto accepted=action.begin(
             *destination.value(),encoding,seedForPcm,
             terminal.value()->parameters().ceiling_db_tp(),true);
