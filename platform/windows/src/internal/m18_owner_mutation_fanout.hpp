@@ -526,6 +526,12 @@ private:
             ||operation=="clear_gold"
             ||operation=="invalidate_candidate"
             ||operation=="master_rate_change"
+            // SOURCE replacement can synchronously trigger the existing
+            // M17 coordinator's retirement of the previous terminal
+            // session via AuditionSourceSelector::changed. This is a
+            // nested child of the already exclusive SOURCE lease.
+            ||operation=="cancel"
+            ||operation=="failed"
             ||operation=="gain_parameters"
             ||operation=="eq_parameters"
             ||operation=="compressor_parameters"
@@ -549,7 +555,11 @@ private:
             ||operation=="region_clear"
             ||operation=="loop_toggle"
             ||operation=="invalidate_candidate"
-            ||operation=="master_rate_change";
+            ||operation=="master_rate_change"
+            // Project Open publishes a replacement SOURCE and may retire
+            // the preceding M17 session synchronously during Qt signals.
+            ||operation=="cancel"
+            ||operation=="failed";
     }
 
     [[nodiscard]] static core::Status reject(const char* message) {
