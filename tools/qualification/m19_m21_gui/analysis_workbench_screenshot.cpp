@@ -263,6 +263,21 @@ int main(int argc,char** argv) {
                 "ANALYSIS_REDOCK_RECREATED_PANEL");
             require(hostRoot->property("transitionEpoch").toInt()==2,
                     "ANALYSIS_REDOCK_TRANSITION_EPOCH_WRONG");
+            auto* undock=hostRoot->findChild<QObject*>("analysisUndockButton");
+            auto* redock=hostRoot->findChild<QObject*>("analysisRedockButton");
+            require(undock && redock,"ANALYSIS_SHARED_BUTTONS_MISSING");
+            require(undock->property("tone").toString()=="secondary"
+                    && redock->property("tone").toString()=="secondary",
+                    "ANALYSIS_SHARED_BUTTON_STYLE_MISSING");
+            if(tab < 2){
+                const auto* value=hostRoot->findChild<QObject*>(
+                    tab==0 ? "m19MetricValue_lufs" : "m20StereoWidthReadout");
+                require(value!=nullptr,"ANALYSIS_STUDIO_READOUT_MISSING");
+                require(value->property("readOnly").toBool(),
+                        "ANALYSIS_READOUT_MUST_BE_READ_ONLY");
+                require(!value->property("dataAvailable").toBool(),
+                        "ANALYSIS_UNAUTHENTICATED_MEASUREMENT_LEAK");
+            }
             lifecycleHosts[static_cast<std::size_t>(tab)]=std::move(host);
         }
         std::cout<<"RGSML_M19_M21_THREE_DOCK_UNDOCK_NATIVE_QT_LIFECYCLES_PASS_NO_PRODUCT_BINDING\n";

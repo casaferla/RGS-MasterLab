@@ -30,9 +30,9 @@ Rectangle {
     readonly property color cyan: "#00C8FF"
     readonly property color copper: "#D19562"
     readonly property color amber: "#F2B632"
-    readonly property color edge: "#2A3947"
-    readonly property color panel: "#0F1820"
-    readonly property color raised: "#142634"
+    readonly property color edge: "#2C5A78"
+    readonly property color panel: "#0E1A24"
+    readonly property color raised: "#12243F"
 
     function valueOr(value, unavailable) {
         return root.available && value !== undefined && value !== null
@@ -229,33 +229,15 @@ Rectangle {
                                 anchors.fill: parent
                                 anchors.margins: 13
                                 spacing: 8
-                                Text {
-                                    text: modelData.label
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: root.dim
-                                }
-                                Row {
-                                    spacing: 6
-                                    Text {
-                                        objectName: "m19MetricValue_" + modelData.key
-                                        text: root.valueOr(
-                                            root.presentation.levels
-                                                ? root.presentation.levels[modelData.key] : null,
-                                            "—")
-                                        font.family: "Segoe UI"
-                                        font.pixelSize: Math.max(21,Math.min(33,levelTiles.width/42))
-                                        font.weight: Font.DemiBold
-                                        color: modelData.key==="truePeak" ? root.amber : root.ink
-                                    }
-                                    Text {
-                                        text: modelData.unit
-                                        anchors.bottom: parent.bottom
-                                        color: root.dim
-                                        font.family: "Segoe UI"
-                                        font.pixelSize: 11
-                                    }
+                                StudioReadOnlyMeasurement {
+                                    objectName: "m19MetricValue_" + modelData.key
+                                    width: parent.width
+                                    labelText: modelData.label
+                                    unitText: modelData.unit
+                                    rawText: root.valueOr(root.presentation.levels
+                                        ? root.presentation.levels[modelData.key] : null)
+                                    dataAvailable: root.available && modelData.key!=="truePeak"
+                                    accentColor: modelData.key==="truePeak" ? root.amber : root.cyan
                                 }
                                 Text {
                                     width: parent.width
@@ -456,19 +438,26 @@ Rectangle {
                         Column{
                             anchors.fill:parent;anchors.margins:12;spacing:8
                             Text{text:"STEREO IMAGE";color:root.ink;font.bold:true;font.pixelSize:13}
-                            Row{
-                                spacing:10
-                                Text{text:"WIDTH";width:110;color:root.dim;font.pixelSize:11}
-                                Text{text:root.valueOr(root.presentation.stereo?root.presentation.stereo.width:null);color:root.cyan;font.pixelSize:24;font.bold:true}
+                            StudioReadOnlyMeasurement {
+                                objectName: "m20StereoWidthReadout"
+                                width: parent.width
+                                labelText: "WIDTH"
+                                rawText: root.valueOr(root.presentation.stereo
+                                    ? root.presentation.stereo.width : null)
+                                dataAvailable: root.available
                             }
                             Rectangle{width:parent.width;height:1;color:root.edge}
                             Text{text:"CORRELATION · WINDOWED";color:root.dim;font.pixelSize:11;font.bold:true}
                             Repeater{
                                 model:[{k:"P10",c:"#D19562"},{k:"P50",c:"#00C8FF"},{k:"P90",c:"#7CDDC8"}]
-                                delegate:Row{
-                                    spacing:10
-                                    Text{text:modelData.k;width:65;color:root.dim;font.pixelSize:12}
-                                    Text{text:root.valueOr(root.presentation.stereo?root.presentation.stereo[modelData.k]:null);color:modelData.c;font.pixelSize:19;font.bold:true}
+                                delegate:StudioReadOnlyMeasurement {
+                                    objectName: "m20StereoCorrelation_" + modelData.k
+                                    width: parent.width
+                                    labelText: modelData.k
+                                    rawText: root.valueOr(root.presentation.stereo
+                                        ? root.presentation.stereo[modelData.k] : null)
+                                    dataAvailable: root.available
+                                    accentColor: modelData.c
                                 }
                             }
                             Rectangle{width:parent.width;height:1;color:root.edge}
@@ -595,7 +584,7 @@ Rectangle {
                                             width:parent.width/6
                                             height:parent.height
                                             text:modelData
-                                            font.family:"Segoe UI"
+                                            font.family:index===0 ? "Segoe UI" : "Consolas"
                                             font.pixelSize:11
                                             font.bold:index===0
                                             color:String(modelData).indexOf("UNAVAILABLE")>=0?root.amber:

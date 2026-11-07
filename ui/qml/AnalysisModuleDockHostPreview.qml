@@ -94,12 +94,15 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: root.moduleLabel + " · DOCKED PREVIEW"
-                    color: "#8FAAB9"
+                    color: "#A1B5C9"
                     font.family: "Segoe UI"
                     font.pixelSize: 11
                 }
-                Button {
+                StudioButton {
                     objectName: "analysisUndockButton"
+                    tone: "secondary"
+                    accentColor: "#00C8FF"
+                    minimumControlWidth: 86
                     text: "Undock"
                     Accessible.name: "Undock " + root.moduleLabel
                     onClicked: root.requestUndock()
@@ -143,12 +146,15 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: root.moduleLabel + " · FLOATING PREVIEW"
-                    color: "#8FAAB9"
+                    color: "#A1B5C9"
                     font.family: "Segoe UI"
                     font.pixelSize: 11
                 }
-                Button {
+                StudioButton {
                     objectName: "analysisRedockButton"
+                    tone: "secondary"
+                    accentColor: "#00C8FF"
+                    minimumControlWidth: 86
                     text: "Dock"
                     Accessible.name: "Dock " + root.moduleLabel
                     onClicked: root.requestDock()
