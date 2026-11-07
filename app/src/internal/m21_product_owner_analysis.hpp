@@ -38,6 +38,7 @@ public:
     struct Capture final {
         Fanout::OwnerSnapshot owner;
         core::ResourceReference source;
+        std::int64_t source_full_frames{0};
         std::shared_ptr<const render::RenderResult> prepared;
         std::shared_ptr<const render::RenderResult> processed;
         std::optional<core::RealizationId> processed_realization_id;
@@ -71,15 +72,16 @@ public:
         auto prepared=selector.prepared_realization_snapshot();
         auto processed=selector.processed_realization_snapshot();
         auto id=selector.processed_realization_id();
-        if(!prepared ||(static_cast<bool>(processed)!=id.has_value())
+        if(!prepared ||product.upstream.source.frame_count()<=0
+           ||(static_cast<bool>(processed)!=id.has_value())
            ||(id&&id->value==0))
             return R::failure(failed("M21_CAPTURE_NO_AUTHENTIC_PREPARED_OR_PROCESSED"));
         if(prepared->view().frame_count().value()<=0 ||
            (processed&&processed->view().frame_count().value()<=0))
             return R::failure(failed("M21_CAPTURE_EMPTY_REAL_RENDER"));
         return R::success(Capture{
-            *owner,source->reference(),std::move(prepared),
-            std::move(processed),id});
+            *owner,source->reference(),product.upstream.source.frame_count(),
+            std::move(prepared),std::move(processed),id});
     }
 
     // A value-copy of the Product epoch and retained immutable PCM is
@@ -102,6 +104,7 @@ public:
             &&current->identity==expected.owner.identity
             &&source&&source->reference().same_resource_identity(
                 expected.source)
+            &&product.upstream.source.frame_count()==expected.source_full_frames
             &&selector.prepared_realization_snapshot()==expected.prepared
             &&selector.processed_realization_snapshot()==expected.processed
             &&selector.processed_realization_id()
@@ -268,22 +271,25 @@ public:
         return R::success(std::move(*imported.snapshot));
     }
 
-    // Synchronous, owner-thread-only real PCM analysis for now. No
-    // event-loop pumping or write; when async scheduling is introduced,
-    // move only immutable owners to workers and use still_current before
-    // accepting results. GOLD needs independent WAV decode/owner proof
-    // and is deliberately NOT substituted by PREPARED or PROCESSED.
+    // Worker-safe numerical half of the authenticated PREPARED/PROCESSED
+    // Product pipeline. It reads ONLY retained immutable shared render
+    // owners and frozen SOURCE provenance from Capture; no Qt QObject,
+    // fanout, mutex, playback or UI member is touched. An admitted
+    // capture can become stale while the worker runs: this function
+    // NEVER certifies that its output may be published. Recheck with
+    // still_current() on the owner thread after completion.
     [[nodiscard]] static core::Result<m21_private::Snapshot>
-    measure_current(
-        const Controllers& product,const Fanout& fanout,
-        const AuditionSourceSelector& selector,
-        const Capture& captured,Column column)
+    measure_render_worker(const Capture& captured,Column column)
     {
         using R=core::Result<m21_private::Snapshot>;
         if(column==Column::gold)
             return R::failure(failed("M21_GOLD_REQUIRES_INDEPENDENT_RESOURCE_OWNER"));
-        if(!still_current(product,fanout,selector,captured))
-            return R::failure(failed("M21_CAPTURE_STALE_BEFORE_ANALYSIS"));
+        if(captured.owner.epoch==0||!captured.owner.identity.valid()
+           ||captured.source_full_frames<=0||!captured.prepared
+           ||!captured.source.permissions().can_read()
+           ||(static_cast<bool>(captured.processed)
+                !=captured.processed_realization_id.has_value()))
+            return R::failure(failed("M21_WORKER_REQUIRES_AUTHENTIC_RETAINED_CAPTURE"));
         const auto render=column==Column::prepared
             ?captured.prepared:captured.processed;
         if(!render)
@@ -298,8 +304,6 @@ public:
             view,view.absolute_start_frame(),view.frame_count(),
             view.timebase().frame_domain_id());
         if(!tonal)return R::failure(*tonal.error());
-        if(!still_current(product,fanout,selector,captured))
-            return R::failure(failed("M21_CAPTURE_STALE_AFTER_ANALYSIS"));
         m21_private::ProductMetricsOwnerClaim claim;
         claim.column=column;
         claim.generation_token=captured.owner.epoch;
@@ -320,8 +324,7 @@ public:
                 std::to_string(captured.owner.identity.source_generation);
         }
         const bool full=view.absolute_start_frame().value()==0
-            &&view.frame_count().value()
-                ==product.upstream.source.frame_count();
+            &&view.frame_count().value()==captured.source_full_frames;
         claim.scope_label=full?"Full Track":"Region";
         claim.external_product_owner_confirmed=true;
         auto converted=m21_private::import_real_product_metrics(
@@ -329,6 +332,27 @@ public:
         if(!converted.snapshot)
             return R::failure(failed("M21_AUTHENTIC_PRODUCT_METRICS_PORT_REFUSED"));
         return R::success(std::move(*converted.snapshot));
+    }
+
+    // Synchronous Qt Product reference path for focused native tests.
+    // Real application integration should dispatch measure_render_worker
+    // outside Qt, then call still_current on the Qt owner before
+    // publishing. This wrapper proves the same pre/post gate locally,
+    // but MUST NOT be invoked in a GUI signal on long programmes.
+    [[nodiscard]] static core::Result<m21_private::Snapshot>
+    measure_current(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const Capture& captured,Column column)
+    {
+        using R=core::Result<m21_private::Snapshot>;
+        if(!still_current(product,fanout,selector,captured))
+            return R::failure(failed("M21_CAPTURE_STALE_BEFORE_ANALYSIS"));
+        auto result=measure_render_worker(captured,column);
+        if(!result)return result;
+        if(!still_current(product,fanout,selector,captured))
+            return R::failure(failed("M21_CAPTURE_STALE_AFTER_ANALYSIS"));
+        return result;
     }
 private:
     [[nodiscard]] static core::Error failed(const char* msg) {
