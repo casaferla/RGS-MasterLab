@@ -16,6 +16,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
