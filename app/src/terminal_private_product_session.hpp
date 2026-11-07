@@ -224,7 +224,12 @@ public:
     // controllers and TerminalCandidateGate are not yet covered.
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_mutation_admission(M18MutationAdmission gate)
-    { m18MutationAdmission_=std::move(gate); }
+    {
+        // The callback that owns the shared epoch cannot remove itself
+        // while it is deciding whether the Product write is admitted.
+        if(m18PrivateAdmitting_)return;
+        m18MutationAdmission_=std::move(gate);
+    }
     using M18ExplicitExportConsent=std::function<core::Status()>;
     [[nodiscard]] core::Result<
         platform::windows::M18TransactionalAudioExportRequest>
@@ -429,6 +434,7 @@ private:
     // Opt-in isolated safety seam. NO production use until every upstream
     // mutation and candidate-gate invalidation participates in the epoch.
     M18MutationAdmission m18MutationAdmission_;
+    mutable bool m18PrivateAdmitting_{false};
     Snapshot prepared_;
     Snapshot manual_;
     ManualId manualId_;
