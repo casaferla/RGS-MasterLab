@@ -771,7 +771,11 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
     QVERIFY(app::internal::M18ProductPrivateSessionBinding::can_bind(
         session,candidates));
     bool foreignBindingDenied=false;
+    bool foreignPreflightDenied=false;
     std::thread foreignBinder([&] {
+        foreignPreflightDenied=
+            !app::internal::M18ProductPrivateSessionBinding::can_bind(
+                session,candidates);
         const auto result=app::internal::M18ProductPrivateSessionBinding::bind(
             session,candidates,fanout);
         foreignBindingDenied=!result;
