@@ -14,6 +14,8 @@ add_library(rgsml_analysis STATIC
     # duplicates the strict-FP M16 FIR/dBTP core or creates live DSP.
     src/true_peak_measurement.cpp
     src/basic_level_analyzer.cpp
+    # L1-M20: read-only FFT/Hann/PSD and stereo scope adapter; no DSP.
+    src/tonal_stereo_analyzer.cpp
 )
 # M16 Gate G: preserve source-ordered binary64 FIR products, additions, and
 # final dBTP conversion. Do NOT use fast math or implicit FMA contraction.
