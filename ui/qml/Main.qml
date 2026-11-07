@@ -58,6 +58,11 @@ ApplicationWindow {
         ? terminalProductActivation : null
     readonly property var appMasterRateState: typeof masterOutputRateState !== "undefined"
         ? masterOutputRateState : null
+    // M18 remains dormant until main registers the exact Product-owned
+    // adapter following native positive export qualification.
+    readonly property var appM18ExportModel: typeof m18ProductExportViewModel !== "undefined"
+        ? m18ProductExportViewModel : null
+    property int m18ExportFormatIndex: 0
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
     readonly property var appPrivateFirLibrary:
