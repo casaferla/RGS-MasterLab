@@ -49,6 +49,20 @@ class M18OwnerMutationFanout final {
         std::shared_ptr<Shared> state;
         std::unique_ptr<M18EpochCommitBarrier::MutationLease> held;
     };
+    struct HeldSourceCommit final {
+        HeldSourceCommit(std::shared_ptr<Shared> owner,
+            std::unique_ptr<M18EpochCommitBarrier::MutationLease> lease)
+            :state(std::move(owner)),held(std::move(lease)) {}
+        ~HeldSourceCommit(){
+            held.reset();
+            state->sourceCommitActive.store(
+                false,std::memory_order_release);
+        }
+        HeldSourceCommit(const HeldSourceCommit&)=delete;
+        HeldSourceCommit& operator=(const HeldSourceCommit&)=delete;
+        std::shared_ptr<Shared> state;
+        std::unique_ptr<M18EpochCommitBarrier::MutationLease> held;
+    };
 public:
     using StatusAdmission=std::function<core::Status(const char*)>;
     using RateAdmission=std::function<bool()>;
