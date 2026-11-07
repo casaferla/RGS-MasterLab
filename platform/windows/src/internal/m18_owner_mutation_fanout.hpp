@@ -93,7 +93,8 @@ public:
             &&!state->sourceCommitActive.load(std::memory_order_acquire)
             &&state->authority &&state->identity.valid()
             &&state->epoch>0
-            &&state->authority->can_install_full_product_guards();
+            &&state->authority->can_install_full_product_guards(
+                state->epoch,state->identity);
     }
 
     [[nodiscard]] StatusAdmission status_admission() const {
