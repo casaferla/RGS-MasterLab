@@ -452,7 +452,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             terminal.value()->parameters().ceiling_db_tp(),true);
         QVERIFY2(accepted,accepted?"":accepted.error()->message().c_str());
         QVERIFY(action.has_unacknowledged_export());
-        QVERIFY(!action.can_acknowledge()); // not 100% until readback
+        // The first worker might finish before the next Qt instruction.
+        // Do not make a timing-dependent false "still encoding" claim.
+        // Irrespective of timing, an unacknowledged result must prohibit
+        // any second Product worker or replacement of the output path.
+        QVERIFY(!action.begin(
+            *destination.value(),encoding,seedForPcm,
+            terminal.value()->parameters().ceiling_db_tp(),true));
         QTRY_VERIFY_WITH_TIMEOUT(
             action.snapshot().phase==
                 M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
