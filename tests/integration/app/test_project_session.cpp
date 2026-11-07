@@ -367,12 +367,32 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
         controllers,fanout,true));
 
+    // Set real nondefault MANUAL state first. The next SOURCE must
+    // atomically restore Gain defaults under its ONE physical SOURCE
+    // lease, not silently skip the nested setter through M18 admission.
+    const auto modifiedGain=dsp::GainParameters::create(3.0);
+    QVERIFY(modifiedGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *modifiedGain.value()));
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        session.masteringChainState->gain_instance_id(),true));
+    QCOMPARE(session.masteringChainState->gain_parameters().gain_db(),3.0);
+    const auto gainBypassed=session.masteringChainState->is_bypassed(
+        session.masteringChainState->gain_instance_id());
+    QVERIFY(gainBypassed);
+    QVERIFY(*gainBypassed.value());
+
     // Same-rate replacement still changes SOURCE provenance. No stale
     // epoch may be reused just because both source WAVs are 48 kHz.
     session.source.selectSource(QUrl::fromLocalFile(second));
     QVERIFY(session.source.has_source());
     QCOMPARE(session.source.display_name(),
              QStringLiteral("m18-second-source.wav"));
+    QCOMPARE(session.masteringChainState->gain_parameters().gain_db(),0.0);
+    const auto resetBypassed=session.masteringChainState->is_bypassed(
+        session.masteringChainState->gain_instance_id());
+    QVERIFY(resetBypassed);
+    QVERIFY(!*resetBypassed.value());
     const auto replacement=fanout.current_owner_snapshot();
     QVERIFY(replacement);
     QVERIFY(replacement->epoch>reconciled->epoch);
