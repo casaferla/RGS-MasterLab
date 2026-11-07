@@ -1311,3 +1311,64 @@ are UNCOMPILED. A next exact-SHA Focused Windows/Linux run, NOT a
 Full Qualification, is required after promoting the corrected staging.
 Still no merge before explicit Product Owner approval and one shared
 FQ only after integrated M18–M22.
+
+### Chat #72 — next isolated M18 Project Open owner batch after #1074 dispatch
+Current focused gate is
+[#1074](https://github.com/casaferla/RGS-MasterLab/actions/runs/42348334420)
+on PR #84 SHA `f5ccbb6d59e12703698172af2485e49e46e7279e`.
+The PO is checking its outcome. The newer NO-CI staging below
+has NOT been compiled and must not be promoted before the gate verdict.
+
+This isolated macrolot implements the first real *private* typed
+`M18OwnerMutationFanout::project_open_batch()`:
+- One Product-owner-thread `try_begin_product_mutation` revokes
+  consent and obtains an exclusive RAII lease before any Project
+  SOURCE/Master/Gold/chain replacement. The opaque token owns BOTH
+  the underlying M18 commit-barrier lease and the nested-child phase;
+  release is fail-closed and cannot revive an obsolete M17 ticket.
+- The already-existing Product status callbacks now permit **only
+  explicitly listed Project-open child operation tags** within that
+  exact held batch (SOURCE adoption/selector, Gold, Region/Loop, MASTER
+  rate and M17 candidate retirement), without advancing a second
+  epoch. Unrelated writes, absent tags, nested Project Open/SaveAs,
+  retired Product owner and foreign threads are rejected. This
+  allowlist is necessary but NOT sufficient to prove no malicious Qt
+  reentry: a future consolidated Product command router must also
+  identify the actual nested caller and ensure its scope is correctly
+  guarded.
+- The Project-specific binder now offers
+  `bind_project_open_and_save` for both Project callbacks, distinct
+  from the portable DSP/Audition binder. This avoids the #1072
+  missing-Project-header regression.
+- `ProjectSessionViewModel` uses
+  `MasterOutputRateState::try_source_committed_for_m18` when a
+  Product M18 rate gate is present instead of the obsolete `void`
+  `source_committed` path, avoiding a silent MASTER rate mismatch
+  after a project SOURCE restore. When M18 gate is absent, legacy M17
+  rate behavior is unchanged.
+- The M17 terminal candidate receives a separate typed Product
+  binder so that neither Project nor Audition portable tests import
+  unrelated platform headers. Windows native tests check a genuine
+  pending commit lease denies candidate invalidation; after release,
+  the obsolete ticket remains revoked.
+- Qt-free Windows M18 tests prove worker-busy denial, a single
+  Open Project lease across allowed child callbacks, nested/unknown
+  operation denial, worker-thread denial, retirement of controller
+  callbacks while a token remains alive, and no restoration of
+  export consent after an aborted operation.
+
+IMPORTANT REMAINING P0:
+* Main.cpp SOURCE handler still calls legacy void MASTER rate reset;
+  it must move to a coordinated status-returning SOURCE/Open batch
+  before enabling the Product-wide M18 gate. Open's actual callbacks
+  and display publishers must be wired and tested with the real
+  Source/Gold/Rate/Region/Chain data; SOURCE's historical committed
+  handler is still void and can partially publish before an error.
+* All M17 render candidate cancellation/return/completion paths must
+  acknowledge BUSY and use `try_invalidate_for_m18` rather than
+  bypassing/discarding the current stage.
+* Actual verified-M17 identity, user consent, asynchronous exporter
+  lifecycle/progress and export GUI remain OFF; no Product export
+  ticket is minted by this new Project adapter.
+* No Full Qualification until all M18–M22 are integrated, per PO.
+  Never merge to main without PO authorization.
