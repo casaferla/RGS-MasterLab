@@ -150,6 +150,16 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
         emit changed();
         return core::Status::failure(*captured.error());
     }
+    // A verified-M17 candidate must not be silently retained when
+    // authentication of the selected original Q0 bank fails. If an
+    // M18 file commit acquired the exact epoch, report BUSY rather than
+    // cancelling the renderer locally and leaving stage provenance split.
+    const auto retire_q0_failed_candidate=[this]()->core::Status {
+        if(gate_->m18_mutation_admission_installed())
+            return try_invalidate_for_m18();
+        invalidate();
+        return core::Status::success();
+    };
     std::vector<std::uint8_t> originalFir;
     const auto fin=captured.value()->manual_owner->view()
         .format().sample_rate().value();
