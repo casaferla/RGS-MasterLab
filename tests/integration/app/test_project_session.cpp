@@ -555,6 +555,33 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
+    // Real GOLD worker uses the exact selected independent WAV file,
+    // never the currently selected SOURCE (which is `second`).
+    // Decoder, M19/20 and M21 typed import must run on its real PCM.
+    const auto goldMeasured=M21Owners::measure_gold_worker(
+        *selectedGold.value());
+    QVERIFY2(goldMeasured,
+             goldMeasured?"":goldMeasured.error()->message().c_str());
+    QCOMPARE(goldMeasured.value()->column,app::m21_private::Column::gold);
+    QCOMPARE(goldMeasured.value()->scope_frames,std::uint64_t{256});
+    QCOMPARE(goldMeasured.value()->sample_rate_hz,48000U);
+    QCOMPARE(goldMeasured.value()->generation_token,
+             selectedGold.value()->owner.epoch);
+    QVERIFY(!goldMeasured.value()->resource_identity.empty());
+    QCOMPARE(goldMeasured.value()->metrics[3].quality,
+             app::m21_private::Quality::missing); // M16 not qualified
+    QVERIFY(goldMeasured.value()->metrics[2].unrounded.has_value());
+    QVERIFY(M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value()));
+    // The read-only worker must reject a physically replaced WAV whose
+    // new metadata does not match the authenticated capture. The UI
+    // still owns the old selection, but cannot publish a new false GOLD.
+    QVERIFY(QFile::remove(first));
+    const auto replacedGold=wav(dir,QStringLiteral("m18-first-source.wav"),
+                                13,44100U,300U);
+    QVERIFY(!replacedGold.isEmpty());
+    QVERIFY(!M21Owners::measure_gold_worker(*selectedGold.value()));
     session.gold.clearGold();
     QVERIFY(!session.gold.has_gold());
     QVERIFY(!M21Owners::gold_still_current(
