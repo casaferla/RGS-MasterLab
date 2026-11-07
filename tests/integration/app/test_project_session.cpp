@@ -3,6 +3,9 @@
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
 #include "internal/m18_product_complete_binding.hpp"
+#include "internal/m22_verified_master_preview_parity.hpp"
+#include "internal/m21_product_owner_analysis.hpp"
+#include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -44,6 +47,7 @@
 #include <QUrl>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -444,6 +448,26 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!M18ProductCompleteBinding::authorize_verified_master_for_user(
         controllers,fanout,true));
 
+    // M19/20/21 first SOURCE analysis borrows the REAL prepared owner;
+    // it must not fabricate an absent processed or GOLD resource.
+    using M21Owners=app::internal::M21ProductOwnerAnalysis;
+    const auto firstAnalysisOwner=M21Owners::capture(
+        controllers,fanout,session.selector);
+    QVERIFY2(firstAnalysisOwner,
+        firstAnalysisOwner?"":firstAnalysisOwner.error()->message().c_str());
+    QVERIFY(firstAnalysisOwner.value()->prepared);
+    QVERIFY(!firstAnalysisOwner.value()->processed);
+    QVERIFY(M21Owners::still_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value()));
+    const auto firstAnalysis=M21Owners::measure_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value(),
+        app::m21_private::Column::prepared);
+    QVERIFY2(firstAnalysis,
+        firstAnalysis?"":firstAnalysis.error()->message().c_str());
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value(),
+        app::m21_private::Column::processed));
+
     // Set real nondefault MANUAL state first. The next SOURCE must
     // atomically restore Gain defaults under its ONE physical SOURCE
     // lease, not silently skip the nested setter through M18 admission.
@@ -475,6 +499,13 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(replacement->epoch>reconciled->epoch);
     QVERIFY(replacement->identity.source_generation>
             reconciled->identity.source_generation);
+    // Same-rate SOURCE replacement retires both the old resource
+    // identity and all of its M19/20/M21 derived metric snapshots.
+    QVERIFY(!M21Owners::still_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value()));
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*firstAnalysisOwner.value(),
+        app::m21_private::Column::prepared));
     QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
         controllers,fanout));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
@@ -506,6 +537,79 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
         controllers,fanout));
+
+    // Real GOLD has an independent file owner, even if it happens to
+    // have the same sample rate as SOURCE. Do not substitute PREPARED
+    // PCM, create a Processed identity or assume timeline alignment.
+    QVERIFY(!M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold));
+    session.gold.selectGold(QUrl::fromLocalFile(first));
+    QVERIFY2(session.gold.has_gold(),
+             session.gold.error_message().toUtf8().constData());
+    const auto selectedGold=M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY2(selectedGold,
+             selectedGold?"":selectedGold.error()->message().c_str());
+    QCOMPARE(selectedGold.value()->sample_rate_hz,48000U);
+    QCOMPARE(selectedGold.value()->full_frames,std::int64_t{256});
+    QCOMPARE(selectedGold.value()->channels,std::size_t{1});
+    QVERIFY(M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value()));
+    // Real GOLD worker uses the exact selected independent WAV file,
+    // never the currently selected SOURCE (which is `second`).
+    // Decoder, M19/20 and M21 typed import must run on its real PCM.
+    const auto goldMeasured=M21Owners::measure_gold_worker(
+        *selectedGold.value());
+    QVERIFY2(goldMeasured,
+             goldMeasured?"":goldMeasured.error()->message().c_str());
+    QCOMPARE(goldMeasured.value()->column,app::m21_private::Column::gold);
+    QCOMPARE(goldMeasured.value()->scope_frames,std::uint64_t{256});
+    QCOMPARE(goldMeasured.value()->sample_rate_hz,48000U);
+    QCOMPARE(goldMeasured.value()->generation_token,
+             selectedGold.value()->owner.epoch);
+    QVERIFY(!goldMeasured.value()->resource_identity.empty());
+    QCOMPARE(goldMeasured.value()->metrics[3].quality,
+             app::m21_private::Quality::missing); // M16 not qualified
+    QVERIFY(goldMeasured.value()->metrics[2].unrounded.has_value());
+    app::internal::M21ProductPublicationInbox goldInbox;
+    QVERIFY(goldInbox.accept_gold(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value(),*goldMeasured.value()));
+    const auto goldView=goldInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(goldView.columns[1].has_value());
+    QCOMPARE(goldView.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!goldView.columns[0]);
+    QVERIFY(!goldView.columns[2]);
+    QVERIFY(M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value()));
+    // A huge but syntactically valid producer claim is refused before
+    // open/allocate, rather than consuming arbitrarily large RAM or
+    // freezing the Qt owner. A later streaming M19 will replace this
+    // conservative explicit cap; it is NOT a hidden full-track PASS.
+    auto oversize=*selectedGold.value();
+    oversize.full_frames=16'777'217LL;
+    QVERIFY(!M21Owners::measure_gold_worker(oversize));
+    // The read-only worker must reject a physically replaced WAV whose
+    // new metadata does not match the authenticated capture. The UI
+    // still owns the old selection, but cannot publish a new false GOLD.
+    QVERIFY(QFile::remove(first));
+    const auto replacedGold=wav(dir,QStringLiteral("m18-first-source.wav"),
+                                13,44100U,300U);
+    QVERIFY(!replacedGold.isEmpty());
+    QVERIFY(!M21Owners::measure_gold_worker(*selectedGold.value()));
+    session.gold.clearGold();
+    QVERIFY(!session.gold.has_gold());
+    const auto retiredGold=goldInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(retiredGold.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QVERIFY(!M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value()));
 }
 
 void ProjectSessionTest::
@@ -692,6 +796,86 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         *rate48.value());
     QVERIFY(verified);
     QCOMPARE(verified,candidates.staged());
+    // Actual PREPARED and PROCESSED Product analysis, not fixture-provided
+    // DTOs. The captured immutable RenderResult owners and accepted
+    // RealizationId MUST match the real Qt AuditionSourceSelector.
+    using M21Owners=app::internal::M21ProductOwnerAnalysis;
+    auto analysisOwners=M21Owners::capture(
+        controllers,fanout,session.selector);
+    QVERIFY2(analysisOwners,
+        analysisOwners?"":analysisOwners.error()->message().c_str());
+    QCOMPARE(analysisOwners.value()->prepared,
+             session.selector.prepared_realization_snapshot());
+    QCOMPARE(analysisOwners.value()->processed,
+             session.selector.processed_realization_snapshot());
+    QCOMPARE(analysisOwners.value()->processed_realization_id,
+             session.selector.processed_realization_id());
+    QVERIFY(M21Owners::still_current(
+        controllers,fanout,session.selector,*analysisOwners.value()));
+    const auto preparedMetrics=M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::prepared);
+    const auto processedMetrics=M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::processed);
+    QVERIFY2(preparedMetrics,
+        preparedMetrics?"":preparedMetrics.error()->message().c_str());
+    QVERIFY2(processedMetrics,
+        processedMetrics?"":processedMetrics.error()->message().c_str());
+    // This worker-side computation uses ONLY retained immutable PCM.
+    // Its numeric results agree with the guarded synchronous Product
+    // reference; neither operation copies QObject state to a worker.
+    const auto workerPrepared=M21Owners::measure_render_worker(
+        *analysisOwners.value(),app::m21_private::Column::prepared);
+    const auto workerProcessed=M21Owners::measure_render_worker(
+        *analysisOwners.value(),app::m21_private::Column::processed);
+    QVERIFY(workerPrepared&&workerProcessed);
+    QCOMPARE(workerPrepared.value()->resource_identity,
+             preparedMetrics.value()->resource_identity);
+    QCOMPARE(workerProcessed.value()->resource_identity,
+             processedMetrics.value()->resource_identity);
+    app::internal::M21ProductPublicationInbox productInbox;
+    QVERIFY(productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerPrepared.value()));
+    QVERIFY(productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerProcessed.value()));
+    const auto visible=productInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(visible.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(visible.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!visible.columns[1]); // Never invent GOLD.
+    QVERIFY(!productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerPrepared.value())); // Duplicate epoch rejected.
+    for(std::size_t k=0;k<9U;++k) {
+        QCOMPARE(workerPrepared.value()->metrics[k].quality,
+                 preparedMetrics.value()->metrics[k].quality);
+        QCOMPARE(workerPrepared.value()->metrics[k].unrounded,
+                 preparedMetrics.value()->metrics[k].unrounded);
+        QCOMPARE(workerProcessed.value()->metrics[k].unrounded,
+                 processedMetrics.value()->metrics[k].unrounded);
+    }
+    QCOMPARE(preparedMetrics.value()->scope_frames,
+             static_cast<std::uint64_t>(n));
+    QCOMPARE(processedMetrics.value()->scope_frames,
+             static_cast<std::uint64_t>(n));
+    QCOMPARE(preparedMetrics.value()->sample_rate_hz,48000U);
+    QCOMPARE(processedMetrics.value()->sample_rate_hz,48000U);
+    QCOMPARE(preparedMetrics.value()->column,
+             app::m21_private::Column::prepared);
+    QCOMPARE(processedMetrics.value()->column,
+             app::m21_private::Column::processed);
+    QVERIFY(preparedMetrics.value()->resource_identity
+            !=processedMetrics.value()->resource_identity);
+    // GOLD is a separately selected immutable file and must never be
+    // invented by re-tagging PREPARED or PROCESSED PCM.
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::gold));
     QVERIFY(ui.can_export());
     QVERIFY(!ui.can_cancel());
     QVERIFY(!ui.can_acknowledge());
@@ -699,6 +883,75 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(verified->rendered.terminal.checked.final_check);
     QCOMPARE(verified->rendered.manual_chain_revision,
              session.masteringChainState->chain().revision());
+    // M22 Product parity: PREVIEW must borrow the EXACT already checked
+    // immutable FULL M17 MASTER. Its binary64 selected samples equal the
+    // absolute full-programme crop bit-for-bit, without resetting M11–17
+    // DSP state or re-running a region-local limiter/M16 measurement.
+    const auto selectedWindow=core::FrameRange::create(
+        core::FrameIndex{731},core::FrameIndex{2831});
+    QVERIFY(selectedWindow);
+    const auto fullMaster=verified->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    const auto preview=app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*selectedWindow.value());
+    QVERIFY2(preview,preview?"":preview.error()->message().c_str());
+    QCOMPARE(preview.value()->frame_count().value(),qint64{2100});
+    QCOMPARE(preview.value()->absolute_start_frame().value(),qint64{731});
+    QCOMPARE(preview.value()->timebase().frame_domain_id(),
+             audio::FrameDomainId::OUTPUT_RATE);
+    auto wholeChannel=fullMaster.channel(0);
+    auto segmentChannel=preview.value()->channel(0);
+    QVERIFY(wholeChannel&&segmentChannel);
+    for(std::size_t i=0;i<segmentChannel.value()->size();++i) {
+        QCOMPARE(std::bit_cast<std::uint64_t>((*segmentChannel.value())[i]),
+                 std::bit_cast<std::uint64_t>((*wholeChannel.value())[i+731U]));
+    }
+
+    // M22 absolute full-history parity boundary matrix: the preview
+    // MUST be an actual zero-copy slice of the original checked M17
+    // full programme at the exact OUTPUT_RATE origin, including the
+    // very first and last frame. No local DSP state reset, no alternate
+    // regional True Peak, and no one-frame off-by-one at EOS.
+    constexpr std::array<std::pair<qint64,qint64>,5> kPreviewWindows{{
+        {0,static_cast<qint64>(n)}, // entire verified programme
+        {0,1},                     // first output sample
+        {static_cast<qint64>(n)-1,static_cast<qint64>(n)}, // EOS
+        {125,128},                 // short interior segment
+        {3719,3857},               // non-aligned final region
+    }};
+    for(const auto& [begin,end]:kPreviewWindows) {
+        const auto requested=core::FrameRange::create(
+            core::FrameIndex{begin},core::FrameIndex{end});
+        QVERIFY(requested);
+        const auto actual=app::internal::m22_verified_master_preview_crop(
+            controllers,fanout,verified,*requested.value());
+        QVERIFY2(actual,actual?"":actual.error()->message().c_str());
+        QCOMPARE(actual.value()->absolute_start_frame().value(),begin);
+        QCOMPARE(actual.value()->frame_count().value(),end-begin);
+        QCOMPARE(actual.value()->timebase().frame_domain_id(),
+                 audio::FrameDomainId::OUTPUT_RATE);
+        for(std::size_t ch=0;ch<fullMaster.format().channel_count();++ch) {
+            const auto allSamples=fullMaster.channel(ch);
+            const auto previewSamples=actual.value()->channel(ch);
+            QVERIFY(allSamples&&previewSamples);
+            // Verify aliasing, not merely numerical equality: no copy,
+            // resampling, re-quantization or second render is permitted.
+            QCOMPARE(previewSamples.value()->data(),
+                     allSamples.value()->data()+begin);
+            for(std::size_t i=0;i<previewSamples.value()->size();++i) {
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                             (*previewSamples.value())[i]),
+                         std::bit_cast<std::uint64_t>(
+                             (*allSamples.value())[i+begin]));
+            }
+        }
+    }
+    const auto illegalWindow=core::FrameRange::create(
+        core::FrameIndex{731},core::FrameIndex{4097});
+    QVERIFY(illegalWindow);
+    QVERIFY(!app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*illegalWindow.value()));
+
     QCOMPARE(verified->rendered.terminal.checked.terminal
                  .compensated_pcm.view().frame_count(),*frames.value());
     QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
@@ -885,6 +1138,31 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              revisionBeforeParam);
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(!ui.can_export());
+    // M21 must reject an earlier real-PCM result after this very same
+    // accepted DSP change, even when chain().revision() did not move.
+    QVERIFY(!M21Owners::still_current(
+        controllers,fanout,session.selector,*analysisOwners.value()));
+    QVERIFY(!M21Owners::measure_current(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        app::m21_private::Column::prepared));
+    // A completed worker may still hold its old valid-looking numbers;
+    // the owning Qt context MUST refuse publication of this capture.
+    QVERIFY(workerPrepared.value()->metrics[2].unrounded);
+    const auto stalePresentation=productInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(stalePresentation.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QCOMPARE(stalePresentation.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QVERIFY(!productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerPrepared.value())); // Late worker refused.
+    QVERIFY(!M21Owners::still_current(
+        controllers,fanout,session.selector,*analysisOwners.value()));
+    // The stale M17 shared_ptr is still in memory, but M22 Preview may
+    // not expose it after even a parameter-only accepted Gain edit.
+    QVERIFY(!app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*selectedWindow.value()));
     const auto parameterOnlyStalePath=directory.filePath(
         QStringLiteral("m18-stale-parameter-only-master.wav"));
     QVERIFY(!ui.beginExport(

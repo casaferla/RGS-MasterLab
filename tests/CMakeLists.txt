@@ -144,7 +144,11 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp)
-target_include_directories(rgsml_project_session_tests PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+# M19–M21 real Product owners use the original M20 canonical spectral
+# geometry through the private, non-GUI implementation adapter.
+target_include_directories(rgsml_project_session_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src
+    ${CMAKE_SOURCE_DIR}/analysis/src)
 target_link_libraries(rgsml_project_session_tests PRIVATE
     rgsml_project rgsml_render rgsml_platform rgsml_ui Qt6::Core Qt6::Test)
 rgsml_apply_project_warnings(rgsml_project_session_tests)
