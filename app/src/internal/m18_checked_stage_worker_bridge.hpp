@@ -1,7 +1,8 @@
 #pragma once
-// PREPRODUCTION ONLY. Not connected to the GUI, Source/Project epoch, or
-// shipping export action. A real Product must first atomically bind every
-// authoritative upstream mutation to the identical single-writer epoch.
+// M18 real Product bridge. main.cpp binds the GUI export action to
+// SOURCE, Project, MANUAL, M17 stage and one shared Single-Writer epoch.
+// Only the Qt Product owner captures these mutable states; the worker
+// receives immutable PCM and a Qt-free commit lease factory.
 #include "../terminal_candidate_gate.hpp"
 #include "../terminal_private_product_session.hpp"
 #include "../master_output_rate_state.hpp"
