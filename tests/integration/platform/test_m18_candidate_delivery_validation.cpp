@@ -355,7 +355,7 @@ exportConsentReleaseRequiresItsIssuingProductAndNoHeldCommit()
     // explicit user action issues a new, non-reusable Ticket.
     auto next=fanout.capture_after_explicit_verified_consent(id,true);
     QVERIFY(next);
-    QCOMPARE(next.value()->epoch,UINT64_C(23));
+    QCOMPARE(next.value()->epoch(),UINT64_C(23));
     QVERIFY(!issued.value()->commit_lease_factory()());
     QVERIFY(fanout.withdraw_completed_export_consent(*next.value()));
 }
