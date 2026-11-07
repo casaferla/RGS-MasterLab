@@ -3095,6 +3095,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         QStringLiteral("READY_TO_INSTALL"),12000);
     const auto firstProjectMaster=candidates.staged();
     QVERIFY(firstProjectMaster);
+    QCOMPARE(firstProjectMaster->accepted_terminal_parameter_revision,
+             limiter.value()->parameter_revision());
+    QCOMPARE(firstProjectMaster->accepted_ceiling_db_tp,
+             limiter.value()->parameters().ceiling_db_tp());
     QCOMPARE(firstProjectMaster->rendered.output_rate,*masterRate.value());
     QCOMPARE(vm.audio_status(),
         QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
