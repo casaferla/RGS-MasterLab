@@ -366,6 +366,20 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
     QVERIFY(!QFileInfo::exists(deniedWav));
     QCOMPARE(exportAction.snapshot().phase,
              app::internal::M18PrivateAsyncExportSession::Phase::IDLE);
+    // Invalid output requests are pure preflight: no ticket or worker
+    // may be minted before a valid format and a real user decision.
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::PCM_S24,
+        std::nullopt,-1.0,true));
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::optional<std::uint64_t>{42U},-1.0,true));
+    QVERIFY(!exportAction.begin(
+        *exportDestination.value(),audio::WavSampleFormat::IEEE_F32,
+        std::nullopt,-1.0,false));
+    QVERIFY(!exportAction.has_unacknowledged_export());
+    QVERIFY(!QFileInfo::exists(deniedWav));
+    exportAction.cancel();
     QVERIFY(!exportAction.acknowledge());
     QVERIFY(!owner->capture(initial));
     QVERIFY(owner->can_install_full_product_guards(30U,initial));
