@@ -5,6 +5,7 @@
 #include "internal/m18_product_complete_binding.hpp"
 #include "internal/m22_verified_master_preview_parity.hpp"
 #include "internal/m21_product_owner_analysis.hpp"
+#include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -571,6 +572,17 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QCOMPARE(goldMeasured.value()->metrics[3].quality,
              app::m21_private::Quality::missing); // M16 not qualified
     QVERIFY(goldMeasured.value()->metrics[2].unrounded.has_value());
+    app::internal::M21ProductPublicationInbox goldInbox;
+    QVERIFY(goldInbox.accept_gold(
+        controllers,fanout,session.selector,session.gold,
+        *selectedGold.value(),*goldMeasured.value()));
+    const auto goldView=goldInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(goldView.columns[1].has_value());
+    QCOMPARE(goldView.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!goldView.columns[0]);
+    QVERIFY(!goldView.columns[2]);
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
@@ -591,6 +603,10 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!M21Owners::measure_gold_worker(*selectedGold.value()));
     session.gold.clearGold();
     QVERIFY(!session.gold.has_gold());
+    const auto retiredGold=goldInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(retiredGold.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::stale);
     QVERIFY(!M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
@@ -818,6 +834,23 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              preparedMetrics.value()->resource_identity);
     QCOMPARE(workerProcessed.value()->resource_identity,
              processedMetrics.value()->resource_identity);
+    app::internal::M21ProductPublicationInbox productInbox;
+    QVERIFY(productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerPrepared.value()));
+    QVERIFY(productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerProcessed.value()));
+    const auto visible=productInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(visible.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(visible.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!visible.columns[1]); // Never invent GOLD.
+    QVERIFY(!productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerPrepared.value())); // Duplicate epoch rejected.
     for(std::size_t k=0;k<9U;++k) {
         QCOMPARE(workerPrepared.value()->metrics[k].quality,
                  preparedMetrics.value()->metrics[k].quality);
@@ -1115,6 +1148,15 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     // A completed worker may still hold its old valid-looking numbers;
     // the owning Qt context MUST refuse publication of this capture.
     QVERIFY(workerPrepared.value()->metrics[2].unrounded);
+    const auto stalePresentation=productInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(stalePresentation.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QCOMPARE(stalePresentation.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QVERIFY(!productInbox.accept_render(
+        controllers,fanout,session.selector,*analysisOwners.value(),
+        *workerPrepared.value())); // Late worker refused.
     QVERIFY(!M21Owners::still_current(
         controllers,fanout,session.selector,*analysisOwners.value()));
     // The stale M17 shared_ptr is still in memory, but M22 Preview may
