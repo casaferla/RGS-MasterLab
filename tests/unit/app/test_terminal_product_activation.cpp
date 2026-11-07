@@ -3739,6 +3739,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!exportView.error_text().isEmpty());
         QVERIFY(!exportView.failure_hint().isEmpty());
         QVERIFY(!exportView.failure_hint().contains(viewOutputPath));
+        QVERIFY(exportView.verified_encoded_sha256().isEmpty());
+        QCOMPARE(exportView.verified_file_size_bytes(),qulonglong{0});
         QVERIFY(exportView.can_acknowledge());
         QVERIFY(!exportView.can_cancel());
         exportView.cancelExport();
