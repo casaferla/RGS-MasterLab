@@ -8,6 +8,19 @@
 namespace rgsml::app::internal {
 
 struct M18ProductProjectSaveBinding final {
+    static void bind_project_open_and_save(
+        ProjectSessionViewModel& project,
+        const platform::windows::internal::M18OwnerMutationFanout& fanout)
+    {
+        // Both Project transitions receive the SAME Product epoch state.
+        // Open permits only enumerated nested controller mutations while
+        // its exclusive physical mutation lease remains held.
+        project.set_private_m18_project_open_batch_begin(
+            fanout.project_open_batch());
+        project.set_private_m18_project_save_batch_begin(
+            fanout.project_save_batch());
+    }
+
     static void bind_project_save_only(
         ProjectSessionViewModel& project,
         const platform::windows::internal::M18OwnerMutationFanout& fanout)
