@@ -404,6 +404,33 @@ void SourceSelectionViewModel::cancelSourceSelection() noexcept
     // A native picker cancellation is intentionally a complete no-op.
 }
 
+void SourceSelectionViewModel::fail_closed_checked_source_commit(
+    const core::Error& error)
+{
+    // A downstream Product rejection can occur after the probed SOURCE
+    // has been accepted into this VM but before any READY Qt publication.
+    // The prior M17 audio and Product revisions must not be presented as
+    // still-current. The outer physical M18 epoch has already withdrawn
+    // verified-M17 export consent; never restore it on an error.
+    if(playbackTransport_!=nullptr)
+        static_cast<void>(playbackTransport_->stop_and_clear());
+    source_.reset();
+    displayName_.clear();
+    containerLabel_.clear();
+    sampleFormatLabel_.clear();
+    sampleRateHz_=0;
+    channelLayoutLabel_.clear();
+    channelCount_=0;
+    frameCount_=0;
+    durationLabel_.clear();
+    const auto message=user_message(error.code());
+    const bool hadDifferentError=errorMessage_!=message;
+    errorMessage_=message;
+    emit sourceChanged();
+    emit sourceStateChanged();
+    if(hadDifferentError)emit errorChanged();
+}
+
 void SourceSelectionViewModel::publish_error(const QString& message)
 {
     if (errorMessage_ == message) {
