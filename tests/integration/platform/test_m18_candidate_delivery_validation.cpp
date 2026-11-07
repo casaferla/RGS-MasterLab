@@ -369,6 +369,55 @@ actualProductSaveBatchBlocksWorkerAndOtherEditorCallbacks()
 }
 
 void M18CandidateDeliveryValidationTest::
+productOpenBatchUsesOneExclusiveEpochForSourceRateAndGold()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{61U,62U,63U,0U,48000U,12U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        700U,id);
+    QVERIFY(owner->try_transition(700U,701U,id,true));
+    auto ticket=owner->capture(id);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,701U,id};
+    const auto open=fanout.project_open_batch();
+    auto source=fanout.status_admission();
+    auto gold=fanout.status_admission();
+    auto rate=fanout.rate_admission();
+    auto worker=ticket.value()->commit_lease_factory()();
+    QVERIFY(worker);
+    // An external worker may already be completing a file rename. The
+    // Project must refuse BEFORE stopping transport or touching SOURCE.
+    QVERIFY(!open());
+    QVERIFY((*worker.value())->revalidate_current());
+    worker.value()->reset();
+
+    auto batch=open();QVERIFY(batch);
+    QVERIFY(batch.value()->get()!=nullptr);
+    QVERIFY(!open()); // nested Project open is never allowed
+    QVERIFY(!fanout.project_save_batch()());
+    QVERIFY(source("source_adopt_probed"));
+    QVERIFY(source("source_committed"));
+    QVERIFY(rate());
+    QVERIFY(gold("set_gold"));
+    QVERIFY(gold("region_set"));
+    QVERIFY(gold("switch_target"));
+    // Unrelated edits cannot slip through the Project-only allowance
+    // while the exclusive authorizer has been granted.
+    QVERIFY(!source("gain_set"));
+    QVERIFY(!source("ceiling_update"));
+    QVERIFY(!source(nullptr));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+
+    // Releasing the opaque Project operation unblocks the normal
+    // per-controller gate, but never revives old verified-M17 consent.
+    batch.value()->reset();
+    QVERIFY(source("gain_set"));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+}
+
+void M18CandidateDeliveryValidationTest::
 realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit()
 {
     // The file worker is independent of the QObject Product. Its exact
