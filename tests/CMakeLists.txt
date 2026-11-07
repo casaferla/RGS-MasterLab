@@ -1837,6 +1837,21 @@ set_tests_properties(rgsml_true_peak_measurement_tests PROPERTIES
     LABELS "analysis;true_peak;public_result;unqualified;unit"
 )
 
+# L1-M21 typed real M19/M20 producer port into Gold-minus-Current
+# comparison, with no fabricated Phase-6 owner or canonical Gold alignment.
+qt_add_executable(rgsml_m21_real_product_metrics_port_tests
+    unit/app/test_m21_real_product_metrics_port.cpp)
+target_include_directories(rgsml_m21_real_product_metrics_port_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
+target_link_libraries(rgsml_m21_real_product_metrics_port_tests PRIVATE
+    rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m21_real_product_metrics_port_tests)
+add_test(NAME rgsml_m21_real_product_metrics_port_tests
+    COMMAND rgsml_m21_real_product_metrics_port_tests)
+set_tests_properties(rgsml_m21_real_product_metrics_port_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;analysis;m21;gold_delta;real_product_port;unit")
+
 # L1-M20 read-only real AudioBuffer spectral/stereo analysis. Reuses
 # canonical rgsml_analysis FFT/PSD; scope/authority tested without QML.
 qt_add_executable(rgsml_tonal_stereo_analyzer_tests
