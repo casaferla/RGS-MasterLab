@@ -327,6 +327,15 @@ m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding()
     session.project.saveProjectAs(QUrl::fromLocalFile(blockedProject));
     QVERIFY(!QFileInfo::exists(blockedProject));
     QVERIFY(!terminal.value()->set_ceiling_db_tp(-2.0));
+    const auto originalChainRevision=
+        session.masteringChainState->chain().revision();
+    const auto gainId=session.masteringChainState->gain_instance_id();
+    const auto gainState=session.masteringChainState->is_bypassed(gainId);
+    QVERIFY(gainState);
+    QVERIFY(!session.masteringChainState->set_user_bypass(
+        gainId,!(*gainState.value())));
+    QCOMPARE(session.masteringChainState->chain().revision(),
+             originalChainRevision);
     const auto candidate=core::FrameRange::create(
         core::FrameIndex{7},core::FrameIndex{19});
     QVERIFY(candidate);
