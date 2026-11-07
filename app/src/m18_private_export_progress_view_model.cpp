@@ -44,6 +44,11 @@ core::Status M18PrivateExportProgressViewModel::begin_private_export(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_EXPORT_VIEWMODEL_START_REQUIRES_QT_OWNER_THREAD"});
+    // The UI cannot sneak in a seeded FLOAT or undithered PCM24 choice.
+    // Reject without changing progress and before touching Product state.
+    const auto formatStatus=internal::validate_m18_export_format(
+        format,seed,ceilingDbTp);
+    if(!formatStatus)return formatStatus;
     const auto started=session_.begin(
         sourceSession,source,rate,gate,ticket,
         std::move(selectedSource),std::move(destination),format,
