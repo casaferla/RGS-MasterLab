@@ -69,6 +69,7 @@ private slots:
     void m18ThrownAdmissionRecoversWithoutReplacingSource();
     void m18DirectProbedSourceFromForeignThreadCannotBypassOwner();
     void m18DirectSourceAdoptionBlockedDuringOuterPublication();
+    void m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
