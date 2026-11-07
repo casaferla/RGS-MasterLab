@@ -433,6 +433,16 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
                  .compensated_pcm.view().frame_count(),*frames.value());
     QVERIFY(!owner->capture(fanout.current_owner_snapshot()->identity));
     QCOMPARE(session.observed->audibleRealization.realizationId,manualId);
+    // The accepted M17 stage must not be enough to republish onto the
+    // original SOURCE path, even with a matching physical file identity.
+    const auto originalSourceRef=session.source.source_resource()->reference();
+    QVERIFY(!action.begin(originalSourceRef,
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!action.has_unacknowledged_export());
+    QVERIFY(owner->can_install_full_product_guards(
+        fanout.current_owner_snapshot()->epoch,
+        fanout.current_owner_snapshot()->identity));
 
     for(const auto encoding:{
             audio::WavSampleFormat::PCM_S24,
