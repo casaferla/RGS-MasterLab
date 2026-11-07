@@ -70,6 +70,9 @@ public:
         M18RateMutationAdmission gate) {
         m18RateMutationAdmission_=std::move(gate);
     }
+    [[nodiscard]] bool m18_rate_mutation_admission_installed() const noexcept {
+        return static_cast<bool>(m18RateMutationAdmission_);
+    }
     [[nodiscard]] bool can_edit_target() const noexcept {
         return has_supported_master_rate()
             &&(!targetSelectionGuard_||targetSelectionGuard_());
