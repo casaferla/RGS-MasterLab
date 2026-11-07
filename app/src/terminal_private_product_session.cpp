@@ -53,6 +53,15 @@ core::Status TerminalPrivateProductSession::admit_m18_private_mutation(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_PRODUCT_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18PrivateAdmitting_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PRODUCT_MUTATION_REENTRANT_ADMISSION"});
+    m18PrivateAdmitting_=true;
+    struct Unwind final {
+        bool* active;
+        ~Unwind(){*active=false;}
+    } unwind{&m18PrivateAdmitting_};
     try{return m18MutationAdmission_(operation);}
     catch(...){return core::Status::failure(core::Error{
         core::ErrorCode::InvalidState,
