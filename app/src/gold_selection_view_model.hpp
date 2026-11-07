@@ -45,6 +45,8 @@ public:
         if(m18GoldAdmitting_||m18GoldPublicationActive_)return;
         m18GoldMutationAdmission_=std::move(gate);
     }
+    [[nodiscard]] bool m18_gold_admission_installed() const noexcept
+    {return static_cast<bool>(m18GoldMutationAdmission_);}
     [[nodiscard]] core::Status adopt_probed_gold(audio::SourceResource candidate);
 
     Q_INVOKABLE void selectGold(const QUrl& selectedFile);
