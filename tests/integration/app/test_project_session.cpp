@@ -2,6 +2,7 @@
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
+#include "internal/m18_product_complete_binding.hpp"
 #include "source_selection_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
