@@ -449,6 +449,12 @@ m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial()
     // Even an allowed status callback cannot be stacked with an
     // independent batch authorizer: choose ONE Product epoch authority.
     model.set_private_m18_source_mutation_admission({});
+    std::size_t downstream=0;
+    model.set_private_m18_checked_source_committed_handler(
+        [&](const core::ResourceReference&)->core::Status {
+            ++downstream;
+            return core::Status::success();
+        });
     model.set_private_m18_source_batch_begin(
         [&]()->core::Result<std::shared_ptr<const void>> {
             ++batchCalls;
@@ -475,6 +481,7 @@ m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial()
     QVERIFY(model.has_source());
     QCOMPARE(batchCalls,std::size_t{2});
     QCOMPARE(statusCalls,std::size_t{0});
+    QCOMPARE(downstream,std::size_t{1});
     QCOMPARE(changed.count(),1);
     QCOMPARE(model.display_name(),QStringLiteral("m18-batch-source.wav"));
     QVERIFY(model.error_message().isEmpty());
