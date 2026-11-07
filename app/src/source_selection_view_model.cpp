@@ -316,6 +316,10 @@ core::Status SourceSelectionViewModel::adopt_probed_source(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M18_SOURCE_ADOPTION_REENTRANT_EPOCH_DENIED"});
+    if(m18SourceBatchBegin_&&!m18CheckedSourceCommittedHandler_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_BATCH_REQUIRES_STATUS_PRODUCT_DISPATCHER"});
     std::shared_ptr<const void> heldSourceBatch;
     if(m18SourceBatchBegin_) {
         // Also guard the *begin callback*, before the exclusive physical
