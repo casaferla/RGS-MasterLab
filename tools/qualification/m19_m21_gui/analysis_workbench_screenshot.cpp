@@ -5,6 +5,7 @@
 #include <QEventLoop>
 #include <QFont>
 #include <QFontDatabase>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QQuickItem>
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 namespace {
@@ -156,10 +158,59 @@ int main(int argc,char** argv) {
         for(int tab=0;tab<3;++tab){
             screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)],false);
             screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)],false);
-            screenshot(view,dir,1440,900,tab,names[static_cast<std::size_t>(tab)],true);
-            screenshot(view,dir,1184,688,tab,names[static_cast<std::size_t>(tab)],true);
         }
-        std::cout<<"RGSML_M19_M21_GUI_12_UNIFIED_AND_STANDALONE_QT_SCREENSHOTS_PASS_NOT_PRODUCT\n";
+
+        // Each individual analysis panel is a distinct native top-level QQuickView.
+        // Product docking and authenticated data are NOT wired by this design harness.
+        const std::array<QString,3> components{
+            QStringLiteral("M19LevelsPanelPreview.qml"),
+            QStringLiteral("M20TonalStereoPanelPreview.qml"),
+            QStringLiteral("M21MetricsDeltaPanelPreview.qml")};
+        const std::array<QString,3> expectedRoots{
+            QStringLiteral("m19IndividualPanelPreview"),
+            QStringLiteral("m20IndividualPanelPreview"),
+            QStringLiteral("m21IndividualPanelPreview")};
+        const QDir qmlFolder(QFileInfo(
+            QString::fromUtf8(RGSML_ANALYSIS_QML_SOURCE)).absolutePath());
+        std::array<std::unique_ptr<QQuickView>,3> individualWindows;
+        for(int tab=0;tab<3;++tab){
+            const auto index=static_cast<std::size_t>(tab);
+            auto panel=std::make_unique<QQuickView>();
+            panel->setResizeMode(QQuickView::SizeRootObjectToView);
+            panel->setSource(QUrl::fromLocalFile(qmlFolder.filePath(components[index])));
+            if(panel->status()!=QQuickView::Ready){
+                for(const auto& err:panel->errors())
+                    std::cerr<<err.toString().toStdString()<<'\n';
+                throw std::runtime_error("GUI_INDIVIDUAL_QML_COMPONENT_NOT_READY");
+            }
+            require(panel->rootObject()!=nullptr,"GUI_INDIVIDUAL_ROOT_MISSING");
+            require(panel->rootObject()->objectName()==expectedRoots[index],
+                    "GUI_INDIVIDUAL_ROOT_ID_MISMATCH");
+            require(panel->rootObject()->property("activeTab").toInt()==tab,
+                    "GUI_INDIVIDUAL_SELECTED_MODULE_WRONG");
+            require(panel->rootObject()->property("standaloneModuleMode").toBool(),
+                    "GUI_INDIVIDUAL_MODE_INACTIVE");
+            require(panel->rootObject()->setProperty("fixtureMode",true),
+                    "GUI_INDIVIDUAL_FIXTURE_BADGE_MISSING");
+            require(panel->rootObject()->setProperty("presentation",demo_data()),
+                    "GUI_INDIVIDUAL_FIXTURE_BINDING_FAILED");
+            screenshot(*panel,dir,1440,900,tab,names[index],true);
+            screenshot(*panel,dir,1184,688,tab,names[index],true);
+            individualWindows[index]=std::move(panel);
+        }
+        for(int tab=0;tab<3;++tab){
+            const auto index=static_cast<std::size_t>(tab);
+            require(individualWindows[index]!=nullptr
+                    && individualWindows[index]->isVisible(),
+                    "GUI_THREE_INDIVIDUAL_WINDOWS_NOT_SIMULTANEOUS");
+            require(individualWindows[index]->rootObject()->objectName()
+                    ==expectedRoots[index],"GUI_INDIVIDUAL_ROOT_CHANGED");
+        }
+        require(individualWindows[0].get()!=individualWindows[1].get()
+                && individualWindows[1].get()!=individualWindows[2].get()
+                && individualWindows[0].get()!=individualWindows[2].get(),
+                "GUI_QQUICKVIEW_OBJECT_REUSED");
+        std::cout<<"RGSML_M19_M21_GUI_12_WINDOWS_3_DISTINCT_QML_ROOTS_PASS_NOT_PRODUCT\n";
         return 0;
     }catch(const std::exception& e){
         std::cerr<<"RGSML_GUI_SCREENSHOT_FAILURE "<<e.what()<<'\n';
