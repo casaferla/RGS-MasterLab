@@ -574,6 +574,13 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
+    // A huge but syntactically valid producer claim is refused before
+    // open/allocate, rather than consuming arbitrarily large RAM or
+    // freezing the Qt owner. A later streaming M19 will replace this
+    // conservative explicit cap; it is NOT a hidden full-track PASS.
+    auto oversize=*selectedGold.value();
+    oversize.full_frames=16'777'217LL;
+    QVERIFY(!M21Owners::measure_gold_worker(oversize));
     // The read-only worker must reject a physically replaced WAV whose
     // new metadata does not match the authenticated capture. The UI
     // still owns the old selection, but cannot publish a new false GOLD.
