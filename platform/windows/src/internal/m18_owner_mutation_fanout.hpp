@@ -113,6 +113,39 @@ public:
                 state->epoch,state->identity);
     }
 
+    // Called by the Product owner after a completed/acknowledged Export
+    // or a failed worker launch. Retires ONLY this exact consent Ticket,
+    // never the verified M17 PCM, SOURCE or Project generation. Refuse
+    // release during a worker's physical commit and preserve consent BUSY.
+    [[nodiscard]] core::Status withdraw_completed_export_consent(
+        const M18ProductEpochTicketAuthority::Ticket& ticket) const
+    {
+        const auto state=shared_;
+        if(!state||std::this_thread::get_id()!=state->ownerThread
+           ||state->retired.load(std::memory_order_acquire)
+           ||state->admitting
+           ||state->projectOpenActive.load(std::memory_order_acquire)
+           ||state->sourceCommitActive.load(std::memory_order_acquire)
+           ||!state->authority||!state->authority->owns_ticket(ticket)
+           ||ticket.epoch()!=state->epoch
+           ||ticket.identity()!=state->identity
+           ||state->epoch==std::numeric_limits<std::uint64_t>::max())
+            return reject("M18_EXPORT_CONSENT_REVOKE_REQUIRES_EXACT_OWNER_TICKET");
+        state->admitting=true;
+        struct Unwind final {
+            bool* active;
+            ~Unwind(){*active=false;}
+        } unwind{&state->admitting};
+        const auto nextEpoch=state->epoch+1;
+        // A held worker commit prevents this transition immediately,
+        // without blocking the Qt thread or leaking the prior file.
+        const auto revoked=state->authority->try_transition(
+            state->epoch,nextEpoch,state->identity,false);
+        if(!revoked)return revoked;
+        state->epoch=nextEpoch;
+        return core::Status::success();
+    }
+
     // After an accepted SOURCE/Project/MANUAL mutation, the true rate
     // and chain revision may differ from the earlier terminal stage.
     // Reconcile ONLY these model-derived fields. Never let a caller
