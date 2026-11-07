@@ -83,7 +83,12 @@ public:
     // upgraded to honor BUSY; do NOT enable async export before then.
     using M18MutationAdmission=std::function<core::Status(const char*)>;
     void set_private_m18_mutation_admission(M18MutationAdmission guard)
-    {m18MutationAdmission_=std::move(guard);}
+    {
+        // A callback cannot erase the very authority whose epoch is
+        // being consumed, then recursively mutate a checked M17 stage.
+        if(m18AdmissionActive_)return;
+        m18MutationAdmission_=std::move(guard);
+    }
     [[nodiscard]] core::Status try_invalidate_for_m18();
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept {
         return static_cast<bool>(m18MutationAdmission_);
@@ -102,6 +107,7 @@ private:
     [[nodiscard]] core::Status admit_m18_candidate_mutation(
         const char* operation) const;
     M18MutationAdmission m18MutationAdmission_;
+    mutable bool m18AdmissionActive_{false};
     std::uint64_t ticket_{0};
     std::shared_ptr<const StagedCandidate> staged_;
     std::shared_ptr<const StagedMeasuredCandidate> stagedMeasured_;
