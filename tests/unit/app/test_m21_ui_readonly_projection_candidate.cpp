@@ -105,6 +105,13 @@ matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease() {
     const auto unchecked=project_readonly(compose(slots),owner);
     QVERIFY(!unchecked.columns[0].candidate_matched);
     QVERIFY(!unchecked.prepared_to_gold[1].numeric);
+
+    // Invalid storage cannot show a numeric or masquerade as CURRENT.
+    owner[0]=receipt(*slots[0]);
+    slots[0]->metrics[1]={std::nullopt,Quality::present,{}};
+    const auto poison=project_readonly(compose(slots),owner);
+    QVERIFY(!poison.columns[0].values[1].numeric);
+    QVERIFY(poison.columns[0].values[1].quality_text=="INVALID");
 }
 void M21UiReadonlyProjectionCandidateTest::
 changedSourceDoesNotInvalidateIndependentGold() {
