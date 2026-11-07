@@ -21,6 +21,7 @@ class M18PrivateExportProgressViewModel final : public QObject {
     Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
     Q_PROPERTY(bool verifiedDelivered READ verified_delivered NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
+    Q_PROPERTY(QString failureHint READ failure_hint NOTIFY changed)
 public:
     explicit M18PrivateExportProgressViewModel(QObject* parent=nullptr);
     ~M18PrivateExportProgressViewModel() override;
@@ -47,6 +48,7 @@ public:
     [[nodiscard]] bool can_acknowledge() const noexcept;
     [[nodiscard]] bool verified_delivered() const noexcept;
     [[nodiscard]] QString error_text() const;
+    [[nodiscard]] QString failure_hint() const;
 
     Q_INVOKABLE void cancelExport();
     Q_INVOKABLE bool acknowledgeExport();
