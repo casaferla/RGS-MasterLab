@@ -58,8 +58,8 @@ ApplicationWindow {
         ? terminalProductActivation : null
     readonly property var appMasterRateState: typeof masterOutputRateState !== "undefined"
         ? masterOutputRateState : null
-    // M18 remains dormant until main registers the exact Product-owned
-    // adapter following native positive export qualification.
+    // M18 Export becomes available only when the native Product owner
+    // has installed all epoch guards and retained an exact verified M17 Master.
     readonly property var appM18ExportModel: typeof m18ProductExportViewModel !== "undefined"
         ? m18ProductExportViewModel : null
     property int m18ExportFormatIndex: 0
@@ -694,6 +694,17 @@ ApplicationWindow {
     }
 
     onClosing: function(close) {
+        // An async WAV candidate must never outlive a normal Product exit.
+        // Cancel is nonblocking; keep the UI alive until the worker is
+        // terminal and its transactional writer has finished rollback.
+        // This takes precedence over the M17 discard-recovery exit.
+        if (root.appM18ExportModel && root.appM18ExportModel.exportInProgress) {
+            close.accepted = false
+            root.appM18ExportModel.cancelExport()
+            if (!m18ExportProgressDialog.opened)
+                m18ExportProgressDialog.open()
+            return
+        }
         if (root.m17ConfirmedDiscardExit) {
             close.accepted = true
             Qt.quit()
