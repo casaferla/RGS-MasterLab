@@ -195,7 +195,7 @@ void SourceSelectionViewModel::set_playback_transport(
 {
     // The callback publisher must not retarget its transport while
     // the preceding SOURCE's entire M18 epoch remains in publication.
-    if(m18SourceMutationAdmission_
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
        &&(m18SourcePublishing_||m18SourceAdmitting_
           ||QThread::currentThread()!=thread()))return;
     playbackTransport_ = playback;
@@ -207,7 +207,7 @@ void SourceSelectionViewModel::set_source_committed_handler(
     // Mutating a std::function while it is being invoked would also
     // destroy the active callback closure. Keep the Product handler
     // constant from admission through all synchronous Qt observers.
-    if(m18SourceMutationAdmission_
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
        &&(m18SourcePublishing_||m18SourceAdmitting_
           ||QThread::currentThread()!=thread()))return;
     sourceCommittedHandler_ = std::move(handler);
@@ -241,10 +241,11 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
     // M18 opt-in gate: never let a foreign worker enter Qt path parsing
     // or publish an error before the real SOURCE admission is checked.
     // Legacy M17 behavior remains unchanged when no guard is installed.
-    if(m18SourceMutationAdmission_ &&QThread::currentThread()!=thread())return;
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
+       &&QThread::currentThread()!=thread())return;
     // Never start a second QFile/Qt notification path from an admission
     // callback or from the outer SOURCE commit's changed() listener.
-    if(m18SourceMutationAdmission_
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
        &&(m18SourceAdmitting_||m18SourcePublishing_))return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         publish_error(QStringLiteral("Choose one local WAV file."));
