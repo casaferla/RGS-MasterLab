@@ -806,6 +806,8 @@ m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
         session,candidates,fanout));
     QVERIFY(session.m18_private_mutation_admission_installed());
     QVERIFY(candidates.m18_mutation_admission_installed());
+    QVERIFY(!app::internal::M18ProductPrivateSessionBinding::can_bind(
+        session,candidates)); // cannot double-install shared epoch
     QVERIFY(!app::internal::M18ProductPrivateSessionBinding::bind(
         session,candidates,fanout)); // no silent independent rebind
     auto held=ticket.value()->commit_lease_factory()();
