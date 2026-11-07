@@ -757,6 +757,17 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                     invalid("output.targetMasterOutputRateHz/source"));
         }
     }
+    // User-chosen M18 WAV settings are a canonical Project OUTPUT
+    // preference, not proof of a completed WAV delivery. Legacy projects
+    // without an explicit choice remain unchanged on ordinary SaveAs.
+    if(m18OutputPreference_) {
+        auto updated=project::M18MasterWavPreferenceCodec::with_choice(
+            doc.output,*m18OutputPreference_);
+        if(!updated)
+            return core::Result<project::ProjectSnapshot>::failure(
+                *updated.error());
+        doc.output=std::move(*updated.value());
+    }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
 }
 
