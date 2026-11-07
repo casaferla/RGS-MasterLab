@@ -366,7 +366,22 @@ core::Status SourceSelectionViewModel::adopt_probed_source(
     durationLabel_ = format_duration(frames, sampleRate);
     source_ = std::move(candidate);
 
-    if (sourceCommittedHandler_) {
+    if(m18SourceBatchBegin_) {
+        // The same Product lease remains alive during the entire checked
+        // controller cascade. An error withdraws the selected SOURCE
+        // instead of publishing a falsely READY/verified stage.
+        core::Status dispatched=core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_PRODUCT_DISPATCHER_THROWN"});
+        try {
+            dispatched=m18CheckedSourceCommittedHandler_(
+                source_->reference());
+        }catch(...) {}
+        if(!dispatched) {
+            fail_closed_checked_source_commit(*dispatched.error());
+            return dispatched;
+        }
+    } else if(sourceCommittedHandler_) {
         sourceCommittedHandler_(source_->reference());
     }
 
