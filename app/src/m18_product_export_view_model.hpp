@@ -1,7 +1,6 @@
 #pragma once
-// M18 UI ADAPTER (staged, not wired into main/QML until positive Product E2E
-// and owner-bound teardown pass). This QObject never mints a ticket: only
-// the private Product Export action may request a fresh user consent.
+// M18 Product UI adapter. QML can only request the Product-owned action;
+// it cannot mint consent tickets, mutate verified PCM or publish a WAV.
 #include "internal/m18_private_product_export_action.hpp"
 #include <QObject>
 #include <QString>
@@ -15,6 +14,7 @@ class M18ProductExportViewModel final : public QObject {
     Q_PROPERTY(bool canExport READ can_export NOTIFY changed)
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
     Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
+    Q_PROPERTY(bool exportInProgress READ export_in_progress NOTIFY changed)
     Q_PROPERTY(double encodedProgress READ encoded_progress NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
@@ -29,6 +29,7 @@ public:
     [[nodiscard]] bool can_export() const;
     [[nodiscard]] bool can_cancel() const;
     [[nodiscard]] bool can_acknowledge() const;
+    [[nodiscard]] bool export_in_progress() const;
     [[nodiscard]] double encoded_progress() const;
     [[nodiscard]] QString status_text() const;
     [[nodiscard]] QString error_text() const;
