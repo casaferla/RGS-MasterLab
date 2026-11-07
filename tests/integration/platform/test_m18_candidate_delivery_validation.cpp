@@ -203,6 +203,7 @@ private slots:
     void productMutationBatchPinsIdentityAndForbidsPartialCapture();
     void productDestroyedDuringProjectMutationCannotReviveWorkerExport();
     void productEpochTicketConsentAndMasterIdentityAreWorkerSafe();
+    void fullProductGuardActivationRequiresFreshUnconsentedEpoch();
     void sameProductMutationFanoutRevokesWorkerAcrossControllerCallbacks();
     void retiredProductMutationFanoutRejectsCachedControllerCallbacks();
     void productMutationFanoutRejectsOverflowAndInvalidOperations();
