@@ -271,6 +271,7 @@ m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent()
     QVERIFY(session.source.has_source());
     app::MasterOutputRateState rate;
     rate.source_committed(session.source.sample_rate_hz());
+    session.project.set_master_output_rate_state(&rate);
     install_m18_checked_source_dispatch(session,rate);
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
