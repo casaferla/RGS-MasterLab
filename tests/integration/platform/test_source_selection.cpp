@@ -70,6 +70,8 @@ private slots:
     void m18DirectProbedSourceFromForeignThreadCannotBypassOwner();
     void m18DirectSourceAdoptionBlockedDuringOuterPublication();
     void m18PhysicalSourceBatchExcludesAmbiguousDualGateAndDenial();
+    void m18PhysicalSourceBatchNeedsCheckedProductDispatcher();
+    void m18RejectedCheckedSourceCascadesFailClosedThenRecover();
     void acceptedFormatMappings_data();
     void acceptedFormatMappings();
 };
