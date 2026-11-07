@@ -114,6 +114,10 @@ QString M18PrivateExportProgressViewModel::error_text() const
 void M18PrivateExportProgressViewModel::cancelExport()
 {
     if(QThread::currentThread()!=thread())return;
+    // A direct QML/C++ call must respect the same enabled state as the UI.
+    // Once a file has been verified, failed, cancelled or acknowledged,
+    // there is no active encoder left to cancel or relabel as CANCELLED.
+    if(!can_cancel())return;
     session_.cancel();
     poll();
 }
