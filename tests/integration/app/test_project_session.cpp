@@ -239,6 +239,66 @@ private slots:
 
 
 void ProjectSessionTest::
+m18ActualProjectOpenCheckedSourceFailureCannotPublishReady()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;QVERIFY(dir.isValid());
+    const auto source=wav(
+        dir,QStringLiteral("m18-project-downstream-fault.wav"),21,48000U);
+    QVERIFY(!source.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(author.source.has_source());
+    const auto projectFile=dir.filePath(
+        QStringLiteral("m18-project-downstream-fault.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(projectFile));
+    QVERIFY(QFileInfo::exists(projectFile));
+
+    Session target;
+    app::MasterOutputRateState rate;
+    target.project.set_master_output_rate_state(&rate);
+    const M18ProductExportIdentity id{711U,712U,713U,0U,48000U,7U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        401U,id);
+    QVERIFY(owner->try_transition(401U,402U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,402U,id};
+    app::internal::M18ProductControllerBinding::bind_source_chain_rate(
+        target.source,*target.masteringChainState,rate,fanout);
+    app::internal::M18ProductControllerBinding::bind_audition_region_gold(
+        target.selector,target.region,target.gold,fanout);
+    app::internal::M18ProductProjectSaveBinding::bind_project_open_and_save(
+        target.project,fanout);
+    target.source.set_private_m18_checked_source_committed_handler(
+        [](const core::ResourceReference&)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_VERIFIED_SOURCE_PREPARED_HANDOFF_REFUSED"});
+        });
+    target.project.openProject(QUrl::fromLocalFile(projectFile));
+    QVERIFY(!target.project.error_message().isEmpty());
+    QVERIFY(!target.source.has_source());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{0});
+    QCOMPARE(rate.rate_revision(),std::uint64_t{0});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+
+    // The physical failed batch released its writer lease. A fresh
+    // explicitly checked SOURCE dispatch may successfully open the
+    // same Project without reviving old verified-M17 consent.
+    install_m18_checked_source_dispatch(target,rate);
+    target.project.openProject(QUrl::fromLocalFile(projectFile));
+    QCOMPARE(target.project.error_message(),QString());
+    QVERIFY(target.source.has_source());
+    QVERIFY(target.selector.prepared_available());
+    QCOMPARE(target.source.sample_rate_hz(),qint64{48000});
+    QCOMPARE(rate.source_rate_hz(),qint64{48000});
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+}
+
+void ProjectSessionTest::
 m18ActualSourcePickerAndAuditionUseOnePhysicalProductBatch()
 {
     using platform::windows::internal::M18ProductEpochTicketAuthority;
