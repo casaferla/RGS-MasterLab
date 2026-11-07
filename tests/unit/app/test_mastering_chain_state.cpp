@@ -446,6 +446,35 @@ m18ActualChainAndTerminalShareOneProductWorkerBarrier()
     QVERIFY(!owner->capture(id));
 }
 
+void MasteringChainStateTest::
+m18TerminalCandidateGateSharesActualProductExportCommitEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{91U,92U,93U,0U,48000U,8U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        330U,id);
+    QVERIFY(owner->try_transition(330U,331U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,331U,id};
+    TerminalCandidateGate candidates;
+    app::internal::M18ProductTerminalCandidateBinding::bind(
+        candidates,fanout);
+    auto committing=ticket.value()->commit_lease_factory()();
+    QVERIFY(committing);
+    // An actual M17 terminal state invalidation MUST NOT silently
+    // withdraw the exact checked stage during Windows file publication.
+    const auto blocked=candidates.try_invalidate_for_m18();
+    QVERIFY(!blocked);
+    QCOMPARE(blocked.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY((*committing.value())->revalidate_current());
+    committing.value()->reset();
+    QVERIFY(candidates.try_invalidate_for_m18());
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+}
+
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
 {
     auto registry = ModuleRegistry::create_dsp_package_v1();
