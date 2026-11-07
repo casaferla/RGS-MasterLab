@@ -3678,6 +3678,13 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QVERIFY(!exportView.can_cancel());
         QVERIFY(exportView.can_acknowledge());
         QVERIFY(exportView.error_text().isEmpty());
+        // A direct stale UI Cancel click after successful WAV readback
+        // must not relabel or revoke the already verified delivery.
+        exportView.cancelExport();
+        QCOMPARE(exportView.status_text(),
+                 QStringLiteral("VERIFIED_DELIVERED"));
+        QVERIFY(exportView.verified_delivered());
+        QVERIFY(exportView.can_acknowledge());
         QVERIFY(exportChanges.count()>=2);
         QVERIFY(QFileInfo::exists(viewOutputPath));
         QVERIFY(exportView.acknowledgeExport());
