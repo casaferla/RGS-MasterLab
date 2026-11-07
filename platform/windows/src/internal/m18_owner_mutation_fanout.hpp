@@ -151,9 +151,10 @@ public:
             // lease and their nested child operations bypass this path.
             const std::string_view op{operation};
             const bool changesSource=op=="source_selection"
-                ||op=="source_committed"||op=="source_adopt_probed";
+                ||op=="source_committed"||op=="source_committed_same_fs"
+                ||op=="source_adopt_probed"||op=="source_cleared";
             const bool changesProject=op=="project_open"
-                ||op=="project_save";
+                ||op=="project_save"||op=="project_close";
             if(state->epoch==std::numeric_limits<std::uint64_t>::max()
                ||state->identity.master_generation
                       ==std::numeric_limits<std::uint64_t>::max()
