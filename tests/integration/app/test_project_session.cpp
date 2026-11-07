@@ -600,9 +600,8 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         make_write_reference(collisionPath.toUtf8().toStdString(),
                              "m18-f32-verified-existing.wav");
     QVERIFY(collisionRef);
-    QVERIFY(action.begin(*collisionRef.value(),
-        audio::WavSampleFormat::IEEE_F32,std::nullopt,
-        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(ui.beginExport(QUrl::fromLocalFile(collisionPath),1));
+    QVERIFY(!ui.can_export());
     QTRY_VERIFY_WITH_TIMEOUT(
         action.snapshot().phase==M18PrivateAsyncExportSession::Phase::FAILED,
         30000);
@@ -612,7 +611,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(QFileInfo{collisionPath}.size(),originalBytes);
     QVERIFY(!action.can_cancel());
     QVERIFY(action.can_acknowledge());
-    QVERIFY(action.acknowledge());
+    QVERIFY(ui.can_acknowledge());
+    QCOMPARE(ui.status_text(),QStringLiteral("FAILED"));
+    QVERIFY(!ui.error_text().isEmpty());
+    QVERIFY(ui.acknowledgeExport());
+    QVERIFY(ui.can_export());
     expectedConsentEpoch+=2;
     const auto afterCollision=fanout.current_owner_snapshot();
     QVERIFY(afterCollision);
