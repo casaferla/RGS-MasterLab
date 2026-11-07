@@ -105,6 +105,9 @@ qt_add_resources(rgsml_app "rgsml_window_icon" PREFIX "/rgsml"
 
 target_include_directories(rgsml_app PRIVATE
     ${CMAKE_SOURCE_DIR}/audio/src
+    # M18 Product's private worker bridge consumes the same Windows
+    # internal epoch ticket header as its already qualified QtTest target.
+    ${CMAKE_SOURCE_DIR}/platform/windows/src
     ${CMAKE_SOURCE_DIR}/analysis/src
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
