@@ -432,6 +432,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(M18ProductCompleteBinding::installed(controllers));
     QVERIFY(!owner->capture(identity));
     M18PrivateProductExportAction action{controllers,fanout};
+    // The very same QObject adapter intended for the GUI must observe
+    // Product readiness, and it must NOT offer Export before M17 has
+    // completed its M16 checked terminal render.
+    app::M18ProductExportViewModel ui{action,controllers};
+    QVERIFY(!ui.can_export());
+    QVERIFY(!ui.can_cancel());
+    QVERIFY(!ui.can_acknowledge());
 
     const auto preparedOk=product.request_private(*rate48.value(),true);
     QVERIFY2(preparedOk,preparedOk?"":preparedOk.error()->message().c_str());
