@@ -590,6 +590,89 @@ m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority()
     QVERIFY(!gate.m18_mutation_admission_installed());
 }
 
+void MasteringChainStateTest::
+m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=MasteringChainState::create_default(
+        *registry.value(),
+        test_uuid("ac000000-0000-4000-8000-000000000001"),
+        test_instance_id("ac000000-0000-4000-8000-000000000010"),
+        test_instance_id("ac000000-0000-4000-8000-000000000020"),
+        test_instance_id("ac000000-0000-4000-8000-000000000030"));
+    QVERIFY(chain);
+    auto limiter=TerminalLimiterState::create_default(
+        *registry.value(),
+        test_instance_id("ac000000-0000-4000-8000-000000000040"));
+    QVERIFY(limiter);
+    TerminalCandidateGate candidates;
+    TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&]{return chain.value()->chain();}};
+    auto service=std::make_unique<FakePlaybackService>();
+    auto& fake=*service;
+    PlaybackTransportViewModel transport{std::move(service)};
+    TerminalAudioSessionGate device{
+        candidates,fake,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::success();
+        }};
+    TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_TEST_NO_TERMINAL_ID_ISSUED"});
+        }};
+    TerminalPrivateProductSession session{
+        renderer,publisher,candidates,transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+    QSignalSpy changed{&session,&TerminalPrivateProductSession::changed};
+    std::size_t calls=0;
+    bool nestedDenied=false;
+    session.set_private_m18_mutation_admission(
+        [&](const char* operation)->core::Status {
+            ++calls;
+            if(!operation)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRIVATE_SESSION_OPERATION_REQUIRED"});
+            session.set_private_m18_mutation_admission({});
+            const auto nested=session.cancel();
+            nestedDenied=!nested&&nested.error()->code()
+                ==core::ErrorCode::InvalidState;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRIVATE_SESSION_WORKER_COMMIT_BUSY"});
+        });
+    QVERIFY(!session.cancel());
+    QVERIFY(nestedDenied);
+    QCOMPARE(calls,std::size_t{1});
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(session.status(),QStringLiteral("IDLE"));
+    // If the attempted self-uninstall had succeeded, the next Cancel
+    // would bypass Product and publish a changed() signal.
+    QVERIFY(!session.cancel());
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(changed.count(),0);
+    session.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_PRIVATE_SESSION_ADMISSION_FAULT");
+        });
+    QVERIFY(!session.cancel());
+    QCOMPARE(changed.count(),0);
+    // Admission-unwind makes a subsequent external owner replacement legal.
+    session.set_private_m18_mutation_admission({});
+}
+
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
 {
     auto registry = ModuleRegistry::create_dsp_package_v1();
