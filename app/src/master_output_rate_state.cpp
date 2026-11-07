@@ -21,6 +21,12 @@ QString MasterOutputRateState::final_src_path_status(qint64 hz) const {
 bool MasterOutputRateState::admit_m18_source_rate_mutation() noexcept {
     if(!m18RateMutationAdmission_)return true;
     if(QThread::currentThread()!=thread())return false;
+    if(m18RateAdmitting_)return false;
+    m18RateAdmitting_=true;
+    struct AdmissionUnwind final {
+        bool* active;
+        ~AdmissionUnwind(){*active=false;}
+    } unwind{&m18RateAdmitting_};
     try{return m18RateMutationAdmission_();}
     catch(...){return false;}
 }
