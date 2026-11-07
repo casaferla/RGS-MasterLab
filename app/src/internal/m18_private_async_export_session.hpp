@@ -67,10 +67,23 @@ public:
     // Nonblocking. Product teardown or a Cancel command can request
     // revocation without waiting for the WAV codec or filesystem.
     void cancel() noexcept {
+        // job_ is a Product-owner-only shared_ptr, not an atomic handle.
+        // A detached worker must use its immutable cancel token instead
+        // of racing the Qt acknowledgement/reset of the live session.
+        if(std::this_thread::get_id()!=owner_thread_)return;
         if(job_)job_->cancel();
     }
 
     [[nodiscard]] Snapshot snapshot() const {
+        // The progress/cancellation atomics belong to M18AsyncExportWorker,
+        // but access to job_ is Product-owner-thread serialized. Reject a
+        // foreign reader before touching that non-atomic shared_ptr.
+        if(std::this_thread::get_id()!=owner_thread_) {
+            Snapshot denied;
+            denied.phase=Phase::FAILED;
+            denied.failure_code=core::ErrorCode::InvalidState;
+            return denied;
+        }
         if(!job_)return {};
         Snapshot current;
         current.encoded_frames=job_->encoded_frames();
