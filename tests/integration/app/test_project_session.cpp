@@ -935,6 +935,22 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     ++tamperedQtOwner.owner_identity.master_rate_revision;
     QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting));
+
+    // Proof also includes the selected real M21 result identity, not just
+    // the Product-wide Source/Project epoch. No recomputation is triggered
+    // by merely testing a queued Qt frame.
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.identities[0].generation;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    tamperedQtOwner.identities[1].resource+=":synthetic";
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.identities[0].frames;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
     QCOMPARE(privatePanels.panels[0].value("sourceRole").toString(),
              QStringLiteral("PREPARED"));
     QCOMPARE(privatePanels.panels[1].value("sourceRole").toString(),
