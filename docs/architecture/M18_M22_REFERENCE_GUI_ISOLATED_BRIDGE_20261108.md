@@ -68,3 +68,21 @@ The next major gate is **genuine canonical Phase-6 release authorization and Pro
 - Native ProductSession tests deliberately tamper source/project/master-rate revisions, independent M21 measurement generation, resource realization ID and absolute scope to prove every mismatch refuses `still_current`. None creates a fake source, result or export permission.
 - The combined bridge workflow now re-runs the previous ten independent M19/M20 numerical reference checks per platform **before** configuring the heavy Qt compiler; these cover P01/Six Rate K, F07, scope/tonal profile/stereo without fabricating downstream data. Guarding M22's immutable Product base and the existing true Preview/Full alias tests remains mandatory.
 - All modifications belong to the same no-CI single writer. No candidate advancement while building the macro-lot.
+
+## PO macro-lot: authenticated private M20 PSD + M22 Preview admission (2026-11-08)
+
+The sole Chat Operativa writer has confirmed the apparent interleaved commits were issued earlier by the same interrupted conversation. Single-writer ownership is resumed. This lot accumulates changes only in `staging/m18-m22-reference-ui-convergence-no-ci-20261108` and retains the separate PR #96 CI candidate on the last known dual-OS green SHA until promotion. One combined focused CI at the end of the lot, not one CI per commit.
+
+### M20 genuine spectrum
+
+`app/src/internal/m21_product_spectrum_evidence.hpp` is a **private authenticated proof**, not a released QML chart. It reads M21 Product's independently accepted M20 PSD from the actual current Product Source/Gold/Processed column and exact route. It rejects a different M18 owner, selected source identity/generation, incompatible scope/rate, invalid bins, synthetic flat spectrum, nonmonotonic frequencies and all non-current evidence. A second epoch-and-route check after reading the bins prevents queued reuse. The numbers never leave the private C++ proof and cannot make `productionAuthorized=true`. Native real ProductSession tests compare every genuine M20 bin against the unrounded M20 worker result and prove Source/REFERENCE ownership and clearGold/routing invalidation.
+
+### M22 genuine verified full-Master Preview
+
+`app/src/internal/m22_product_preview_admission.hpp` obtains a true full-M17 binary64 `AudioBufferView` subset from the existing M18 complete Product authority, with exact Output-Rate timebase, absolute window and shared ownership of the verified full M17 stage. It checks current M18 epoch and all original Product identity; **off-Qt-thread calls are rejected before any mutable Product read**. The retained view is not a permission to play/export, and a queued use must revalidate the checked full-M17 stage, original frame range, channels and the exact channel pointer aliases (no local DSP rerun/copy). The existing real ProductSession test now checks five boundary windows, actual channel memory identity, illegal range, wrong-thread refusal, and revocation on a parameter-only Gain edit.
+
+### Static and authority gates
+
+The provenance checker explicitly whitelists precisely these new private files and requires their genuine owner, thread, generation and Source/REFERENCE test checks. No M19/M20/M21 backend DSP or canonical persistence, M16 TP, M17 limiter, FIR, exporter or QML Main registration has been rewritten. The technical GOLD source identity remains stable even when user-visible REFERENCE text is used. Historical Phase-6 authority documents on Drive are a semantic source, **not permission to invent or declare an already materialized canonical FeatureDefinitionRegistry**. No new registry, parallel status authority, fake release ticket or alternate analysis algorithm is introduced by this lot.
+
+Status remains **PREINTEGRATION ONLY**, pending the focused dual-OS CI, completion of canonical Product/Phase-6 release bindings and M22 end-to-end scheduler, M18 A01–A15/Windows physical PO tests and a single final integrated Full Qualification. No main merge without PO GO. M17 GR HISTORY stays later on PR #85.
