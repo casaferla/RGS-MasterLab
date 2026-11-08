@@ -132,6 +132,8 @@ def parse_junit(paths: list[Path]) -> dict[str, str]:
                 if old is not None and old != state:
                     raise M23ContractError("conflicting JUnit verdict: " + name)
                 observations[name] = state
+    if paths and not observations:
+        raise M23ContractError("JUnit contains no executed CTest cases")
     return observations
 
 
