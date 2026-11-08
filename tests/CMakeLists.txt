@@ -1506,7 +1506,7 @@ target_include_directories(rgsml_m22_product_chain_epoch_capture_tests PRIVATE
 # Windows-only transactional_audio_exporter.cpp (<Windows.h>).
 # This test never calls the Windows platform implementation or export job.
 target_link_libraries(rgsml_m22_product_chain_epoch_capture_tests PRIVATE
-    rgsml_render
+    rgsml_project rgsml_render
     Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_m22_product_chain_epoch_capture_tests)
