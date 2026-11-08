@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void invalidLifecycleBlocksDemoWithoutImplicitZero();
     void revokedFixtureImmediatelyMasksReadouts();
     void missingStateBlocksValidLookingOldPresenter();
     void staleDisplayStateBlocksEvenReadyDemoData();
@@ -385,6 +386,18 @@ void M19M21TypedQmlConvergenceTest::revokedFixtureImmediatelyMasksReadouts()
     QVERIFY(!view->rootObject()->property("available").toBool());
     QVERIFY(view->rootObject()->setProperty("fixtureMode",true));
     QVERIFY(view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::invalidLifecycleBlocksDemoWithoutImplicitZero()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","INVALID"},
+                    {"levels",QVariantMap{{"rms","-18.00"}}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QCOMPARE(view->rootObject()->property("analysisStatus").toString(),
+             QStringLiteral("INVALID"));
 }
 
 } // namespace rgsml::tests
