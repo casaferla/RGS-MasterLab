@@ -7,6 +7,7 @@
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QImage>
@@ -105,6 +106,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void missingGoldBadgeIsVisuallyMuted();
     void m21RealTypedComparisonRequiresCurrentSelectedOwner();
     void m21EmptyComparisonShowsExplicitNoRowsNotice();
     void m20UnsupportedProfileStatusKeepsAllBandShapesHidden();
@@ -564,6 +566,17 @@ void M19M21TypedQmlConvergenceTest::m21RealTypedComparisonRequiresCurrentSelecte
     mount_explicit_demo(*view,after.m21);
     QVERIFY(!view->rootObject()->property("available").toBool());
     QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::missingGoldBadgeIsVisuallyMuted()
+{
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    auto* badge=visual_by_name(view->rootObject(),"analysisScopeBadge_GOLD");
+    QVERIFY(badge);
+    QCOMPARE(badge->property("color").value<QColor>(),
+             QColor(QStringLiteral("#16232D")));
+    QVERIFY(!view->rootObject()->property("available").toBool());
 }
 
 } // namespace rgsml::tests
