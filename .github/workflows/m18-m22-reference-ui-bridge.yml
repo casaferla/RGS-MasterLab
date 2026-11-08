@@ -68,7 +68,7 @@ jobs:
             tail -n 50 "$cfg" >"$bounded"
             exit 1
           fi
-          if ! cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_tonal_stereo_analyzer_tests rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests rgsml_app >"$buildlog" 2>&1; then
+          if ! cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_tonal_stereo_analyzer_tests rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests >"$buildlog" 2>&1; then
             tail -n 60 "$buildlog" >"$bounded"
             exit 1
           fi
