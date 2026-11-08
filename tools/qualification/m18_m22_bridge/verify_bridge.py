@@ -51,6 +51,7 @@ ADDED = {
     ".github/workflows/m18-m22-reference-ui-bridge.yml",
     "docs/architecture/M18_M22_REFERENCE_GUI_ISOLATED_BRIDGE_20261108.md",
     "app/src/internal/m21_product_qt_readiness_bridge.hpp",
+    "app/src/internal/m21_product_spectrum_evidence.hpp",
     "tests/integration/app/test_project_session.cpp",
 }
 PROTECTED = (
@@ -120,6 +121,27 @@ def main():
                    "now.owner_identity==expected.owner_identity",
                    "now.identities==expected.identities"):
         check(marker in bridge, "Private UI owner guard missing: "+marker)
+
+    spectrum=blob("HEAD",
+        "app/src/internal/m21_product_spectrum_evidence.hpp").decode()
+    for required in (
+        "M21ProductQtReadinessBridge",
+        "view_current(",
+        "average_spectrum",
+        "record.resource_identity!=proof.identity.resource",
+        "record.generation_token!=proof.identity.generation",
+        "Readiness::still_current(",
+        "product_ui_authorized{false}",
+        "QThread::currentThread()!=selector.thread()",
+    ):
+        check(required in spectrum, "M20 true PSD proof guard missing: "+required)
+    for required in (
+        '#include "internal/m21_product_spectrum_evidence.hpp"',
+        "const auto provenSpectrum=SpectrumProof::capture(",
+        "referenceSpectrum=app::internal::M21ProductSpectrumEvidence::",
+        "!SpectrumProof::still_current(provenSpectrum",
+    ):
+        check(required in joined, "M20 real PSD ProductSession test absent: "+required)
 
     cmake = blob("HEAD", "tests/CMakeLists.txt")
     original = blob(BASE, "tests/CMakeLists.txt")
