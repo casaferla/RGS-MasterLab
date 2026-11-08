@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsPerColumnLowSupportDoesNotSpreadToOtherPanels();
     void routedPanelsRoutingRevisionRejectsFrameEvenWithoutSourceChange();
     void routedPanelsSourceRevisionRejectsPendingFrameEvenWithoutRoutingChange();
     void routedPanelsProcessedReanalysisDoesNotMaskGoldSelectedM19();
@@ -2189,6 +2190,31 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsRoutingRevisionRejectsFra
     const auto next=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
     QVERIFY(review_frame_current(store,route,next));
     QVERIFY(!next.m19.value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsPerColumnLowSupportDoesNotSpreadToOtherPanels()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto g=example(Column::gold,3,"g",-13.0);
+    p.metrics[1]={-18.0,Quality::low_confidence,"short frame"};
+    g.metrics[1]={-13.0,Quality::present,{}};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    IndependentPanelRouting route;
+    QVERIFY(route.select(AnalysisPanel::tonal_m20,Column::gold));
+    const auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QCOMPARE(f.m19.value("levelsQuality").toMap().value("rms").toString(),
+             QStringLiteral("LOW SUPPORT"));
+    QCOMPARE(f.m20.value("stereoQuality").toMap().value("width").toString(),
+             QStringLiteral("MISSING"));
+    QCOMPARE(f.m21.value("metrics").toList().at(1).toMap().value("goldQuality").toString(),
+             QStringLiteral("CURRENT"));
+    QCOMPARE(f.m21.value("metrics").toList().at(1).toMap().value("preparedQuality").toString(),
+             QStringLiteral("LOW SUPPORT"));
 }
 
 } // namespace rgsml::tests
