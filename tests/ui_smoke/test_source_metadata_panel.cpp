@@ -520,6 +520,7 @@ private slots:
     void m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly();
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
+    void referenceTerminologyOnRealMain();
     void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
     void truePeakReadOnlyAnalysisVisualEvidence();
@@ -3492,6 +3493,100 @@ Window {
     QCoreApplication::processEvents();
 }
 
+// Dedicated PO terminology probe on actual Main.qml. Unlike the
+// historical full-window smoke, this test makes no docking/telemetry claims.
+void SourceMetadataPanelSmokeTest::referenceTerminologyOnRealMain()
+{
+    // Match the genuine application Main bootstrap instead of parsing
+    // the qrc:/Main.qml resource directly: Qt QML_ELEMENT types such as
+    // WaveformItem are registered by loadFromModule, not raw qrc loading.
+    // Only the initial read-only UI surface is exercised.
+    auto playbackService=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel playbackTransport{std::move(playbackService)};
+    app::SourceSelectionViewModel sourceSelection;
+    ui::WaveformPresentation waveformPresentation;
+    app::AuditionRegionViewModel auditionRegion{&playbackTransport};
+    app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    auto modules=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(modules);
+    const auto chainUuid=*core::Uuid::parse(
+        "11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid=*core::Uuid::parse(
+        "22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid=*core::Uuid::parse(
+        "33333333-3333-3333-3333-333333333333").value();
+    const auto compUuid=*core::Uuid::parse(
+        "44444444-4444-4444-4444-444444444444").value();
+    const auto gainId=*dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId=*dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    const auto compId=*dsp::ModuleInstanceId::from_uuid(compUuid).value();
+    auto createdChain=app::MasteringChainState::create_default(
+        *modules.value(),chainUuid,gainId,eqId,compId);
+    QVERIFY(createdChain);
+    auto chain=std::move(*createdChain.value());
+    app::MasteringPreviewController preview{
+        &chain,
+        [&auditionSelector] {
+            return auditionSelector.prepared_realization_snapshot();
+        },
+        [&auditionSelector](render::RenderResult result) {
+            return auditionSelector.set_processed_realization(
+                std::move(result));
+        }
+    };
+    app::GainViewModel gain{&chain,&preview};
+    app::EqViewModel eq{&chain,&preview};
+    app::CompressorViewModel compressor{&chain,&preview};
+    app::StereoMsViewModel stereo{&chain,&preview};
+    app::DspChainAdapterModel dspAdapters{
+        &gain,&eq,&compressor,&chain,QStringLiteral("Mastering"),
+        nullptr,&stereo};
+    app::GoldSelectionViewModel goldSelection{&auditionSelector};
+    app::ProjectSessionViewModel projectSession{
+        &sourceSelection,&goldSelection,&auditionRegion,&playbackTransport};
+    analysis::LiveSpectrumAnalyzer spectrumAnalyzer;
+    spectrumAnalyzer.start();
+    app::LiveSpectrumViewModel spectrum{&spectrumAnalyzer};
+    QQmlApplicationEngine engine;
+    engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    auto* context=engine.rootContext();
+    context->setContextProperty("sourceSelection",&sourceSelection);
+    context->setContextProperty("playbackTransport",&playbackTransport);
+    context->setContextProperty("sourceWaveform",&waveformPresentation);
+    context->setContextProperty("auditionRegion",&auditionRegion);
+    context->setContextProperty("auditionSelector",&auditionSelector);
+    context->setContextProperty("goldSelection",&goldSelection);
+    context->setContextProperty("projectSession",&projectSession);
+    context->setContextProperty("gainViewModel",&gain);
+    context->setContextProperty("eqViewModel",&eq);
+    context->setContextProperty("compressorViewModel",&compressor);
+    context->setContextProperty("dspChainAdapterModel",&dspAdapters);
+    context->setContextProperty("liveSpectrumViewModel",&spectrum);
+    context->setContextProperty(
+        "buildProvenance",app::configured_build_provenance());
+    // Canonical Qt QML module registration, exactly like app/src/main.cpp.
+    engine.loadFromModule("Rgsml.Ui","Main");
+    QCOMPARE(engine.rootObjects().size(),1);
+    auto* root=engine.rootObjects().front();
+    QVERIFY(qobject_cast<QQuickWindow*>(root));
+    QCoreApplication::processEvents();
+    const auto checkLabel=[&](const char* objectName,const char* expected) {
+        auto* item=root->findChild<QObject*>(
+            QString::fromLatin1(objectName));
+        return item&&item->property("text").toString()
+            ==QString::fromLatin1(expected);
+    };
+    QVERIFY2(checkLabel("menuOpenGold","Open Reference"),
+        "Real Main file menu must show Open Reference");
+    QVERIFY2(checkLabel("menuClearGold","Clear Reference"),
+        "Real Main file menu must show Clear Reference");
+    QVERIFY2(checkLabel("adaptiveModeToggle_Gold","Reference / AutoMatch"),
+        "Real Main tab must show Reference / AutoMatch");
+    QVERIFY2(checkLabel("auditionGoldButton","REFERENCE"),
+        "Real Main audition control must show REFERENCE");
+    qobject_cast<QQuickWindow*>(root)->close();
+}
+
 void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 {
     auto playbackService = std::make_unique<FakePlaybackService>();
@@ -4060,7 +4155,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!preparedTarget->property("enabled").toBool());
     QVERIFY(!processedTarget->property("enabled").toBool());
     QVERIFY(!goldTarget->property("enabled").toBool());
-    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Gold: not loaded"));
+    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Reference: not loaded"));
+    QCOMPARE(goldTarget->property("text").toString(),QStringLiteral("REFERENCE"));
+    QVERIFY2(goldTarget->property("implicitWidth").toReal()>=112,
+             "REFERENCE must fit in the actual audition button without elision");
+    auto* referenceContextTab = root->findChild<QObject*>(
+        QStringLiteral("adaptiveModeToggle_Gold")); // internal ID unchanged
+    QVERIFY(referenceContextTab);
+    QCOMPARE(referenceContextTab->property("text").toString(),
+             QStringLiteral("Reference / AutoMatch"));
+    QVERIFY2(referenceContextTab->property("implicitWidth").toReal()>=166,
+             "Reference/AutoMatch needs enough width at minimum UI scale");
+    auto* referenceStatus = root->findChild<QObject*>(
+        QStringLiteral("goldReferenceStatus")); // internal ID unchanged
+    QVERIFY(referenceStatus);
+    QCOMPARE(referenceStatus->property("text").toString(),
+             QStringLiteral("NO REFERENCE LOADED"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
     auto* waveformPanel = root->findChild<QObject*>(
@@ -4171,6 +4281,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(goldMenuItem && goldFileDialog);
     QVERIFY(goldMenuItem->property("enabled").toBool());
     QVERIFY(goldMenuItem->width() > 0);
+    QCOMPARE(goldMenuItem->property("text").toString(),
+             QStringLiteral("Open Reference"));
+    QCOMPARE(goldFileDialog->property("title").toString(),
+             QStringLiteral("Open Reference WAV"));
+    auto* clearReferenceItem = root->findChild<QObject*>(
+        QStringLiteral("menuClearGold")); // stable internal object name
+    QVERIFY(clearReferenceItem);
+    QCOMPARE(clearReferenceItem->property("text").toString(),
+             QStringLiteral("Clear Reference"));
     auto* gainMenuItem = root->findChild<QObject*>(
         QStringLiteral("menuViewInputGain"));
     auto* eqMenuItem = root->findChild<QObject*>(
