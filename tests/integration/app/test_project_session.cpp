@@ -929,6 +929,26 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     }
     QVERIFY(QtReadiness::still_current(privatePanels,controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting));
+
+    // A numerical worker cannot inspect Qt-owned routing, owner state or
+    // private Product metrics. Its entire return is a static masked map.
+    bool rejectedWorker=false;
+    std::thread privateQtWorker([&] {
+        const auto refused=QtReadiness::capture(
+            controllers,fanout,session.selector,session.gold,
+            productInbox,analysisRouting);
+        rejectedWorker=!refused.current_product_owner
+            &&!refused.product_ui_authorized
+            &&!refused.panels[0].value("ready").toBool()
+            &&refused.panels[0].value("levels").toMap().isEmpty()
+            &&refused.panels[0].value("sourceRole").toString()
+                ==QStringLiteral("UNAVAILABLE")
+            &&!QtReadiness::still_current(privatePanels,controllers,fanout,
+                session.selector,session.gold,productInbox,analysisRouting);
+    });
+    privateQtWorker.join();
+    QVERIFY(rejectedWorker);
+
     QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::tonal_m20,
         app::m21_private::Column::prepared));
     QVERIFY(!QtReadiness::still_current(privatePanels,controllers,fanout,
