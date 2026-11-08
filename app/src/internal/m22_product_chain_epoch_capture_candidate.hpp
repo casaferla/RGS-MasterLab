@@ -52,8 +52,11 @@ public:
            ||product.candidates.staged()!=expected)
             return R::failure(fail("M22_PRODUCT_CHAIN_REQUIRES_EXACT_CURRENT_STAGE"));
         const auto owner=fanout.current_owner_snapshot();
+        const auto* source=product.upstream.source.source_resource();
         if(!owner||owner->epoch==0||!owner->identity.valid())
             return R::failure(fail("M22_PRODUCT_CHAIN_MISSING_EPOCH"));
+        if(!source||!source->reference().permissions().can_read())
+            return R::failure(fail("M22_PRODUCT_CHAIN_SOURCE_IDENTITY_MISSING"));
         m22_private::FullChainWitnessFailure reason{};
         const auto witness=m22_private::observe_real_complete_chain_candidate(
             expected->rendered,reason);
@@ -77,7 +80,7 @@ public:
            ||product.candidates.staged()!=expected)
             return R::failure(fail("M22_PRODUCT_CHAIN_CHANGED_DURING_CAPTURE"));
         return R::success(Capture{
-            *owner,std::move(expected),std::move(*witness)});
+            *owner,source->reference(),std::move(expected),std::move(*witness)});
     }
 
     [[nodiscard]] static bool still_current(
