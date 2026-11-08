@@ -1,4 +1,8 @@
 #include "m22_checked_output_clock_candidate.hpp"
+#include "m22_checked_output_pcm_candidate.hpp"
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/audio_format.hpp>
+#include <rgsml/core/frame_time.hpp>
 #include <QtTest/QTest>
 #include <array>
 #include <cstdint>
@@ -81,6 +85,75 @@ private slots:
             QVERIFY(!frozen->plan_window(Mode::FULL,{307,8999},reason));
             QCOMPARE(reason,OutputClockFailure::INVALID_WINDOW);
             QVERIFY(frozen->plan_window(Mode::FULL,{0,9011},reason));
+        }
+    }
+    void genuineOutputBufferMetadataIsNotAnExternalClaim() {
+        using namespace rgsml;
+        using namespace rgsml::m22_private;
+        for(const auto hz:{44100,48000,88200,96000,176400,192000}) {
+            OutputClockFailure reason{};
+            const auto expected=CheckedOutputClockCandidate::freeze(
+                {48000,static_cast<std::uint32_t>(hz),101,103,
+                 "checked-current-M17-owner",
+                 hz==48000 ? "" : "unqualified-Q0-asset-id"},reason);
+            // Same-rate needs equal source/output frame counts.
+            if(hz==48000) {
+                QVERIFY(!expected);
+                QCOMPARE(reason,OutputClockFailure::WRONG_BYPASS_LENGTH);
+                continue;
+            }
+            QVERIFY(expected);
+            QVERIFY(!expected->authorizes_release());
+            const auto rate=core::SampleRate::create(hz);
+            const auto count=core::FrameCount::create(103);
+            QVERIFY(rate&&count);
+            for(const auto layout:{audio::ChannelLayout::MONO_C,
+                                  audio::ChannelLayout::STEREO_LR}) {
+                const auto fmt=audio::AudioFormat::create(*rate.value(),layout);
+                QVERIFY(fmt);
+                auto actual=audio::AudioBuffer::create(*fmt.value(),
+                    audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{0},*count.value());
+                QVERIFY(actual);
+                QCOMPARE(check_real_full_output_pcm_candidate(
+                    *expected,actual.value()->view()),PcmClockFailure::NONE);
+                QVERIFY(!expected->authorizes_release());
+                auto sourceDomain=audio::AudioBuffer::create(*fmt.value(),
+                    audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                    core::FrameIndex{0},*count.value());
+                QVERIFY(sourceDomain);
+                QCOMPARE(check_real_full_output_pcm_candidate(
+                    *expected,sourceDomain.value()->view()),
+                    PcmClockFailure::INVALID_OUTPUT_DOMAIN);
+                auto nonZeroOrigin=audio::AudioBuffer::create(*fmt.value(),
+                    audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{7},*count.value());
+                QVERIFY(nonZeroOrigin);
+                QCOMPARE(check_real_full_output_pcm_candidate(
+                    *expected,nonZeroOrigin.value()->view()),
+                    PcmClockFailure::NOT_WHOLE_PROGRAMME);
+                const auto shortCount=core::FrameCount::create(102);
+                QVERIFY(shortCount);
+                auto shortened=audio::AudioBuffer::create(*fmt.value(),
+                    audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{0},*shortCount.value());
+                QVERIFY(shortened);
+                QCOMPARE(check_real_full_output_pcm_candidate(
+                    *expected,shortened.value()->view()),
+                    PcmClockFailure::NOT_WHOLE_PROGRAMME);
+                const auto wrongRate=core::SampleRate::create(32000);
+                QVERIFY(wrongRate);
+                const auto wrongFormat=audio::AudioFormat::create(
+                    *wrongRate.value(),layout);
+                QVERIFY(wrongFormat);
+                auto wrongClock=audio::AudioBuffer::create(
+                    *wrongFormat.value(),audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{0},*count.value());
+                QVERIFY(wrongClock);
+                QCOMPARE(check_real_full_output_pcm_candidate(
+                    *expected,wrongClock.value()->view()),
+                    PcmClockFailure::WRONG_OUTPUT_RATE);
+            }
         }
     }
     void missingAndInvalidNeverFallbackToBypass() {
