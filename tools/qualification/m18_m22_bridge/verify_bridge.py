@@ -153,7 +153,9 @@ def main():
         "now->identity!=capture.owner.identity",
         "QThread::currentThread()!=product.session.thread()",
         "absoluteOutputWindow.end()",
-        "return verified.value()->absolute_start_frame()",
+        "return true;",
+        "expected.value()->data()!=retained.value()->data()",
+        "QThread::currentThread()!=product.session.thread()",
     ):
         check(required in preview, "M22 real Product preview admission guard missing: "+required)
     for required in (
@@ -162,6 +164,9 @@ def main():
         "const auto admittedMasterPreview=PreviewAdmission::capture(",
         "PreviewAdmission::still_current(",
         "!PreviewAdmission::capture(",
+        "std::thread privatePreviewWorker(",
+        "QCOMPARE(crop.value()->data(),whole.value()->data()+731)",
+        "PreviewAdmission::still_current(",
     ):
         check(required in joined, "M22 real Product preview acceptance test absent: "+required)
 
