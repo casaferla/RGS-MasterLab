@@ -6,6 +6,7 @@
 #include "../../../render/src/internal/m22_full_chain_witness_candidate.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
+#include <rgsml/core/resource_reference.hpp>
 #include <QThread>
 #include <cstdint>
 #include <memory>
@@ -23,13 +24,16 @@ public:
 
     struct Capture final {
         Fanout::OwnerSnapshot epoch;
+        core::ResourceReference exact_source_resource;
         std::shared_ptr<const Stage> exact_m17_owner;
         m22_private::FullChainWitness immutable_chain_witness;
         Capture()=delete;
         Capture(Fanout::OwnerSnapshot accepted,
+                core::ResourceReference source,
                 std::shared_ptr<const Stage> m17,
                 m22_private::FullChainWitness witness)
-            :epoch(std::move(accepted)),exact_m17_owner(std::move(m17)),
+            :epoch(std::move(accepted)),exact_source_resource(std::move(source)),
+             exact_m17_owner(std::move(m17)),
              immutable_chain_witness(std::move(witness)) {}
         [[nodiscard]] bool authorizes_release() const noexcept {return false;}
     };
