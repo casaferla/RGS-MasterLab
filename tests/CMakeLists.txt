@@ -1501,7 +1501,8 @@ target_include_directories(rgsml_m22_product_chain_epoch_capture_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src
 )
 target_link_libraries(rgsml_m22_product_chain_epoch_capture_tests PRIVATE
-    rgsml_render rgsml_platform Qt6::Test
+    rgsml_render rgsml_platform
+    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_m22_product_chain_epoch_capture_tests)
 add_test(NAME rgsml_m22_product_chain_epoch_capture_tests
