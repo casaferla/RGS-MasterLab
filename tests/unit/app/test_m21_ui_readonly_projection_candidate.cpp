@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreLateCompletionCannotRestoreOldPrepared();
     void reviewStoreNewGenerationStalesOldPrepared();
     void reviewStorePublishesOnlyAfterExactExpectedGeneration();
     void displayZeroSuppressesSignedRoundedZero();
@@ -823,6 +824,18 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreNewGenerationStalesOldPrep
     QVERIFY(changed.columns[0].values[1].value_text=="STALE");
     QVERIFY(!store.test_preview(
         qt_review::ExplicitTestFixture{0x4D323147U}).value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreLateCompletionCannotRestoreOldPrepared()
+{
+    ReviewEpochStore store;
+    const auto stale=example(Column::prepared,7,"p7",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(stale,receipt(stale)));
+    QVERIFY(store.begin(Column::prepared,8));
+    QVERIFY(!store.receive(stale,receipt(stale)));
+    QVERIFY(!store.snapshot().columns[0].candidate_matched);
+    QVERIFY(store.snapshot().columns[0].state=="STALE");
 }
 
 } // namespace rgsml::tests
