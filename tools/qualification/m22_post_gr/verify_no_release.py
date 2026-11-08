@@ -127,6 +127,10 @@ def main():
     require(actualtest,(
         "realPinnedQ0BothDirectionsExactReplay",
         "refusalAndIdentityDoNotBypassQ0",
+        "allThirtyDirectedOriginalQ0FirsReallyProcessPCM",
+        "std::size_t{30}",
+        "stopAfterProgress",
+        "quiet_NaN()",
         '"RGSMSR1_L160_M147.bin"',
         '"RGSMSR1_L147_M160.bin"',
         "std::bit_cast<std::uint64_t>",
