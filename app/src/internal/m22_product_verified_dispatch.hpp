@@ -5,7 +5,6 @@
 // No alternative limiter/renderer/encoder or synthetic Phase-6 gate.
 #include "m22_product_preview_admission.hpp"
 #include "m18_private_product_export_action.hpp"
-#include <rgsml/audio/wav_format.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/resource_reference.hpp>
