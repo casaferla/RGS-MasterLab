@@ -75,7 +75,7 @@ public:
             std::vector<M23DiagnosticFinding> findings;
             findings.reserve(source.size());
             for(const auto& observed:source) {
-                if(!observed.status ||!*observed.status
+                if(!observed.status ||observed.status->has_value()
                    ||observed.status->error()==nullptr)
                     return R::failure(rgsml::core::Error{
                         rgsml::core::ErrorCode::InvalidState,
