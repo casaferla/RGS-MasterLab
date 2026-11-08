@@ -80,7 +80,7 @@ jobs:
             tail -n 50 "$cfg" >"$bounded"
             exit 1
           fi
-          if ! cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_tonal_stereo_analyzer_tests rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests rgsml_m22_checked_output_clock_candidate_tests rgsml_m22_authentic_q0_candidate_tests rgsml_m22_real_manual_q0_m17_chain_candidate_tests rgsml_m22_product_chain_epoch_capture_tests >"$buildlog" 2>&1; then
+          if ! cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_tonal_stereo_analyzer_tests rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests rgsml_m22_checked_output_clock_candidate_tests rgsml_m22_authentic_q0_candidate_tests rgsml_m22_real_manual_q0_m17_chain_candidate_tests rgsml_m22_product_chain_epoch_capture_tests rgsml_render_preview_tests >"$buildlog" 2>&1; then
             tail -n 60 "$buildlog" >"$bounded"
             exit 1
           fi
@@ -101,7 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           testlog="$RUNNER_TEMP/rgs-ui-ctest.log"
-          if ! ctest --test-dir build/m21-ui-typed --output-on-failure -R '^(rgsml_m21_qml_typed_convergence_tests|rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests|rgsml_m22_checked_output_clock_candidate_tests|rgsml_m22_authentic_q0_candidate_tests|rgsml_m22_real_manual_q0_m17_chain_candidate_tests|rgsml_m22_product_chain_epoch_capture_tests)$' >"$testlog" 2>&1; then
+          if ! ctest --test-dir build/m21-ui-typed --output-on-failure -R '^(rgsml_m21_qml_typed_convergence_tests|rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests|rgsml_m22_checked_output_clock_candidate_tests|rgsml_m22_authentic_q0_candidate_tests|rgsml_m22_real_manual_q0_m17_chain_candidate_tests|rgsml_m22_product_chain_epoch_capture_tests|rgsml_render_preview_tests)$' >"$testlog" 2>&1; then
             tail -n 55 "$testlog" >"$RUNNER_TEMP/rgs-ui-test-bounded.txt"
             exit 1
           fi
@@ -204,7 +204,7 @@ jobs:
             Get-Content $cfg -Tail 50 | Set-Content $bounded
             throw 'UI_PROJECTION_WINDOWS_CONFIGURE_FAILED'
           }
-          cmake --build build/m21-ui-typed --config Release --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_source_metadata_panel_smoke rgsml_audition_source_selector_tests rgsml_project_roundtrip_tests rgsml_project_session_tests rgsml_tonal_stereo_analyzer_tests rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests rgsml_m22_checked_output_clock_candidate_tests rgsml_m22_authentic_q0_candidate_tests rgsml_m22_real_manual_q0_m17_chain_candidate_tests rgsml_m22_product_chain_epoch_capture_tests rgsml_app *> $buildlog
+          cmake --build build/m21-ui-typed --config Release --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_source_metadata_panel_smoke rgsml_audition_source_selector_tests rgsml_project_roundtrip_tests rgsml_project_session_tests rgsml_tonal_stereo_analyzer_tests rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests rgsml_m22_checked_output_clock_candidate_tests rgsml_m22_authentic_q0_candidate_tests rgsml_m22_real_manual_q0_m17_chain_candidate_tests rgsml_m22_product_chain_epoch_capture_tests rgsml_render_preview_tests rgsml_app *> $buildlog
           if ($LASTEXITCODE -ne 0) {
             Get-Content $buildlog -Tail 60 | Set-Content $bounded
             throw 'UI_PROJECTION_WINDOWS_BUILD_FAILED'
@@ -226,7 +226,7 @@ jobs:
         run: |
           $testlog = "$env:RUNNER_TEMP/rgs-ui-ctest.log"
           $bounded = "$env:RUNNER_TEMP/rgs-ui-test-bounded.txt"
-          ctest --test-dir build/m21-ui-typed -C Release --output-on-failure -R '^(rgsml_m21_qml_typed_convergence_tests|rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_audition_source_selector_tests|rgsml_project_roundtrip_tests|rgsml_project_session_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests|rgsml_m22_checked_output_clock_candidate_tests|rgsml_m22_authentic_q0_candidate_tests|rgsml_m22_real_manual_q0_m17_chain_candidate_tests|rgsml_m22_product_chain_epoch_capture_tests)$' *> $testlog
+          ctest --test-dir build/m21-ui-typed -C Release --output-on-failure -R '^(rgsml_m21_qml_typed_convergence_tests|rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_audition_source_selector_tests|rgsml_project_roundtrip_tests|rgsml_project_session_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests|rgsml_m22_checked_output_clock_candidate_tests|rgsml_m22_authentic_q0_candidate_tests|rgsml_m22_real_manual_q0_m17_chain_candidate_tests|rgsml_m22_product_chain_epoch_capture_tests|rgsml_render_preview_tests)$' *> $testlog
           if ($LASTEXITCODE -ne 0) {
             Get-Content $testlog -Tail 55 | Set-Content $bounded
             throw 'UI_PROJECTION_WINDOWS_TESTS_FAILED'
