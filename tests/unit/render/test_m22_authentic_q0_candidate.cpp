@@ -131,6 +131,42 @@ private slots:
             }
         }
     }
+    void allSixIdentityRatesAreBitExactWithoutFIR() {
+        using namespace rgsml::m22_private;
+        constexpr std::array<std::int64_t,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        for(const auto rate:rates)for(const auto layout:{
+            audio::ChannelLayout::MONO_C,
+            audio::ChannelLayout::STEREO_LR}) {
+            const auto input=source(rate,layout);
+            const auto destination=core::SampleRate::create(rate);
+            const auto blockFrames=core::FrameCount::create(31);
+            QVERIFY(input&&destination&&blockFrames);
+            const auto accepted=materialize_authentic_q0_source_candidate(
+                input.value()->view(),*destination.value(),
+                *blockFrames.value(),{});
+            QVERIFY(accepted);
+            QVERIFY(!accepted.value()->used_frozen_q0);
+            QVERIFY(!accepted.value()->authorizes_release());
+            QVERIFY(accepted.value()->frozen_q0_sha256.empty());
+            const auto sourceView=input.value()->view();
+            const auto output=accepted.value()->pre_terminal_pcm.pcm.view();
+            QCOMPARE(output.timebase().frame_domain_id(),
+                     audio::FrameDomainId::OUTPUT_RATE);
+            QCOMPARE(output.frame_count(),sourceView.frame_count());
+            for(std::size_t ch=0;ch<output.format().channel_count();++ch) {
+                const auto actual=output.channel(ch);
+                const auto expected=sourceView.channel(ch);
+                QVERIFY(actual&&expected);
+                QCOMPARE(actual.value()->size(),expected.value()->size());
+                for(std::size_t n=0;n<actual.value()->size();++n)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                                 (*actual.value())[n]),
+                             std::bit_cast<std::uint64_t>(
+                                 (*expected.value())[n]));
+            }
+        }
+    }
     void allThirtyDirectedOriginalQ0FirsReallyProcessPCM() {
         using namespace rgsml::m22_private;
         constexpr std::array<std::int64_t,6> rates{
