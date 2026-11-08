@@ -149,6 +149,11 @@ qt_add_executable(rgsml_project_session_tests
 target_include_directories(rgsml_project_session_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src
     ${CMAKE_SOURCE_DIR}/analysis/src)
+# The native Product Q0 integration test reads the existing SHA-pinned
+# coefficient files from the checkout; production does not gain a test root.
+target_compile_definitions(rgsml_project_session_tests PRIVATE
+    RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
 target_link_libraries(rgsml_project_session_tests PRIVATE
     rgsml_project rgsml_render rgsml_platform rgsml_ui Qt6::Core Qt6::Test)
 rgsml_apply_project_warnings(rgsml_project_session_tests)
