@@ -28,9 +28,13 @@ public:
         std::optional<Owner::GoldCapture> reference;
         std::uint64_t captured_epoch{0};
         [[nodiscard]] bool structurally_valid() const noexcept {
-            return captured_epoch>0
+            const bool defined=column==Column::prepared
+                ||column==Column::processed||column==Column::gold;
+            return defined &&captured_epoch>0
                 &&(render.has_value()!=reference.has_value())
-                &&((column==Column::gold)==reference.has_value());
+                &&((column==Column::gold)==reference.has_value())
+                &&(!render||render->owner.epoch==captured_epoch)
+                &&(!reference||reference->owner.epoch==captured_epoch);
         }
     };
 
