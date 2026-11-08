@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void rejectUncheckedFrameDomainClaim();
     void rejectUnconfirmedCanonicalOwnerClaim();
     void rejectReceiptWithDifferentSampleRate();
     void rejectReceiptWithDifferentFrameCount();
@@ -380,6 +381,17 @@ void M21UiReadonlyProjectionCandidateTest::rejectUnconfirmedCanonicalOwnerClaim(
     const auto r=project_readonly(compose(snapshots),owners);
     QVERIFY(!r.columns[0].candidate_matched);
     QVERIFY(!r.columns[0].values[1].numeric);
+    QVERIFY(!r.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::rejectUncheckedFrameDomainClaim()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    owners[0]->frame_domain_checked_at_source=false;
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(!r.columns[0].candidate_matched);
+    QVERIFY(r.columns[0].state=="STALE");
     QVERIFY(!r.production_authorized);
 }
 
