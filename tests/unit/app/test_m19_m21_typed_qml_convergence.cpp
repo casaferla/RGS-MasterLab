@@ -106,6 +106,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m20RefusesLowSupportTonalProfileAsFullValidatedCurve();
     void m20RefusesStaleSpectrumAlthoughPointsExist();
     void referenceBadgeUsesApprovedUserFacingName();
     void missingGoldBadgeIsVisuallyMuted();
@@ -608,6 +609,19 @@ void M19M21TypedQmlConvergenceTest::m20RefusesStaleSpectrumAlthoughPointsExist()
     QVERIFY(view->rootObject()->property("available").toBool());
     QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
     auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m20RefusesLowSupportTonalProfileAsFullValidatedCurve()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList bands{QVariantMap{{"label","1k"},{"level",0.5},{"supported",true}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"bands",bands},{"tonalProfileStatus","LOW SUPPORT"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("tonalProfileAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingProfileNotice");
     QVERIFY(notice && notice->isVisible());
 }
 
