@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void processedColumnQtProjectionSelectsProcessedCorrectly();
     void testFixtureRejectsArtificialProductionAuthorization();
     void decimalDisplayUsesStableDotAndDeltaSign();
     void allSixSupportedRatesUseExactMatchingOnly();
@@ -693,6 +694,29 @@ void M21UiReadonlyProjectionCandidateTest::testFixtureRejectsArtificialProductio
     QVERIFY(!denied.value("ready").toBool());
     QVERIFY(!denied.value("fixtureMode").toBool());
     QVERIFY(denied.value("levels").toMap().isEmpty());
+}
+
+void M21UiReadonlyProjectionCandidateTest::processedColumnQtProjectionSelectsProcessedCorrectly()
+{
+    using namespace app::m21_private::ui_candidate::qt_review;
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[1]=example(Column::gold,3,"g",-13.0);
+    snapshots[2]=example(Column::processed,9,"x",-14.0);
+    Receipts owners{};
+    for(std::size_t i=0;i<3;++i)owners[i]=receipt(*snapshots[i]);
+    const auto projection=project_readonly(compose(snapshots),owners);
+    const auto shown=candidate_test_fixture_envelope(
+        projection,Column::processed,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(shown.value("ready").toBool());
+    QCOMPARE(shown.value("levels").toMap().value("rms").toString(),
+             QStringLiteral("-14.00"));
+    const auto rows=shown.value("metrics").toList();
+    QCOMPARE(rows.at(1).toMap().value("processed").toString(),
+             QStringLiteral("-14.00"));
+    QCOMPARE(rows.at(1).toMap().value("processedDelta").toString(),
+             QStringLiteral("+1.00"));
+    QVERIFY(!shown.value("productionAuthorized").toBool());
 }
 
 } // namespace rgsml::tests
