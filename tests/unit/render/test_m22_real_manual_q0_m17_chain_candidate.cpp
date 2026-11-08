@@ -406,6 +406,17 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
                 result.value()->used_candidate_src=false;
             }
+            // Unqualified-but-supported M16 is kept as such; UNSUPPORTED is fatal.
+            {
+                const auto old=result.value()->terminal.checked.final_check->qualification_status;
+                result.value()->terminal.checked.final_check->qualification_status=
+                    analysis::TruePeakQualificationStatus::UNSUPPORTED;
+                m22_private::FullChainWitnessFailure why{};
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
+                result.value()->terminal.checked.final_check->qualification_status=old;
+            }
             ++inspected;
         }
         QCOMPARE(inspected,std::size_t{6});
