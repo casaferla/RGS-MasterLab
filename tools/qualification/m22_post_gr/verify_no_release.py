@@ -18,6 +18,9 @@ ALLOWED = {
     "render/src/internal/m22_authentic_q0_conversion_candidate.hpp",
     "tests/unit/render/test_m22_authentic_q0_candidate.cpp",
     "tests/unit/render/test_m22_real_manual_q0_m17_chain_candidate.cpp",
+    "render/src/internal/m22_full_chain_witness_candidate.hpp",
+    "app/src/internal/m22_product_chain_epoch_capture_candidate.hpp",
+    "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp",
     "tests/unit/render/test_m22_checked_output_clock_candidate.cpp",
     "tests/CMakeLists.txt",
     ".github/workflows/m22-post-gr-focused.yml",
@@ -151,18 +154,51 @@ def main():
         "materialize_phase11_scoped_q0_pinned_offline_candidate(",
         "allThirtyRealQ0RoutesViaImmutableManualOwnerAndRealM17Bypass",
         "realActiveM17AfterQ0RunsM16AndRetainsManualOwner",
+        "allSixNativeIdentityRatesProduceM16CheckedWithoutFIR",
+        "observe_real_complete_chain_candidate(",
         "tamperAndStaleManualEpochCannotPublishM17",
         "std::size_t{30}",
         "final_check.has_value()",
         "src_kernel_sha256",
     ),"M22 genuine manual-Q0-M17 whole-chain proof")
 
+    nativewitness=blob("HEAD",
+        "render/src/internal/m22_full_chain_witness_candidate.hpp").decode()
+    require(nativewitness,(
+        "observe_real_complete_chain_candidate(",
+        "phase11_frozen_original_fir_pin(",
+        "FrameDomainId::SOURCE_PROCESSING_RATE",
+        "FrameDomainId::OUTPUT_RATE",
+        "FullChainWitnessFailure::INVALID_M17_OR_M16",
+        "src_kernel_sha256!=std::string_view{pin->sha256}",
+        "authorizes_release() const noexcept { return false; }",
+    ),"M22 native full-chain witness")
+    productbridge=blob("HEAD",
+        "app/src/internal/m22_product_chain_epoch_capture_candidate.hpp").decode()
+    require(productbridge,(
+        "M18ProductCompleteBinding",
+        "Binding::can_offer_verified_master(product,fanout)",
+        "product.candidates.staged()!=expected",
+        "source->reference().same_resource_identity(",
+        "observe_real_complete_chain_candidate(",
+        "owner->epoch",
+        "still_current(",
+        "authorizes_release() const noexcept {return false;}",
+    ),"M22 exact Product owner epoch bridge")
+    producttest=blob("HEAD",
+        "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp").decode()
+    require(producttest,(
+        "M22ProductChainEpochCaptureCandidate",
+        "is_default_constructible_v<Probe::Capture>",
+        "Probe::still_current(",
+    ),"M22 Product capture compile contract")
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
     require(cmake,(
         "rgsml_m22_checked_output_clock_candidate_tests",
         "rgsml_audio Qt6::Test",
         "rgsml_m22_authentic_q0_candidate_tests",
         "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
+        "rgsml_m22_product_chain_epoch_capture_tests",
         'RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"',
     ),"M22 Qt test target")
     workflow=blob("HEAD",
@@ -171,6 +207,7 @@ def main():
         "rgsml_m22_checked_output_clock_candidate_tests",
         "rgsml_m22_authentic_q0_candidate_tests",
         "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
+        "rgsml_m22_product_chain_epoch_capture_tests",
         "tools/qualification/m22_post_gr/verify_no_release.py",
         "staging/m22-post-gr-focused-ci-20261108",
         "tools/qualification/playback_src/test_approved_16_fir_package.py",
