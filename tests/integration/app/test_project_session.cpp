@@ -5,6 +5,7 @@
 #include "internal/m18_product_complete_binding.hpp"
 #include "internal/m22_verified_master_preview_parity.hpp"
 #include "internal/m22_product_preview_admission.hpp"
+#include "internal/m22_product_verified_dispatch.hpp"
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m21_product_qt_readiness_bridge.hpp"
@@ -1571,6 +1572,57 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QCOMPARE(session.source.display_name(),
                  QStringLiteral("m18-positive-real-source.wav"));
     }
+    // M22 FULL is NOT a duplicate DSP renderer: it must take the exact
+    // same verified M17 Master from the canonical M18 Product context
+    // and dispatch through the existing user-consented M18 WAV action.
+    using M22Dispatch=app::internal::M22ProductVerifiedDispatch;
+    const auto dispatchOutput=directory.filePath(
+        QStringLiteral("m22-current-verified-full-dispatch.wav"));
+    auto dispatchResource=platform::windows::WindowsResourceWriter::
+        make_write_reference(dispatchOutput.toUtf8().toStdString(),
+            "m22-current-verified-full-dispatch.wav");
+    QVERIFY(dispatchResource);
+    const auto currentDispatchedPreview=M22Dispatch::begin_preview(
+        controllers,fanout,verified,*selectedWindow.value());
+    QVERIFY(currentDispatchedPreview);
+    QVERIFY(!M22Dispatch::begin_full(
+        controllers,fanout,action,{},*dispatchResource.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!M22Dispatch::begin_full(
+        controllers,fanout,action,verified,*dispatchResource.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),false));
+    QVERIFY(!QFileInfo::exists(dispatchOutput));
+    const auto dispatched=M22Dispatch::begin_full(
+        controllers,fanout,action,verified,*dispatchResource.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true);
+    QVERIFY2(dispatched,dispatched?"":dispatched.error()->message().c_str());
+    QVERIFY(action.has_unacknowledged_export());
+    QVERIFY(!M22Dispatch::begin_preview(
+        controllers,fanout,verified,*selectedWindow.value()));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        action.snapshot().phase==
+            M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
+        30000);
+    QCOMPARE(action.snapshot().total_frames,
+             static_cast<std::uint64_t>(n));
+    QCOMPARE(action.snapshot().encoded_frames,
+             static_cast<std::uint64_t>(n));
+    QVERIFY(QFileInfo::exists(dispatchOutput));
+    QCOMPARE(action.snapshot().verified_encoded_sha256.size(),
+             std::size_t{64});
+    QVERIFY(action.acknowledge());
+    expectedConsentEpoch+=2;
+    const auto afterDispatch=fanout.current_owner_snapshot();
+    QVERIFY(afterDispatch);
+    QCOMPARE(afterDispatch->epoch,expectedConsentEpoch);
+    QVERIFY(afterDispatch->identity==initialProductEpoch->identity);
+    QVERIFY(!PreviewAdmission::still_current(
+        controllers,fanout,*currentDispatchedPreview.value()));
+    QVERIFY(ui.can_export());
+
     // A fresh confirmed Export into an already-published WAV must fail
     // without overwriting the first verified output or losing the M17
     // Master. A failed job still requires explicit ACK to release consent.
