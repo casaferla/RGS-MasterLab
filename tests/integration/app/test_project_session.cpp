@@ -605,6 +605,16 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QCOMPARE(independentGoldPanels.panels[2].value(
         "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
     QVERIFY(!independentGoldPanels.panels[1].value("ready").toBool());
+    // True selected REFERENCE M20 carries only quality classifications:
+    // no invented loudness, zero-valued TP or spectral bins.
+    const auto referenceQuality=independentGoldPanels.panels[1]
+        .value("privateQualityOnly").toMap();
+    QVERIFY(referenceQuality.contains("width"));
+    QVERIFY(referenceQuality.contains("P50"));
+    QVERIFY(!referenceQuality.contains("lufs"));
+    QCOMPARE(referenceQuality.size(),4);
+    QVERIFY(independentGoldPanels.panels[0]
+        .value("privateQualityOnly").toMap().isEmpty());
     QVERIFY(independentGoldPanels.panels[1].value("stereo").toMap().isEmpty());
     QVERIFY(GoldQtReadiness::still_current(independentGoldPanels,
         controllers,fanout,session.selector,session.gold,
@@ -643,6 +653,8 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     const auto retiredGoldPanel=GoldQtReadiness::capture(
         controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
     QVERIFY(!retiredGoldPanel.panels[1].value("ready").toBool());
+    QVERIFY(retiredGoldPanel.panels[1]
+        .value("privateQualityOnly").toMap().isEmpty());
     QVERIFY(retiredGoldPanel.panels[1].value("stereo").toMap().isEmpty());
     if(retiredGoldPanel.current_product_owner)
         QCOMPARE(retiredGoldPanel.panels[1].value(
@@ -917,6 +929,26 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              QStringLiteral("CURRENT"));
     QCOMPARE(privatePanels.panels[2].value("privateEvidenceStatus").toString(),
              QStringLiteral("MISSING"));
+    const auto levelsQuality=privatePanels.panels[0]
+        .value("privateQualityOnly").toMap();
+    QCOMPARE(levelsQuality.size(),5);
+    QVERIFY(levelsQuality.contains("lufs"));
+    QVERIFY(levelsQuality.contains("rms"));
+    QCOMPARE(levelsQuality.value("truePeak").toString(),
+        QStringLiteral("M16 UNQUALIFIED"));
+    const auto stereoQuality=privatePanels.panels[1]
+        .value("privateQualityOnly").toMap();
+    QCOMPARE(stereoQuality.size(),4);
+    QVERIFY(stereoQuality.contains("width"));
+    QVERIFY(!stereoQuality.contains("lufs"));
+    QVERIFY(privatePanels.panels[2]
+        .value("privateQualityOnly").toMap().isEmpty());
+    for(const auto& map:{levelsQuality,stereoQuality}) {
+        for(auto it=map.cbegin();it!=map.cend();++it) {
+            QVERIFY(!it.value().toString().isEmpty());
+            QVERIFY(!it.value().canConvert<double>());
+        }
+    }
     for(const auto& panel:privatePanels.panels) {
         QVERIFY(!panel.value("ready").toBool());
         QVERIFY(!panel.value("fixtureMode").toBool());
@@ -1273,6 +1305,8 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         session.selector,session.gold,productInbox,analysisRouting);
     QVERIFY(!stalePrivatePanels.product_ui_authorized);
     QVERIFY(!stalePrivatePanels.panels[0].value("ready").toBool());
+    QVERIFY(stalePrivatePanels.panels[0]
+        .value("privateQualityOnly").toMap().isEmpty());
     QVERIFY(stalePrivatePanels.panels[0].value("levels").toMap().isEmpty());
     if(stalePrivatePanels.current_product_owner)
         QCOMPARE(stalePrivatePanels.panels[0].value(
