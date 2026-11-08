@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsReal48kM19M20AudioBufferSupportsIndependentSelection();
     void routedPanelsLegacyStoreSelectionDoesNotOverrideIndependentRoutes();
     void routedPanelsNoSourceDataNeverDisplaysInventedNumbers();
     void routedPanelsTamperedPanelIdCannotBecomeCurrent();
@@ -2391,6 +2392,62 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsLegacyStoreSelectionDoesN
     QVERIFY(review_frame_current(store,route,f));
     QVERIFY(store.selected()==Column::gold);
     QVERIFY(route.selected(AnalysisPanel::levels_m19)==Column::prepared);
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsReal48kM19M20AudioBufferSupportsIndependentSelection()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(19200);
+    QVERIFY(fmt&&frames);
+    auto pcm=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{12},*frames.value());
+    QVERIFY(pcm);
+    auto channel=pcm.value()->mutable_view().channel(0);
+    QVERIFY(channel);
+    for(std::size_t i=0;i<channel.value()->size();++i)
+        (*channel.value())[i]=0.20*std::sin(
+            2.0*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
+    const auto level=analysis::measure_basic_level_full_resource(*pcm.value());
+    const auto stereo=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{12},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(level&&stereo);
+    const auto imported=import_real_product_metrics(*level.value(),
+        *stereo.value(),
+        {Column::prepared,17,"real-prepared-48k","Full Track",true});
+    QVERIFY(imported.snapshot);
+    QVERIFY(imported.problem==RealProductPortProblem::none);
+    ReviewEpochStore store;
+    QVERIFY(store.begin(Column::prepared,17));
+    QVERIFY(store.receive(*imported.snapshot,receipt(*imported.snapshot)));
+    IndependentPanelRouting route;
+    const auto ready=capture_test_panels(
+        store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,route,ready));
+    bool converted=false;
+    const double shown=ready.m19.value("levels").toMap()
+        .value("rms").toString().toDouble(&converted);
+    QVERIFY(converted);
+    QVERIFY(std::abs(shown-*imported.snapshot->metrics[1].unrounded)<=0.0051);
+    QCOMPARE(ready.m20.value("stereo").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    // Switching M19 to missing GOLD must not hide still-current M20 PREPARED.
+    QVERIFY(route.select(AnalysisPanel::levels_m19,Column::gold));
+    const auto changed=capture_test_panels(
+        store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(!review_frame_current(store,route,ready));
+    QVERIFY(review_frame_current(store,route,changed));
+    QVERIFY(!changed.m19.value("ready").toBool());
+    QVERIFY(changed.m19.value("levels").toMap().isEmpty());
+    QVERIFY(changed.m20.value("ready").toBool());
+    QCOMPARE(changed.m20.value("stereo").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QVERIFY(!unpublished_panels(store).m20.value("ready").toBool());
 }
 
 } // namespace rgsml::tests
