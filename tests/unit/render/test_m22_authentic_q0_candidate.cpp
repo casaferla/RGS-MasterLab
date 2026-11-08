@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -169,6 +170,29 @@ private slots:
         QVERIFY(!materialize_authentic_q0_source_candidate(
             input.value()->view(),*rate.value(),*block.value(),real,
             []{return true;}));
+        // Retire immediately after a real strictly scalar full-resource
+        // progress callback. No privately allocated partial PCM may
+        // escape or be treated as a valid M22 stage after cancellation.
+        bool stopAfterProgress=false;
+        std::int64_t observed=0;
+        const auto retired=materialize_authentic_q0_source_candidate(
+            input.value()->view(),*rate.value(),*block.value(),real,
+            [&]{return stopAfterProgress;},
+            [&](std::int64_t done,std::int64_t) {
+                if(done>0) {observed=done;stopAfterProgress=true;}
+            });
+        QVERIFY(observed>0);
+        QVERIFY(!retired);
+        // A nonfinite input must fail *before* the first output
+        // publication, even with genuine frozen coefficients.
+        auto nanInput=source(48000,audio::ChannelLayout::MONO_C);
+        QVERIFY(nanInput);
+        auto nanChannel=nanInput.value()->mutable_view().channel(0);
+        QVERIFY(nanChannel);
+        (*nanChannel.value())[41]=
+            std::numeric_limits<double>::quiet_NaN();
+        QVERIFY(!materialize_authentic_q0_source_candidate(
+            nanInput.value()->view(),*rate.value(),*block.value(),real));
     }
 };
 } // namespace rgsml::tests
