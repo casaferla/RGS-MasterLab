@@ -49,6 +49,9 @@ Rectangle {
         && root.presentation.bands.length > 0
         && (root.presentation.tonalProfileStatus === undefined
             || root.presentation.tonalProfileStatus === "CURRENT")
+    readonly property bool comparisonAvailable: root.available
+        && !!root.presentation && !!root.presentation.metrics
+        && root.presentation.metrics.length > 0
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -629,12 +632,14 @@ Rectangle {
                         }
                         Text {
                             objectName: "m21MissingComparisonNotice"
-                            visible: !root.available
+                            visible: !root.comparisonAvailable
                             width: parent.width
                             height: 64
                             text: root.stateStale
                                 ? "METRICS STALE — REANALYZE PREPARED / GOLD / PROCESSED"
-                                : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
+                                : root.available
+                                  ? "METRICS UNAVAILABLE — VERIFIED COMPARISON NOT PUBLISHED"
+                                  : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
                             font.family: "Segoe UI"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -644,7 +649,7 @@ Rectangle {
                             wrapMode: Text.WordWrap
                         }
                         Repeater{
-                            model:root.available?(root.presentation.metrics||[]):[]
+                            model:root.comparisonAvailable?(root.presentation.metrics||[]):[]
                             delegate:Rectangle{
                                 width:parent.width
                                 height:Math.max(23,Math.min(48,Math.floor((parent.height-100)/9)))
