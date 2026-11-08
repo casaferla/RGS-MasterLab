@@ -6,6 +6,7 @@
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/analysis/true_peak_measurement.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <numeric>
 #include <optional>
