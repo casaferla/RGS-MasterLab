@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <limits>
 #include <optional>
 #include <string>
 
@@ -26,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void infiniteSampleNeverBecomesReadout();
     void negativeGoldMinusCurrentDeltaRetainsSign();
     void actualZeroIsNumericNotUnavailable();
     void nanMetricRemainsInvalidNotZero();
@@ -605,6 +607,17 @@ void M21UiReadonlyProjectionCandidateTest::negativeGoldMinusCurrentDeltaRetainsS
     QVERIFY(view.prepared_to_gold[1].numeric);
     QVERIFY(view.prepared_to_gold[1].value_text=="-2.00");
     QVERIFY(view.prepared_to_gold[1].unit_text=="dB");
+}
+
+void M21UiReadonlyProjectionCandidateTest::infiniteSampleNeverBecomesReadout()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[0]->metrics[1]={std::numeric_limits<double>::infinity(),
+                               Quality::present,{}};
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(!view.columns[0].values[1].numeric);
+    QVERIFY(view.columns[0].values[1].quality_text=="INVALID");
 }
 
 } // namespace rgsml::tests
