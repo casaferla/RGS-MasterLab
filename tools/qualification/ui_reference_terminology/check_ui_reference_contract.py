@@ -33,7 +33,10 @@ def must_avoid(path: str, snippets: tuple[str, ...]) -> None:
 def immutable_source(path: str) -> None:
     previous = subprocess.check_output(
         ["git", "show", f"{BASE}:{path}"], cwd=ROOT)
-    current = (ROOT / path).read_bytes()
+    # Compare canonical committed blobs, not checkout bytes: Windows checkout
+    # may use CRLF while git show always returns the LF-normalized blob.
+    current = subprocess.check_output(
+        ["git", "show", f"HEAD:{path}"], cwd=ROOT)
     if previous != current:
         fail(f"PROTECTED_PERSISTENCE_OR_DSP_CHANGED: {path}")
 
