@@ -93,7 +93,7 @@ def read_manifest(root: Path, manifest_path: Path) -> dict:
             raise M23ContractError("claimed CTest suite isn't registered: " + suite)
         source_text = safe_path(root, source).read_text(encoding="utf-8")
         if not re.search(
-            r"\bvoid\s+(?:[A-Za-z_][A-Za-z_0-9]*::)?"
+            r"\bvoid\s+(?:[A-Za-z_][A-Za-z_0-9]*::\s*)?"
             + re.escape(slot) + r"\s*\(\s*\)\s*(?:;|\{)",
             source_text,
         ):
