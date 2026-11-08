@@ -21,6 +21,7 @@ ALLOWED = {
     "render/src/internal/m22_full_chain_witness_candidate.hpp",
     "app/src/internal/m22_product_chain_epoch_capture_candidate.hpp",
     "render/src/internal/m22_verified_full_output_window_candidate.hpp",
+    "render/src/internal/m22_real_verified_output_plan_candidate.hpp",
     "app/src/internal/m22_verified_master_preview_parity.hpp",
     "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp",
     "tests/integration/app/test_project_session.cpp",
@@ -202,6 +203,28 @@ def main():
         "authorizes_release() const noexcept {return false;}",
         "M22_PREVIEW_REQUIRES_REAL_FULL_MANUAL_Q0_M17_M16",
     ),"True full-M17 output-rate crop candidate")
+    native_plan=blob("HEAD",
+        "render/src/internal/m22_real_verified_output_plan_candidate.hpp"
+    ).decode()
+    require(native_plan,(
+        "observe_real_complete_chain_candidate(",
+        "CheckedOutputClockCandidate::freeze(observed,clock_failure)",
+        "bind_frozen_original_q0_identity_candidate(",
+        "check_real_full_output_pcm_candidate(*clock,full_pcm)",
+        "genuine->frozen_original_q0_sha256",
+        "clock->plan_window(",
+        "INVALID_ABSOLUTE_OUTPUT_WINDOW",
+        "authorizes_release() const noexcept {return false;}",
+    ),"M22 read-only plan deriving from actual full M17 PCM, Q0 and EOS")
+    true_crop=blob("HEAD",
+        "render/src/internal/m22_verified_full_output_window_candidate.hpp"
+    ).decode()
+    require(true_crop,(
+        'm22_real_verified_output_plan_candidate.hpp',
+        "observe_real_full_output_plan_candidate(",
+        "planned->output.required_output_true_eos",
+        "planned->native.actual_master_frames",
+    ),"M22 live Preview uses native M17 output plan")
     product_crop=blob("HEAD",
         "app/src/internal/m22_verified_master_preview_parity.hpp"
     ).decode()
@@ -219,6 +242,11 @@ def main():
         and "The source full-programme count" not in product_crop,
         "Product Preview still assumes source-rate frame count")
     require(fullchain,(
+        "observe_real_full_output_plan_candidate(",
+        "NO_VERIFIED_NATIVE_FULL_M17",
+        "INVALID_ABSOLUTE_OUTPUT_WINDOW",
+        "QCOMPARE(realPlan->output.required_output_true_eos,",
+        "QCOMPARE(identityPlan->output.absolute_dither_first,",
         "observe_verified_full_output_window_candidate(",
         "The SOURCE is 257 frames",
         "No SOURCE-rate window may be mislabeled as output-rate.",
