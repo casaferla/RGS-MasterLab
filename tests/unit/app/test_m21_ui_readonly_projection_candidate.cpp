@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void rejectReceiptWithChangedGeneration();
     void rejectReceiptWithWrongSemanticColumn();
 };
 using namespace app::m21_private;
@@ -299,6 +300,17 @@ void M21UiReadonlyProjectionCandidateTest::rejectReceiptWithWrongSemanticColumn(
     QVERIFY(r.columns[0].state=="STALE");
     QVERIFY(!r.columns[0].values[1].numeric);
     QVERIFY(!r.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::rejectReceiptWithChangedGeneration()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    owners[0]->generation_token=8;
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(!r.columns[0].candidate_matched);
+    QVERIFY(r.columns[0].state=="STALE");
+    QVERIFY(r.columns[0].values[1].value_text=="STALE");
 }
 
 } // namespace rgsml::tests
