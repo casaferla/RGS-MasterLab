@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleReal48kM19M20AudioBufferEndToEnd();
     void independentPanelBundleMonoWidthRemainsNotApplicable();
     void independentPanelBundleLowSupportQualitySurvivesQtConversion();
     void independentPanelBundleInvalidPanelSelectionDoesNotAdvanceRevision();
@@ -1773,6 +1774,60 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleMonoWidthRemain
     QCOMPARE(f.m20.value("stereoQuality").toMap().value("width").toString(),
              QStringLiteral("NOT APPLICABLE"));
     QVERIFY(f.m20.value("spectrum").toList().isEmpty());
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleReal48kM19M20AudioBufferEndToEnd()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(19200);
+    QVERIFY(fmt&&frames);
+    auto pcm=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{12},*frames.value());
+    QVERIFY(pcm);
+    auto values=pcm.value()->mutable_view().channel(0);
+    QVERIFY(values);
+    for(std::size_t i=0;i<values.value()->size();++i)
+        (*values.value())[i]=0.25*std::sin(
+            2.0*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
+    const auto level=analysis::measure_basic_level_full_resource(*pcm.value());
+    const auto stereo=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{12},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(level&&stereo);
+    const auto imported=import_real_product_metrics(*level.value(),
+        *stereo.value(),
+        {Column::prepared,11,"real-48khz-typed-panel","Full Track",true});
+    QVERIFY(imported.snapshot);
+    QVERIFY(imported.problem==RealProductPortProblem::none);
+    ReviewEpochStore store;
+    QVERIFY(store.begin(Column::prepared,11));
+    QVERIFY(store.receive(*imported.snapshot,receipt(*imported.snapshot)));
+    const auto panels=capture_test_panels(
+        store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,panels));
+    QVERIFY(panels.m19.value("ready").toBool());
+    bool ok=false;
+    const double shown=panels.m19.value("levels").toMap()
+                            .value("rms").toString().toDouble(&ok);
+    QVERIFY(ok);
+    QVERIFY(std::isfinite(shown));
+    QVERIFY(std::abs(shown-*imported.snapshot->metrics[1].unrounded)<=0.0051);
+    QCOMPARE(panels.m19.value("levels").toMap().value("truePeak").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(panels.m20.value("stereo").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QVERIFY(panels.m20.value("bands").toList().isEmpty());
+    QVERIFY(panels.m20.value("spectrum").toList().isEmpty());
+    QVERIFY(!panels.m21.value("productionAuthorized").toBool());
+    // Real analysis does NOT imply release authorization or true product data.
+    const auto unpublished=unpublished_panels(store);
+    QVERIFY(!unpublished.m19.value("ready").toBool());
+    QVERIFY(unpublished.m19.value("levels").toMap().isEmpty());
 }
 
 } // namespace rgsml::tests
