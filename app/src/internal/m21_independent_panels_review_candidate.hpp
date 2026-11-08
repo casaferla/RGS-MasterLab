@@ -11,12 +11,51 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 
 namespace rgsml::app::m21_private::ui_candidate::panel_review {
 
+// Three actual independent UI selectors (one per module). They do not
+// mutate or re-own the source evidence; GOLD remains independently owned.
+enum class AnalysisPanel : std::uint8_t { levels_m19=0, tonal_m20=1, delta_m21=2 };
+
+class IndependentPanelRouting final {
+public:
+    IndependentPanelRouting()=default;
+    IndependentPanelRouting(const IndependentPanelRouting&)=delete;
+    IndependentPanelRouting& operator=(const IndependentPanelRouting&)=delete;
+    IndependentPanelRouting(IndependentPanelRouting&&)=delete;
+    IndependentPanelRouting& operator=(IndependentPanelRouting&&)=delete;
+
+    [[nodiscard]] bool select(AnalysisPanel panel, Column source) {
+        const auto i=static_cast<std::size_t>(panel);
+        if(i>=selected_.size() || static_cast<std::size_t>(source)>=3)
+            return false;
+        if(selected_[i]==source)return true; // idempotent UI selection
+        if(revision_==(std::numeric_limits<std::uint64_t>::max)())
+            return false;
+        selected_[i]=source;
+        ++revision_;
+        return true;
+    }
+    [[nodiscard]] Column selected(AnalysisPanel panel) const {
+        const auto i=static_cast<std::size_t>(panel);
+        return i<selected_.size() ? selected_[i] : Column::prepared;
+    }
+    [[nodiscard]] std::uint64_t routing_revision() const {return revision_;}
+    [[nodiscard]] bool is_current_route(std::uint64_t revision) const {
+        return revision==revision_;
+    }
+private:
+    std::array<Column,3> selected_{{Column::prepared,Column::prepared,Column::prepared}};
+    std::uint64_t revision_{};
+};
+
 struct IndependentPanelBundle final {
     std::uint64_t review_revision{};
+    std::uint64_t routing_revision{};
+    std::array<Column,3> selected_columns{{Column::prepared,Column::prepared,Column::prepared}};
     bool test_fixture_only{false};
     QVariantMap m19{};
     QVariantMap m20{};
