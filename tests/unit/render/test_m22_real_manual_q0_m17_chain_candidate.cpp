@@ -277,6 +277,15 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
                 result.value()->src_kernel_sha256=original;
             }
+            // The Product must never promote an unmeasured terminal candidate.
+            {
+                const auto original=result.value()->terminal.checked.final_check;
+                result.value()->terminal.checked.final_check.reset();
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
+                result.value()->terminal.checked.final_check=original;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
