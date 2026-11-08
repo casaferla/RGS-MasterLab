@@ -917,6 +917,24 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(privatePanels.current_product_owner);
     QVERIFY(!privatePanels.product_ui_authorized);
     QVERIFY(privatePanels.owner_epoch>0);
+    const auto qtProductOwner=fanout.current_owner_snapshot();
+    QVERIFY(qtProductOwner);
+    QCOMPARE(privatePanels.owner_epoch,qtProductOwner->epoch);
+    QVERIFY(privatePanels.owner_identity==qtProductOwner->identity);
+    // Even an otherwise valid captured frame is not re-authorized by
+    // its epoch alone: all M18 Product identity fields are mandatory.
+    auto tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.owner_identity.source_generation;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.owner_identity.project_generation;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.owner_identity.master_rate_revision;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
     QCOMPARE(privatePanels.panels[0].value("sourceRole").toString(),
              QStringLiteral("PREPARED"));
     QCOMPARE(privatePanels.panels[1].value("sourceRole").toString(),
