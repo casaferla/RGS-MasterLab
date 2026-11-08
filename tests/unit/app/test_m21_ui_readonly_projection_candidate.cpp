@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleCreatesThreeDistinctModuleIds();
     void reviewStoreIsNonCopyableSingleWriterState();
     void reviewStoreSelectionDoesNotChangeOwnerReceipts();
     void reviewStoreSelectingPendingGoldCannotExposePrepared();
@@ -1234,6 +1235,24 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleStartsUnpublish
         QVERIFY(panel->value("levels").toMap().isEmpty());
     }
     QVERIFY(!review_frame_current(store,masked));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleCreatesThreeDistinctModuleIds()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"source-seven",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    const auto bundle=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(bundle.test_fixture_only);
+    QVERIFY(review_frame_current(store,bundle));
+    QCOMPARE(bundle.m19.value("panelId").toString(),QStringLiteral("M19"));
+    QCOMPARE(bundle.m20.value("panelId").toString(),QStringLiteral("M20"));
+    QCOMPARE(bundle.m21.value("panelId").toString(),QStringLiteral("M21"));
+    QVERIFY(!bundle.m19.value("productionAuthorized").toBool());
+    QVERIFY(!bundle.m20.value("productionAuthorized").toBool());
+    QVERIFY(!bundle.m21.value("productionAuthorized").toBool());
 }
 
 } // namespace rgsml::tests
