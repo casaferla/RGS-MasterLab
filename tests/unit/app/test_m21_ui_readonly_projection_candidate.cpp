@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void allSixSupportedRatesUseExactMatchingOnly();
     void matchingRegionReceiptKeepsRegionScope();
     void invalidLifecycleMasksEveryReadout();
     void infiniteSampleNeverBecomesReadout();
@@ -646,6 +647,23 @@ void M21UiReadonlyProjectionCandidateTest::matchingRegionReceiptKeepsRegionScope
     QVERIFY(r.columns[0].scope_text=="Region");
     QVERIFY(r.columns[0].values[1].numeric);
     QVERIFY(!r.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::allSixSupportedRatesUseExactMatchingOnly()
+{
+    const std::array<std::uint32_t,6> valid{44100,48000,88200,96000,
+                                            176400,192000};
+    for(const auto rate:valid) {
+        Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+        snapshots[0]->sample_rate_hz=rate;
+        Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+        const auto r=project_readonly(compose(snapshots),owners);
+        QVERIFY(r.columns[0].candidate_matched);
+        QVERIFY(r.columns[0].values[1].numeric);
+        owners[0]->sample_rate_hz=rate==192000 ? 176400 : 192000;
+        const auto mismatch=project_readonly(compose(snapshots),owners);
+        QVERIFY(!mismatch.columns[0].candidate_matched);
+    }
 }
 
 } // namespace rgsml::tests
