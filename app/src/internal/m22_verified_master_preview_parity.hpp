@@ -5,6 +5,7 @@
 // The existing M18 Product epoch, current SOURCE/chain/MASTER rate,
 // accepted M17 final M16 check and unrevoked staged owner are mandatory.
 #include "m18_product_complete_binding.hpp"
+#include "../../../render/src/internal/m22_verified_full_output_window_candidate.hpp"
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -44,30 +45,33 @@ m22_verified_master_preview_crop(
             !=product.upstream.rate.master_rate_hz())
         return refuse("M22_PREVIEW_M17_CHAIN_RATE_OR_CHECK_NOT_CURRENT");
 
-    const auto full=checked.terminal.compensated_pcm.view();
-    // Full M17 must have already been rendered from canonical origin
-    // to actual EOS. Never run M17 on only the selected interval:
-    // that would reset compressor history and omit global M16 trim.
-    if(full.timebase().frame_domain_id()
-            !=audio::FrameDomainId::OUTPUT_RATE
-       ||full.absolute_start_frame().value()!=0
-       ||full.format().sample_rate()!=rendered.output_rate
-       ||full.frame_count()!=rendered.programme_frames
-       ||exactOutputFrameWindow.begin().value()<0
-       ||exactOutputFrameWindow.begin()
-            >=exactOutputFrameWindow.end()
-       ||exactOutputFrameWindow.end().value()
-            >full.frame_count().value())
-        return refuse("M22_PREVIEW_REQUIRES_EXACT_FULL_OUTPUT_RATE_TIMELINE");
-    const auto frames=core::FrameCount::create(
-        exactOutputFrameWindow.end().value()-
-        exactOutputFrameWindow.begin().value());
-    if(!frames)return R::failure(*frames.error());
-    // AudioBufferView.subview is a true zero-copy crop preserving actual
-    // binary64 samples and the M17's complete prior state history.
-    // PCM24 Philox must still use ABSOLUTE output frame addressing at
-    // subsequent M18 encoding: there is no local reseed here.
-    return full.subview(exactOutputFrameWindow.begin(),*frames.value());
+    // The source full-programme count and final Master output count are
+    // different after an authentic nonidentity Q0 conversion. The existing
+    // check full.frame_count()==rendered.programme_frames was correct only
+    // for identity Fs; it silently disabled cross-rate Product Preview.
+    // Reobserve real native manual/Q0/M17/M16 evidence before any subview.
+    const auto native=m22_private::observe_verified_full_output_window_candidate(
+        rendered,exactOutputFrameWindow);
+    if(!native)
+        return refuse("M22_PREVIEW_REQUIRES_NATIVE_VERIFIED_OUTPUT_RATE_WINDOW");
+    const auto& witnessed=native.value()->full_master_witness;
+    const auto& currentSource=product.upstream.source;
+    if(witnessed.manual_chain_revision
+            !=product.upstream.chain.chain().revision()
+       ||witnessed.terminal_chain_revision
+            !=product.upstream.terminal.chain().revision()
+       ||witnessed.complete_source_frames!=currentSource.frame_count()
+       ||witnessed.manual_source_hz!=currentSource.sample_rate_hz()
+       ||witnessed.channels
+            !=static_cast<std::size_t>(currentSource.channel_count())
+       ||witnessed.final_master_hz
+            !=product.upstream.rate.master_rate_hz())
+        return refuse("M22_PREVIEW_REAL_SOURCE_CHAIN_OR_OUTPUT_RATE_STALE");
+
+    // This view is borrowed from the SAME staged, immutable verified M17
+    // PCM. M22ProductPreviewAdmission::Capture retains that shared owner
+    // and rechecks the exact Product epoch before queued use.
+    return R::success(native.value()->exact_output_crop);
 }
 
 } // namespace rgsml::app::internal
