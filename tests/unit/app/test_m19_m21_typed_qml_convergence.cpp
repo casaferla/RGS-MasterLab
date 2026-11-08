@@ -8,6 +8,9 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <QColor>
+#include <QFont>
+#include <QFontDatabase>
+#include <QGuiApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QImage>
@@ -99,6 +102,7 @@ void mount_explicit_demo(QQuickView& view,const QVariantMap& data) {
 class M19M21TypedQmlConvergenceTest final: public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase();
     void threeActualIndependentQmlRootsOpenFailClosed();
     void explicitTypedM19TestFixtureRendersReadout();
     void actualPcmM19M20ReachesThreeQmlPanels();
@@ -131,6 +135,24 @@ private slots:
     void staleDisplayStateBlocksEvenReadyDemoData();
     void readyPresentationWithoutFixtureRemainsMasked();
 };
+
+void M19M21TypedQmlConvergenceTest::initTestCase()
+{
+#ifdef Q_OS_WIN
+    // Qt software/offscreen renderer on Windows CI may have no usable font
+    // atlas until an installed OS font is explicitly registered. The older
+    // PR91 screenshot harness already does this; fonts are NOT redistributed.
+    const auto fontId=QFontDatabase::addApplicationFont(
+        QStringLiteral("C:/Windows/Fonts/segoeui.ttf"));
+    QVERIFY2(fontId>=0,"CI_WINDOWS_SEGOE_FONT_REGISTRATION_FAILED");
+    const auto families=QFontDatabase::applicationFontFamilies(fontId);
+    QVERIFY2(!families.isEmpty(),"CI_WINDOWS_SEGOE_FONT_FAMILY_UNAVAILABLE");
+    QGuiApplication::setFont(QFont(families.first(),10));
+    const auto consolas=QFontDatabase::addApplicationFont(
+        QStringLiteral("C:/Windows/Fonts/consola.ttf"));
+    Q_UNUSED(consolas);
+#endif
+}
 
 void M19M21TypedQmlConvergenceTest::threeActualIndependentQmlRootsOpenFailClosed() {
     const QStringList names{
