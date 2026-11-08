@@ -23,6 +23,7 @@ ALLOWED = {
     "render/src/internal/m22_verified_full_output_window_candidate.hpp",
     "render/src/internal/m22_real_verified_output_plan_candidate.hpp",
     "app/src/internal/m22_verified_master_preview_parity.hpp",
+    "app/src/internal/m22_product_verified_dispatch.hpp",
     "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp",
     "tests/integration/app/test_project_session.cpp",
     "tests/unit/render/test_m22_checked_output_clock_candidate.cpp",
@@ -33,7 +34,6 @@ ALLOWED = {
 FROZEN = (
     "app/src/main.cpp",
     "app/src/m21_product_status_view_model.hpp",
-    "app/src/internal/m22_product_verified_dispatch.hpp",
     "app/src/internal/m22_product_preview_admission.hpp",
     "render/src/internal/m22_request_plan_candidate.hpp",
     "audio/src/phase11_final_src_candidate.cpp",
@@ -283,6 +283,17 @@ def main():
         "is_default_constructible_v<Probe::Capture>",
         "Probe::still_current(",
     ),"M22 Product capture compile contract")
+    productdispatch=blob("HEAD",
+        "app/src/internal/m22_product_verified_dispatch.hpp").decode()
+    require(productdispatch,(
+        "M22ProductChainEpochCaptureCandidate::capture(",
+        "observe_real_full_output_plan_candidate(",
+        "genuine->native.frozen_original_q0_sha256",
+        "genuine->output.required_output_true_eos",
+        "M22ProductChainEpochCaptureCandidate::still_current(",
+        "return exporter.begin(",
+        "M22_FULL_REQUIRES_TRUE_NATIVE_VERIFIED_OUTPUT_PLAN",
+    ),"M22 real full/preview Product aligned current native-EOS gate")
     productruntime=blob("HEAD",
         "tests/integration/app/test_project_session.cpp").decode()
     require(productruntime,(
@@ -314,6 +325,9 @@ def main():
         "M18PrivateAsyncExportSession::Phase::FAILED",
         "pcmAfter.readAll(),originalPcmBytes",
         "outputRate.choose_master_rate(48000)",
+        "m22-stale-full-after-rate-change.wav",
+        "!M22ProductVerifiedDispatch::begin_full(",
+        "afterRevocation.readAll(),originalBytes",
         "!M22ProductChainEpochCaptureCandidate::still_current(",
     ),"M22 actual identity/cross-rate full Product-WAV regression")
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
