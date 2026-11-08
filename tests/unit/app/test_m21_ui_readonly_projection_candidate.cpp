@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void decimalDisplayUsesStableDotAndDeltaSign();
     void allSixSupportedRatesUseExactMatchingOnly();
     void matchingRegionReceiptKeepsRegionScope();
     void invalidLifecycleMasksEveryReadout();
@@ -664,6 +665,18 @@ void M21UiReadonlyProjectionCandidateTest::allSixSupportedRatesUseExactMatchingO
         const auto mismatch=project_readonly(compose(snapshots),owners);
         QVERIFY(!mismatch.columns[0].candidate_matched);
     }
+}
+
+void M21UiReadonlyProjectionCandidateTest::decimalDisplayUsesStableDotAndDeltaSign()
+{
+    QVERIFY(decimal_text(1.234,false)=="1.23");
+    QVERIFY(decimal_text(1.234,true)=="+1.23");
+    QVERIFY(decimal_text(-2.345,true)=="-2.35" ||
+            decimal_text(-2.345,true)=="-2.34");
+    QVERIFY(decimal_text(std::numeric_limits<double>::infinity(),false)
+            =="INVALID");
+    QVERIFY(decimal_text(std::numeric_limits<double>::quiet_NaN(),false)
+            =="INVALID");
 }
 
 } // namespace rgsml::tests
