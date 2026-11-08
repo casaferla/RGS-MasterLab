@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m19TruePeakReadoutCannotBecomeNumeric();
     void m19HeroReadoutUsesInputGainTypography();
     void wrongTestMarkerCannotBecomeReadyQml();
     void invalidLifecycleBlocksDemoWithoutImplicitZero();
@@ -432,6 +433,19 @@ void M19M21TypedQmlConvergenceTest::m19HeroReadoutUsesInputGainTypography()
     QCOMPARE(readout->property("numericPixelSize").toInt(),36);
     QVERIFY(readout->property("readOnly").toBool());
     QVERIFY(readout->property("dataAvailable").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::m19TruePeakReadoutCannotBecomeNumeric()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"levels",QVariantMap{{"truePeak","-1.0"}}}};
+    mount_explicit_demo(*view,map);
+    auto* readout=visual_by_name(view->rootObject(),"m19MetricValue_truePeak");
+    QVERIFY(readout);
+    QVERIFY(!readout->property("dataAvailable").toBool());
+    QVERIFY(readout->property("readOnly").toBool());
 }
 
 } // namespace rgsml::tests
