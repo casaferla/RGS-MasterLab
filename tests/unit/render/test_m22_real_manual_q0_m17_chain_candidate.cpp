@@ -231,6 +231,15 @@ private slots:
                      static_cast<std::size_t>(out.frame_count().value()));
             for(const auto& witness:result.value()->terminal.checked.terminal.applied_gain_frames)
                 QVERIFY(std::isfinite(witness.gain));
+            // A detached manual PCM pointer cannot be replaced by an epoch label.
+            {
+                const auto retained=result.value()->manual_owner;
+                result.value()->manual_owner.reset();
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::NO_MANUAL_OWNER);
+                result.value()->manual_owner=retained;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
