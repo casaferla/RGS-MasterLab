@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleMonoWidthRemainsNotApplicable();
     void independentPanelBundleLowSupportQualitySurvivesQtConversion();
     void independentPanelBundleInvalidPanelSelectionDoesNotAdvanceRevision();
     void independentPanelBundleQtCopyOnWriteKeepsOtherPanelUnchanged();
@@ -1756,6 +1757,22 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleLowSupportQuali
              QStringLiteral("LOW SUPPORT"));
     QCOMPARE(f.m21.value("metrics").toList().at(1).toMap()
              .value("preparedQuality").toString(),QStringLiteral("LOW SUPPORT"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleMonoWidthRemainsNotApplicable()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"mono",-18.0);
+    p.metrics[5]={std::nullopt,Quality::not_applicable,"mono"};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    const auto f=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QCOMPARE(f.m20.value("stereo").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QCOMPARE(f.m20.value("stereoQuality").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QVERIFY(f.m20.value("spectrum").toList().isEmpty());
 }
 
 } // namespace rgsml::tests
