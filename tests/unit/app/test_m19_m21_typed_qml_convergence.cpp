@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void staleDisplayStateBlocksEvenReadyDemoData();
     void readyPresentationWithoutFixtureRemainsMasked();
 };
 
@@ -342,6 +343,19 @@ void M19M21TypedQmlConvergenceTest::readyPresentationWithoutFixtureRemainsMasked
     QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("CURRENT")));
     QCoreApplication::processEvents();
     QVERIFY(!view->rootObject()->property("fixtureMode").toBool());
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::staleDisplayStateBlocksEvenReadyDemoData()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"levels",QVariantMap{{"rms","-18.00"}}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("CURRENT")));
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("STALE")));
     QVERIFY(!view->rootObject()->property("available").toBool());
 }
 
