@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleMarkerCannotBeUsedAsReleasePermission();
     void independentPanelBundleM21CarriesThreeColumnLifecycles();
     void independentPanelBundleM20ContainsOnlyVerifiedStereoFields();
     void independentPanelBundleReadsM19RmsFromExactReceipt();
@@ -1308,6 +1309,24 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleM21CarriesThree
     QCOMPARE(status.value("processed").toString(),QStringLiteral("MISSING"));
     QVERIFY(frame.m21.value("goldIndependentScope").toBool());
     QCOMPARE(frame.m21.value("metrics").toList().at(1).toMap().value("preparedDelta").toString(),QStringLiteral("+5.00"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleMarkerCannotBeUsedAsReleasePermission()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    for(const std::uint32_t marker:{0U,1U,0xDEADBEEFU}) {
+        const auto denied=capture_test_panels(store,qt_review::ExplicitTestFixture{marker});
+        QVERIFY(!denied.test_fixture_only);
+        QVERIFY(!denied.m19.value("ready").toBool());
+        QVERIFY(!denied.m19.value("fixtureMode").toBool());
+        QVERIFY(denied.m19.value("levels").toMap().isEmpty());
+        QVERIFY(denied.m21.value("metrics").toList().isEmpty());
+        QVERIFY(!review_frame_current(store,denied));
+    }
 }
 
 } // namespace rgsml::tests
