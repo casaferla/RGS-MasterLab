@@ -115,7 +115,10 @@ def main():
                    "privateQualityOnly",
                    "m21_private::ui_candidate::quality_label(",
                    "metric==3",
-                   "s.lifecycle==Lifecycle::current"):
+                   "s.lifecycle==Lifecycle::current",
+                   "M18ProductExportIdentity owner_identity",
+                   "now.owner_identity==expected.owner_identity",
+                   "now.identities==expected.identities"):
         check(marker in bridge, "Private UI owner guard missing: "+marker)
 
     cmake = blob("HEAD", "tests/CMakeLists.txt")
