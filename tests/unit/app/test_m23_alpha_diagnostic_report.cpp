@@ -42,8 +42,8 @@ capturesActualStatusCodesAndRefusesSecretErrorStrings()
     QCOMPARE(result.value()->findings()[1].canonical_code,
              rgsml::core::ErrorCode::MalformedAudioContainer);
     const auto summary=result.value()->sanitized_summary();
-    QVERIFY(summary.find("IoFailure")!=std::string::npos);
-    QVERIFY(summary.find("MalformedAudioContainer")!=std::string::npos);
+    QVERIFY(summary.find("io_failure")!=std::string::npos);
+    QVERIFY(summary.find("malformed_audio_container")!=std::string::npos);
     QVERIFY(summary.find(secret)==std::string::npos);
     QVERIFY(summary.find("credential")==std::string::npos);
     QVERIFY(summary.find("provider")==std::string::npos);
