@@ -108,7 +108,7 @@ public:
 
 private:
     [[nodiscard]] static core::Error fail(const char* reason) {
-        return {core::ErrorCode::InvalidState,reason};
+        return core::Error{core::ErrorCode::InvalidState,reason};
     }
 };
 } // namespace rgsml::app::internal
