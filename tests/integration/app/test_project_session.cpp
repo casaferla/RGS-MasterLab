@@ -7,6 +7,7 @@
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m21_product_qt_readiness_bridge.hpp"
+#include "internal/m21_product_spectrum_evidence.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -998,6 +999,36 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(QtReadiness::still_current(privatePanels,controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting));
 
+    // This M20 proof is backed by the REAL privately published
+    // PROCESSED M19/M20 result; it never synthesizes PSD from LUFS,
+    // exports bins to QML or upgrades unavailable Phase-6 status.
+    using SpectrumProof=app::internal::M21ProductSpectrumEvidence;
+    const auto provenSpectrum=SpectrumProof::capture(
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting);
+    QVERIFY(provenSpectrum.current_owner);
+    QVERIFY(!provenSpectrum.product_ui_authorized);
+    QCOMPARE(provenSpectrum.selected,app::m21_private::Column::processed);
+    QCOMPARE(provenSpectrum.actual_spectrum,
+             !workerProcessed.value()->average_spectrum.empty());
+    QCOMPARE(provenSpectrum.bins.size(),
+             workerProcessed.value()->average_spectrum.size());
+    for(std::size_t b=0;b<provenSpectrum.bins.size();++b) {
+        QCOMPARE(provenSpectrum.bins[b].hz,
+                 workerProcessed.value()->average_spectrum[b].hz);
+        QCOMPARE(provenSpectrum.bins[b].linear_power,
+                 *workerProcessed.value()->average_spectrum[b]
+                    .power_density.unrounded);
+    }
+    QCOMPARE(SpectrumProof::still_current(provenSpectrum,
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting),provenSpectrum.actual_spectrum);
+    for(const auto& panel:privatePanels.panels) {
+        QVERIFY(panel.value("spectrum").toList().isEmpty());
+        QVERIFY(panel.value("bands").toList().isEmpty());
+    }
+
+
     // A numerical worker cannot inspect Qt-owned routing, owner state or
     // private Product metrics. Its entire return is a static masked map.
     bool rejectedWorker=false;
@@ -1021,6 +1052,9 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         app::m21_private::Column::prepared));
     QVERIFY(!QtReadiness::still_current(privatePanels,controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting));
+    QVERIFY(!SpectrumProof::still_current(provenSpectrum,
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting));
     const auto reroutedPanels=QtReadiness::capture(controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting);
     QVERIFY(QtReadiness::still_current(reroutedPanels,controllers,fanout,
@@ -1337,6 +1371,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     // DSP revision even though the structural chain revision is unchanged.
     QVERIFY(!QtReadiness::still_current(reroutedPanels,controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting));
+    // Old M20 proof remains stale even if the original double samples
+    // are retained in private memory.
+    QVERIFY(!SpectrumProof::still_current(provenSpectrum,
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting));
     const auto stalePrivatePanels=QtReadiness::capture(controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting);
     QVERIFY(!stalePrivatePanels.product_ui_authorized);
