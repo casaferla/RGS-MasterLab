@@ -36,3 +36,16 @@ The real Windows `rgsml_project_session_tests` now validates:
 - Earlier M22 whole-Master Preview/Full bitwise parity and M18 WAV export tests are **preserved without modification**, not replaced by these new assertions.
 
 The bridge provenance checker now permits only additive tests in `test_project_session.cpp`, never deleting/changing original M22 test lines; the source M22 Product baseline remains frozen. Subsequent work MUST obtain real Phase-6 status authority, implement a release-qualified Product presenter, and then connect it to the independent docked/floating Qt wrappers with physical PO verification. Do not reclassify the private bridge as production.
+
+## PO build cadence 2026-11-08 — macro-lots of up to ~40 meaningful commits
+
+The PO explicitly wants larger, coherent single-writer macro-lots (typically 20–40 meaningful commits, not a mandatory quota) to reduce CI overhead. Use one Windows+Linux focused CI at the end of a validated macro-lot and freeze its CI candidate until terminal results; small corrections after a red CI are exceptions. Never edit the active CI candidate during a running check. No auto-merge to any predecessor/main and no FQ before full Product integration. The 7-commit previous bridge lot was qualified by focused CI #3, exact SHA `ba376284fe97d6d2bf4634fc7e11e726c76170b8`, Windows and Linux SUCCESS; that SHA remains the stable PR #96 CI candidate.
+
+### Current next-lot staging start (not yet CI-qualified)
+
+- Real M21 Product private Qt source quality tags: per-panel M19 levels (LUFS/RMS/sample peak/crest), M20 stereo (width/correlation P10/P50/P90) and M21 metrics evidence. Only string quality status from canonical retained M21 inbox; no scalar values, no spectral bins and no normalized shape/spectrum synthesis. Never present an M16 True Peak number; quality explicitly M16 UNQUALIFIED.
+- Quality labels provided only for `Lifecycle::current`; independent REFERENCE and PREPARED/PROCESSED owners cannot substitute one another. Missing/stale results return completely masked quality maps.
+- Existing M18 ProductSession native tests extended with actual current prepared/processed and independent Gold selected WAV quality, per-panel separation, stale masking, and no numeric readouts. Test checks nonnumerical strings at value level.
+- Frozen provenance checker now requires actual quality-only guard and explicit M16 disqualification. **Do not promote/dispatch** until the larger coherent Product/UI lot has been completed and audited.
+
+The next major gate is **genuine canonical Phase-6 release authorization and Product UI signal wiring**, not another private fixture. The work above improves private readiness without claiming that unresolved authorization is already implemented.
