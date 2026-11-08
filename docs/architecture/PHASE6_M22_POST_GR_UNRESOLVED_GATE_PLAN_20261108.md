@@ -93,3 +93,14 @@ Real defect discovered in the existing previously green Product Preview seam `ap
 - The existing focused CI and strict provenance guard are extended for this explicit narrow fix; no new CMake target, no second SRC, no change to 16 FIR assets. M21 Product numerical authority remains OFF; original Phase-6 P01–P06 semantic decision is not Product implementation approval.
 
 **Open:** validate this follow-up in a new Windows+Linux focused CI after the complete writer macro-lot. Live Product cross-rate capture/queued preview, generalized immutable M22 execution scheduler with true EOS/state replay, complete Q1–Q6 and PCM24 absolute frame dither full-crop verification, Phase-6 FeatureDefinitionRegistry/Gate G, PO A01–A15 and first real mastering/FQ are not certified by this private change. Never infer completion from green static/Qt focused tests.
+
+
+### Real post-M17 PCM24/Float32 absolute-frame crop evidence (same follow-up)
+
+The same native test now sends **actual checked M17 OUTPUT_RATE PCM** (not only detached synthetic M18 fixture) to the previously accepted M18 terminal codec:
+- both real nonidentity 44.1→48 and 48→44.1 full programmes, stereo, real original-Q0 asset SHA and full M17 final M16 check;
+- convert FULL and exact 9..41 OUTPUT_RATE crop to real PCM24 TPDF using the same seed, and verify byte-exact crop of FULL; poison test `wrongLocalDither!=cropPcm24` rejects preview-local zero reseeding;
+- encode same full M17 PCM24 in 17-frame chunks, exact byte equality with full single-block M18 encode;
+- compare actual IEEE_FLOAT32 bytes of full vs exact preview crop; existing six same-rate binary64 M17/PREVIEW tests remain and bypassed M17/Q0 never receives Preview admission.
+
+This is the **real manual-DSP/Q0/M17→M18 representation seam** rather than claiming M18 digital codec is reimplemented. It is still nonrelease and not a full WAV readback of all 36 route combinations, generalized scheduler, signed Phase-6 Registry or PO physical approval.
