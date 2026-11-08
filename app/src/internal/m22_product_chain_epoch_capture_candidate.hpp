@@ -8,6 +8,7 @@
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <QThread>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -69,6 +70,11 @@ public:
            ||id.master_rate_revision!=product.upstream.rate.rate_revision()
            ||witness->complete_source_frames
                !=product.upstream.source.frame_count()
+           ||witness->manual_source_hz
+               !=product.upstream.source.sample_rate_hz()
+           ||witness->channels
+               !=static_cast<std::size_t>(
+                   product.upstream.source.channel_count())
            ||witness->terminal_chain_revision
                !=product.upstream.terminal.chain().revision())
             return R::failure(fail("M22_PRODUCT_CHAIN_SOURCE_RATE_OR_REVISION_STALE"));
@@ -125,6 +131,11 @@ public:
                 ==saved.immutable_chain_witness.frozen_original_q0_sha256
             &&product.upstream.source.frame_count()
                 ==witness->complete_source_frames
+            &&product.upstream.source.sample_rate_hz()
+                ==witness->manual_source_hz
+            &&static_cast<std::size_t>(
+                product.upstream.source.channel_count())
+                ==witness->channels
             &&static_cast<std::uint32_t>(witness->final_master_hz)
                 ==now->identity.master_rate_hz;
     }
