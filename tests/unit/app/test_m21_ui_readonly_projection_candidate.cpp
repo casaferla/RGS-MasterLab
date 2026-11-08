@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsSwitchM20DoesNotChangeM19FrameValues();
     void routedPanelsM19GoldDoesNotSwitchM20Prepared();
     void routedPanelsShowThreeDifferentSourcesConcurrently();
     void routedPanelsBadFixtureAlwaysMasksEveryModule();
@@ -2012,6 +2013,28 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsM19GoldDoesNotSwitchM20Pr
     QCOMPARE(frame.m20.value("stereo").toMap().value("width").toString(),QStringLiteral("0.80"));
     QVERIFY(route.selected(AnalysisPanel::tonal_m20)==Column::prepared);
     QVERIFY(review_frame_current(store,route,frame));
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsSwitchM20DoesNotChangeM19FrameValues()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto g=example(Column::gold,3,"g",-13.0);
+    p.metrics[5]={0.8,Quality::present,{}};
+    g.metrics[5]={1.1,Quality::present,{}};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    IndependentPanelRouting route;
+    const auto before=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(route.select(AnalysisPanel::tonal_m20,Column::gold));
+    const auto after=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(!review_frame_current(store,route,before));
+    QVERIFY(review_frame_current(store,route,after));
+    QCOMPARE(before.m19.value("levels").toMap(),after.m19.value("levels").toMap());
+    QCOMPARE(after.m20.value("stereo").toMap().value("width").toString(),QStringLiteral("1.10"));
 }
 
 } // namespace rgsml::tests
