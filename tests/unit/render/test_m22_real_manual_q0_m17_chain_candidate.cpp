@@ -174,6 +174,83 @@ private slots:
         QCOMPARE(verified,std::size_t{30});
     }
 
+    void allThirtyActiveOriginalQ0RoutesUseGenuineFullM17AndM16() {
+        using namespace rgsml;
+        using namespace render_support;
+        auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+        QVERIFY(registry);
+        auto manual=dsp::ProcessingChain::create(*registry.value(),
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+        auto terminal=dsp::ProcessingChain::create(*registry.value(),
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::TERMINAL});
+        QVERIFY(manual&&terminal);
+        const auto gainId=make_id("94000000-0000-4000-8000-000000000001");
+        const auto limiterId=make_id("94000000-0000-4000-8000-000000000017");
+        QVERIFY(manual.value()->add(gainId,"rgsml.dsp.gain",0));
+        QVERIFY(terminal.value()->add(limiterId,"rgsml.dsp.true-peak-limiter",0));
+        const auto gain=dsp::GainParameters::create(-9.0);
+        const auto ceiling=dsp::TruePeakLimiterParameters::create(-1.0);
+        QVERIFY(gain&&ceiling);
+        const std::array<dsp::ModuleExecutionBinding,1> binding{{
+            {limiterId,*ceiling.value()}}};
+        const auto block=frame_count(128);
+        constexpr std::array<std::int64_t,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        std::size_t completed=0;
+        for(const auto from:rates) {
+            auto input=source(from,audio::ChannelLayout::MONO_C);
+            QVERIFY(input);
+            auto request=render::RenderRequest::create(
+                input.value()->view(),input.value()->view().absolute_range(),
+                *manual.value(),{{gainId,*gain.value()}},block);
+            QVERIFY(request);
+            auto prepared=render::render_preview(*request.value(),*registry.value());
+            QVERIFY(prepared);
+            auto owner=std::make_shared<const render::RenderResult>(
+                std::move(*prepared.value()));
+            for(const auto to:rates) {
+                if(from==to)continue;
+                auto target=core::SampleRate::create(to);
+                QVERIFY(target);
+                const auto bytes=frozen(from,to);
+                QVERIFY(bytes.size()>1000);
+                auto checked=render::render_true_peak_limiter_owned_output_rate_candidate(
+                    owner,*manual.value(),frame_count(257),
+                    owner->chain_revision(),*target.value(),*terminal.value(),
+                    binding,*registry.value(),block,{},nullptr,false,nullptr,bytes);
+                QVERIFY2(checked,checked?"":checked.error()->message().c_str());
+                QVERIFY(!checked.value()->terminal.checked.terminal.bypassed);
+                QVERIFY(checked.value()->terminal.checked.final_check.has_value());
+                m22_private::FullChainWitnessFailure why{};
+                const auto actual=m22_private::observe_real_complete_chain_candidate(
+                    *checked.value(),why);
+                QVERIFY(actual);
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::NONE);
+                QVERIFY(actual->used_original_q0);
+                QCOMPARE(actual->manual_source_hz,from);
+                QCOMPARE(actual->final_master_hz,to);
+                QCOMPARE(actual->complete_source_frames,std::int64_t{257});
+                QCOMPARE(actual->actual_master_frames,
+                    (std::int64_t{257}*to+from-1)/from);
+                const auto range=core::FrameRange::create(
+                    core::FrameIndex{3},core::FrameIndex{26});
+                QVERIFY(range);
+                const auto crop=m22_private::observe_verified_full_output_window_candidate(
+                    *checked.value(),*range.value());
+                QVERIFY(crop);
+                QCOMPARE(crop.value()->exact_output_crop.frame_count().value(),
+                         std::int64_t{23});
+                QCOMPARE(crop.value()->exact_output_crop.format().sample_rate().value(),
+                         to);
+                QVERIFY(!crop.value()->authorizes_release());
+                QCOMPARE(crop.value()->full_master_witness.frozen_original_q0_sha256,
+                    std::string{checked.value()->src_kernel_sha256});
+                ++completed;
+            }
+        }
+        QCOMPARE(completed,std::size_t{30});
+    }
+
     void realActiveM17AfterQ0RunsM16AndRetainsManualOwner() {
         using namespace rgsml;
         using namespace render_support;
