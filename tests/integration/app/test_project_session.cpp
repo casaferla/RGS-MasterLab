@@ -2096,6 +2096,7 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         .compensated_pcm.view();
     QCOMPARE(full.frame_count().value(),kOutFrames);
     QCOMPARE(full.format().sample_rate().value(),std::int64_t{44100});
+    QCOMPARE(full.format().channel_count(),std::size_t{2});
     QCOMPARE(full.timebase().frame_domain_id(),
              audio::FrameDomainId::OUTPUT_RATE);
 
@@ -2245,6 +2246,8 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
                  .sample_rate().value(),std::int64_t{44100});
     QCOMPARE(reader.value()->get()->info().encoded_sample_format(),
              audio::WavSampleFormat::IEEE_F32);
+    QCOMPARE(reader.value()->get()->info().audio_format().channel_count(),
+             std::size_t{2});
     const auto outputFormat=reader.value()->get()->info().audio_format();
     auto outputFrameCount=core::FrameCount::create(kOutFrames);
     QVERIFY(outputFrameCount);
@@ -2319,6 +2322,8 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
              kOutFrames);
     QCOMPARE(pcmReader.value()->get()->info().encoded_sample_format(),
              audio::WavSampleFormat::PCM_S24);
+    QCOMPARE(pcmReader.value()->get()->info().audio_format().channel_count(),
+             std::size_t{2});
     QCOMPARE(pcmReader.value()->get()->info().audio_format()
                  .sample_rate().value(),std::int64_t{44100});
     auto decodedPcm=audio::AudioBuffer::create(
