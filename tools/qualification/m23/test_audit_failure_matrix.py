@@ -27,7 +27,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(manifest["release_qualified"])
         counts = {k: sum(c["static_coverage"] == k for c in manifest["cases"])
                   for k in ("existing", "partial", "gap")}
-        self.assertEqual(counts, {"existing": 12, "partial": 3, "gap": 5})
+        self.assertEqual(counts, {"existing": 12, "partial": 5, "gap": 3})
 
     def test_fake_release_and_manual_verdict_never_accepted(self):
         baseline = json.loads(MATRIX.read_text(encoding="utf-8"))
