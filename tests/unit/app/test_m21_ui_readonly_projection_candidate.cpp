@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void unclaimedGoldColumnIsNeverRenderedInQtRows();
     void processedColumnQtProjectionSelectsProcessedCorrectly();
     void testFixtureRejectsArtificialProductionAuthorization();
     void decimalDisplayUsesStableDotAndDeltaSign();
@@ -717,6 +718,25 @@ void M21UiReadonlyProjectionCandidateTest::processedColumnQtProjectionSelectsPro
     QCOMPARE(rows.at(1).toMap().value("processedDelta").toString(),
              QStringLiteral("+1.00"));
     QVERIFY(!shown.value("productionAuthorized").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::unclaimedGoldColumnIsNeverRenderedInQtRows()
+{
+    using namespace app::m21_private::ui_candidate::qt_review;
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[1]=example(Column::gold,3,"g",-13.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]); // no Gold receipt
+    const auto projection=project_readonly(compose(snapshots),owners);
+    const auto shown=candidate_test_fixture_envelope(
+        projection,Column::prepared,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(shown.value("ready").toBool());
+    const auto row=shown.value("metrics").toList().at(1).toMap();
+    QCOMPARE(row.value("prepared").toString(),QStringLiteral("-18.00"));
+    QCOMPARE(row.value("gold").toString(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(row.value("preparedDelta").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(row.value("goldQuality").toString(),QStringLiteral("MISSING"));
 }
 
 } // namespace rgsml::tests
