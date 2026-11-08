@@ -200,7 +200,7 @@ struct ReadOnlyProjection final {
         if(prep&&gold)
             result.prepared_to_gold[k]=display_cell(compared.prepared_to_gold[k],k,true);
         else {
-            const auto quality=result.columns[0].state=="STALE"
+            const std::string quality=result.columns[0].state=="STALE"
                 || result.columns[1].state=="STALE" ? "STALE" : "MISSING";
             result.prepared_to_gold[k].quality_text=quality;
             result.prepared_to_gold[k].value_text=quality=="STALE"
@@ -210,7 +210,7 @@ struct ReadOnlyProjection final {
         if(proc&&gold)
             result.processed_to_gold[k]=display_cell(compared.processed_to_gold[k],k,true);
         else {
-            const auto quality=result.columns[2].state=="STALE"
+            const std::string quality=result.columns[2].state=="STALE"
                 || result.columns[1].state=="STALE" ? "STALE" : "MISSING";
             result.processed_to_gold[k].quality_text=quality;
             result.processed_to_gold[k].value_text=quality=="STALE"
