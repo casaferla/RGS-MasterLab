@@ -208,6 +208,7 @@ private slots:
     void sourceAndDestinationCollisionProtection();
     void goldDirectAndHardlinkDestinationRemainByteIdentical();
     void m23CloseAndCandidateReopenFaultsAreFailClosed();
+    void m23TruncatedCandidateFailsAfterRealReopen();
     void injectedFailureStagesCleanUp();
 };
 
@@ -494,6 +495,27 @@ void TransactionalAudioExporterTest::m23CloseAndCandidateReopenFaultsAreFailClos
         QVERIFY(!diagnostic.value()->safe_failure_evidence_complete());
         QVERIFY(!diagnostic.value()->authorizes_release());
     }
+}
+
+void TransactionalAudioExporterTest::m23TruncatedCandidateFailsAfterRealReopen()
+{
+    // Unlike generic VALIDATION injection, damage REAL candidate bytes
+    // after a successful write/close, then require the existing WAV reader
+    // and structural validator to fail closed without publication.
+    const auto sourcePath=fixture_path();
+    const auto before=file_bytes(sourcePath);
+    auto source=decode_source(sourcePath);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path=directory.filePath(QStringLiteral("m23-truncated-candidate.wav"));
+    set_export_failure_point_for_test(ExportFailurePoint::CANDIDATE_TRUNCATED_WAV);
+    const auto attempt=export_to(source.reference,source.buffer.view(),path);
+    set_export_failure_point_for_test(ExportFailurePoint::NONE);
+    QVERIFY(!attempt);
+    QVERIFY(attempt.error()!=nullptr);
+    QVERIFY(!QFileInfo::exists(path));
+    QVERIFY(no_candidates(directory.path()));
+    QCOMPARE(file_bytes(sourcePath),before);
 }
 
 void TransactionalAudioExporterTest::injectedFailureStagesCleanUp()
