@@ -27,7 +27,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(manifest["release_qualified"])
         counts = {k: sum(c["static_coverage"] == k for c in manifest["cases"])
                   for k in ("existing", "partial", "gap")}
-        self.assertEqual(counts, {"existing": 14, "partial": 6, "gap": 0})
+        self.assertEqual(counts, {"existing": 15, "partial": 5, "gap": 0})
 
     def test_fake_release_and_manual_verdict_never_accepted(self):
         baseline = json.loads(MATRIX.read_text(encoding="utf-8"))
@@ -90,7 +90,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(report["m23_closed"])
         self.assertFalse(report["release_qualified"])
         self.assertFalse(report["full_fq_passed"])
-        self.assertEqual(len(report["unexecuted_existing_categories"]), 14)
+        self.assertEqual(len(report["unexecuted_existing_categories"]), 15)
         self.assertEqual(len(report["unresolved_categories"]), 8)
         with self.assertRaises(M23ContractError):
             run(ROOT, MATRIX, [], "windows", True)
