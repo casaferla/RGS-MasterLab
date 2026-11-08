@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace rgsml::app::m21_private::ui_candidate::panel_review {
 
@@ -175,4 +176,92 @@ struct IndependentPanelBundle final {
         && !frame.m20.value("productionAuthorized").toBool()
         && !frame.m21.value("productionAuthorized").toBool();
 }
+// Independent M19/M20/M21 source selectors: capture three distinct
+// per-panel views from one immutable typed snapshot. The M21 matrix still
+// contains all PREPARED/GOLD/PROCESSED columns; its selection only defines
+// its own contextual header and availability, never the other panels.
+[[nodiscard]] inline IndependentPanelBundle capture_test_panels(
+    const ReviewEpochStore& store,
+    const IndependentPanelRouting& routing,
+    qt_review::ExplicitTestFixture fixture)
+{
+    IndependentPanelBundle result=unpublished_panels(store);
+    result.routing_revision=routing.routing_revision();
+    result.selected_columns={{
+        routing.selected(AnalysisPanel::levels_m19),
+        routing.selected(AnalysisPanel::tonal_m20),
+        routing.selected(AnalysisPanel::delta_m21)
+    }};
+    const auto projection=store.snapshot();
+    const auto value_for=[&](std::size_t i) {
+        return qt_review::candidate_test_fixture_envelope(
+            projection,result.selected_columns[i],fixture);
+    };
+    auto levels=value_for(0);
+    auto stereo=value_for(1);
+    auto metrics=value_for(2);
+    // Every panel must be an explicitly watermarked REVIEW fixture, and
+    // neither typed source nor routing may change during capture.
+    if(!levels.value("fixtureMode").toBool()
+       || !stereo.value("fixtureMode").toBool()
+       || !metrics.value("fixtureMode").toBool()
+       || levels.value("productionAuthorized").toBool()
+       || stereo.value("productionAuthorized").toBool()
+       || metrics.value("productionAuthorized").toBool()
+       || !store.is_current_review(result.review_revision)
+       || !routing.is_current_route(result.routing_revision))
+        return result;
+
+    result.test_fixture_only=true;
+    result.m19=std::move(levels);
+    result.m20=std::move(stereo);
+    result.m21=std::move(metrics);
+    result.m19.insert("panelId",QStringLiteral("M19"));
+    result.m20.insert("panelId",QStringLiteral("M20"));
+    result.m21.insert("panelId",QStringLiteral("M21"));
+    result.m19.remove("stereo");
+    result.m19.remove("metrics");
+    result.m19.remove("spectrum");
+    result.m19.remove("bands");
+    result.m20.remove("levels");
+    result.m20.remove("metrics");
+    result.m21.remove("levels");
+    result.m21.remove("stereo");
+    result.m21.remove("spectrum");
+    result.m21.remove("bands");
+    static constexpr std::array<const char*,9> keys{{
+        "lufs","rms","samplePeak","truePeak","crest",
+        "width","P10","P50","P90"
+    }};
+    const auto m19=static_cast<std::size_t>(result.selected_columns[0]);
+    const auto m20=static_cast<std::size_t>(result.selected_columns[1]);
+    if(m19>=3 || m20>=3)return unpublished_panels(store);
+    result.m19.insert("levelsQuality",
+        metric_quality_fields(projection.columns[m19],0,5,keys));
+    result.m20.insert("stereoQuality",
+        metric_quality_fields(projection.columns[m20],5,9,keys));
+    result.m21.insert("columnLifecycles",column_lifecycles(projection));
+    result.m21.insert("goldIndependentScope",projection.gold_independent_scope);
+    result.m20.insert("spectrum",QVariantList{});
+    result.m20.insert("bands",QVariantList{});
+    result.m20.insert("spectrumStatus",QStringLiteral("UNAVAILABLE"));
+    result.m20.insert("tonalProfileStatus",QStringLiteral("UNAVAILABLE"));
+    return result;
+}
+
+// A queued independent snapshot is usable only with BOTH current producer
+// revision and current per-panel routing revision. Product Main is NOT wired.
+[[nodiscard]] inline bool review_frame_current(
+    const ReviewEpochStore& store,
+    const IndependentPanelRouting& routing,
+    const IndependentPanelBundle& frame)
+{
+    if(!review_frame_current(store,frame)
+       || !routing.is_current_route(frame.routing_revision))
+        return false;
+    return frame.selected_columns[0]==routing.selected(AnalysisPanel::levels_m19)
+        && frame.selected_columns[1]==routing.selected(AnalysisPanel::tonal_m20)
+        && frame.selected_columns[2]==routing.selected(AnalysisPanel::delta_m21);
+}
+
 } // namespace rgsml::app::m21_private::ui_candidate::panel_review
