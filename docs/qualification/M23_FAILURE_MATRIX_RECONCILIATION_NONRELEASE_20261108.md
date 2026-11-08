@@ -23,8 +23,8 @@ These are **existing code/test fixtures**. They are not granted executed/PASS st
 `tools/qualification/m23/failure_matrix_reconciliation.json` maintains 20 frozen categories:
 
 - **12 covered at source** by a concrete existing named Qt test slot; a focused CI must actually execute the named CTest suite before recording `EXECUTED_PASS`.
-- **3 partially evidenced**: precise short-write vs generic writer-I/O failure; independently malformed/truncated WAV vs generic candidate-validation fault; unknown sound-changing module malicious-open case vs legacy opaque/degraded behavior.
-- **5 explicit gaps**: nonfinite DSP injection through the real full Product, flush/close error after writing, candidate reopen failure distinct from validation, Gold destination/direct/alias collision and the `AlphaDiagnosticReport` canonical aggregation/lifecycle.
+- **5 partially evidenced**: real GOLD direct/hard-link alias no-replace and nonrelease diagnostic collection are now test-backed, alongside precise short-write vs generic writer-I/O failure; independently malformed/truncated WAV vs generic candidate-validation fault; unknown sound-changing module malicious-open case vs legacy opaque/degraded behavior.
+- **3 explicit gaps**: nonfinite DSP injection through the real full Product, flush/close error after writing, and candidate reopen failure distinct from validation. GOLD identity-aware Product admission and diagnostic lifecycle are still only PARTIALLY evidenced, not qualified.
 
 A static source match is not proof of fault injection: category `qualified=false` in every M23 reconciliation receipt, even when its predecessor CTest suite passes. Missing categories **remain visible and prevent M23 closure**. They must be implemented/tested or explicitly resolved under frozen Product Owner M23 authority. Never reclassify an indirect generic fault as the missing precise failure proof.
 
@@ -44,3 +44,14 @@ Remaining M23 engineering belongs to a further **coherent large macro-lot**, not
 The official FQ is still manual-dispatch-only and must target a **single integrated** M18–M23 candidate after real Windows M23 I+P+M and the prerequisites. Phase-6 P01–P06 semantic closure **does not itself authorize implementation or Gate G**; it is a distinct PO checkpoint. User listening and first real remaster M24 cannot be self-certified.
 
 Do not merge `main` without explicit Product Owner authorization. No concurrent CI candidates.
+
+
+## 5. After M23 CI #2 dual green — AlphaDiagnosticReport and GOLD alias proofs
+
+[M23 focused #2](https://github.com/casaferla/RGS-MasterLab/actions/runs/42528282396) on SHA `18f270bd96d7f595506be984626c1fa9291c6c3f` COMPLETED SUCCESS Windows and Linux. This confirms that the already existing predecessor suite executions and no-release reconciliation tool pass; it **does not** pass M23 I+P+M.
+
+The next writer-only targeted evidence set adds a **real C++ `AlphaDiagnosticReport`** inside `app/src/internal/m23_alpha_diagnostic_report.hpp`, aggregating genuine `core::Status` / `core::ErrorCode` without a second error taxonomy. It discards original Error.message(), details, raw resource path, credentials and raw pointer identities, stores only canonical `error_code_token` and an explicit observation of SOURCE, GOLD, existing destination, project state, publication and candidate cleanup. Unproven evidence remains UNKNOWN; even fully observed safe failure **never** gives M23 I/P/M or RELEASE authorization. Cross-platform native C++ tests feed real core error statuses with secret-bearing messages and assert sanitized report, status rejection and fail-closed/safety semantics.
+
+The existing **Windows M09 FAIL_IF_EXISTS exporter** is exercised against an independent real `GOLD.wav` file and its real Win32 hard-link alias (Source is separately opened). Both must be refused by the original transaction, with Gold, Source and any unrelated destination bytes unchanged and no task-owned temporary files. The resulting two **actual** exporter errors feed the new diagnostic. This proves existing no-replace on Gold, but does not pretend that the Product has gained a new Gold-specific strong identity preflight. Category stays `partial`, not `existing`.
+
+The 20-category matrix therefore now has **12 existing-source, 5 partial-source, 3 missing-source** categories. The same M23 dual-OS CI builds/executes the new diagnostic target and real Windows GOLD alias integration target, binds genuine CTest JUnit receipts and **always** marks `m23_closed=false`. No algorithm, FIR, source output, M09 writer, original M18 encoder, M17, M22 engine, GOLD persisted token, Main or QML changed. Remaining three gaps and partial scopes must be resolved with the frozen M23 authority before actual Gate I+P; physical Windows Gate M is separately required.
