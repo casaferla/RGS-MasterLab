@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void readyPresentationWithoutFixtureRemainsMasked();
 };
 
 void M19M21TypedQmlConvergenceTest::threeActualIndependentQmlRootsOpenFailClosed() {
@@ -331,6 +332,19 @@ void M19M21TypedQmlConvergenceTest::dockHostRemainsPreviewOnly() {
     QCOMPARE(root->property("moduleIndex").toInt(),0);
     QVERIFY(root->property("presentation").toMap().value("ready").toBool()==false);
 }
+void M19M21TypedQmlConvergenceTest::readyPresentationWithoutFixtureRemainsMasked()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVERIFY(view->rootObject());
+    QVERIFY(view->rootObject()->setProperty("presentation",
+        QVariantMap{{"ready",true},{"levels",QVariantMap{{"rms","-18.00"}}}}));
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("CURRENT")));
+    QCoreApplication::processEvents();
+    QVERIFY(!view->rootObject()->property("fixtureMode").toBool());
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
 } // namespace rgsml::tests
 QTEST_MAIN(rgsml::tests::M19M21TypedQmlConvergenceTest)
 #include "test_m19_m21_typed_qml_convergence.moc"
