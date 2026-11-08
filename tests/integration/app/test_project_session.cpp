@@ -621,6 +621,20 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout,session.selector,session.gold,
         goldInbox,goldRouting));
 
+    const auto referenceSpectrum=app::internal::M21ProductSpectrumEvidence::
+        capture(controllers,fanout,session.selector,session.gold,
+                goldInbox,goldRouting);
+    QVERIFY(referenceSpectrum.current_owner);
+    QCOMPARE(referenceSpectrum.selected,app::m21_private::Column::gold);
+    QCOMPARE(referenceSpectrum.actual_spectrum,
+             !goldMeasured.value()->average_spectrum.empty());
+    QCOMPARE(referenceSpectrum.bins.size(),
+             goldMeasured.value()->average_spectrum.size());
+    QVERIFY(!referenceSpectrum.product_ui_authorized);
+    // Switching the selected Reference must never silently render a
+    // guessed spectrum from the unrelated SOURCE or PROCESSED PCM.
+
+
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
@@ -650,6 +664,9 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     // Qt panels without affecting Product DSP state or fabricating zeros.
     QVERIFY(!GoldQtReadiness::still_current(independentGoldPanels,
         controllers,fanout,session.selector,session.gold,
+        goldInbox,goldRouting));
+    QVERIFY(!app::internal::M21ProductSpectrumEvidence::still_current(
+        referenceSpectrum,controllers,fanout,session.selector,session.gold,
         goldInbox,goldRouting));
     const auto retiredGoldPanel=GoldQtReadiness::capture(
         controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
