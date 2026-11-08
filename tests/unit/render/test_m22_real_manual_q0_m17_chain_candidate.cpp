@@ -314,6 +314,14 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
                 result.value()->terminal.terminal_chain_revision=original;
             }
+            // An implicit rate conversion with no named frozen Q0 cannot pass.
+            {
+                result.value()->used_candidate_src=false;
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
+                result.value()->used_candidate_src=true;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
