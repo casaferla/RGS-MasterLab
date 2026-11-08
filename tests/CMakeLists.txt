@@ -148,7 +148,8 @@ qt_add_executable(rgsml_project_session_tests
 # geometry through the private, non-GUI implementation adapter.
 target_include_directories(rgsml_project_session_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src
-    ${CMAKE_SOURCE_DIR}/analysis/src)
+    ${CMAKE_SOURCE_DIR}/analysis/src
+    ${CMAKE_SOURCE_DIR}/audio/src/internal)
 # The native Product Q0 integration test reads the existing SHA-pinned
 # coefficient files from the checkout; production does not gain a test root.
 target_compile_definitions(rgsml_project_session_tests PRIVATE
