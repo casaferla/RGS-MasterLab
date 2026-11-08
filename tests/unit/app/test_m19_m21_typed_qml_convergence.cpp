@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m21EmptyComparisonShowsExplicitNoRowsNotice();
     void m20UnsupportedProfileStatusKeepsAllBandShapesHidden();
     void m20VerifiedDemoBandMakesProfileVisible();
     void m20SinglePointIsNotFalseFullSpectrum();
@@ -525,6 +526,20 @@ void M19M21TypedQmlConvergenceTest::m20UnsupportedProfileStatusKeepsAllBandShape
     QVERIFY(!view->rootObject()->property("tonalProfileAvailable").toBool());
     auto* notice=visual_by_name(view->rootObject(),"m20MissingProfileNotice");
     QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m21EmptyComparisonShowsExplicitNoRowsNotice()
+{
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"metrics",QVariantList{}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m21MissingComparisonNotice");
+    QVERIFY(notice && notice->isVisible());
+    QVERIFY(notice->property("text").toString().contains("UNAVAILABLE"));
 }
 
 } // namespace rgsml::tests
