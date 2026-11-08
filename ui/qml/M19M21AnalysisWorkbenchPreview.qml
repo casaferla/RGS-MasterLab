@@ -203,7 +203,7 @@ Rectangle {
                         border.width: 1
                         Text {
                             anchors.centerIn: parent
-                            text: modelData.name
+                            text: modelData.name === "GOLD" ? "REFERENCE" : modelData.name
                             font.family: "Segoe UI"
                             font.bold: true
                             font.pixelSize: 11
@@ -306,7 +306,7 @@ Rectangle {
                                 color: root.ink
                             }
                             Text {
-                                text: "Read-only comparison; GOLD is measured independently."
+                                text: "Read-only comparison; REFERENCE is measured independently."
                                 font.family: "Segoe UI"
                                 font.pixelSize: 11
                                 color: root.dim
@@ -322,7 +322,7 @@ Rectangle {
                                     spacing: 5
                                     Row {
                                         width: parent.width
-                                        Text {text:modelData.name;width:parent.width-125;color:root.dim;font.pixelSize:11;font.bold:true}
+                                        Text {text:modelData.name==="GOLD"?"REFERENCE":modelData.name;width:parent.width-125;color:root.dim;font.pixelSize:11;font.bold:true}
                                         Text {text:root.available?modelData.reading:"UNAVAILABLE";color:root.ink;font.pixelSize:12}
                                     }
                                     Rectangle {
