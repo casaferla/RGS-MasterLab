@@ -305,6 +305,7 @@ def main():
         "rgsml_m22_authentic_q0_candidate_tests",
         "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
         "rgsml_m22_product_chain_epoch_capture_tests",
+        "rgsml_render_preview_tests",
         "tools/qualification/m22_post_gr/verify_no_release.py",
         "staging/m22-post-gr-focused-ci-20261108",
         "tools/qualification/playback_src/test_approved_16_fir_package.py",
