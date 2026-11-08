@@ -2015,6 +2015,33 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
                  .frozen_original_q0_sha256.empty());
     QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
         bound,fanout,*provenance.value()));
+    // The M22 window planner is now derived from the SAME real native
+    // checked 44.1-kHz Master, with exact source/output EOS and original
+    // authenticated Q0 SHA, never an inferred clock or fixture label.
+    m22_private::RealFullOutputPlanFailure nativeFailure{};
+    const auto nativePlan=m22_private::observe_real_full_output_plan_candidate(
+        verified->rendered,m22_private::Mode::PREVIEW,
+        m22_private::Window{97,913},nativeFailure);
+    QVERIFY(nativePlan);
+    QCOMPARE(nativeFailure,m22_private::RealFullOutputPlanFailure::NONE);
+    QVERIFY(!nativePlan->authorizes_release());
+    QVERIFY(nativePlan->clock.uses_final_src());
+    QCOMPARE(nativePlan->clock.declaration().source_processing_hz,
+             std::uint32_t{48000});
+    QCOMPARE(nativePlan->clock.declaration().output_hz,
+             std::uint32_t{44100});
+    QCOMPARE(nativePlan->clock.declaration().source_processing_frames,
+             std::uint64_t{kSourceFrames});
+    QCOMPARE(nativePlan->clock.declaration().declared_full_output_frames,
+             static_cast<std::uint64_t>(kOutFrames));
+    QCOMPARE(nativePlan->original_q0.pinned_sha256,
+             provenance.value()->immutable_chain_witness
+                 .frozen_original_q0_sha256);
+    QCOMPARE(nativePlan->output.required_source_true_eos,
+             std::uint64_t{kSourceFrames});
+    QCOMPARE(nativePlan->output.required_output_true_eos,
+             static_cast<std::uint64_t>(kOutFrames));
+    QCOMPARE(nativePlan->output.absolute_dither_first,std::uint64_t{97});
     const auto window=core::FrameRange::create(
         core::FrameIndex{97},core::FrameIndex{913});
     QVERIFY(window);
