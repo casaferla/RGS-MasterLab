@@ -11,6 +11,7 @@ enum class ExportFailurePoint : std::uint8_t {
     // M23 test-only fault points: no effect with production NONE.
     FLUSH_CLOSE,
     CANDIDATE_REOPEN,
+    CANDIDATE_TRUNCATED_WAV,
     VALIDATION,
     ENCODED_CHECKSUM,
     DECODED_CHECKSUM,
