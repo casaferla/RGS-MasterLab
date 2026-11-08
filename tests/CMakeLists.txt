@@ -1474,7 +1474,7 @@ target_include_directories(rgsml_m22_checked_output_clock_candidate_tests PRIVAT
     ${CMAKE_SOURCE_DIR}/render/src/internal
 )
 target_link_libraries(rgsml_m22_checked_output_clock_candidate_tests
-    PRIVATE Qt6::Test
+    PRIVATE rgsml_audio Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_m22_checked_output_clock_candidate_tests)
 add_test(NAME rgsml_m22_checked_output_clock_candidate_tests
