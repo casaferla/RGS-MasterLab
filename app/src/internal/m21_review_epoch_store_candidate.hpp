@@ -10,6 +10,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 namespace rgsml::app::m21_private::ui_candidate {
@@ -27,8 +28,10 @@ public:
     // column, not independent GOLD or the other analyzer's result.
     [[nodiscard]] bool begin(Column column, std::uint64_t generation) {
         const auto i=static_cast<std::size_t>(column);
-        if(i>=3 || !guard_.expect(column,generation))return false;
+        if(i>=3 || revision_==(std::numeric_limits<std::uint64_t>::max)()
+           || !guard_.expect(column,generation))return false;
         receipts_[i].reset();
+        ++revision_;
         return true;
     }
 
@@ -39,18 +42,29 @@ public:
     [[nodiscard]] bool receive(const Snapshot& data,
                                const ExpectedOwnerReceipt& claimed) {
         const auto i=static_cast<std::size_t>(data.column);
-        if(i>=3 || !receipt_matches(data,claimed,i))return false;
+        if(i>=3 || revision_==(std::numeric_limits<std::uint64_t>::max)()
+           || !receipt_matches(data,claimed,i))return false;
         if(!guard_.publish(data))return false;
         receipts_[i]=claimed;
+        ++revision_;
         return true;
     }
 
     [[nodiscard]] bool select(Column column) {
         if(static_cast<std::size_t>(column)>=3)return false;
+        if(selected_==column)return true;
+        if(revision_==(std::numeric_limits<std::uint64_t>::max)())return false;
         selected_=column;
+        ++revision_;
         return true;
     }
     [[nodiscard]] Column selected() const {return selected_;}
+    // Private revision guards against cached/late preview frames. This is
+    // NOT a canonical Product generation token or a release authority.
+    [[nodiscard]] std::uint64_t review_revision() const {return revision_;}
+    [[nodiscard]] bool is_current_review(std::uint64_t r) const {
+        return r!=0 && r==revision_;
+    }
 
     // Always recompute from current receipts; never cache a ready map across
     // a begin(), receive(), or selected-column transition.
@@ -75,5 +89,6 @@ private:
     PrivatePublicationGuard guard_{};
     std::array<std::optional<ExpectedOwnerReceipt>,3> receipts_{};
     Column selected_{Column::prepared};
+    std::uint64_t revision_{};
 };
 } // namespace rgsml::app::m21_private::ui_candidate
