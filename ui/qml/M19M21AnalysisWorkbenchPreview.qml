@@ -587,12 +587,12 @@ Rectangle {
                     Row{
                         anchors.fill:parent;anchors.margins:11;spacing:10
                         Text{
-                            text:"GOLD SCOPE IS INDEPENDENT"
+                            text:"REFERENCE SCOPE IS INDEPENDENT"
                             color:root.amber;font.bold:true;font.pixelSize:12
                             anchors.verticalCenter:parent.verticalCenter
                         }
                         Text{
-                            text:"No time alignment is assumed. Δ is GOLD − CURRENT; unavailable values remain unavailable."
+                            text:"No time alignment is assumed. Δ is REFERENCE − CURRENT; unavailable values remain unavailable."
                             color:"#E7C99D";font.pixelSize:11
                             anchors.verticalCenter:parent.verticalCenter
                         }
@@ -615,7 +615,7 @@ Rectangle {
                             Row{
                                 anchors.fill:parent
                                 Repeater{
-                                    model:["METRIC","PREPARED","GOLD","PROCESSED","Δ PREPARED → GOLD","Δ PROCESSED → GOLD"]
+                                    model:["METRIC","PREPARED","REFERENCE","PROCESSED","Δ PREPARED → REF","Δ PROCESSED → REF"]
                                     delegate:Text{
                                         width:parent.width/6
                                         height:parent.height
@@ -636,10 +636,10 @@ Rectangle {
                             width: parent.width
                             height: 64
                             text: root.stateStale
-                                ? "METRICS STALE — REANALYZE PREPARED / GOLD / PROCESSED"
+                                ? "METRICS STALE — REANALYZE PREPARED / REFERENCE / PROCESSED"
                                 : root.available
                                   ? "METRICS UNAVAILABLE — VERIFIED COMPARISON NOT PUBLISHED"
-                                  : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
+                                  : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / REFERENCE / PROCESSED DATA"
                             font.family: "Segoe UI"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
