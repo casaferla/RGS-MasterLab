@@ -58,7 +58,12 @@ public:
         const Routing& routing)
     {
         Frame result;
-        result.routing_revision=routing.routing_revision();
+        // Wrong-thread callers must never inspect a mutable Qt-owned
+        // panel routing or Product QObject. Return only static masks.
+        const bool on_owner_thread=
+            QThread::currentThread()==selector.thread()
+            &&QThread::currentThread()==gold.thread()
+            &&QThread::currentThread()==product.session.thread();
         constexpr std::array<AnalysisPanel,3> panels{{
             AnalysisPanel::levels_m19,AnalysisPanel::tonal_m20,
             AnalysisPanel::delta_m21}};
@@ -66,21 +71,24 @@ public:
         constexpr std::array<const char*,3> role_names{{
             "PREPARED","REFERENCE","PROCESSED"}};
         for(std::size_t i=0;i<3;++i) {
-            result.selected[i]=routing.selected(panels[i]);
             result.panels[i]=m21_private::ui_candidate::qt_review::
                 masked_unpublished_envelope();
             result.panels[i].insert("panelId",
                 QString::fromLatin1(panel_names[i]));
             result.panels[i].insert("sourceRole",
-                QString::fromLatin1(role_names[
-                    static_cast<std::size_t>(result.selected[i])]));
+                QStringLiteral("UNAVAILABLE"));
             result.panels[i].insert("privateEvidenceStatus",
                 QStringLiteral("MISSING"));
         }
-        if(QThread::currentThread()!=selector.thread()
-           ||QThread::currentThread()!=gold.thread()
-           ||QThread::currentThread()!=product.session.thread()
-           ||!Product::Binding::installed(product)
+        if(!on_owner_thread)return result;
+        result.routing_revision=routing.routing_revision();
+        for(std::size_t i=0;i<3;++i) {
+            result.selected[i]=routing.selected(panels[i]);
+            result.panels[i].insert("sourceRole",
+                QString::fromLatin1(role_names[
+                    static_cast<std::size_t>(result.selected[i])]));
+        }
+        if(!Product::Binding::installed(product)
            ||!Product::Binding::Upstream::
                 owner_thread_current(product.upstream)
            ||!fanout.can_install_full_product_guards())
@@ -126,7 +134,10 @@ public:
         const GoldSelectionViewModel& gold,const Inbox& inbox,
         const Routing& routing)
     {
-        if(!expected.current_product_owner||expected.product_ui_authorized
+        if(QThread::currentThread()!=selector.thread()
+           ||QThread::currentThread()!=gold.thread()
+           ||QThread::currentThread()!=product.session.thread()
+           ||!expected.current_product_owner||expected.product_ui_authorized
            ||expected.owner_epoch==0
            ||!routing.is_current_route(expected.routing_revision))
             return false;
