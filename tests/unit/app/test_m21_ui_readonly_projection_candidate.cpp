@@ -4,6 +4,7 @@
 #include "internal/m21_ui_readonly_projection_candidate.hpp"
 #include "internal/m21_qt_snapshot_review_candidate.hpp"
 #include "internal/m21_review_epoch_store_candidate.hpp"
+#include "internal/m21_independent_panels_review_candidate.hpp"
 #include "internal/m21_real_product_metrics_port.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
@@ -30,6 +31,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void independentPanelBundleStartsUnpublished();
     void reviewStoreIsNonCopyableSingleWriterState();
     void reviewStoreSelectionDoesNotChangeOwnerReceipts();
     void reviewStoreSelectingPendingGoldCannotExposePrepared();
@@ -1215,6 +1217,23 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreIsNonCopyableSingleWriterS
     ReviewEpochStore store;
     QVERIFY(store.selected()==Column::prepared);
     QVERIFY(!store.unpublished().value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleStartsUnpublished()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto masked=unpublished_panels(store);
+    QVERIFY(masked.review_revision==0);
+    QVERIFY(!masked.test_fixture_only);
+    for(const auto* panel:{&masked.m19,&masked.m20,&masked.m21}) {
+        QVERIFY(!panel->value("ready").toBool());
+        QVERIFY(!panel->value("fixtureMode").toBool());
+        QVERIFY(!panel->value("productionAuthorized").toBool());
+        QVERIFY(panel->value("metrics").toList().isEmpty());
+        QVERIFY(panel->value("levels").toMap().isEmpty());
+    }
+    QVERIFY(!review_frame_current(store,masked));
 }
 
 } // namespace rgsml::tests
