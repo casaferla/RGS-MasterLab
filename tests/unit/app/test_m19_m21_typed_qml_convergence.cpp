@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m21RealTypedComparisonRequiresCurrentSelectedOwner();
     void m21EmptyComparisonShowsExplicitNoRowsNotice();
     void m20UnsupportedProfileStatusKeepsAllBandShapesHidden();
     void m20VerifiedDemoBandMakesProfileVisible();
@@ -540,6 +541,29 @@ void M19M21TypedQmlConvergenceTest::m21EmptyComparisonShowsExplicitNoRowsNotice(
     auto* notice=visual_by_name(view->rootObject(),"m21MissingComparisonNotice");
     QVERIFY(notice && notice->isVisible());
     QVERIFY(notice->property("text").toString().contains("UNAVAILABLE"));
+}
+
+void M19M21TypedQmlConvergenceTest::m21RealTypedComparisonRequiresCurrentSelectedOwner()
+{
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,claim(p)));
+    QVERIFY(store.receive(g,claim(g)));
+    IndependentPanelRouting route;
+    const auto before=capture_test_panels(store,route,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(before.m21.value("metrics").toList().size()==9);
+    QVERIFY(store.begin(Column::prepared,8));
+    const auto after=capture_test_panels(store,route,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(!review_frame_current(store,route,before));
+    QVERIFY(!after.m21.value("ready").toBool());
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,after.m21);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
 }
 
 } // namespace rgsml::tests
