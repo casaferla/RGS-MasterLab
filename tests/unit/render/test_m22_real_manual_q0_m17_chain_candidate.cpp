@@ -388,6 +388,15 @@ private slots:
             QCOMPARE(witness->actual_master_frames,std::int64_t{257});
             QVERIFY(result.value()->terminal.checked.final_check.has_value());
             QCOMPARE(bits(owner->view()),bitsBefore);
+            // An identity clock must NOT consume or claim any FIR coefficient.
+            {
+                result.value()->src_kernel_sha256="forged-identity-coefficients";
+                m22_private::FullChainWitnessFailure why{};
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
+                result.value()->src_kernel_sha256={};
+            }
             ++inspected;
         }
         QCOMPARE(inspected,std::size_t{6});
