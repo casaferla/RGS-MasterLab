@@ -44,7 +44,7 @@ jobs:
             tail -n 55 "$RUNNER_TEMP/m23-cmake.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           fi
-          if ! cmake --build build/m23-native --parallel 4 --target rgsml_render_preview_tests rgsml_project_package_tests rgsml_project_json_tests >"$RUNNER_TEMP/m23-build.log" 2>&1; then
+          if ! cmake --build build/m23-native --parallel 4 --target rgsml_render_preview_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_m23_alpha_diagnostic_tests >"$RUNNER_TEMP/m23-build.log" 2>&1; then
             tail -n 65 "$RUNNER_TEMP/m23-build.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           fi
@@ -56,7 +56,7 @@ jobs:
           QT_QUICK_BACKEND: software
         run: |
           set -euo pipefail
-          if ! ctest --test-dir build/m23-native --output-on-failure --output-junit "$RUNNER_TEMP/m23-ctest-linux.xml" -R '^(rgsml_render_preview_tests|rgsml_project_package_tests|rgsml_project_json_tests)$' >"$RUNNER_TEMP/m23-ctest.log" 2>&1; then
+          if ! ctest --test-dir build/m23-native --output-on-failure --output-junit "$RUNNER_TEMP/m23-ctest-linux.xml" -R '^(rgsml_render_preview_tests|rgsml_project_package_tests|rgsml_project_json_tests|rgsml_m23_alpha_diagnostic_tests)"$RUNNER_TEMP/m23-ctest.log" 2>&1; then >"$RUNNER_TEMP/m23-ctest.log" 2>&1; then
             tail -n 55 "$RUNNER_TEMP/m23-ctest.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           fi
@@ -116,7 +116,7 @@ jobs:
             Get-Content "$env:RUNNER_TEMP/m23-cmake.log" -Tail 55 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_CONFIGURE_FAILED'
           }
-          cmake --build build/m23-native --config Release --parallel 4 --target rgsml_transactional_audio_export_tests rgsml_m18_windows_candidate_delivery_tests rgsml_project_session_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_render_preview_tests *> "$env:RUNNER_TEMP/m23-build.log"
+          cmake --build build/m23-native --config Release --parallel 4 --target rgsml_transactional_audio_export_tests rgsml_m18_windows_candidate_delivery_tests rgsml_project_session_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_render_preview_tests rgsml_m23_alpha_diagnostic_tests *> "$env:RUNNER_TEMP/m23-build.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 65 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_BUILD_FAILED'
@@ -128,7 +128,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           QT_QUICK_BACKEND: software
         run: |
-          ctest --test-dir build/m23-native -C Release --output-on-failure --output-junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" -R '^(rgsml_transactional_audio_export_tests|rgsml_m18_windows_candidate_delivery_tests|rgsml_project_session_tests|rgsml_project_package_tests|rgsml_project_json_tests|rgsml_render_preview_tests)$' *> "$env:RUNNER_TEMP/m23-ctest.log"
+          ctest --test-dir build/m23-native -C Release --output-on-failure --output-junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" -R '^(rgsml_transactional_audio_export_tests|rgsml_m18_windows_candidate_delivery_tests|rgsml_project_session_tests|rgsml_project_package_tests|rgsml_project_json_tests|rgsml_render_preview_tests|rgsml_m23_alpha_diagnostic_tests) "$env:RUNNER_TEMP/m23-ctest.log" *> "$env:RUNNER_TEMP/m23-ctest.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-ctest.log" -Tail 60 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_REAL_FAULT_CTEST_FAILED'
