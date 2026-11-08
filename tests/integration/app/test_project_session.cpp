@@ -56,6 +56,7 @@
 
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -91,6 +92,37 @@ namespace {
     if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly) ||
         file.write(reinterpret_cast<const char*>(data.data()),
             static_cast<qint64>(data.size())) != static_cast<qint64>(data.size())) return {};
+    file.close();
+    return path;
+}
+
+// Genuine two-channel PCM16 SOURCE for the M22 real Product four-DSP
+// Full/Preview/Final SRC/M17/M18 integration regression. A physical WAV is
+// intentionally decoded via the same WindowsResourceReader as the Product;
+// test vectors are not promoted as independent production realizations.
+[[nodiscard]] QString stereo_wav_for_m22(
+    QTemporaryDir& dir,const QString& name,std::uint32_t sampleRate,
+    std::size_t frameCount)
+{
+    std::vector<std::int64_t> interleaved(frameCount*2U);
+    for(std::size_t i=0;i<frameCount;++i) {
+        const auto t=static_cast<double>(i);
+        const auto pulse=(i%503U)==0U?10000.0:0.0;
+        const auto left=10000.0*std::sin(t*0.031)
+                       +3500.0*std::cos(t*0.009)+pulse;
+        const auto right=9000.0*std::sin(t*0.044)
+                       -3200.0*std::cos(t*0.012)-pulse*0.5;
+        interleaved[2U*i]=static_cast<std::int64_t>(std::llround(left));
+        interleaved[2U*i+1U]=static_cast<std::int64_t>(std::llround(right));
+    }
+    const auto bytes=wav_support::make_wav(
+        1U,16U,2U,sampleRate,wav_support::pcm_payload(interleaved,16U));
+    const auto path=dir.filePath(name);
+    QFile file{path};
+    if(!file.open(QIODevice::WriteOnly|QIODevice::NewOnly)
+       ||file.write(reinterpret_cast<const char*>(bytes.data()),
+                     static_cast<qint64>(bytes.size()))
+            !=static_cast<qint64>(bytes.size()))return {};
     file.close();
     return path;
 }
@@ -1823,8 +1855,9 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     constexpr std::size_t kSourceFrames=4096;
     constexpr std::int64_t kOutFrames=
         (static_cast<std::int64_t>(kSourceFrames)*44100+48000-1)/48000;
-    const auto sourcePath=wav(directory,
-        QStringLiteral("m22-real-source-48000.wav"),39,48000U,kSourceFrames);
+    const auto sourcePath=stereo_wav_for_m22(
+        directory,QStringLiteral("m22-real-stereo-source-48000.wav"),
+        48000U,kSourceFrames);
     QVERIFY(!sourcePath.isEmpty());
     QFile inputBefore{sourcePath};
     QVERIFY(inputBefore.open(QIODevice::ReadOnly));
@@ -1833,10 +1866,62 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QVERIFY(!originalBytes.isEmpty());
 
     Session session;
+    // The actual product session's installed four-module chain must be
+    // exercised, not four manually synthesized test-only DSP instances.
+    // Fixed Input Gain stays first; the remaining user-editable modules
+    // keep their actual stored order (EQ -> Compressor -> Stereo/M-S).
+    auto chainRegistry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(chainRegistry);
+    const auto msUuid=core::Uuid::parse(
+        "95000000-0000-4000-8000-000000000099");
+    QVERIFY(msUuid);
+    const auto msId=dsp::ModuleInstanceId::from_uuid(*msUuid.value());
+    QVERIFY(msId);
+    const auto msParameters=dsp::StereoMsParameters::create(
+        -2.0,4.0,false,dsp::MonoBassMode::LR12,145.0,40.0);
+    QVERIFY(msParameters);
+    const auto fourModule=app::MasteringChainState::create_with_stereo_ms(
+        *chainRegistry.value(),session.chainId,
+        session.gainId,session.eqId,session.compId,
+        *msId.value(),*msParameters.value(),false);
+    QVERIFY(fourModule);
+    *session.masteringChainState=std::move(*fourModule.value());
+    const auto gain=dsp::GainParameters::create(-4.5);
+    QVERIFY(gain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(*gain.value()));
+    const auto eqBandUuid=core::Uuid::parse(
+        "95000000-0000-4000-8000-000000000098");
+    QVERIFY(eqBandUuid);
+    const auto eqBand=dsp::EqBandParameters::create(
+        *eqBandUuid.value(),true,dsp::EqFilterType::BELL,
+        dsp::EqRouting::STEREO,dsp::BellPayload{830.0,2.75,0.8});
+    QVERIFY(eqBand);
+    const auto eqParameters=dsp::ParametricEqParameters::create(
+        {*eqBand.value()});
+    QVERIFY(eqParameters);
+    QVERIFY(session.masteringChainState->set_parametric_eq_parameters(
+        *eqParameters.value()));
+    const auto compParameters=dsp::CompressorParameters::create(
+        dsp::CompressorDetectorMode::RMS,
+        dsp::CompressorChannelLink::LINKED_MAX,
+        -22.0,2.0,6.0,15.0,160.0,40.0,5.0,100.0,0.0);
+    QVERIFY(compParameters);
+    QVERIFY(session.masteringChainState->set_compressor_parameters(
+        *compParameters.value()));
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        session.compId,false));
+    QVERIFY(session.masteringChainState->set_user_bypass(
+        *msId.value(),false));
+    QCOMPARE(session.masteringChainState->module_count(),std::size_t{4});
+    QCOMPARE(session.masteringChainState->execution_bindings().size(),
+             std::size_t{4});
     session.source.selectSource(QUrl::fromLocalFile(sourcePath));
     QVERIFY(session.source.has_source());
     QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
     QCOMPARE(session.source.frame_count(),qint64{kSourceFrames});
+    QCOMPARE(session.source.channel_count(),2);
+    QCOMPARE(session.masteringChainState->chain().instances().size(),
+             std::size_t{4});
     session.transport.set_pcm_prepare_handler(
         [&session](audio::AudioBufferView view,
             std::shared_ptr<const void> lease,
@@ -1862,7 +1947,7 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     auto block=core::FrameCount::create(128);
     QVERIFY(registry&&rate48&&rate44&&sourceFrames&&block);
     auto ref=platform::windows::WindowsResourceReader::make_read_reference(
-        sourcePath.toUtf8().toStdString(),"m22-real-source-48000.wav");
+        sourcePath.toUtf8().toStdString(),"m22-real-stereo-source-48000.wav");
     QVERIFY(ref);
     auto file=platform::windows::WindowsResourceReader::open_read_only(
         *ref.value());
@@ -1900,6 +1985,20 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         session.masteringChainState->chain(),
         session.masteringChainState->execution_bindings());
     QVERIFY(prepared&&processed);
+    // Real registry execution proved all FOUR product manual modules active
+    // and in the actual preserved chain order. M17 runs only after them.
+    QCOMPARE(processed.value()->signatures().size(),std::size_t{4});
+    const auto& signatures=processed.value()->signatures();
+    QCOMPARE(signatures[0].instance_id,session.gainId);
+    QCOMPARE(signatures[1].instance_id,session.eqId);
+    QCOMPARE(signatures[2].instance_id,session.compId);
+    QCOMPARE(signatures[3].instance_id,*msId.value());
+    for(const auto& signature:signatures)
+        QCOMPARE(signature.disposition,
+                 render::ModuleExecutionDisposition::PROCESSED);
+    QVERIFY(processed.value()->compressor_telemetry_sidecar().has_value());
+    QCOMPARE(processed.value()->stereo_ms_stage_output_sidecars().size(),
+             std::size_t{1});
     QVERIFY(session.selector.set_prepared_realization(
         std::move(*prepared.value())));
     QVERIFY(session.selector.set_processed_realization(
