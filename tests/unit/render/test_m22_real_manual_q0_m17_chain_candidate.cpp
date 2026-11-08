@@ -417,6 +417,17 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
                 result.value()->terminal.checked.final_check->qualification_status=old;
             }
+            // After all fail-closed probes, return the identical native witness.
+            {
+                m22_private::FullChainWitnessFailure why{};
+                const auto rechecked=m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why);
+                QVERIFY(rechecked);
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::NONE);
+                QVERIFY(!rechecked->authorizes_release());
+                QVERIFY(!rechecked->used_original_q0);
+                QCOMPARE(rechecked->actual_master_frames,std::int64_t{257});
+            }
             ++inspected;
         }
         QCOMPARE(inspected,std::size_t{6});
