@@ -584,6 +584,32 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
              app::m21_private::Lifecycle::current);
     QVERIFY(!goldView.columns[0]);
     QVERIFY(!goldView.columns[2]);
+
+    // A truly independent REFERENCE is visible to the private UI readiness
+    // bridge only after its own canonical GoldSelection file owner accepted
+    // the measured WAV. The same object never invents PREPARED/PROCESSED.
+    using GoldQtReadiness=app::internal::M21ProductQtReadinessBridge;
+    GoldQtReadiness::Routing goldRouting;
+    QVERIFY(goldRouting.select(GoldQtReadiness::AnalysisPanel::tonal_m20,
+        app::m21_private::Column::gold));
+    QVERIFY(goldRouting.select(GoldQtReadiness::AnalysisPanel::delta_m21,
+        app::m21_private::Column::gold));
+    const auto independentGoldPanels=GoldQtReadiness::capture(
+        controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
+    QVERIFY(independentGoldPanels.current_product_owner);
+    QVERIFY(!independentGoldPanels.product_ui_authorized);
+    QCOMPARE(independentGoldPanels.panels[0].value(
+        "privateEvidenceStatus").toString(),QStringLiteral("MISSING"));
+    QCOMPARE(independentGoldPanels.panels[1].value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(independentGoldPanels.panels[2].value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QVERIFY(!independentGoldPanels.panels[1].value("ready").toBool());
+    QVERIFY(independentGoldPanels.panels[1].value("stereo").toMap().isEmpty());
+    QVERIFY(GoldQtReadiness::still_current(independentGoldPanels,
+        controllers,fanout,session.selector,session.gold,
+        goldInbox,goldRouting));
+
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
@@ -608,6 +634,20 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout,session.selector,session.gold);
     QCOMPARE(retiredGold.columns[1]->lifecycle,
              app::m21_private::Lifecycle::stale);
+
+    // Clearing a selected REFERENCE invalidates the exact same private
+    // Qt panels without affecting Product DSP state or fabricating zeros.
+    QVERIFY(!GoldQtReadiness::still_current(independentGoldPanels,
+        controllers,fanout,session.selector,session.gold,
+        goldInbox,goldRouting));
+    const auto retiredGoldPanel=GoldQtReadiness::capture(
+        controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
+    QVERIFY(!retiredGoldPanel.panels[1].value("ready").toBool());
+    QVERIFY(retiredGoldPanel.panels[1].value("stereo").toMap().isEmpty());
+    if(retiredGoldPanel.current_product_owner)
+        QCOMPARE(retiredGoldPanel.panels[1].value(
+            "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+
     QVERIFY(!M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
