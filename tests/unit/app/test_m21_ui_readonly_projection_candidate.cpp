@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleBeginningEpochChangesRevision();
     void independentPanelBundleMarkerCannotBeUsedAsReleasePermission();
     void independentPanelBundleM21CarriesThreeColumnLifecycles();
     void independentPanelBundleM20ContainsOnlyVerifiedStereoFields();
@@ -1327,6 +1328,21 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleMarkerCannotBeU
         QVERIFY(denied.m21.value("metrics").toList().isEmpty());
         QVERIFY(!review_frame_current(store,denied));
     }
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleBeginningEpochChangesRevision()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    QVERIFY(store.review_revision()==0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.review_revision()==1);
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.review_revision()==2);
+    QVERIFY(store.is_current_review(2));
+    QVERIFY(!store.is_current_review(1));
+    QVERIFY(!store.is_current_review(0));
+    QVERIFY(!store.unpublished().value("ready").toBool());
 }
 
 } // namespace rgsml::tests
