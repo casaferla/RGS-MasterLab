@@ -520,6 +520,7 @@ private slots:
     void m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly();
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
+    void referenceTerminologyOnRealMain();
     void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
     void truePeakReadOnlyAnalysisVisualEvidence();
@@ -3490,6 +3491,37 @@ Window {
     }
     window->close();
     QCoreApplication::processEvents();
+}
+
+// Dedicated PO terminology probe on actual Main.qml. Unlike the
+// historical full-window smoke, this test makes no docking/telemetry claims.
+void SourceMetadataPanelSmokeTest::referenceTerminologyOnRealMain()
+{
+    QQmlEngine engine;
+    QQmlComponent component{&engine,
+        QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
+    QVERIFY2(component.status()!=QQmlComponent::Error,
+        qPrintable(component.errorString()));
+    QVariantMap initial;
+    initial.insert(QStringLiteral("visible"),false);
+    initial.insert(QStringLiteral("width"),1184);
+    initial.insert(QStringLiteral("height"),688);
+    QScopedPointer<QObject> root{component.createWithInitialProperties(initial)};
+    QVERIFY2(root,qPrintable(component.errorString()));
+    QCoreApplication::processEvents();
+    const auto checkLabel=[&](const char* objectName, const char* expected) {
+        auto* object=root->findChild<QObject*>(QString::fromLatin1(objectName));
+        return object && object->property("text").toString()
+            == QString::fromLatin1(expected);
+    };
+    QVERIFY2(checkLabel("menuOpenGold","Open Reference"),
+        "Actual Main File menu must show Open Reference");
+    QVERIFY2(checkLabel("menuClearGold","Clear Reference"),
+        "Actual Main File menu must show Clear Reference");
+    QVERIFY2(checkLabel("adaptiveModeToggle_Gold","Reference / AutoMatch"),
+        "Actual Main context tab must say Reference / AutoMatch");
+    QVERIFY2(checkLabel("auditionGoldButton","REFERENCE"),
+        "Actual Main audition control must say REFERENCE");
 }
 
 void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
