@@ -23,7 +23,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/qualification/m18_m22_bridge/verify_bridge.py
+          log="$RUNNER_TEMP/bridge-guard-linux.log"
+          if ! python3 tools/qualification/m18_m22_bridge/verify_bridge.py >"$log" 2>&1; then
+            tail -n 45 "$log" >"$RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+            cat "$RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+            exit 1
+          fi
+          tail -n 2 "$log"
       - name: Install Qt 6.8.3 and dependencies
         shell: bash
         run: |
@@ -106,8 +112,15 @@ jobs:
       - name: Frozen technical GOLD contract and UI wording (Windows)
         shell: pwsh
         run: |
-          python tools/qualification/m18_m22_bridge/verify_bridge.py
-          if ($LASTEXITCODE -ne 0) { throw 'REFERENCE_UI_TECHNICAL_FROZEN_CONTRACT_FAILED' }
+          $guardLog = "$env:RUNNER_TEMP/bridge-guard-windows.log"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          python tools/qualification/m18_m22_bridge/verify_bridge.py *> $guardLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $guardLog -Tail 45 | Set-Content $bounded
+            Get-Content $bounded
+            throw 'BRIDGE_FROZEN_PRODUCT_AND_QT_CONTRACT_FAILED'
+          }
+          Get-Content $guardLog -Tail 2
       - name: Install Qt 6.8.3 MSVC
         shell: pwsh
         run: |
