@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreUncheckedFrameDomainIsRejected();
     void reviewStoreInvalidOwnerClaimCannotMakeDataCurrent();
     void reviewStoreRejectsWrongSourceScopeWithoutInstalling();
     void reviewStoreRefusesWrongOwnerWithoutInstalling();
@@ -996,6 +997,18 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreInvalidOwnerClaimCannotMak
     QVERIFY(!store.snapshot().columns[0].candidate_matched);
     QVERIFY(!store.test_preview(qt_review::ExplicitTestFixture{0x4D323147U})
              .value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreUncheckedFrameDomainIsRejected()
+{
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto claim=receipt(p);
+    claim.frame_domain_checked_at_source=false;
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(!store.receive(p,claim));
+    QVERIFY(!store.snapshot().columns[0].candidate_matched);
+    QVERIFY(!store.snapshot().production_authorized);
 }
 
 } // namespace rgsml::tests
