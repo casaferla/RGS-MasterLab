@@ -265,7 +265,9 @@ jobs:
           }
           foreach ($name in @(
             "m17_gr_history_SYNTHETIC_cursor25.png",
-            "m17_gr_history_SYNTHETIC_cursor75.png"
+            "m17_gr_history_SYNTHETIC_cursor75.png",
+            "m17_gr_history_EDITOR_SYNTHETIC_cursor25.png",
+            "m17_gr_history_EDITOR_SYNTHETIC_cursor75.png"
           )) {
             $image = Join-Path $shots $name
             if (-not (Test-Path $image) -or (Get-Item $image).Length -lt 1500) {
@@ -274,12 +276,12 @@ jobs:
             }
           }
           Write-Output "M17_FULL_MASTER_GR_HISTORY_QT_CURSOR_RASTER_PASS_NON_FQ"
-      - name: Upload M17 two actual Qt synthetic cursor PNGs
+      - name: Upload 4 genuine Qt synthetic history-and-full-editor cursor PNGs
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RGS-M17-Full-History-Synthetic-Qt-Cursor-25-75
-          path: ${{ runner.temp }}/m17-gr-synthetic/m17_gr_history_SYNTHETIC_cursor*.png
+          name: RGS-M17-Whole-Editor-And-GR-Qt-Cursor-25-75
+          path: ${{ runner.temp }}/m17-gr-synthetic/m17_gr_history_*cursor*.png
           if-no-files-found: error
           retention-days: 30
 
