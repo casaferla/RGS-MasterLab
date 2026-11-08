@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleLowSupportQualitySurvivesQtConversion();
     void independentPanelBundleInvalidPanelSelectionDoesNotAdvanceRevision();
     void independentPanelBundleQtCopyOnWriteKeepsOtherPanelUnchanged();
     void independentPanelBundleM21RowsDoNotLeakMissingGoldValues();
@@ -1738,6 +1739,23 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleInvalidPanelSel
     QVERIFY(review_frame_current(store,prior));
     QCOMPARE(prior.m19.value("levels").toMap().value("rms").toString(),
              QStringLiteral("-18.00"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleLowSupportQualitySurvivesQtConversion()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    p.metrics[1]={-18.0,Quality::low_confidence,"support limited"};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    const auto f=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QCOMPARE(f.m19.value("levels").toMap().value("rms").toString(),
+             QStringLiteral("-18.00"));
+    QCOMPARE(f.m19.value("levelsQuality").toMap().value("rms").toString(),
+             QStringLiteral("LOW SUPPORT"));
+    QCOMPARE(f.m21.value("metrics").toList().at(1).toMap()
+             .value("preparedQuality").toString(),QStringLiteral("LOW SUPPORT"));
 }
 
 } // namespace rgsml::tests
