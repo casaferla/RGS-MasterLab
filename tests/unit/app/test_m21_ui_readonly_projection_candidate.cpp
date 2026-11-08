@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void actualZeroIsNumericNotUnavailable();
     void nanMetricRemainsInvalidNotZero();
     void invalidPresentCellWithoutScalarNeverRenders();
     void monoNotApplicableWidthHasNoNumeric();
@@ -579,6 +580,17 @@ void M21UiReadonlyProjectionCandidateTest::nanMetricRemainsInvalidNotZero()
     QVERIFY(!view.columns[0].values[1].numeric);
     QVERIFY(view.columns[0].values[1].value_text=="INVALID");
     QVERIFY(!view.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::actualZeroIsNumericNotUnavailable()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",0.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(view.columns[0].candidate_matched);
+    QVERIFY(view.columns[0].values[1].numeric);
+    QVERIFY(view.columns[0].values[1].value_text=="0.00");
+    QVERIFY(view.columns[0].values[1].quality_text=="CURRENT");
 }
 
 } // namespace rgsml::tests
