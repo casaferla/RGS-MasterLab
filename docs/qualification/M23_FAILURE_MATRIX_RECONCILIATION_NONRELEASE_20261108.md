@@ -55,3 +55,60 @@ The next writer-only targeted evidence set adds a **real C++ `AlphaDiagnosticRep
 The existing **Windows M09 FAIL_IF_EXISTS exporter** is exercised against an independent real `GOLD.wav` file and its real Win32 hard-link alias (Source is separately opened). Both must be refused by the original transaction, with Gold, Source and any unrelated destination bytes unchanged and no task-owned temporary files. The resulting two **actual** exporter errors feed the new diagnostic. This proves existing no-replace on Gold, but does not pretend that the Product has gained a new Gold-specific strong identity preflight. Category stays `partial`, not `existing`.
 
 The 20-category matrix therefore now has **12 existing-source, 5 partial-source, 3 missing-source** categories. The same M23 dual-OS CI builds/executes the new diagnostic target and real Windows GOLD alias integration target, binds genuine CTest JUnit receipts and **always** marks `m23_closed=false`. No algorithm, FIR, source output, M09 writer, original M18 encoder, M17, M22 engine, GOLD persisted token, Main or QML changed. Remaining three gaps and partial scopes must be resolved with the frozen M23 authority before actual Gate I+P; physical Windows Gate M is separately required.
+
+## 6. Chat #78 — M23 #4 authentic CTest failures and exact repair
+
+[CI #4](https://github.com/casaferla/RGS-MasterLab/actions/runs/42531621259)
+at `26db14127b1242c03373b0e48eea091ca00b0ab3` **FAILED on both OS after
+actual C++ compile and CTest execution**, not at YAML launch. Bounded receipts:
+Windows 5/7 CTest suites passed; new AlphaDiagnosticReport and the physical
+transactional exporter suite failed. Linux 3/4 passed; only Alpha failed.
+Linux's four failed Alpha Qt assertions all follow from one reversed check in
+`from_failed_statuses`: a true **failed** `core::Status` has
+`has_value()==false`, so `!*observed.status` mistakenly rejected the
+very statuses it was designed to aggregate. Surgical writer commit
+`9ddaacef85ee56d5e0a66d501dd9e8c7d2cf8c04` checks
+`observed.status->has_value()` instead, preserving rejection of null or
+successful statuses and never touching Error.message/details. Promoted by
+non-force expected-head CAS to the M23 CI candidate, triggering another push
+check; its CI run number/result must be independently verified.
+
+## 7. Chat #78 — new additional staging proofs, unqualified pending CI
+
+Only on writer `staging/m23-failure-matrix-writer-no-ci-20261108`,
+after the above surgical correction, added the following **test-scope** probes.
+No production contract was changed: the test seam defaults to NONE, with
+existing candidate write/close/validation/commit sequence unchanged otherwise.
+
+- `FLUSH_CLOSE` test-only failure imposed at the **real candidate close**
+  return boundary after a complete native WAV write/finalize. The handle is
+  actually closed; injected failed status requires owned-candidate cleanup.
+  This tests safe response to a close failure; it does not assert the host
+  operating system suffered an actual disk/flush fault.
+- `CANDIDATE_REOPEN` distinct injected error immediately before
+  `validate_candidate`, after real finalized candidate close. Both fault
+  tests prove no destination, no task-owned temporary file, source byte
+  identity, and privacy-safe report assembled from the **actual** failed
+  exporter status.
+- `CANDIDATE_TRUNCATED_WAV` physically resizes a successfully written,
+  closed, task-owned candidate to eight bytes; existing candidate reader and
+  validation genuinely reopen the damaged bytes and must reject them without
+  publishing or touching SOURCE.
+- Real MANUAL Gain module rejects **NaN / +Inf / -Inf** in supplied samples
+  during genuine render execution with `InvalidAudioSample`; no successful
+  Render Preview is returned and SOURCE bits are preserved. **This is not
+  equivalent to Product FULL M17/M22 nonfinite failure injection.**
+
+Source inventory at this staging revision becomes **15 existing / 5 partial
+/ 0 categories without any source test**. Five partial scopes remain:
+`nonfinite_dsp_input` (needs Product FULL),
+`short_write` (precise partial-byte injection not proved),
+`gold_destination_collision` (Product Gold-specific admission),
+`unknown_semantic_module` (malicious semantic open),
+`alpha_diagnostic_report` (full Product lifecycle wiring).
+The `test_audit_failure_matrix.py` count assertions have been updated. The
+new tests MUST compile/run on Windows/Linux and bind genuine CTest JUnit
+before any qualified PASS; source code or static audit alone proves nothing.
+M23 I+P+M, Gate M physical, M24, Q1-Q6, Phase-6 Gate G and official cold FQ
+remain separate **OPEN** gates. PR #99 remains Draft, main unchanged;
+the candidate may be behind this writer while the previous CI completes.
