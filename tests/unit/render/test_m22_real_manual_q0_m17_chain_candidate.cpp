@@ -11,7 +11,6 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
-#include <rgsml/render/render_execution_signature.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
@@ -157,7 +156,7 @@ private slots:
                 original.value()->view().absolute_range(),
                 *manual.value(),binding,frame_count(chunk));
             QVERIFY(request);
-            const auto full=render::render_preview(
+            auto full=render::render_preview(
                 *request.value(),*registry.value());
             QVERIFY2(full,full?"":full.error()->message().c_str());
             QCOMPARE(full.value()->signatures().size(),std::size_t{4});
