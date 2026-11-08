@@ -242,6 +242,7 @@ private slots:
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
     void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
     void m18RealProductVerifiedMasterToPcm24AndFloat32WavAck();
+    void m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation();
     void m18RegionGateCannotSelfUninstallOrCrossThread();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
     void m18ProjectOpenBatchMustNotLeaveSaveAsUnguarded();
@@ -1798,6 +1799,320 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!ui.beginExport(QUrl::fromLocalFile(stalePath),0));
     QVERIFY(!action.has_unacknowledged_export());
     QVERIFY(!QFileInfo::exists(stalePath));
+}
+
+void ProjectSessionTest::
+m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
+{
+    // A physical SOURCE WAV and real installed Qt M18 Product, rather
+    // than the compile-only M22 Product capture or a synthetic owner.
+    // This test requires the frozen original Q0 bank installed in the
+    // test tree. It NEVER releases private FIR coefficient bytes.
+    using app::internal::M18ProductCompleteBinding;
+    using app::internal::M18PrivateProductExportAction;
+    using app::internal::M22ProductChainEpochCaptureCandidate;
+    using app::internal::M22ProductPreviewAdmission;
+    using app::internal::M22ProductVerifiedDispatch;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18OwnerMutationFanout;
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    constexpr std::size_t kSourceFrames=4096;
+    constexpr std::int64_t kOutFrames=
+        (static_cast<std::int64_t>(kSourceFrames)*44100+48000-1)/48000;
+    const auto sourcePath=wav(directory,
+        QStringLiteral("m22-real-source-48000.wav"),39,48000U,kSourceFrames);
+    QVERIFY(!sourcePath.isEmpty());
+    QFile inputBefore{sourcePath};
+    QVERIFY(inputBefore.open(QIODevice::ReadOnly));
+    const auto originalBytes=inputBefore.readAll();
+    inputBefore.close();
+    QVERIFY(!originalBytes.isEmpty());
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(session.source.has_source());
+    QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
+    QCOMPARE(session.source.frame_count(),qint64{kSourceFrames});
+    session.transport.set_pcm_prepare_handler(
+        [&session](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease||!id)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M22_TEST_REQUIRES_ACTUAL_MANUAL_OWNER"});
+            session.observed->state=core::PlaybackState::STOPPED;
+            session.observed->position=view.absolute_start_frame();
+            session.observed->duration=view.frame_count();
+            session.observed->loop.reset();
+            session.observed->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
+
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto rate48=core::SampleRate::create(48000);
+    auto rate44=core::SampleRate::create(44100);
+    auto sourceFrames=core::FrameCount::create(
+        static_cast<std::int64_t>(kSourceFrames));
+    auto block=core::FrameCount::create(128);
+    QVERIFY(registry&&rate48&&rate44&&sourceFrames&&block);
+    auto ref=platform::windows::WindowsResourceReader::make_read_reference(
+        sourcePath.toUtf8().toStdString(),"m22-real-source-48000.wav");
+    QVERIFY(ref);
+    auto file=platform::windows::WindowsResourceReader::open_read_only(
+        *ref.value());
+    QVERIFY(file);
+    auto decoder=audio::WavReader::open(std::move(*file.value()));
+    QVERIFY(decoder);
+    auto format=decoder.value()->get()->info().audio_format();
+    auto sourcePcm=audio::AudioBuffer::create(
+        format,audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*sourceFrames.value());
+    QVERIFY(sourcePcm);
+    auto read=decoder.value()->get()->read_frames(
+        core::FrameIndex{0},sourcePcm.value()->mutable_view());
+    QVERIFY(read);
+    QCOMPARE(*read.value(),*sourceFrames.value());
+    QVERIFY(decoder.value()->get()->close());
+
+    auto neutral=dsp::ProcessingChain::create(
+        *registry.value(),{dsp::ProcessingStage::MASTER,
+                           dsp::ChainSegment::MANUAL});
+    QVERIFY(neutral);
+    const auto renderManual=[&](const dsp::ProcessingChain& chain,
+        std::vector<dsp::ModuleExecutionBinding> bindings)
+        ->core::Result<render::RenderResult> {
+        auto request=render::RenderRequest::create(
+            sourcePcm.value()->view(),
+            sourcePcm.value()->view().absolute_range(),
+            chain,std::move(bindings),*block.value());
+        if(!request)return core::Result<render::RenderResult>::failure(
+            *request.error());
+        return render::render_preview(*request.value(),*registry.value());
+    };
+    auto prepared=renderManual(*neutral.value(),{});
+    auto processed=renderManual(
+        session.masteringChainState->chain(),
+        session.masteringChainState->execution_bindings());
+    QVERIFY(prepared&&processed);
+    QVERIFY(session.selector.set_prepared_realization(
+        std::move(*prepared.value())));
+    QVERIFY(session.selector.set_processed_realization(
+        std::move(*processed.value())));
+    QVERIFY(session.selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(session.selector.processed_realization_snapshot());
+
+    app::MasterOutputRateState outputRate;
+    outputRate.source_committed(48000);
+    outputRate.set_original_q0_family_ready(true);
+    QVERIFY(outputRate.choose_master_rate(44100));
+    QCOMPARE(outputRate.master_rate_hz(),qint64{44100});
+    session.project.set_master_output_rate_state(&outputRate);
+    install_m18_checked_source_dispatch(session,outputRate);
+
+    const auto limiterId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "c4000000-0000-4000-8000-000000000018").value());
+    QVERIFY(limiterId);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(terminal);
+    QVERIFY(terminal.value()->set_user_bypass(false));
+    app::TerminalCandidateGate candidates;
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M22_CROSS_RATE_MASTER_MAY_NOT_INSTALL_DEVICE"});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [&session](auto p,auto m,auto id){
+            return session.selector.reserve_private_terminal_realization_id(
+                std::move(p),std::move(m),id);
+        }};
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        [&session]{return session.selector.prepared_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_id();},
+        [&session]{return session.masteringChainState->chain();}};
+    const auto originalQ0Root=std::filesystem::path{RGSML_M22_SOURCE_DIR}
+        /"resources"/"fir";
+    renderer.set_original_q0_fir_root(originalQ0Root);
+    QVERIFY2(renderer.full_original_q0_family_ready(),
+        "Missing genuine complete SHA-authenticated original Q0 FIR bank");
+    app::TerminalPrivateProductSession product{
+        renderer,publisher,candidates,session.transport,
+        [&session]{return session.selector.prepared_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_snapshot();},
+        [&session]{return session.selector.processed_realization_id();},
+        [&session]{return session.region.region();},
+        [&session]{return session.selector.active_target()
+                         ==app::AuditionTarget::PROCESSED;}};
+    const M18ProductExportIdentity identity{
+        991U,992U,993U,session.masteringChainState->chain().revision(),
+        44100U,outputRate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        71U,identity);
+    M18OwnerMutationFanout fanout{owner,71U,identity};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,outputRate,
+        *session.masteringChainState,session.selector,session.region,
+        session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers bound{
+        upstream,product,candidates};
+    QVERIFY(M18ProductCompleteBinding::preflight(bound,fanout));
+    QVERIFY(M18ProductCompleteBinding::bind(bound,fanout));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        bound,fanout));
+
+    // Actual app M17 worker executes source-rate manual -> original Q0
+    // 48000 to 44100 -> active M17 -> M16 global check. No test factory
+    // may fabricate a verified M17 stage or a Product permission.
+    const auto begin=product.request_private(*rate44.value(),true);
+    QVERIFY2(begin,begin?"":begin.error()->message().c_str());
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),30000);
+    const auto verified=product.capture_m18_verified_stage_for_worker(
+        *rate44.value());
+    QVERIFY(verified);
+    QVERIFY(M18ProductCompleteBinding::can_offer_verified_master(
+        bound,fanout));
+    QVERIFY(!verified->rendered.terminal.checked.terminal.bypassed);
+    QVERIFY(verified->rendered.terminal.checked.final_check.has_value());
+    QCOMPARE(verified->rendered.output_rate.value(),std::int64_t{44100});
+    QCOMPARE(verified->rendered.programme_frames.value(),
+             std::int64_t{kSourceFrames});
+    const auto full=verified->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    QCOMPARE(full.frame_count().value(),kOutFrames);
+    QCOMPARE(full.format().sample_rate().value(),std::int64_t{44100});
+    QCOMPARE(full.timebase().frame_domain_id(),
+             audio::FrameDomainId::OUTPUT_RATE);
+
+    const auto provenance=M22ProductChainEpochCaptureCandidate::capture(
+        bound,fanout,verified);
+    QVERIFY2(provenance,provenance?"":provenance.error()->message().c_str());
+    QVERIFY(!provenance.value()->authorizes_release());
+    QVERIFY(provenance.value()->immutable_chain_witness.used_original_q0);
+    QCOMPARE(provenance.value()->immutable_chain_witness.manual_source_hz,
+             std::int64_t{48000});
+    QCOMPARE(provenance.value()->immutable_chain_witness.final_master_hz,
+             std::int64_t{44100});
+    QCOMPARE(provenance.value()->immutable_chain_witness.complete_source_frames,
+             std::int64_t{kSourceFrames});
+    QCOMPARE(provenance.value()->immutable_chain_witness.actual_master_frames,
+             kOutFrames);
+    QVERIFY(!provenance.value()->immutable_chain_witness
+                 .frozen_original_q0_sha256.empty());
+    QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*provenance.value()));
+    const auto window=core::FrameRange::create(
+        core::FrameIndex{97},core::FrameIndex{913});
+    QVERIFY(window);
+    const auto preview=M22ProductVerifiedDispatch::begin_preview(
+        bound,fanout,verified,*window.value());
+    QVERIFY2(preview,preview?"":preview.error()->message().c_str());
+    QVERIFY(M22ProductPreviewAdmission::still_current(
+        bound,fanout,*preview.value()));
+    QCOMPARE(preview.value()->crop.frame_count().value(),std::int64_t{816});
+    QCOMPARE(preview.value()->crop.absolute_start_frame().value(),
+             std::int64_t{97});
+    for(std::size_t channel=0;channel<full.format().channel_count();++channel) {
+        const auto whole=full.channel(channel);
+        const auto part=preview.value()->crop.channel(channel);
+        QVERIFY(whole&&part);
+        QCOMPARE(part.value()->data(),whole.value()->data()+97);
+        for(std::size_t i=0;i<part.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*part.value())[i]),
+                     std::bit_cast<std::uint64_t>((*whole.value())[i+97]));
+    }
+    bool rejectedWorker=false;
+    std::thread background([&]{
+        rejectedWorker=
+            !M22ProductChainEpochCaptureCandidate::capture(
+                bound,fanout,verified)
+            &&!M22ProductPreviewAdmission::capture(
+                bound,fanout,verified,*window.value())
+            &&!M22ProductChainEpochCaptureCandidate::still_current(
+                bound,fanout,*provenance.value());
+    });
+    background.join();
+    QVERIFY(rejectedWorker);
+
+    M18PrivateProductExportAction exporter{bound,fanout};
+    const auto filePath=directory.filePath(
+        QStringLiteral("m22-real-output-44100-f32.wav"));
+    auto destination=platform::windows::WindowsResourceWriter::
+        make_write_reference(filePath.toUtf8().toStdString(),
+            "m22-real-output-44100-f32.wav");
+    QVERIFY(destination);
+    QVERIFY(M22ProductVerifiedDispatch::begin_full(
+        bound,fanout,exporter,verified,*destination.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*provenance.value()));
+    QVERIFY(!M22ProductPreviewAdmission::still_current(
+        bound,fanout,*preview.value()));
+    QTRY_VERIFY_WITH_TIMEOUT(exporter.snapshot().phase==
+        app::internal::M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
+        30000);
+    QCOMPARE(exporter.snapshot().encoded_frames,
+             static_cast<std::uint64_t>(kOutFrames));
+    QCOMPARE(exporter.snapshot().total_frames,
+             static_cast<std::uint64_t>(kOutFrames));
+    QVERIFY(QFileInfo::exists(filePath));
+
+    // Independent on-disk readback: rate/format/frame count must come from
+    // the WAV container, never the requested UI rate or a guessed ratio.
+    auto outRef=platform::windows::WindowsResourceReader::make_read_reference(
+        filePath.toUtf8().toStdString(),"m22-real-output-44100-f32.wav");
+    QVERIFY(outRef);
+    auto outHandle=platform::windows::WindowsResourceReader::open_read_only(
+        *outRef.value());
+    QVERIFY(outHandle);
+    auto reader=audio::WavReader::open(std::move(*outHandle.value()));
+    QVERIFY(reader);
+    QCOMPARE(reader.value()->get()->info().frame_count().value(),kOutFrames);
+    QCOMPARE(reader.value()->get()->info().audio_format()
+                 .sample_rate().value(),std::int64_t{44100});
+    QCOMPARE(reader.value()->get()->info().encoded_sample_format(),
+             audio::WavSampleFormat::IEEE_F32);
+    QVERIFY(reader.value()->get()->close());
+    QFile inputAfter{sourcePath};
+    QVERIFY(inputAfter.open(QIODevice::ReadOnly));
+    QCOMPARE(inputAfter.readAll(),originalBytes);
+    inputAfter.close();
+
+    QVERIFY(exporter.acknowledge());
+    QVERIFY(!M22ProductPreviewAdmission::still_current(
+        bound,fanout,*preview.value()));
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*provenance.value()));
+    const auto recaptured=M22ProductChainEpochCaptureCandidate::capture(
+        bound,fanout,verified);
+    QVERIFY(recaptured);
+    QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*recaptured.value()));
+    // Changing MASTER output rate is a REAL Product mutation, and MUST
+    // retire previously accepted cross-rate M17 even when SOURCE persists.
+    QVERIFY(outputRate.choose_master_rate(48000));
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(
+        bound,fanout));
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*recaptured.value()));
+    QVERIFY(!M22ProductVerifiedDispatch::begin_preview(
+        bound,fanout,verified,*window.value()));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        bound,fanout));
 }
 
 void ProjectSessionTest::
