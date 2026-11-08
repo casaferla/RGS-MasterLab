@@ -207,6 +207,7 @@ private slots:
     void task011IdentityGainRoundTripAndSourceImmutability();
     void sourceAndDestinationCollisionProtection();
     void goldDirectAndHardlinkDestinationRemainByteIdentical();
+    void m23CloseAndCandidateReopenFaultsAreFailClosed();
     void injectedFailureStagesCleanUp();
 };
 
@@ -443,6 +444,55 @@ void TransactionalAudioExporterTest::goldDirectAndHardlinkDestinationRemainByteI
             ==std::string::npos);
     QVERIFY(report.value()->sanitized_summary().find("m23-source")
             ==std::string::npos);
+}
+
+void TransactionalAudioExporterTest::m23CloseAndCandidateReopenFaultsAreFailClosed()
+{
+    // The existing transaction must reject distinct injected failures after
+    // a real candidate write, at final close and at pre-validation reopen.
+    // This is fault-injection evidence, not an assertion that OS I/O failed.
+    const auto sourcePath=fixture_path();
+    const auto sourceBefore=file_bytes(sourcePath);
+    auto source=decode_source(sourcePath);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    struct Case {ExportFailurePoint fault; const char* token;};
+    constexpr std::array faults{
+        Case{ExportFailurePoint::FLUSH_CLOSE,"candidate_flush_close_failed"},
+        Case{ExportFailurePoint::CANDIDATE_REOPEN,"candidate_reopen_failed"},
+    };
+    int index=0;
+    for(const auto& entry:faults) {
+        const auto path=directory.filePath(
+            QStringLiteral("m23-injected-fault-%1.wav").arg(index++));
+        set_export_failure_point_for_test(entry.fault);
+        const auto attempt=export_to(
+            source.reference,source.buffer.view(),path);
+        set_export_failure_point_for_test(ExportFailurePoint::NONE);
+        QVERIFY(!attempt);
+        QVERIFY(attempt.error()!=nullptr);
+        QCOMPARE(attempt.error()->code(),core::ErrorCode::IoFailure);
+        QVERIFY(attempt.error()->message().find(entry.token)!=std::string::npos);
+        QVERIFY(!QFileInfo::exists(path));
+        QVERIFY(no_candidates(directory.path()));
+        QCOMPARE(file_bytes(sourcePath),sourceBefore);
+        const auto genuineFailure=core::Status::failure(*attempt.error());
+        const std::array observations{
+            ai::M23FailedStatus{ai::M23Operation::EXPORT,
+                entry.fault==ExportFailurePoint::FLUSH_CLOSE
+                    ? ai::M23Stage::CLOSE : ai::M23Stage::REOPEN,
+                &genuineFailure}};
+        ai::M23SafetyEvidence evidence{};
+        evidence.source=ai::M23Evidence::VERIFIED_UNCHANGED;
+        evidence.publication=ai::M23Publication::NO_AUTHORITATIVE_OUTPUT;
+        evidence.candidate_cleanup_verified=no_candidates(directory.path());
+        const auto diagnostic=ai::AlphaDiagnosticReport::from_failed_statuses(
+            observations,evidence);
+        QVERIFY(diagnostic);
+        QCOMPARE(diagnostic.value()->findings().size(),std::size_t{1});
+        QVERIFY(!diagnostic.value()->safe_failure_evidence_complete());
+        QVERIFY(!diagnostic.value()->authorizes_release());
+    }
 }
 
 void TransactionalAudioExporterTest::injectedFailureStagesCleanUp()
