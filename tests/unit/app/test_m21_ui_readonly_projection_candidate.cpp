@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsRejectInvalidPanelIndex();
     void routedPanelsRedundantSelectionDoesNotAdvanceRevision();
     void routedPanelsSelectM21WithoutChangingM19OrM20();
     void routedPanelsSelectM20WithoutChangingM19OrM21();
@@ -1891,6 +1892,16 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsRedundantSelectionDoesNot
     const auto atGold=route.routing_revision();
     QVERIFY(route.select(AnalysisPanel::levels_m19,Column::gold));
     QVERIFY(route.routing_revision()==atGold);
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsRejectInvalidPanelIndex()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    IndependentPanelRouting route;
+    QVERIFY(!route.select(static_cast<AnalysisPanel>(255),Column::gold));
+    QVERIFY(route.routing_revision()==0);
+    QVERIFY(route.selected(AnalysisPanel::levels_m19)==Column::prepared);
+    QVERIFY(route.selected(AnalysisPanel::tonal_m20)==Column::prepared);
 }
 
 } // namespace rgsml::tests
