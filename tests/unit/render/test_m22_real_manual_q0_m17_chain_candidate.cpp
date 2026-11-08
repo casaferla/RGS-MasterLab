@@ -305,6 +305,15 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
                 gains.push_back(last);
             }
+            // No phantom terminal identity from a zero or unknown revision.
+            {
+                const auto original=result.value()->terminal.terminal_chain_revision;
+                result.value()->terminal.terminal_chain_revision=0;
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
+                result.value()->terminal.terminal_chain_revision=original;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
