@@ -258,6 +258,16 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::PARTIAL_OR_STALE_MANUAL);
                 result.value()->programme_frames=original;
             }
+            // Authentic PCM but stale master-output clock is never admitted.
+            {
+                const auto original=result.value()->output_rate;
+                result.value()->output_rate=
+                    *core::SampleRate::create(pair[0]).value();
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_OUTPUT_DOMAIN_OR_CLOCK);
+                result.value()->output_rate=original;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
