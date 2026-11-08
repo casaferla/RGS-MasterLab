@@ -150,6 +150,7 @@ private slots:
         const std::array<dsp::ModuleExecutionBinding,1> terminalBinding{{
             {limiterId,*ceiling.value()}}};
         std::vector<std::uint64_t> canonicalFull;
+        std::vector<std::uint64_t> canonicalMaster;
         for(const auto chunk:{64,257}) {
             const auto request=render::RenderRequest::create(
                 original.value()->view(),
@@ -218,6 +219,9 @@ private slots:
             const auto audible=checked.value()->terminal.checked.terminal
                 .compensated_pcm.view();
             QCOMPARE(audible.frame_count().value(),n);
+            const auto masterBits=bits(audible);
+            if(!canonicalMaster.empty())QCOMPARE(masterBits,canonicalMaster);
+            else canonicalMaster=masterBits;
             for(const auto [first,last]:
                 {std::pair{713,2751},std::pair{3599,4096}}) {
                 const auto region=core::FrameRange::create(
@@ -234,6 +238,53 @@ private slots:
                     const auto part=result.value()->exact_output_crop.channel(ch);
                     QVERIFY(whole&&part);
                     QCOMPARE(part.value()->data(),whole.value()->data()+first);
+                }
+            }
+            if(chunk==64) {
+                // This exact same four-module MANUAL state drives original
+                // SHA-pinned Final SRC, then one ACTIVE M17/M16. Unlike
+                // detached synthetic fixtures, each output sample keeps
+                // the exact real gain/EQ/mono-bass/compressor predecessor.
+                auto convertedRate=core::SampleRate::create(44100);
+                QVERIFY(convertedRate);
+                const auto originalFir=frozen(48000,44100);
+                QVERIFY(originalFir.size()>1000);
+                const auto cross=render::render_true_peak_limiter_owned_output_rate_candidate(
+                    owner,*manual.value(),frame_count(n),
+                    owner->chain_revision(),*convertedRate.value(),
+                    *terminal.value(),terminalBinding,*registry.value(),
+                    frame_count(128),{},nullptr,false,nullptr,originalFir);
+                QVERIFY2(cross,cross?"":cross.error()->message().c_str());
+                const auto valid=m22_private::observe_real_complete_chain_candidate(
+                    *cross.value(),reason);
+                QVERIFY(valid);
+                QVERIFY(valid->used_original_q0);
+                QCOMPARE(valid->manual_source_hz,fs);
+                QCOMPARE(valid->final_master_hz,std::int64_t{44100});
+                QCOMPARE(valid->complete_source_frames,n);
+                QCOMPARE(valid->actual_master_frames,
+                         (n*44100+fs-1)/fs);
+                QVERIFY(cross.value()->terminal.checked.final_check.has_value());
+                const auto end=valid->actual_master_frames;
+                const auto finalWindow=core::FrameRange::create(
+                    core::FrameIndex{end-233},core::FrameIndex{end});
+                QVERIFY(finalWindow);
+                const auto out=m22_private::observe_verified_full_output_window_candidate(
+                    *cross.value(),*finalWindow.value());
+                QVERIFY(out);
+                QCOMPARE(out.value()->exact_output_crop.frame_count().value(),
+                         std::int64_t{233});
+                QCOMPARE(out.value()->exact_output_crop.format()
+                             .sample_rate().value(),
+                         std::int64_t{44100});
+                const auto converted=cross.value()->terminal.checked.terminal
+                    .compensated_pcm.view();
+                for(std::size_t ch=0;ch<2;++ch) {
+                    const auto fullPlane=converted.channel(ch);
+                    const auto cropPlane=out.value()->exact_output_crop.channel(ch);
+                    QVERIFY(fullPlane&&cropPlane);
+                    QCOMPARE(cropPlane.value()->data(),
+                             fullPlane.value()->data()+(end-233));
                 }
             }
         }
