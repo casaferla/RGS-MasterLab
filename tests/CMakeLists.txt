@@ -1890,6 +1890,12 @@ set_tests_properties(rgsml_m21_qml_typed_convergence_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;analysis;m19;m20;m21;qml_convergence;non_fq")
 
+# The real ProductSession Windows integration test also links the
+# native Q_OBJECT M21 status ViewModel, not a QML fixture or imitation.
+target_sources(rgsml_project_session_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src/m21_product_status_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/m21_product_status_view_model.hpp)
+
 # L1-M20 read-only real AudioBuffer spectral/stereo analysis. Reuses
 # canonical rgsml_analysis FFT/PSD; scope/authority tested without QML.
 qt_add_executable(rgsml_tonal_stereo_analyzer_tests
