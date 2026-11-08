@@ -6,6 +6,7 @@
 #include "internal/m22_verified_master_preview_parity.hpp"
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
+#include "internal/m21_product_qt_readiness_bridge.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -848,6 +849,55 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(visible.columns[2]->lifecycle,
              app::m21_private::Lifecycle::current);
     QVERIFY(!visible.columns[1]); // Never invent GOLD.
+
+    // Actual M18 Product epoch and M21 publication inbox feed three
+    // independent PRIVATE Qt readiness surfaces. Values must remain
+    // masked until later real Phase-6 QML authorization; none can use
+    // test fixtureMode or pretend the independent REFERENCE is present.
+    using QtReadiness=app::internal::M21ProductQtReadinessBridge;
+    QtReadiness::Routing analysisRouting;
+    QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::tonal_m20,
+        app::m21_private::Column::processed));
+    QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::delta_m21,
+        app::m21_private::Column::gold));
+    const auto privatePanels=QtReadiness::capture(controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting);
+    QVERIFY(privatePanels.current_product_owner);
+    QVERIFY(!privatePanels.product_ui_authorized);
+    QVERIFY(privatePanels.owner_epoch>0);
+    QCOMPARE(privatePanels.panels[0].value("sourceRole").toString(),
+             QStringLiteral("PREPARED"));
+    QCOMPARE(privatePanels.panels[1].value("sourceRole").toString(),
+             QStringLiteral("PROCESSED"));
+    QCOMPARE(privatePanels.panels[2].value("sourceRole").toString(),
+             QStringLiteral("REFERENCE"));
+    QCOMPARE(privatePanels.panels[0].value("privateEvidenceStatus").toString(),
+             QStringLiteral("CURRENT"));
+    QCOMPARE(privatePanels.panels[1].value("privateEvidenceStatus").toString(),
+             QStringLiteral("CURRENT"));
+    QCOMPARE(privatePanels.panels[2].value("privateEvidenceStatus").toString(),
+             QStringLiteral("MISSING"));
+    for(const auto& panel:privatePanels.panels) {
+        QVERIFY(!panel.value("ready").toBool());
+        QVERIFY(!panel.value("fixtureMode").toBool());
+        QVERIFY(!panel.value("productionAuthorized").toBool());
+        QVERIFY(panel.value("levels").toMap().isEmpty());
+        QVERIFY(panel.value("stereo").toMap().isEmpty());
+        QVERIFY(panel.value("metrics").toList().isEmpty());
+        QVERIFY(panel.value("spectrum").toList().isEmpty());
+        QVERIFY(panel.value("bands").toList().isEmpty());
+    }
+    QVERIFY(QtReadiness::still_current(privatePanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::tonal_m20,
+        app::m21_private::Column::prepared));
+    QVERIFY(!QtReadiness::still_current(privatePanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    const auto reroutedPanels=QtReadiness::capture(controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting);
+    QVERIFY(QtReadiness::still_current(reroutedPanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+
     QVERIFY(!productInbox.accept_render(
         controllers,fanout,session.selector,*analysisOwners.value(),
         *workerPrepared.value())); // Duplicate epoch rejected.
@@ -1154,6 +1204,20 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              app::m21_private::Lifecycle::stale);
     QCOMPARE(stalePresentation.columns[2]->lifecycle,
              app::m21_private::Lifecycle::stale);
+
+    // Same checked Product readout must be revoked after parameter-only
+    // DSP revision even though the structural chain revision is unchanged.
+    QVERIFY(!QtReadiness::still_current(reroutedPanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    const auto stalePrivatePanels=QtReadiness::capture(controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting);
+    QVERIFY(!stalePrivatePanels.product_ui_authorized);
+    QVERIFY(!stalePrivatePanels.panels[0].value("ready").toBool());
+    QVERIFY(stalePrivatePanels.panels[0].value("levels").toMap().isEmpty());
+    if(stalePrivatePanels.current_product_owner)
+        QCOMPARE(stalePrivatePanels.panels[0].value(
+            "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+
     QVERIFY(!productInbox.accept_render(
         controllers,fanout,session.selector,*analysisOwners.value(),
         *workerPrepared.value())); // Late worker refused.
