@@ -49,6 +49,18 @@ jobs:
           for script in "${scripts[@]}"; do
             python3 "$script"
           done
+      - name: Unified 16-FIR source and manifest contract (Linux, non-FQ)
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/rgs-16fir-contract.log"
+          bounded="$RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          if ! python3 tools/qualification/playback_src/test_approved_16_fir_package.py >"$log" 2>&1; then
+            tail -n 55 "$log" >"$bounded"
+            cat "$bounded"
+            exit 1
+          fi
+          tail -n 8 "$log"
       - name: Install Qt 6.8.3 and dependencies
         shell: bash
         run: |
@@ -161,6 +173,18 @@ jobs:
               throw "M18_M22_NUMERICAL_REFERENCE_FAIL $script"
             }
           }
+      - name: Unified 16-FIR source and manifest contract (Windows, non-FQ)
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/rgs-16fir-contract.log"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          python tools/qualification/playback_src/test_approved_16_fir_package.py *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 55 | Set-Content $bounded
+            Get-Content $bounded
+            throw "UNIFIED_16_FIR_SOURCE_MANIFEST_TEST_FAILED"
+          }
+          Get-Content $log -Tail 8
       - name: Install Qt 6.8.3 MSVC
         shell: pwsh
         run: |
