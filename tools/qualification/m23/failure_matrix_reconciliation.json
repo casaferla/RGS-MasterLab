@@ -111,11 +111,11 @@
     {
       "id": "12",
       "category": "gold_destination_collision",
-      "static_coverage": "gap",
-      "ctest": null,
-      "source": null,
-      "slot": null,
-      "rationale": "real Gold destination identity, direct and alias"
+      "static_coverage": "partial",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "goldDirectAndHardlinkDestinationRemainByteIdentical",
+      "rationale": "real Windows GOLD direct/alias files remain byte-identical via frozen FAIL_IF_EXISTS; Product Gold-specific identity admission not independently proven"
     },
     {
       "id": "13",
@@ -183,11 +183,11 @@
     {
       "id": "20",
       "category": "alpha_diagnostic_report",
-      "static_coverage": "gap",
-      "ctest": null,
-      "source": null,
-      "slot": null,
-      "rationale": "canonical AlphaDiagnosticReport evidence aggregator not implemented"
+      "static_coverage": "partial",
+      "ctest": "rgsml_m23_alpha_diagnostic_tests",
+      "source": "tests/unit/app/test_m23_alpha_diagnostic_report.cpp",
+      "slot": "capturesActualStatusCodesAndRefusesSecretErrorStrings",
+      "rationale": "nonrelease immutable privacy-safe aggregate of actual ErrorCode/Status with negative proofs; not yet wired to complete Product M23 failure lifecycle"
     }
   ]
 }
