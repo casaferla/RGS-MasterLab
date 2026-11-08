@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void staleGoldMasksBothDependentDeltaColumns();
     void missingGoldMasksPreparedDeltaOnly();
     void swappedSnapshotColumnIsInvalidNotCurrent();
     void missingLifecycleNeverMasqueradesAsZero();
@@ -503,6 +504,26 @@ void M21UiReadonlyProjectionCandidateTest::missingGoldMasksPreparedDeltaOnly()
     QVERIFY(!view.prepared_to_gold[1].numeric);
     QVERIFY(view.prepared_to_gold[1].value_text=="UNAVAILABLE");
     QVERIFY(view.prepared_to_gold[1].quality_text=="MISSING");
+}
+
+void M21UiReadonlyProjectionCandidateTest::staleGoldMasksBothDependentDeltaColumns()
+{
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[1]=example(Column::gold,3,"g",-13.0);
+    snapshots[2]=example(Column::processed,9,"x",-14.0);
+    Receipts owners{};
+    for(std::size_t i=0;i<3;++i)owners[i]=receipt(*snapshots[i]);
+    snapshots[1]->lifecycle=Lifecycle::stale;
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(view.columns[0].candidate_matched);
+    QVERIFY(view.columns[2].candidate_matched);
+    QVERIFY(!view.columns[1].candidate_matched);
+    QVERIFY(!view.prepared_to_gold[1].numeric);
+    QVERIFY(view.prepared_to_gold[1].value_text=="STALE");
+    QVERIFY(view.prepared_to_gold[1].quality_text=="STALE");
+    QVERIFY(!view.processed_to_gold[1].numeric);
+    QVERIFY(view.processed_to_gold[1].quality_text=="STALE");
 }
 
 } // namespace rgsml::tests
