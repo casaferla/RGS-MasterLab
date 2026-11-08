@@ -16,6 +16,12 @@ namespace rgsml::app::m21_private::ui_candidate {
 
 class ReviewEpochStore final {
 public:
+    ReviewEpochStore()=default;
+    ReviewEpochStore(const ReviewEpochStore&)=delete;
+    ReviewEpochStore& operator=(const ReviewEpochStore&)=delete;
+    ReviewEpochStore(ReviewEpochStore&&)=delete;
+    ReviewEpochStore& operator=(ReviewEpochStore&&)=delete;
+
     // Caller must marshal all methods onto a single writer; concurrent
     // callbacks are prohibited. A new generation invalidates *only* its
     // column, not independent GOLD or the other analyzer's result.
