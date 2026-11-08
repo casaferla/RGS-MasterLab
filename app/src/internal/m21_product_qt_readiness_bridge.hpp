@@ -114,6 +114,29 @@ public:
                 lifecycle_label(s.lifecycle);
             result.panels[i].insert("privateEvidenceStatus",
                 QString::fromStdString(status));
+            // Quality labels are observed from the genuine private M19/M20
+            // Product result, NEVER inferred from displayed strings. They
+            // carry no numeric values and cannot authorize any Qt readout.
+            // A stale/invalid/missing column exposes NO old per-cell status.
+            if(s.lifecycle==Lifecycle::current) {
+                static constexpr std::array<const char*,9> names{{
+                    "lufs","rms","samplePeak","truePeak","crest",
+                    "width","P10","P50","P90"}};
+                QVariantMap quality;
+                const auto begin=i==0 ? std::size_t{0} :
+                    i==1 ? std::size_t{5} : std::size_t{0};
+                const auto end=i==0 ? std::size_t{5} :
+                    i==1 ? std::size_t{9} : std::size_t{9};
+                for(std::size_t metric=begin;metric<end;++metric) {
+                    const auto tag=metric==3
+                      ? QStringLiteral("M16 UNQUALIFIED")
+                      : QString::fromStdString(
+                          m21_private::ui_candidate::quality_label(
+                              s.metrics[metric].quality));
+                    quality.insert(QString::fromLatin1(names[metric]),tag);
+                }
+                result.panels[i].insert("privateQualityOnly",quality);
+            }
             // Not an official Product/Phase-6 status, even if the private
             // inbox holds an authenticated CURRENT numerical result.
             result.panels[i].insert("analysisStatus",
