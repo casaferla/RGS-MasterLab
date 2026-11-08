@@ -1852,6 +1852,21 @@ set_tests_properties(rgsml_m21_real_product_metrics_port_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;analysis;m21;gold_delta;real_product_port;unit")
 
+# L1-M19/M20/M21 preproduction read-only typed UI envelope.
+# Never registered with Main.qml, no canonical Product authorization.
+qt_add_executable(rgsml_m21_ui_readonly_projection_candidate_tests
+    unit/app/test_m21_ui_readonly_projection_candidate.cpp)
+target_include_directories(rgsml_m21_ui_readonly_projection_candidate_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
+target_link_libraries(rgsml_m21_ui_readonly_projection_candidate_tests PRIVATE
+    rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m21_ui_readonly_projection_candidate_tests)
+add_test(NAME rgsml_m21_ui_readonly_projection_candidate_tests
+    COMMAND rgsml_m21_ui_readonly_projection_candidate_tests)
+set_tests_properties(rgsml_m21_ui_readonly_projection_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;analysis;m21;ui_candidate;owner;non_fq")
+
 # L1-M20 read-only real AudioBuffer spectral/stereo analysis. Reuses
 # canonical rgsml_analysis FFT/PSD; scope/authority tested without QML.
 qt_add_executable(rgsml_tonal_stereo_analyzer_tests
