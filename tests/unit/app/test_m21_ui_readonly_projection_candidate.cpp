@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void qtRowsPreservePerMetricUnitsAndQualityNames();
     void unclaimedGoldColumnIsNeverRenderedInQtRows();
     void processedColumnQtProjectionSelectsProcessedCorrectly();
     void testFixtureRejectsArtificialProductionAuthorization();
@@ -737,6 +738,27 @@ void M21UiReadonlyProjectionCandidateTest::unclaimedGoldColumnIsNeverRenderedInQ
     QCOMPARE(row.value("preparedDelta").toString(),
              QStringLiteral("UNAVAILABLE"));
     QCOMPARE(row.value("goldQuality").toString(),QStringLiteral("MISSING"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::qtRowsPreservePerMetricUnitsAndQualityNames()
+{
+    using namespace app::m21_private::ui_candidate::qt_review;
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[0]->metrics[5]={std::nullopt,Quality::not_applicable,"mono"};
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto projection=project_readonly(compose(snapshots),owners);
+    const auto shown=candidate_test_fixture_envelope(
+        projection,Column::prepared,ExplicitTestFixture{0x4D323147U});
+    const auto rows=shown.value("metrics").toList();
+    QCOMPARE(rows.size(),9);
+    QCOMPARE(rows.at(1).toMap().value("unit").toString(),
+             QStringLiteral("dBFS"));
+    QCOMPARE(rows.at(1).toMap().value("preparedQuality").toString(),
+             QStringLiteral("CURRENT"));
+    QCOMPARE(rows.at(5).toMap().value("prepared").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QCOMPARE(rows.at(5).toMap().value("preparedQuality").toString(),
+             QStringLiteral("NOT APPLICABLE"));
 }
 
 } // namespace rgsml::tests
