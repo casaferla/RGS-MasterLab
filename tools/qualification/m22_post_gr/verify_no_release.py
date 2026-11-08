@@ -259,6 +259,17 @@ def main():
         "QTRY_VERIFY_WITH_TIMEOUT(exporter.snapshot().phase==",
         "reader.value()->get()->info().frame_count().value()",
         "inputAfter.readAll(),originalBytes",
+        "product.request_private(*rate44.value(),true)",
+        "renderer.full_original_q0_family_ready()",
+        "std::int64_t{44100}",
+        "pcmSeed=UINT64_C(0x1122334455667788)",
+        "audio::internal::m18_quantize_pcm24(",
+        "checkedQuantized.code)/8388608.0",
+        "m22-real-output-44100-f32.wav",
+        "m22-real-output-44100-pcm24.wav",
+        "M18PrivateAsyncExportSession::Phase::FAILED",
+        "pcmAfter.readAll(),originalPcmBytes",
+        "outputRate.choose_master_rate(48000)",
         "!M22ProductChainEpochCaptureCandidate::still_current(",
     ),"M22 actual identity/cross-rate full Product-WAV regression")
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
