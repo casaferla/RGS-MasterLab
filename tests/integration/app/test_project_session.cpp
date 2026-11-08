@@ -8,6 +8,7 @@
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m21_product_qt_readiness_bridge.hpp"
+#include "internal/m21_product_analysis_handoff.hpp"
 #include "internal/m21_product_spectrum_evidence.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
@@ -587,6 +588,43 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!goldView.columns[0]);
     QVERIFY(!goldView.columns[2]);
 
+    // Real three-stage Product handoff: Qt owner captures an independent
+    // selected REFERENCE, the worker decodes and measures its actual WAV,
+    // and the Qt owner alone decides whether M21 may publish the result.
+    using Handoff=app::internal::M21ProductAnalysisHandoff;
+    const auto goldJob=Handoff::capture_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        app::m21_private::Column::gold);
+    QVERIFY(goldJob);
+    QVERIFY(goldJob.value()->structurally_valid());
+    std::optional<core::Result<app::m21_private::Snapshot>> goldFromThread;
+    std::thread realReferenceWorker([&] {
+        goldFromThread.emplace(Handoff::measure_on_worker(*goldJob.value()));
+    });
+    realReferenceWorker.join();
+    QVERIFY(goldFromThread.has_value());
+    QVERIFY(*goldFromThread);
+    QCOMPARE(goldFromThread->value()->resource_identity,
+             goldMeasured.value()->resource_identity);
+    QCOMPARE(goldFromThread->value()->scope_frames,
+             goldMeasured.value()->scope_frames);
+    app::internal::M21ProductPublicationInbox handoffGoldInbox;
+    QVERIFY(Handoff::publish_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
+    QVERIFY(!Handoff::publish_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
+    bool workerCannotCapture=false;
+    std::thread illegalCapture([&] {
+        workerCannotCapture=!Handoff::capture_on_owner(
+            controllers,fanout,session.selector,session.gold,
+            app::m21_private::Column::gold);
+    });
+    illegalCapture.join();
+    QVERIFY(workerCannotCapture);
+
+
     // A truly independent REFERENCE is visible to the private UI readiness
     // bridge only after its own canonical GoldSelection file owner accepted
     // the measured WAV. The same object never invents PREPARED/PROCESSED.
@@ -666,6 +704,9 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!GoldQtReadiness::still_current(independentGoldPanels,
         controllers,fanout,session.selector,session.gold,
         goldInbox,goldRouting));
+    QVERIFY(!Handoff::publish_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
     QVERIFY(!app::internal::M21ProductSpectrumEvidence::still_current(
         referenceSpectrum,controllers,fanout,session.selector,session.gold,
         goldInbox,goldRouting));
