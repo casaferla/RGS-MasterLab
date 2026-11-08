@@ -448,6 +448,7 @@ void TransactionalAudioExporterTest::goldDirectAndHardlinkDestinationRemainByteI
 
 void TransactionalAudioExporterTest::m23CloseAndCandidateReopenFaultsAreFailClosed()
 {
+    namespace ai=rgsml::app::internal;
     // The existing transaction must reject distinct injected failures after
     // a real candidate write, at final close and at pre-validation reopen.
     // This is fault-injection evidence, not an assertion that OS I/O failed.
