@@ -106,6 +106,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void referenceBadgeUsesApprovedUserFacingName();
     void missingGoldBadgeIsVisuallyMuted();
     void m21RealTypedComparisonRequiresCurrentSelectedOwner();
     void m21EmptyComparisonShowsExplicitNoRowsNotice();
@@ -576,6 +577,21 @@ void M19M21TypedQmlConvergenceTest::missingGoldBadgeIsVisuallyMuted()
     QVERIFY(badge);
     QCOMPARE(badge->property("color").value<QColor>(),
              QColor(QStringLiteral("#16232D")));
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::referenceBadgeUsesApprovedUserFacingName()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    auto* badge=visual_by_name(view->rootObject(),"analysisScopeBadge_GOLD");
+    QVERIFY(badge);
+    bool foundReference=false;
+    for(auto* child:badge->childItems()) {
+        if(child->property("text").toString()==QStringLiteral("REFERENCE"))
+            foundReference=true;
+    }
+    QVERIFY(foundReference); // Internal GOLD objectName remains unchanged
     QVERIFY(!view->rootObject()->property("available").toBool());
 }
 
