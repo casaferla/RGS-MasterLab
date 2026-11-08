@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundlePanelSelectionBumpsRevisionOnlyOnChange();
     void independentPanelBundleRejectedGenerationLeavesRevisionStable();
     void independentPanelBundleRejectedReceiptLeavesRevisionStable();
     void independentPanelBundleReceiveBumpsRevisionOnce();
@@ -1389,6 +1390,23 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleRejectedGenerat
     QVERIFY(store.review_revision()==before);
     QVERIFY(store.begin(Column::prepared,8));
     QVERIFY(store.review_revision()==before+1);
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundlePanelSelectionBumpsRevisionOnlyOnChange()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    QVERIFY(store.begin(Column::prepared,7));
+    const auto before=store.review_revision();
+    QVERIFY(store.select(Column::prepared));
+    QVERIFY(store.review_revision()==before);
+    QVERIFY(store.select(Column::gold));
+    QVERIFY(store.review_revision()==before+1);
+    QVERIFY(store.select(Column::gold));
+    QVERIFY(store.review_revision()==before+1);
+    QVERIFY(!store.select(static_cast<Column>(255)));
+    QVERIFY(store.review_revision()==before+1);
+    QVERIFY(store.selected()==Column::gold);
 }
 
 } // namespace rgsml::tests
