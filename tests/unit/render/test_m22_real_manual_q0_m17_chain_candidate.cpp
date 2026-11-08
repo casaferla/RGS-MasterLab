@@ -337,6 +337,62 @@ private slots:
         }
     }
 
+    void allSixNativeIdentityRatesProduceM16CheckedWithoutFIR() {
+        using namespace rgsml;
+        using namespace render_support;
+        auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+        QVERIFY(registry);
+        auto manual=dsp::ProcessingChain::create(*registry.value(),
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+        auto terminal=dsp::ProcessingChain::create(*registry.value(),
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::TERMINAL});
+        QVERIFY(manual&&terminal);
+        const auto limiterId=make_id("95000000-0000-4000-8000-000000000017");
+        QVERIFY(terminal.value()->add(limiterId,"rgsml.dsp.true-peak-limiter",0));
+        auto ceiling=dsp::TruePeakLimiterParameters::create(-1.0);
+        QVERIFY(ceiling);
+        const std::array<dsp::ModuleExecutionBinding,1> binding{{
+            {limiterId,*ceiling.value()}}};
+        constexpr std::array<std::int64_t,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        std::size_t inspected=0;
+        for(const auto rate:rates) {
+            auto input=source(rate,audio::ChannelLayout::MONO_C);
+            QVERIFY(input);
+            const auto block=frame_count(128);
+            auto request=render::RenderRequest::create(
+                input.value()->view(),input.value()->view().absolute_range(),
+                *manual.value(),{},block);
+            QVERIFY(request);
+            auto prepared=render::render_preview(*request.value(),*registry.value());
+            QVERIFY(prepared);
+            auto owner=std::make_shared<const render::RenderResult>(
+                std::move(*prepared.value()));
+            const auto bitsBefore=bits(owner->view());
+            auto hz=core::SampleRate::create(rate);
+            QVERIFY(hz);
+            auto result=render::render_true_peak_limiter_owned_same_rate_candidate(
+                owner,*manual.value(),frame_count(257),owner->chain_revision(),
+                *hz.value(),*terminal.value(),binding,*registry.value(),block);
+            QVERIFY2(result,result?"":result.error()->message().c_str());
+            m22_private::FullChainWitnessFailure why{};
+            const auto witness=m22_private::observe_real_complete_chain_candidate(
+                *result.value(),why);
+            QVERIFY(witness);
+            QCOMPARE(why,m22_private::FullChainWitnessFailure::NONE);
+            QVERIFY(!witness->authorizes_release());
+            QVERIFY(!witness->used_original_q0);
+            QVERIFY(witness->frozen_original_q0_sha256.empty());
+            QCOMPARE(witness->manual_source_hz,rate);
+            QCOMPARE(witness->final_master_hz,rate);
+            QCOMPARE(witness->actual_master_frames,std::int64_t{257});
+            QVERIFY(result.value()->terminal.checked.final_check.has_value());
+            QCOMPARE(bits(owner->view()),bitsBefore);
+            ++inspected;
+        }
+        QCOMPARE(inspected,std::size_t{6});
+    }
+
     void tamperAndStaleManualEpochCannotPublishM17() {
         using namespace rgsml;
         using namespace render_support;
