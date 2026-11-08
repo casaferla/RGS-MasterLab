@@ -1875,7 +1875,7 @@ qt_add_executable(rgsml_m19_m21_typed_qml_convergence_tests
 target_include_directories(rgsml_m19_m21_typed_qml_convergence_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
 target_compile_definitions(rgsml_m19_m21_typed_qml_convergence_tests PRIVATE
-    RGSML_ANALYSIS_GUI_ROOT="${CMAKE_SOURCE_DIR}/ui/qml")
+    RGSML_ANALYSIS_GUI_ROOT=\"${CMAKE_SOURCE_DIR}/ui/qml\")
 target_link_libraries(rgsml_m19_m21_typed_qml_convergence_tests PRIVATE
     rgsml_analysis Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
 rgsml_apply_project_warnings(rgsml_m19_m21_typed_qml_convergence_tests)
