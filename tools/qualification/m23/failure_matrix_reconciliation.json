@@ -66,11 +66,11 @@
     {
       "id": "07",
       "category": "malformed_candidate",
-      "static_coverage": "partial",
+      "static_coverage": "existing",
       "ctest": "rgsml_transactional_audio_export_tests",
       "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
-      "slot": "injectedFailureStagesCleanUp",
-      "rationale": "injected validation failure, not independent mutated/truncated WAV file"
+      "slot": "m23TruncatedCandidateFailsAfterRealReopen",
+      "rationale": "test-only corruption physically truncates the task-owned, written and closed candidate WAV to 8 bytes before the real validator reopens it; rejection, cleanup and unchanged SOURCE are asserted"
     },
     {
       "id": "08",
