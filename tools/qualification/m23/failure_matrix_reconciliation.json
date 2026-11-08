@@ -1,0 +1,193 @@
+{
+  "schema": "rgsml.m23.failure-matrix-reconciliation/1",
+  "baseline_sha": "31b81571eef1497c0d561105cc9e619ea95aafe6",
+  "authority": "L1-M23 I+P+M; preimplementation packet v0.2; no new Product semantics",
+  "status": "RECONCILIATION_ONLY_NOT_M23_QUALIFIED",
+  "note": "Statuses reflect source-code evidence only, not executed CTest, FQ, manual acceptance or release.",
+  "m23_closed": false,
+  "physical_gate_m": false,
+  "product_admission_authorized": false,
+  "release_qualified": false,
+  "cases": [
+    {
+      "id": "01",
+      "category": "render_window",
+      "static_coverage": "existing",
+      "ctest": "rgsml_render_preview_tests",
+      "source": "tests/unit/render/test_render_preview.cpp",
+      "slot": "validatesBindingsAndWindowAtomically",
+      "rationale": "invalid window/premature publication"
+    },
+    {
+      "id": "02",
+      "category": "unavailable_module",
+      "static_coverage": "existing",
+      "ctest": "rgsml_render_preview_tests",
+      "source": "tests/unit/render/test_render_preview.cpp",
+      "slot": "activeUnavailableModuleFails",
+      "rationale": "reject module missing from active registry"
+    },
+    {
+      "id": "03",
+      "category": "nonfinite_dsp_input",
+      "static_coverage": "gap",
+      "ctest": null,
+      "source": null,
+      "slot": null,
+      "rationale": "independent NaN/Inf injected through real full Product output"
+    },
+    {
+      "id": "04",
+      "category": "short_write",
+      "static_coverage": "partial",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "injectedFailureStagesCleanUp",
+      "rationale": "writer I/O fault is tested; precise partial-byte short-write injection not separately proved"
+    },
+    {
+      "id": "05",
+      "category": "flush_close_failure",
+      "static_coverage": "gap",
+      "ctest": null,
+      "source": null,
+      "slot": null,
+      "rationale": "physical close/flush error after data write"
+    },
+    {
+      "id": "06",
+      "category": "candidate_reopen_failure",
+      "static_coverage": "gap",
+      "ctest": null,
+      "source": null,
+      "slot": null,
+      "rationale": "distinct candidate reopen error (vs generic validation injection)"
+    },
+    {
+      "id": "07",
+      "category": "malformed_candidate",
+      "static_coverage": "partial",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "injectedFailureStagesCleanUp",
+      "rationale": "injected validation failure, not independent mutated/truncated WAV file"
+    },
+    {
+      "id": "08",
+      "category": "encoded_checksum_mismatch",
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "injectedFailureStagesCleanUp",
+      "rationale": "encoded mismatch cleanup and nonpublication"
+    },
+    {
+      "id": "09",
+      "category": "decoded_checksum_mismatch",
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "injectedFailureStagesCleanUp",
+      "rationale": "decoded mismatch cleanup and nonpublication"
+    },
+    {
+      "id": "10",
+      "category": "existing_destination",
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "sourceAndDestinationCollisionProtection",
+      "rationale": "FAIL_IF_EXISTS preserves existing bytes"
+    },
+    {
+      "id": "11",
+      "category": "source_hardlink_alias",
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "sourceAndDestinationCollisionProtection",
+      "rationale": "Windows CreateHardLinkW resource-identity collision"
+    },
+    {
+      "id": "12",
+      "category": "gold_destination_collision",
+      "static_coverage": "gap",
+      "ctest": null,
+      "source": null,
+      "slot": null,
+      "rationale": "real Gold destination identity, direct and alias"
+    },
+    {
+      "id": "13",
+      "category": "commit_epoch_race",
+      "static_coverage": "existing",
+      "ctest": "rgsml_m18_windows_candidate_delivery_tests",
+      "source": "tests/integration/platform/test_m18_candidate_delivery_validation.cpp",
+      "slot": "crossThreadEpochBarrierPreventsCommitRaceWithoutQtBlocking",
+      "rationale": "retire permission before commit, no output"
+    },
+    {
+      "id": "14",
+      "category": "destination_readback_mismatch",
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "injectedFailureStagesCleanUp",
+      "rationale": "post-commit read-back failure; no falsely validated output"
+    },
+    {
+      "id": "15",
+      "category": "malformed_project",
+      "static_coverage": "existing",
+      "ctest": "rgsml_project_package_tests",
+      "source": "tests/unit/project/test_project_package.cpp",
+      "slot": "raw_header_rejections",
+      "rationale": "malformed project package rejected"
+    },
+    {
+      "id": "16",
+      "category": "unknown_semantic_module",
+      "static_coverage": "partial",
+      "ctest": "rgsml_project_session_tests",
+      "source": "tests/integration/app/test_project_session.cpp",
+      "slot": "future_opaque_preservation_and_non_degraded_b4",
+      "rationale": "unknown semantic module policy needs separate malicious injection"
+    },
+    {
+      "id": "17",
+      "category": "project_open_atomicity",
+      "static_coverage": "existing",
+      "ctest": "rgsml_project_session_tests",
+      "source": "tests/integration/app/test_project_session.cpp",
+      "slot": "atomic_rejection",
+      "rationale": "failed project open doesn't replace live session"
+    },
+    {
+      "id": "18",
+      "category": "source_gold_immutability",
+      "static_coverage": "existing",
+      "ctest": "rgsml_project_session_tests",
+      "source": "tests/integration/app/test_project_session.cpp",
+      "slot": "invalid_gold_and_hardlink_preflight_preserve_session",
+      "rationale": "source and Gold survive invalid alias preflight"
+    },
+    {
+      "id": "19",
+      "category": "postdecode_true_peak_pcm24",
+      "static_coverage": "existing",
+      "ctest": "rgsml_m18_windows_candidate_delivery_tests",
+      "source": "tests/integration/platform/test_m18_candidate_delivery_validation.cpp",
+      "slot": "exactPcm24ReadbackAndCeilingEvidence",
+      "rationale": "real decoded output evaluated against M16"
+    },
+    {
+      "id": "20",
+      "category": "alpha_diagnostic_report",
+      "static_coverage": "gap",
+      "ctest": null,
+      "source": null,
+      "slot": null,
+      "rationale": "canonical AlphaDiagnosticReport evidence aggregator not implemented"
+    }
+  ]
+}
