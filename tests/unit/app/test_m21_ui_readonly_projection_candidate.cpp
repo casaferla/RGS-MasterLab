@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void matchingRegionReceiptKeepsRegionScope();
     void invalidLifecycleMasksEveryReadout();
     void infiniteSampleNeverBecomesReadout();
     void negativeGoldMinusCurrentDeltaRetainsSign();
@@ -633,6 +634,18 @@ void M21UiReadonlyProjectionCandidateTest::invalidLifecycleMasksEveryReadout()
         QVERIFY(v.value_text=="INVALID");
         QVERIFY(v.quality_text=="INVALID");
     }
+}
+
+void M21UiReadonlyProjectionCandidateTest::matchingRegionReceiptKeepsRegionScope()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"region",-18.0);
+    snapshots[0]->analysis_scope_label="Region";
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(r.columns[0].candidate_matched);
+    QVERIFY(r.columns[0].scope_text=="Region");
+    QVERIFY(r.columns[0].values[1].numeric);
+    QVERIFY(!r.production_authorized);
 }
 
 } // namespace rgsml::tests
