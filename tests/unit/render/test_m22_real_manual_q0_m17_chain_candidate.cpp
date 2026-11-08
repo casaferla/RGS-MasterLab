@@ -3,6 +3,7 @@
 #include "render_test_support.hpp"
 #include "m22_full_chain_witness_candidate.hpp"
 #include "m22_verified_full_output_window_candidate.hpp"
+#include "m22_real_verified_output_plan_candidate.hpp"
 #include "m18_terminal_sample_codec.hpp"
 #include <rgsml/audio/phase11_final_src_candidate.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
@@ -364,6 +365,13 @@ private slots:
                 QVERIFY(blockedWindow);
                 QVERIFY(!m22_private::observe_verified_full_output_window_candidate(
                     *result.value(),*blockedWindow.value()));
+                m22_private::RealFullOutputPlanFailure invalidPlan{};
+                QVERIFY(!m22_private::observe_real_full_output_plan_candidate(
+                    *result.value(),m22_private::Mode::PREVIEW,
+                    m22_private::Window{2,12},invalidPlan));
+                QCOMPARE(invalidPlan,
+                    m22_private::RealFullOutputPlanFailure::
+                        NO_VERIFIED_NATIVE_FULL_M17);
                 const auto out=result.value()->terminal.checked.terminal
                     .compensated_pcm.view();
                 QCOMPARE(out.timebase().frame_domain_id(),
@@ -456,6 +464,72 @@ private slots:
                 QVERIFY(!crop.value()->authorizes_release());
                 QCOMPARE(crop.value()->full_master_witness.frozen_original_q0_sha256,
                     std::string{checked.value()->src_kernel_sha256});
+                // Bind the NONRELEASE M22 output planner to a real
+                // observed M17/M16 result, never caller-supplied output
+                // duration, untrusted clock label or guessed SRC ratio.
+                m22_private::RealFullOutputPlanFailure planFailure{};
+                const auto realPlan=
+                    m22_private::observe_real_full_output_plan_candidate(
+                        *checked.value(),m22_private::Mode::PREVIEW,
+                        m22_private::Window{3,26},planFailure);
+                QVERIFY(realPlan);
+                QCOMPARE(planFailure,
+                    m22_private::RealFullOutputPlanFailure::NONE);
+                QVERIFY(!realPlan->authorizes_release());
+                QVERIFY(!realPlan->clock.authorizes_release());
+                QVERIFY(!realPlan->original_q0.authorizes_release());
+                QVERIFY(realPlan->clock.uses_final_src());
+                QCOMPARE(realPlan->native.manual_source_hz,from);
+                QCOMPARE(realPlan->native.final_master_hz,to);
+                QCOMPARE(realPlan->clock.declaration().source_processing_hz,
+                         static_cast<std::uint32_t>(from));
+                QCOMPARE(realPlan->clock.declaration().output_hz,
+                         static_cast<std::uint32_t>(to));
+                QCOMPARE(realPlan->clock.declaration().source_processing_frames,
+                         std::uint64_t{257});
+                QCOMPARE(realPlan->clock.declaration().declared_full_output_frames,
+                         static_cast<std::uint64_t>(
+                             actual->actual_master_frames));
+                QCOMPARE(realPlan->original_q0.pinned_sha256,
+                         actual->frozen_original_q0_sha256);
+                QVERIFY(!realPlan->original_q0.identity_bypass);
+                QCOMPARE(realPlan->output.absolute_output_first,
+                         std::uint64_t{3});
+                QCOMPARE(realPlan->output.absolute_output_end,
+                         std::uint64_t{26});
+                QCOMPARE(realPlan->output.required_source_true_eos,
+                         std::uint64_t{257});
+                QCOMPARE(realPlan->output.required_output_true_eos,
+                         static_cast<std::uint64_t>(
+                             actual->actual_master_frames));
+                QCOMPARE(realPlan->output.absolute_dither_first,
+                         std::uint64_t{3});
+                const auto n=static_cast<std::uint64_t>(
+                    actual->actual_master_frames);
+                const auto fullPlan=
+                    m22_private::observe_real_full_output_plan_candidate(
+                        *checked.value(),m22_private::Mode::FULL,
+                        m22_private::Window{0,n},planFailure);
+                QVERIFY(fullPlan);
+                QCOMPARE(fullPlan->output.output_frame_count(),n);
+                const auto eosPlan=
+                    m22_private::observe_real_full_output_plan_candidate(
+                        *checked.value(),m22_private::Mode::PREVIEW,
+                        m22_private::Window{n-1,n},planFailure);
+                QVERIFY(eosPlan);
+                QCOMPARE(eosPlan->output.required_output_true_eos,n);
+                QVERIFY(!m22_private::observe_real_full_output_plan_candidate(
+                    *checked.value(),m22_private::Mode::PREVIEW,
+                    m22_private::Window{n-1,n+1},planFailure));
+                QCOMPARE(planFailure,
+                    m22_private::RealFullOutputPlanFailure::
+                        INVALID_ABSOLUTE_OUTPUT_WINDOW);
+                QVERIFY(!m22_private::observe_real_full_output_plan_candidate(
+                    *checked.value(),m22_private::Mode::FULL,
+                    m22_private::Window{3,26},planFailure));
+                QCOMPARE(planFailure,
+                    m22_private::RealFullOutputPlanFailure::
+                        INVALID_ABSOLUTE_OUTPUT_WINDOW);
                 ++completed;
             }
         }
@@ -809,6 +883,21 @@ private slots:
             QVERIFY(!checkedPreview.value()->full_master_witness.used_original_q0);
             QCOMPARE(checkedPreview.value()->exact_output_crop.frame_count().value(),
                      std::int64_t{16});
+            m22_private::RealFullOutputPlanFailure planFailure{};
+            const auto identityPlan=
+                m22_private::observe_real_full_output_plan_candidate(
+                    *result.value(),m22_private::Mode::PREVIEW,
+                    m22_private::Window{13,29},planFailure);
+            QVERIFY(identityPlan);
+            QCOMPARE(planFailure,m22_private::RealFullOutputPlanFailure::NONE);
+            QVERIFY(identityPlan->original_q0.identity_bypass);
+            QVERIFY(identityPlan->original_q0.pinned_sha256.empty());
+            QVERIFY(!identityPlan->clock.uses_final_src());
+            QCOMPARE(identityPlan->output.required_output_true_eos,
+                     std::uint64_t{257});
+            QCOMPARE(identityPlan->output.absolute_dither_first,
+                     std::uint64_t{13});
+            QVERIFY(!identityPlan->authorizes_release());
             const auto originalMaster=
                 result.value()->terminal.checked.terminal.compensated_pcm.view();
             for(std::size_t ch=0;ch<originalMaster.format().channel_count();++ch) {
