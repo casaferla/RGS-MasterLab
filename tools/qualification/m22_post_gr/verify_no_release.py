@@ -23,6 +23,7 @@ ALLOWED = {
     "render/src/internal/m22_verified_full_output_window_candidate.hpp",
     "app/src/internal/m22_verified_master_preview_parity.hpp",
     "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp",
+    "tests/integration/app/test_project_session.cpp",
     "tests/unit/render/test_m22_checked_output_clock_candidate.cpp",
     "tests/CMakeLists.txt",
     ".github/workflows/m22-post-gr-focused.yml",
@@ -236,6 +237,19 @@ def main():
         "is_default_constructible_v<Probe::Capture>",
         "Probe::still_current(",
     ),"M22 Product capture compile contract")
+    productruntime=blob("HEAD",
+        "tests/integration/app/test_project_session.cpp").decode()
+    require(productruntime,(
+        "M22ProductChainEpochCaptureCandidate",
+        "const auto completeChain=FullChainEpoch::capture(",
+        "FullChainEpoch::still_current(",
+        "refusedOffThread=!forbidden&&!forbiddenEpoch",
+        "!FullChainEpoch::capture(",
+        "const auto refreshedFullChain=FullChainEpoch::capture(",
+        "immutable_chain_witness.actual_master_frames",
+        "!completeChain.value()->authorizes_release()",
+        "M18 export ticket is live",
+    ),"M22 genuinely installed Product epoch runtime regression")
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
     require(cmake,(
         "rgsml_m22_checked_output_clock_candidate_tests",
