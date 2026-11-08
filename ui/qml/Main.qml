@@ -480,7 +480,7 @@ ApplicationWindow {
     FileDialog {
         id: goldDialog
         objectName: "goldFileDialog"
-        title: "Open Gold Reference WAV"
+        title: "Open Reference WAV"
         fileMode: FileDialog.OpenFile
         nameFilters: ["WAV audio (*.wav *.wave)"]
         onAccepted: {
@@ -1227,8 +1227,8 @@ ApplicationWindow {
                         StudioMenuItem { objectName: "menuOpenProject"; text: "Open Project…"; enabled: !root.monitorExclusive; onTriggered: projectOpenDialog.open() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuOpenSource"; text: "Open Source\tCtrl+O"; enabled: !root.monitorExclusive; onTriggered: sourceDialog.open() }
-                        StudioMenuItem { objectName: "menuOpenGold"; text: "Open Gold Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
-                        StudioMenuItem { objectName: "menuClearGold"; text: "Clear Gold Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
+                        StudioMenuItem { objectName: "menuOpenGold"; text: "Open Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
+                        StudioMenuItem { objectName: "menuClearGold"; text: "Clear Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuSaveProjectAs"; text: "Save Project As…"; enabled: projectSession.canSaveProject; onTriggered: projectSaveDialog.open() }
                         StudioMenuItem {
@@ -1670,9 +1670,9 @@ ApplicationWindow {
 
                                         StudioSegmentButton {
                                             objectName: "adaptiveModeToggle_Gold"
-                                            text: "Gold / Automatch"
+                                            text: "Reference / AutoMatch"
                                             selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            minimumControlWidth: 105
+                                            minimumControlWidth: 166
                                             contentPadding: 3
                                             onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
                                         }
@@ -1738,12 +1738,14 @@ ApplicationWindow {
                                                     Text {
                                                         id: goldReferenceStatus
                                                         objectName: "goldReferenceStatus"
-                                                        text: goldSelection.hasGold ? ("GOLD  " + goldSelection.displayName) : "NO GOLD REFERENCE LOADED"
+                                                        text: goldSelection.hasGold ? ("REFERENCE  " + goldSelection.displayName) : "NO REFERENCE LOADED"
                                                         color: goldSelection.hasGold ? root.textPrimary : "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 10
                                                         font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
+                                                        elide: Text.ElideNone
+                                                        wrapMode: Text.WrapAnywhere
+                                                        Layout.fillHeight: true
                                                         Layout.fillWidth: true
                                                     }
                                                 }
@@ -2302,7 +2304,7 @@ ApplicationWindow {
     Label { objectName: "playbackErrorMessage"; visible: false; text: playbackTransport.errorMessage }
     Label { objectName: "goldErrorLabel"; visible: false; text: goldSelection.errorMessage }
     Label { objectName: "auditionRoutingStatus"; visible: false; text: auditionSelector.statusText }
-    Label { objectName: "goldStateLabel"; visible: false; text: goldSelection.hasGold ? "Gold: " + goldSelection.displayName : "Gold: not loaded" }
+    Label { objectName: "goldStateLabel"; visible: false; text: goldSelection.hasGold ? "Reference: " + goldSelection.displayName : "Reference: not loaded" }
     Label { objectName: "sourceEmptyState"; visible: !sourceSelection.hasSource; opacity: 0; width: 0; height: 0; text: "No Source selected" }
     Label { objectName: "sourceReadOnlyBadge"; visible: sourceSelection.hasSource; opacity: 0; width: 0; height: 0; text: "Read-only" }
     Label { objectName: "sourceErrorMessage"; visible: sourceSelection.errorMessage.length > 0; opacity: 0; width: 0; height: 0; text: sourceSelection.errorMessage }

@@ -176,7 +176,7 @@ Rectangle {
                 Repeater {
                     model: [
                         {name:"PREPARED",color:"#76CDE9"},
-                        {name:"GOLD",color:"#D19562"},
+                        {name:"REFERENCE",key:"GOLD",color:"#D19562"},
                         {name:"PROCESSED",color:"#7CDDC8"}
                     ]
                     delegate: Rectangle {
@@ -184,9 +184,9 @@ Rectangle {
                         height: 29
                         anchors.verticalCenter: parent.verticalCenter
                         radius: 4
-                        objectName: "analysisScopeBadge_" + modelData.name
+                        objectName: "analysisScopeBadge_" + (modelData.key || modelData.name)
                         color: !root.available ? "#16232D"
-                            : modelData.name === "GOLD" ? "#30261E" : "#152937"
+                            : modelData.key === "GOLD" ? "#30261E" : "#152937"
                         border.color: root.available ? modelData.color : "#3A4B58"
                         border.width: 1
                         Text {
@@ -294,7 +294,7 @@ Rectangle {
                                 color: root.ink
                             }
                             Text {
-                                text: "Read-only comparison; GOLD is measured independently."
+                                text: "Read-only comparison; REFERENCE is measured independently."
                                 font.family: "Segoe UI"
                                 font.pixelSize: 11
                                 color: root.dim
@@ -302,7 +302,7 @@ Rectangle {
                             Repeater {
                                 model: [
                                     {name:"PREPARED",value:0.52,color:"#76CDE9",reading:"−18.4 LUFS"},
-                                    {name:"GOLD",value:0.76,color:"#D19562",reading:"−13.8 LUFS"},
+                                    {name:"REFERENCE",value:0.76,color:"#D19562",reading:"−13.8 LUFS"},
                                     {name:"PROCESSED",value:0.73,color:"#7CDDC8",reading:"−14.2 LUFS"}
                                 ]
                                 delegate: Column {
@@ -571,12 +571,12 @@ Rectangle {
                     Row{
                         anchors.fill:parent;anchors.margins:11;spacing:10
                         Text{
-                            text:"GOLD SCOPE IS INDEPENDENT"
+                            text:"REFERENCE SCOPE IS INDEPENDENT"
                             color:root.amber;font.bold:true;font.pixelSize:12
                             anchors.verticalCenter:parent.verticalCenter
                         }
                         Text{
-                            text:"No time alignment is assumed. Δ is GOLD − CURRENT; unavailable values remain unavailable."
+                            text:"No time alignment is assumed. Δ is REFERENCE − CURRENT; unavailable values remain unavailable."
                             color:"#E7C99D";font.pixelSize:11
                             anchors.verticalCenter:parent.verticalCenter
                         }
@@ -599,7 +599,7 @@ Rectangle {
                             Row{
                                 anchors.fill:parent
                                 Repeater{
-                                    model:["METRIC","PREPARED","GOLD","PROCESSED","Δ PREPARED → GOLD","Δ PROCESSED → GOLD"]
+                                    model:["METRIC","PREPARED","REFERENCE","PROCESSED","Δ PREPARED → REFERENCE","Δ PROCESSED → REFERENCE"]
                                     delegate:Text{
                                         width:parent.width/6
                                         height:parent.height
@@ -620,8 +620,8 @@ Rectangle {
                             width: parent.width
                             height: 64
                             text: root.stateStale
-                                ? "METRICS STALE — REANALYZE PREPARED / GOLD / PROCESSED"
-                                : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / GOLD / PROCESSED DATA"
+                                ? "METRICS STALE — REANALYZE PREPARED / REFERENCE / PROCESSED"
+                                : "METRICS UNAVAILABLE — NO AUTHENTICATED PREPARED / REFERENCE / PROCESSED DATA"
                             font.family: "Segoe UI"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold

@@ -133,6 +133,14 @@ void screenshot(QQuickView& view,const QString& dir,
         for(int x=0;x<capture.width();x+=3)
             colors.insert(capture.pixel(x,y));
     require(colors.size()>=35,"QT_CAPTURE_BLANK_OR_FONT_MISSING");
+    auto* preservedGoldBadge=findVisualByObjectName(view.rootObject(),
+                                      QStringLiteral("analysisScopeBadge_GOLD"));
+    require(preservedGoldBadge!=nullptr,"UI_REFERENCE_TECHNICAL_BADGE_ID_CHANGED");
+    bool referenceTextVisible=false;
+    for(auto* child:preservedGoldBadge->childItems())
+        if(child->property("text").toString()==QStringLiteral("REFERENCE"))
+            referenceTextVisible=true;
+    require(referenceTextVisible,"UI_REFERENCE_BADGE_VISIBLE_LABEL_MISSING");
     if(withoutProductData){
         auto* scope=findVisualByObjectName(view.rootObject(),
                                           QStringLiteral("analysisScopeStatusText"));

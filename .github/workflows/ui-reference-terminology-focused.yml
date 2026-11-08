@@ -1,0 +1,257 @@
+name: PO Reference Public UI Terminology Focused (non-FQ)
+on:
+  push:
+    branches:
+      - staging/ui-reference-terminology-candidate-20261108
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: po-reference-visible-ui-20261108
+  cancel-in-progress: false
+jobs:
+  linux-ui-projection:
+    name: Linux - real M19/M20 into fail-closed M21 UI projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Frozen technical GOLD contract and UI wording (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/ui_reference_terminology/check_ui_reference_contract.py
+      - name: Install Qt 6.8.3 and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
+      - name: "Build typed projection and real M21 regression"
+        shell: bash
+        run: |
+          set -euo pipefail
+          cfg="$RUNNER_TEMP/rgs-ui-configure.log"
+          buildlog="$RUNNER_TEMP/rgs-ui-build.log"
+          bounded="$RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          if ! cmake -S . -B build/m21-ui-typed -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON >"$cfg" 2>&1; then
+            tail -n 50 "$cfg" >"$bounded"
+            exit 1
+          fi
+          if ! cmake --build build/m21-ui-typed --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests >"$buildlog" 2>&1; then
+            tail -n 60 "$buildlog" >"$bounded"
+            exit 1
+          fi
+          tail -n 5 "$buildlog"
+      - name: Upload bounded Linux failure (no complete logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-UI-Bounded-Linux
+          path: ${{ runner.temp }}/rgs-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: "Run genuine QtQuick and typed owner regression"
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          set -euo pipefail
+          testlog="$RUNNER_TEMP/rgs-ui-ctest.log"
+          if ! ctest --test-dir build/m21-ui-typed --output-on-failure -R '^(rgsml_m21_qml_typed_convergence_tests|rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests)$' >"$testlog" 2>&1; then
+            tail -n 55 "$testlog" >"$RUNNER_TEMP/rgs-ui-test-bounded.txt"
+            exit 1
+          fi
+          tail -n 7 "$testlog"
+      - name: Legacy M21 dedicated QML preview displays REFERENCE
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          set -euo pipefail
+          cmake -S tools/qualification/m21/qt_preview -B build/m21-legacy-reference -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" >/dev/null
+          cmake --build build/m21-legacy-reference --parallel 3 >/dev/null
+          ./build/m21-legacy-reference/m21_qt_preview_smoke
+      - name: Upload bounded Linux CTest failure only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-UI-CTest-Bounded-Linux
+          path: ${{ runner.temp }}/rgs-ui-test-bounded.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows-ui-projection:
+    name: Windows - real M19/M20 into fail-closed M21 UI projection
+    runs-on: windows-2022
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Frozen technical GOLD contract and UI wording (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui_reference_terminology/check_ui_reference_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'REFERENCE_UI_TECHNICAL_FROZEN_CONTRACT_FAILED' }
+      - name: Install Qt 6.8.3 MSVC
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'UI_PROJECTION_QT_INSTALL_FAILED' }
+      - name: "Build typed projection and real M21 regression"
+        shell: pwsh
+        run: |
+          $qtRoot = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          $cfg = "$env:RUNNER_TEMP/rgs-ui-configure.log"
+          $buildlog = "$env:RUNNER_TEMP/rgs-ui-build.log"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          cmake -S . -B build/m21-ui-typed -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES=Release -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$qtRoot" *> $cfg
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $cfg -Tail 50 | Set-Content $bounded
+            throw 'UI_PROJECTION_WINDOWS_CONFIGURE_FAILED'
+          }
+          cmake --build build/m21-ui-typed --config Release --parallel 4 --target rgsml_m21_qml_typed_convergence_tests rgsml_m21_ui_readonly_projection_candidate_tests rgsml_m21_real_product_metrics_port_tests rgsml_source_metadata_panel_smoke rgsml_audition_source_selector_tests rgsml_project_roundtrip_tests *> $buildlog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $buildlog -Tail 60 | Set-Content $bounded
+            throw 'UI_PROJECTION_WINDOWS_BUILD_FAILED'
+          }
+          Get-Content $buildlog -Tail 5
+      - name: Upload bounded Windows failure (no complete logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-UI-Bounded-Windows
+          path: ${{ runner.temp }}/rgs-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: "Run genuine QtQuick and typed owner regression"
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          $testlog = "$env:RUNNER_TEMP/rgs-ui-ctest.log"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-test-bounded.txt"
+          ctest --test-dir build/m21-ui-typed -C Release --output-on-failure -R '^(rgsml_m21_qml_typed_convergence_tests|rgsml_m21_ui_readonly_projection_candidate_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_audition_source_selector_tests|rgsml_project_roundtrip_tests)$' *> $testlog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $testlog -Tail 55 | Set-Content $bounded
+            throw 'UI_PROJECTION_WINDOWS_TESTS_FAILED'
+          }
+          Get-Content $testlog -Tail 7
+      - name: Dedicated real Main.qml terminology probe (not full legacy docking smoke)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          $qtRoot = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-test-bounded.txt"
+          $binary = Get-ChildItem -Path "$env:GITHUB_WORKSPACE/build/m21-ui-typed" -Filter "rgsml_source_metadata_panel_smoke.exe" -Recurse -File | Select-Object -First 1
+          if (-not $binary) {
+            'REFERENCE_UI_SOURCE_METADATA_BINARY_MISSING: searched full build tree' | Set-Content $bounded
+            throw 'REFERENCE_UI_SOURCE_METADATA_BINARY_MISSING'
+          }
+          $env:PATH = "$qtRoot/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$qtRoot/qml;$env:QML2_IMPORT_PATH"
+          $log = "$env:RUNNER_TEMP/reference-ui-targeted-qt-smoke.txt"
+          & $binary.FullName referenceTerminologyOnRealMain -o "$log,txt"
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $log) {
+              Get-Content $log -Tail 65 | Set-Content $bounded
+            } else {
+              'REFERENCE_UI_TARGETED_QT_NO_LOG; see bounded failing step' | Set-Content $bounded
+            }
+            throw 'REFERENCE_UI_TARGETED_MAIN_QT_SMOKE_FAILED'
+          }
+          Write-Output 'REFERENCE_UI_MAIN_QT_TERMINOLOGY_PASS'
+
+      - name: Upload bounded Windows CTest failure only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-UI-CTest-Bounded-Windows
+          path: ${{ runner.temp }}/rgs-ui-test-bounded.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Legacy M21 dedicated QML preview displays REFERENCE
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          $qt = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          $dir = "$env:RUNNER_TEMP/m21-legacy-reference"
+          cmake -S tools/qualification/m21/qt_preview -B $dir -G Ninja "-DCMAKE_PREFIX_PATH=$qt"
+          if ($LASTEXITCODE -ne 0) { throw 'M21_LEGACY_QML_CONFIG_FAILED' }
+          cmake --build $dir --parallel 3
+          if ($LASTEXITCODE -ne 0) { throw 'M21_LEGACY_QML_BUILD_FAILED' }
+          $env:PATH = "$qt/bin;$env:PATH"
+          & "$dir/m21_qt_preview_smoke.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'M21_LEGACY_REFERENCE_SCOPE_FAILED' }
+      - name: Real Qt6 GUI screenshot regression, 24 genuine PNGs
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          $qtRoot = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          $build = "$env:RUNNER_TEMP/analysis-ui-build"
+          $shots = "$env:RUNNER_TEMP/analysis-ui-screenshots"
+          $log = "$env:RUNNER_TEMP/analysis-ui-command.log"
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-bounded-failure.txt"
+          cmake -S tools/qualification/m19_m21_gui -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$qtRoot" *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 55 | Set-Content $bounded
+            throw 'CONVERGENCE_GUI_CONFIGURE_FAILED'
+          }
+          cmake --build $build --parallel 3 *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 65 | Set-Content $bounded
+            throw 'CONVERGENCE_GUI_BUILD_FAILED'
+          }
+          $env:PATH = "$qtRoot/bin;$env:PATH"
+          & "$build/rgsml_analysis_workbench_screenshot.exe" $shots *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 65 | Set-Content $bounded
+            throw 'CONVERGENCE_GUI_CAPTURE_FAILED'
+          }
+          $pngs = @(Get-ChildItem $shots -Filter '*.png')
+          if ($pngs.Count -ne 24) { throw "CONVERGENCE_EXPECTED_24_PNG_FOUND_$($pngs.Count)" }
+          foreach ($img in $pngs) {
+            if ($img.Length -lt 14000) { throw "CONVERGENCE_BLANK_PNG_$($img.Name)" }
+          }
+          Write-Output 'PO_REFERENCE_UI_24_QT_SCREENSHOTS_AND_LEGACY_PROJECT_PASS_NON_FQ'
+      - name: Upload bounded Windows GUI failure only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-QML-Convergence-Bounded
+          path: ${{ runner.temp }}/rgs-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload 24 genuine Qt visual screenshots
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-QML-Convergence-24-PNG
+          path: ${{ runner.temp }}/analysis-ui-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 30
