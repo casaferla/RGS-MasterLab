@@ -220,7 +220,13 @@ def main():
         "The SOURCE is 257 frames",
         "No SOURCE-rate window may be mislabeled as output-rate.",
         "Authentic Q0 conversion with M17 bypass",
-    ),"Native active true-M17 absolute crop regression")
+        "audio::internal::m18_pcm24_block(",
+        "audio::internal::m18_float32_block(",
+        "wrongLocalDither!=cropPcm24",
+        "chunkedPcm24==fullPcm24",
+        "fullPcm24.begin()+static_cast<std::ptrdiff_t>(9U*channels*3U)",
+        "fullF32.begin()+static_cast<std::ptrdiff_t>(9U*channels*4U)",
+    ),"Native active true-M17 absolute crop and M18 encoding regression")
     producttest=blob("HEAD",
         "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp").decode()
     require(producttest,(
@@ -236,6 +242,7 @@ def main():
         "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
         "rgsml_m22_product_chain_epoch_capture_tests",
         'RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"',
+        "${CMAKE_SOURCE_DIR}/audio/src/internal",
     ),"M22 Qt test target")
     workflow=blob("HEAD",
         ".github/workflows/m22-post-gr-focused.yml").decode()
