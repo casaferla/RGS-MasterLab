@@ -962,6 +962,47 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              app::m21_private::Lifecycle::current);
     QVERIFY(!visible.columns[1]); // Never invent GOLD.
 
+    // PREPARED and PROCESSED are two independent REAL RenderResult
+    // owners. Exercise the same capture/worker/publish protocol as the
+    // selected REFERENCE WAV, never changing a QObject on the worker.
+    app::internal::M21ProductPublicationInbox handoffRenderInbox;
+    for(const auto target:{app::m21_private::Column::prepared,
+                           app::m21_private::Column::processed}) {
+        const auto job=Handoff::capture_on_owner(
+            controllers,fanout,session.selector,session.gold,target);
+        QVERIFY(job);
+        QVERIFY(job.value()->structurally_valid());
+        QVERIFY(job.value()->render.has_value());
+        QVERIFY(!job.value()->reference.has_value());
+        std::optional<core::Result<app::m21_private::Snapshot>> computed;
+        std::thread numericalWorker([&] {
+            computed.emplace(Handoff::measure_on_worker(*job.value()));
+        });
+        numericalWorker.join();
+        QVERIFY(computed&&*computed);
+        const auto& direct=target==app::m21_private::Column::prepared
+            ?*workerPrepared.value():*workerProcessed.value();
+        QCOMPARE(computed->value()->resource_identity,
+                 direct.resource_identity);
+        QCOMPARE(computed->value()->generation_token,
+                 direct.generation_token);
+        QCOMPARE(computed->value()->scope_frames,direct.scope_frames);
+        QVERIFY(Handoff::publish_on_owner(
+            controllers,fanout,session.selector,session.gold,
+            handoffRenderInbox,*job.value(),*computed->value()));
+        QVERIFY(!Handoff::publish_on_owner(
+            controllers,fanout,session.selector,session.gold,
+            handoffRenderInbox,*job.value(),*computed->value()));
+    }
+    const auto handoffVisible=handoffRenderInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(handoffVisible.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(handoffVisible.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!handoffVisible.columns[1]);
+
+
     // Actual M18 Product epoch and M21 publication inbox feed three
     // independent PRIVATE Qt readiness surfaces. Values must remain
     // masked until later real Phase-6 QML authorization; none can use
