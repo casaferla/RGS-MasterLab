@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsNoCrossModuleReadoutPayload();
     void routedPanelsSelectingM21ProcessedPreservesBothOtherSelectors();
     void routedPanelsSwitchM20DoesNotChangeM19FrameValues();
     void routedPanelsM19GoldDoesNotSwitchM20Prepared();
@@ -2061,6 +2062,27 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsSelectingM21ProcessedPres
     QCOMPARE(frame.m21.value("metrics").toList().at(1).toMap().value("preparedDelta").toString(),
              QStringLiteral("+5.00"));
     QVERIFY(route.selected(AnalysisPanel::tonal_m20)==Column::prepared);
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsNoCrossModuleReadoutPayload()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    IndependentPanelRouting route;
+    const auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(f.m19.contains("levels"));
+    QVERIFY(!f.m19.contains("metrics"));
+    QVERIFY(!f.m19.contains("stereo"));
+    QVERIFY(f.m20.contains("stereo"));
+    QVERIFY(!f.m20.contains("levels"));
+    QVERIFY(!f.m20.contains("metrics"));
+    QVERIFY(f.m21.contains("metrics"));
+    QVERIFY(!f.m21.contains("stereo"));
+    QVERIFY(!f.m21.contains("levels"));
+    QVERIFY(review_frame_current(store,route,f));
 }
 
 } // namespace rgsml::tests
