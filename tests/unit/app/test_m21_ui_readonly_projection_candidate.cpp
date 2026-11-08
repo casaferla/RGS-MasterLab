@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsCannotCopyOrMoveSelectionAuthority();
     void routedPanelsRejectInvalidColumnIndex();
     void routedPanelsRejectInvalidPanelIndex();
     void routedPanelsRedundantSelectionDoesNotAdvanceRevision();
@@ -1912,6 +1913,17 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsRejectInvalidColumnIndex(
     QVERIFY(!route.select(AnalysisPanel::levels_m19,static_cast<Column>(255)));
     QVERIFY(route.routing_revision()==0);
     QVERIFY(route.selected(AnalysisPanel::levels_m19)==Column::prepared);
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsCannotCopyOrMoveSelectionAuthority()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    static_assert(!std::is_copy_constructible_v<IndependentPanelRouting>);
+    static_assert(!std::is_copy_assignable_v<IndependentPanelRouting>);
+    static_assert(!std::is_move_constructible_v<IndependentPanelRouting>);
+    static_assert(!std::is_move_assignable_v<IndependentPanelRouting>);
+    IndependentPanelRouting route;
+    QVERIFY(route.routing_revision()==0);
 }
 
 } // namespace rgsml::tests
