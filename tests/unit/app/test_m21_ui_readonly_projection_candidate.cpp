@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void missingGoldMasksPreparedDeltaOnly();
     void swappedSnapshotColumnIsInvalidNotCurrent();
     void missingLifecycleNeverMasqueradesAsZero();
     void staleLifecycleMasksAllAbsoluteNumbers();
@@ -490,6 +491,18 @@ void M21UiReadonlyProjectionCandidateTest::swappedSnapshotColumnIsInvalidNotCurr
     QVERIFY(!r.columns[0].candidate_matched);
     QVERIFY(!r.columns[0].values[1].numeric);
     QVERIFY(!r.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::missingGoldMasksPreparedDeltaOnly()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(view.columns[0].candidate_matched);
+    QVERIFY(!view.columns[1].candidate_matched);
+    QVERIFY(!view.prepared_to_gold[1].numeric);
+    QVERIFY(view.prepared_to_gold[1].value_text=="UNAVAILABLE");
+    QVERIFY(view.prepared_to_gold[1].quality_text=="MISSING");
 }
 
 } // namespace rgsml::tests
