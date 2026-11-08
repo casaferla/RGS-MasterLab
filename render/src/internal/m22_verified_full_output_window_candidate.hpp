@@ -2,7 +2,7 @@
 // Reuse the real retained whole-manual / frozen Q0 / checked M17+M16 PCM:
 // no resampling, no local M17 run, no new floating-point DSP, no dither.
 #pragma once
-#include "m22_full_chain_witness_candidate.hpp"
+#include "m22_real_verified_output_plan_candidate.hpp"
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -34,18 +34,27 @@ observe_verified_full_output_window_candidate(
         return R::failure(rgsml::core::Error{
             rgsml::core::ErrorCode::InvalidState,reason});
     };
-    FullChainWitnessFailure witness_failure{};
-    auto witnessed=observe_real_complete_chain_candidate(full,witness_failure);
-    if(!witnessed)
-        return refuse("M22_PREVIEW_REQUIRES_REAL_FULL_MANUAL_Q0_M17_M16");
-
     const auto first=absolute_output_window.begin().value();
     const auto end=absolute_output_window.end().value();
-    // The absolute region is measured in OUTPUT_RATE frames. In a 44.1->48
-    // render, SOURCE frame_count is NOT the audible Master's frame_count.
-    if(first<0 || end<=first || end>witnessed->actual_master_frames)
+    if(first<0 ||end<=first)
         return refuse("M22_PREVIEW_REQUIRES_EXACT_OUTPUT_FRAME_WINDOW");
-
+    RealFullOutputPlanFailure plan_failure{};
+    auto planned=observe_real_full_output_plan_candidate(
+        full,Mode::PREVIEW,
+        Window{static_cast<std::uint64_t>(first),
+               static_cast<std::uint64_t>(end)},plan_failure);
+    if(!planned)
+        return refuse("M22_PREVIEW_REQUIRES_REAL_CHECKED_OUTPUT_PLAN");
+    // An absolute output-frame crop must be inside the NATIVE checked M17
+    // programme, not a SOURCE-rate estimate or preview-local FIR run.
+    if(planned->output.absolute_output_first
+            !=static_cast<std::uint64_t>(first)
+       ||planned->output.absolute_output_end
+            !=static_cast<std::uint64_t>(end)
+       ||planned->output.required_output_true_eos
+            !=static_cast<std::uint64_t>(
+                planned->native.actual_master_frames))
+        return refuse("M22_PREVIEW_PLAN_MUST_END_AT_REAL_MASTER_EOS");
     const auto count=rgsml::core::FrameCount::create(end-first);
     if(!count)return R::failure(*count.error());
     const auto full_pcm=full.terminal.checked.terminal.compensated_pcm.view();
@@ -57,10 +66,10 @@ observe_verified_full_output_window_candidate(
        ||selected.value()->timebase().frame_domain_id()
             !=rgsml::audio::FrameDomainId::OUTPUT_RATE
        ||selected.value()->format().sample_rate().value()
-            !=witnessed->final_master_hz)
+            !=planned->native.final_master_hz)
         return refuse("M22_PREVIEW_OUTPUT_CROP_IDENTITY_MISMATCH");
 
     return R::success(VerifiedFullOutputWindowCandidate{
-        std::move(*witnessed),*selected.value()});
+        std::move(planned->native),*selected.value()});
 }
 } // namespace rgsml::m22_private
