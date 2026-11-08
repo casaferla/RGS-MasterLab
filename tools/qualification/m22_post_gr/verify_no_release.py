@@ -20,6 +20,8 @@ ALLOWED = {
     "tests/unit/render/test_m22_real_manual_q0_m17_chain_candidate.cpp",
     "render/src/internal/m22_full_chain_witness_candidate.hpp",
     "app/src/internal/m22_product_chain_epoch_capture_candidate.hpp",
+    "render/src/internal/m22_verified_full_output_window_candidate.hpp",
+    "app/src/internal/m22_verified_master_preview_parity.hpp",
     "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp",
     "tests/unit/render/test_m22_checked_output_clock_candidate.cpp",
     "tests/CMakeLists.txt",
@@ -185,6 +187,40 @@ def main():
         "still_current(",
         "authorizes_release() const noexcept {return false;}",
     ),"M22 exact Product owner epoch bridge")
+    checked_window=blob("HEAD",
+        "render/src/internal/m22_verified_full_output_window_candidate.hpp"
+    ).decode()
+    require(checked_window,(
+        "observe_verified_full_output_window_candidate(",
+        "observe_real_complete_chain_candidate(full,witness_failure)",
+        "witnessed->actual_master_frames",
+        "full_pcm.subview(absolute_output_window.begin()",
+        "FrameDomainId::OUTPUT_RATE",
+        "authorizes_release() const noexcept {return false;}",
+        "M22_PREVIEW_REQUIRES_REAL_FULL_MANUAL_Q0_M17_M16",
+    ),"True full-M17 output-rate crop candidate")
+    product_crop=blob("HEAD",
+        "app/src/internal/m22_verified_master_preview_parity.hpp"
+    ).decode()
+    require(product_crop,(
+        "Binding",
+        "M18ProductCompleteBinding::can_offer_verified_master(",
+        "observe_verified_full_output_window_candidate(",
+        "witnessed.complete_source_frames!=currentSource.frame_count()",
+        "witnessed.manual_source_hz!=currentSource.sample_rate_hz()",
+        "witnessed.terminal_chain_revision",
+        "witnessed.final_master_hz",
+        "exact_output_crop",
+    ),"Real Product cross-rate Preview admission")
+    fail_if("full.frame_count()!=rendered.programme_frames" in product_crop
+        and "The source full-programme count" not in product_crop,
+        "Product Preview still assumes source-rate frame count")
+    require(fullchain,(
+        "observe_verified_full_output_window_candidate(",
+        "The SOURCE is 257 frames",
+        "No SOURCE-rate window may be mislabeled as output-rate.",
+        "Authentic Q0 conversion with M17 bypass",
+    ),"Native active true-M17 absolute crop regression")
     producttest=blob("HEAD",
         "tests/unit/app/test_m22_product_chain_epoch_capture_contract.cpp").decode()
     require(producttest,(
