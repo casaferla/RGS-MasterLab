@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsShowThreeDifferentSourcesConcurrently();
     void routedPanelsBadFixtureAlwaysMasksEveryModule();
     void routedPanelsMultipleSelectionsUseMonotonicRevision();
     void routedPanelsCannotCopyOrMoveSelectionAuthority();
@@ -1957,6 +1958,38 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsBadFixtureAlwaysMasksEver
     QVERIFY(!denied.m20.value("ready").toBool());
     QVERIFY(!denied.m21.value("ready").toBool());
     QVERIFY(!review_frame_current(store,route,denied));
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsShowThreeDifferentSourcesConcurrently()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto g=example(Column::gold,3,"g",-13.0);
+    auto x=example(Column::processed,9,"x",-14.0);
+    p.metrics[5]={0.80,Quality::present,{}};
+    g.metrics[5]={1.10,Quality::present,{}};
+    x.metrics[5]={1.05,Quality::present,{}};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.begin(Column::processed,9));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    QVERIFY(store.receive(x,receipt(x)));
+    IndependentPanelRouting route;
+    QVERIFY(route.select(AnalysisPanel::tonal_m20,Column::gold));
+    QVERIFY(route.select(AnalysisPanel::delta_m21,Column::processed));
+    const auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,route,f));
+    QCOMPARE(f.m19.value("levels").toMap().value("rms").toString(),QStringLiteral("-18.00"));
+    QCOMPARE(f.m20.value("stereo").toMap().value("width").toString(),QStringLiteral("1.10"));
+    QCOMPARE(f.m21.value("metrics").toList().at(1).toMap().value("processed").toString(),
+             QStringLiteral("-14.00"));
+    QCOMPARE(f.m21.value("metrics").toList().at(1).toMap().value("processedDelta").toString(),
+             QStringLiteral("+1.00"));
+    QVERIFY(!f.m19.contains("stereo"));
+    QVERIFY(!f.m20.contains("levels"));
+    QVERIFY(!f.m21.contains("levels"));
 }
 
 } // namespace rgsml::tests
