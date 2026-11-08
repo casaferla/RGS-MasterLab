@@ -63,6 +63,21 @@ add_test(NAME rgsml_project_dependency_contract_tests
 set_tests_properties(rgsml_project_dependency_contract_tests PROPERTIES
     RUN_SERIAL TRUE LABELS "dependency_contract;project")
 
+# M23 nonrelease diagnostic projection consumes only real core ErrorCode/Status.
+# It never grants a Product export ticket, physical acceptance or I+P+M PASS.
+qt_add_executable(rgsml_m23_alpha_diagnostic_tests
+    unit/app/test_m23_alpha_diagnostic_report.cpp)
+target_include_directories(rgsml_m23_alpha_diagnostic_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_m23_alpha_diagnostic_tests PRIVATE
+    rgsml_core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m23_alpha_diagnostic_tests)
+add_test(NAME rgsml_m23_alpha_diagnostic_tests
+    COMMAND rgsml_m23_alpha_diagnostic_tests)
+set_tests_properties(rgsml_m23_alpha_diagnostic_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "m23;diagnostic;nonrelease")
+
 qt_add_executable(rgsml_project_json_tests unit/project/test_project_json.cpp)
 
 qt_add_executable(rgsml_project_roundtrip_tests unit/project/test_project_json.cpp)
@@ -305,6 +320,7 @@ qt_add_executable(rgsml_transactional_audio_export_tests
 target_include_directories(rgsml_transactional_audio_export_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/platform/windows/src
+        ${CMAKE_SOURCE_DIR}/app/src
 )
 target_compile_definitions(rgsml_transactional_audio_export_tests
     PRIVATE
