@@ -155,26 +155,32 @@ jobs:
             throw 'UI_PROJECTION_WINDOWS_TESTS_FAILED'
           }
           Get-Content $testlog -Tail 7
-      - name: Targeted real Main Qt reference wording, without unrelated legacy docking test
+      - name: Dedicated real Main.qml terminology probe (not full legacy docking smoke)
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           QT_QUICK_BACKEND: software
         run: |
           $qtRoot = "$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
-          $binary = Get-ChildItem -Path "build/m21-ui-typed/tests" -Filter "rgsml_source_metadata_panel_smoke.exe" -Recurse -File | Select-Object -First 1
-          if (-not $binary) { throw 'REFERENCE_UI_SOURCE_METADATA_BINARY_MISSING' }
+          $bounded = "$env:RUNNER_TEMP/rgs-ui-test-bounded.txt"
+          $binary = Get-ChildItem -Path "$env:GITHUB_WORKSPACE/build/m21-ui-typed" -Filter "rgsml_source_metadata_panel_smoke.exe" -Recurse -File | Select-Object -First 1
+          if (-not $binary) {
+            'REFERENCE_UI_SOURCE_METADATA_BINARY_MISSING: searched full build tree' | Set-Content $bounded
+            throw 'REFERENCE_UI_SOURCE_METADATA_BINARY_MISSING'
+          }
           $env:PATH = "$qtRoot/bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$qtRoot/qml;$env:QML2_IMPORT_PATH"
           $log = "$env:RUNNER_TEMP/reference-ui-targeted-qt-smoke.txt"
-          & $binary.FullName emptyReadyErrorAndWindowLifecycle -o "$log,txt"
+          & $binary.FullName referenceTerminologyOnRealMain -o "$log,txt"
           if ($LASTEXITCODE -ne 0) {
             if (Test-Path $log) {
-              Get-Content $log -Tail 65 | Set-Content "$env:RUNNER_TEMP/rgs-ui-test-bounded.txt"
+              Get-Content $log -Tail 65 | Set-Content $bounded
+            } else {
+              'REFERENCE_UI_TARGETED_QT_NO_LOG; see bounded failing step' | Set-Content $bounded
             }
             throw 'REFERENCE_UI_TARGETED_MAIN_QT_SMOKE_FAILED'
           }
-          Write-Output 'REFERENCE_UI_MAIN_QT_SMOKE_TARGETED_PASS'
+          Write-Output 'REFERENCE_UI_MAIN_QT_TERMINOLOGY_PASS'
 
       - name: Upload bounded Windows CTest failure only
         if: failure()
