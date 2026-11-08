@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void wrongTestMarkerCannotBecomeReadyQml();
     void invalidLifecycleBlocksDemoWithoutImplicitZero();
     void revokedFixtureImmediatelyMasksReadouts();
     void missingStateBlocksValidLookingOldPresenter();
@@ -398,6 +399,22 @@ void M19M21TypedQmlConvergenceTest::invalidLifecycleBlocksDemoWithoutImplicitZer
     QVERIFY(!view->rootObject()->property("available").toBool());
     QCOMPARE(view->rootObject()->property("analysisStatus").toString(),
              QStringLiteral("INVALID"));
+}
+
+void M19M21TypedQmlConvergenceTest::wrongTestMarkerCannotBecomeReadyQml()
+{
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"prepared",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,claim(p)));
+    IndependentPanelRouting route;
+    const auto denied=capture_test_panels(store,route,qt_review::ExplicitTestFixture{1U});
+    QVERIFY(!denied.test_fixture_only);
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,denied.m19);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(denied.m19.value("levels").toMap().isEmpty());
 }
 
 } // namespace rgsml::tests
