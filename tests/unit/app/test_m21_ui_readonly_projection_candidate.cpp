@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleM19ReadsAllFiveExpectedKeys();
     void independentPanelBundleStaleSelectedOwnerHidesNumbers();
     void independentPanelBundleMissingSelectedOwnerShowsNoNumbers();
     void independentPanelBundleCannotEnableReleaseByTamperingFrame();
@@ -1637,6 +1638,26 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleStaleSelectedOw
     QVERIFY(frame.m21.value("metrics").toList().isEmpty());
     QCOMPARE(frame.m21.value("columnLifecycles").toMap().value("prepared").toString(),
              QStringLiteral("STALE"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleM19ReadsAllFiveExpectedKeys()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    const auto f=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    const auto values=f.m19.value("levels").toMap();
+    const auto quality=f.m19.value("levelsQuality").toMap();
+    for(const auto* k:{"lufs","rms","samplePeak","truePeak","crest"}) {
+        const QString key=QString::fromLatin1(k);
+        QVERIFY(values.contains(key));
+        QVERIFY(quality.contains(key));
+    }
+    QCOMPARE(values.value("truePeak").toString(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(quality.value("truePeak").toString(),QStringLiteral("M16 UNQUALIFIED"));
+    QVERIFY(!f.m19.contains("metrics"));
 }
 
 } // namespace rgsml::tests
