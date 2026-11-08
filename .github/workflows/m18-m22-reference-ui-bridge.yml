@@ -30,6 +30,25 @@ jobs:
             exit 1
           fi
           tail -n 2 "$log"
+      - name: Independent M19/M20 numerical proof (portable, before Qt)
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            tools/qualification/m19/test_m19_independent_reference.py
+            tools/qualification/m19/test_m19_scope_grid_reference.py
+            tools/qualification/m19/test_m19_f07_decimal_reference.py
+            tools/qualification/m19/test_m19_f07_gate_decimal_reference.py
+            tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py
+            tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py
+            tools/qualification/m20/test_m20_independent_reference.py
+            tools/qualification/m20/test_m20_profile_reference.py
+            tools/qualification/m20/test_m20_stereo_reference.py
+            tools/qualification/m20/test_m20_u_g_preflight.py
+          )
+          for script in "${scripts[@]}"; do
+            python3 "$script"
+          done
       - name: Install Qt 6.8.3 and dependencies
         shell: bash
         run: |
@@ -121,6 +140,27 @@ jobs:
             throw 'BRIDGE_FROZEN_PRODUCT_AND_QT_CONTRACT_FAILED'
           }
           Get-Content $guardLog -Tail 2
+      - name: Independent M19/M20 numerical proof (Windows, before Qt)
+        shell: pwsh
+        run: |
+          $scripts = @(
+            "tools/qualification/m19/test_m19_independent_reference.py",
+            "tools/qualification/m19/test_m19_scope_grid_reference.py",
+            "tools/qualification/m19/test_m19_f07_decimal_reference.py",
+            "tools/qualification/m19/test_m19_f07_gate_decimal_reference.py",
+            "tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py",
+            "tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py",
+            "tools/qualification/m20/test_m20_independent_reference.py",
+            "tools/qualification/m20/test_m20_profile_reference.py",
+            "tools/qualification/m20/test_m20_stereo_reference.py",
+            "tools/qualification/m20/test_m20_u_g_preflight.py"
+          )
+          foreach ($script in $scripts) {
+            python $script
+            if ($LASTEXITCODE -ne 0) {
+              throw "M18_M22_NUMERICAL_REFERENCE_FAIL $script"
+            }
+          }
       - name: Install Qt 6.8.3 MSVC
         shell: pwsh
         run: |
