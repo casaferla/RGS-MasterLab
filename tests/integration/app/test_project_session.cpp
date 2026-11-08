@@ -945,6 +945,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     // DTOs. The captured immutable RenderResult owners and accepted
     // RealizationId MUST match the real Qt AuditionSourceSelector.
     using M21Owners=app::internal::M21ProductOwnerAnalysis;
+    using Handoff=app::internal::M21ProductAnalysisHandoff;
     auto analysisOwners=M21Owners::capture(
         controllers,fanout,session.selector);
     QVERIFY2(analysisOwners,
