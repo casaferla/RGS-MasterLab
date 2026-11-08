@@ -111,7 +111,11 @@ def main():
                    "view_current(", "current_product_owner",
                    "product_ui_authorized{false}",
                    "masked_unpublished_envelope",
-                   "routing.is_current_route("):
+                   "routing.is_current_route(",
+                   "privateQualityOnly",
+                   "m21_private::ui_candidate::quality_label(",
+                   "metric==3",
+                   "s.lifecycle==Lifecycle::current"):
         check(marker in bridge, "Private UI owner guard missing: "+marker)
 
     cmake = blob("HEAD", "tests/CMakeLists.txt")
