@@ -120,6 +120,8 @@ def main():
         "pre_terminal_pcm",
         "authorizes_release() const noexcept {return false;}",
         "M22_Q0_ACTUAL_FULL_OUTPUT_OR_PIN_MISMATCH",
+        "produced.value()->source_rate",
+        "produced.value()->output_rate",
     ),"M22 genuine Q0 preterminal conversion")
     actualtest=blob("HEAD",
         "tests/unit/render/test_m22_authentic_q0_candidate.cpp"
@@ -128,6 +130,7 @@ def main():
         "realPinnedQ0BothDirectionsExactReplay",
         "refusalAndIdentityDoNotBypassQ0",
         "allThirtyDirectedOriginalQ0FirsReallyProcessPCM",
+        "allSixIdentityRatesAreBitExactWithoutFIR",
         "std::size_t{30}",
         "stopAfterProgress",
         "quiet_NaN()",
