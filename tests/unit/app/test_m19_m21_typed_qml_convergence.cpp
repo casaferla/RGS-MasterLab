@@ -105,6 +105,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m19HeroReadoutUsesInputGainTypography();
     void wrongTestMarkerCannotBecomeReadyQml();
     void invalidLifecycleBlocksDemoWithoutImplicitZero();
     void revokedFixtureImmediatelyMasksReadouts();
@@ -415,6 +416,22 @@ void M19M21TypedQmlConvergenceTest::wrongTestMarkerCannotBecomeReadyQml()
     mount_explicit_demo(*view,denied.m19);
     QVERIFY(!view->rootObject()->property("available").toBool());
     QVERIFY(denied.m19.value("levels").toMap().isEmpty());
+}
+
+void M19M21TypedQmlConvergenceTest::m19HeroReadoutUsesInputGainTypography()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+        {"levels",QVariantMap{{"lufs","-14.00"},{"rms","-18.00"},
+              {"samplePeak","-1.20"},{"truePeak","UNAVAILABLE"},{"crest","16.80"}}}};
+    mount_explicit_demo(*view,map);
+    auto* readout=visual_by_name(view->rootObject(),"m19MetricValue_rms");
+    QVERIFY(readout);
+    QVERIFY(readout->property("heroReadout").toBool());
+    QCOMPARE(readout->property("numericPixelSize").toInt(),36);
+    QVERIFY(readout->property("readOnly").toBool());
+    QVERIFY(readout->property("dataAvailable").toBool());
 }
 
 } // namespace rgsml::tests
