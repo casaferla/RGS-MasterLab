@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void missingLifecycleNeverMasqueradesAsZero();
     void staleLifecycleMasksAllAbsoluteNumbers();
     void rejectAbsoluteFrameRangeOverflow();
     void rejectZeroLengthScope();
@@ -461,6 +462,20 @@ void M21UiReadonlyProjectionCandidateTest::staleLifecycleMasksAllAbsoluteNumbers
     for(const auto& cell:r.columns[0].values) {
         QVERIFY(cell.value_text=="STALE");
         QVERIFY(cell.quality_text=="STALE");
+        QVERIFY(!cell.numeric);
+    }
+}
+
+void M21UiReadonlyProjectionCandidateTest::missingLifecycleNeverMasqueradesAsZero()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[0]->lifecycle=Lifecycle::missing;
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(r.columns[0].state=="MISSING");
+    for(const auto& cell:r.columns[0].values) {
+        QVERIFY(cell.value_text=="UNAVAILABLE");
+        QVERIFY(cell.quality_text=="MISSING");
         QVERIFY(!cell.numeric);
     }
 }
