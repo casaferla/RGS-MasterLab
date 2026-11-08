@@ -240,6 +240,15 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::NO_MANUAL_OWNER);
                 result.value()->manual_owner=retained;
             }
+            // Same samples with a different manual-chain revision are stale.
+            {
+                const auto original=result.value()->manual_chain_revision;
+                ++result.value()->manual_chain_revision;
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::PARTIAL_OR_STALE_MANUAL);
+                result.value()->manual_chain_revision=original;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
