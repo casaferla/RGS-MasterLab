@@ -2191,6 +2191,38 @@ Window {
     QCOMPARE(imageQuarter.size(),imageThreeQuarter.size());
     QVERIFY2(imageQuarter!=imageThreeQuarter,
         "M17 OFFLINE GR cursor property moved but Canvas pixels did not");
+    // Review the actual whole M17 Qt editor, not just its 54-pixel GR
+    // ribbon. These are still SYNTHETIC waveform/GR test fixtures:
+    // never relabel them as real Windows playback or physical PO FQ.
+    // The same real QML editor instance must render the two positions.
+    const auto syntheticWholeM17=[&](double fraction,
+        const QString& name)->QImage {
+        if (!fixture->setProperty("grFraction",fraction)) return {};
+        QTest::qWait(160);
+        QCoreApplication::processEvents();
+        const auto grabbed=m17->grabToImage();
+        if(!grabbed)return {};
+        QSignalSpy ready{grabbed.data(),&QQuickItemGrabResult::ready};
+        if(ready.empty()&&!ready.wait(15000))return {};
+        const auto image=grabbed->image();
+        if(image.isNull()||image.width()<400||image.height()<200)
+            return {};
+        const auto folder=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if(!folder.isEmpty()) {
+            if(!QDir{}.mkpath(folder)
+               ||!image.save(QDir{folder}.filePath(name),"PNG"))
+                return {};
+        }
+        return image;
+    };
+    const auto wholeQuarter=syntheticWholeM17(
+        0.25,QStringLiteral("m17_gr_history_EDITOR_SYNTHETIC_cursor25.png"));
+    const auto wholeThreeQuarter=syntheticWholeM17(
+        0.75,QStringLiteral("m17_gr_history_EDITOR_SYNTHETIC_cursor75.png"));
+    QVERIFY(!wholeQuarter.isNull()&&!wholeThreeQuarter.isNull());
+    QCOMPARE(wholeQuarter.size(),wholeThreeQuarter.size());
+    QVERIFY2(wholeQuarter!=wholeThreeQuarter,
+        "M17 full editor raster failed to reflect GR playhead seek");
     const auto cursorX=[&](const QImage& image)->double {
         const double scale=double(image.width())/grItem->width();
         const int y=std::clamp(int(std::round(4*scale)),0,image.height()-1);
