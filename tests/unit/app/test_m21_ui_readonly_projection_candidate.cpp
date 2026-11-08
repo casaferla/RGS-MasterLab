@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void rejectAbsoluteFrameRangeOverflow();
     void rejectZeroLengthScope();
     void rejectUnsupportedMatchedRate();
     void rejectEmptyExactRealizationIdentity();
@@ -434,6 +435,17 @@ void M21UiReadonlyProjectionCandidateTest::rejectZeroLengthScope()
     Receipts owners{}; owners[0]=receipt(*snapshots[0]);
     const auto r=project_readonly(compose(snapshots),owners);
     QVERIFY(!r.columns[0].candidate_matched);
+    QVERIFY(!r.columns[0].values[1].numeric);
+}
+
+void M21UiReadonlyProjectionCandidateTest::rejectAbsoluteFrameRangeOverflow()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[0]->absolute_scope_begin=std::uint64_t(-1)-9;
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(!r.columns[0].candidate_matched);
+    QVERIFY(r.columns[0].state=="STALE");
     QVERIFY(!r.columns[0].values[1].numeric);
 }
 
