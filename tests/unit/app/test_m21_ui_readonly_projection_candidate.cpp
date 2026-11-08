@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreFreshReplacementWinsAfterStaleCompletion();
     void reviewStoreLateCompletionCannotRestoreOldPrepared();
     void reviewStoreNewGenerationStalesOldPrepared();
     void reviewStorePublishesOnlyAfterExactExpectedGeneration();
@@ -836,6 +837,21 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreLateCompletionCannotRestor
     QVERIFY(!store.receive(stale,receipt(stale)));
     QVERIFY(!store.snapshot().columns[0].candidate_matched);
     QVERIFY(store.snapshot().columns[0].state=="STALE");
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreFreshReplacementWinsAfterStaleCompletion()
+{
+    ReviewEpochStore store;
+    const auto old=example(Column::prepared,7,"p7",-18.0);
+    const auto newer=example(Column::prepared,8,"p8",-15.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(old,receipt(old)));
+    QVERIFY(store.begin(Column::prepared,8));
+    QVERIFY(!store.receive(old,receipt(old)));
+    QVERIFY(store.receive(newer,receipt(newer)));
+    QVERIFY(store.snapshot().columns[0].candidate_matched);
+    QVERIFY(store.snapshot().columns[0].values[1].value_text=="-15.00");
+    QVERIFY(!store.receive(old,receipt(old)));
 }
 
 } // namespace rgsml::tests
