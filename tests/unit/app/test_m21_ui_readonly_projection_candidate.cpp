@@ -18,6 +18,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <type_traits>
 
 namespace rgsml::tests {
 class M21UiReadonlyProjectionCandidateTest final : public QObject {
@@ -29,6 +30,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreIsNonCopyableSingleWriterState();
     void reviewStoreSelectionDoesNotChangeOwnerReceipts();
     void reviewStoreSelectingPendingGoldCannotExposePrepared();
     void reviewStoreTestMarkerCannotGrantProductionAccess();
@@ -1202,6 +1204,17 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreSelectionDoesNotChangeOwne
     QVERIFY(after.columns[1].candidate_matched==before.columns[1].candidate_matched);
     QVERIFY(after.prepared_to_gold[1].value_text==before.prepared_to_gold[1].value_text);
     QVERIFY(!after.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreIsNonCopyableSingleWriterState()
+{
+    static_assert(!std::is_copy_constructible_v<ReviewEpochStore>);
+    static_assert(!std::is_copy_assignable_v<ReviewEpochStore>);
+    static_assert(!std::is_move_constructible_v<ReviewEpochStore>);
+    static_assert(!std::is_move_assignable_v<ReviewEpochStore>);
+    ReviewEpochStore store;
+    QVERIFY(store.selected()==Column::prepared);
+    QVERIFY(!store.unpublished().value("ready").toBool());
 }
 
 } // namespace rgsml::tests
