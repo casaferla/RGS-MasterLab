@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreSelectionDoesNotChangeOwnerReceipts();
     void reviewStoreSelectingPendingGoldCannotExposePrepared();
     void reviewStoreTestMarkerCannotGrantProductionAccess();
     void reviewStoreWrongColumnCannotOverwriteGold();
@@ -1182,6 +1183,25 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreSelectingPendingGoldCannot
     QCOMPARE(store.test_preview(qt_review::ExplicitTestFixture{0x4D323147U})
              .value("levels").toMap().value("rms").toString(),
              QStringLiteral("-18.00"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreSelectionDoesNotChangeOwnerReceipts()
+{
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    const auto before=store.snapshot();
+    QVERIFY(store.select(Column::gold));
+    QVERIFY(store.select(Column::prepared));
+    const auto after=store.snapshot();
+    QVERIFY(after.columns[0].candidate_matched==before.columns[0].candidate_matched);
+    QVERIFY(after.columns[1].candidate_matched==before.columns[1].candidate_matched);
+    QVERIFY(after.prepared_to_gold[1].value_text==before.prepared_to_gold[1].value_text);
+    QVERIFY(!after.production_authorized);
 }
 
 } // namespace rgsml::tests
