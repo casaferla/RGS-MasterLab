@@ -1,5 +1,6 @@
 #include "m22_checked_output_clock_candidate.hpp"
 #include "m22_checked_output_pcm_candidate.hpp"
+#include "m22_final_src_frozen_pin_candidate.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -155,6 +156,61 @@ private slots:
                     PcmClockFailure::WRONG_OUTPUT_RATE);
             }
         }
+    }
+    void onlyActualFrozenQ0AssetIdentityForAll30Routes() {
+        using namespace rgsml::m22_private;
+        constexpr std::array<std::uint32_t,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        std::size_t crossCount=0;
+        for(const auto source:rates)for(const auto output:rates) {
+            const auto g=std::gcd(source,output);
+            const auto L=output/g, M=source/g;
+            const auto expectedName=std::string("RGSMSR1_L")
+                +std::to_string(L)+"_M"+std::to_string(M)+".bin";
+            OutputClockFailure clockFailure{};
+            OutputClockDeclaration d{source,output,8003,
+                source==output ? 8003U:9011U,"real-M17-master-owner",
+                source==output ? "" : expectedName};
+            const auto clock=CheckedOutputClockCandidate::freeze(
+                d,clockFailure);
+            QVERIFY(clock);
+            QCOMPARE(clockFailure,OutputClockFailure::NONE);
+            FrozenFirFailure pinFailure{};
+            const auto pinned=bind_frozen_original_q0_identity_candidate(
+                *clock,pinFailure);
+            QVERIFY(pinned);
+            QCOMPARE(pinFailure,FrozenFirFailure::NONE);
+            QVERIFY(!pinned->authorizes_release());
+            if(source==output) {
+                QVERIFY(pinned->identity_bypass);
+                QVERIFY(pinned->pinned_sha256.empty());
+                QCOMPARE(pinned->L,std::uint32_t{1});
+                QCOMPARE(pinned->M,std::uint32_t{1});
+            }else {
+                ++crossCount;
+                QVERIFY(!pinned->identity_bypass);
+                QCOMPARE(pinned->L,L);
+                QCOMPARE(pinned->M,M);
+                QCOMPARE(pinned->pinned_asset_name,expectedName);
+                QCOMPARE(pinned->pinned_sha256.size(),std::size_t{64});
+                QVERIFY(pinned->frozen_taps_per_phase>0);
+                QVERIFY(pinned->frozen_total_taps>0);
+                auto substituted=d;
+                substituted.selected_final_src_asset_id=
+                    "RGSMSR1_L1_M2.bin";
+                if(substituted.selected_final_src_asset_id==expectedName)
+                    substituted.selected_final_src_asset_id=
+                        "RGSMSR1_L2_M1.bin";
+                const auto forgedClock=CheckedOutputClockCandidate::freeze(
+                    substituted,clockFailure);
+                QVERIFY(forgedClock); // metadata validation alone is weak
+                QVERIFY(!bind_frozen_original_q0_identity_candidate(
+                    *forgedClock,pinFailure));
+                QCOMPARE(pinFailure,
+                         FrozenFirFailure::WRONG_FROZEN_ASSET_NAME);
+            }
+        }
+        QCOMPARE(crossCount,std::size_t{30});
     }
     void missingAndInvalidNeverFallbackToBypass() {
         using namespace rgsml::m22_private;
