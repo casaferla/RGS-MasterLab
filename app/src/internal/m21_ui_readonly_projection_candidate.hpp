@@ -86,7 +86,12 @@ struct ReadOnlyProjection final {
     out.imbue(std::locale::classic());
     if(delta && value>0.0)out << '+';
     out << std::fixed << std::setprecision(2) << value;
-    return out.str();
+    const auto displayed=out.str();
+    // A real nonzero sub-centibel delta may round to zero. Its display
+    // must not suggest a negative/positive 0.00 value; the unrounded
+    // upstream metric remains unchanged for all subsequent comparisons.
+    if(displayed=="-0.00" || displayed=="+0.00")return "0.00";
+    return displayed;
 }
 [[nodiscard]] inline ReadOnlyCell display_cell(const Cell& cell,
                                                 std::size_t metric_index,
