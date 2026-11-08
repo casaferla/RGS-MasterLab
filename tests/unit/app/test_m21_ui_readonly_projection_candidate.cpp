@@ -185,6 +185,34 @@ realM19M20DataCanBeProjectedOnlyAsPreproduction() {
     QVERIFY(view.columns[0].values[5].quality_text=="NOT APPLICABLE");
     QVERIFY(!view.production_authorized);        // Still private candidate
     QVERIFY(!view.prepared_to_gold[1].numeric);    // No Gold owner
+
+    // This UI envelope is derived from ACTUAL M19/M20 AudioBuffer
+    // measurements, never from a hand-written level value. It may be
+    // displayed only as an explicitly marked non-Product test fixture.
+    using namespace app::m21_private::ui_candidate::qt_review;
+    const auto realReview=candidate_test_fixture_envelope(
+        view,Column::prepared,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(realReview.value("fixtureMode").toBool());
+    QVERIFY(realReview.value("ready").toBool());
+    QVERIFY(!realReview.value("productionAuthorized").toBool());
+    const auto fields=realReview.value("levels").toMap();
+    bool numberOk=false;
+    const double displayRms=fields.value("rms").toString().toDouble(&numberOk);
+    QVERIFY(numberOk);
+    QVERIFY(std::isfinite(displayRms));
+    QVERIFY(std::abs(displayRms-*imported.snapshot->metrics[1].unrounded)
+            <=0.0051); // decimal UI rounds ONLY at display time
+    QCOMPARE(fields.value("truePeak").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(realReview.value("stereo").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QCOMPARE(realReview.value("spectrumStatus").toString(),
+             QStringLiteral("UNAVAILABLE")); // no fabricated static PSD plot
+    QCOMPARE(realReview.value("tonalProfileStatus").toString(),
+             QStringLiteral("UNAVAILABLE")); // no invented dB shape
+    // Even for this real buffer, the ordinary unpublished envelope is
+    // masked and cannot become a production result via test receipt claims.
+    QVERIFY(!masked_unpublished_envelope().value("ready").toBool());
 }
 
 void M21UiReadonlyProjectionCandidateTest::
