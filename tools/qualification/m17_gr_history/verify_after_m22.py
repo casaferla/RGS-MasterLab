@@ -30,7 +30,7 @@ ORIGINAL = {
 GRAFTED = {
     "ui/qml/Main.qml":"4b4af77e532accb9f0e7742ba55a01f1d29ed57d",
     "tests/ui_smoke/test_source_metadata_panel.cpp":
-        "ae83b13e14981963e208ab138c33f7ee1a1bb7bc",
+        "c9f28a952e0b9081a68a09cf164a7d799e0561d1",
 }
 BRIDGE = {
     "docs/architecture/M17_GR_AFTER_M22_REBASE_20261108.md",
@@ -113,6 +113,9 @@ def main():
         "referenceTerminologyOnRealMain",
         "m17_gr_history_SYNTHETIC_cursor25.png",
         "m17_gr_history_SYNTHETIC_cursor75.png",
+        "m17_gr_history_EDITOR_SYNTHETIC_cursor25.png",
+        "m17_gr_history_EDITOR_SYNTHETIC_cursor75.png",
+        "M17 full editor raster failed to reflect GR playhead seek",
         "QVERIFY(!grPlot->property(\"playheadAvailable\").toBool());",
         "NON-CONFORMING",
     ):
