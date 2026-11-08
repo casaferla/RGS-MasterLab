@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <numeric>
+#include <limits>
 #include <string>
 
 namespace rgsml::tests {
@@ -233,6 +234,16 @@ private slots:
         QVERIFY(!CheckedOutputClockCandidate::freeze(d,reason));
         QCOMPARE(reason,OutputClockFailure::INVALID_LENGTH);
         d.declared_full_output_frames=9011;
+        const auto cap=static_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max());
+        auto badSource=d;
+        badSource.source_processing_frames=cap+1;
+        QVERIFY(!CheckedOutputClockCandidate::freeze(badSource,reason));
+        QCOMPARE(reason,OutputClockFailure::INVALID_LENGTH);
+        auto badOutput=d;
+        badOutput.declared_full_output_frames=cap+1;
+        QVERIFY(!CheckedOutputClockCandidate::freeze(badOutput,reason));
+        QCOMPARE(reason,OutputClockFailure::INVALID_LENGTH);
         const auto valid=CheckedOutputClockCandidate::freeze(d,reason);
         QVERIFY(valid);
         for(const Window invalid:{
