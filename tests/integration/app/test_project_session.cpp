@@ -9,6 +9,7 @@
 #include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m21_product_qt_readiness_bridge.hpp"
 #include "internal/m21_product_analysis_handoff.hpp"
+#include "m21_product_status_view_model.hpp"
 #include "internal/m21_product_spectrum_evidence.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
@@ -646,6 +647,21 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
     QVERIFY(independentGoldPanels.current_product_owner);
     QVERIFY(!independentGoldPanels.product_ui_authorized);
+    app::M21ProductStatusViewModel goldNativeStatus{
+        controllers,fanout,session.selector,session.gold,goldInbox};
+    QVERIFY(!goldNativeStatus.production_authorized());
+    QVERIFY(goldNativeStatus.selectPanelSource(
+        1,QStringLiteral("REFERENCE")));
+    QCOMPARE(goldNativeStatus.m20().value("sourceRole").toString(),
+             QStringLiteral("REFERENCE"));
+    QCOMPARE(goldNativeStatus.m20().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
+    QVERIFY(goldNativeStatus.m20().value("spectrum").toList().isEmpty());
+    QVERIFY(!goldNativeStatus.selectPanelSource(
+        1,QStringLiteral("GOLD"))); // internal token never public UI
+    QVERIFY(!goldNativeStatus.selectPanelSource(
+        7,QStringLiteral("REFERENCE")));
     QCOMPARE(independentGoldPanels.panels[0].value(
         "privateEvidenceStatus").toString(),QStringLiteral("MISSING"));
     QCOMPARE(independentGoldPanels.panels[1].value(
@@ -712,6 +728,13 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!GoldQtReadiness::still_current(independentGoldPanels,
         controllers,fanout,session.selector,session.gold,
         goldInbox,goldRouting));
+    goldNativeStatus.refresh();
+    QVERIFY(!goldNativeStatus.production_authorized());
+    QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
+    QCOMPARE(goldNativeStatus.m20().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+    QVERIFY(goldNativeStatus.m20().value(
+        "privateQualityOnly").toMap().isEmpty());
     QVERIFY(!Handoff::publish_on_owner(
         controllers,fanout,session.selector,session.gold,
         handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
@@ -1030,6 +1053,33 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(privatePanels.current_product_owner);
     QVERIFY(!privatePanels.product_ui_authorized);
     QVERIFY(privatePanels.owner_epoch>0);
+    // Concrete Qt QObject installed by app/main.cpp observes only
+    // authenticated Product-derived statuses, no fake numeric rows.
+    app::M21ProductStatusViewModel liveNativeStatus{
+        controllers,fanout,session.selector,session.gold,productInbox};
+    QVERIFY(!liveNativeStatus.production_authorized());
+    QCOMPARE(liveNativeStatus.m19().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QVERIFY(liveNativeStatus.selectPanelSource(
+        1,QStringLiteral("PROCESSED")));
+    QCOMPARE(liveNativeStatus.m20().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(liveNativeStatus.m20().value("sourceRole").toString(),
+             QStringLiteral("PROCESSED"));
+    QVERIFY(liveNativeStatus.m20().value("stereo").toMap().isEmpty());
+    QVERIFY(liveNativeStatus.m21().value("metrics").toList().isEmpty());
+    QVERIFY(!liveNativeStatus.selectPanelSource(
+        -1,QStringLiteral("PREPARED")));
+    QVERIFY(!liveNativeStatus.selectPanelSource(
+        0,QStringLiteral("INVALID")));
+    bool workerUiRejected=false;
+    std::thread foreignStatus([&] {
+        workerUiRejected=!liveNativeStatus.selectPanelSource(
+            0,QStringLiteral("REFERENCE"));
+        liveNativeStatus.refresh(); // no-op off owner Qt thread
+    });
+    foreignStatus.join();
+    QVERIFY(workerUiRejected);
     const auto qtProductOwner=fanout.current_owner_snapshot();
     QVERIFY(qtProductOwner);
     QCOMPARE(privatePanels.owner_epoch,qtProductOwner->epoch);
@@ -1587,6 +1637,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     const auto stalePrivatePanels=QtReadiness::capture(controllers,fanout,
         session.selector,session.gold,productInbox,analysisRouting);
     QVERIFY(!stalePrivatePanels.product_ui_authorized);
+    liveNativeStatus.refresh();
+    QVERIFY(!liveNativeStatus.production_authorized());
+    QVERIFY(!liveNativeStatus.m19().value("ready").toBool());
+    QVERIFY(liveNativeStatus.m19().value(
+        "privateQualityOnly").toMap().isEmpty());
     QVERIFY(!stalePrivatePanels.panels[0].value("ready").toBool());
     QVERIFY(stalePrivatePanels.panels[0]
         .value("privateQualityOnly").toMap().isEmpty());
