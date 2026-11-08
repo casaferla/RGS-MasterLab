@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void negativeGoldMinusCurrentDeltaRetainsSign();
     void actualZeroIsNumericNotUnavailable();
     void nanMetricRemainsInvalidNotZero();
     void invalidPresentCellWithoutScalarNeverRenders();
@@ -591,6 +592,19 @@ void M21UiReadonlyProjectionCandidateTest::actualZeroIsNumericNotUnavailable()
     QVERIFY(view.columns[0].values[1].numeric);
     QVERIFY(view.columns[0].values[1].value_text=="0.00");
     QVERIFY(view.columns[0].values[1].quality_text=="CURRENT");
+}
+
+void M21UiReadonlyProjectionCandidateTest::negativeGoldMinusCurrentDeltaRetainsSign()
+{
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[1]=example(Column::gold,3,"g",-20.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    owners[1]=receipt(*snapshots[1]);
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(view.prepared_to_gold[1].numeric);
+    QVERIFY(view.prepared_to_gold[1].value_text=="-2.00");
+    QVERIFY(view.prepared_to_gold[1].unit_text=="dB");
 }
 
 } // namespace rgsml::tests
