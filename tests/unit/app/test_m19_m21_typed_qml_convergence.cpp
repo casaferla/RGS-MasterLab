@@ -106,6 +106,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m20RefusesStaleSpectrumAlthoughPointsExist();
     void referenceBadgeUsesApprovedUserFacingName();
     void missingGoldBadgeIsVisuallyMuted();
     void m21RealTypedComparisonRequiresCurrentSelectedOwner();
@@ -593,6 +594,21 @@ void M19M21TypedQmlConvergenceTest::referenceBadgeUsesApprovedUserFacingName()
     }
     QVERIFY(foundReference); // Internal GOLD objectName remains unchanged
     QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::m20RefusesStaleSpectrumAlthoughPointsExist()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList spectrum{QVariantMap{{"x",0.0},{"y",0.1}},
+                                QVariantMap{{"x",1.0},{"y",0.9}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"spectrum",spectrum},{"spectrumStatus","STALE"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice && notice->isVisible());
 }
 
 } // namespace rgsml::tests
