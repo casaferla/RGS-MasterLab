@@ -22,6 +22,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -61,7 +62,7 @@ private:
             audio::FrameDomainId::SOURCE_PROCESSING_RATE,
             core::FrameIndex{0},*count.value());
         if(!result)return result;
-        for(std::size_t ch=0;ch<layout==audio::ChannelLayout::MONO_C?1U:2U;++ch) {
+        for(std::size_t ch=0;ch<result.value()->view().format().channel_count();++ch) {
             auto plane=result.value()->mutable_view().channel(ch);
             if(!plane)return core::Result<audio::AudioBuffer>::failure(*plane.error());
             for(std::size_t i=0;i<plane.value()->size();++i) {
