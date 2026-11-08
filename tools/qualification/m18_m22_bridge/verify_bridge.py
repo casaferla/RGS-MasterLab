@@ -5,6 +5,7 @@ Does not authorize Product registration, CI/PO FQ, or any main integration.
 from pathlib import Path
 import subprocess
 import sys
+import difflib
 
 ROOT = Path(__file__).resolve().parents[3]
 BASE = "5a5b9b7e4b01779832e32662d5c6b66b23087ce9"  # M22 CI#12 SUCCESS
@@ -49,14 +50,15 @@ ADDED = {
     "tools/qualification/m18_m22_bridge/verify_bridge.py",
     ".github/workflows/m18-m22-reference-ui-bridge.yml",
     "docs/architecture/M18_M22_REFERENCE_GUI_ISOLATED_BRIDGE_20261108.md",
+    "app/src/internal/m21_product_qt_readiness_bridge.hpp",
+    "tests/integration/app/test_project_session.cpp",
 }
 PROTECTED = (
     "core/src/processing_state.cpp",
     "project/include/rgsml/project/project_document.hpp",
     "project/src/project_snapshot.cpp",
     "project/src/internal/canonical_json.cpp",
-    "tests/integration/app/test_project_session.cpp",
-    "render/src/internal/m22_request_plan_candidate.hpp",
+        "render/src/internal/m22_request_plan_candidate.hpp",
     "app/src/internal/m21_product_owner_analysis.hpp",
     "app/src/internal/m21_product_publication_inbox.hpp",
 )
@@ -84,6 +86,33 @@ def main():
     for path in PROTECTED:
         check(blob("HEAD", path) == blob(BASE, path),
               "Protected canonical M22/Product/state changed: " + path)
+
+    # The real M22 ProductSession and M21 worker tests may only gain
+    # assertions; never drop/alter historical Product gates to go green.
+    test_path = "tests/integration/app/test_project_session.cpp"
+    baseline = blob(BASE, test_path).decode().splitlines(keepends=True)
+    current = blob("HEAD", test_path).decode().splitlines(keepends=True)
+    changes = difflib.SequenceMatcher(a=baseline, b=current, autojunk=False)
+    check(all(tag in ("equal", "insert") for tag,*_ in changes.get_opcodes()),
+          "Existing M22 ProductSession assertions deleted or altered")
+    joined = "".join(current)
+    for marker in (
+        '#include "internal/m21_product_qt_readiness_bridge.hpp"',
+        "using QtReadiness=app::internal::M21ProductQtReadinessBridge;",
+        "privatePanels.current_product_owner",
+        "MISSING",
+        "privatePanels.panels[0].value(\"levels\").toMap().isEmpty()",
+        "QtReadiness::still_current(reroutedPanels",
+    ):
+        check(marker in joined, "M21 real-owner Qt regression absent: "+marker)
+    bridge = blob("HEAD",
+        "app/src/internal/m21_product_qt_readiness_bridge.hpp").decode()
+    for marker in ("M21ProductPublicationInbox",
+                   "view_current(", "current_product_owner",
+                   "product_ui_authorized{false}",
+                   "masked_unpublished_envelope",
+                   "routing.is_current_route("):
+        check(marker in bridge, "Private UI owner guard missing: "+marker)
 
     cmake = blob("HEAD", "tests/CMakeLists.txt")
     original = blob(BASE, "tests/CMakeLists.txt")
