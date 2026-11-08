@@ -249,6 +249,15 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::PARTIAL_OR_STALE_MANUAL);
                 result.value()->manual_chain_revision=original;
             }
+            // A forged source frame count cannot legitimize a partial Master.
+            {
+                const auto original=result.value()->programme_frames;
+                result.value()->programme_frames=frame_count(256);
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::PARTIAL_OR_STALE_MANUAL);
+                result.value()->programme_frames=original;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
