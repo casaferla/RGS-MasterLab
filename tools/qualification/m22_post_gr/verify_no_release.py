@@ -196,12 +196,13 @@ def main():
     ).decode()
     require(checked_window,(
         "observe_verified_full_output_window_candidate(",
-        "observe_real_complete_chain_candidate(full,witness_failure)",
-        "witnessed->actual_master_frames",
+        "observe_real_full_output_plan_candidate(",
+        "planned->output.required_output_true_eos",
+        "planned->native.actual_master_frames",
         "full_pcm.subview(absolute_output_window.begin()",
         "FrameDomainId::OUTPUT_RATE",
         "authorizes_release() const noexcept {return false;}",
-        "M22_PREVIEW_REQUIRES_REAL_FULL_MANUAL_Q0_M17_M16",
+        "M22_PREVIEW_REQUIRES_REAL_CHECKED_OUTPUT_PLAN",
     ),"True full-M17 output-rate crop candidate")
     native_plan=blob("HEAD",
         "render/src/internal/m22_real_verified_output_plan_candidate.hpp"
