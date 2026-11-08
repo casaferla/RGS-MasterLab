@@ -106,6 +106,7 @@ private slots:
     void m21ComparisonRendersOnlyEligibleTypedRows();
     void truePeakIsNeverAuthorizedByTestPreview();
     void dockHostRemainsPreviewOnly();
+    void m21UnavailableDataDoesNotBecomeZeroAfterPanelChange();
     void changingPresentationRevokesOldAvailableContentImmediately();
     void m20RefusesLowSupportTonalProfileAsFullValidatedCurve();
     void m20RefusesStaleSpectrumAlthoughPointsExist();
@@ -642,6 +643,24 @@ void M19M21TypedQmlConvergenceTest::changingPresentationRevokesOldAvailableConte
     QVERIFY(!view->rootObject()->property("available").toBool());
     QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
     auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m21UnavailableDataDoesNotBecomeZeroAfterPanelChange()
+{
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList rows{QVariantMap{{"name","RMS"},{"prepared","-18.00"},
+             {"gold","UNAVAILABLE"},{"processed","UNAVAILABLE"},
+             {"preparedDelta","UNAVAILABLE"},{"processedDelta","UNAVAILABLE"}}};
+    QVariantMap data{{"ready",true},{"analysisStatus","CURRENT"},{"metrics",rows}};
+    mount_explicit_demo(*view,data);
+    QVERIFY(view->rootObject()->property("comparisonAvailable").toBool());
+    QVERIFY(view->rootObject()->setProperty("presentation",
+        QVariantMap{{"ready",false},{"metrics",QVariantList{}}}));
+    QCoreApplication::processEvents();
+    QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m21MissingComparisonNotice");
     QVERIFY(notice && notice->isVisible());
 }
 
