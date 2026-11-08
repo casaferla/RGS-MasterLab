@@ -54,6 +54,7 @@ ADDED = {
     "app/src/internal/m21_product_spectrum_evidence.hpp",
     "app/src/internal/m22_product_preview_admission.hpp",
     "app/src/internal/m21_product_analysis_handoff.hpp",
+    "app/src/internal/m22_product_verified_dispatch.hpp",
     "app/src/m21_product_status_view_model.hpp",
     "app/src/m21_product_status_view_model.cpp",
     "app/src/main.cpp",
@@ -174,6 +175,26 @@ def main():
         "PreviewAdmission::still_current(",
     ):
         check(required in joined, "M22 real Product preview acceptance test absent: "+required)
+
+    delivery=blob("HEAD",
+        "app/src/internal/m22_product_verified_dispatch.hpp").decode()
+    for required in ("M18PrivateProductExportAction",
+                     "M22ProductPreviewAdmission",
+                     "Binding::can_offer_verified_master(product,fanout)",
+                     "exporter.can_begin_verified_export()",
+                     "return exporter.begin(",
+                     "return Preview::capture("):
+        check(required in delivery, "M22 verified M18/M17 dispatcher absent: "+required)
+    for required in (
+        '#include "internal/m22_product_verified_dispatch.hpp"',
+        "using M22Dispatch=app::internal::M22ProductVerifiedDispatch;",
+        "const auto dispatched=M22Dispatch::begin_full(",
+        "M22Dispatch::begin_preview(",
+        "action.snapshot().verified_encoded_sha256.size()",
+        "std::bit_cast<std::uint64_t>(actualWav)",
+        "kMaxDitherQuantizerError",
+    ):
+        check(required in joined, "M22 genuine full WAV/preview regression absent: "+required)
 
     # Reuse the real Product M18 Qt instance; the native M21 ViewModel
     # is strictly a status presenter until authoritative Phase-6 gates.
