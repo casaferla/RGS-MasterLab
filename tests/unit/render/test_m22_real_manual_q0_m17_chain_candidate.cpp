@@ -286,6 +286,14 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
                 result.value()->terminal.checked.final_check=original;
             }
+            // An asserted bypass can never borrow an active verified M16.
+            {
+                result.value()->terminal.checked.terminal.bypassed=true;
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
+                result.value()->terminal.checked.terminal.bypassed=false;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
