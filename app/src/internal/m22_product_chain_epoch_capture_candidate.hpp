@@ -80,7 +80,7 @@ public:
            ||product.candidates.staged()!=expected)
             return R::failure(fail("M22_PRODUCT_CHAIN_CHANGED_DURING_CAPTURE"));
         return R::success(Capture{
-            *owner,source->reference(),std::move(expected),std::move(*witness)});
+            *owner,source->reference(),std::move(expected),*witness});
     }
 
     [[nodiscard]] static bool still_current(
