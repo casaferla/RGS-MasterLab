@@ -17,17 +17,18 @@ Item {
     property bool showLimiterControls: false
     property bool limiterBypassed: true
     property bool limiterSonicControlsEnabled: false
-    property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
+    property real grTimelineFraction: -1
+    property string grTimelineScope: ""
     property var limiterViewModel: null
     property var monitorViewModel: null
     readonly property bool devicePreparing: root.showLimiterGrHistory
         && root.monitorViewModel && root.monitorViewModel.monitorPreparing
     // The lower bay is stable: show PREPARATION only for an actual job.
     // READY, MONITOR, Return to Source, ERROR, BYPASS and NEEDS PREPARATION
-    // all show the GR HISTORY chrome. In those states the graph is EMPTY
-    // unless its independently authenticated OUTPUT-consumption witness
-    // exists; a prepared MASTER is not itself proof of audible GR.
+    // all show the GR HISTORY chrome. A current source-bound MASTER may
+    // show its immutable OFFLINE SAMPLED GR without asserting a device
+    // consumed-output LIVE measurement. No current MASTER means EMPTY.
     readonly property string terminalAudioStatus: root.limiterViewModel
         ? root.limiterViewModel.audioStatus : ""
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
@@ -258,23 +259,14 @@ Item {
                                         && root.limiterViewModel.audioStatus.startsWith("Preparing")
                                           ? "OFFLINE · IN PROGRESS" : "OFFLINE · NOT RUNNING"
                                     : root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
-                                    : grHistoryGraph.verifiedSeriesAvailable
-                                        ? "LIVE · CONSUMED GR"
-                                        : grHistoryGraph.offlineSeriesAvailable
-                                          ? root.limiterOfflineGrProvider.offlineStatus
-                                          : "NOT PREPARED · NO GR DATA"
+                                    : grHistoryGraph.offlineSeriesAvailable
+                                        ? root.limiterOfflineGrProvider.offlineStatus.indexOf("NON-CONFORMING") >= 0
+                                            ? "NON-CONFORMING" : "OFFLINE · SAMPLED"
+                                        : "NO GR DATA"
                                 color: "#91A8B7"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
                                 font.weight: Font.Bold
-                                HoverHandler { id: grStatusHover }
-                                ToolTip.text: "OFFLINE shows sampled actual M17 gain applied to this MASTER; LIVE requires independently witnessed consumed device output. No source, bypass or stale owner means no curve."
-                                ToolTip.visible: (grStatusHover.hovered) && stationaryTooltipDwell1.ready
-                                ToolTip.delay: 0
-                                StudioTooltipDwell {
-                                    id: stationaryTooltipDwell1
-                                    anchors.fill: parent
-                                }
                             }
                         }
                         ColumnLayout {
@@ -420,14 +412,12 @@ Item {
                             Layout.preferredHeight: root.height < 420 ? 42 : 54
                             Layout.maximumHeight: root.height < 420 ? 42 : 54
                             familyAccent: root.familyAccent
-                            backendVerified: root.limiterGrProvider
-                                ? root.limiterGrProvider.verified : false
-                            verifiedHistory: root.limiterGrProvider
-                                ? root.limiterGrProvider.verifiedSeries : []
                             backendOfflineAvailable: root.limiterOfflineGrProvider
                                 ? root.limiterOfflineGrProvider.offlineAvailable : false
                             offlineHistory: root.limiterOfflineGrProvider
                                 ? root.limiterOfflineGrProvider.offlineSeries : []
+                            timelineFraction: root.grTimelineFraction
+                            timelineScope: root.grTimelineScope
                             bypassed: root.limiterBypassed
                         }
                     }
