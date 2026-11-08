@@ -1486,7 +1486,8 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         // -> REAL user-consented M18 IEEE_F32 WAV -> independently
         // decoded samples. Quantization must be exactly one f64->f32
         // cast; no second compressor/limiter or region-only rerender.
-        if(encoding==audio::WavSampleFormat::IEEE_F32) {
+        if(encoding==audio::WavSampleFormat::IEEE_F32
+            ||encoding==audio::WavSampleFormat::PCM_S24) {
             auto decodedExport=audio::AudioBuffer::create(
                 *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
                 core::FrameIndex{0},*frames.value());
@@ -1509,11 +1510,26 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
                 QCOMPARE(finalM17.value()->size(),finalWav.value()->size());
                 for(std::size_t sample=0;
                     sample<finalWav.value()->size();++sample) {
-                    const auto expected=static_cast<double>(
-                        static_cast<float>((*finalM17.value())[sample]));
-                    QCOMPARE(std::bit_cast<std::uint64_t>(
-                                 (*finalWav.value())[sample]),
-                             std::bit_cast<std::uint64_t>(expected));
+                    const auto checkedMaster=(*finalM17.value())[sample];
+                    const auto actualWav=(*finalWav.value())[sample];
+                    QVERIFY(std::isfinite(checkedMaster));
+                    QVERIFY(std::isfinite(actualWav));
+                    if(encoding==audio::WavSampleFormat::IEEE_F32) {
+                        const auto expected=static_cast<double>(
+                            static_cast<float>(checkedMaster));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(actualWav),
+                                 std::bit_cast<std::uint64_t>(expected));
+                    }else {
+                        // Genuine M18 Philox/TPDF PCM24 quantization may
+                        // vary individual bits but cannot create a second
+                        // sound stage. Eight PCM24 LSB is a deliberately
+                        // loose dither+quantizer upper bound, NOT a
+                        // substitute for the frozen statistical QTP.
+                        constexpr double kMaxDitherQuantizerError=
+                            8.0/8388608.0;
+                        QVERIFY(std::abs(actualWav-checkedMaster)
+                                <=kMaxDitherQuantizerError);
+                    }
                 }
             }
         }
