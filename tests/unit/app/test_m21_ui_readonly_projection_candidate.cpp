@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreRejectsWrongSourceScopeWithoutInstalling();
     void reviewStoreRefusesWrongOwnerWithoutInstalling();
     void reviewStoreRejectsZeroAndBackwardGenerations();
     void reviewStoreRejectsPublishWithoutBeginningEpoch();
@@ -968,6 +969,19 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreRefusesWrongOwnerWithoutIn
     QVERIFY(store.receive(p,receipt(p))); // same pending epoch remains usable
     QVERIFY(store.snapshot().columns[0].candidate_matched);
     QVERIFY(store.snapshot().columns[0].values[1].value_text=="-18.00");
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreRejectsWrongSourceScopeWithoutInstalling()
+{
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto claim=receipt(p);
+    claim.absolute_scope_begin+=1;
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(!store.receive(p,claim));
+    QVERIFY(!store.snapshot().columns[0].candidate_matched);
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.snapshot().columns[0].candidate_matched);
 }
 
 } // namespace rgsml::tests
