@@ -4,6 +4,7 @@
 #pragma once
 #include "m22_request_plan_candidate.hpp"
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -54,8 +55,14 @@ public:
             failure=OutputClockFailure::MISSING_IDENTITY;
             return std::nullopt;
         }
+        // Canonical FrameCount/FrameIndex use signed 64-bit storage:
+        // reject non-representable values before any cast or QML publish.
+        constexpr auto limit=static_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max());
         if(d.source_processing_frames==0
-           ||d.declared_full_output_frames==0) {
+           ||d.declared_full_output_frames==0
+           ||d.source_processing_frames>limit
+           ||d.declared_full_output_frames>limit) {
             failure=OutputClockFailure::INVALID_LENGTH;
             return std::nullopt;
         }
