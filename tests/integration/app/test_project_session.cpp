@@ -5,6 +5,7 @@
 #include "internal/m18_product_complete_binding.hpp"
 #include "internal/m22_verified_master_preview_parity.hpp"
 #include "internal/m22_product_preview_admission.hpp"
+#include "internal/m22_product_chain_epoch_capture_candidate.hpp"
 #include "internal/m22_product_verified_dispatch.hpp"
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
@@ -1275,6 +1276,29 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(preview.value()->absolute_start_frame().value(),qint64{731});
     QCOMPARE(preview.value()->timebase().frame_domain_id(),
              audio::FrameDomainId::OUTPUT_RATE);
+    using FullChainEpoch=app::internal::M22ProductChainEpochCaptureCandidate;
+    // Capture a REAL installed Qt Product owner, not the compile-only
+    // contract probe. It must bind one actual SOURCE resource identity,
+    // one immutable manual/Q0/M17/M16 full chain and current M18 epoch.
+    const auto completeChain=FullChainEpoch::capture(
+        controllers,fanout,verified);
+    QVERIFY2(completeChain,
+        completeChain ? "" : completeChain.error()->message().c_str());
+    QVERIFY(!completeChain.value()->authorizes_release());
+    QVERIFY(FullChainEpoch::still_current(
+        controllers,fanout,*completeChain.value()));
+    QCOMPARE(completeChain.value()->exact_m17_owner,verified);
+    QCOMPARE(completeChain.value()->immutable_chain_witness.manual_source_hz,
+             std::int64_t{48000});
+    QCOMPARE(completeChain.value()->immutable_chain_witness.final_master_hz,
+             std::int64_t{48000});
+    QCOMPARE(completeChain.value()->immutable_chain_witness.complete_source_frames,
+             std::int64_t{4096});
+    QCOMPARE(completeChain.value()->immutable_chain_witness.actual_master_frames,
+             std::int64_t{4096});
+    QVERIFY(!completeChain.value()->immutable_chain_witness.used_original_q0);
+    QVERIFY(completeChain.value()->immutable_chain_witness
+                 .frozen_original_q0_sha256.empty());
     using PreviewAdmission=app::internal::M22ProductPreviewAdmission;
     const auto admittedMasterPreview=PreviewAdmission::capture(
         controllers,fanout,verified,*selectedWindow.value());
@@ -1303,7 +1327,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     std::thread privatePreviewWorker([&] {
         const auto forbidden=PreviewAdmission::capture(
             controllers,fanout,verified,*selectedWindow.value());
-        refusedOffThread=!forbidden
+        const auto forbiddenEpoch=FullChainEpoch::capture(
+            controllers,fanout,verified);
+        refusedOffThread=!forbidden&&!forbiddenEpoch
+            &&!FullChainEpoch::still_current(
+                controllers,fanout,*completeChain.value())
             &&!PreviewAdmission::still_current(
                 controllers,fanout,*admittedMasterPreview.value());
     });
@@ -1441,6 +1469,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         // the old verified owner even though its PCM remains in memory.
         QVERIFY(!PreviewAdmission::still_current(
             controllers,fanout,*admittedMasterPreview.value()));
+        QVERIFY(!FullChainEpoch::still_current(
+            controllers,fanout,*completeChain.value()));
+        QVERIFY(!FullChainEpoch::capture(
+            controllers,fanout,verified));
         QVERIFY(!PreviewAdmission::capture(
             controllers,fanout,verified,*selectedWindow.value()));
         QVERIFY(!ui.can_export()); // one unacknowledged Product job
@@ -1554,6 +1586,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         const auto newPreviewEpoch=PreviewAdmission::capture(
             controllers,fanout,verified,*selectedWindow.value());
         QVERIFY(newPreviewEpoch);
+        QVERIFY(!FullChainEpoch::still_current(
+            controllers,fanout,*completeChain.value()));
+        const auto refreshedFullChain=FullChainEpoch::capture(
+            controllers,fanout,verified);
+        QVERIFY(refreshedFullChain);
+        QVERIFY(FullChainEpoch::still_current(
+            controllers,fanout,*refreshedFullChain.value()));
         QVERIFY(PreviewAdmission::still_current(
             controllers,fanout,*newPreviewEpoch.value()));
         expectedConsentEpoch+=2; // one user consent, one terminal ACK
@@ -1730,6 +1769,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         controllers,fanout,verified,*selectedWindow.value()));
     QVERIFY(!PreviewAdmission::still_current(
         controllers,fanout,*admittedMasterPreview.value()));
+    QVERIFY(!FullChainEpoch::still_current(
+        controllers,fanout,*completeChain.value()));
+    QVERIFY(!FullChainEpoch::capture(
+        controllers,fanout,verified));
     QVERIFY(!PreviewAdmission::capture(
         controllers,fanout,verified,*selectedWindow.value()));
     const auto parameterOnlyStalePath=directory.filePath(
