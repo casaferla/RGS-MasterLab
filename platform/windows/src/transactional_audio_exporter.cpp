@@ -727,6 +727,18 @@ TransactionalAudioExporter::export_impl(
             "candidate_flush_close_failed: injected close/flush failure."},
             *candidatePath.value(), false);
     }
+    // Owned candidate-only corruption *after* final close. Validation
+    // must genuinely reopen and reject this physically truncated WAV.
+    if (g_failure_point == ExportFailurePoint::CANDIDATE_TRUNCATED_WAV) {
+        QFile damaged{*candidatePath.value()};
+        if (!damaged.open(QIODevice::ReadWrite) || !damaged.resize(8)) {
+            damaged.close();
+            return cleanup_failure(core::Error{core::ErrorCode::IoFailure,
+                "m23_candidate_truncation_injection_failed"},
+                *candidatePath.value(),false);
+        }
+        damaged.close();
+    }
     if (g_failure_point == ExportFailurePoint::VALIDATION) {
         return cleanup_failure(
             core::Error{core::ErrorCode::MalformedAudioContainer,
