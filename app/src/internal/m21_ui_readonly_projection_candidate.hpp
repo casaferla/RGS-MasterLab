@@ -167,8 +167,12 @@ struct ReadOnlyProjection final {
             // matching independent external receipt. Mask ALL numbers.
             view.state=expected[i] ? "STALE" : "MISSING";
             for(auto& val:view.values) {
-                val.value_text=view.state;
+                // Lifecycle describes why the measurement cannot be used;
+                // the numeric readout itself must remain visibly unavailable.
+                // A mismatched receipt is marked STALE, never refreshed.
+                val.value_text=expected[i] ? "STALE" : "UNAVAILABLE";
                 val.quality_text=view.state;
+                val.numeric=false;
             }
             continue;
         }

@@ -62,9 +62,15 @@ void M21UiReadonlyProjectionCandidateTest::missingReceiptsHideAllNumbers() {
     QVERIFY(!view.columns[1].candidate_matched);
     QVERIFY(view.columns[0].state=="MISSING");
     QVERIFY(view.columns[0].scope_text=="SCOPE UNAVAILABLE");
-    QVERIFY(!view.columns[0].values[1].numeric);
-    QVERIFY(view.columns[0].values[1].value_text=="UNAVAILABLE");
+    for(const auto* col:{&view.columns[0],&view.columns[1]}) {
+        for(const auto& cell:col->values) {
+            QVERIFY(!cell.numeric);
+            QVERIFY(cell.value_text=="UNAVAILABLE");
+            QVERIFY(cell.quality_text=="MISSING");
+        }
+    }
     QVERIFY(view.prepared_to_gold[1].value_text=="UNAVAILABLE");
+    QVERIFY(!view.prepared_to_gold[1].numeric);
 }
 void M21UiReadonlyProjectionCandidateTest::
 matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease() {
@@ -96,6 +102,8 @@ matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease() {
     QVERIFY(mismatch.columns[0].state=="STALE");
     QVERIFY(!mismatch.columns[0].candidate_matched);
     QVERIFY(!mismatch.columns[0].values[1].numeric);
+    QVERIFY(mismatch.columns[0].values[1].value_text=="STALE");
+    QVERIFY(mismatch.columns[0].values[1].quality_text=="STALE");
     QVERIFY(mismatch.columns[1].candidate_matched);
     QVERIFY(!mismatch.prepared_to_gold[1].numeric);
     QVERIFY(mismatch.prepared_to_gold[1].value_text=="STALE");
