@@ -2035,6 +2035,25 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
             QCOMPARE(std::bit_cast<std::uint64_t>((*part.value())[i]),
                      std::bit_cast<std::uint64_t>((*whole.value())[i+97]));
     }
+    // Output-rate windows are checked against the REAL verified length,
+    // including the native Final SRC EOS rather than SOURCE's 4096 frames.
+    const auto finalSample=core::FrameRange::create(
+        core::FrameIndex{kOutFrames-1},core::FrameIndex{kOutFrames});
+    QVERIFY(finalSample);
+    const auto tail=M22ProductVerifiedDispatch::begin_preview(
+        bound,fanout,verified,*finalSample.value());
+    QVERIFY(tail);
+    QCOMPARE(tail.value()->crop.frame_count().value(),std::int64_t{1});
+    const auto beyond=core::FrameRange::create(
+        core::FrameIndex{kOutFrames-1},core::FrameIndex{kOutFrames+1});
+    QVERIFY(beyond);
+    QVERIFY(!M22ProductVerifiedDispatch::begin_preview(
+        bound,fanout,verified,*beyond.value()));
+    const auto negative=core::FrameRange::create(
+        core::FrameIndex{-1},core::FrameIndex{10});
+    QVERIFY(negative);
+    QVERIFY(!M22ProductVerifiedDispatch::begin_preview(
+        bound,fanout,verified,*negative.value()));
     bool rejectedWorker=false;
     std::thread background([&]{
         rejectedWorker=
@@ -2055,6 +2074,17 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         make_write_reference(filePath.toUtf8().toStdString(),
             "m22-real-output-44100-f32.wav");
     QVERIFY(destination);
+    // A current full M17 stage is not implicit consent, and its ceiling
+    // cannot be rebound to an arbitrary export-time parameter.
+    QVERIFY(!M22ProductVerifiedDispatch::begin_full(
+        bound,fanout,exporter,verified,*destination.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),false));
+    QVERIFY(!QFileInfo::exists(filePath));
+    QVERIFY(!M22ProductVerifiedDispatch::begin_full(
+        bound,fanout,exporter,verified,*destination.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,-2.0,true));
+    QVERIFY(!QFileInfo::exists(filePath));
     QVERIFY(M22ProductVerifiedDispatch::begin_full(
         bound,fanout,exporter,verified,*destination.value(),
         audio::WavSampleFormat::IEEE_F32,std::nullopt,
@@ -2196,6 +2226,38 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QVERIFY(afterPcm24);
     QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
         bound,fanout,*afterPcm24.value()));
+    // No-overwrite is protected by the EXISTING M09/M18 transactional
+    // writer even for genuine Final SRC Q0 PCM24, not by a new M22 writer.
+    QFile pcmBefore{pcmPath};
+    QVERIFY(pcmBefore.open(QIODevice::ReadOnly));
+    const auto originalPcmBytes=pcmBefore.readAll();
+    pcmBefore.close();
+    QVERIFY(!originalPcmBytes.isEmpty());
+    auto sameDest=platform::windows::WindowsResourceWriter::
+        make_write_reference(pcmPath.toUtf8().toStdString(),
+            "m22-real-output-44100-pcm24.wav");
+    QVERIFY(sameDest);
+    QVERIFY(M22ProductVerifiedDispatch::begin_full(
+        bound,fanout,exporter,verified,*sameDest.value(),
+        audio::WavSampleFormat::PCM_S24,pcmSeed,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QTRY_VERIFY_WITH_TIMEOUT(exporter.snapshot().phase==
+        app::internal::M18PrivateAsyncExportSession::Phase::FAILED,
+        30000);
+    QCOMPARE(exporter.snapshot().verified_encoded_sha256.size(),
+             std::size_t{0});
+    QFile pcmAfter{pcmPath};
+    QVERIFY(pcmAfter.open(QIODevice::ReadOnly));
+    QCOMPARE(pcmAfter.readAll(),originalPcmBytes);
+    pcmAfter.close();
+    QVERIFY(exporter.acknowledge());
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*afterPcm24.value()));
+    const auto afterCollision=M22ProductChainEpochCaptureCandidate::capture(
+        bound,fanout,verified);
+    QVERIFY(afterCollision);
+    QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*afterCollision.value()));
     QFile sourceUnchanged{sourcePath};
     QVERIFY(sourceUnchanged.open(QIODevice::ReadOnly));
     QCOMPARE(sourceUnchanged.readAll(),originalBytes);
@@ -2209,6 +2271,8 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         bound,fanout,*recaptured.value()));
     QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
         bound,fanout,*afterPcm24.value()));
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*afterCollision.value()));
     QVERIFY(!M22ProductVerifiedDispatch::begin_preview(
         bound,fanout,verified,*window.value()));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
