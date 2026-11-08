@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void rejectReceiptWithDifferentSampleRate();
     void rejectReceiptWithDifferentFrameCount();
     void rejectReceiptWithDifferentFirstFrame();
     void rejectReceiptWithDifferentScopeKind();
@@ -358,6 +359,16 @@ void M21UiReadonlyProjectionCandidateTest::rejectReceiptWithDifferentFrameCount(
     const auto r=project_readonly(compose(snapshots),owners);
     QVERIFY(!r.columns[0].candidate_matched);
     QVERIFY(r.columns[0].values[1].quality_text=="STALE");
+}
+
+void M21UiReadonlyProjectionCandidateTest::rejectReceiptWithDifferentSampleRate()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    owners[0]->sample_rate_hz=44100;
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(!r.columns[0].candidate_matched);
+    QVERIFY(r.columns[0].scope_text=="SCOPE UNAVAILABLE");
 }
 
 } // namespace rgsml::tests
