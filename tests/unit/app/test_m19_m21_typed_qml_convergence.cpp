@@ -14,8 +14,11 @@
 #include <QQuickItem>
 #include <QQuickView>
 #include <QQmlError>
+#include <QStringList>
+#include <QUrl>
 #include <QtTest>
 #include <QVariantMap>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
