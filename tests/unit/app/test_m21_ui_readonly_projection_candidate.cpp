@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsTamperedSelectedColumnIsNotAccepted();
     void routedPanelsTamperedRoutingRevisionRejectsQueuedFrame();
     void routedPanelsOnlyTestFixtureCanExposeCandidateReadouts();
     void routedPanelsNeverInferSpectrumOrTonalCurveFromLevels();
@@ -2320,6 +2321,20 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsTamperedRoutingRevisionRe
     auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
     QVERIFY(review_frame_current(store,route,f));
     ++f.routing_revision;
+    QVERIFY(!review_frame_current(store,route,f));
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsTamperedSelectedColumnIsNotAccepted()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    IndependentPanelRouting route;
+    auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,route,f));
+    f.selected_columns[1]=Column::gold;
     QVERIFY(!review_frame_current(store,route,f));
 }
 
