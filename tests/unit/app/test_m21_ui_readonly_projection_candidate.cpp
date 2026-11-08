@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsSourceChangeDoesNotInvalidateIndependentGoldData();
     void routedPanelsNoCrossModuleReadoutPayload();
     void routedPanelsSelectingM21ProcessedPreservesBothOtherSelectors();
     void routedPanelsSwitchM20DoesNotChangeM19FrameValues();
@@ -2083,6 +2084,29 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsNoCrossModuleReadoutPaylo
     QVERIFY(!f.m21.contains("stereo"));
     QVERIFY(!f.m21.contains("levels"));
     QVERIFY(review_frame_current(store,route,f));
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsSourceChangeDoesNotInvalidateIndependentGoldData()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    IndependentPanelRouting route;
+    QVERIFY(route.select(AnalysisPanel::tonal_m20,Column::gold));
+    QVERIFY(store.begin(Column::prepared,8));
+    const auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,route,f));
+    QVERIFY(!f.m19.value("ready").toBool());
+    QVERIFY(f.m19.value("levels").toMap().isEmpty());
+    QVERIFY(f.m20.value("ready").toBool());
+    QCOMPARE(f.m20.value("analysisStatus").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(f.m21.value("columnLifecycles").toMap().value("gold").toString(),
+             QStringLiteral("CURRENT"));
 }
 
 } // namespace rgsml::tests
