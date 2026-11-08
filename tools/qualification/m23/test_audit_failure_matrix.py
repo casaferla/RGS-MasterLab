@@ -10,7 +10,7 @@ import unittest
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 from audit_failure_matrix import (
-    M23ContractError, build_report, parse_junit, read_manifest,
+    M23ContractError, WINDOWS_ONLY, build_report, parse_junit, read_manifest,
     run, safe_path,
 )
 
@@ -117,8 +117,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
         manifest = read_manifest(ROOT, MATRIX)
         suite_names = sorted(set(
             c["ctest"] for c in manifest["cases"]
-            if c["ctest"] and "windows" not in c["ctest"]
-            and "transactional_audio" not in c["ctest"]
+            if c["ctest"] and c["ctest"] not in WINDOWS_ONLY
         ))
         with tempfile.TemporaryDirectory() as temp:
             junit = Path(temp)/"linux-junit.xml"
@@ -139,7 +138,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
             cases = parse_junit([junit])
             self.assertEqual(cases[names[0]],"FAIL")
             self.assertEqual(cases[names[1]],"SKIP")
-            report = build_report(read_manifest(ROOT,MATRIX),cases,"linux")
+            report = build_report(read_manifest(ROOT,MATRIX),cases,"windows")
             self.assertIn("render_window",report["unexecuted_existing_categories"])
             self.assertIn("project_open_atomicity",
                           report["unexecuted_existing_categories"])
