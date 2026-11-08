@@ -94,8 +94,13 @@ public:
            ||product.candidates.staged()!=saved.exact_m17_owner)
             return false;
         const auto now=fanout.current_owner_snapshot();
+        const auto* source=product.upstream.source.source_resource();
         if(!now||now->epoch!=saved.epoch.epoch
-           ||now->identity!=saved.epoch.identity)
+           ||now->identity!=saved.epoch.identity
+           ||!source
+           ||!source->reference().permissions().can_read()
+           ||!source->reference().same_resource_identity(
+               saved.exact_source_resource))
             return false;
         m22_private::FullChainWitnessFailure reason{};
         const auto witness=m22_private::observe_real_complete_chain_candidate(
