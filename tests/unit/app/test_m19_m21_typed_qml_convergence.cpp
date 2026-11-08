@@ -1,0 +1,708 @@
+// Isolated, non-FQ convergence of PR #91 QML and PR #92 typed analysis.
+// All QML values are explicitly watermarked TEST FIXTURES. Production Main
+// is untouched; no canonical Product owner authorization is implied.
+#include "internal/m21_independent_panels_review_candidate.hpp"
+#include "internal/m21_real_product_metrics_port.hpp"
+#include <rgsml/analysis/basic_level_analyzer.hpp>
+#include <rgsml/analysis/tonal_stereo_analyzer.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/audio_format.hpp>
+#include <QColor>
+#include <QFont>
+#include <QFontDatabase>
+#include <QGuiApplication>
+#include <QCoreApplication>
+#include <QDir>
+#include <QImage>
+#include <QQuickItem>
+#include <QQuickView>
+#include <QSet>
+#include <QQmlError>
+#include <QStringList>
+#include <QUrl>
+#include <QtTest>
+#include <QVariantMap>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <numbers>
+#include <optional>
+#include <string>
+
+namespace rgsml::tests {
+using namespace app::m21_private;
+using namespace app::m21_private::ui_candidate;
+using namespace app::m21_private::ui_candidate::panel_review;
+namespace {
+constexpr std::uint32_t kExplicitFixture=0x4D323147U;
+QDir qml_folder() {return QDir(QStringLiteral(RGSML_ANALYSIS_GUI_ROOT));}
+std::unique_ptr<QQuickView> open_panel(const QString& file) {
+    auto view=std::make_unique<QQuickView>();
+    view->setResizeMode(QQuickView::SizeRootObjectToView);
+    view->resize(1184,688);
+    view->setSource(QUrl::fromLocalFile(qml_folder().filePath(file)));
+    if(view->status()!=QQuickView::Ready) {
+        for(const auto& error:view->errors())qWarning()<<error.toString();
+    }
+    return view;
+}
+QQuickItem* visual_by_name(QQuickItem* item,const QString& name) {
+    if(!item)return nullptr;
+    if(item->objectName()==name)return item;
+    for(auto* child:item->childItems()) {
+        if(auto* found=visual_by_name(child,name))return found;
+    }
+    return nullptr;
+}
+Snapshot example(Column column,std::uint64_t generation,
+                 const std::string& id,double rms) {
+    Snapshot s;
+    s.column=column;
+    s.generation_token=generation;
+    s.resource_identity=id;
+    s.analysis_scope_label="Full Track";
+    s.absolute_scope_begin=12;
+    s.scope_frames=19200;
+    s.sample_rate_hz=48000;
+    s.lifecycle=Lifecycle::current;
+    s.metrics[1]={rms,Quality::present,{}};
+    s.metrics[3]={-1.0,Quality::present,{}}; // Mock TP never displayed
+    return s;
+}
+ExpectedOwnerReceipt claim(const Snapshot& s) {
+    return {s.column,s.generation_token,s.resource_identity,
+            s.analysis_scope_label,s.absolute_scope_begin,
+            s.scope_frames,s.sample_rate_hz,true,true};
+}
+// Only Windows CI explicitly requests screenshots. Never write files in a
+// production session; this test executable is not linked into the app.
+bool optional_test_screenshot(QQuickView& view,const QString& name) {
+    const QString destination=qEnvironmentVariable("RGSML_TYPED_QT_SCREENSHOT_DIR");
+    if(destination.isEmpty())return true;
+    if(!QDir().mkpath(destination))return false;
+    view.resize(1184,688);
+    view.show();
+    QTest::qWait(450);
+    const auto image=view.grabWindow();
+    if(image.isNull() || image.width()<1184 || image.height()<688)return false;
+    // A previous Windows QtQuick run wrote fully sized PNGs with missing
+    // font glyphs (small white squares). Their palette had ~100 unique
+    // colors, versus thousands for legible Segoe/Consolas glyphs.
+    // Require enough antialiased text colors to reject this failure.
+    QSet<QRgb> colors;
+    for(int y=0;y<image.height();y+=3)
+        for(int x=0;x<image.width();x+=3)
+            colors.insert(image.pixel(x,y));
+    if(colors.size()<350) {
+        qWarning()<<"RGSML_TYPED_SCREENSHOT_FONT_GLYPHS_MISSING"
+                  <<name<<"sampled_colors"<<colors.size();
+        return false;
+    }
+    return image.save(QDir(destination).filePath(name), "PNG");
+}
+void mount_explicit_demo(QQuickView& view,const QVariantMap& data) {
+    auto* root=view.rootObject();
+    if(!root)return;
+    // This local test-only path does not connect the QML component to Main.
+    root->setProperty("presentation",data);
+    root->setProperty("analysisStatus",data.value("analysisStatus","MISSING"));
+    root->setProperty("fixtureMode",true);
+    QCoreApplication::processEvents();
+}
+} // namespace
+
+class M19M21TypedQmlConvergenceTest final: public QObject {
+    Q_OBJECT
+private slots:
+    void initTestCase();
+    void threeActualIndependentQmlRootsOpenFailClosed();
+    void explicitTypedM19TestFixtureRendersReadout();
+    void actualPcmM19M20ReachesThreeQmlPanels();
+    void spectrumAndTonalProfileRemainUnavailableWithoutVerifiedPsd();
+    void missingAndStaleSourceNeverShowPriorNumericData();
+    void independentSelectorsDoNotCrossModifySource();
+    void staleRevisionDeniesQueuedQtFrame();
+    void m21ComparisonRendersOnlyEligibleTypedRows();
+    void truePeakIsNeverAuthorizedByTestPreview();
+    void dockHostRemainsPreviewOnly();
+    void m21UnavailableDataDoesNotBecomeZeroAfterPanelChange();
+    void changingPresentationRevokesOldAvailableContentImmediately();
+    void m20RefusesLowSupportTonalProfileAsFullValidatedCurve();
+    void m20RefusesStaleSpectrumAlthoughPointsExist();
+    void referenceBadgeUsesApprovedUserFacingName();
+    void missingGoldBadgeIsVisuallyMuted();
+    void m21RealTypedComparisonRequiresCurrentSelectedOwner();
+    void m21EmptyComparisonShowsExplicitNoRowsNotice();
+    void m20UnsupportedProfileStatusKeepsAllBandShapesHidden();
+    void m20VerifiedDemoBandMakesProfileVisible();
+    void m20SinglePointIsNotFalseFullSpectrum();
+    void m20UnverifiedSpectrumStatusSuppressesEvenExistingPoints();
+    void m20VerifiedDemoSpectrumRequiresExplicitTwoPoints();
+    void m19TruePeakReadoutCannotBecomeNumeric();
+    void m19HeroReadoutUsesInputGainTypography();
+    void wrongTestMarkerCannotBecomeReadyQml();
+    void invalidLifecycleBlocksDemoWithoutImplicitZero();
+    void revokedFixtureImmediatelyMasksReadouts();
+    void missingStateBlocksValidLookingOldPresenter();
+    void staleDisplayStateBlocksEvenReadyDemoData();
+    void readyPresentationWithoutFixtureRemainsMasked();
+};
+
+void M19M21TypedQmlConvergenceTest::initTestCase()
+{
+#ifdef Q_OS_WIN
+    // Qt software/offscreen renderer on Windows CI may have no usable font
+    // atlas until an installed OS font is explicitly registered. The older
+    // PR91 screenshot harness already does this; fonts are NOT redistributed.
+    const auto fontId=QFontDatabase::addApplicationFont(
+        QStringLiteral("C:/Windows/Fonts/segoeui.ttf"));
+    QVERIFY2(fontId>=0,"CI_WINDOWS_SEGOE_FONT_REGISTRATION_FAILED");
+    const auto families=QFontDatabase::applicationFontFamilies(fontId);
+    QVERIFY2(!families.isEmpty(),"CI_WINDOWS_SEGOE_FONT_FAMILY_UNAVAILABLE");
+    QGuiApplication::setFont(QFont(families.first(),10));
+    const auto consolas=QFontDatabase::addApplicationFont(
+        QStringLiteral("C:/Windows/Fonts/consola.ttf"));
+    Q_UNUSED(consolas);
+#endif
+}
+
+void M19M21TypedQmlConvergenceTest::threeActualIndependentQmlRootsOpenFailClosed() {
+    const QStringList names{
+        "M19LevelsPanelPreview.qml","M20TonalStereoPanelPreview.qml",
+        "M21MetricsDeltaPanelPreview.qml"};
+    for(int tab=0;tab<3;++tab) {
+        auto view=open_panel(names.at(tab));
+        QVERIFY(view->status()==QQuickView::Ready);
+        auto* root=view->rootObject();
+        QVERIFY(root!=nullptr);
+        QCOMPARE(root->property("activeTab").toInt(),tab);
+        QVERIFY(root->property("standaloneModuleMode").toBool());
+        QVERIFY(!root->property("fixtureMode").toBool());
+        QVERIFY(!root->property("available").toBool());
+    }
+}
+void M19M21TypedQmlConvergenceTest::explicitTypedM19TestFixtureRendersReadout() {
+    ReviewEpochStore store;
+    const auto prepared=example(Column::prepared,7,"pcm-prepared",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(prepared,claim(prepared)));
+    IndependentPanelRouting routing;
+    const auto frame=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(review_frame_current(store,routing,frame));
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,frame.m19);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QCOMPARE(view->rootObject()->property("fixtureMode").toBool(),true);
+    QCOMPARE(frame.m19.value("levels").toMap().value("rms").toString(),
+             QStringLiteral("-18.00"));
+    QCOMPARE(frame.m19.value("levelsQuality").toMap().value("rms").toString(),
+             QStringLiteral("CURRENT"));
+    QVERIFY(!frame.m19.value("productionAuthorized").toBool());
+}
+void M19M21TypedQmlConvergenceTest::actualPcmM19M20ReachesThreeQmlPanels() {
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto fmt=audio::AudioFormat::create(*rate.value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(19200);
+    QVERIFY(fmt&&frames);
+    auto pcm=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{12},*frames.value());
+    QVERIFY(pcm);
+    auto channel=pcm.value()->mutable_view().channel(0);
+    QVERIFY(channel);
+    for(std::size_t i=0;i<channel.value()->size();++i) {
+        (*channel.value())[i]=0.25*std::sin(
+            2.0*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
+    }
+    const auto level=analysis::measure_basic_level_full_resource(*pcm.value());
+    const auto stereo=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{12},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(level&&stereo);
+    const auto imported=import_real_product_metrics(*level.value(),*stereo.value(),
+        {Column::prepared,11,"real-m19m20-qml-test","Full Track",true});
+    QVERIFY(imported.snapshot);
+    QVERIFY(imported.problem==RealProductPortProblem::none);
+    ReviewEpochStore store;
+    QVERIFY(store.begin(Column::prepared,11));
+    QVERIFY(store.receive(*imported.snapshot,claim(*imported.snapshot)));
+    IndependentPanelRouting routing;
+    const auto frame=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(review_frame_current(store,routing,frame));
+    const QStringList files{
+        "M19LevelsPanelPreview.qml","M20TonalStereoPanelPreview.qml",
+        "M21MetricsDeltaPanelPreview.qml"};
+    const std::array<QVariantMap,3> maps{frame.m19,frame.m20,frame.m21};
+    for(int i=0;i<3;++i) {
+        auto view=open_panel(files.at(i));
+        QVERIFY(view->status()==QQuickView::Ready);
+        mount_explicit_demo(*view,maps[static_cast<std::size_t>(i)]);
+        QVERIFY(view->rootObject()->property("available").toBool());
+        QVERIFY(view->rootObject()->property("fixtureMode").toBool());
+        const QString filename=QStringLiteral("typed-")
+            +QString::number(i)+QStringLiteral("-real-pcm-1184x688.png");
+        QVERIFY(optional_test_screenshot(*view,filename));
+    }
+    bool parsed=false;
+    const double rms=frame.m19.value("levels").toMap()
+                         .value("rms").toString().toDouble(&parsed);
+    QVERIFY(parsed);
+    QVERIFY(std::abs(rms-*imported.snapshot->metrics[1].unrounded)<=0.0051);
+    QCOMPARE(frame.m20.value("stereo").toMap().value("width").toString(),
+             QStringLiteral("NOT APPLICABLE"));
+    QVERIFY(!frame.m21.value("productionAuthorized").toBool());
+}
+void M19M21TypedQmlConvergenceTest::
+spectrumAndTonalProfileRemainUnavailableWithoutVerifiedPsd() {
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"prepared",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,claim(p)));
+    IndependentPanelRouting routing;
+    const auto frame=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(frame.m20.value("ready").toBool());
+    QVERIFY(frame.m20.value("spectrum").toList().isEmpty());
+    QVERIFY(frame.m20.value("bands").toList().isEmpty());
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,frame.m20);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
+    QVERIFY(!view->rootObject()->property("tonalProfileAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice);
+    QVERIFY(notice->isVisible());
+    QVERIFY(notice->property("text").toString().contains("UNAVAILABLE"));
+    auto* profile=visual_by_name(view->rootObject(),"m20MissingProfileNotice");
+    QVERIFY(profile&&profile->isVisible());
+}
+void M19M21TypedQmlConvergenceTest::
+missingAndStaleSourceNeverShowPriorNumericData() {
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"old",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,claim(p)));
+    IndependentPanelRouting routing;
+    const auto old=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(store.begin(Column::prepared,8));
+    QVERIFY(!review_frame_current(store,routing,old));
+    const auto stale=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,stale.m19);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QCOMPARE(view->rootObject()->property("analysisStatus").toString(),
+             QStringLiteral("STALE"));
+    QVERIFY(stale.m19.value("levels").toMap().isEmpty());
+    QVERIFY(optional_test_screenshot(*view,
+        QStringLiteral("typed-m19-stale-1184x688.png")));
+}
+void M19M21TypedQmlConvergenceTest::independentSelectorsDoNotCrossModifySource() {
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto g=example(Column::gold,3,"g",-13.0);
+    p.metrics[5]={0.8,Quality::present,{}};
+    g.metrics[5]={1.1,Quality::present,{}};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,claim(p)));
+    QVERIFY(store.receive(g,claim(g)));
+    IndependentPanelRouting routing;
+    QVERIFY(routing.select(AnalysisPanel::tonal_m20,Column::gold));
+    const auto f=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QCOMPARE(f.m19.value("levels").toMap().value("rms").toString(),QStringLiteral("-18.00"));
+    QCOMPARE(f.m20.value("stereo").toMap().value("width").toString(),QStringLiteral("1.10"));
+    QVERIFY(review_frame_current(store,routing,f));
+    auto levelView=open_panel("M19LevelsPanelPreview.qml");
+    auto stereoView=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(levelView->status()==QQuickView::Ready);
+    QVERIFY(stereoView->status()==QQuickView::Ready);
+    mount_explicit_demo(*levelView,f.m19);
+    mount_explicit_demo(*stereoView,f.m20);
+    QVERIFY(levelView->rootObject()->property("available").toBool());
+    QVERIFY(stereoView->rootObject()->property("available").toBool());
+}
+void M19M21TypedQmlConvergenceTest::staleRevisionDeniesQueuedQtFrame() {
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,claim(p)));
+    IndependentPanelRouting routing;
+    const auto previous=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(review_frame_current(store,routing,previous));
+    QVERIFY(routing.select(AnalysisPanel::levels_m19,Column::gold));
+    QVERIFY(!review_frame_current(store,routing,previous));
+    const auto changed=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(review_frame_current(store,routing,changed));
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,changed.m19);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(changed.m19.value("levels").toMap().isEmpty());
+}
+void M19M21TypedQmlConvergenceTest::m21ComparisonRendersOnlyEligibleTypedRows() {
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,claim(p)));
+    QVERIFY(store.receive(g,claim(g)));
+    IndependentPanelRouting routing;
+    const auto frame=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(review_frame_current(store,routing,frame));
+    QCOMPARE(frame.m21.value("metrics").toList().size(),9);
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,frame.m21);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->property("comparisonAvailable").toBool());
+    QCOMPARE(frame.m21.value("metrics").toList().at(1).toMap()
+                 .value("preparedDelta").toString(),QStringLiteral("+5.00"));
+    QCOMPARE(frame.m21.value("metrics").toList().at(1).toMap()
+                 .value("processed").toString(),QStringLiteral("UNAVAILABLE"));
+}
+void M19M21TypedQmlConvergenceTest::truePeakIsNeverAuthorizedByTestPreview() {
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,claim(p)));
+    IndependentPanelRouting routing;
+    const auto frame=capture_test_panels(store,routing,qt_review::ExplicitTestFixture{kExplicitFixture});
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,frame.m19);
+    QCOMPARE(frame.m19.value("levels").toMap().value("truePeak").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(frame.m19.value("levelsQuality").toMap().value("truePeak").toString(),
+             QStringLiteral("M16 UNQUALIFIED"));
+    QVERIFY(!frame.m19.value("productionAuthorized").toBool());
+}
+void M19M21TypedQmlConvergenceTest::dockHostRemainsPreviewOnly() {
+    auto view=open_panel("AnalysisModuleDockHostPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    auto* root=view->rootObject();
+    QVERIFY(root);
+    QVERIFY(!root->property("fixtureMode").toBool());
+    QVERIFY(!root->property("detached").toBool());
+    QCOMPARE(root->property("moduleIndex").toInt(),0);
+    QVERIFY(root->property("presentation").toMap().value("ready").toBool()==false);
+}
+void M19M21TypedQmlConvergenceTest::readyPresentationWithoutFixtureRemainsMasked()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVERIFY(view->rootObject());
+    QVERIFY(view->rootObject()->setProperty("presentation",
+        QVariantMap{{"ready",true},{"levels",QVariantMap{{"rms","-18.00"}}}}));
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("CURRENT")));
+    QCoreApplication::processEvents();
+    QVERIFY(!view->rootObject()->property("fixtureMode").toBool());
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::staleDisplayStateBlocksEvenReadyDemoData()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"levels",QVariantMap{{"rms","-18.00"}}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("CURRENT")));
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("STALE")));
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::missingStateBlocksValidLookingOldPresenter()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"levels",QVariantMap{{"rms","-18.00"}}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("analysisStatus",QStringLiteral("MISSING")));
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::revokedFixtureImmediatelyMasksReadouts()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"levels",QVariantMap{{"rms","-18.00"}}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("fixtureMode",false));
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->setProperty("fixtureMode",true));
+    QVERIFY(view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::invalidLifecycleBlocksDemoWithoutImplicitZero()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","INVALID"},
+                    {"levels",QVariantMap{{"rms","-18.00"}}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QCOMPARE(view->rootObject()->property("analysisStatus").toString(),
+             QStringLiteral("INVALID"));
+}
+
+void M19M21TypedQmlConvergenceTest::wrongTestMarkerCannotBecomeReadyQml()
+{
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"prepared",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,claim(p)));
+    IndependentPanelRouting route;
+    const auto denied=capture_test_panels(store,route,qt_review::ExplicitTestFixture{1U});
+    QVERIFY(!denied.test_fixture_only);
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,denied.m19);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(denied.m19.value("levels").toMap().isEmpty());
+}
+
+void M19M21TypedQmlConvergenceTest::m19HeroReadoutUsesInputGainTypography()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+        {"levels",QVariantMap{{"lufs","-14.00"},{"rms","-18.00"},
+              {"samplePeak","-1.20"},{"truePeak","UNAVAILABLE"},{"crest","16.80"}}}};
+    mount_explicit_demo(*view,map);
+    auto* readout=visual_by_name(view->rootObject(),"m19MetricValue_rms");
+    QVERIFY(readout);
+    QVERIFY(readout->property("heroReadout").toBool());
+    QCOMPARE(readout->property("numericPixelSize").toInt(),36);
+    QVERIFY(readout->property("readOnly").toBool());
+    QVERIFY(readout->property("dataAvailable").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::m19TruePeakReadoutCannotBecomeNumeric()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"levels",QVariantMap{{"truePeak","-1.0"}}}};
+    mount_explicit_demo(*view,map);
+    auto* readout=visual_by_name(view->rootObject(),"m19MetricValue_truePeak");
+    QVERIFY(readout);
+    QVERIFY(!readout->property("dataAvailable").toBool());
+    QVERIFY(readout->property("readOnly").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::m20VerifiedDemoSpectrumRequiresExplicitTwoPoints()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList spectrum{
+        QVariantMap{{"x",0.0},{"y",0.2}},
+        QVariantMap{{"x",1.0},{"y",0.8}}
+    };
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"spectrum",spectrum},{"spectrumStatus","CURRENT"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(view->rootObject()->property("spectrumAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice);
+    QVERIFY(!notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m20UnverifiedSpectrumStatusSuppressesEvenExistingPoints()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList spectrum{
+        QVariantMap{{"x",0.0},{"y",0.2}},
+        QVariantMap{{"x",1.0},{"y",0.8}}
+    };
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"spectrum",spectrum},{"spectrumStatus","UNAVAILABLE"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m20SinglePointIsNotFalseFullSpectrum()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList spectrum{QVariantMap{{"x",0.5},{"y",0.5}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"spectrum",spectrum},{"spectrumStatus","CURRENT"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
+    QVERIFY(visual_by_name(view->rootObject(),"m20MissingSpectrumNotice")->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m20VerifiedDemoBandMakesProfileVisible()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList bands{QVariantMap{{"label","1k"},{"level",0.5},{"supported",true}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"bands",bands},{"tonalProfileStatus","CURRENT"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("tonalProfileAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingProfileNotice");
+    QVERIFY(notice && !notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m20UnsupportedProfileStatusKeepsAllBandShapesHidden()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList bands{QVariantMap{{"label","1k"},{"level",0.5},{"supported",true}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"bands",bands},{"tonalProfileStatus","UNAVAILABLE"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("tonalProfileAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingProfileNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m21EmptyComparisonShowsExplicitNoRowsNotice()
+{
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"metrics",QVariantList{}}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m21MissingComparisonNotice");
+    QVERIFY(notice && notice->isVisible());
+    QVERIFY(notice->property("text").toString().contains("UNAVAILABLE"));
+}
+
+void M19M21TypedQmlConvergenceTest::m21RealTypedComparisonRequiresCurrentSelectedOwner()
+{
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,claim(p)));
+    QVERIFY(store.receive(g,claim(g)));
+    IndependentPanelRouting route;
+    const auto before=capture_test_panels(store,route,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(before.m21.value("metrics").toList().size()==9);
+    QVERIFY(store.begin(Column::prepared,8));
+    const auto after=capture_test_panels(store,route,qt_review::ExplicitTestFixture{kExplicitFixture});
+    QVERIFY(!review_frame_current(store,route,before));
+    QVERIFY(!after.m21.value("ready").toBool());
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    mount_explicit_demo(*view,after.m21);
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::missingGoldBadgeIsVisuallyMuted()
+{
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    auto* badge=visual_by_name(view->rootObject(),"analysisScopeBadge_GOLD");
+    QVERIFY(badge);
+    QCOMPARE(badge->property("color").value<QColor>(),
+             QColor(QStringLiteral("#16232D")));
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::referenceBadgeUsesApprovedUserFacingName()
+{
+    auto view=open_panel("M19LevelsPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    auto* badge=visual_by_name(view->rootObject(),"analysisScopeBadge_GOLD");
+    QVERIFY(badge);
+    bool foundReference=false;
+    for(auto* child:badge->childItems()) {
+        if(child->property("text").toString()==QStringLiteral("REFERENCE"))
+            foundReference=true;
+    }
+    QVERIFY(foundReference); // Internal GOLD objectName remains unchanged
+    QVERIFY(!view->rootObject()->property("available").toBool());
+}
+
+void M19M21TypedQmlConvergenceTest::m20RefusesStaleSpectrumAlthoughPointsExist()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList spectrum{QVariantMap{{"x",0.0},{"y",0.1}},
+                                QVariantMap{{"x",1.0},{"y",0.9}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"spectrum",spectrum},{"spectrumStatus","STALE"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m20RefusesLowSupportTonalProfileAsFullValidatedCurve()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList bands{QVariantMap{{"label","1k"},{"level",0.5},{"supported",true}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"bands",bands},{"tonalProfileStatus","LOW SUPPORT"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(!view->rootObject()->property("tonalProfileAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingProfileNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::changingPresentationRevokesOldAvailableContentImmediately()
+{
+    auto view=open_panel("M20TonalStereoPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList spectrum{QVariantMap{{"x",0.0},{"y",0.1}},
+                                QVariantMap{{"x",1.0},{"y",0.9}}};
+    QVariantMap map{{"ready",true},{"analysisStatus","CURRENT"},
+                    {"spectrum",spectrum},{"spectrumStatus","CURRENT"}};
+    mount_explicit_demo(*view,map);
+    QVERIFY(view->rootObject()->property("spectrumAvailable").toBool());
+    QVERIFY(view->rootObject()->setProperty("presentation",
+        QVariantMap{{"ready",false},{"spectrumStatus","MISSING"}}));
+    QCoreApplication::processEvents();
+    QVERIFY(!view->rootObject()->property("available").toBool());
+    QVERIFY(!view->rootObject()->property("spectrumAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m20MissingSpectrumNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+void M19M21TypedQmlConvergenceTest::m21UnavailableDataDoesNotBecomeZeroAfterPanelChange()
+{
+    auto view=open_panel("M21MetricsDeltaPanelPreview.qml");
+    QVERIFY(view->status()==QQuickView::Ready);
+    const QVariantList rows{QVariantMap{{"name","RMS"},{"prepared","-18.00"},
+             {"gold","UNAVAILABLE"},{"processed","UNAVAILABLE"},
+             {"preparedDelta","UNAVAILABLE"},{"processedDelta","UNAVAILABLE"}}};
+    QVariantMap data{{"ready",true},{"analysisStatus","CURRENT"},{"metrics",rows}};
+    mount_explicit_demo(*view,data);
+    QVERIFY(view->rootObject()->property("comparisonAvailable").toBool());
+    QVERIFY(view->rootObject()->setProperty("presentation",
+        QVariantMap{{"ready",false},{"metrics",QVariantList{}}}));
+    QCoreApplication::processEvents();
+    QVERIFY(!view->rootObject()->property("comparisonAvailable").toBool());
+    auto* notice=visual_by_name(view->rootObject(),"m21MissingComparisonNotice");
+    QVERIFY(notice && notice->isVisible());
+}
+
+} // namespace rgsml::tests
+QTEST_MAIN(rgsml::tests::M19M21TypedQmlConvergenceTest)
+#include "test_m19_m21_typed_qml_convergence.moc"
