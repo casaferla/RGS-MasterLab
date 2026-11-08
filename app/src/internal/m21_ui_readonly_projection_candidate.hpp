@@ -157,8 +157,12 @@ struct ReadOnlyProjection final {
         view.state=lifecycle_label(source.lifecycle);
         if(source.lifecycle!=Lifecycle::current) {
             for(auto& val:view.values) {
-                val.value_text=view.state;
+                // A missing result is an unavailable numeric field, not 0.
+                // Preserve the exact lifecycle separately from the readout.
+                val.value_text=source.lifecycle==Lifecycle::missing
+                    ? "UNAVAILABLE" : view.state;
                 val.quality_text=view.state;
+                val.numeric=false;
             }
             continue;
         }
