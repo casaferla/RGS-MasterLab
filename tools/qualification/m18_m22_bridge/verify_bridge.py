@@ -53,6 +53,11 @@ ADDED = {
     "app/src/internal/m21_product_qt_readiness_bridge.hpp",
     "app/src/internal/m21_product_spectrum_evidence.hpp",
     "app/src/internal/m22_product_preview_admission.hpp",
+    "app/src/internal/m21_product_analysis_handoff.hpp",
+    "app/src/m21_product_status_view_model.hpp",
+    "app/src/m21_product_status_view_model.cpp",
+    "app/src/main.cpp",
+    "app/CMakeLists.txt",
     "tests/integration/app/test_project_session.cpp",
 }
 PROTECTED = (
@@ -169,6 +174,75 @@ def main():
         "PreviewAdmission::still_current(",
     ):
         check(required in joined, "M22 real Product preview acceptance test absent: "+required)
+
+    # Reuse the real Product M18 Qt instance; the native M21 ViewModel
+    # is strictly a status presenter until authoritative Phase-6 gates.
+    handoff=blob("HEAD",
+        "app/src/internal/m21_product_analysis_handoff.hpp").decode()
+    for required in (
+        "M21ProductOwnerAnalysis",
+        "M21ProductPublicationInbox",
+        "capture_on_owner(",
+        "measure_on_worker(",
+        "publish_on_owner(",
+        "Owner::capture_gold(",
+        "Owner::measure_gold_worker(",
+        "Owner::measure_render_worker(",
+        "inbox.accept_render(",
+        "inbox.accept_gold(",
+        "captured_epoch>0",
+    ):
+        check(required in handoff, "M21 genuine Product worker handoff missing: "+required)
+    for required in (
+        '#include "internal/m21_product_analysis_handoff.hpp"',
+        "goldFromThread.emplace(Handoff::measure_on_worker(",
+        "handoffRenderInbox",
+        "Handoff::publish_on_owner(",
+        "wrongColumnJob.column=",
+        "wrongGeneration.captured_epoch",
+    ):
+        check(required in joined, "M21 real worker handoff ProductSession test missing: "+required)
+
+    vmh=blob("HEAD","app/src/m21_product_status_view_model.hpp").decode()
+    vmc=blob("HEAD","app/src/m21_product_status_view_model.cpp").decode()
+    for required in ("Q_PROPERTY(QVariantMap m19", "Q_PROPERTY(QVariantMap m20",
+                     "Q_PROPERTY(QVariantMap m21",
+                     "productionAuthorized READ production_authorized CONSTANT",
+                     "M21ProductQtReadinessBridge",
+                     "Q_INVOKABLE bool selectPanelSource("):
+        check(required in vmh, "M21 native Qt status-only ViewModel contract missing: "+required)
+    for required in ("Bridge::capture(", "owner_thread()", "emit changed()",
+                     'QStringLiteral("REFERENCE")'):
+        check(required in vmc, "M21 native Qt owner refresh or public label missing: "+required)
+    for required in ("app::M21ProductStatusViewModel",
+                     "liveNativeStatus", "goldNativeStatus",
+                     "goldNativeStatus.refresh();",
+                     "liveNativeStatus.refresh();"):
+        check(required in joined, "M21 authentic native Qt ProductSession test missing: "+required)
+
+    # Real app bootstrap/CMake may only gain the M21 Presenter.
+    for apppath,needles in (
+        ("app/src/main.cpp", (
+            '#include "m21_product_status_view_model.hpp"',
+            "M21ProductPublicationInbox m21ProductInbox;",
+            "M21ProductStatusViewModel m21ProductStatusViewModel{",
+            'QStringLiteral("m21ProductStatusViewModel")',
+            "&rgsml::app::M21ProductStatusViewModel::refresh",
+        )),
+        ("app/CMakeLists.txt", (
+            "src/m21_product_status_view_model.cpp",
+            "src/m21_product_status_view_model.hpp",
+        )),
+    ):
+        original_lines=blob(BASE,apppath).decode().splitlines(keepends=True)
+        present_lines=blob("HEAD",apppath).decode().splitlines(keepends=True)
+        edits=difflib.SequenceMatcher(
+            a=original_lines,b=present_lines,autojunk=False)
+        check(all(tag in ("equal","insert") for tag,*_ in edits.get_opcodes()),
+              "Original Product bootstrap/CMake altered outside additive Qt seam: "+apppath)
+        for needle in needles:
+            check(needle in "".join(present_lines),
+                  "M21 native Product binding absent: "+apppath+" / "+needle)
 
     cmake = blob("HEAD", "tests/CMakeLists.txt")
     original = blob(BASE, "tests/CMakeLists.txt")
