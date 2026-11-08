@@ -36,9 +36,10 @@ public:
         core::FrameRange absoluteOutputWindow)
     {
         using R=core::Result<Capture>;
-        if(!Binding::installed(product)
+        // Reject off-owner calls BEFORE accessing mutable Product state.
+        if(QThread::currentThread()!=product.session.thread()
            ||!Binding::Upstream::owner_thread_current(product.upstream)
-           ||QThread::currentThread()!=product.session.thread())
+           ||!Binding::installed(product))
             return R::failure(fail("M22_PRODUCT_PREVIEW_REQUIRES_QT_OWNER"));
         const auto owner=fanout.current_owner_snapshot();
         if(!owner||owner->epoch==0||!owner->identity.valid())
@@ -66,9 +67,11 @@ public:
         const Controllers& product,const Fanout& fanout,
         const Capture& capture)
     {
-        if(!Binding::installed(product)
+        // A worker may retain immutable PCM but cannot validate or
+        // publish it by reading a live GUI-owned Product gate.
+        if(QThread::currentThread()!=product.session.thread()
            ||!Binding::Upstream::owner_thread_current(product.upstream)
-           ||QThread::currentThread()!=product.session.thread()
+           ||!Binding::installed(product)
            ||!capture.full_master||capture.owner.epoch==0)
             return false;
         const auto now=fanout.current_owner_snapshot();
