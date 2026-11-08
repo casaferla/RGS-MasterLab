@@ -1290,6 +1290,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             encoding==audio::WavSampleFormat::PCM_S24?0:1);
         QVERIFY2(accepted,ui.error_text().toUtf8().constData());
         QVERIFY(action.has_unacknowledged_export());
+        // M22 Preview cannot retain a prior authorisation while an
+        // M18 export ticket is live. A queued GUI preview must drop
+        // the old verified owner even though its PCM remains in memory.
+        QVERIFY(!PreviewAdmission::still_current(
+            controllers,fanout,*admittedMasterPreview.value()));
+        QVERIFY(!PreviewAdmission::capture(
+            controllers,fanout,verified,*selectedWindow.value()));
         QVERIFY(!ui.can_export()); // one unacknowledged Product job
         // The first worker might finish before the next Qt instruction.
         // Do not make a timing-dependent false "still encoding" claim.
@@ -1377,6 +1384,16 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QVERIFY(ui.acknowledgeExport());
         QVERIFY(!ui.can_acknowledge());
         QVERIFY(ui.can_export());
+        // ACK is a NEW Product epoch; the old Preview receipt must
+        // stay retired, even though the exact checked full Master
+        // remains eligible for a fresh explicitly requested Preview.
+        QVERIFY(!PreviewAdmission::still_current(
+            controllers,fanout,*admittedMasterPreview.value()));
+        const auto newPreviewEpoch=PreviewAdmission::capture(
+            controllers,fanout,verified,*selectedWindow.value());
+        QVERIFY(newPreviewEpoch);
+        QVERIFY(PreviewAdmission::still_current(
+            controllers,fanout,*newPreviewEpoch.value()));
         expectedConsentEpoch+=2; // one user consent, one terminal ACK
         const auto afterAck=fanout.current_owner_snapshot();
         QVERIFY(afterAck);
