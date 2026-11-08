@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleRejectedGenerationLeavesRevisionStable();
     void independentPanelBundleRejectedReceiptLeavesRevisionStable();
     void independentPanelBundleReceiveBumpsRevisionOnce();
     void independentPanelBundleBeginningEpochChangesRevision();
@@ -1373,6 +1374,20 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleRejectedReceipt
     QVERIFY(!store.receive(p,falseReceipt));
     QVERIFY(store.review_revision()==before);
     QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.review_revision()==before+1);
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleRejectedGenerationLeavesRevisionStable()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    QVERIFY(store.begin(Column::prepared,7));
+    const auto before=store.review_revision();
+    QVERIFY(!store.begin(Column::prepared,7));
+    QVERIFY(!store.begin(Column::prepared,6));
+    QVERIFY(!store.begin(Column::prepared,0));
+    QVERIFY(store.review_revision()==before);
+    QVERIFY(store.begin(Column::prepared,8));
     QVERIFY(store.review_revision()==before+1);
 }
 
