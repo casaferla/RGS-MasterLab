@@ -1,0 +1,141 @@
+#pragma once
+// M18-M22 isolated Product-to-Qt readiness bridge.
+// This uses the *actual* current M18 owner and M21 publication inbox.
+// It emits NO metric numbers, no Product QML registration and no
+// Phase-6 approval. The public visual workbench stays fail-closed.
+#include "m21_product_publication_inbox.hpp"
+#include "m21_independent_panels_review_candidate.hpp"
+#include "m21_qt_snapshot_review_candidate.hpp"
+#include <QThread>
+#include <QVariantMap>
+#include <QString>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+
+namespace rgsml::app::internal {
+
+class M21ProductQtReadinessBridge final {
+public:
+    using Inbox=M21ProductPublicationInbox;
+    using Product=M21ProductOwnerAnalysis;
+    using Controllers=Product::Controllers;
+    using Fanout=Product::Fanout;
+    using Column=m21_private::Column;
+    using Lifecycle=m21_private::Lifecycle;
+    using Routing=m21_private::ui_candidate::panel_review::IndependentPanelRouting;
+    using AnalysisPanel=m21_private::ui_candidate::panel_review::AnalysisPanel;
+
+    struct Identity final {
+        std::string resource{};
+        std::uint64_t generation{};
+        Lifecycle lifecycle{Lifecycle::missing};
+        std::string scope{};
+        std::uint64_t start{};
+        std::uint64_t frames{};
+        std::uint32_t sample_rate{};
+        [[nodiscard]] bool operator==(const Identity&) const = default;
+    };
+    struct Frame final {
+        std::uint64_t owner_epoch{};
+        std::uint64_t routing_revision{};
+        bool current_product_owner{false};
+        bool product_ui_authorized{false}; // ALWAYS FALSE in this bridge
+        std::array<Column,3> selected{{
+            Column::prepared,Column::prepared,Column::prepared}};
+        std::array<Identity,3> identities{};
+        std::array<QVariantMap,3> panels{};
+    };
+
+    // Must be called on the true Qt Product owner, not a numerical worker.
+    // Missing, invalid and stale evidence must never turn into fake zeros.
+    [[nodiscard]] static Frame capture(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,const Inbox& inbox,
+        const Routing& routing)
+    {
+        Frame result;
+        result.routing_revision=routing.routing_revision();
+        constexpr std::array<AnalysisPanel,3> panels{{
+            AnalysisPanel::levels_m19,AnalysisPanel::tonal_m20,
+            AnalysisPanel::delta_m21}};
+        constexpr std::array<const char*,3> panel_names{{"M19","M20","M21"}};
+        constexpr std::array<const char*,3> role_names{{
+            "PREPARED","REFERENCE","PROCESSED"}};
+        for(std::size_t i=0;i<3;++i) {
+            result.selected[i]=routing.selected(panels[i]);
+            result.panels[i]=m21_private::ui_candidate::qt_review::
+                masked_unpublished_envelope();
+            result.panels[i].insert("panelId",
+                QString::fromLatin1(panel_names[i]));
+            result.panels[i].insert("sourceRole",
+                QString::fromLatin1(role_names[
+                    static_cast<std::size_t>(result.selected[i])]));
+            result.panels[i].insert("privateEvidenceStatus",
+                QStringLiteral("MISSING"));
+        }
+        if(QThread::currentThread()!=selector.thread()
+           ||QThread::currentThread()!=gold.thread()
+           ||QThread::currentThread()!=product.session.thread()
+           ||!Product::Binding::installed(product)
+           ||!Product::Binding::Upstream::
+                owner_thread_current(product.upstream)
+           ||!fanout.can_install_full_product_guards())
+            return result;
+        const auto owner=fanout.current_owner_snapshot();
+        if(!owner||!owner->identity.valid()||owner->epoch==0)
+            return result;
+        result.current_product_owner=true;
+        result.owner_epoch=owner->epoch;
+        const auto current=inbox.view_current(
+            product,fanout,selector,gold);
+        for(std::size_t i=0;i<3;++i) {
+            const auto index=static_cast<std::size_t>(result.selected[i]);
+            if(index>=current.columns.size())continue;
+            const auto& selected=current.columns[index];
+            if(!selected)continue;
+            const auto& s=*selected;
+            result.identities[i]=Identity{
+                s.resource_identity,s.generation_token,s.lifecycle,
+                s.analysis_scope_label,s.absolute_scope_begin,s.scope_frames,
+                s.sample_rate_hz};
+            const auto status=m21_private::ui_candidate::
+                lifecycle_label(s.lifecycle);
+            result.panels[i].insert("privateEvidenceStatus",
+                QString::fromStdString(status));
+            // Not an official Product/Phase-6 status, even if the private
+            // inbox holds an authenticated CURRENT numerical result.
+            result.panels[i].insert("analysisStatus",
+                QString::fromStdString(status));
+            result.panels[i].insert("scopeLabel",
+                s.lifecycle==Lifecycle::current
+                  ?QString::fromStdString(s.analysis_scope_label)
+                  :QStringLiteral("SCOPE UNAVAILABLE"));
+        }
+        return result;
+    }
+
+    // A queued Qt frame becomes unusable after any change of current
+    // M18 epoch, source identity, result generation OR individual route.
+    [[nodiscard]] static bool still_current(
+        const Frame& expected,const Controllers& product,
+        const Fanout& fanout,const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,const Inbox& inbox,
+        const Routing& routing)
+    {
+        if(!expected.current_product_owner||expected.product_ui_authorized
+           ||expected.owner_epoch==0
+           ||!routing.is_current_route(expected.routing_revision))
+            return false;
+        const auto now=capture(product,fanout,selector,gold,inbox,routing);
+        return now.current_product_owner&&!now.product_ui_authorized
+            &&now.owner_epoch==expected.owner_epoch
+            &&now.routing_revision==expected.routing_revision
+            &&now.selected==expected.selected
+            &&now.identities==expected.identities;
+    }
+};
+} // namespace rgsml::app::internal
