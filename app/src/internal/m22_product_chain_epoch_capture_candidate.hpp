@@ -25,6 +25,12 @@ public:
         Fanout::OwnerSnapshot epoch;
         std::shared_ptr<const Stage> exact_m17_owner;
         m22_private::FullChainWitness immutable_chain_witness;
+        Capture()=delete;
+        Capture(Fanout::OwnerSnapshot accepted,
+                std::shared_ptr<const Stage> m17,
+                m22_private::FullChainWitness witness)
+            :epoch(std::move(accepted)),exact_m17_owner(std::move(m17)),
+             immutable_chain_witness(std::move(witness)) {}
         [[nodiscard]] bool authorizes_release() const noexcept {return false;}
     };
 
