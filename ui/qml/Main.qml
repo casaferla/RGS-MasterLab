@@ -76,6 +76,19 @@ ApplicationWindow {
         ? privateOriginalFirLibrary : null
     readonly property bool monitorExclusive: root.appTerminalMonitorViewModel
         ? root.appTerminalMonitorViewModel.monitorExclusive : false
+    // A read-only navigation clock shared with the main full-track waveform.
+    // MASTER during anonymous Master Audition; SOURCE when its playhead is
+    // visible. This is NOT a Windows-consumed GR witness or second timer.
+    readonly property real m17GrTimelineFraction:
+        waveformOverview.visible
+        && (root.monitorExclusive || auditionSelector.sourcePlayheadVisible)
+        && waveformOverview.durationFrames > 0
+        ? Math.max(0, Math.min(1,
+            waveformOverview.positionFrames / waveformOverview.durationFrames))
+        : -1
+    readonly property string m17GrTimelineScope:
+        root.monitorExclusive ? "MASTER"
+        : auditionSelector.sourcePlayheadVisible ? "SOURCE" : ""
     // PO 2026-10-27 §12: Master listening belongs to MAIN transport.
     // The historic service editor remains temporarily for PO parity/FQ,
     // not as a second DSP or a second MASTER Prepare authority.
@@ -1095,10 +1108,10 @@ ApplicationWindow {
             masterListeningHandler: function() { return root.listenToPreparedMaster() }
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
-            limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
-                ? terminalPrivateGrViewModel : null
             limiterOfflineGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
+            m17GrTimelineFraction: root.m17GrTimelineFraction
+            m17GrTimelineScope: root.m17GrTimelineScope
         }
     }
 

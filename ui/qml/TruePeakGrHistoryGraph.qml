@@ -1,37 +1,62 @@
 import QtQuick
 
-// M17 GR has TWO distinct, truthfully labeled sources: actual applied
-// M17 MASTER gains sampled offline, and the stricter Windows consumed-output
-// live witness. No candidate means NO painted curve, never fake zero-history.
+// One M17 GR HISTORY: sampled actual applied gains across the WHOLE
+// immutable MASTER. There is no GR Live chart and no Live/History toggle.
+// The yellow cursor is a SOURCE/MASTER navigation position, NOT a Windows
+// consumed-output or M16 True Peak certificate.
 Canvas {
     id: root
     objectName: "m17GainReductionPlot"
-    // Only a backend-bound authenticated GR provider may populate history.
-    // The current production default stays NULL / NO GRAPH, not fake zero.
-    property var verifiedHistory: []
-    property bool backendVerified: false
     property var offlineHistory: []
     property bool backendOfflineAvailable: false
-    readonly property bool verifiedSeriesAvailable: backendVerified
-        && !bypassed && verifiedHistory && verifiedHistory.length > 0
-    readonly property bool offlineSeriesAvailable: backendOfflineAvailable
-        && !bypassed && offlineHistory && offlineHistory.length > 0
-        && !verifiedSeriesAvailable
     property color familyAccent: "#C4774A"
     property bool bypassed: true
-    implicitWidth: 160
-    // Single stereo-linked GR history lane: identical native Canvas height
-    // to CompressorEditor.qml's single-lane GR ribbon (54px).
-    implicitHeight: 54
+    // -1 means no authoritative position. The hosting Main waveform owns
+    // the one clock; the GR chart must not run an independent timer.
+    property real timelineFraction: -1
+    property string timelineScope: ""
 
+    readonly property bool offlineSeriesValid: {
+        if (!root.backendOfflineAvailable || !root.offlineHistory
+            || root.offlineHistory.length < 1
+            || root.offlineHistory.length > 256)
+            return false
+        let nextBegin = 0
+        for (let i = 0; i < root.offlineHistory.length; ++i) {
+            const p = root.offlineHistory[i]
+            if (!p || typeof p.peakReductionDb !== "number"
+                || !isFinite(p.peakReductionDb) || p.peakReductionDb < 0
+                || typeof p.frameBegin !== "number"
+                || typeof p.frameEndExclusive !== "number"
+                || !isFinite(p.frameBegin) || !isFinite(p.frameEndExclusive)
+                || !Number.isSafeInteger(p.frameBegin)
+                || !Number.isSafeInteger(p.frameEndExclusive)
+                || p.frameBegin !== nextBegin
+                || p.frameEndExclusive <= p.frameBegin)
+                return false
+            nextBegin = p.frameEndExclusive
+        }
+        return nextBegin > 0
+    }
+    readonly property bool offlineSeriesAvailable:
+        !root.bypassed && root.offlineSeriesValid
+    readonly property bool playheadAvailable: root.offlineSeriesAvailable
+        && isFinite(root.timelineFraction)
+        && root.timelineFraction >= 0 && root.timelineFraction <= 1
+        && (root.timelineScope === "SOURCE" || root.timelineScope === "MASTER")
+
+    implicitWidth: 160
+    // Same fixed one-lane GR ribbon geometry as the M17/M14 layouts.
+    implicitHeight: 54
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
-    onFamilyAccentChanged: requestPaint()
-    onVerifiedHistoryChanged: requestPaint()
-    onBackendVerifiedChanged: requestPaint()
     onOfflineHistoryChanged: requestPaint()
     onBackendOfflineAvailableChanged: requestPaint()
+    onOfflineSeriesAvailableChanged: requestPaint()
+    onFamilyAccentChanged: requestPaint()
     onBypassedChanged: requestPaint()
+    onTimelineFractionChanged: requestPaint()
+    onTimelineScopeChanged: requestPaint()
 
     onPaint: {
         const ctx = getContext("2d")
@@ -44,27 +69,16 @@ Canvas {
         const bottom = height - 13
         const plotWidth = Math.max(1, right - left)
         const plotHeight = Math.max(1, bottom - top)
-
-        // LIVE has precedence. Otherwise a separately labeled offline
-        // sampled curve may use ONLY source-bound, actual M17 applied gains.
-        const history = root.verifiedSeriesAvailable ? root.verifiedHistory
-            : root.offlineSeriesAvailable ? root.offlineHistory : []
-        let valid = history.length > 0 && history.length <= 256
+        const history = root.offlineSeriesAvailable ? root.offlineHistory : []
+        const valid = history.length > 0
+        const rgb = root.bypassed ? "108, 188, 207" : "196, 119, 74"
         let axisMax = 6
         if (valid) {
-            for (let i = 0; i < history.length; ++i) {
-                const sample = history[i]
-                if (!sample || typeof sample.peakReductionDb !== "number"
-                    || !isFinite(sample.peakReductionDb)
-                    || sample.peakReductionDb < 0) {
-                    valid = false
-                    break
-                }
-                axisMax = Math.max(axisMax, sample.peakReductionDb)
-            }
+            for (let i = 0; i < history.length; ++i)
+                axisMax = Math.max(axisMax, history[i].peakReductionDb)
         }
         axisMax = Math.ceil(axisMax / 3) * 3
-        const rgb = bypassed ? "108, 188, 207" : "196, 119, 74"
+
         ctx.save()
         ctx.lineWidth = 1
         for (let tick = 0; tick <= 2; ++tick) {
@@ -88,58 +102,69 @@ Canvas {
             ctx.lineTo(Math.round(x) + 0.5, bottom)
             ctx.stroke()
         }
+
         if (valid) {
-            // Match Compressor GR's visual discontinuity grammar: two empty
-            // horizontal slots and a subtle, 1px vertical 2-2 dashed marker.
-            // BREAK flags come only from backend-verified epoch transitions;
-            // never interpolate across a seek, loop wrap or ownership reset.
-            let breakCount = 0
-            for (let i = 1; i < history.length; ++i) {
-                if (history[i].breakBefore === true)
-                    breakCount += 1
+            const fullFrames = history[history.length - 1].frameEndExclusive
+            const pointX = p => left + plotWidth
+                * (0.5 * (p.frameBegin / fullFrames)
+                    + 0.5 * (p.frameEndExclusive / fullFrames))
+            const pointY = p => top + plotHeight * p.peakReductionDb / axisMax
+
+            // GR data is an immutable sampled whole-master envelope.
+            // The copper fill is clipped BOTH to the curve's true shape
+            // and to the waveform-synchronized cursor. It is not a rectangle.
+            if (root.playheadAvailable && root.timelineFraction > 0) {
+                const cursorX = left + plotWidth * root.timelineFraction
+                ctx.save()
+                ctx.beginPath()
+                ctx.rect(left, top, Math.max(0, cursorX - left), plotHeight)
+                ctx.clip()
+                ctx.beginPath()
+                ctx.moveTo(left, top)
+                ctx.lineTo(left, pointY(history[0]))
+                for (let i = 0; i < history.length; ++i)
+                    ctx.lineTo(pointX(history[i]), pointY(history[i]))
+                ctx.lineTo(right, pointY(history[history.length - 1]))
+                ctx.lineTo(right, top)
+                ctx.closePath()
+                const fill = ctx.createLinearGradient(
+                    left, 0, Math.max(left + 1, cursorX), 0)
+                fill.addColorStop(0, "rgba(196, 119, 74, 0.035)")
+                fill.addColorStop(0.7, "rgba(196, 119, 74, 0.23)")
+                fill.addColorStop(1, "rgba(244, 166, 109, 0.68)")
+                ctx.fillStyle = fill
+                ctx.fill()
+                ctx.restore()
             }
-            const stepX = plotWidth / (history.length + breakCount * 2)
-            let slot = 0
-            const markers = []
+            // The entire future GR remains visible beyond the playhead.
             ctx.setLineDash([])
             ctx.strokeStyle = "#C4774A"
             ctx.lineWidth = 1.5
             ctx.beginPath()
-            for (let i = 0; i < history.length; ++i) {
-                const point = history[i]
-                if (i > 0 && point.breakBefore === true) {
-                    ctx.stroke()
-                    slot += 2
-                    markers.push({
-                        x: left + (slot - 0.5) * stepX,
-                        loop: point.loopBefore === true
-                    })
-                    ctx.beginPath()
-                }
-                const x = left + (slot + 0.5) * stepX
-                const y = top + plotHeight * point.peakReductionDb / axisMax
-                if (i === 0 || point.breakBefore === true)
-                    ctx.moveTo(x, y)
-                else
-                    ctx.lineTo(x, y)
-                slot += 1
-            }
+            ctx.moveTo(left, pointY(history[0]))
+            for (let i = 0; i < history.length; ++i)
+                ctx.lineTo(pointX(history[i]), pointY(history[i]))
+            ctx.lineTo(right, pointY(history[history.length - 1]))
             ctx.stroke()
-            for (let m = 0; m < markers.length; ++m) {
-                ctx.strokeStyle = markers[m].loop ? "#586773" : "#C4774A"
-                ctx.lineWidth = 1
-                ctx.setLineDash([2, 2])
-                ctx.beginPath()
-                ctx.moveTo(markers[m].x, top)
-                ctx.lineTo(markers[m].x, bottom)
-                ctx.stroke()
+
+            if (root.playheadAvailable) {
+                const cursorX = left + plotWidth * root.timelineFraction
+                // Exact waveform grammar: 2px yellow line and 8px triangle.
                 ctx.setLineDash([])
+                ctx.fillStyle = "#F2B632"
+                ctx.fillRect(cursorX - 1, 0, 2, bottom)
+                ctx.beginPath()
+                ctx.moveTo(cursorX - 4, 0)
+                ctx.lineTo(cursorX + 4, 0)
+                ctx.lineTo(cursorX, 8)
+                ctx.closePath()
+                ctx.fill()
             }
         }
         ctx.setLineDash([])
         ctx.fillStyle = "#7895A6"
         ctx.font = "8px 'Segoe UI'"
-        ctx.fillText("dB GR", Math.max(0, right - 21), height - 2)
+        ctx.fillText("dB GR · sampled", Math.max(0, right - 68), height - 2)
         ctx.restore()
     }
 }
