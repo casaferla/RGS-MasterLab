@@ -34,7 +34,12 @@ Rectangle {
     // typed Product presenters are bound. Never display an unverified result.
     readonly property bool available: root.fixtureMode && root.stateCurrent
         && !!presentation && presentation.ready === true
+    readonly property bool spectrumAvailable: root.available
+        && !!root.presentation.spectrum && root.presentation.spectrum.length > 1
+    readonly property bool tonalBandsAvailable: root.available
+        && !!root.presentation.bands && root.presentation.bands.length > 0
     onAvailableChanged: spectrumCanvas.requestPaint()
+    onSpectrumAvailableChanged: spectrumCanvas.requestPaint()
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -416,7 +421,7 @@ Rectangle {
                                     ctx.beginPath();ctx.moveTo(tickX,0)
                                     ctx.lineTo(tickX,height);ctx.stroke()
                                 }
-                                const pts=root.available?root.presentation.spectrum:[]
+                                const pts=root.spectrumAvailable?root.presentation.spectrum:[]
                                 ctx.strokeStyle="#00C8FF";ctx.lineWidth=2.3
                                 ctx.beginPath()
                                 for(let i=0;i<pts.length;i++){
@@ -430,7 +435,7 @@ Rectangle {
                         }
                         Text {
                             objectName: "m20MissingSpectrumNotice"
-                            visible: !root.available
+                            visible: !root.spectrumAvailable
                             anchors.centerIn: spectrumCanvas
                             width: spectrumCanvas.width * 0.85
                             text: root.stateStale
@@ -515,7 +520,7 @@ Rectangle {
                         }
                         Text {
                             objectName: "m20MissingProfileNotice"
-                            visible: !root.available
+                            visible: !root.tonalBandsAvailable
                             text: root.stateStale
                                 ? "TONAL PROFILE STALE" : "TONAL PROFILE UNAVAILABLE"
                             font.family: "Segoe UI"
@@ -525,7 +530,7 @@ Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         Repeater {
-                            model:root.available?(root.presentation.bands||[]):[]
+                            model:root.tonalBandsAvailable?(root.presentation.bands||[]):[]
                             delegate:Column{
                                 width:Math.max(12,Math.floor((workspace.width-260)/root.presentation.bands.length)-14)
                                 height:90
