@@ -29,6 +29,7 @@
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
 #include "m18_product_export_view_model.hpp"
+#include "m21_product_status_view_model.hpp"
 #include "internal/m18_product_complete_binding.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"
@@ -928,6 +929,35 @@ int main(int argc, char* argv[])
     rgsml::app::M18ProductExportViewModel m18ExportViewModel{
         m18ExportAction,m18Controllers};
 
+    // Same real M18 Product authority, Source and REFERENCE objects.
+    // The M21 worker inbox is separate from the QML view: until the
+    // canonical Phase-6 feature registry/gates are qualified, this
+    // native presenter MUST report readiness only, never numeric values.
+    rgsml::app::internal::M21ProductPublicationInbox m21ProductInbox;
+    rgsml::app::M21ProductStatusViewModel m21ProductStatusViewModel{
+        m18Controllers,m18Fanout,auditionSelector,goldSelection,
+        m21ProductInbox};
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+    QObject::connect(&goldSelection,
+        &rgsml::app::GoldSelectionViewModel::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+
     // Invalidate the *visible* Export affordance whenever a Product
     // signal can retire the current verified M17 stage. The real Product
     // consent gate remains the source of truth; these are UI refreshes
@@ -1005,6 +1035,11 @@ int main(int argc, char* argv[])
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
         QStringLiteral("m18ProductExportViewModel"),&m18ExportViewModel);
+    // Real Product-backed M19/M20/M21 readiness only. This QML
+    // context never certifies Phase-6 or exposes synthetic/demo numbers.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m21ProductStatusViewModel"),
+        &m21ProductStatusViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);

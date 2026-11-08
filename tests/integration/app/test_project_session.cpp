@@ -4,8 +4,14 @@
 #include "internal/m18_product_upstream_binding.hpp"
 #include "internal/m18_product_complete_binding.hpp"
 #include "internal/m22_verified_master_preview_parity.hpp"
+#include "internal/m22_product_preview_admission.hpp"
+#include "internal/m22_product_verified_dispatch.hpp"
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
+#include "internal/m21_product_qt_readiness_bridge.hpp"
+#include "internal/m21_product_analysis_handoff.hpp"
+#include "m21_product_status_view_model.hpp"
+#include "internal/m21_product_spectrum_evidence.hpp"
 #include "internal/m18_private_product_export_action.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -583,6 +589,116 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
              app::m21_private::Lifecycle::current);
     QVERIFY(!goldView.columns[0]);
     QVERIFY(!goldView.columns[2]);
+
+    // Real three-stage Product handoff: Qt owner captures an independent
+    // selected REFERENCE, the worker decodes and measures its actual WAV,
+    // and the Qt owner alone decides whether M21 may publish the result.
+    using Handoff=app::internal::M21ProductAnalysisHandoff;
+    const auto goldJob=Handoff::capture_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        app::m21_private::Column::gold);
+    QVERIFY(goldJob);
+    QVERIFY(goldJob.value()->structurally_valid());
+    auto mismatchedEpochJob=*goldJob.value();
+    ++mismatchedEpochJob.captured_epoch;
+    QVERIFY(!mismatchedEpochJob.structurally_valid());
+    QVERIFY(!Handoff::measure_on_worker(mismatchedEpochJob));
+    auto wrongColumnJob=*goldJob.value();
+    wrongColumnJob.column=app::m21_private::Column::prepared;
+    QVERIFY(!wrongColumnJob.structurally_valid());
+    QVERIFY(!Handoff::measure_on_worker(wrongColumnJob));
+    std::optional<core::Result<app::m21_private::Snapshot>> goldFromThread;
+    std::thread realReferenceWorker([&] {
+        goldFromThread.emplace(Handoff::measure_on_worker(*goldJob.value()));
+    });
+    realReferenceWorker.join();
+    QVERIFY(goldFromThread.has_value());
+    QVERIFY(*goldFromThread);
+    QCOMPARE(goldFromThread->value()->resource_identity,
+             goldMeasured.value()->resource_identity);
+    QCOMPARE(goldFromThread->value()->scope_frames,
+             goldMeasured.value()->scope_frames);
+    app::internal::M21ProductPublicationInbox handoffGoldInbox;
+    QVERIFY(Handoff::publish_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
+    QVERIFY(!Handoff::publish_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
+    bool workerCannotCapture=false;
+    std::thread illegalCapture([&] {
+        workerCannotCapture=!Handoff::capture_on_owner(
+            controllers,fanout,session.selector,session.gold,
+            app::m21_private::Column::gold);
+    });
+    illegalCapture.join();
+    QVERIFY(workerCannotCapture);
+
+
+    // A truly independent REFERENCE is visible to the private UI readiness
+    // bridge only after its own canonical GoldSelection file owner accepted
+    // the measured WAV. The same object never invents PREPARED/PROCESSED.
+    using GoldQtReadiness=app::internal::M21ProductQtReadinessBridge;
+    GoldQtReadiness::Routing goldRouting;
+    QVERIFY(goldRouting.select(GoldQtReadiness::AnalysisPanel::tonal_m20,
+        app::m21_private::Column::gold));
+    QVERIFY(goldRouting.select(GoldQtReadiness::AnalysisPanel::delta_m21,
+        app::m21_private::Column::gold));
+    const auto independentGoldPanels=GoldQtReadiness::capture(
+        controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
+    QVERIFY(independentGoldPanels.current_product_owner);
+    QVERIFY(!independentGoldPanels.product_ui_authorized);
+    app::M21ProductStatusViewModel goldNativeStatus{
+        controllers,fanout,session.selector,session.gold,goldInbox};
+    QVERIFY(!goldNativeStatus.production_authorized());
+    QVERIFY(goldNativeStatus.selectPanelSource(
+        1,QStringLiteral("REFERENCE")));
+    QCOMPARE(goldNativeStatus.m20().value("sourceRole").toString(),
+             QStringLiteral("REFERENCE"));
+    QCOMPARE(goldNativeStatus.m20().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
+    QVERIFY(goldNativeStatus.m20().value("spectrum").toList().isEmpty());
+    QVERIFY(!goldNativeStatus.selectPanelSource(
+        1,QStringLiteral("GOLD"))); // internal token never public UI
+    QVERIFY(!goldNativeStatus.selectPanelSource(
+        7,QStringLiteral("REFERENCE")));
+    QCOMPARE(independentGoldPanels.panels[0].value(
+        "privateEvidenceStatus").toString(),QStringLiteral("MISSING"));
+    QCOMPARE(independentGoldPanels.panels[1].value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(independentGoldPanels.panels[2].value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QVERIFY(!independentGoldPanels.panels[1].value("ready").toBool());
+    // True selected REFERENCE M20 carries only quality classifications:
+    // no invented loudness, zero-valued TP or spectral bins.
+    const auto referenceQuality=independentGoldPanels.panels[1]
+        .value("privateQualityOnly").toMap();
+    QVERIFY(referenceQuality.contains("width"));
+    QVERIFY(referenceQuality.contains("P50"));
+    QVERIFY(!referenceQuality.contains("lufs"));
+    QCOMPARE(referenceQuality.size(),4);
+    QVERIFY(independentGoldPanels.panels[0]
+        .value("privateQualityOnly").toMap().isEmpty());
+    QVERIFY(independentGoldPanels.panels[1].value("stereo").toMap().isEmpty());
+    QVERIFY(GoldQtReadiness::still_current(independentGoldPanels,
+        controllers,fanout,session.selector,session.gold,
+        goldInbox,goldRouting));
+
+    const auto referenceSpectrum=app::internal::M21ProductSpectrumEvidence::
+        capture(controllers,fanout,session.selector,session.gold,
+                goldInbox,goldRouting);
+    QVERIFY(referenceSpectrum.current_owner);
+    QCOMPARE(referenceSpectrum.selected,app::m21_private::Column::gold);
+    QCOMPARE(referenceSpectrum.actual_spectrum,
+             !goldMeasured.value()->average_spectrum.empty());
+    QCOMPARE(referenceSpectrum.bins.size(),
+             goldMeasured.value()->average_spectrum.size());
+    QVERIFY(!referenceSpectrum.product_ui_authorized);
+    // Switching the selected Reference must never silently render a
+    // guessed spectrum from the unrelated SOURCE or PROCESSED PCM.
+
+
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
@@ -607,6 +723,35 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         controllers,fanout,session.selector,session.gold);
     QCOMPARE(retiredGold.columns[1]->lifecycle,
              app::m21_private::Lifecycle::stale);
+
+    // Clearing a selected REFERENCE invalidates the exact same private
+    // Qt panels without affecting Product DSP state or fabricating zeros.
+    QVERIFY(!GoldQtReadiness::still_current(independentGoldPanels,
+        controllers,fanout,session.selector,session.gold,
+        goldInbox,goldRouting));
+    goldNativeStatus.refresh();
+    QVERIFY(!goldNativeStatus.production_authorized());
+    QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
+    QCOMPARE(goldNativeStatus.m20().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+    QVERIFY(goldNativeStatus.m20().value(
+        "privateQualityOnly").toMap().isEmpty());
+    QVERIFY(!Handoff::publish_on_owner(
+        controllers,fanout,session.selector,session.gold,
+        handoffGoldInbox,*goldJob.value(),*goldFromThread->value()));
+    QVERIFY(!app::internal::M21ProductSpectrumEvidence::still_current(
+        referenceSpectrum,controllers,fanout,session.selector,session.gold,
+        goldInbox,goldRouting));
+    const auto retiredGoldPanel=GoldQtReadiness::capture(
+        controllers,fanout,session.selector,session.gold,goldInbox,goldRouting);
+    QVERIFY(!retiredGoldPanel.panels[1].value("ready").toBool());
+    QVERIFY(retiredGoldPanel.panels[1]
+        .value("privateQualityOnly").toMap().isEmpty());
+    QVERIFY(retiredGoldPanel.panels[1].value("stereo").toMap().isEmpty());
+    if(retiredGoldPanel.current_product_owner)
+        QCOMPARE(retiredGoldPanel.panels[1].value(
+            "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+
     QVERIFY(!M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
@@ -800,6 +945,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     // DTOs. The captured immutable RenderResult owners and accepted
     // RealizationId MUST match the real Qt AuditionSourceSelector.
     using M21Owners=app::internal::M21ProductOwnerAnalysis;
+    using Handoff=app::internal::M21ProductAnalysisHandoff;
     auto analysisOwners=M21Owners::capture(
         controllers,fanout,session.selector);
     QVERIFY2(analysisOwners,
@@ -848,6 +994,236 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(visible.columns[2]->lifecycle,
              app::m21_private::Lifecycle::current);
     QVERIFY(!visible.columns[1]); // Never invent GOLD.
+
+    // PREPARED and PROCESSED are two independent REAL RenderResult
+    // owners. Exercise the same capture/worker/publish protocol as the
+    // selected REFERENCE WAV, never changing a QObject on the worker.
+    app::internal::M21ProductPublicationInbox handoffRenderInbox;
+    for(const auto target:{app::m21_private::Column::prepared,
+                           app::m21_private::Column::processed}) {
+        const auto job=Handoff::capture_on_owner(
+            controllers,fanout,session.selector,session.gold,target);
+        QVERIFY(job);
+        QVERIFY(job.value()->structurally_valid());
+        auto wrongGeneration=*job.value();
+        ++wrongGeneration.captured_epoch;
+        QVERIFY(!wrongGeneration.structurally_valid());
+        QVERIFY(!Handoff::measure_on_worker(wrongGeneration));
+        QVERIFY(job.value()->render.has_value());
+        QVERIFY(!job.value()->reference.has_value());
+        std::optional<core::Result<app::m21_private::Snapshot>> computed;
+        std::thread numericalWorker([&] {
+            computed.emplace(Handoff::measure_on_worker(*job.value()));
+        });
+        numericalWorker.join();
+        QVERIFY(computed&&*computed);
+        const auto& direct=target==app::m21_private::Column::prepared
+            ?*workerPrepared.value():*workerProcessed.value();
+        QCOMPARE(computed->value()->resource_identity,
+                 direct.resource_identity);
+        QCOMPARE(computed->value()->generation_token,
+                 direct.generation_token);
+        QCOMPARE(computed->value()->scope_frames,direct.scope_frames);
+        QVERIFY(Handoff::publish_on_owner(
+            controllers,fanout,session.selector,session.gold,
+            handoffRenderInbox,*job.value(),*computed->value()));
+        QVERIFY(!Handoff::publish_on_owner(
+            controllers,fanout,session.selector,session.gold,
+            handoffRenderInbox,*job.value(),*computed->value()));
+    }
+    const auto handoffVisible=handoffRenderInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(handoffVisible.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(handoffVisible.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!handoffVisible.columns[1]);
+
+
+    // Actual M18 Product epoch and M21 publication inbox feed three
+    // independent PRIVATE Qt readiness surfaces. Values must remain
+    // masked until later real Phase-6 QML authorization; none can use
+    // test fixtureMode or pretend the independent REFERENCE is present.
+    using QtReadiness=app::internal::M21ProductQtReadinessBridge;
+    QtReadiness::Routing analysisRouting;
+    QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::tonal_m20,
+        app::m21_private::Column::processed));
+    QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::delta_m21,
+        app::m21_private::Column::gold));
+    const auto privatePanels=QtReadiness::capture(controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting);
+    QVERIFY(privatePanels.current_product_owner);
+    QVERIFY(!privatePanels.product_ui_authorized);
+    QVERIFY(privatePanels.owner_epoch>0);
+    // Concrete Qt QObject installed by app/main.cpp observes only
+    // authenticated Product-derived statuses, no fake numeric rows.
+    app::M21ProductStatusViewModel liveNativeStatus{
+        controllers,fanout,session.selector,session.gold,productInbox};
+    QVERIFY(!liveNativeStatus.production_authorized());
+    QCOMPARE(liveNativeStatus.m19().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QVERIFY(liveNativeStatus.selectPanelSource(
+        1,QStringLiteral("PROCESSED")));
+    QCOMPARE(liveNativeStatus.m20().value(
+        "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(liveNativeStatus.m20().value("sourceRole").toString(),
+             QStringLiteral("PROCESSED"));
+    QVERIFY(liveNativeStatus.m20().value("stereo").toMap().isEmpty());
+    QVERIFY(liveNativeStatus.m21().value("metrics").toList().isEmpty());
+    QVERIFY(!liveNativeStatus.selectPanelSource(
+        -1,QStringLiteral("PREPARED")));
+    QVERIFY(!liveNativeStatus.selectPanelSource(
+        0,QStringLiteral("INVALID")));
+    bool workerUiRejected=false;
+    std::thread foreignStatus([&] {
+        workerUiRejected=!liveNativeStatus.selectPanelSource(
+            0,QStringLiteral("REFERENCE"));
+        liveNativeStatus.refresh(); // no-op off owner Qt thread
+    });
+    foreignStatus.join();
+    QVERIFY(workerUiRejected);
+    const auto qtProductOwner=fanout.current_owner_snapshot();
+    QVERIFY(qtProductOwner);
+    QCOMPARE(privatePanels.owner_epoch,qtProductOwner->epoch);
+    QVERIFY(privatePanels.owner_identity==qtProductOwner->identity);
+    // Even an otherwise valid captured frame is not re-authorized by
+    // its epoch alone: all M18 Product identity fields are mandatory.
+    auto tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.owner_identity.source_generation;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.owner_identity.project_generation;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.owner_identity.master_rate_revision;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+
+    // Proof also includes the selected real M21 result identity, not just
+    // the Product-wide Source/Project epoch. No recomputation is triggered
+    // by merely testing a queued Qt frame.
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.identities[0].generation;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    tamperedQtOwner.identities[1].resource+=":synthetic";
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    tamperedQtOwner=privatePanels;
+    ++tamperedQtOwner.identities[0].frames;
+    QVERIFY(!QtReadiness::still_current(tamperedQtOwner,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    QCOMPARE(privatePanels.panels[0].value("sourceRole").toString(),
+             QStringLiteral("PREPARED"));
+    QCOMPARE(privatePanels.panels[1].value("sourceRole").toString(),
+             QStringLiteral("PROCESSED"));
+    QCOMPARE(privatePanels.panels[2].value("sourceRole").toString(),
+             QStringLiteral("REFERENCE"));
+    QCOMPARE(privatePanels.panels[0].value("privateEvidenceStatus").toString(),
+             QStringLiteral("CURRENT"));
+    QCOMPARE(privatePanels.panels[1].value("privateEvidenceStatus").toString(),
+             QStringLiteral("CURRENT"));
+    QCOMPARE(privatePanels.panels[2].value("privateEvidenceStatus").toString(),
+             QStringLiteral("MISSING"));
+    const auto levelsQuality=privatePanels.panels[0]
+        .value("privateQualityOnly").toMap();
+    QCOMPARE(levelsQuality.size(),5);
+    QVERIFY(levelsQuality.contains("lufs"));
+    QVERIFY(levelsQuality.contains("rms"));
+    QCOMPARE(levelsQuality.value("truePeak").toString(),
+        QStringLiteral("M16 UNQUALIFIED"));
+    const auto stereoQuality=privatePanels.panels[1]
+        .value("privateQualityOnly").toMap();
+    QCOMPARE(stereoQuality.size(),4);
+    QVERIFY(stereoQuality.contains("width"));
+    QVERIFY(!stereoQuality.contains("lufs"));
+    QVERIFY(privatePanels.panels[2]
+        .value("privateQualityOnly").toMap().isEmpty());
+    for(const auto& map:{levelsQuality,stereoQuality}) {
+        for(auto it=map.cbegin();it!=map.cend();++it) {
+            QVERIFY(!it.value().toString().isEmpty());
+            bool isNumeric=false;
+            static_cast<void>(it.value().toString().toDouble(&isNumeric));
+            QVERIFY(!isNumeric);
+        }
+    }
+    for(const auto& panel:privatePanels.panels) {
+        QVERIFY(!panel.value("ready").toBool());
+        QVERIFY(!panel.value("fixtureMode").toBool());
+        QVERIFY(!panel.value("productionAuthorized").toBool());
+        QVERIFY(panel.value("levels").toMap().isEmpty());
+        QVERIFY(panel.value("stereo").toMap().isEmpty());
+        QVERIFY(panel.value("metrics").toList().isEmpty());
+        QVERIFY(panel.value("spectrum").toList().isEmpty());
+        QVERIFY(panel.value("bands").toList().isEmpty());
+    }
+    QVERIFY(QtReadiness::still_current(privatePanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+
+    // This M20 proof is backed by the REAL privately published
+    // PROCESSED M19/M20 result; it never synthesizes PSD from LUFS,
+    // exports bins to QML or upgrades unavailable Phase-6 status.
+    using SpectrumProof=app::internal::M21ProductSpectrumEvidence;
+    const auto provenSpectrum=SpectrumProof::capture(
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting);
+    QVERIFY(provenSpectrum.current_owner);
+    QVERIFY(!provenSpectrum.product_ui_authorized);
+    QCOMPARE(provenSpectrum.selected,app::m21_private::Column::processed);
+    QCOMPARE(provenSpectrum.actual_spectrum,
+             !workerProcessed.value()->average_spectrum.empty());
+    QCOMPARE(provenSpectrum.bins.size(),
+             workerProcessed.value()->average_spectrum.size());
+    for(std::size_t b=0;b<provenSpectrum.bins.size();++b) {
+        QCOMPARE(provenSpectrum.bins[b].hz,
+                 workerProcessed.value()->average_spectrum[b].hz);
+        QCOMPARE(provenSpectrum.bins[b].linear_power,
+                 *workerProcessed.value()->average_spectrum[b]
+                    .power_density.unrounded);
+    }
+    QCOMPARE(SpectrumProof::still_current(provenSpectrum,
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting),provenSpectrum.actual_spectrum);
+    for(const auto& panel:privatePanels.panels) {
+        QVERIFY(panel.value("spectrum").toList().isEmpty());
+        QVERIFY(panel.value("bands").toList().isEmpty());
+    }
+
+
+    // A numerical worker cannot inspect Qt-owned routing, owner state or
+    // private Product metrics. Its entire return is a static masked map.
+    bool rejectedWorker=false;
+    std::thread privateQtWorker([&] {
+        const auto refused=QtReadiness::capture(
+            controllers,fanout,session.selector,session.gold,
+            productInbox,analysisRouting);
+        rejectedWorker=!refused.current_product_owner
+            &&!refused.product_ui_authorized
+            &&!refused.panels[0].value("ready").toBool()
+            &&refused.panels[0].value("levels").toMap().isEmpty()
+            &&refused.panels[0].value("sourceRole").toString()
+                ==QStringLiteral("UNAVAILABLE")
+            &&!QtReadiness::still_current(privatePanels,controllers,fanout,
+                session.selector,session.gold,productInbox,analysisRouting);
+    });
+    privateQtWorker.join();
+    QVERIFY(rejectedWorker);
+
+    QVERIFY(analysisRouting.select(QtReadiness::AnalysisPanel::tonal_m20,
+        app::m21_private::Column::prepared));
+    QVERIFY(!QtReadiness::still_current(privatePanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    QVERIFY(!SpectrumProof::still_current(provenSpectrum,
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting));
+    const auto reroutedPanels=QtReadiness::capture(controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting);
+    QVERIFY(QtReadiness::still_current(reroutedPanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+
     QVERIFY(!productInbox.accept_render(
         controllers,fanout,session.selector,*analysisOwners.value(),
         *workerPrepared.value())); // Duplicate epoch rejected.
@@ -899,6 +1275,40 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QCOMPARE(preview.value()->absolute_start_frame().value(),qint64{731});
     QCOMPARE(preview.value()->timebase().frame_domain_id(),
              audio::FrameDomainId::OUTPUT_RATE);
+    using PreviewAdmission=app::internal::M22ProductPreviewAdmission;
+    const auto admittedMasterPreview=PreviewAdmission::capture(
+        controllers,fanout,verified,*selectedWindow.value());
+    QVERIFY2(admittedMasterPreview,
+        admittedMasterPreview ? "" :
+        admittedMasterPreview.error()->message().c_str());
+    QCOMPARE(admittedMasterPreview.value()->crop.absolute_start_frame(),
+             preview.value()->absolute_start_frame());
+    QCOMPARE(admittedMasterPreview.value()->crop.frame_count(),
+             preview.value()->frame_count());
+    QVERIFY(PreviewAdmission::still_current(
+        controllers,fanout,*admittedMasterPreview.value()));
+    // The captured interval aliases the very same checked full M17 PCM,
+    // with an immutable full-owner lease. No pseudo-Preview numerical
+    // result, worker render or second M16 endpoint is acceptable.
+    for(std::size_t ch=0;ch<fullMaster.format().channel_count();++ch) {
+        const auto whole=fullMaster.channel(ch);
+        const auto crop=admittedMasterPreview.value()->crop.channel(ch);
+        QVERIFY(whole&&crop);
+        QCOMPARE(crop.value()->data(),whole.value()->data()+731);
+        QCOMPARE(crop.value()->size(),std::size_t{2100});
+    }
+    // Non-owner worker may hold immutable PCM to inspect, but cannot
+    // obtain or re-authorize Product Preview through any Qt source.
+    bool refusedOffThread=false;
+    std::thread privatePreviewWorker([&] {
+        const auto forbidden=PreviewAdmission::capture(
+            controllers,fanout,verified,*selectedWindow.value());
+        refusedOffThread=!forbidden
+            &&!PreviewAdmission::still_current(
+                controllers,fanout,*admittedMasterPreview.value());
+    });
+    privatePreviewWorker.join();
+    QVERIFY(refusedOffThread);
     auto wholeChannel=fullMaster.channel(0);
     auto segmentChannel=preview.value()->channel(0);
     QVERIFY(wholeChannel&&segmentChannel);
@@ -925,6 +1335,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QVERIFY(requested);
         const auto actual=app::internal::m22_verified_master_preview_crop(
             controllers,fanout,verified,*requested.value());
+        const auto admitted=PreviewAdmission::capture(
+            controllers,fanout,verified,*requested.value());
+        QVERIFY(admitted);
+        QVERIFY(PreviewAdmission::still_current(
+            controllers,fanout,*admitted.value()));
+        QCOMPARE(admitted.value()->crop.absolute_start_frame().value(),begin);
+        QCOMPARE(admitted.value()->crop.frame_count().value(),end-begin);
         QVERIFY2(actual,actual?"":actual.error()->message().c_str());
         QCOMPARE(actual.value()->absolute_start_frame().value(),begin);
         QCOMPARE(actual.value()->frame_count().value(),end-begin);
@@ -950,6 +1367,8 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         core::FrameIndex{731},core::FrameIndex{4097});
     QVERIFY(illegalWindow);
     QVERIFY(!app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*illegalWindow.value()));
+    QVERIFY(!PreviewAdmission::capture(
         controllers,fanout,verified,*illegalWindow.value()));
 
     QCOMPARE(verified->rendered.terminal.checked.terminal
@@ -1017,6 +1436,13 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             encoding==audio::WavSampleFormat::PCM_S24?0:1);
         QVERIFY2(accepted,ui.error_text().toUtf8().constData());
         QVERIFY(action.has_unacknowledged_export());
+        // M22 Preview cannot retain a prior authorisation while an
+        // M18 export ticket is live. A queued GUI preview must drop
+        // the old verified owner even though its PCM remains in memory.
+        QVERIFY(!PreviewAdmission::still_current(
+            controllers,fanout,*admittedMasterPreview.value()));
+        QVERIFY(!PreviewAdmission::capture(
+            controllers,fanout,verified,*selectedWindow.value()));
         QVERIFY(!ui.can_export()); // one unacknowledged Product job
         // The first worker might finish before the next Qt instruction.
         // Do not make a timing-dependent false "still encoding" claim.
@@ -1057,6 +1483,58 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
                  *rate48.value());
         QCOMPARE((*inspected.value())->info().audio_format().channel_layout(),
                  audio::ChannelLayout::MONO_C);
+        // M22 true Product end-to-end path:
+        // SOURCE decoded -> genuine MANUAL -> checked full M17 MASTER
+        // -> REAL user-consented M18 IEEE_F32 WAV -> independently
+        // decoded samples. Quantization must be exactly one f64->f32
+        // cast; no second compressor/limiter or region-only rerender.
+        if(encoding==audio::WavSampleFormat::IEEE_F32
+            ||encoding==audio::WavSampleFormat::PCM_S24) {
+            auto decodedExport=audio::AudioBuffer::create(
+                *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                core::FrameIndex{0},*frames.value());
+            QVERIFY(decodedExport);
+            const auto readBack=(*inspected.value())->read_frames(
+                core::FrameIndex{0},decodedExport.value()->mutable_view());
+            QVERIFY(readBack);
+            QCOMPARE(*readBack.value(),*frames.value());
+            const auto exported=decodedExport.value()->view();
+            const auto master=verified->rendered.terminal.checked.terminal
+                .compensated_pcm.view();
+            QCOMPARE(master.frame_count(),exported.frame_count());
+            QCOMPARE(master.format().sample_rate(),
+                     exported.format().sample_rate());
+            for(std::size_t channel=0;
+                channel<master.format().channel_count();++channel) {
+                const auto finalM17=master.channel(channel);
+                const auto finalWav=exported.channel(channel);
+                QVERIFY(finalM17&&finalWav);
+                QCOMPARE(finalM17.value()->size(),finalWav.value()->size());
+                for(std::size_t sample=0;
+                    sample<finalWav.value()->size();++sample) {
+                    const auto checkedMaster=(*finalM17.value())[sample];
+                    const auto actualWav=(*finalWav.value())[sample];
+                    QVERIFY(std::isfinite(checkedMaster));
+                    QVERIFY(std::isfinite(actualWav));
+                    if(encoding==audio::WavSampleFormat::IEEE_F32) {
+                        const auto expected=static_cast<double>(
+                            static_cast<float>(checkedMaster));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(actualWav),
+                                 std::bit_cast<std::uint64_t>(expected));
+                    }else {
+                        // Genuine M18 Philox/TPDF PCM24 quantization may
+                        // vary individual bits but cannot create a second
+                        // sound stage. Eight PCM24 LSB is a deliberately
+                        // loose dither+quantizer upper bound, NOT a
+                        // substitute for the frozen statistical QTP.
+                        constexpr double kMaxDitherQuantizerError=
+                            8.0/8388608.0;
+                        QVERIFY(std::abs(actualWav-checkedMaster)
+                                <=kMaxDitherQuantizerError);
+                    }
+                }
+            }
+        }
         QVERIFY((*inspected.value())->close());
         QVERIFY(action.can_acknowledge());
         QVERIFY(ui.can_acknowledge());
@@ -1068,6 +1546,16 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QVERIFY(ui.acknowledgeExport());
         QVERIFY(!ui.can_acknowledge());
         QVERIFY(ui.can_export());
+        // ACK is a NEW Product epoch; the old Preview receipt must
+        // stay retired, even though the exact checked full Master
+        // remains eligible for a fresh explicitly requested Preview.
+        QVERIFY(!PreviewAdmission::still_current(
+            controllers,fanout,*admittedMasterPreview.value()));
+        const auto newPreviewEpoch=PreviewAdmission::capture(
+            controllers,fanout,verified,*selectedWindow.value());
+        QVERIFY(newPreviewEpoch);
+        QVERIFY(PreviewAdmission::still_current(
+            controllers,fanout,*newPreviewEpoch.value()));
         expectedConsentEpoch+=2; // one user consent, one terminal ACK
         const auto afterAck=fanout.current_owner_snapshot();
         QVERIFY(afterAck);
@@ -1085,6 +1573,57 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         QCOMPARE(session.source.display_name(),
                  QStringLiteral("m18-positive-real-source.wav"));
     }
+    // M22 FULL is NOT a duplicate DSP renderer: it must take the exact
+    // same verified M17 Master from the canonical M18 Product context
+    // and dispatch through the existing user-consented M18 WAV action.
+    using M22Dispatch=app::internal::M22ProductVerifiedDispatch;
+    const auto dispatchOutput=directory.filePath(
+        QStringLiteral("m22-current-verified-full-dispatch.wav"));
+    auto dispatchResource=platform::windows::WindowsResourceWriter::
+        make_write_reference(dispatchOutput.toUtf8().toStdString(),
+            "m22-current-verified-full-dispatch.wav");
+    QVERIFY(dispatchResource);
+    const auto currentDispatchedPreview=M22Dispatch::begin_preview(
+        controllers,fanout,verified,*selectedWindow.value());
+    QVERIFY(currentDispatchedPreview);
+    QVERIFY(!M22Dispatch::begin_full(
+        controllers,fanout,action,{},*dispatchResource.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!M22Dispatch::begin_full(
+        controllers,fanout,action,verified,*dispatchResource.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),false));
+    QVERIFY(!QFileInfo::exists(dispatchOutput));
+    const auto dispatched=M22Dispatch::begin_full(
+        controllers,fanout,action,verified,*dispatchResource.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true);
+    QVERIFY2(dispatched,dispatched?"":dispatched.error()->message().c_str());
+    QVERIFY(action.has_unacknowledged_export());
+    QVERIFY(!M22Dispatch::begin_preview(
+        controllers,fanout,verified,*selectedWindow.value()));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        action.snapshot().phase==
+            M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
+        30000);
+    QCOMPARE(action.snapshot().total_frames,
+             static_cast<std::uint64_t>(n));
+    QCOMPARE(action.snapshot().encoded_frames,
+             static_cast<std::uint64_t>(n));
+    QVERIFY(QFileInfo::exists(dispatchOutput));
+    QCOMPARE(action.snapshot().verified_encoded_sha256.size(),
+             std::size_t{64});
+    QVERIFY(action.acknowledge());
+    expectedConsentEpoch+=2;
+    const auto afterDispatch=fanout.current_owner_snapshot();
+    QVERIFY(afterDispatch);
+    QCOMPARE(afterDispatch->epoch,expectedConsentEpoch);
+    QVERIFY(afterDispatch->identity==initialProductEpoch->identity);
+    QVERIFY(!PreviewAdmission::still_current(
+        controllers,fanout,*currentDispatchedPreview.value()));
+    QVERIFY(ui.can_export());
+
     // A fresh confirmed Export into an already-published WAV must fail
     // without overwriting the first verified output or losing the M17
     // Master. A failed job still requires explicit ACK to release consent.
@@ -1154,6 +1693,32 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              app::m21_private::Lifecycle::stale);
     QCOMPARE(stalePresentation.columns[2]->lifecycle,
              app::m21_private::Lifecycle::stale);
+
+    // Same checked Product readout must be revoked after parameter-only
+    // DSP revision even though the structural chain revision is unchanged.
+    QVERIFY(!QtReadiness::still_current(reroutedPanels,controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting));
+    // Old M20 proof remains stale even if the original double samples
+    // are retained in private memory.
+    QVERIFY(!SpectrumProof::still_current(provenSpectrum,
+        controllers,fanout,session.selector,session.gold,
+        productInbox,analysisRouting));
+    const auto stalePrivatePanels=QtReadiness::capture(controllers,fanout,
+        session.selector,session.gold,productInbox,analysisRouting);
+    QVERIFY(!stalePrivatePanels.product_ui_authorized);
+    liveNativeStatus.refresh();
+    QVERIFY(!liveNativeStatus.production_authorized());
+    QVERIFY(!liveNativeStatus.m19().value("ready").toBool());
+    QVERIFY(liveNativeStatus.m19().value(
+        "privateQualityOnly").toMap().isEmpty());
+    QVERIFY(!stalePrivatePanels.panels[0].value("ready").toBool());
+    QVERIFY(stalePrivatePanels.panels[0]
+        .value("privateQualityOnly").toMap().isEmpty());
+    QVERIFY(stalePrivatePanels.panels[0].value("levels").toMap().isEmpty());
+    if(stalePrivatePanels.current_product_owner)
+        QCOMPARE(stalePrivatePanels.panels[0].value(
+            "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+
     QVERIFY(!productInbox.accept_render(
         controllers,fanout,session.selector,*analysisOwners.value(),
         *workerPrepared.value())); // Late worker refused.
@@ -1162,6 +1727,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     // The stale M17 shared_ptr is still in memory, but M22 Preview may
     // not expose it after even a parameter-only accepted Gain edit.
     QVERIFY(!app::internal::m22_verified_master_preview_crop(
+        controllers,fanout,verified,*selectedWindow.value()));
+    QVERIFY(!PreviewAdmission::still_current(
+        controllers,fanout,*admittedMasterPreview.value()));
+    QVERIFY(!PreviewAdmission::capture(
         controllers,fanout,verified,*selectedWindow.value()));
     const auto parameterOnlyStalePath=directory.filePath(
         QStringLiteral("m18-stale-parameter-only-master.wav"));

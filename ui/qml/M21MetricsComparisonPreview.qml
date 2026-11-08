@@ -13,15 +13,16 @@ Rectangle {
         anchors.margins: 16
         spacing: 8
         Text {
-            text: "METRICS / DELTA · PREPARED | GOLD | PROCESSED · DEMO DATA"
+            text: "METRICS / DELTA · PREPARED | REFERENCE | PROCESSED · DEMO DATA"
             font.bold: true
             font.family: "Arial"; font.pixelSize: 18
             color: "#DCEAF2"
         }
         Text {
             objectName: "m21ScopeWarning"
-            text: root.modelReady ? root.presentation.scopeWarning :
-                  "Independent GOLD analysis scope; no time alignment is implied."
+            text: root.modelReady ?
+                String(root.presentation.scopeWarning).replace(/\bGOLD\b/g, "REFERENCE") :
+                  "Independent REFERENCE analysis scope; no time alignment is implied."
             font.family: "Arial"; font.pixelSize: 12
             color: "#EAC28C"
             width: parent.width
@@ -51,7 +52,7 @@ Rectangle {
             Text {
                 objectName: "m21GoldScope"
                 width: (parent.width-16)/3
-                text: root.modelReady ? "GOLD · " +
+                text: root.modelReady ? "REFERENCE · " +
                     root.presentation.scopes[1] + " · " + root.presentation.states[1] : ""
                 color: "#EFCB8D"
                 font.family: "Arial"; font.pixelSize: 12
@@ -82,8 +83,8 @@ Rectangle {
                     Row {
                         anchors.fill: parent
                         Repeater {
-                            model: ["METRIC","PREPARED","GOLD","PROCESSED",
-                                    "Δ PREPARED→GOLD","Δ PROCESSED→GOLD"]
+                            model: ["METRIC","PREPARED","REFERENCE","PROCESSED",
+                                    "Δ PREPARED→REFERENCE","Δ PROCESSED→REFERENCE"]
                             delegate: Text {
                                 width: parent.width/6
                                 height: parent.height
@@ -131,7 +132,7 @@ Rectangle {
             visible: root.modelReady
             width: parent.width
             text: root.modelReady ? "AVERAGE SPECTRUM · PREPARED " +
-                root.presentation.spectrumStates[0] + " | GOLD " +
+                root.presentation.spectrumStates[0] + " | REFERENCE " +
                 root.presentation.spectrumStates[1] + " | PROCESSED " +
                 root.presentation.spectrumStates[2] : ""
             color: "#A7CADC"
