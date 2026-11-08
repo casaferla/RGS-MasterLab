@@ -82,6 +82,18 @@ struct IndependentPanelBundle final {
     result.m19.insert("panelId",QStringLiteral("M19"));
     result.m20.insert("panelId",QStringLiteral("M20"));
     result.m21.insert("panelId",QStringLiteral("M21"));
+    // Isolation by panel: do not hand an M19 readout a full M21
+    // comparison or hand the M20 spectrum surface unrelated LUFS levels.
+    result.m19.remove("stereo");
+    result.m19.remove("metrics");
+    result.m19.remove("spectrum");
+    result.m19.remove("bands");
+    result.m20.remove("levels");
+    result.m20.remove("metrics");
+    result.m21.remove("levels");
+    result.m21.remove("stereo");
+    result.m21.remove("spectrum");
+    result.m21.remove("bands");
     const auto idx=static_cast<std::size_t>(store.selected());
     if(idx>=projection.columns.size())return unpublished_panels(store);
     const auto& selected=projection.columns[idx];
@@ -114,6 +126,12 @@ struct IndependentPanelBundle final {
     const ReviewEpochStore& store, const IndependentPanelBundle& frame) {
     return frame.test_fixture_only
         && store.is_current_review(frame.review_revision)
+        && frame.m19.value("fixtureMode").toBool()
+        && frame.m20.value("fixtureMode").toBool()
+        && frame.m21.value("fixtureMode").toBool()
+        && frame.m19.value("panelId").toString()==QStringLiteral("M19")
+        && frame.m20.value("panelId").toString()==QStringLiteral("M20")
+        && frame.m21.value("panelId").toString()==QStringLiteral("M21")
         && !frame.m19.value("productionAuthorized").toBool()
         && !frame.m20.value("productionAuthorized").toBool()
         && !frame.m21.value("productionAuthorized").toBool();
