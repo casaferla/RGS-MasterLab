@@ -40,6 +40,9 @@ public:
     };
     struct Frame final {
         std::uint64_t owner_epoch{};
+        // The complete M18 owner identity must travel with the private
+        // pending Qt frame; an epoch number alone is not a source identity.
+        platform::windows::internal::M18ProductExportIdentity owner_identity{};
         std::uint64_t routing_revision{};
         bool current_product_owner{false};
         bool product_ui_authorized{false}; // ALWAYS FALSE in this bridge
@@ -98,6 +101,7 @@ public:
             return result;
         result.current_product_owner=true;
         result.owner_epoch=owner->epoch;
+        result.owner_identity=owner->identity;
         const auto current=inbox.view_current(
             product,fanout,selector,gold);
         for(std::size_t i=0;i<3;++i) {
@@ -162,11 +166,13 @@ public:
            ||QThread::currentThread()!=product.session.thread()
            ||!expected.current_product_owner||expected.product_ui_authorized
            ||expected.owner_epoch==0
+           ||!expected.owner_identity.valid()
            ||!routing.is_current_route(expected.routing_revision))
             return false;
         const auto now=capture(product,fanout,selector,gold,inbox,routing);
         return now.current_product_owner&&!now.product_ui_authorized
             &&now.owner_epoch==expected.owner_epoch
+            &&now.owner_identity==expected.owner_identity
             &&now.routing_revision==expected.routing_revision
             &&now.selected==expected.selected
             &&now.identities==expected.identities;
