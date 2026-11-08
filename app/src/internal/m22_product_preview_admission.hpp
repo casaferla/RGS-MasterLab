@@ -7,6 +7,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <QThread>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -78,12 +79,28 @@ public:
         const auto verified=m22_verified_master_preview_crop(
             product,fanout,capture.full_master,capture.exact_window);
         if(!verified)return false;
-        return verified.value()->absolute_start_frame()
-                   ==capture.crop.absolute_start_frame()
-            &&verified.value()->frame_count()==capture.crop.frame_count()
-            &&verified.value()->timebase().frame_domain_id()
-                   ==capture.crop.timebase().frame_domain_id()
-            &&verified.value()->format()==capture.crop.format();
+        if(verified.value()->absolute_start_frame()
+                !=capture.crop.absolute_start_frame()
+           ||verified.value()->absolute_end_frame()
+                !=capture.crop.absolute_end_frame()
+           ||verified.value()->frame_count()!=capture.crop.frame_count()
+           ||verified.value()->timebase().frame_domain_id()
+                !=capture.crop.timebase().frame_domain_id()
+           ||verified.value()->format()!=capture.crop.format())
+            return false;
+        // Retained preview may only alias the same immutable verified
+        // double buffers. A detached/replaced/misaddressed view is NOT
+        // proof even when its displayed duration and rate still match.
+        for(std::size_t ch=0;
+            ch<verified.value()->format().channel_count();++ch) {
+            const auto expected=verified.value()->channel(ch);
+            const auto retained=capture.crop.channel(ch);
+            if(!expected||!retained
+               ||expected.value()->data()!=retained.value()->data()
+               ||expected.value()->size()!=retained.value()->size())
+                return false;
+        }
+        return true;
     }
 
 private:
