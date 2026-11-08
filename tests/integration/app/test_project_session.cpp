@@ -1141,6 +1141,28 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              preview.value()->frame_count());
     QVERIFY(PreviewAdmission::still_current(
         controllers,fanout,*admittedMasterPreview.value()));
+    // The captured interval aliases the very same checked full M17 PCM,
+    // with an immutable full-owner lease. No pseudo-Preview numerical
+    // result, worker render or second M16 endpoint is acceptable.
+    for(std::size_t ch=0;ch<fullMaster.format().channel_count();++ch) {
+        const auto whole=fullMaster.channel(ch);
+        const auto crop=admittedMasterPreview.value()->crop.channel(ch);
+        QVERIFY(whole&&crop);
+        QCOMPARE(crop.value()->data(),whole.value()->data()+731);
+        QCOMPARE(crop.value()->size(),std::size_t{2100});
+    }
+    // Non-owner worker may hold immutable PCM to inspect, but cannot
+    // obtain or re-authorize Product Preview through any Qt source.
+    bool refusedOffThread=false;
+    std::thread privatePreviewWorker([&] {
+        const auto forbidden=PreviewAdmission::capture(
+            controllers,fanout,verified,*selectedWindow.value());
+        refusedOffThread=!forbidden
+            &&!PreviewAdmission::still_current(
+                controllers,fanout,*admittedMasterPreview.value());
+    });
+    privatePreviewWorker.join();
+    QVERIFY(refusedOffThread);
     auto wholeChannel=fullMaster.channel(0);
     auto segmentChannel=preview.value()->channel(0);
     QVERIFY(wholeChannel&&segmentChannel);
