@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreRefusesWrongOwnerWithoutInstalling();
     void reviewStoreRejectsZeroAndBackwardGenerations();
     void reviewStoreRejectsPublishWithoutBeginningEpoch();
     void reviewStoreSelectionDoesNotMutateOtherPanels();
@@ -953,6 +954,20 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreRejectsZeroAndBackwardGene
     const auto p=example(Column::prepared,7,"p",-18.0);
     QVERIFY(store.receive(p,receipt(p)));
     QVERIFY(store.snapshot().columns[0].candidate_matched);
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreRefusesWrongOwnerWithoutInstalling()
+{
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    auto claim=receipt(p);
+    claim.exact_realization_id="another";
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(!store.receive(p,claim));
+    QVERIFY(!store.snapshot().columns[0].candidate_matched);
+    QVERIFY(store.receive(p,receipt(p))); // same pending epoch remains usable
+    QVERIFY(store.snapshot().columns[0].candidate_matched);
+    QVERIFY(store.snapshot().columns[0].values[1].value_text=="-18.00");
 }
 
 } // namespace rgsml::tests
