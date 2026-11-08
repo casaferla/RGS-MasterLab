@@ -1492,6 +1492,25 @@ set_tests_properties(rgsml_m22_authentic_q0_candidate_tests PROPERTIES
 # M22 nonrelease actual Product-DSP integration regression:
 # authentic manual Gain RenderResult -> original Q0 Final SRC -> bound M17/M16.
 # Exercise all 30 conversions and tamper/stale refusal on both OSes.
+# M22 true Qt Product owner-epoch type contract, non-FQ/nonrelease.
+# This compiles the existing M18 binding against the new chain witness.
+qt_add_executable(rgsml_m22_product_chain_epoch_capture_tests
+    unit/app/test_m22_product_chain_epoch_capture_contract.cpp
+)
+target_include_directories(rgsml_m22_product_chain_epoch_capture_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_m22_product_chain_epoch_capture_tests PRIVATE
+    rgsml_render rgsml_platform Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m22_product_chain_epoch_capture_tests)
+add_test(NAME rgsml_m22_product_chain_epoch_capture_tests
+    COMMAND rgsml_m22_product_chain_epoch_capture_tests)
+set_tests_properties(rgsml_m22_product_chain_epoch_capture_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;m22;product_epoch;full_master;non_fq"
+)
+
 qt_add_executable(rgsml_m22_real_manual_q0_m17_chain_candidate_tests
     unit/render/test_m22_real_manual_q0_m17_chain_candidate.cpp
 )
