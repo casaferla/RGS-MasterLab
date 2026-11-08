@@ -74,6 +74,21 @@ def run() -> None:
          ("Gold must not be an alias of the Source file.",
           "Reference must not be an alias of the Source file.")))
 
+    only_public_cpp_text_changed(
+        "platform/windows/src/windows_resource_identity.cpp",
+        (("Gold identity requires a read-only Windows local-file reference.",
+          "Reference identity requires a read-only Windows local-file reference."),
+         ("Gold identity requires a canonical absolute local drive path.",
+          "Reference identity requires a canonical absolute local drive path."),
+         ("Gold identity could not be established; selection rejected.",
+          "Reference identity could not be established; selection rejected."),
+         ("Gold identity query failed closed.",
+          "Reference identity query failed closed.")))
+    only_public_cpp_text_changed(
+        "app/src/playback_transport_view_model.cpp",
+        (("Source waveform seek is unavailable during Gold audition.",
+          "Source waveform seek is unavailable during Reference audition."),))
+
     must_have("core/src/processing_state.cpp",
               ("ProcessingState::GOLD", 'return "GOLD";', 'token == "GOLD"'))
     must_have("project/include/rgsml/project/project_document.hpp",
