@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsMultipleSelectionsUseMonotonicRevision();
     void routedPanelsCannotCopyOrMoveSelectionAuthority();
     void routedPanelsRejectInvalidColumnIndex();
     void routedPanelsRejectInvalidPanelIndex();
@@ -1924,6 +1925,19 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsCannotCopyOrMoveSelection
     static_assert(!std::is_move_assignable_v<IndependentPanelRouting>);
     IndependentPanelRouting route;
     QVERIFY(route.routing_revision()==0);
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsMultipleSelectionsUseMonotonicRevision()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    IndependentPanelRouting route;
+    QVERIFY(route.select(AnalysisPanel::levels_m19,Column::gold));
+    QVERIFY(route.select(AnalysisPanel::tonal_m20,Column::processed));
+    QVERIFY(route.select(AnalysisPanel::delta_m21,Column::gold));
+    QVERIFY(route.routing_revision()==3);
+    QVERIFY(route.is_current_route(3));
+    QVERIFY(!route.is_current_route(2));
+    QVERIFY(!route.is_current_route(4));
 }
 
 } // namespace rgsml::tests
