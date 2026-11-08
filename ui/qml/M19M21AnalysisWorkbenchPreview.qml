@@ -44,6 +44,11 @@ Rectangle {
     onAvailableChanged: spectrumCanvas.requestPaint()
     onSpectrumAvailableChanged: spectrumCanvas.requestPaint()
     onPresentationChanged: spectrumCanvas.requestPaint()
+    readonly property bool tonalProfileAvailable: root.available
+        && !!root.presentation && !!root.presentation.bands
+        && root.presentation.bands.length > 0
+        && (root.presentation.tonalProfileStatus === undefined
+            || root.presentation.tonalProfileStatus === "CURRENT")
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -526,9 +531,11 @@ Rectangle {
                         }
                         Text {
                             objectName: "m20MissingProfileNotice"
-                            visible: !root.available
+                            visible: !root.tonalProfileAvailable
                             text: root.stateStale
-                                ? "TONAL PROFILE STALE" : "TONAL PROFILE UNAVAILABLE"
+                                ? "TONAL PROFILE STALE"
+                                : root.available ? "TONAL PROFILE UNAVAILABLE · NO VERIFIED BANDS"
+                                : "TONAL PROFILE UNAVAILABLE"
                             font.family: "Segoe UI"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -536,7 +543,7 @@ Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         Repeater {
-                            model:root.available?(root.presentation.bands||[]):[]
+                            model:root.tonalProfileAvailable?(root.presentation.bands||[]):[]
                             delegate:Column{
                                 width:Math.max(12,Math.floor((workspace.width-260)/root.presentation.bands.length)-14)
                                 height:90
