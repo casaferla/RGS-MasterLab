@@ -191,14 +191,24 @@ struct ReadOnlyProjection final {
     for(std::size_t k=0;k<kMetricSpecs.size();++k) {
         if(prep&&gold)
             result.prepared_to_gold[k]=display_cell(compared.prepared_to_gold[k],k,true);
-        else
-            result.prepared_to_gold[k].value_text=
-                result.columns[0].state=="STALE" ? "STALE" : "UNAVAILABLE";
+        else {
+            const auto quality=result.columns[0].state=="STALE"
+                || result.columns[1].state=="STALE" ? "STALE" : "MISSING";
+            result.prepared_to_gold[k].quality_text=quality;
+            result.prepared_to_gold[k].value_text=quality=="STALE"
+                ? "STALE" : "UNAVAILABLE";
+            result.prepared_to_gold[k].numeric=false;
+        }
         if(proc&&gold)
             result.processed_to_gold[k]=display_cell(compared.processed_to_gold[k],k,true);
-        else
-            result.processed_to_gold[k].value_text=
-                result.columns[2].state=="STALE" ? "STALE" : "UNAVAILABLE";
+        else {
+            const auto quality=result.columns[2].state=="STALE"
+                || result.columns[1].state=="STALE" ? "STALE" : "MISSING";
+            result.processed_to_gold[k].quality_text=quality;
+            result.processed_to_gold[k].value_text=quality=="STALE"
+                ? "STALE" : "UNAVAILABLE";
+            result.processed_to_gold[k].numeric=false;
+        }
     }
     return result;
 }
