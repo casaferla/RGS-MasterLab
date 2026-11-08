@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleNewResultSupersedesStalePreview();
     void independentPanelBundleLateWorkerCannotRestoreStaleFrame();
     void independentPanelBundleFreshGenerationInvalidatesCapturedFrame();
     void independentPanelBundleLimitsFieldsToTheirOwnModule();
@@ -1466,6 +1467,24 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleLateWorkerCanno
     QVERIFY(!review_frame_current(store,old));
     QVERIFY(!capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U})
              .m19.value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleNewResultSupersedesStalePreview()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"old",-18.0);
+    const auto fresh=example(Column::prepared,8,"new",-15.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    const auto before=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(store.begin(Column::prepared,8));
+    QVERIFY(store.receive(fresh,receipt(fresh)));
+    const auto after=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(!review_frame_current(store,before));
+    QVERIFY(review_frame_current(store,after));
+    QCOMPARE(after.m19.value("levels").toMap().value("rms").toString(),
+             QStringLiteral("-15.00"));
 }
 
 } // namespace rgsml::tests
