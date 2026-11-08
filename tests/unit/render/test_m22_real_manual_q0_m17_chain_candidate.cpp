@@ -229,8 +229,8 @@ private slots:
             QCOMPARE(out.format().sample_rate().value(),pair[1]);
             QCOMPARE(result.value()->terminal.checked.terminal.applied_gain_frames.size(),
                      static_cast<std::size_t>(out.frame_count().value()));
-            for(const auto& witness:result.value()->terminal.checked.terminal.applied_gain_frames)
-                QVERIFY(std::isfinite(witness.gain));
+            for(const auto& gain_frame:result.value()->terminal.checked.terminal.applied_gain_frames)
+                QVERIFY(std::isfinite(gain_frame.gain));
             // A detached manual PCM pointer cannot be replaced by an epoch label.
             {
                 const auto retained=result.value()->manual_owner;
@@ -391,7 +391,7 @@ private slots:
             // An identity clock must NOT consume or claim any FIR coefficient.
             {
                 result.value()->src_kernel_sha256="forged-identity-coefficients";
-                m22_private::FullChainWitnessFailure why{};
+
                 QVERIFY(!m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why));
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
@@ -400,7 +400,7 @@ private slots:
             // Same-clock output must be proven as exact no-SRC, never reclassified.
             {
                 result.value()->used_candidate_src=true;
-                m22_private::FullChainWitnessFailure why{};
+
                 QVERIFY(!m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why));
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
@@ -411,7 +411,7 @@ private slots:
                 const auto old=result.value()->terminal.checked.final_check->qualification_status;
                 result.value()->terminal.checked.final_check->qualification_status=
                     analysis::TruePeakQualificationStatus::UNSUPPORTED;
-                m22_private::FullChainWitnessFailure why{};
+
                 QVERIFY(!m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why));
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
@@ -419,7 +419,7 @@ private slots:
             }
             // After all fail-closed probes, return the identical native witness.
             {
-                m22_private::FullChainWitnessFailure why{};
+
                 const auto rechecked=m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why);
                 QVERIFY(rechecked);
