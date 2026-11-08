@@ -89,6 +89,34 @@ private slots:
             QVERIFY(frozen->plan_window(Mode::FULL,{0,9011},reason));
         }
     }
+    void equalRateFullMasterAndSubviewAreNotInterchangeable() {
+        using namespace rgsml;
+        using namespace rgsml::m22_private;
+        OutputClockFailure failure{};
+        const auto plan=CheckedOutputClockCandidate::freeze(
+            {48000,48000,37,37,"actual-checked-full-M17",{}},failure);
+        QVERIFY(plan);
+        QVERIFY(!plan->authorizes_release());
+        const auto rate=core::SampleRate::create(48000);
+        const auto count=core::FrameCount::create(37);
+        QVERIFY(rate&&count);
+        const auto fmt=audio::AudioFormat::create(
+            *rate.value(),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(fmt);
+        auto full=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},*count.value());
+        QVERIFY(full);
+        QCOMPARE(check_real_full_output_pcm_candidate(
+            *plan,full.value()->view()),PcmClockFailure::NONE);
+        const auto cropCount=core::FrameCount::create(11);
+        QVERIFY(cropCount);
+        const auto part=full.value()->view().subview(
+            core::FrameIndex{13},*cropCount.value());
+        QVERIFY(part);
+        QCOMPARE(check_real_full_output_pcm_candidate(*plan,*part.value()),
+                 PcmClockFailure::NOT_WHOLE_PROGRAMME);
+    }
     void genuineOutputBufferMetadataIsNotAnExternalClaim() {
         using namespace rgsml;
         using namespace rgsml::m22_private;
