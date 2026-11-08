@@ -4060,7 +4060,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!preparedTarget->property("enabled").toBool());
     QVERIFY(!processedTarget->property("enabled").toBool());
     QVERIFY(!goldTarget->property("enabled").toBool());
-    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Gold: not loaded"));
+    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Reference: not loaded"));
+    QCOMPARE(goldTarget->property("text").toString(),QStringLiteral("REFERENCE"));
+    QVERIFY2(goldTarget->property("implicitWidth").toReal()>=112,
+             "REFERENCE must fit in the actual audition button without elision");
+    auto* referenceContextTab = root->findChild<QObject*>(
+        QStringLiteral("adaptiveModeToggle_Gold")); // internal ID unchanged
+    QVERIFY(referenceContextTab);
+    QCOMPARE(referenceContextTab->property("text").toString(),
+             QStringLiteral("Reference / AutoMatch"));
+    QVERIFY2(referenceContextTab->property("implicitWidth").toReal()>=166,
+             "Reference/AutoMatch needs enough width at minimum UI scale");
+    auto* referenceStatus = root->findChild<QObject*>(
+        QStringLiteral("goldReferenceStatus")); // internal ID unchanged
+    QVERIFY(referenceStatus);
+    QCOMPARE(referenceStatus->property("text").toString(),
+             QStringLiteral("NO REFERENCE LOADED"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
     auto* waveformPanel = root->findChild<QObject*>(
@@ -4171,6 +4186,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(goldMenuItem && goldFileDialog);
     QVERIFY(goldMenuItem->property("enabled").toBool());
     QVERIFY(goldMenuItem->width() > 0);
+    QCOMPARE(goldMenuItem->property("text").toString(),
+             QStringLiteral("Open Reference"));
+    QCOMPARE(goldFileDialog->property("title").toString(),
+             QStringLiteral("Open Reference WAV"));
+    auto* clearReferenceItem = root->findChild<QObject*>(
+        QStringLiteral("menuClearGold")); // stable internal object name
+    QVERIFY(clearReferenceItem);
+    QCOMPARE(clearReferenceItem->property("text").toString(),
+             QStringLiteral("Clear Reference"));
     auto* gainMenuItem = root->findChild<QObject*>(
         QStringLiteral("menuViewInputGain"));
     auto* eqMenuItem = root->findChild<QObject*>(

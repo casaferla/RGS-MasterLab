@@ -100,6 +100,10 @@ int main(int argc,char** argv){
         "M21_QML_PREPARED_SCOPE");
   check(goldScope->property("text").toString().contains("Region"),
         "M21_QML_EXTERNAL_GOLD_SCOPE");
+  check(goldScope->property("text").toString().startsWith("REFERENCE"),
+        "M21_QML_VISIBLE_REFERENCE_SCOPE_EXPECTED");
+  check(!goldScope->property("text").toString().contains("GOLD"),
+        "M21_QML_INTERNAL_GOLD_LEAK_IN_PRESENTATION");
   check(processedScope->property("text").toString().contains("CURRENT"),
         "M21_QML_PROCESSED_STATE");
   check(tonal->property("count").toInt()==1,"M21_QML_TONAL_BAND_LIST");
