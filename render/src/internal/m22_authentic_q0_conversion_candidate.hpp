@@ -82,6 +82,9 @@ materialize_authentic_q0_source_candidate(
        ||full.format().channel_layout()
             !=complete_source.format().channel_layout()
        ||produced.value()->source_frames!=complete_source.frame_count()
+       ||produced.value()->source_rate
+            !=complete_source.format().sample_rate()
+       ||produced.value()->output_rate!=target_output_rate
        ||produced.value()->used_src!=(!identity)
        ||(identity
           ? !produced.value()->kernel_sha256.empty()
