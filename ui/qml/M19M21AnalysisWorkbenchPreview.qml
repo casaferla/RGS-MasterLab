@@ -36,7 +36,14 @@ Rectangle {
     // typed Product presenters are bound. Never display an unverified result.
     readonly property bool available: root.fixtureMode && root.stateCurrent
         && !!presentation && presentation.ready === true
+    readonly property bool spectrumAvailable: root.available
+        && !!root.presentation && !!root.presentation.spectrum
+        && root.presentation.spectrum.length >= 2
+        && (root.presentation.spectrumStatus === undefined
+            || root.presentation.spectrumStatus === "CURRENT")
     onAvailableChanged: spectrumCanvas.requestPaint()
+    onSpectrumAvailableChanged: spectrumCanvas.requestPaint()
+    onPresentationChanged: spectrumCanvas.requestPaint()
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -418,7 +425,7 @@ Rectangle {
                                     ctx.beginPath();ctx.moveTo(tickX,0)
                                     ctx.lineTo(tickX,height);ctx.stroke()
                                 }
-                                const pts=root.available?root.presentation.spectrum:[]
+                                const pts=root.spectrumAvailable ? root.presentation.spectrum : []
                                 ctx.strokeStyle="#00C8FF";ctx.lineWidth=2.3
                                 ctx.beginPath()
                                 for(let i=0;i<pts.length;i++){
@@ -432,11 +439,13 @@ Rectangle {
                         }
                         Text {
                             objectName: "m20MissingSpectrumNotice"
-                            visible: !root.available
+                            visible: !root.spectrumAvailable
                             anchors.centerIn: spectrumCanvas
                             width: spectrumCanvas.width * 0.85
                             text: root.stateStale
                                 ? "SPECTRUM STALE\nREANALYSIS REQUIRED"
+                                : root.available
+                                ? "SPECTRUM UNAVAILABLE\nVERIFIED PSD NOT PUBLISHED"
                                 : "SPECTRUM UNAVAILABLE\nAUTHENTICATED PCM REQUIRED"
                             font.family: "Segoe UI"
                             font.pixelSize: 14
