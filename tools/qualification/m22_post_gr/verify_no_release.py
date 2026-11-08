@@ -17,6 +17,7 @@ ALLOWED = {
     "render/src/internal/m22_final_src_frozen_pin_candidate.hpp",
     "render/src/internal/m22_authentic_q0_conversion_candidate.hpp",
     "tests/unit/render/test_m22_authentic_q0_candidate.cpp",
+    "tests/unit/render/test_m22_real_manual_q0_m17_chain_candidate.cpp",
     "tests/unit/render/test_m22_checked_output_clock_candidate.cpp",
     "tests/CMakeLists.txt",
     ".github/workflows/m22-post-gr-focused.yml",
@@ -141,11 +142,28 @@ def main():
         "return true;",
     ),"M22 true FIR binary64 test")
 
+    fullchain=blob("HEAD",
+        "tests/unit/render/test_m22_real_manual_q0_m17_chain_candidate.cpp"
+    ).decode()
+    require(fullchain,(
+        "render_preview(*request.value(),*registry.value())",
+        "render_true_peak_limiter_owned_output_rate_candidate(",
+        "materialize_phase11_scoped_q0_pinned_offline_candidate(",
+        "allThirtyRealQ0RoutesViaImmutableManualOwnerAndRealM17Bypass",
+        "realActiveM17AfterQ0RunsM16AndRetainsManualOwner",
+        "tamperAndStaleManualEpochCannotPublishM17",
+        "std::size_t{30}",
+        "final_check.has_value()",
+        "src_kernel_sha256",
+    ),"M22 genuine manual-Q0-M17 whole-chain proof")
+
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
     require(cmake,(
         "rgsml_m22_checked_output_clock_candidate_tests",
         "rgsml_audio Qt6::Test",
         "rgsml_m22_authentic_q0_candidate_tests",
+        "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
+        "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
         'RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"',
     ),"M22 Qt test target")
     workflow=blob("HEAD",
