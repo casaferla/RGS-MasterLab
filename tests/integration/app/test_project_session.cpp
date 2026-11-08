@@ -597,6 +597,14 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         app::m21_private::Column::gold);
     QVERIFY(goldJob);
     QVERIFY(goldJob.value()->structurally_valid());
+    auto mismatchedEpochJob=*goldJob.value();
+    ++mismatchedEpochJob.captured_epoch;
+    QVERIFY(!mismatchedEpochJob.structurally_valid());
+    QVERIFY(!Handoff::measure_on_worker(mismatchedEpochJob));
+    auto wrongColumnJob=*goldJob.value();
+    wrongColumnJob.column=app::m21_private::Column::prepared;
+    QVERIFY(!wrongColumnJob.structurally_valid());
+    QVERIFY(!Handoff::measure_on_worker(wrongColumnJob));
     std::optional<core::Result<app::m21_private::Snapshot>> goldFromThread;
     std::thread realReferenceWorker([&] {
         goldFromThread.emplace(Handoff::measure_on_worker(*goldJob.value()));
@@ -972,6 +980,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
             controllers,fanout,session.selector,session.gold,target);
         QVERIFY(job);
         QVERIFY(job.value()->structurally_valid());
+        auto wrongGeneration=*job.value();
+        ++wrongGeneration.captured_epoch;
+        QVERIFY(!wrongGeneration.structurally_valid());
+        QVERIFY(!Handoff::measure_on_worker(wrongGeneration));
         QVERIFY(job.value()->render.has_value());
         QVERIFY(!job.value()->reference.has_value());
         std::optional<core::Result<app::m21_private::Snapshot>> computed;
