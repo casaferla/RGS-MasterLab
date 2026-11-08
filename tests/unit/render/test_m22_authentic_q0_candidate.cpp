@@ -52,7 +52,7 @@ private:
         auto pcm=audio::AudioBuffer::create(*fmt.value(),domain,
                                            start,*count.value());
         if(!pcm)return pcm;
-        for(std::size_t ch=0;ch<pcm.value()->format().channel_count();++ch) {
+        for(std::size_t ch=0;ch<pcm.value()->view().format().channel_count();++ch) {
             auto plane=pcm.value()->mutable_view().channel(ch);
             if(!plane)return core::Result<audio::AudioBuffer>::failure(
                 *plane.error());
