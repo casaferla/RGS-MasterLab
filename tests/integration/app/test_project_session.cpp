@@ -2304,6 +2304,24 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         bound,fanout,verified,*window.value()));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
         bound,fanout));
+    // FULL must be revoked by the *same* native/owner plan as PREVIEW.
+    // No stale Final SRC can be sent to the M18 exporter after a
+    // real Product MASTER-rate mutation, even with explicit consent.
+    const auto staleFullPath=directory.filePath(
+        QStringLiteral("m22-stale-full-after-rate-change.wav"));
+    auto staleFullDestination=platform::windows::WindowsResourceWriter::
+        make_write_reference(staleFullPath.toUtf8().toStdString(),
+            "m22-stale-full-after-rate-change.wav");
+    QVERIFY(staleFullDestination);
+    QVERIFY(!M22ProductVerifiedDispatch::begin_full(
+        bound,fanout,exporter,verified,*staleFullDestination.value(),
+        audio::WavSampleFormat::IEEE_F32,std::nullopt,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!QFileInfo::exists(staleFullPath));
+    QFile afterRevocation{sourcePath};
+    QVERIFY(afterRevocation.open(QIODevice::ReadOnly));
+    QCOMPARE(afterRevocation.readAll(),originalBytes);
+    afterRevocation.close();
 }
 
 void ProjectSessionTest::
