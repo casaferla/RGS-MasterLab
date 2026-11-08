@@ -1866,6 +1866,10 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QVERIFY(!originalBytes.isEmpty());
 
     Session session;
+    // SOURCE commits in the actual application reset defaults for the
+    // incoming file. Configure the four active DSPs only AFTER that reset.
+    session.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(session.source.has_source());
     // The actual product session's installed four-module chain must be
     // exercised, not four manually synthesized test-only DSP instances.
     // Fixed Input Gain stays first; the remaining user-editable modules
@@ -1915,8 +1919,6 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QCOMPARE(session.masteringChainState->module_count(),std::size_t{4});
     QCOMPARE(session.masteringChainState->execution_bindings().size(),
              std::size_t{4});
-    session.source.selectSource(QUrl::fromLocalFile(sourcePath));
-    QVERIFY(session.source.has_source());
     QCOMPARE(session.source.sample_rate_hz(),qint64{48000});
     QCOMPARE(session.source.frame_count(),qint64{kSourceFrames});
     QCOMPARE(session.source.channel_count(),2);
