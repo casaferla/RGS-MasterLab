@@ -101,7 +101,7 @@ def main():
         "using QtReadiness=app::internal::M21ProductQtReadinessBridge;",
         "privatePanels.current_product_owner",
         "MISSING",
-        "privatePanels.panels[0].value(\"levels\").toMap().isEmpty()",
+        "panel.value(\"levels\").toMap().isEmpty()",
         "QtReadiness::still_current(reroutedPanels",
     ):
         check(marker in joined, "M21 real-owner Qt regression absent: "+marker)
