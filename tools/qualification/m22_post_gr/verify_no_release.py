@@ -118,6 +118,9 @@ def main():
         "rgsml_m22_checked_output_clock_candidate_tests",
         "tools/qualification/m22_post_gr/verify_no_release.py",
         "staging/m22-post-gr-focused-ci-20261108",
+        "tools/qualification/playback_src/test_approved_16_fir_package.py",
+        "Unified 16-FIR source and manifest contract (Linux, non-FQ)",
+        "Unified 16-FIR source and manifest contract (Windows, non-FQ)",
     ),"M22 focused CI")
     doc=blob("HEAD",
         "docs/architecture/PHASE6_M22_POST_GR_UNRESOLVED_GATE_PLAN_20261108.md"
