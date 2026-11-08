@@ -224,6 +224,8 @@ def main():
         "audio::internal::m18_float32_block(",
         "wrongLocalDither!=cropPcm24",
         "chunkedPcm24==fullPcm24",
+        "allThirtyActiveOriginalQ0RoutesUseGenuineFullM17AndM16",
+        "QCOMPARE(completed,std::size_t{30})",
         "fullPcm24.begin()+static_cast<std::ptrdiff_t>(9U*channels*3U)",
         "fullF32.begin()+static_cast<std::ptrdiff_t>(9U*channels*4U)",
     ),"Native active true-M17 absolute crop and M18 encoding regression")
