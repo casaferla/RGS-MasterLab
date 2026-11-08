@@ -8,6 +8,9 @@ enum class ExportFailurePoint : std::uint8_t {
     NONE,
     CANDIDATE_CREATE,
     WRITER_IO,
+    // M23 test-only fault points: no effect with production NONE.
+    FLUSH_CLOSE,
+    CANDIDATE_REOPEN,
     VALIDATION,
     ENCODED_CHECKSUM,
     DECODED_CHECKSUM,
