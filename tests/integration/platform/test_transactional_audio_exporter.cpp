@@ -1,4 +1,5 @@
 #include "internal/transactional_audio_exporter_test_seam.hpp"
+#include "internal/m23_alpha_diagnostic_report.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -205,6 +206,7 @@ private slots:
     void monoStereoRoundTripAndEvidence();
     void task011IdentityGainRoundTripAndSourceImmutability();
     void sourceAndDestinationCollisionProtection();
+    void goldDirectAndHardlinkDestinationRemainByteIdentical();
     void injectedFailureStagesCleanUp();
 };
 
@@ -360,6 +362,87 @@ void TransactionalAudioExporterTest::sourceAndDestinationCollisionProtection()
     QCOMPARE(hardlinkResult.error()->code(), core::ErrorCode::InvalidState);
     QVERIFY(hardlinkResult.error()->message().find("source_collision") != std::string::npos);
     QCOMPARE(file_bytes(copiedSource), sourceBefore);
+}
+
+void TransactionalAudioExporterTest::goldDirectAndHardlinkDestinationRemainByteIdentical()
+{
+    // M23 cross-reference protection: Gold is NOT the Source and the
+    // frozen M09 writer must still refuse publication even if a caller
+    // chooses Gold directly or uses a different hard-link pathname.
+    // This is existing FAIL_IF_EXISTS evidence, NOT a claim of a newly
+    // installed Product Gold-specific strong identity admission.
+    namespace ai=rgsml::app::internal;
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto sourcePath=directory.filePath(QStringLiteral("m23-source.wav"));
+    const auto goldPath=directory.filePath(QStringLiteral("m23-GOLD.wav"));
+    QVERIFY(QFile::copy(fixture_path(),sourcePath));
+    QVERIFY(QFile::copy(fixture_path(),goldPath));
+    const auto sourceBefore=file_bytes(sourcePath);
+    const auto goldBefore=file_bytes(goldPath);
+    auto source=decode_source(sourcePath);
+    auto gold=WindowsResourceReader::make_read_reference(
+        utf8(goldPath),"m23-GOLD.wav");
+    QVERIFY(gold);
+    QVERIFY(gold.value()->permissions().can_read());
+    QVERIFY(!gold.value()->permissions().can_write());
+    QVERIFY(!gold.value()->same_resource_identity(source.reference));
+
+    const auto direct=export_to(
+        source.reference,source.buffer.view(),goldPath);
+    QVERIFY(!direct);
+    QCOMPARE(direct.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(direct.error()->message().find("destination_exists")
+            !=std::string::npos);
+    QCOMPARE(file_bytes(goldPath),goldBefore);
+    QCOMPARE(file_bytes(sourcePath),sourceBefore);
+    QVERIFY(no_candidates(directory.path()));
+
+    const auto aliasPath=directory.filePath(QStringLiteral("m23-gold-alias.wav"));
+    const auto goldNative=QDir::toNativeSeparators(goldPath);
+    const auto aliasNative=QDir::toNativeSeparators(aliasPath);
+    QVERIFY(::CreateHardLinkW(
+        reinterpret_cast<LPCWSTR>(aliasNative.utf16()),
+        reinterpret_cast<LPCWSTR>(goldNative.utf16()),nullptr)!=FALSE);
+    QVERIFY(QFileInfo::exists(aliasPath));
+    const auto aliased=export_to(
+        source.reference,source.buffer.view(),aliasPath);
+    QVERIFY(!aliased);
+    QCOMPARE(aliased.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(aliased.error()->message().find("destination_exists")
+            !=std::string::npos);
+    QCOMPARE(file_bytes(aliasPath),goldBefore);
+    QCOMPARE(file_bytes(goldPath),goldBefore);
+    QCOMPARE(file_bytes(sourcePath),sourceBefore);
+    QVERIFY(no_candidates(directory.path()));
+
+    // Reporter consumes the ACTUAL two failed writer statuses. No
+    // raw Error.message() or path enters the diagnostic artifact.
+    const auto first=core::Status::failure(*direct.error());
+    const auto second=core::Status::failure(*aliased.error());
+    const std::array failures{
+        ai::M23FailedStatus{ai::M23Operation::EXPORT,
+                            ai::M23Stage::PREFLIGHT,&first},
+        ai::M23FailedStatus{ai::M23Operation::EXPORT,
+                            ai::M23Stage::PREFLIGHT,&second}};
+    ai::M23SafetyEvidence evidence{};
+    evidence.source=ai::M23Evidence::VERIFIED_UNCHANGED;
+    evidence.gold=ai::M23Evidence::VERIFIED_UNCHANGED;
+    evidence.preexisting_destination=ai::M23Evidence::VERIFIED_UNCHANGED;
+    evidence.live_project=ai::M23Evidence::UNKNOWN;
+    evidence.publication=ai::M23Publication::NO_AUTHORITATIVE_OUTPUT;
+    evidence.candidate_cleanup_verified=no_candidates(directory.path());
+    const auto report=ai::AlphaDiagnosticReport::from_failed_statuses(
+        failures,evidence);
+    QVERIFY(report);
+    QCOMPARE(report.value()->findings().size(),std::size_t{2});
+    QVERIFY(!report.value()->safe_failure_evidence_complete());
+    QVERIFY(!report.value()->m23_i_p_m_passed());
+    QVERIFY(!report.value()->authorizes_release());
+    QVERIFY(report.value()->sanitized_summary().find("m23-GOLD")
+            ==std::string::npos);
+    QVERIFY(report.value()->sanitized_summary().find("m23-source")
+            ==std::string::npos);
 }
 
 void TransactionalAudioExporterTest::injectedFailureStagesCleanUp()
