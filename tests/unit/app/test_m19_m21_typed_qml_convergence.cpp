@@ -9,6 +9,7 @@
 #include <rgsml/audio/audio_format.hpp>
 #include <QCoreApplication>
 #include <QDir>
+#include <QImage>
 #include <QQuickItem>
 #include <QQuickView>
 #include <QQmlError>
@@ -66,6 +67,19 @@ ExpectedOwnerReceipt claim(const Snapshot& s) {
     return {s.column,s.generation_token,s.resource_identity,
             s.analysis_scope_label,s.absolute_scope_begin,
             s.scope_frames,s.sample_rate_hz,true,true};
+}
+// Only Windows CI explicitly requests screenshots. Never write files in a
+// production session; this test executable is not linked into the app.
+bool optional_test_screenshot(QQuickView& view,const QString& name) {
+    const QString destination=qEnvironmentVariable("RGSML_TYPED_QT_SCREENSHOT_DIR");
+    if(destination.isEmpty())return true;
+    if(!QDir().mkpath(destination))return false;
+    view.resize(1184,688);
+    view.show();
+    QTest::qWait(450);
+    const auto image=view.grabWindow();
+    if(image.isNull() || image.width()<1184 || image.height()<688)return false;
+    return image.save(QDir(destination).filePath(name), "PNG");
 }
 void mount_explicit_demo(QQuickView& view,const QVariantMap& data) {
     auto* root=view.rootObject();
@@ -168,6 +182,9 @@ void M19M21TypedQmlConvergenceTest::actualPcmM19M20ReachesThreeQmlPanels() {
         mount_explicit_demo(*view,maps[static_cast<std::size_t>(i)]);
         QVERIFY(view->rootObject()->property("available").toBool());
         QVERIFY(view->rootObject()->property("fixtureMode").toBool());
+        const QString filename=QStringLiteral("typed-")
+            +QString::number(i)+QStringLiteral("-real-pcm-1184x688.png");
+        QVERIFY(optional_test_screenshot(*view,filename));
     }
     bool parsed=false;
     const double rms=frame.m19.value("levels").toMap()
@@ -220,6 +237,8 @@ missingAndStaleSourceNeverShowPriorNumericData() {
     QCOMPARE(view->rootObject()->property("analysisStatus").toString(),
              QStringLiteral("STALE"));
     QVERIFY(stale.m19.value("levels").toMap().isEmpty());
+    QVERIFY(optional_test_screenshot(*view,
+        QStringLiteral("typed-m19-stale-1184x688.png")));
 }
 void M19M21TypedQmlConvergenceTest::independentSelectorsDoNotCrossModifySource() {
     ReviewEpochStore store;
