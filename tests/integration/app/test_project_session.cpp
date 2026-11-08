@@ -7,6 +7,7 @@
 #include "internal/m22_product_preview_admission.hpp"
 #include "internal/m22_product_chain_epoch_capture_candidate.hpp"
 #include "internal/m22_product_verified_dispatch.hpp"
+#include "m18_terminal_sample_codec.hpp"
 #include "internal/m21_product_owner_analysis.hpp"
 #include "internal/m21_product_publication_inbox.hpp"
 #include "internal/m21_product_qt_readiness_bridge.hpp"
@@ -2086,6 +2087,28 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
                  .sample_rate().value(),std::int64_t{44100});
     QCOMPARE(reader.value()->get()->info().encoded_sample_format(),
              audio::WavSampleFormat::IEEE_F32);
+    const auto outputFormat=reader.value()->get()->info().audio_format();
+    auto outputFrameCount=core::FrameCount::create(kOutFrames);
+    QVERIFY(outputFrameCount);
+    auto decodedFloat=audio::AudioBuffer::create(
+        outputFormat,audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*outputFrameCount.value());
+    QVERIFY(decodedFloat);
+    const auto readFloat=reader.value()->get()->read_frames(
+        core::FrameIndex{0},decodedFloat.value()->mutable_view());
+    QVERIFY(readFloat);
+    QCOMPARE(*readFloat.value(),*outputFrameCount.value());
+    for(std::size_t channel=0;channel<full.format().channel_count();++channel) {
+        const auto original=full.channel(channel);
+        const auto decoded=decodedFloat.value()->view().channel(channel);
+        QVERIFY(original&&decoded);
+        for(std::size_t frame=0;frame<original.value()->size();++frame) {
+            const auto expected=static_cast<double>(
+                static_cast<float>((*original.value())[frame]));
+            QCOMPARE(std::bit_cast<std::uint64_t>((*decoded.value())[frame]),
+                     std::bit_cast<std::uint64_t>(expected));
+        }
+    }
     QVERIFY(reader.value()->get()->close());
     QFile inputAfter{sourcePath};
     QVERIFY(inputAfter.open(QIODevice::ReadOnly));
@@ -2102,6 +2125,81 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QVERIFY(recaptured);
     QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
         bound,fanout,*recaptured.value()));
+    // A second *independently consented* PCM24 output from this SAME
+    // checked 44.1-kHz full M17 owner must use actual absolute-output
+    // Philox (no preview-local reseed and no hidden second render).
+    constexpr std::uint64_t pcmSeed=UINT64_C(0x1122334455667788);
+    const auto pcmPath=directory.filePath(
+        QStringLiteral("m22-real-output-44100-pcm24.wav"));
+    auto pcmDest=platform::windows::WindowsResourceWriter::
+        make_write_reference(pcmPath.toUtf8().toStdString(),
+            "m22-real-output-44100-pcm24.wav");
+    QVERIFY(pcmDest);
+    QVERIFY(M22ProductVerifiedDispatch::begin_full(
+        bound,fanout,exporter,verified,*pcmDest.value(),
+        audio::WavSampleFormat::PCM_S24,pcmSeed,
+        terminal.value()->parameters().ceiling_db_tp(),true));
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*recaptured.value()));
+    QTRY_VERIFY_WITH_TIMEOUT(exporter.snapshot().phase==
+        app::internal::M18PrivateAsyncExportSession::Phase::VERIFIED_DELIVERED,
+        30000);
+    QCOMPARE(exporter.snapshot().total_frames,
+             static_cast<std::uint64_t>(kOutFrames));
+    QCOMPARE(exporter.snapshot().encoded_frames,
+             static_cast<std::uint64_t>(kOutFrames));
+    auto pcmReadRef=platform::windows::WindowsResourceReader::
+        make_read_reference(pcmPath.toUtf8().toStdString(),
+            "m22-real-output-44100-pcm24.wav");
+    QVERIFY(pcmReadRef);
+    auto pcmHandle=platform::windows::WindowsResourceReader::
+        open_read_only(*pcmReadRef.value());
+    QVERIFY(pcmHandle);
+    auto pcmReader=audio::WavReader::open(std::move(*pcmHandle.value()));
+    QVERIFY(pcmReader);
+    QCOMPARE(pcmReader.value()->get()->info().frame_count().value(),
+             kOutFrames);
+    QCOMPARE(pcmReader.value()->get()->info().encoded_sample_format(),
+             audio::WavSampleFormat::PCM_S24);
+    QCOMPARE(pcmReader.value()->get()->info().audio_format()
+                 .sample_rate().value(),std::int64_t{44100});
+    auto decodedPcm=audio::AudioBuffer::create(
+        pcmReader.value()->get()->info().audio_format(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*outputFrameCount.value());
+    QVERIFY(decodedPcm);
+    const auto readPcm=pcmReader.value()->get()->read_frames(
+        core::FrameIndex{0},decodedPcm.value()->mutable_view());
+    QVERIFY(readPcm);
+    QCOMPARE(*readPcm.value(),*outputFrameCount.value());
+    for(std::size_t channel=0;channel<full.format().channel_count();++channel) {
+        const auto original=full.channel(channel);
+        const auto decoded=decodedPcm.value()->view().channel(channel);
+        QVERIFY(original&&decoded);
+        for(std::size_t frame=0;frame<original.value()->size();++frame) {
+            const auto checkedQuantized=audio::internal::m18_quantize_pcm24(
+                (*original.value())[frame],pcmSeed,
+                static_cast<std::uint64_t>(frame),
+                static_cast<std::uint32_t>(channel));
+            QVERIFY(checkedQuantized.status==
+                    audio::internal::M18CodecStatus::OK);
+            const auto expected=static_cast<double>(
+                checkedQuantized.code)/8388608.0;
+            QCOMPARE(std::bit_cast<std::uint64_t>((*decoded.value())[frame]),
+                     std::bit_cast<std::uint64_t>(expected));
+        }
+    }
+    QVERIFY(pcmReader.value()->get()->close());
+    QVERIFY(exporter.acknowledge());
+    const auto afterPcm24=M22ProductChainEpochCaptureCandidate::capture(
+        bound,fanout,verified);
+    QVERIFY(afterPcm24);
+    QVERIFY(M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*afterPcm24.value()));
+    QFile sourceUnchanged{sourcePath};
+    QVERIFY(sourceUnchanged.open(QIODevice::ReadOnly));
+    QCOMPARE(sourceUnchanged.readAll(),originalBytes);
+    sourceUnchanged.close();
     // Changing MASTER output rate is a REAL Product mutation, and MUST
     // retire previously accepted cross-rate M17 even when SOURCE persists.
     QVERIFY(outputRate.choose_master_rate(48000));
@@ -2109,6 +2207,8 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         bound,fanout));
     QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
         bound,fanout,*recaptured.value()));
+    QVERIFY(!M22ProductChainEpochCaptureCandidate::still_current(
+        bound,fanout,*afterPcm24.value()));
     QVERIFY(!M22ProductVerifiedDispatch::begin_preview(
         bound,fanout,verified,*window.value()));
     QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
