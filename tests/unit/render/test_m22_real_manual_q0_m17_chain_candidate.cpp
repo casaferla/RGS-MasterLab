@@ -322,6 +322,17 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
                 result.value()->used_candidate_src=true;
             }
+            // Every rejected probe must leave the real immutable master intact.
+            {
+                const auto restored=m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why);
+                QVERIFY(restored);
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::NONE);
+                QCOMPARE(restored->frozen_original_q0_sha256,
+                         witness->frozen_original_q0_sha256);
+                QCOMPARE(restored->actual_master_frames,witness->actual_master_frames);
+                QVERIFY(!restored->authorizes_release());
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
