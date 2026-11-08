@@ -72,8 +72,8 @@ jobs:
         with:
           name: RGS-M23-Bounded-Linux
           path: |
-            \${{ runner.temp }}/m23-receipt-linux.json
-            \${{ runner.temp }}/m23-failure-bounded.txt
+            ${{ runner.temp }}/m23-receipt-linux.json
+            ${{ runner.temp }}/m23-failure-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
   windows-reconciliation:
@@ -149,7 +149,7 @@ jobs:
         with:
           name: RGS-M23-Bounded-Windows
           path: |
-            \${{ runner.temp }}/m23-receipt-windows.json
-            \${{ runner.temp }}/m23-failure-bounded.txt
+            ${{ runner.temp }}/m23-receipt-windows.json
+            ${{ runner.temp }}/m23-failure-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
