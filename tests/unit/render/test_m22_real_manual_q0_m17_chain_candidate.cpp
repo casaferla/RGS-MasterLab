@@ -2,6 +2,7 @@
 // Final SRC Q0 -> genuine bound M17 terminal/M16, without duplicate DSP.
 #include "render_test_support.hpp"
 #include "m22_full_chain_witness_candidate.hpp"
+#include "m22_verified_full_output_window_candidate.hpp"
 #include <rgsml/audio/phase11_final_src_candidate.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
@@ -142,6 +143,13 @@ private slots:
                 QVERIFY(!result.value()->terminal.checked.final_check.has_value());
                 QVERIFY(result.value()->terminal.checked.terminal
                     .applied_gain_frames.empty());
+                // Authentic Q0 conversion with M17 bypass is never a
+                // verified Product Preview, even with perfectly finite PCM.
+                auto blockedWindow=core::FrameRange::create(
+                    core::FrameIndex{2},core::FrameIndex{12});
+                QVERIFY(blockedWindow);
+                QVERIFY(!m22_private::observe_verified_full_output_window_candidate(
+                    *result.value(),*blockedWindow.value()));
                 const auto out=result.value()->terminal.checked.terminal
                     .compensated_pcm.view();
                 QCOMPARE(out.timebase().frame_domain_id(),
@@ -229,6 +237,45 @@ private slots:
             QCOMPARE(out.format().sample_rate().value(),pair[1]);
             QCOMPARE(result.value()->terminal.checked.terminal.applied_gain_frames.size(),
                      static_cast<std::size_t>(out.frame_count().value()));
+            // The SOURCE is 257 frames, but actual 44.1/48 OUTPUT_RATE
+            // lengths differ: Preview must crop the VERIFIED final M17
+            // programme and preserve binary64 bits (never rerun DSP).
+            QVERIFY(out.frame_count().value()!=257);
+            auto window=core::FrameRange::create(
+                core::FrameIndex{9},core::FrameIndex{41});
+            QVERIFY(window);
+            const auto crop=m22_private::observe_verified_full_output_window_candidate(
+                *result.value(),*window.value());
+            QVERIFY(crop);
+            QVERIFY(!crop.value()->authorizes_release());
+            QVERIFY(crop.value()->full_master_witness.used_original_q0);
+            QCOMPARE(crop.value()->full_master_witness.actual_master_frames,
+                     out.frame_count().value());
+            QCOMPARE(crop.value()->exact_output_crop.frame_count().value(),
+                     std::int64_t{32});
+            QCOMPARE(crop.value()->exact_output_crop.absolute_start_frame().value(),
+                     std::int64_t{9});
+            for(std::size_t ch=0;ch<out.format().channel_count();++ch) {
+                const auto fullPlane=out.channel(ch);
+                const auto previewPlane=crop.value()->exact_output_crop.channel(ch);
+                QVERIFY(fullPlane&&previewPlane);
+                QCOMPARE(previewPlane.value()->data(),fullPlane.value()->data()+9);
+                for(std::size_t i=0;i<previewPlane.value()->size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>((*previewPlane.value())[i]),
+                             std::bit_cast<std::uint64_t>((*fullPlane.value())[i+9]));
+            }
+            const auto beyond=core::FrameRange::create(
+                core::FrameIndex{out.frame_count().value()-1},
+                core::FrameIndex{out.frame_count().value()+1});
+            QVERIFY(beyond);
+            QVERIFY(!m22_private::observe_verified_full_output_window_candidate(
+                *result.value(),*beyond.value()));
+            // No SOURCE-rate window may be mislabeled as output-rate.
+            const auto negative=core::FrameRange::create(
+                core::FrameIndex{-1},core::FrameIndex{10});
+            QVERIFY(negative);
+            QVERIFY(!m22_private::observe_verified_full_output_window_candidate(
+                *result.value(),*negative.value()));
             for(const auto& gain_frame:result.value()->terminal.checked.terminal.applied_gain_frames)
                 QVERIFY(std::isfinite(gain_frame.gain));
             // A detached manual PCM pointer cannot be replaced by an epoch label.
@@ -387,6 +434,26 @@ private slots:
             QCOMPARE(witness->final_master_hz,rate);
             QCOMPARE(witness->actual_master_frames,std::int64_t{257});
             QVERIFY(result.value()->terminal.checked.final_check.has_value());
+            // All 6 same-rate identities also crop the original checked
+            // Master with NO FIR and no second M17 processing.
+            auto inner=core::FrameRange::create(
+                core::FrameIndex{13},core::FrameIndex{29});
+            QVERIFY(inner);
+            const auto checkedPreview=
+                m22_private::observe_verified_full_output_window_candidate(
+                    *result.value(),*inner.value());
+            QVERIFY(checkedPreview);
+            QVERIFY(!checkedPreview.value()->full_master_witness.used_original_q0);
+            QCOMPARE(checkedPreview.value()->exact_output_crop.frame_count().value(),
+                     std::int64_t{16});
+            const auto originalMaster=
+                result.value()->terminal.checked.terminal.compensated_pcm.view();
+            for(std::size_t ch=0;ch<originalMaster.format().channel_count();++ch) {
+                const auto whole=originalMaster.channel(ch);
+                const auto part=checkedPreview.value()->exact_output_crop.channel(ch);
+                QVERIFY(whole&&part);
+                QCOMPARE(part.value()->data(),whole.value()->data()+13);
+            }
             QCOMPARE(bits(owner->view()),bitsBefore);
             // An identity clock must NOT consume or claim any FIR coefficient.
             {
