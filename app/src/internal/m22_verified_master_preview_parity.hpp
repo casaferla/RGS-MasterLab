@@ -10,6 +10,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
