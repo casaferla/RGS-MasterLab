@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleM21RowsDoNotLeakMissingGoldValues();
     void independentPanelBundleM20ReadsAllFourExpectedKeys();
     void independentPanelBundleM19ReadsAllFiveExpectedKeys();
     void independentPanelBundleStaleSelectedOwnerHidesNumbers();
@@ -1678,6 +1679,30 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleM20ReadsAllFour
     }
     QVERIFY(!f.m20.contains("levels"));
     QVERIFY(!f.m20.contains("metrics"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleM21RowsDoNotLeakMissingGoldValues()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"gold",-13.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.receive(p,receipt(p))); // GOLD still pending
+    const auto f=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    const auto rows=f.m21.value("metrics").toList();
+    QCOMPARE(rows.size(),9);
+    const auto rms=rows.at(1).toMap();
+    QCOMPARE(rms.value("prepared").toString(),QStringLiteral("-18.00"));
+    QCOMPARE(rms.value("gold").toString(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(rms.value("preparedDelta").toString(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(rms.value("goldQuality").toString(),QStringLiteral("MISSING"));
+    QVERIFY(!store.snapshot().production_authorized);
+    QVERIFY(store.receive(g,receipt(g)));
+    const auto fresh=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QCOMPARE(fresh.m21.value("metrics").toList().at(1).toMap()
+                 .value("preparedDelta").toString(),QStringLiteral("+5.00"));
 }
 
 } // namespace rgsml::tests
