@@ -946,7 +946,9 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     for(const auto& map:{levelsQuality,stereoQuality}) {
         for(auto it=map.cbegin();it!=map.cend();++it) {
             QVERIFY(!it.value().toString().isEmpty());
-            QVERIFY(!it.value().canConvert<double>());
+            bool isNumeric=false;
+            static_cast<void>(it.value().toString().toDouble(&isNumeric));
+            QVERIFY(!isNumeric);
         }
     }
     for(const auto& panel:privatePanels.panels) {
