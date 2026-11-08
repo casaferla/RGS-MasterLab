@@ -1,0 +1,85 @@
+name: M19-M21 Analysis UI · Genuine Qt Screenshots (non-FQ)
+
+on:
+  push:
+    branches:
+      - staging/m19-m21-analysis-gui-screenshots-20261107
+      - staging/m19-m21-analysis-standalone-gui-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m19-m21-analysis-gui-screenshots
+  cancel-in-progress: false
+
+jobs:
+  windows-analysis-screenshots:
+    name: Windows · Qt6 actual GUI screenshots at 1440 and 1184
+    runs-on: windows-2022
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install Qt 6.8.3 MSVC and Ninja
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_TOOLS_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:RUNNER_TEMP/analysisqt"
+          if ($LASTEXITCODE -ne 0) { throw 'ANALYSIS_UI_QT_INSTALL_FAILED' }
+      - name: "Build 24 QtQuick visual states - DEMO, missing and stale analysis"
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $qtRoot = "$env:RUNNER_TEMP/analysisqt/6.8.3/msvc2022_64"
+          $build = "$env:RUNNER_TEMP/analysis-ui-build"
+          $shots = "$env:RUNNER_TEMP/analysis-ui-screenshots"
+          $bounded = "$env:RUNNER_TEMP/analysis-ui-bounded-failure.txt"
+          $log = "$env:RUNNER_TEMP/analysis-ui-command.log"
+          cmake -S tools/qualification/m19_m21_gui -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$qtRoot" *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 55 | Set-Content $bounded
+            throw 'ANALYSIS_UI_CMAKE_CONFIGURE_FAILED'
+          }
+          cmake --build $build --parallel 3 *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 65 | Set-Content $bounded
+            throw 'ANALYSIS_UI_QT_BUILD_FAILED'
+          }
+          $env:PATH = "$qtRoot/bin;$env:PATH"
+          & "$build/rgsml_analysis_workbench_screenshot.exe" $shots *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 65 | Set-Content $bounded
+            throw 'ANALYSIS_UI_QT_CAPTURE_FAILED'
+          }
+          Get-Content $log -Tail 8
+          $pngs = @(Get-ChildItem $shots -Filter '*.png')
+          if ($pngs.Count -ne 24) { throw "ANALYSIS_UI_EXPECTED_TWENTYFOUR_PNG_FOUND_$($pngs.Count)" }
+          foreach ($img in $pngs) {
+            if ($img.Length -lt 14000) { throw "ANALYSIS_UI_POSSIBLY_BLANK_$($img.Name)" }
+          }
+          Write-Output "M19_M20_M21_TWENTYFOUR_REAL_WINDOWS_QT_SCREENSHOTS_PASS_NON_FQ_DESIGN_ONLY"
+      - name: Preserve bounded failure only (never full job logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M21-Qt-GUI-Bounded-Diagnostic
+          path: ${{ runner.temp }}/analysis-ui-bounded-failure.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload screenshots for Product Owner visual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M19-M20-M21-Actual-Windows-Qt-GUI-Design-Review
+          path: ${{ runner.temp }}/analysis-ui-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 30
