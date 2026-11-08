@@ -13,6 +13,8 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <numeric>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -128,6 +130,51 @@ private slots:
                 QCOMPARE(part.value()->size(),std::size_t{19});
             }
         }
+    }
+    void allThirtyDirectedOriginalQ0FirsReallyProcessPCM() {
+        using namespace rgsml::m22_private;
+        constexpr std::array<std::int64_t,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        std::size_t conversions=0;
+        for(const auto from:rates)for(const auto to:rates) {
+            if(from==to)continue;
+            const auto gcd=std::gcd(from,to);
+            const auto L=static_cast<std::uint32_t>(to/gcd);
+            const auto M=static_cast<std::uint32_t>(from/gcd);
+            const std::string assetName="RGSMSR1_L"+std::to_string(L)
+                +"_M"+std::to_string(M)+".bin";
+            const auto* truePin=
+                audio::internal::phase11_frozen_original_fir_pin(L,M);
+            QVERIFY(truePin);
+            const auto bytes=frozen(assetName);
+            QVERIFY2(bytes.size()>1000,assetName.c_str());
+            const auto input=source(from,audio::ChannelLayout::MONO_C);
+            const auto outputRate=core::SampleRate::create(to);
+            const auto block=core::FrameCount::create(128);
+            QVERIFY(input&&outputRate&&block);
+            const auto transformed=materialize_authentic_q0_source_candidate(
+                input.value()->view(),*outputRate.value(),*block.value(),
+                bytes);
+            QVERIFY2(transformed,
+                     transformed?"":transformed.error()->message().c_str());
+            QVERIFY(transformed.value()->used_frozen_q0);
+            QVERIFY(!transformed.value()->authorizes_release());
+            QCOMPARE(transformed.value()->frozen_q0_sha256,
+                     std::string_view{truePin->sha256});
+            const auto pcm=transformed.value()->pre_terminal_pcm.pcm.view();
+            const auto rationalExpected=
+                (std::int64_t{257}*to+from-1)/from;
+            QCOMPARE(pcm.frame_count().value(),rationalExpected);
+            QCOMPARE(pcm.timebase().frame_domain_id(),
+                     audio::FrameDomainId::OUTPUT_RATE);
+            QCOMPARE(pcm.format().sample_rate().value(),to);
+            const auto samples=pcm.channel(0);
+            QVERIFY(samples);
+            for(const auto value:*samples.value())
+                QVERIFY(std::isfinite(value));
+            ++conversions;
+        }
+        QCOMPARE(conversions,std::size_t{30});
     }
     void refusalAndIdentityDoNotBypassQ0() {
         using namespace rgsml::m22_private;
