@@ -57,7 +57,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
             )
             variants.append(swap)
             inject = copy.deepcopy(baseline)
-            inject["cases"][6]["static_coverage"] = "existing"
+            inject["cases"][6]["static_coverage"] = "gap"
             variants.append(inject)
             for i, modified in enumerate(variants):
                 target.write_text(json.dumps(modified), encoding="utf-8")
