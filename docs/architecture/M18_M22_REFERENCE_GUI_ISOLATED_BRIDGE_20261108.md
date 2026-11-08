@@ -49,3 +49,22 @@ The PO explicitly wants larger, coherent single-writer macro-lots (typically 20�
 - Frozen provenance checker now requires actual quality-only guard and explicit M16 disqualification. **Do not promote/dispatch** until the larger coherent Product/UI lot has been completed and audited.
 
 The next major gate is **genuine canonical Phase-6 release authorization and Product UI signal wiring**, not another private fixture. The work above improves private readiness without claiming that unresolved authorization is already implemented.
+
+## Traceable closure ledger (current audited status; not FQ)
+
+| Milestone | Confirmed implementation | Blocking release evidence |
+| --- | --- | --- |
+| M18 | Native guarded Master export; PCM24/Float32, persisted preference, Windows ProductSession focused tests | PO physical A01–A15, full file/encoder/output-rate grid, final integrated FQ |
+| M19 | Public native Level Analyzer and actual PCM→M21 Product private inbox | Canonical Phase-6 FeatureStatus authority and physical Product UI measurement acceptance |
+| M20 | Public native tonal/stereo PCM analyzer and authentic independent spectral geometry | Canonical PSD/tonal band Product release, correct unavailable/mono support, physical visual sign-off |
+| M21 | Real PREPARED/PROCESSED and independent selected REFERENCE provenance; private Qt readiness and quality-only metadata | Authenticated release publisher/Phase-6 registry, three live independent Qt panel bindings, visual gate; never use TEST fixtures |
+| M22 | Real M17 whole-Master Preview/Full absolute-frame/zero-copy bit-parity + M18 protected full output | Complete canonical executable RenderExecutionPlan, six-rate SRC/latency/history, no hidden second limiter, end-to-end output verification and final FQ |
+
+**Candidate CI #3** Windows and Linux green at `ba376284fe97d6d2bf4634fc7e11e726c76170b8`. Single-writer successor work is unqualified until the next focused gate. The prior M21 product private inbox is **not** a canonical Phase-6 release registry. Neither a copied owner identity nor a quality tag grants publication: the private `M21ProductQtReadinessBridge` always returns `ready=false`/`productionAuthorized=false`.
+
+### Follow-on sublot: provenance and numerical verification
+
+- A queued Qt frame must preserve the **complete** native M18 `M18ProductExportIdentity`, not merely an epoch. This covers source generation, project generation, master generation, chain revision, master Fs and rate revision. All are cross-checked again on the Qt owner thread on publication attempt.
+- Native ProductSession tests deliberately tamper source/project/master-rate revisions, independent M21 measurement generation, resource realization ID and absolute scope to prove every mismatch refuses `still_current`. None creates a fake source, result or export permission.
+- The combined bridge workflow now re-runs the previous ten independent M19/M20 numerical reference checks per platform **before** configuring the heavy Qt compiler; these cover P01/Six Rate K, F07, scope/tonal profile/stereo without fabricating downstream data. Guarding M22's immutable Product base and the existing true Preview/Full alias tests remains mandatory.
+- All modifications belong to the same no-CI single writer. No candidate advancement while building the macro-lot.
