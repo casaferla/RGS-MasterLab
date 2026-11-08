@@ -179,6 +179,8 @@ def main():
     productbridge=blob("HEAD",
         "app/src/internal/m22_product_chain_epoch_capture_candidate.hpp").decode()
     require(productbridge,(
+        "product.upstream.source.sample_rate_hz()",
+        "product.upstream.source.channel_count()",
         "M18ProductCompleteBinding",
         "Binding::can_offer_verified_master(product,fanout)",
         "product.candidates.staged()!=expected",
@@ -249,7 +251,16 @@ def main():
         "immutable_chain_witness.actual_master_frames",
         "!completeChain.value()->authorizes_release()",
         "M18 export ticket is live",
-    ),"M22 genuinely installed Product epoch runtime regression")
+        "m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()",
+        "renderer.set_original_q0_fir_root(originalQ0Root)",
+        "M22ProductChainEpochCaptureCandidate::capture(",
+        "M22ProductVerifiedDispatch::begin_preview(",
+        "M22ProductVerifiedDispatch::begin_full(",
+        "QTRY_VERIFY_WITH_TIMEOUT(exporter.snapshot().phase==",
+        "reader.value()->get()->info().frame_count().value()",
+        "inputAfter.readAll(),originalBytes",
+        "!M22ProductChainEpochCaptureCandidate::still_current(",
+    ),"M22 actual identity/cross-rate full Product-WAV regression")
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
     require(cmake,(
         "rgsml_m22_checked_output_clock_candidate_tests",
@@ -259,6 +270,7 @@ def main():
         "rgsml_m22_product_chain_epoch_capture_tests",
         'RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"',
         "${CMAKE_SOURCE_DIR}/audio/src/internal",
+        "RGSML_M22_SOURCE_DIR=",
     ),"M22 Qt test target")
     workflow=blob("HEAD",
         ".github/workflows/m22-post-gr-focused.yml").decode()
