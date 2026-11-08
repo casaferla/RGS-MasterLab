@@ -268,6 +268,15 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_OUTPUT_DOMAIN_OR_CLOCK);
                 result.value()->output_rate=original;
             }
+            // A self-declared SHA, even with correct PCM, is not an asset pin.
+            {
+                const auto original=result.value()->src_kernel_sha256;
+                result.value()->src_kernel_sha256="untrusted-q0-sha";
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
+                result.value()->src_kernel_sha256=original;
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
