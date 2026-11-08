@@ -30,11 +30,11 @@
     {
       "id": "03",
       "category": "nonfinite_dsp_input",
-      "static_coverage": "gap",
-      "ctest": null,
-      "source": null,
-      "slot": null,
-      "rationale": "independent NaN/Inf injected through real full Product output"
+      "static_coverage": "partial",
+      "ctest": "rgsml_render_preview_tests",
+      "source": "tests/unit/render/test_render_preview.cpp",
+      "slot": "nonfiniteActiveGainInputFailsWithoutResult",
+      "rationale": "actual MANUAL Gain renderer rejects injected NaN/+Inf/-Inf with InvalidAudioSample and no PREVIEW, while Source bits remain unchanged; full Product M17/M22 integration still unproven"
     },
     {
       "id": "04",
@@ -48,20 +48,20 @@
     {
       "id": "05",
       "category": "flush_close_failure",
-      "static_coverage": "gap",
-      "ctest": null,
-      "source": null,
-      "slot": null,
-      "rationale": "physical close/flush error after data write"
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "m23CloseAndCandidateReopenFaultsAreFailClosed",
+      "rationale": "test-only close/flush error injected at actual finalized candidate close boundary, fail-closed and owned cleanup; not an OS disk-fault reproduction"
     },
     {
       "id": "06",
       "category": "candidate_reopen_failure",
-      "static_coverage": "gap",
-      "ctest": null,
-      "source": null,
-      "slot": null,
-      "rationale": "distinct candidate reopen error (vs generic validation injection)"
+      "static_coverage": "existing",
+      "ctest": "rgsml_transactional_audio_export_tests",
+      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
+      "slot": "m23CloseAndCandidateReopenFaultsAreFailClosed",
+      "rationale": "distinct test-only reader reopen error after actual candidate final close, before validation/commit, with cleanup and Source bit identity"
     },
     {
       "id": "07",
