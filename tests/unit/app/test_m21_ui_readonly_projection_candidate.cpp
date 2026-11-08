@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleRejectedReceiptLeavesRevisionStable();
     void independentPanelBundleReceiveBumpsRevisionOnce();
     void independentPanelBundleBeginningEpochChangesRevision();
     void independentPanelBundleMarkerCannotBeUsedAsReleasePermission();
@@ -1358,6 +1359,21 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleReceiveBumpsRev
     QVERIFY(!store.receive(p,receipt(p)));
     QVERIFY(store.review_revision()==started+1);
     QVERIFY(!store.unpublished().value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleRejectedReceiptLeavesRevisionStable()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    const auto before=store.review_revision();
+    auto falseReceipt=receipt(p);
+    falseReceipt.exact_realization_id="wrong";
+    QVERIFY(!store.receive(p,falseReceipt));
+    QVERIFY(store.review_revision()==before);
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.review_revision()==before+1);
 }
 
 } // namespace rgsml::tests
