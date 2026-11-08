@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void monoNotApplicableWidthHasNoNumeric();
     void lowConfidenceMetricKeepsExplicitQuality();
     void staleGoldMasksBothDependentDeltaColumns();
     void missingGoldMasksPreparedDeltaOnly();
@@ -541,6 +542,18 @@ void M21UiReadonlyProjectionCandidateTest::lowConfidenceMetricKeepsExplicitQuali
     QVERIFY(view.prepared_to_gold[1].numeric);
     QVERIFY(view.prepared_to_gold[1].quality_text=="LOW SUPPORT");
     QVERIFY(!view.production_authorized);
+}
+
+void M21UiReadonlyProjectionCandidateTest::monoNotApplicableWidthHasNoNumeric()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"mono",-18.0);
+    snapshots[0]->metrics[5]={std::nullopt,Quality::not_applicable,"mono"};
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(view.columns[0].candidate_matched);
+    QVERIFY(!view.columns[0].values[5].numeric);
+    QVERIFY(view.columns[0].values[5].value_text=="NOT APPLICABLE");
+    QVERIFY(view.columns[0].values[5].quality_text=="NOT APPLICABLE");
 }
 
 } // namespace rgsml::tests
