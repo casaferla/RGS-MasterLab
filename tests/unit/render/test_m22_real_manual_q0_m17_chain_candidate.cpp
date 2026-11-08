@@ -1,6 +1,7 @@
 // M22 NONRELEASE: actual canonical MANUAL DSP RenderResult -> frozen original
 // Final SRC Q0 -> genuine bound M17 terminal/M16, without duplicate DSP.
 #include "render_test_support.hpp"
+#include "m22_full_chain_witness_candidate.hpp"
 #include <rgsml/audio/phase11_final_src_candidate.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
@@ -134,6 +135,10 @@ private slots:
                 QCOMPARE(result.value()->src_kernel_sha256,
                          std::string_view{truePin->sha256});
                 QVERIFY(result.value()->terminal.checked.terminal.bypassed);
+                m22_private::FullChainWitnessFailure closed{};
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),closed));
+                QCOMPARE(closed,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
                 QVERIFY(!result.value()->terminal.checked.final_check.has_value());
                 QVERIFY(result.value()->terminal.checked.terminal
                     .applied_gain_frames.empty());
@@ -195,12 +200,27 @@ private slots:
             QVERIFY(target);
             const auto bytes=frozen(pair[0],pair[1]);
             QVERIFY(bytes.size()>1000);
-            const auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
+            auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
                 owner,*manual.value(),frame_count(257),owner->chain_revision(),
                 *target.value(),*terminal.value(),binding,*registry.value(),
                 block,{},nullptr,false,nullptr,bytes);
             QVERIFY2(result,result?"":result.error()->message().c_str());
             QVERIFY(!result.value()->terminal.checked.terminal.bypassed);
+            m22_private::FullChainWitnessFailure why{};
+            const auto witness=m22_private::observe_real_complete_chain_candidate(
+                *result.value(),why);
+            QVERIFY(witness);
+            QCOMPARE(why,m22_private::FullChainWitnessFailure::NONE);
+            QVERIFY(!witness->authorizes_release());
+            QVERIFY(witness->used_original_q0);
+            QCOMPARE(witness->complete_source_frames,std::int64_t{257});
+            QCOMPARE(witness->final_master_hz,pair[1]);
+            QCOMPARE(witness->manual_source_hz,pair[0]);
+            QCOMPARE(witness->actual_master_frames,
+                     result.value()->terminal.checked.terminal.compensated_pcm.view()
+                         .frame_count().value());
+            QCOMPARE(witness->frozen_original_q0_sha256,
+                     std::string{result.value()->src_kernel_sha256});
             QVERIFY(result.value()->terminal.checked.final_check.has_value());
             QCOMPARE(result.value()->manual_owner.get(),owner.get());
             const auto out=result.value()->terminal.checked.terminal.compensated_pcm.view();
