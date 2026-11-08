@@ -190,7 +190,7 @@ realM19M20DataCanBeProjectedOnlyAsPreproduction() {
 void M21UiReadonlyProjectionCandidateTest::
 qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease()
 {
-    using namespace ui_candidate::qt_review;
+    using namespace app::m21_private::ui_candidate::qt_review;
     Slots snapshots{};
     snapshots[0]=example(Column::prepared,7,"prepared-7",-18.0);
     snapshots[1]=example(Column::gold,3,"gold-independent",-13.0);
