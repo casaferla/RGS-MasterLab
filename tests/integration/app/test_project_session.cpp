@@ -1330,6 +1330,42 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
                  *rate48.value());
         QCOMPARE((*inspected.value())->info().audio_format().channel_layout(),
                  audio::ChannelLayout::MONO_C);
+        // M22 true Product end-to-end path:
+        // SOURCE decoded -> genuine MANUAL -> checked full M17 MASTER
+        // -> REAL user-consented M18 IEEE_F32 WAV -> independently
+        // decoded samples. Quantization must be exactly one f64->f32
+        // cast; no second compressor/limiter or region-only rerender.
+        if(encoding==audio::WavSampleFormat::IEEE_F32) {
+            auto decodedExport=audio::AudioBuffer::create(
+                *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                core::FrameIndex{0},*frames.value());
+            QVERIFY(decodedExport);
+            const auto readBack=(*inspected.value())->read_frames(
+                core::FrameIndex{0},decodedExport.value()->mutable_view());
+            QVERIFY(readBack);
+            QCOMPARE(*readBack.value(),*frames.value());
+            const auto exported=decodedExport.value()->view();
+            const auto master=verified->rendered.terminal.checked.terminal
+                .compensated_pcm.view();
+            QCOMPARE(master.frame_count(),exported.frame_count());
+            QCOMPARE(master.format().sample_rate(),
+                     exported.format().sample_rate());
+            for(std::size_t channel=0;
+                channel<master.format().channel_count();++channel) {
+                const auto finalM17=master.channel(channel);
+                const auto finalWav=exported.channel(channel);
+                QVERIFY(finalM17&&finalWav);
+                QCOMPARE(finalM17.value()->size(),finalWav.value()->size());
+                for(std::size_t sample=0;
+                    sample<finalWav.value()->size();++sample) {
+                    const auto expected=static_cast<double>(
+                        static_cast<float>((*finalM17.value())[sample]));
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                                 (*finalWav.value())[sample]),
+                             std::bit_cast<std::uint64_t>(expected));
+                }
+            }
+        }
         QVERIFY((*inspected.value())->close());
         QVERIFY(action.can_acknowledge());
         QVERIFY(ui.can_acknowledge());
