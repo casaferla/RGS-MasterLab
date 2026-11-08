@@ -1867,6 +1867,25 @@ set_tests_properties(rgsml_m21_ui_readonly_projection_candidate_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;analysis;m21;ui_candidate;owner;non_fq")
 
+# L1-M19–M21 private PR91+PR92 convergence: actual QtQuick roots
+# driven by real M19/M20 typed PCM and TEST-ONLY M21 review envelopes.
+# Explicitly not registered with Main.qml / Product.
+qt_add_executable(rgsml_m19_m21_typed_qml_convergence_tests
+    unit/app/test_m19_m21_typed_qml_convergence.cpp)
+target_include_directories(rgsml_m19_m21_typed_qml_convergence_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
+target_compile_definitions(rgsml_m19_m21_typed_qml_convergence_tests PRIVATE
+    RGSML_ANALYSIS_GUI_ROOT="${CMAKE_SOURCE_DIR}/ui/qml")
+target_link_libraries(rgsml_m19_m21_typed_qml_convergence_tests PRIVATE
+    rgsml_analysis Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m19_m21_typed_qml_convergence_tests)
+add_test(NAME rgsml_m19_m21_typed_qml_convergence_tests
+    COMMAND rgsml_m19_m21_typed_qml_convergence_tests)
+set_tests_properties(rgsml_m19_m21_typed_qml_convergence_tests PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;analysis;m19;m20;m21;quick;typed_fixture;non_fq")
+
 # L1-M20 read-only real AudioBuffer spectral/stereo analysis. Reuses
 # canonical rgsml_analysis FFT/PSD; scope/authority tested without QML.
 qt_add_executable(rgsml_tonal_stereo_analyzer_tests
