@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsNeverExposeUnqualifiedTruePeakOnAnyColumn();
     void routedPanelsM20MonoWidthRemainsNotApplicableOnSelectedGold();
     void routedPanelsPerColumnLowSupportDoesNotSpreadToOtherPanels();
     void routedPanelsRoutingRevisionRejectsFrameEvenWithoutSourceChange();
@@ -2235,6 +2236,35 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsM20MonoWidthRemainsNotApp
              QStringLiteral("NOT APPLICABLE"));
     QVERIFY(!f.m19.value("ready").toBool());
     QVERIFY(f.m20.value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsNeverExposeUnqualifiedTruePeakOnAnyColumn()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    const auto x=example(Column::processed,9,"x",-14.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.begin(Column::processed,9));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    QVERIFY(store.receive(x,receipt(x)));
+    IndependentPanelRouting route;
+    for(const auto source:{Column::prepared,Column::gold,Column::processed}) {
+        QVERIFY(route.select(AnalysisPanel::levels_m19,source));
+        QVERIFY(route.select(AnalysisPanel::delta_m21,source));
+        const auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+        QVERIFY(review_frame_current(store,route,f));
+        QCOMPARE(f.m19.value("levels").toMap().value("truePeak").toString(),
+                 QStringLiteral("UNAVAILABLE"));
+        QCOMPARE(f.m19.value("levelsQuality").toMap().value("truePeak").toString(),
+                 QStringLiteral("M16 UNQUALIFIED"));
+        const auto row=f.m21.value("metrics").toList().at(3).toMap();
+        QCOMPARE(row.value("preparedDelta").toString(),QStringLiteral("UNAVAILABLE"));
+        QCOMPARE(row.value("processedDelta").toString(),QStringLiteral("UNAVAILABLE"));
+    }
 }
 
 } // namespace rgsml::tests
