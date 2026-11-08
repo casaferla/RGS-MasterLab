@@ -62,9 +62,9 @@ Item {
             StudioButton {
                 id: goldButton
                 objectName: "auditionGoldButton"
-                text: "GOLD"
+                text: "REFERENCE"
                 tone: "gold"
-                minimumControlWidth: 70
+                minimumControlWidth: 112
                 contentPadding: 10
                 enabled: auditionSelector.goldAvailable
                 selected: auditionSelector.activeTarget === "GOLD"
@@ -72,7 +72,7 @@ Item {
                 onClicked: auditionSelector.selectGold()
                 KeyNavigation.backtab: processedButton
                 KeyNavigation.tab: root.nextTabItem
-                Accessible.name: "Audition Gold Reference"
+                Accessible.name: "Audition Reference"
                 Accessible.description: enabled ? (selected ? "Selected" : "Available audition target") : "Unavailable audition target"
             }
         }
@@ -81,7 +81,8 @@ Item {
     Label {
         objectName: "activeAuditionTargetLabel"
         visible: false
-        text: "Active: " + auditionSelector.activeTarget
+        text: "Active: " + (auditionSelector.activeTarget === "GOLD"
+                            ? "REFERENCE" : auditionSelector.activeTarget)
         Accessible.role: Accessible.StaticText
         Accessible.name: text
     }

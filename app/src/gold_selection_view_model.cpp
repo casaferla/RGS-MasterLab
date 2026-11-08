@@ -64,7 +64,7 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
        &&QThread::currentThread()!=thread())return;
     if(m18GoldAdmitting_ ||m18GoldPublicationActive_)return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
-        errorMessage_ = QStringLiteral("Choose one local Gold WAV file.");
+        errorMessage_ = QStringLiteral("Choose one local Reference WAV file.");
         emit changed();
         return;
     }
