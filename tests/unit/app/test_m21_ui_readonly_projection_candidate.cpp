@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void lowConfidenceMetricKeepsExplicitQuality();
     void staleGoldMasksBothDependentDeltaColumns();
     void missingGoldMasksPreparedDeltaOnly();
     void swappedSnapshotColumnIsInvalidNotCurrent();
@@ -524,6 +525,22 @@ void M21UiReadonlyProjectionCandidateTest::staleGoldMasksBothDependentDeltaColum
     QVERIFY(view.prepared_to_gold[1].quality_text=="STALE");
     QVERIFY(!view.processed_to_gold[1].numeric);
     QVERIFY(view.processed_to_gold[1].quality_text=="STALE");
+}
+
+void M21UiReadonlyProjectionCandidateTest::lowConfidenceMetricKeepsExplicitQuality()
+{
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[1]=example(Column::gold,3,"g",-13.0);
+    snapshots[0]->metrics[1]={-18.0,Quality::low_confidence,"partial support"};
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    owners[1]=receipt(*snapshots[1]);
+    const auto view=project_readonly(compose(snapshots),owners);
+    QVERIFY(view.columns[0].values[1].numeric);
+    QVERIFY(view.columns[0].values[1].quality_text=="LOW SUPPORT");
+    QVERIFY(view.prepared_to_gold[1].numeric);
+    QVERIFY(view.prepared_to_gold[1].quality_text=="LOW SUPPORT");
+    QVERIFY(!view.production_authorized);
 }
 
 } // namespace rgsml::tests
