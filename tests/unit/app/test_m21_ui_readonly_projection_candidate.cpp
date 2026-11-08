@@ -2,6 +2,7 @@
 // Uses the real M19/M20 Product-port DTO; no fake Phase-6 Product publisher,
 // no QML Main integration, and no permission to report release-ready data.
 #include "internal/m21_ui_readonly_projection_candidate.hpp"
+#include "internal/m21_qt_snapshot_review_candidate.hpp"
 #include "internal/m21_real_product_metrics_port.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
@@ -24,6 +25,7 @@ private slots:
     void matchedCandidateExposesOnlyAllowedMetricsAndNeverRelease();
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
+    void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
 };
 using namespace app::m21_private;
 using namespace app::m21_private::ui_candidate;
@@ -184,6 +186,80 @@ realM19M20DataCanBeProjectedOnlyAsPreproduction() {
     QVERIFY(!view.production_authorized);        // Still private candidate
     QVERIFY(!view.prepared_to_gold[1].numeric);    // No Gold owner
 }
+
+void M21UiReadonlyProjectionCandidateTest::
+qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease()
+{
+    using namespace ui_candidate::qt_review;
+    Slots snapshots{};
+    snapshots[0]=example(Column::prepared,7,"prepared-7",-18.0);
+    snapshots[1]=example(Column::gold,3,"gold-independent",-13.0);
+    Receipts matched{};
+    matched[0]=receipt(*snapshots[0]);
+    matched[1]=receipt(*snapshots[1]);
+    const auto typed=project_readonly(compose(snapshots),matched);
+    QVERIFY(!typed.production_authorized);
+    // The ordinary (eventual Product-facing) conversion refuses numeric
+    // publication despite apparently matched preproduction receipts.
+    const auto unpublished=masked_unpublished_envelope();
+    QVERIFY(!unpublished.value("ready").toBool());
+    QVERIFY(!unpublished.value("fixtureMode").toBool());
+    QVERIFY(!unpublished.value("productionAuthorized").toBool());
+    QVERIFY(unpublished.value("levels").toMap().isEmpty());
+    QVERIFY(unpublished.value("metrics").toList().isEmpty());
+    // Wrong marker does not permit even preproduction display.
+    const auto denied=candidate_test_fixture_envelope(
+        typed,Column::prepared,ExplicitTestFixture{0U});
+    QVERIFY(!denied.value("ready").toBool());
+    QVERIFY(!denied.value("fixtureMode").toBool());
+    QVERIFY(denied.value("levels").toMap().isEmpty());
+    // This explicit TEST FIXTURE alone maps typed M19/M21 evidence to QML
+    // strings with an unmistakable fixtureMode watermark.
+    const auto review=candidate_test_fixture_envelope(
+        typed,Column::prepared,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review.value("fixtureMode").toBool());
+    QVERIFY(review.value("ready").toBool());
+    QVERIFY(!review.value("productionAuthorized").toBool());
+    QCOMPARE(review.value("analysisStatus").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(review.value("scopeLabel").toString(),QStringLiteral("Full Track"));
+    const auto levels=review.value("levels").toMap();
+    QCOMPARE(levels.value("rms").toString(),QStringLiteral("-18.00"));
+    QCOMPARE(levels.value("truePeak").toString(),QStringLiteral("UNAVAILABLE"));
+    const auto rows=review.value("metrics").toList();
+    QCOMPARE(rows.size(),9);
+    const auto rms=rows.at(1).toMap();
+    QCOMPARE(rms.value("prepared").toString(),QStringLiteral("-18.00"));
+    QCOMPARE(rms.value("gold").toString(),QStringLiteral("-13.00"));
+    QCOMPARE(rms.value("processed").toString(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(rms.value("preparedDelta").toString(),QStringLiteral("+5.00"));
+    QCOMPARE(rms.value("preparedQuality").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(rms.value("processedQuality").toString(),QStringLiteral("MISSING"));
+    QVERIFY(review.value("spectrum").toList().isEmpty());
+    QVERIFY(review.value("bands").toList().isEmpty());
+    QCOMPARE(review.value("spectrumStatus").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    // Replacing the source marks PREPARED stale, but independent GOLD stays
+    // eligible in a separate nonproduction preview selection.
+    snapshots[0]->lifecycle=Lifecycle::stale;
+    const auto changed=project_readonly(compose(snapshots),matched);
+    const auto stale=candidate_test_fixture_envelope(
+        changed,Column::prepared,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(!stale.value("ready").toBool());
+    QCOMPARE(stale.value("analysisStatus").toString(),QStringLiteral("STALE"));
+    QVERIFY(stale.value("levels").toMap().isEmpty());
+    const auto gold=candidate_test_fixture_envelope(
+        changed,Column::gold,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(gold.value("ready").toBool());
+    QCOMPARE(gold.value("levels").toMap().value("rms").toString(),
+             QStringLiteral("-13.00"));
+    QVERIFY(!gold.value("productionAuthorized").toBool());
+    // Invalid semantic column index is always refused.
+    const auto invalid=candidate_test_fixture_envelope(
+        typed,static_cast<Column>(255),ExplicitTestFixture{0x4D323147U});
+    QVERIFY(!invalid.value("ready").toBool());
+    QVERIFY(!invalid.value("fixtureMode").toBool());
+}
+
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::M21UiReadonlyProjectionCandidateTest)
 #include "test_m21_ui_readonly_projection_candidate.moc"
