@@ -26,6 +26,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void staleLifecycleMasksAllAbsoluteNumbers();
     void rejectAbsoluteFrameRangeOverflow();
     void rejectZeroLengthScope();
     void rejectUnsupportedMatchedRate();
@@ -447,6 +448,21 @@ void M21UiReadonlyProjectionCandidateTest::rejectAbsoluteFrameRangeOverflow()
     QVERIFY(!r.columns[0].candidate_matched);
     QVERIFY(r.columns[0].state=="STALE");
     QVERIFY(!r.columns[0].values[1].numeric);
+}
+
+void M21UiReadonlyProjectionCandidateTest::staleLifecycleMasksAllAbsoluteNumbers()
+{
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    snapshots[0]->lifecycle=Lifecycle::stale;
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    const auto r=project_readonly(compose(snapshots),owners);
+    QVERIFY(r.columns[0].state=="STALE");
+    QVERIFY(!r.columns[0].candidate_matched);
+    for(const auto& cell:r.columns[0].values) {
+        QVERIFY(cell.value_text=="STALE");
+        QVERIFY(cell.quality_text=="STALE");
+        QVERIFY(!cell.numeric);
+    }
 }
 
 } // namespace rgsml::tests
