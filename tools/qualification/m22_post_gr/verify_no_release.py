@@ -15,6 +15,8 @@ ALLOWED = {
     "render/src/internal/m22_checked_output_clock_candidate.hpp",
     "render/src/internal/m22_checked_output_pcm_candidate.hpp",
     "render/src/internal/m22_final_src_frozen_pin_candidate.hpp",
+    "render/src/internal/m22_authentic_q0_conversion_candidate.hpp",
+    "tests/unit/render/test_m22_authentic_q0_candidate.cpp",
     "tests/unit/render/test_m22_checked_output_clock_candidate.cpp",
     "tests/CMakeLists.txt",
     ".github/workflows/m22-post-gr-focused.yml",
@@ -107,15 +109,43 @@ def main():
         "PcmClockFailure::INVALID_OUTPUT_DOMAIN",
         "FrozenFirFailure::WRONG_FROZEN_ASSET_NAME",
     ),"M22 real test matrix")
+    actualq0=blob("HEAD",
+        "render/src/internal/m22_authentic_q0_conversion_candidate.hpp"
+    ).decode()
+    require(actualq0,(
+        "materialize_phase11_scoped_q0_pinned_offline_candidate(",
+        "phase11_frozen_original_fir_pin(",
+        "FrameDomainId::SOURCE_PROCESSING_RATE",
+        "FrameDomainId::OUTPUT_RATE",
+        "pre_terminal_pcm",
+        "authorizes_release() const noexcept {return false;}",
+        "M22_Q0_ACTUAL_FULL_OUTPUT_OR_PIN_MISMATCH",
+    ),"M22 genuine Q0 preterminal conversion")
+    actualtest=blob("HEAD",
+        "tests/unit/render/test_m22_authentic_q0_candidate.cpp"
+    ).decode()
+    require(actualtest,(
+        "realPinnedQ0BothDirectionsExactReplay",
+        "refusalAndIdentityDoNotBypassQ0",
+        '"RGSMSR1_L160_M147.bin"',
+        '"RGSMSR1_L147_M160.bin"',
+        "std::bit_cast<std::uint64_t>",
+        "FrameDomainId::OUTPUT_RATE",
+        "return true;",
+    ),"M22 true FIR binary64 test")
+
     cmake=blob("HEAD","tests/CMakeLists.txt").decode()
     require(cmake,(
         "rgsml_m22_checked_output_clock_candidate_tests",
         "rgsml_audio Qt6::Test",
+        "rgsml_m22_authentic_q0_candidate_tests",
+        'RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"',
     ),"M22 Qt test target")
     workflow=blob("HEAD",
         ".github/workflows/m22-post-gr-focused.yml").decode()
     require(workflow,(
         "rgsml_m22_checked_output_clock_candidate_tests",
+        "rgsml_m22_authentic_q0_candidate_tests",
         "tools/qualification/m22_post_gr/verify_no_release.py",
         "staging/m22-post-gr-focused-ci-20261108",
         "tools/qualification/playback_src/test_approved_16_fir_package.py",
