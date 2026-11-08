@@ -29,6 +29,7 @@ private slots:
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
+    void reviewStoreRejectsPublishWithoutBeginningEpoch();
     void reviewStoreSelectionDoesNotMutateOtherPanels();
     void reviewStoreProcessedKeepsOwnGenerationDuringSourceChange();
     void reviewStoreIndependentGoldSurvivesPreparedReanalysis();
@@ -928,6 +929,16 @@ void M21UiReadonlyProjectionCandidateTest::reviewStoreSelectionDoesNotMutateOthe
     QCOMPARE(store.test_preview(qt_review::ExplicitTestFixture{0x4D323147U})
              .value("levels").toMap().value("rms").toString(),
              QStringLiteral("-18.00"));
+    QVERIFY(!store.unpublished().value("ready").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::reviewStoreRejectsPublishWithoutBeginningEpoch()
+{
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(!store.receive(p,receipt(p)));
+    QVERIFY(!store.snapshot().columns[0].candidate_matched);
+    QVERIFY(store.snapshot().columns[0].state=="MISSING");
     QVERIFY(!store.unpublished().value("ready").toBool());
 }
 
