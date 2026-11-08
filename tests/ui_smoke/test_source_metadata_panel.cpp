@@ -3497,31 +3497,94 @@ Window {
 // historical full-window smoke, this test makes no docking/telemetry claims.
 void SourceMetadataPanelSmokeTest::referenceTerminologyOnRealMain()
 {
-    QQmlEngine engine;
-    QQmlComponent component{&engine,
-        QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
-    QVERIFY2(component.status()!=QQmlComponent::Error,
-        qPrintable(component.errorString()));
-    QVariantMap initial;
-    initial.insert(QStringLiteral("visible"),false);
-    initial.insert(QStringLiteral("width"),1184);
-    initial.insert(QStringLiteral("height"),688);
-    QScopedPointer<QObject> root{component.createWithInitialProperties(initial)};
-    QVERIFY2(root,qPrintable(component.errorString()));
+    // Match the genuine application Main bootstrap instead of parsing
+    // the qrc:/Main.qml resource directly: Qt QML_ELEMENT types such as
+    // WaveformItem are registered by loadFromModule, not raw qrc loading.
+    // Only the initial read-only UI surface is exercised.
+    auto playbackService=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel playbackTransport{std::move(playbackService)};
+    app::SourceSelectionViewModel sourceSelection;
+    ui::WaveformPresentation waveformPresentation;
+    app::AuditionRegionViewModel auditionRegion{&playbackTransport};
+    app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    auto modules=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(modules);
+    const auto chainUuid=*core::Uuid::parse(
+        "11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid=*core::Uuid::parse(
+        "22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid=*core::Uuid::parse(
+        "33333333-3333-3333-3333-333333333333").value();
+    const auto compUuid=*core::Uuid::parse(
+        "44444444-4444-4444-4444-444444444444").value();
+    const auto gainId=*dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId=*dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    const auto compId=*dsp::ModuleInstanceId::from_uuid(compUuid).value();
+    auto createdChain=app::MasteringChainState::create_default(
+        *modules.value(),chainUuid,gainId,eqId,compId);
+    QVERIFY(createdChain);
+    auto chain=std::move(*createdChain.value());
+    app::MasteringPreviewController preview{
+        &chain,
+        [&auditionSelector] {
+            return auditionSelector.prepared_realization_snapshot();
+        },
+        [&auditionSelector](render::RenderResult result) {
+            return auditionSelector.set_processed_realization(
+                std::move(result));
+        }
+    };
+    app::GainViewModel gain{&chain,&preview};
+    app::EqViewModel eq{&chain,&preview};
+    app::CompressorViewModel compressor{&chain,&preview};
+    app::StereoMsViewModel stereo{&chain,&preview};
+    app::DspChainAdapterModel dspAdapters{
+        &gain,&eq,&compressor,&chain,QStringLiteral("Mastering"),
+        nullptr,&stereo};
+    app::GoldSelectionViewModel goldSelection{&auditionSelector};
+    app::ProjectSessionViewModel projectSession{
+        &sourceSelection,&goldSelection,&auditionRegion,&playbackTransport};
+    analysis::LiveSpectrumAnalyzer spectrumAnalyzer;
+    spectrumAnalyzer.start();
+    app::LiveSpectrumViewModel spectrum{&spectrumAnalyzer};
+    QQmlApplicationEngine engine;
+    engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    auto* context=engine.rootContext();
+    context->setContextProperty("sourceSelection",&sourceSelection);
+    context->setContextProperty("playbackTransport",&playbackTransport);
+    context->setContextProperty("sourceWaveform",&waveformPresentation);
+    context->setContextProperty("auditionRegion",&auditionRegion);
+    context->setContextProperty("auditionSelector",&auditionSelector);
+    context->setContextProperty("goldSelection",&goldSelection);
+    context->setContextProperty("projectSession",&projectSession);
+    context->setContextProperty("gainViewModel",&gain);
+    context->setContextProperty("eqViewModel",&eq);
+    context->setContextProperty("compressorViewModel",&compressor);
+    context->setContextProperty("dspChainAdapterModel",&dspAdapters);
+    context->setContextProperty("liveSpectrumViewModel",&spectrum);
+    context->setContextProperty(
+        "buildProvenance",app::configured_build_provenance());
+    // Canonical Qt QML module registration, exactly like app/src/main.cpp.
+    engine.loadFromModule("Rgsml.Ui","Main");
+    QCOMPARE(engine.rootObjects().size(),1);
+    auto* root=engine.rootObjects().front();
+    QVERIFY(qobject_cast<QQuickWindow*>(root));
     QCoreApplication::processEvents();
-    const auto checkLabel=[&](const char* objectName, const char* expected) {
-        auto* object=root->findChild<QObject*>(QString::fromLatin1(objectName));
-        return object && object->property("text").toString()
-            == QString::fromLatin1(expected);
+    const auto checkLabel=[&](const char* objectName,const char* expected) {
+        auto* item=root->findChild<QObject*>(
+            QString::fromLatin1(objectName));
+        return item&&item->property("text").toString()
+            ==QString::fromLatin1(expected);
     };
     QVERIFY2(checkLabel("menuOpenGold","Open Reference"),
-        "Actual Main File menu must show Open Reference");
+        "Real Main file menu must show Open Reference");
     QVERIFY2(checkLabel("menuClearGold","Clear Reference"),
-        "Actual Main File menu must show Clear Reference");
+        "Real Main file menu must show Clear Reference");
     QVERIFY2(checkLabel("adaptiveModeToggle_Gold","Reference / AutoMatch"),
-        "Actual Main context tab must say Reference / AutoMatch");
+        "Real Main tab must show Reference / AutoMatch");
     QVERIFY2(checkLabel("auditionGoldButton","REFERENCE"),
-        "Actual Main audition control must say REFERENCE");
+        "Real Main audition control must show REFERENCE");
+    qobject_cast<QQuickWindow*>(root)->close();
 }
 
 void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
