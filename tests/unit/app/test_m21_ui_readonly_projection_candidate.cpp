@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsSelectingM21ProcessedPreservesBothOtherSelectors();
     void routedPanelsSwitchM20DoesNotChangeM19FrameValues();
     void routedPanelsM19GoldDoesNotSwitchM20Prepared();
     void routedPanelsShowThreeDifferentSourcesConcurrently();
@@ -2035,6 +2036,31 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsSwitchM20DoesNotChangeM19
     QVERIFY(review_frame_current(store,route,after));
     QCOMPARE(before.m19.value("levels").toMap(),after.m19.value("levels").toMap());
     QCOMPARE(after.m20.value("stereo").toMap().value("width").toString(),QStringLiteral("1.10"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsSelectingM21ProcessedPreservesBothOtherSelectors()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    const auto g=example(Column::gold,3,"g",-13.0);
+    const auto x=example(Column::processed,9,"x",-14.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.begin(Column::gold,3));
+    QVERIFY(store.begin(Column::processed,9));
+    QVERIFY(store.receive(p,receipt(p)));
+    QVERIFY(store.receive(g,receipt(g)));
+    QVERIFY(store.receive(x,receipt(x)));
+    IndependentPanelRouting route;
+    QVERIFY(route.select(AnalysisPanel::levels_m19,Column::gold));
+    QVERIFY(route.select(AnalysisPanel::delta_m21,Column::processed));
+    const auto frame=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,route,frame));
+    QCOMPARE(frame.m19.value("levels").toMap().value("rms").toString(),QStringLiteral("-13.00"));
+    QVERIFY(frame.m20.value("ready").toBool());
+    QCOMPARE(frame.m21.value("metrics").toList().at(1).toMap().value("preparedDelta").toString(),
+             QStringLiteral("+5.00"));
+    QVERIFY(route.selected(AnalysisPanel::tonal_m20)==Column::prepared);
 }
 
 } // namespace rgsml::tests
