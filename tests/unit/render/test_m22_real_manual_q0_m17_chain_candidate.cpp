@@ -3,6 +3,7 @@
 #include "render_test_support.hpp"
 #include "m22_full_chain_witness_candidate.hpp"
 #include "m22_verified_full_output_window_candidate.hpp"
+#include "m18_terminal_sample_codec.hpp"
 #include <rgsml/audio/phase11_final_src_candidate.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
@@ -14,6 +15,7 @@
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <QtTest/QTest>
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -23,6 +25,7 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -264,6 +267,78 @@ private slots:
                     QCOMPARE(std::bit_cast<std::uint64_t>((*previewPlane.value())[i]),
                              std::bit_cast<std::uint64_t>((*fullPlane.value())[i+9]));
             }
+            // M18 real terminal PCM24/IEEE-F32 representation must have
+            // exactly the FULL Master crop's bytes. PCM24 Philox is
+            // indexed by ABSOLUTE OUTPUT frame, not preview-local zero.
+            const auto interleave=[](audio::AudioBufferView view) {
+                const auto frames=static_cast<std::size_t>(
+                    view.frame_count().value());
+                const auto channels=view.format().channel_count();
+                std::vector<double> values(frames*channels);
+                for(std::size_t ch=0;ch<channels;++ch) {
+                    const auto plane=view.channel(ch);
+                    if(!plane)return std::vector<double>{};
+                    for(std::size_t i=0;i<frames;++i)
+                        values[i*channels+ch]=(*plane.value())[i];
+                }
+                return values;
+            };
+            const auto fullSamples=interleave(out);
+            const auto cropSamples=interleave(crop.value()->exact_output_crop);
+            const auto channels=static_cast<std::uint32_t>(
+                out.format().channel_count());
+            QVERIFY(fullSamples.size()==static_cast<std::size_t>(
+                out.frame_count().value())*channels);
+            QCOMPARE(cropSamples.size(),std::size_t{32}*channels);
+            constexpr std::uint64_t seed=UINT64_C(0x0123456789ABCDEF);
+            std::vector<std::uint8_t> fullPcm24(fullSamples.size()*3U);
+            std::vector<std::uint8_t> cropPcm24(cropSamples.size()*3U);
+            std::vector<std::uint8_t> wrongLocalDither(cropPcm24.size());
+            QVERIFY(audio::internal::m18_pcm24_block(
+                std::span<const double>{fullSamples},channels,0,seed,
+                std::span<std::uint8_t>{fullPcm24})
+                ==audio::internal::M18CodecStatus::OK);
+            QVERIFY(audio::internal::m18_pcm24_block(
+                std::span<const double>{cropSamples},channels,9,seed,
+                std::span<std::uint8_t>{cropPcm24})
+                ==audio::internal::M18CodecStatus::OK);
+            QVERIFY(std::equal(cropPcm24.begin(),cropPcm24.end(),
+                fullPcm24.begin()+static_cast<std::ptrdiff_t>(9U*channels*3U)));
+            QVERIFY(audio::internal::m18_pcm24_block(
+                std::span<const double>{cropSamples},channels,0,seed,
+                std::span<std::uint8_t>{wrongLocalDither})
+                ==audio::internal::M18CodecStatus::OK);
+            QVERIFY(wrongLocalDither!=cropPcm24);
+            // Real checked full Master may be chunked arbitrarily in the
+            // M18 encoder; 17-frame splits must equal whole-file PCM24.
+            std::vector<std::uint8_t> chunkedPcm24(fullPcm24.size());
+            for(std::size_t frame=0;
+                frame<static_cast<std::size_t>(out.frame_count().value());) {
+                const auto remaining=static_cast<std::size_t>(
+                    out.frame_count().value())-frame;
+                const auto n=std::min(std::size_t{17},remaining);
+                QVERIFY(audio::internal::m18_pcm24_block(
+                    std::span<const double>{fullSamples}.subspan(
+                        frame*channels,n*channels),
+                    channels,frame,seed,
+                    std::span<std::uint8_t>{chunkedPcm24}.subspan(
+                        frame*channels*3U,n*channels*3U))
+                    ==audio::internal::M18CodecStatus::OK);
+                frame+=n;
+            }
+            QVERIFY(chunkedPcm24==fullPcm24);
+            std::vector<std::uint8_t> fullF32(fullSamples.size()*4U);
+            std::vector<std::uint8_t> cropF32(cropSamples.size()*4U);
+            QVERIFY(audio::internal::m18_float32_block(
+                std::span<const double>{fullSamples},channels,0,
+                std::span<std::uint8_t>{fullF32})
+                ==audio::internal::M18CodecStatus::OK);
+            QVERIFY(audio::internal::m18_float32_block(
+                std::span<const double>{cropSamples},channels,9,
+                std::span<std::uint8_t>{cropF32})
+                ==audio::internal::M18CodecStatus::OK);
+            QVERIFY(std::equal(cropF32.begin(),cropF32.end(),
+                fullF32.begin()+static_cast<std::ptrdiff_t>(9U*channels*4U)));
             const auto beyond=core::FrameRange::create(
                 core::FrameIndex{out.frame_count().value()-1},
                 core::FrameIndex{out.frame_count().value()+1});
