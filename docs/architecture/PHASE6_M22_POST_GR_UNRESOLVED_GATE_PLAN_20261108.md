@@ -104,3 +104,8 @@ The same native test now sends **actual checked M17 OUTPUT_RATE PCM** (not only 
 - compare actual IEEE_FLOAT32 bytes of full vs exact preview crop; existing six same-rate binary64 M17/PREVIEW tests remain and bypassed M17/Q0 never receives Preview admission.
 
 This is the **real manual-DSP/Q0/M17→M18 representation seam** rather than claiming M18 digital codec is reimplemented. It is still nonrelease and not a full WAV readback of all 36 route combinations, generalized scheduler, signed Phase-6 Registry or PO physical approval.
+
+
+### 30/30 cross-rate active M17/M16 native check added
+
+Beyond the previously green 30 bypassed routes and two active stereo 44.1↔48 cases, `allThirtyActiveOriginalQ0RoutesUseGenuineFullM17AndM16` now exercises all **30 actual original Q0 conversions** through the real immutable SOURCE-domain Gain/Manual owner, real SRC asset, active M17 terminal and original complete M16 final-check. Every route verifies actual OUTPUT_RATE frame count, rate, retained original SHA identity and nonrelease zero-copy Preview. This is **test source staged**, not qualified or asserted as a success until its own Windows+Linux CI passes. It does NOT replace Phase-11 Q1–Q6, physical Windows qualification, actual Product GUI/user master or safe WAV postwrite checks.
