@@ -1467,6 +1467,28 @@ set_tests_properties(rgsml_stereo_ms_audible_resolver_tests PROPERTIES
 # Strictly nonrelease M22 output-rate timeline preflight. It takes
 # EXTERNALLY DECLARED verified-master frame counts and cannot publish
 # a FIR, True Peak, dither or Phase-6 product status.
+# Authentic frozen-Q0 source-conversion pre-terminal test; no RELEASE.
+# Reads only two genuine repository FIR binaries, verifies real output PCM.
+qt_add_executable(rgsml_m22_authentic_q0_candidate_tests
+    unit/render/test_m22_authentic_q0_candidate.cpp
+)
+target_include_directories(rgsml_m22_authentic_q0_candidate_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/render/src/internal
+)
+target_compile_definitions(rgsml_m22_authentic_q0_candidate_tests PRIVATE
+    RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+target_link_libraries(rgsml_m22_authentic_q0_candidate_tests
+    PRIVATE rgsml_audio Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m22_authentic_q0_candidate_tests)
+add_test(NAME rgsml_m22_authentic_q0_candidate_tests
+    COMMAND rgsml_m22_authentic_q0_candidate_tests)
+set_tests_properties(rgsml_m22_authentic_q0_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "render;m22;real_pcm;original_q0;non_fq"
+)
+
 qt_add_executable(rgsml_m22_checked_output_clock_candidate_tests
     unit/render/test_m22_checked_output_clock_candidate.cpp
 )
