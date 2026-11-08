@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void testFixtureRejectsArtificialProductionAuthorization();
     void decimalDisplayUsesStableDotAndDeltaSign();
     void allSixSupportedRatesUseExactMatchingOnly();
     void matchingRegionReceiptKeepsRegionScope();
@@ -677,6 +678,21 @@ void M21UiReadonlyProjectionCandidateTest::decimalDisplayUsesStableDotAndDeltaSi
             =="INVALID");
     QVERIFY(decimal_text(std::numeric_limits<double>::quiet_NaN(),false)
             =="INVALID");
+}
+
+void M21UiReadonlyProjectionCandidateTest::testFixtureRejectsArtificialProductionAuthorization()
+{
+    using namespace app::m21_private::ui_candidate::qt_review;
+    Slots snapshots{}; snapshots[0]=example(Column::prepared,7,"p",-18.0);
+    Receipts owners{}; owners[0]=receipt(*snapshots[0]);
+    auto projection=project_readonly(compose(snapshots),owners);
+    QVERIFY(projection.columns[0].candidate_matched);
+    projection.production_authorized=true; // deliberately poisoned fixture
+    const auto denied=candidate_test_fixture_envelope(
+        projection,Column::prepared,ExplicitTestFixture{0x4D323147U});
+    QVERIFY(!denied.value("ready").toBool());
+    QVERIFY(!denied.value("fixtureMode").toBool());
+    QVERIFY(denied.value("levels").toMap().isEmpty());
 }
 
 } // namespace rgsml::tests
