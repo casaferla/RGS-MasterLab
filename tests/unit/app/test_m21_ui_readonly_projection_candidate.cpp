@@ -3,6 +3,7 @@
 // no QML Main integration, and no permission to report release-ready data.
 #include "internal/m21_ui_readonly_projection_candidate.hpp"
 #include "internal/m21_qt_snapshot_review_candidate.hpp"
+#include "internal/m21_review_epoch_store_candidate.hpp"
 #include "internal/m21_real_product_metrics_port.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
@@ -27,6 +28,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void newReviewEpochStoreStartsMasked();
     void displayZeroSuppressesSignedRoundedZero();
     void qtRowsPreservePerMetricUnitsAndQualityNames();
     void unclaimedGoldColumnIsNeverRenderedInQtRows();
@@ -772,6 +774,23 @@ void M21UiReadonlyProjectionCandidateTest::displayZeroSuppressesSignedRoundedZer
     QVERIFY(decimal_text(0.015,true)=="+0.01" ||
             decimal_text(0.015,true)=="+0.02");
     QVERIFY(decimal_text(-0.02,true)=="-0.02");
+}
+
+void M21UiReadonlyProjectionCandidateTest::newReviewEpochStoreStartsMasked()
+{
+    ReviewEpochStore store;
+    QVERIFY(store.selected()==Column::prepared);
+    QVERIFY(!store.snapshot().production_authorized);
+    for(const auto& col:store.snapshot().columns) {
+        QVERIFY(!col.candidate_matched);
+        QVERIFY(col.state=="MISSING");
+        QVERIFY(col.scope_text=="SCOPE UNAVAILABLE");
+    }
+    QVERIFY(!store.unpublished().value("ready").toBool());
+    QVERIFY(!store.unpublished().value("fixtureMode").toBool());
+    QVERIFY(store.unpublished().value("levels").toMap().isEmpty());
+    QVERIFY(!store.test_preview(
+        qt_review::ExplicitTestFixture{0x4D323147U}).value("ready").toBool());
 }
 
 } // namespace rgsml::tests
