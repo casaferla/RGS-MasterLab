@@ -30,6 +30,7 @@ MANDATORY = (
 WINDOWS_ONLY = {
     "rgsml_transactional_audio_export_tests",
     "rgsml_m18_windows_candidate_delivery_tests",
+    "rgsml_project_session_tests",
 }
 FROZEN_FALSE = (
     "m23_closed", "physical_gate_m",
