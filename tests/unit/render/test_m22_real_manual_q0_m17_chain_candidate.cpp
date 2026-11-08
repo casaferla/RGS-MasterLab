@@ -910,7 +910,12 @@ private slots:
             // An identity clock must NOT consume or claim any FIR coefficient.
             {
                 result.value()->src_kernel_sha256="forged-identity-coefficients";
-
+                QVERIFY(!m22_private::observe_real_full_output_plan_candidate(
+                    *result.value(),m22_private::Mode::PREVIEW,
+                    m22_private::Window{13,29},planFailure));
+                QCOMPARE(planFailure,
+                    m22_private::RealFullOutputPlanFailure::
+                        NO_VERIFIED_NATIVE_FULL_M17);
                 QVERIFY(!m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why));
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
@@ -919,7 +924,12 @@ private slots:
             // Same-clock output must be proven as exact no-SRC, never reclassified.
             {
                 result.value()->used_candidate_src=true;
-
+                QVERIFY(!m22_private::observe_real_full_output_plan_candidate(
+                    *result.value(),m22_private::Mode::PREVIEW,
+                    m22_private::Window{13,29},planFailure));
+                QCOMPARE(planFailure,
+                    m22_private::RealFullOutputPlanFailure::
+                        NO_VERIFIED_NATIVE_FULL_M17);
                 QVERIFY(!m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why));
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INCORRECT_FROZEN_SRC_PROVENANCE);
@@ -930,7 +940,12 @@ private slots:
                 const auto old=result.value()->terminal.checked.final_check->qualification_status;
                 result.value()->terminal.checked.final_check->qualification_status=
                     analysis::TruePeakQualificationStatus::UNSUPPORTED;
-
+                QVERIFY(!m22_private::observe_real_full_output_plan_candidate(
+                    *result.value(),m22_private::Mode::FULL,
+                    m22_private::Window{0,257},planFailure));
+                QCOMPARE(planFailure,
+                    m22_private::RealFullOutputPlanFailure::
+                        NO_VERIFIED_NATIVE_FULL_M17);
                 QVERIFY(!m22_private::observe_real_complete_chain_candidate(
                     *result.value(),why));
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
