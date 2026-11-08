@@ -27,6 +27,7 @@ private slots:
     void changedSourceDoesNotInvalidateIndependentGold();
     void realM19M20DataCanBeProjectedOnlyAsPreproduction();
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
+    void displayZeroSuppressesSignedRoundedZero();
     void qtRowsPreservePerMetricUnitsAndQualityNames();
     void unclaimedGoldColumnIsNeverRenderedInQtRows();
     void processedColumnQtProjectionSelectsProcessedCorrectly();
@@ -759,6 +760,18 @@ void M21UiReadonlyProjectionCandidateTest::qtRowsPreservePerMetricUnitsAndQualit
              QStringLiteral("NOT APPLICABLE"));
     QCOMPARE(rows.at(5).toMap().value("preparedQuality").toString(),
              QStringLiteral("NOT APPLICABLE"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::displayZeroSuppressesSignedRoundedZero()
+{
+    // Display rounding is cosmetic; exact unrounded M21 delta is preserved.
+    QVERIFY(decimal_text(-0.0001,true)=="0.00");
+    QVERIFY(decimal_text(0.0001,true)=="0.00");
+    QVERIFY(decimal_text(-0.0001,false)=="0.00");
+    QVERIFY(decimal_text(0.0001,false)=="0.00");
+    QVERIFY(decimal_text(0.015,true)=="+0.01" ||
+            decimal_text(0.015,true)=="+0.02");
+    QVERIFY(decimal_text(-0.02,true)=="-0.02");
 }
 
 } // namespace rgsml::tests
