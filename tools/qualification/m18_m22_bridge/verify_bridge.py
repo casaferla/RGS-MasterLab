@@ -52,6 +52,7 @@ ADDED = {
     "docs/architecture/M18_M22_REFERENCE_GUI_ISOLATED_BRIDGE_20261108.md",
     "app/src/internal/m21_product_qt_readiness_bridge.hpp",
     "app/src/internal/m21_product_spectrum_evidence.hpp",
+    "app/src/internal/m22_product_preview_admission.hpp",
     "tests/integration/app/test_project_session.cpp",
 }
 PROTECTED = (
@@ -59,7 +60,7 @@ PROTECTED = (
     "project/include/rgsml/project/project_document.hpp",
     "project/src/project_snapshot.cpp",
     "project/src/internal/canonical_json.cpp",
-        "render/src/internal/m22_request_plan_candidate.hpp",
+    "render/src/internal/m22_request_plan_candidate.hpp",
     "app/src/internal/m21_product_owner_analysis.hpp",
     "app/src/internal/m21_product_publication_inbox.hpp",
 )
@@ -142,6 +143,27 @@ def main():
         "!SpectrumProof::still_current(provenSpectrum",
     ):
         check(required in joined, "M20 real PSD ProductSession test absent: "+required)
+
+    preview = blob("HEAD",
+        "app/src/internal/m22_product_preview_admission.hpp").decode()
+    for required in (
+        "M18ProductCompleteBinding",
+        "m22_verified_master_preview_crop(",
+        "product.candidates.staged()!=capture.full_master",
+        "now->identity!=capture.owner.identity",
+        "QThread::currentThread()!=product.session.thread()",
+        "absoluteOutputWindow.end()",
+        "return verified.value()->absolute_start_frame()",
+    ):
+        check(required in preview, "M22 real Product preview admission guard missing: "+required)
+    for required in (
+        '#include "internal/m22_product_preview_admission.hpp"',
+        "using PreviewAdmission=app::internal::M22ProductPreviewAdmission;",
+        "const auto admittedMasterPreview=PreviewAdmission::capture(",
+        "PreviewAdmission::still_current(",
+        "!PreviewAdmission::capture(",
+    ):
+        check(required in joined, "M22 real Product preview acceptance test absent: "+required)
 
     cmake = blob("HEAD", "tests/CMakeLists.txt")
     original = blob(BASE, "tests/CMakeLists.txt")
