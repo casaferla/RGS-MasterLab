@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void independentPanelBundleM20ContainsOnlyVerifiedStereoFields();
     void independentPanelBundleReadsM19RmsFromExactReceipt();
     void independentPanelBundleCreatesThreeDistinctModuleIds();
     void reviewStoreIsNonCopyableSingleWriterState();
@@ -1269,6 +1270,24 @@ void M21UiReadonlyProjectionCandidateTest::independentPanelBundleReadsM19RmsFrom
     QCOMPARE(frame.m19.value("levelsQuality").toMap().value("rms").toString(),QStringLiteral("CURRENT"));
     QCOMPARE(frame.m19.value("levels").toMap().value("truePeak").toString(),QStringLiteral("UNAVAILABLE"));
     QCOMPARE(frame.m19.value("levelsQuality").toMap().value("truePeak").toString(),QStringLiteral("M16 UNQUALIFIED"));
+}
+
+void M21UiReadonlyProjectionCandidateTest::independentPanelBundleM20ContainsOnlyVerifiedStereoFields()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    auto p=example(Column::prepared,7,"p",-18.0);
+    p.metrics[5]={0.92,Quality::present,{}};
+    p.metrics[6]={0.12,Quality::low_confidence,"short segment"};
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    const auto frame=capture_test_panels(store,qt_review::ExplicitTestFixture{0x4D323147U});
+    QCOMPARE(frame.m20.value("stereo").toMap().value("width").toString(),QStringLiteral("0.92"));
+    QCOMPARE(frame.m20.value("stereo").toMap().value("P10").toString(),QStringLiteral("0.12"));
+    QCOMPARE(frame.m20.value("stereoQuality").toMap().value("width").toString(),QStringLiteral("CURRENT"));
+    QCOMPARE(frame.m20.value("stereoQuality").toMap().value("P10").toString(),QStringLiteral("LOW SUPPORT"));
+    QVERIFY(frame.m20.value("spectrum").toList().isEmpty());
+    QVERIFY(frame.m20.value("bands").toList().isEmpty());
 }
 
 } // namespace rgsml::tests
