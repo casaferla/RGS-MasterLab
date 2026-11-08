@@ -16,6 +16,7 @@
 #include <QImage>
 #include <QQuickItem>
 #include <QQuickView>
+#include <QSet>
 #include <QQmlError>
 #include <QStringList>
 #include <QUrl>
@@ -86,6 +87,19 @@ bool optional_test_screenshot(QQuickView& view,const QString& name) {
     QTest::qWait(450);
     const auto image=view.grabWindow();
     if(image.isNull() || image.width()<1184 || image.height()<688)return false;
+    // A previous Windows QtQuick run wrote fully sized PNGs with missing
+    // font glyphs (small white squares). Their palette had ~100 unique
+    // colors, versus thousands for legible Segoe/Consolas glyphs.
+    // Require enough antialiased text colors to reject this failure.
+    QSet<QRgb> colors;
+    for(int y=0;y<image.height();y+=3)
+        for(int x=0;x<image.width();x+=3)
+            colors.insert(image.pixel(x,y));
+    if(colors.size()<350) {
+        qWarning()<<"RGSML_TYPED_SCREENSHOT_FONT_GLYPHS_MISSING"
+                  <<name<<"sampled_colors"<<colors.size();
+        return false;
+    }
     return image.save(QDir(destination).filePath(name), "PNG");
 }
 void mount_explicit_demo(QQuickView& view,const QVariantMap& data) {
