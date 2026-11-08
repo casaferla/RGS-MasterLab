@@ -1522,6 +1522,7 @@ qt_add_executable(rgsml_m22_real_manual_q0_m17_chain_candidate_tests
 )
 target_include_directories(rgsml_m22_real_manual_q0_m17_chain_candidate_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/render/src/internal
+    ${CMAKE_SOURCE_DIR}/audio/src/internal
 )
 target_compile_definitions(rgsml_m22_real_manual_q0_m17_chain_candidate_tests PRIVATE
     RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
