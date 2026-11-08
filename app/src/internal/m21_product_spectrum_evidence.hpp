@@ -104,7 +104,11 @@ public:
         const GoldSelectionViewModel& gold,const Inbox& inbox,
         const Routing& routing)
     {
-        if(!proof.current_owner||!proof.actual_spectrum
+        // Never inspect mutable routing or Product models from workers.
+        if(QThread::currentThread()!=selector.thread()
+           ||QThread::currentThread()!=gold.thread()
+           ||QThread::currentThread()!=product.session.thread()
+           ||!proof.current_owner||!proof.actual_spectrum
            ||proof.product_ui_authorized
            ||proof.owner_epoch==0
            ||!routing.is_current_route(proof.routing_revision))
