@@ -20,7 +20,9 @@ Rectangle {
         ? "LEVELS  /  M19" : (activeTab === 1
         ? "TONAL & STEREO  /  M20" : "METRICS / DELTA  /  M21")
     property var presentation: ({ready:false})
-    property bool fixtureMode: true
+    // Standalone QML opens fail-closed. Only an explicit Qt TEST harness
+    // may enable demo data. Never treat this as canonical Product authority.
+    property bool fixtureMode: false
     // Display-only lifecycle label. Never authorizes Product data.
     // The future typed owner bridge must supply this; the preview harness
     // uses CURRENT exclusively with explicitly labelled DEMO fixtures.
