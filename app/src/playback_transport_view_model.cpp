@@ -369,7 +369,7 @@ core::Status PlaybackTransportViewModel::seek_source_frame(
     if (!sourceDerivedActive_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
-            "Source waveform seek is unavailable during Gold audition."});
+            "Source waveform seek is unavailable during Reference audition."});
     }
     return seek_target_frame(position);
 }

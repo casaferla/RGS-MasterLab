@@ -547,14 +547,14 @@ core::Status AuditionSourceSelector::set_gold(
     }
     if (source_) {
         if (source_->same_resource_identity(reference)) {
-            return unavailable("Gold must be a file distinct from Source.");
+            return unavailable("Reference must be a file distinct from Source.");
         }
         auto same = platform::windows::same_underlying_local_file(*source_, reference);
         if (!same) {
             return core::Status::failure(*same.error());
         }
         if (*same.value()) {
-            return unavailable("Gold must not be an alias of the Source file.");
+            return unavailable("Reference must not be an alias of the Source file.");
         }
     }
     // Exact file-identity preflight is complete. Only now may the
