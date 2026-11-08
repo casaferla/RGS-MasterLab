@@ -8,6 +8,10 @@
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/render/render_execution_signature.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
@@ -80,6 +84,163 @@ private:
         return result;
     }
 private slots:
+    void realFourModuleStatefulManualFullPreviewAndCheckedM17Parity() {
+        // Actual DSP instances in stored order, not artificial histories:
+        // source -> Gain -> EQ -> Stereo/M-S (active mono bass LR12)
+        // -> Compressor -> real M17 -> real M16, then true PCM crop.
+        using namespace rgsml;
+        using namespace render_support;
+        constexpr std::int64_t n=4096,fs=48000;
+        auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+        QVERIFY(registry);
+        auto rate=core::SampleRate::create(fs);
+        QVERIFY(rate);
+        auto format=audio::AudioFormat::create(
+            *rate.value(),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto original=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(n));
+        QVERIFY(original);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto plane=original.value()->mutable_view().channel(ch);
+            QVERIFY(plane);
+            for(std::size_t i=0;i<plane.value()->size();++i) {
+                const auto t=static_cast<double>(i);
+                (*plane.value())[i]=
+                    0.12*std::sin(t*(ch==0?0.030:0.037))
+                   +0.06*std::cos(t*(ch==0?0.009:0.012))
+                   +((i%499U)==0U?0.24:0.0);
+            }
+        }
+        const auto immutableSource=bits(original.value()->view());
+        auto manual=dsp::ProcessingChain::create(*registry.value(),
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+        auto terminal=dsp::ProcessingChain::create(*registry.value(),
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::TERMINAL});
+        QVERIFY(manual&&terminal);
+        const auto gainId=make_id("95000000-0000-4000-8000-000000000001");
+        const auto eqId=make_id("95000000-0000-4000-8000-000000000002");
+        const auto msId=make_id("95000000-0000-4000-8000-000000000003");
+        const auto compId=make_id("95000000-0000-4000-8000-000000000004");
+        const auto limiterId=make_id("95000000-0000-4000-8000-000000000017");
+        QVERIFY(manual.value()->add(gainId,"rgsml.dsp.gain",0));
+        QVERIFY(manual.value()->add(eqId,"rgsml.dsp.parametric-eq",1));
+        QVERIFY(manual.value()->add(msId,"rgsml.dsp.stereo-ms",2));
+        QVERIFY(manual.value()->add(compId,"rgsml.dsp.compressor",3));
+        QVERIFY(terminal.value()->add(
+            limiterId,"rgsml.dsp.true-peak-limiter",0));
+        const auto gain=dsp::GainParameters::create(-5.0);
+        const auto bandId=*core::Uuid::parse(
+            "95000000-0000-4000-8000-000000000042").value();
+        const auto band=dsp::EqBandParameters::create(
+            bandId,true,dsp::EqFilterType::BELL,dsp::EqRouting::STEREO,
+            dsp::BellPayload{700.0,3.0,0.9});
+        QVERIFY(gain&&band);
+        const auto eq=dsp::ParametricEqParameters::create({*band.value()});
+        const auto ms=dsp::StereoMsParameters::create(
+            -3.0,6.0,false,dsp::MonoBassMode::LR12,145.0,35.0);
+        const auto compressor=dsp::CompressorParameters::create_default();
+        const auto ceiling=dsp::TruePeakLimiterParameters::create(-1.0);
+        QVERIFY(eq&&ms&&compressor&&ceiling);
+        const std::vector<dsp::ModuleExecutionBinding> binding{
+            {compId,*compressor.value()},
+            {msId,*ms.value()},
+            {gainId,*gain.value()},
+            {eqId,*eq.value()}};
+        const std::array<dsp::ModuleExecutionBinding,1> terminalBinding{{
+            {limiterId,*ceiling.value()}}};
+        std::vector<std::uint64_t> canonicalFull;
+        for(const auto chunk:{64,257}) {
+            const auto request=render::RenderRequest::create(
+                original.value()->view(),
+                original.value()->view().absolute_range(),
+                *manual.value(),binding,frame_count(chunk));
+            QVERIFY(request);
+            const auto full=render::render_preview(
+                *request.value(),*registry.value());
+            QVERIFY2(full,full?"":full.error()->message().c_str());
+            QCOMPARE(full.value()->signatures().size(),std::size_t{4});
+            for(const auto& signature:full.value()->signatures())
+                QCOMPARE(signature.disposition,
+                         render::ModuleExecutionDisposition::PROCESSED);
+            QCOMPARE(full.value()->signatures()[0].instance_id,gainId);
+            QCOMPARE(full.value()->signatures()[1].instance_id,eqId);
+            QCOMPARE(full.value()->signatures()[2].instance_id,msId);
+            QCOMPARE(full.value()->signatures()[3].instance_id,compId);
+            QVERIFY(full.value()->compressor_telemetry_sidecar().has_value());
+            QCOMPARE(full.value()->stereo_ms_stage_output_sidecars().size(),
+                     std::size_t{1});
+            auto fullBits=bits(full.value()->view());
+            QVERIFY(fullBits!=immutableSource);
+            if(!canonicalFull.empty())QCOMPARE(fullBits,canonicalFull);
+            else canonicalFull=std::move(fullBits);
+            // Canonical state-origin replay for a middle region and
+            // a tail that includes true EOS. Previous IIR, mono-bass,
+            // envelope and compressor histories must NEVER reset here.
+            for(const auto [first,last]:
+                {std::pair{713,2751},std::pair{3599,4096}}) {
+                const auto region=core::FrameRange::create(
+                    core::FrameIndex{first},core::FrameIndex{last});
+                QVERIFY(region);
+                const auto cropped=full.value()->view().subview(
+                    core::FrameIndex{first},frame_count(last-first));
+                QVERIFY(cropped);
+                const auto previewRequest=render::RenderRequest::create(
+                    original.value()->view(),*region.value(),
+                    *manual.value(),binding,frame_count(chunk==64?17:113));
+                QVERIFY(previewRequest);
+                const auto preview=render::render_preview(
+                    *previewRequest.value(),*registry.value());
+                QVERIFY2(preview,preview?"":preview.error()->message().c_str());
+                QCOMPARE(bits(preview.value()->view()),bits(*cropped.value()));
+            }
+            // The retained WHOLE Manual PCM alone can be a trusted M17
+            // predecessor. A mid-region result may never impersonate it.
+            auto owner=std::make_shared<const render::RenderResult>(
+                std::move(*full.value()));
+            const auto checked=render::render_true_peak_limiter_owned_output_rate_candidate(
+                owner,*manual.value(),frame_count(n),
+                owner->chain_revision(),*rate.value(),*terminal.value(),
+                terminalBinding,*registry.value(),frame_count(128));
+            QVERIFY2(checked,checked?"":checked.error()->message().c_str());
+            m22_private::FullChainWitnessFailure reason{};
+            const auto genuine=m22_private::observe_real_complete_chain_candidate(
+                *checked.value(),reason);
+            QVERIFY(genuine);
+            QCOMPARE(reason,m22_private::FullChainWitnessFailure::NONE);
+            QCOMPARE(genuine->complete_source_frames,n);
+            QCOMPARE(genuine->actual_master_frames,n);
+            QCOMPARE(genuine->manual_source_hz,fs);
+            QCOMPARE(genuine->final_master_hz,fs);
+            QVERIFY(!genuine->used_original_q0);
+            QVERIFY(checked.value()->terminal.checked.final_check.has_value());
+            QVERIFY(!checked.value()->terminal.checked.terminal.bypassed);
+            const auto audible=checked.value()->terminal.checked.terminal
+                .compensated_pcm.view();
+            QCOMPARE(audible.frame_count().value(),n);
+            for(const auto [first,last]:
+                {std::pair{713,2751},std::pair{3599,4096}}) {
+                const auto region=core::FrameRange::create(
+                    core::FrameIndex{first},core::FrameIndex{last});
+                QVERIFY(region);
+                const auto result=
+                    m22_private::observe_verified_full_output_window_candidate(
+                        *checked.value(),*region.value());
+                QVERIFY(result);
+                QCOMPARE(result.value()->exact_output_crop.frame_count().value(),
+                         static_cast<std::int64_t>(last-first));
+                for(std::size_t ch=0;ch<2;++ch) {
+                    const auto whole=audible.channel(ch);
+                    const auto part=result.value()->exact_output_crop.channel(ch);
+                    QVERIFY(whole&&part);
+                    QCOMPARE(part.value()->data(),whole.value()->data()+first);
+                }
+            }
+        }
+        QCOMPARE(bits(original.value()->view()),immutableSource);
+    }
+
     void allThirtyRealQ0RoutesViaImmutableManualOwnerAndRealM17Bypass() {
         using namespace rgsml;
         using namespace render_support;
