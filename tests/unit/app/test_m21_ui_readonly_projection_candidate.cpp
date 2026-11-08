@@ -32,6 +32,7 @@ private slots:
     void qmlEnvelopeHonorsIndividualColumnQualityAndRejectsRelease();
     void newReviewEpochStoreStartsMasked();
     void independentPanelBundleStartsUnpublished();
+    void routedPanelsTamperedRoutingRevisionRejectsQueuedFrame();
     void routedPanelsOnlyTestFixtureCanExposeCandidateReadouts();
     void routedPanelsNeverInferSpectrumOrTonalCurveFromLevels();
     void routedPanelsNeverExposeUnqualifiedTruePeakOnAnyColumn();
@@ -2306,6 +2307,20 @@ void M21UiReadonlyProjectionCandidateTest::routedPanelsOnlyTestFixtureCanExposeC
     QVERIFY(!demo.m19.value("productionAuthorized").toBool());
     QVERIFY(!demo.m20.value("productionAuthorized").toBool());
     QVERIFY(!demo.m21.value("productionAuthorized").toBool());
+}
+
+void M21UiReadonlyProjectionCandidateTest::routedPanelsTamperedRoutingRevisionRejectsQueuedFrame()
+{
+    using namespace app::m21_private::ui_candidate::panel_review;
+    ReviewEpochStore store;
+    const auto p=example(Column::prepared,7,"p",-18.0);
+    QVERIFY(store.begin(Column::prepared,7));
+    QVERIFY(store.receive(p,receipt(p)));
+    IndependentPanelRouting route;
+    auto f=capture_test_panels(store,route,qt_review::ExplicitTestFixture{0x4D323147U});
+    QVERIFY(review_frame_current(store,route,f));
+    ++f.routing_revision;
+    QVERIFY(!review_frame_current(store,route,f));
 }
 
 } // namespace rgsml::tests
