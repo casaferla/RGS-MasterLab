@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <locale>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -141,6 +142,8 @@ struct ReadOnlyProjection final {
         && receipt.analysis_scope_label==snapshot.analysis_scope_label
         && receipt.absolute_scope_begin==snapshot.absolute_scope_begin
         && receipt.scope_frames>0
+        && receipt.absolute_scope_begin<=
+            (std::numeric_limits<std::uint64_t>::max)()-receipt.scope_frames
         && receipt.scope_frames==snapshot.scope_frames
         && receipt.sample_rate_hz==snapshot.sample_rate_hz
         && supported_private_rate(snapshot.sample_rate_hz);
