@@ -294,6 +294,17 @@ private slots:
                 QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
                 result.value()->terminal.checked.terminal.bypassed=false;
             }
+            // Source/output sample alignment requires every gain observation.
+            {
+                auto& gains=result.value()->terminal.checked.terminal.applied_gain_frames;
+                QVERIFY(!gains.empty());
+                const auto last=gains.back();
+                gains.pop_back();
+                QVERIFY(!m22_private::observe_real_complete_chain_candidate(
+                    *result.value(),why));
+                QCOMPARE(why,m22_private::FullChainWitnessFailure::INVALID_M17_OR_M16);
+                gains.push_back(last);
+            }
             QCOMPARE(bits(owner->view()),before);
         }
     }
