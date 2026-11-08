@@ -163,7 +163,6 @@ def main():
         "rgsml_audio Qt6::Test",
         "rgsml_m22_authentic_q0_candidate_tests",
         "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
-        "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
         'RGSML_M22_SOURCE_DIR="${CMAKE_SOURCE_DIR}"',
     ),"M22 Qt test target")
     workflow=blob("HEAD",
@@ -171,6 +170,7 @@ def main():
     require(workflow,(
         "rgsml_m22_checked_output_clock_candidate_tests",
         "rgsml_m22_authentic_q0_candidate_tests",
+        "rgsml_m22_real_manual_q0_m17_chain_candidate_tests",
         "tools/qualification/m22_post_gr/verify_no_release.py",
         "staging/m22-post-gr-focused-ci-20261108",
         "tools/qualification/playback_src/test_approved_16_fir_package.py",
