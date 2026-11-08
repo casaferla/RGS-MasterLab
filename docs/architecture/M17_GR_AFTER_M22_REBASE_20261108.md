@@ -22,3 +22,15 @@ The M17 User Experience is **one full-Master sampled OFFLINE gain-reduction curv
 - Focused success permits the **isolated GR GUI preintegration**; it does not certify physical Windows audio or DSP, nor act as final FQ. PO explicit approval is still needed to merge to `main`.
 
 M18–M22 unresolved release gates (canonical Phase-6 FeatureDefinitionRegistry / product numeric UI, generalized M22 scheduler, physical Windows PO matrix, final combined FQ) are not silently cleared by this UX overlay. The separate PR #85 may remain Draft as historical evidence.
+
+## Follow-up after CI #1 green: complete M17 editor screenshots without physical PC
+
+The PO correctly pointed out that software development must NOT stop while awaiting Windows physical acceptance. CI #1 was completed **SUCCESS on both Windows/Linux**, but its M17 screenshot artifact showed **only** two narrow 54px GR stripes at 25%/75%, insufficient to review the editor layout. Retain original two real Qt raster captures and extend the SAME true `truePeakLimiterLayoutCandidate` Qt fixture with two additional **whole-M17-editor** `QQuickItem::grabToImage()` captures at positions 25% and 75%, at its actual 710px-class layout size. These images are authentic Qt software-rendered test output using synthetic sample GR evidence, NOT photorealistic mockups or a physical Product/DEVICE screenshot.
+
+Four required PNGs, same immutable fixture with on/off/bypass, cursor, owner and geometry checks:
+- `m17_gr_history_SYNTHETIC_cursor25.png`
+- `m17_gr_history_SYNTHETIC_cursor75.png`
+- `m17_gr_history_EDITOR_SYNTHETIC_cursor25.png`
+- `m17_gr_history_EDITOR_SYNTHETIC_cursor75.png`
+
+The candidate CI must refuse missing, empty or invariant full-editor rasters; the provenance guard pins the revised Qt regression's exact blob; original DSP/Product/Phase-6 and project formats remain unchanged. Use one Windows+Linux focused CI after a scoped batch, no merge to main. Then continue open nonphysical development, particularly canonical Phase-6 release semantics, M21 Product numeric presentation eligibility and the generalized M22 planner. Physical A01–A15 and human waveform/audio/dual-monitor judgment are deferred to PO's first available PC.
