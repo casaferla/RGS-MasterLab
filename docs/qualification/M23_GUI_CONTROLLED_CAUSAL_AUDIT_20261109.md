@@ -185,3 +185,59 @@ timing instead of modifying geometry. **Never turn an observational diagnostic
 PASS into a release/FQ pass**.
 
 No changes to `main` or qualified modules, no automatic merge, PR #99 Draft.
+
+## Results — CI #30: CMake-parent behavior, stdout capture excluded
+
+CI #30 https://github.com/casaferla/RGS-MasterLab/actions/runs/42685836317,
+SHA `44b9f69eeb2bd2328c1062a85dca174b933a5b32`. Linux portable PASS;
+Windows original CTest 10/11 PASS, Qt smoke FAIL EQ 992x612 in host 732x475.
+Bounded artifact ID `13703864744`, files `m23-cmake-capture-modes.txt` and
+`m23-failure-bounded.txt`.
+
+**Same exact original gate EXE, SHA256
+`DFA57F49A346592BCED0F7E3F0292A86C3A1AFAB6FD93818010429D6E999DB6F`,
+same CTest tests cwd, screenshots OFF, same 16-case Qt suite:**
+- P0 PowerShell direct: PASS 16/16, 19.7s.
+- P1 CMake execute_process without OUTPUT/ERROR capture: FAIL 15/16, 12.6s.
+- P2 CMake OUTPUT_VARIABLE + ERROR_VARIABLE: FAIL 15/16, 12.5s.
+- P3 CMake OUTPUT_FILE + ERROR_FILE: FAIL 15/16, 12.5s.
+- P4 CMake stdout variable only: FAIL 15/16, 12.5s.
+- P5 repeat CMake no capture: FAIL 15/16, 12.5s.
+- P6 repeat CMake capture variables: FAIL 15/16, 12.5s.
+- P7 repeat PowerShell direct: PASS 16/16, 16.4s.
+All failures were the identical original EQ containment assertion.
+
+**Causal inference:** output capture mode alone is NOT the necessary trigger;
+the entire CMake child-process launch path is implicated. The original Qt
+test is otherwise unchanged and can pass through direct PowerShell invocation.
+This still does NOT establish that the Qt engine or CMake is defective:
+process parentage/console/window activation/exposure/GUI scheduler can be
+different and have not been isolated. Reintroducing/fixing M19–M21 visual
+children is NOT justified by these data.
+
+**Pre-registered next diagnostic, no production changes:** run the identical
+16-case smoke with screenshots OFF on Windows via (1) direct PowerShell,
+(2) CMake directly spawning Qt, (3) CMake spawning an intermediate PowerShell
+process which launches Qt with the exact same arguments. Repeat CMake direct
+and PowerShell direct. Perform this on both the unchanged *original candidate
+gate executable* and a clean-build *FQ99 baseline executable*, so we also
+determine whether the qualified baseline fails under the same CMake-parent
+conditions. Qt 6.8.3 MSVC/native backend; independent clean baseline build,
+same source SHA pins, bounded first-failure report. Two new nonrelease
+launcher scripts and one parent-chain test driver implement this matrix.
+The authoritative original M23 CTest gate remains strict and must not
+be declared green because of any diagnostic PASS.
+
+Potential discriminators:
+- FQ99 CMake direct FAIL and candidate CMake direct FAIL:
+  this is also a qualified-baseline issue in the current CMake invocation,
+  not a demonstrated M19–M21 regression.
+- FQ99 CMake direct PASS, candidate CMake direct FAIL:
+  still revision-dependent; record the exact intermediate transition.
+- CMake -> PowerShell -> Qt PASS where CMake -> Qt FAIL:
+  launch context matters; investigate console/parent and UI exposure.
+- Both CMake variants FAIL while standalone PowerShell PASS:
+  distinguish CMake ancestor/stdio handles from Qt exposure before choosing
+  an infrastructure fix.
+No workaround may weaken the containment assertion, and no GUI change is
+authorized without evidence. PR #99 Draft, main frozen.
