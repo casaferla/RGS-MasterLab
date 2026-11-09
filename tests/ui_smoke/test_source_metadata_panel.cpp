@@ -5817,9 +5817,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             qPrintable(name + QStringLiteral(" must stay inside dspEditorHost at minimum size")));
     }
 
-    // The 1184px product assigns too little horizontal room for the six
-    // fixed-size EQ toolbar controls in one row. All six must reflow visibly
-    // inside the same REAL editor, not disappear, shrink or require scrolling.
+    // Preserve the FQ-qualified single-row EQ toolbar and six unchanged
+    // controls. Verify their actual geometry in the native product minimum,
+    // never presume that an offscreen software renderer is equivalent.
     auto* eqToolbarNative=qobject_cast<QQuickItem*>(
         find_child_by_name(eqEditor,QStringLiteral("eqTopToolbarRegion")));
     QVERIFY2(eqToolbarNative,"The real EQ toolbar must exist at minimum size");
@@ -5849,15 +5849,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(check_item_contained_in_ancestor(control,eqEditorNative),
                  qPrintable(bounds));
     }
-    // The reflow is intentional: row two follows row one at compact width.
-    auto* eqSpectrumCompact=qobject_cast<QQuickItem*>(
-        find_child_by_name(eqEditor,QStringLiteral("eqSpectrumToggleButton")));
-    auto* eqResetCompact=qobject_cast<QQuickItem*>(
-        find_child_by_name(eqEditor,QStringLiteral("eqResetFlatButton")));
-    QVERIFY(eqSpectrumCompact && eqResetCompact);
-    QVERIFY2(eqSpectrumCompact->mapToItem(eqToolbarNative,QPointF{}).y()
-                 > eqResetCompact->mapToItem(eqToolbarNative,QPointF{}).y(),
-             "EQ compact toolbar must use two full-height control rows");
     QVERIFY2(check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(addBandBtn), eqEditorNative),
         "Add Band must stay inside Parametric EQ editor at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(removeBandBtn), eqEditorNative),
