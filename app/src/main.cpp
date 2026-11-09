@@ -937,6 +937,10 @@ int main(int argc, char* argv[])
     rgsml::app::M21ProductStatusViewModel m21ProductStatusViewModel{
         m18Controllers,m18Fanout,auditionSelector,goldSelection,
         m21ProductInbox};
+    // PO: the three analysis panels precede Master Audition in the VISUAL
+    // selector; real numeric publication still requires Phase-6 Product gates.
+    dspChainAdapterModel.bindAnalysisStatusViewModel(
+        &m21ProductStatusViewModel);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
         &m21ProductStatusViewModel,
