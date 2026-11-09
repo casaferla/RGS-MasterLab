@@ -70,42 +70,46 @@ def normalize(path: str, text: str) -> str:
             || root.activeModule.editorContentKey === "M21_ANALYSIS")''',
             '''            || root.activeModule.editorContentKey === "MASTER_MONITOR")''',
         )
-        return remove_exact(text, '''        // M19–M21 follow the proven M16 analysis-in-host model, but
-        // unlike a permanently-instantiated hidden Item, this Loader
-        // contributes NO AnalysisStatusEditor or implicit 640x360 size
-        // while an existing FQ99-qualified module is selected.
-        // Never change any original FQ99 ColumnLayout child or control.
-        Loader {
-            id: productAnalysisEditorLoader
-            objectName: "m19M21ProductAnalysisLoader"
-            readonly property bool analysisSelected: root.activeModule
-                && (root.activeModule.editorContentKey === "M19_ANALYSIS"
-                    || root.activeModule.editorContentKey === "M20_ANALYSIS"
-                    || root.activeModule.editorContentKey === "M21_ANALYSIS")
-            active: analysisSelected
-            visible: analysisSelected
-            asynchronous: false
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.minimumHeight: 0
-            Layout.preferredHeight: 0
-            sourceComponent: Component {
-                AnalysisStatusEditor {
-                    objectName: "m19M21ProductAnalysisEditor"
-                    panelIndex: root.activeModule
-                        && root.activeModule.editorContentKey === "M20_ANALYSIS" ? 1
-                        : root.activeModule
-                        && root.activeModule.editorContentKey === "M21_ANALYSIS" ? 2 : 0
-                    statusViewModel: root.analysisStatusViewModel
-                }
-            }
-        }
-
-''')
+        return text
     if path == "ui/qml/DspWorkspace.qml":
         text = remove_exact(text, "    property var analysisStatusViewModel: null\n")
         return remove_exact(text, "            analysisStatusViewModel: root.analysisStatusViewModel\n", count=2)
     if path == "ui/qml/Main.qml":
+        # New analysis is hosted in the existing MAIN dock slot, never
+        # in the previously qualified DSP host scenegraph.
+        text = remove_exact(text, '''    // M19–M21: new analysis content lives at the DOCK-SLOT layer.
+    // Do NOT insert any child (even an inactive Loader) into the FQ99
+    // DspEditorHost scenegraph: the native minimum-window test proves
+    // such new children perturb the qualified Parametric EQ allocation.
+    // This overlay is strictly limited to NEW analysis selections.
+    Loader {
+        id: dockedProductAnalysis
+        objectName: "m19M21DockSlotAnalysisLoader"
+        parent: root.activeDockSlot()
+        readonly property bool analysisSelected:
+            root.statusDspKey === "M19_ANALYSIS"
+            || root.statusDspKey === "M20_ANALYSIS"
+            || root.statusDspKey === "M21_ANALYSIS"
+        active: analysisSelected && !root.editorDetached
+        visible: active
+        asynchronous: false
+        z: 10
+        anchors.fill: parent
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
+        anchors.bottomMargin: 12
+        anchors.topMargin: 60
+        sourceComponent: Component {
+            AnalysisStatusEditor {
+                objectName: "m19M21ProductAnalysisEditor"
+                panelIndex: root.statusDspKey === "M20_ANALYSIS" ? 1
+                    : root.statusDspKey === "M21_ANALYSIS" ? 2 : 0
+                statusViewModel: realDspWorkspace.analysisStatusViewModel
+            }
+        }
+    }
+
+''')
         return remove_exact(
             text,
             '''            analysisStatusViewModel: typeof m21ProductStatusViewModel !== "undefined"
