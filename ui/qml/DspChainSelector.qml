@@ -73,9 +73,9 @@ Rectangle {
         case "STEREO_MS": return "module-stereo"
         case "TRUE_PEAK_METER": return "module-peak-meter"
         case "TRUE_PEAK_LIMITER": return "module-limiter"
-        case "M19_ANALYSIS": return "module-peak-meter"
-        case "M20_ANALYSIS": return "module-stereo"
-        case "M21_ANALYSIS": return "module-peak-meter"
+        case "M19_ANALYSIS": return "analysis-levels"
+        case "M20_ANALYSIS": return "analysis-spectrum"
+        case "M21_ANALYSIS": return "analysis-delta"
         case "MASTER_MONITOR": return "module-headphones"
         default: return ""
         }
@@ -334,6 +334,23 @@ Rectangle {
                             // Bypass dims the separate row and extinguishes halo.
                             glowEnabled: (rowItem.permanentlyLit
                                 || !rowItem.isDefaultState) && !rowItem.isBypassed
+                            // Three approved analysis glyphs share the
+                            // EXISTING 16px StudioIcon slot, tooltip, focus,
+                            // brightness and bypass semantics. Canvas has no
+                            // paths for these new kinds; a vector Shape child
+                            // supplies the crisp silhouette without moving
+                            // the qualified legacy icon geometry.
+                            AnalysisModuleIcon {
+                                id: analysisVectorIcon
+                                objectName: "dspChainAnalysisVectorIcon_" + rowItem.modelIndex
+                                anchors.fill: parent
+                                kind: moduleSymbol.kind
+                                strokeColor: moduleSymbol.strokeColor
+                                glowEnabled: moduleSymbol.glowEnabled
+                                visible: kind === "analysis-levels"
+                                    || kind === "analysis-spectrum"
+                                    || kind === "analysis-delta"
+                            }
                             opacity: (rowItem.permanentlyLit ? 1.0
                                 : rowItem.isDefaultState ? 0.58 : 1.0)
                                 * (rowItem.isBypassed ? 0.7 : 1.0)

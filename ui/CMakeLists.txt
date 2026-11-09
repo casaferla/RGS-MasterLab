@@ -27,6 +27,7 @@ qt_add_qml_module(rgsml_ui
         qml/StudioNumericField.qml
         qml/StudioReadOnlyMeasurement.qml
         qml/AnalysisApprovedContent.qml
+        qml/AnalysisModuleIcon.qml
         qml/StudioNumericSliderPair.qml
         qml/StudioParameterSlider.qml
         qml/StudioTooltipDwell.qml

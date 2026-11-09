@@ -27,6 +27,7 @@ NEW = {
     "ui/qml/AnalysisStatusEditor.qml",
     "ui/qml/AnalysisApprovedContent.qml",
     "ui/qml/StudioReadOnlyMeasurement.qml",
+    "ui/qml/AnalysisModuleIcon.qml",
 }
 ALLOWED = SHARED | NEW
 
@@ -62,9 +63,30 @@ def remove_exact(text: str, original: str, replacement: str = "",
 
 def normalize(path: str, text: str) -> str:
     if path == "ui/qml/DspChainSelector.qml":
-        return remove_exact(text, '''        case "M19_ANALYSIS": return "module-peak-meter"
-        case "M20_ANALYSIS": return "module-stereo"
-        case "M21_ANALYSIS": return "module-peak-meter"
+        # Exact PO-authorized additional vector CHILD. The original
+        # StudioIcon Canvas, layout and tooltip remain byte-identical.
+        text = remove_exact(text, '''                            // Three approved analysis glyphs share the
+                            // EXISTING 16px StudioIcon slot, tooltip, focus,
+                            // brightness and bypass semantics. Canvas has no
+                            // paths for these new kinds; a vector Shape child
+                            // supplies the crisp silhouette without moving
+                            // the qualified legacy icon geometry.
+                            AnalysisModuleIcon {
+                                id: analysisVectorIcon
+                                objectName: "dspChainAnalysisVectorIcon_" + rowItem.modelIndex
+                                anchors.fill: parent
+                                kind: moduleSymbol.kind
+                                strokeColor: moduleSymbol.strokeColor
+                                glowEnabled: moduleSymbol.glowEnabled
+                                visible: kind === "analysis-levels"
+                                    || kind === "analysis-spectrum"
+                                    || kind === "analysis-delta"
+                            }
+''')
+        # Recover the preexisting M19-M21 additive wiring first.
+        return remove_exact(text, '''        case "M19_ANALYSIS": return "analysis-levels"
+        case "M20_ANALYSIS": return "analysis-spectrum"
+        case "M21_ANALYSIS": return "analysis-delta"
 ''')
     if path == "ui/qml/DspEditorHost.qml":
         text = remove_exact(text, "    property var analysisStatusViewModel: null\n")
@@ -170,6 +192,7 @@ def main() -> int:
         "        qml/AnalysisStatusEditor.qml\n",
         "        qml/StudioReadOnlyMeasurement.qml\n",
         "        qml/AnalysisApprovedContent.qml\n",
+        "        qml/AnalysisModuleIcon.qml\n",
     ):
         current_cmake = remove_exact(current_cmake, approved_qml)
     if current_cmake != old_cmake:

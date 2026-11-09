@@ -55,6 +55,26 @@ def test_product_binds_status_without_demo() -> None:
     assert "m20MissingProfileNotice" in visuals
     assert "m21MissingComparisonNotice" in visuals
     assert "m21MetricRow_" in visuals
+    # PO-approved 16px vectors: only three analysis services, never
+    # inherited meter/stereo placeholders or a new M18/M22 chain row.
+    selector = read("ui/qml/DspChainSelector.qml")
+    vectors = read("ui/qml/AnalysisModuleIcon.qml")
+    for key,kind in (("M19_ANALYSIS","analysis-levels"),
+                     ("M20_ANALYSIS","analysis-spectrum"),
+                     ("M21_ANALYSIS","analysis-delta")):
+        assert f'case "{key}": return "{kind}"' in selector
+        assert f'kind === "{kind}"' in vectors
+    assert 'AnalysisModuleIcon {' in selector
+    assert 'anchors.fill: parent' in vectors
+    assert 'import QtQuick.Shapes' in vectors
+    assert 'PathSvg { path: root.vectorPath }' in vectors
+    assert 'readonly property bool small:' in vectors
+    assert 'Math.min(root.width,root.height)/root.designSize' in vectors
+    assert 'module-output-dither' in vectors
+    assert 'case "M18_ANALYSIS"' not in selector
+    assert 'case "M22_ANALYSIS"' not in selector
+    assert "Image {" not in vectors and ".png" not in vectors
+    assert "qml/AnalysisModuleIcon.qml" in read("ui/CMakeLists.txt")
     readout = read("ui/qml/StudioReadOnlyMeasurement.qml")
     assert "root.heroReadout ? 36 : 13" in readout
     assert "root.heroReadout ? 11 : 10" in readout
