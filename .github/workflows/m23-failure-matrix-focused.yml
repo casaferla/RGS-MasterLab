@@ -162,10 +162,18 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 5
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          QT_QUICK_BACKEND: software
         run: |
+          # The FQ99-qualified Windows Qt smoke runs on the native Windows
+          # QPA/render backend, with this Qt DLL/QML search path. The prior
+          # offscreen+software override used a DIFFERENT layout engine and
+          # must not drive regressions in FQ-qualified production DSP editors.
+          # Keep the exact real CTest inventory, assertion count and JUnit
+          # receipt; remove only the noncanonical QPA/backend overrides.
+          $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          $env:PATH="$qtRoot/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qtRoot/qml"
+          Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+          Remove-Item Env:QT_QUICK_BACKEND -ErrorAction SilentlyContinue
           ctest --test-dir build/m23-native -C Release --output-on-failure --output-junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" -R '^(rgsml_audio_wav_writer_tests|rgsml_transactional_audio_export_tests|rgsml_m18_windows_candidate_delivery_tests|rgsml_project_session_tests|rgsml_project_package_tests|rgsml_project_json_tests|rgsml_render_preview_tests|rgsml_m23_alpha_diagnostic_tests|render_forbidden_public_contract|rgsml_dsp_module_adapter_tests|rgsml_source_metadata_panel_smoke)$' *> "$env:RUNNER_TEMP/m23-ctest.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-ctest.log" -Tail 60 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
