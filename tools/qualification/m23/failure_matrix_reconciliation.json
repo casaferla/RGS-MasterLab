@@ -34,7 +34,7 @@
       "ctest": "rgsml_render_preview_tests",
       "source": "tests/unit/render/test_render_preview.cpp",
       "slot": "nonfiniteActiveGainInputFailsWithoutResult",
-      "rationale": "actual MANUAL Gain renderer rejects injected NaN/+Inf/-Inf with InvalidAudioSample and no PREVIEW, while Source bits remain unchanged; full Product M17/M22 integration still unproven"
+      "rationale": "Genuine MANUAL Gain renderer rejects injected NaN/+Inf/-Inf with InvalidAudioSample, no PREVIEW, Source bits unchanged; Product FULL failure provenance with no M17 verified stage remains to be demonstrated."
     },
     {
       "id": "04",
@@ -187,7 +187,7 @@
       "ctest": "rgsml_m23_alpha_diagnostic_tests",
       "source": "tests/unit/app/test_m23_alpha_diagnostic_report.cpp",
       "slot": "capturesActualStatusCodesAndRefusesSecretErrorStrings",
-      "rationale": "nonrelease immutable privacy-safe aggregate of actual ErrorCode/Status with negative proofs; not yet wired to complete Product M23 failure lifecycle"
+      "rationale": "Cross-platform native AlphaDiagnosticReport rejects success/fake PASS and leaking Error.message; Windows Product M22->M18 failure path now projects real terminal worker failure_code to sanitized canonical report without minting authority. Full Project/Product persisted diagnostic lifecycle and build/baseline summary still require gate evidence."
     }
   ]
 }
