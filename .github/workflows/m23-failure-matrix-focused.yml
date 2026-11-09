@@ -27,7 +27,11 @@ jobs:
             tail -n 45 "$RUNNER_TEMP/m23-static.log" | tee "$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           }
-          tail -n 3 "$RUNNER_TEMP/m23-static.log"
+          if ! python3 tools/qualification/m19_m21_gui/test_product_navigation_guards.py >>"$RUNNER_TEMP/m23-static.log" 2>&1; then
+            tail -n 45 "$RUNNER_TEMP/m23-static.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
+            exit 1
+          fi
+          tail -n 4 "$RUNNER_TEMP/m23-static.log"
       - name: FQ98 regression - compile and execute relocated M22 disk export harness on Linux
         shell: bash
         run: |
@@ -111,6 +115,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-static.log" -Tail 45 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_FAILURE_MATRIX_SELFTEST_FAILED'
+          }
+          python tools/qualification/m19_m21_gui/test_product_navigation_guards.py *>> "$env:RUNNER_TEMP/m23-static.log"
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content "$env:RUNNER_TEMP/m23-static.log" -Tail 45 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
+            throw 'M19_M21_PRODUCT_NAVIGATION_GUARD_FAILED'
           }
           Get-Content "$env:RUNNER_TEMP/m23-static.log" -Tail 4
       - name: FQ98 regression - compile and execute relocated M22 disk export harness on Windows
