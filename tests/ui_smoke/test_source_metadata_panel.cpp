@@ -5830,6 +5830,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         .arg(eqPolishIterations);
     QVERIFY2(check_item_contained_in_ancestor(eqEditorNative, dspEditorHostNative),
         qPrintable(eqContainmentEvidence));
+    // New M19/M20/M21 views persist as peer children of the same qualified
+    // ColumnLayout; on legacy EQ selection they are truly invisible and
+    // cannot steal its geometry or receive input. No factory/destroy cycle.
+    for (const auto& analysisName : {
+             QStringLiteral("m19LevelProductAnalysisEditor"),
+             QStringLiteral("m20TonalStereoProductAnalysisEditor"),
+             QStringLiteral("m21MetricsDeltaProductAnalysisEditor")}) {
+        auto* analysisPage=qobject_cast<QQuickItem*>(
+            find_child_by_name(dspEditorHostObj,analysisName));
+        QVERIFY2(analysisPage!=nullptr,
+            qPrintable(analysisName+QStringLiteral(" persistent page must exist")));
+        QCOMPARE(analysisPage->parentItem(),eqEditorNative->parentItem());
+        QVERIFY2(!analysisPage->isVisible(),
+            qPrintable(analysisName+QStringLiteral(" must be hidden for EQ")));
+        QVERIFY2(!analysisPage->isEnabled(),
+            qPrintable(analysisName+QStringLiteral(" must not accept EQ input")));
+    }
     QVERIFY2(check_item_contained_in_ancestor(dspChainSelectorNative, compactBottomSplitNative),
         "DSP Chain selector must stay inside compactBottomSplit at minimum size");
 
