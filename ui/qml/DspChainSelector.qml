@@ -372,7 +372,11 @@ Rectangle {
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
-                                elide: Text.ElideRight
+                                // Preserve the approved 12px label and full module
+                                // name, even when the 164-DIP sidebar needs two
+                                // lines. Do not silently truncate or shrink it.
+                                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                                elide: Text.ElideNone
                             }
 
                             Text {
