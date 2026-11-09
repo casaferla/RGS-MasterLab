@@ -721,6 +721,16 @@ ApplicationWindow {
         }
     }
 
+    // The File menu text Ctrl+O alone is not a native QML shortcut.
+    // Bind the standard key to the SAME guarded Source dialog action.
+    Shortcut {
+        objectName: "openSourceStandardShortcut"
+        sequence: StandardKey.Open
+        context: Qt.ApplicationShortcut
+        enabled: !root.monitorExclusive
+        onActivated: sourceDialog.open()
+    }
+
     Shortcut {
         sequence: "F10"
         context: Qt.ApplicationShortcut
@@ -2280,6 +2290,23 @@ ApplicationWindow {
                     }
                     Accessible.name: root.statusText
                     Accessible.description: root.statusSeverity + ": " + root.statusText
+                }
+                // Technical nonauthorizing diagnostic for PO physical gate.
+                // Every code is fixed and sanitized; this never enables Export.
+                Text {
+                    objectName: "m18ExportEligibilityDiagnostic"
+                    visible: !!root.appM18ExportModel
+                        && sourceSelection.hasSource
+                        && !root.appM18ExportModel.canExport
+                    Layout.maximumWidth: 310
+                    text: root.appM18ExportModel
+                        ? "EXPORT BLOCK: " + root.appM18ExportModel.exportReadinessReason
+                        : ""
+                    color: "#F0C87D"
+                    font.family: "Consolas"
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                    Accessible.name: text
                 }
                 Text {
                     id: statusBuildProvenanceLabel
