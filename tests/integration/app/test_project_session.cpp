@@ -2236,6 +2236,8 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QVERIFY(rejectedWorker);
 
     M18PrivateProductExportAction exporter{bound,fanout};
+    app::M18ProductExportViewModel exportUi{exporter,bound};
+    QCOMPARE(exportUi.diagnostic_summary(),QString{});
     // M23 real Product FULL rejection against selected REFERENCE/GOLD,
     // including a second pathname to its same Windows file identity.
     const auto m23AliasPath=directory.filePath(
@@ -2264,6 +2266,12 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
             30000);
         QCOMPARE(exporter.snapshot().failure_code,
                  std::optional{core::ErrorCode::InvalidState});
+        // Product read-only M23 report is derived ONLY from the observed
+        // worker code, with unknown stage and no raw pathname.
+        const auto visibleDiagnostic=exportUi.diagnostic_summary();
+        QVERIFY(visibleDiagnostic.contains(QStringLiteral("invalid_state")));
+        QVERIFY(!visibleDiagnostic.contains(m23GoldPath));
+        QVERIFY(!visibleDiagnostic.contains(m23AliasPath));
         // Read-only M23 diagnostic projection from the ACTUAL Product
         // worker's terminal failure code. The worker intentionally does
         // not expose untrusted raw paths or private Error.message().
@@ -2293,6 +2301,7 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
         QCOMPARE(readBytes(m23GoldPath),originalBytes);
         QCOMPARE(readBytes(m23AliasPath),originalBytes);
         QVERIFY(exporter.acknowledge());
+        QCOMPARE(exportUi.diagnostic_summary(),QString{});
         QVERIFY(M18ProductCompleteBinding::can_offer_verified_master(
             bound,fanout));
     }
