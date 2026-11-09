@@ -5790,8 +5790,30 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "compactBottomRight must stay inside compactBottomSplit at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(dspEditorHostNative, compactBottomRightNative),
         "dspEditorHost must stay inside compactBottomRight at minimum size");
+    // Native Qt min-window diagnostic: report BOTH layout and scenegraph
+    // coordinates if the original exact containment assertion fails.
+    // This does not change the accepted geometry or weaken the gate.
+    const QPointF eqOriginInHost=eqEditorNative->mapToItem(
+        dspEditorHostNative,QPointF{});
+    const QPointF hostOriginInProxy=dspEditorHostNative->mapToItem(
+        compactBottomRightNative,QPointF{});
+    auto* eqParentItem=eqEditorNative->parentItem();
+    const QString eqContainmentEvidence=QStringLiteral(
+        "FQ99 frozen EQ containment: editor (%1,%2) %3x%4, "
+        "host %5x%6, host-in-proxy (%7,%8), proxy %9x%10, "
+        "editor visible=%11, parent=%12, Main=%13x%14, module-index=%15")
+        .arg(eqOriginInHost.x()).arg(eqOriginInHost.y())
+        .arg(eqEditorNative->width()).arg(eqEditorNative->height())
+        .arg(dspEditorHostNative->width()).arg(dspEditorHostNative->height())
+        .arg(hostOriginInProxy.x()).arg(hostOriginInProxy.y())
+        .arg(compactBottomRightNative->width())
+        .arg(compactBottomRightNative->height())
+        .arg(eqEditorNative->isVisible() ? QStringLiteral("yes") : QStringLiteral("no"))
+        .arg(eqParentItem ? eqParentItem->objectName() : QStringLiteral("none"))
+        .arg(window->width()).arg(window->height())
+        .arg(dspWorkspaceObj->property("selectedModuleIndex").toInt());
     QVERIFY2(check_item_contained_in_ancestor(eqEditorNative, dspEditorHostNative),
-        "parametricEqEditor must stay inside dspEditorHost at minimum size");
+        qPrintable(eqContainmentEvidence));
     QVERIFY2(check_item_contained_in_ancestor(dspChainSelectorNative, compactBottomSplitNative),
         "DSP Chain selector must stay inside compactBottomSplit at minimum size");
 
@@ -5810,7 +5832,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         find_child_by_name(eqEditor,QStringLiteral("eqTopToolbarRegion")));
     QVERIFY2(eqToolbarNative,"The real EQ toolbar must exist at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(eqToolbarNative,eqEditorNative),
-             "Compact two-row EQ toolbar must stay within the editor");
+             "FQ99 single-row EQ toolbar must stay within the editor");
     for(const auto& controlName:{
             QStringLiteral("bandEnabledToggle"),
             QStringLiteral("eqResetFlatButton"),
