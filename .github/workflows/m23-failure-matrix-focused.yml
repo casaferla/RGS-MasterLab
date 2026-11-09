@@ -193,13 +193,14 @@ jobs:
               Select-String -Pattern 'QT_LINE_[0-9]+: FAIL!' -Context 2,14 |
               Select-Object -First 12 | Out-String -Width 240 |
               Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
-            # A/B fault isolation: if the candidate still fails on native
-            # Qt, run the ORIGINAL cold-FQ99 source smoke on THIS Windows
-            # runner/toolchain. The baseline outcome is bounded diagnostic,
-            # and cannot greenwash the real failing candidate CTest.
-            & pwsh -NoProfile -File tools/qualification/m23/probe_fq99_windows_ui_smoke.ps1 -QtRoot $qtRoot -BoundedEvidence "$env:RUNNER_TEMP/m23-failure-bounded.txt"
+            # FQ99 on this exact runner already PASSed in #22. Now isolate
+            # the only newly-created Layout child without touching approved
+            # QML: one same-SHA temporary worktree, one TEMP-only removal,
+            # same native Qt build/smoke. Even a passing A/B leaves the
+            # candidate real CTest RED; its artifact records the distinction.
+            & pwsh -NoProfile -File tools/qualification/m23/probe_current_without_analysis_child.ps1 -QtRoot $qtRoot -BoundedEvidence "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             if ($LASTEXITCODE -ne 0) {
-              Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt" "FQ99_AB: PROBE_SCRIPT_EXIT=$LASTEXITCODE"
+              Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt" "M19_CHILD_AB: PROBE_SCRIPT_EXIT=$LASTEXITCODE"
             }
             throw 'M23_REAL_FAULT_CTEST_FAILED'
           }
