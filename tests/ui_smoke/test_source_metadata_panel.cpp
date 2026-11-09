@@ -5790,6 +5790,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "compactBottomRight must stay inside compactBottomSplit at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(dspEditorHostNative, compactBottomRightNative),
         "dspEditorHost must stay inside compactBottomRight at minimum size");
+    // The LayoutItemProxy and its nested ColumnLayout schedule polish
+    // asynchronously after the native window/proxy is resized. The same
+    // containment invariant MUST hold after at most 2.5s of ordinary Qt
+    // event-loop/frame progression. No UI property is changed by this test.
+    const QSizeF eqSizeBeforePolish=eqEditorNative->size();
+    int eqPolishIterations=0;
+    while(!check_item_contained_in_ancestor(eqEditorNative,dspEditorHostNative)
+          && eqPolishIterations<50) {
+        window->update();
+        QTest::qWait(50);
+        QCoreApplication::processEvents();
+        ++eqPolishIterations;
+    }
     // Native Qt min-window diagnostic: report BOTH layout and scenegraph
     // coordinates if the original exact containment assertion fails.
     // This does not change the accepted geometry or weaken the gate.
@@ -5801,7 +5814,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const QString eqContainmentEvidence=QStringLiteral(
         "FQ99 frozen EQ containment: editor (%1,%2) %3x%4, "
         "host %5x%6, host-in-proxy (%7,%8), proxy %9x%10, "
-        "editor visible=%11, parent=%12, Main=%13x%14, module-index=%15")
+        "editor visible=%11, parent=%12, Main=%13x%14, module-index=%15, "
+        "before-event-pump=%16x%17, extra-frame-iterations=%18")
         .arg(eqOriginInHost.x()).arg(eqOriginInHost.y())
         .arg(eqEditorNative->width()).arg(eqEditorNative->height())
         .arg(dspEditorHostNative->width()).arg(dspEditorHostNative->height())
@@ -5811,7 +5825,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         .arg(eqEditorNative->isVisible() ? QStringLiteral("yes") : QStringLiteral("no"))
         .arg(eqParentItem ? eqParentItem->objectName() : QStringLiteral("none"))
         .arg(window->width()).arg(window->height())
-        .arg(dspWorkspaceObj->property("selectedModuleIndex").toInt());
+        .arg(dspWorkspaceObj->property("selectedModuleIndex").toInt())
+        .arg(eqSizeBeforePolish.width()).arg(eqSizeBeforePolish.height())
+        .arg(eqPolishIterations);
     QVERIFY2(check_item_contained_in_ancestor(eqEditorNative, dspEditorHostNative),
         qPrintable(eqContainmentEvidence));
     QVERIFY2(check_item_contained_in_ancestor(dspChainSelectorNative, compactBottomSplitNative),
