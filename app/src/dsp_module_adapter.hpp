@@ -383,9 +383,9 @@ public:
     {return QStringLiteral("rgsml.analysis.m%1").arg(milestone_);}
     [[nodiscard]] QString display_name() const override {
         switch(milestone_) {
-        case 19:return QStringLiteral("Basic Level Analyzer");
-        case 20:return QStringLiteral("Basic Tonal & Stereo");
-        default:return QStringLiteral("Metrics / Delta");
+        case 19:return QStringLiteral("M19 · Levels");
+        case 20:return QStringLiteral("M20 · Tonal/Stereo");
+        default:return QStringLiteral("M21 · Metrics/Delta");
         }
     }
     [[nodiscard]] QString workspace_context_label() const override
