@@ -427,13 +427,9 @@ Item {
             TruePeakSharedRail {
                 id: rail
                 objectName: "truePeakMeterSharedRail"
-                // One shared physical rail width: M16 and M17 cannot
-                // negotiate different 225..260-DIP rail widths and shift
-                // the centered L/R bars when switching between editors.
-                // Retain the 225-DIP small-window minimum.
                 Layout.minimumWidth: 225
                 Layout.preferredWidth: 240
-                Layout.maximumWidth: 240
+                Layout.maximumWidth: 260
                 Layout.fillHeight: true
                 measurementProvider: root.measurementProvider
                 liveProvider: root.liveProvider
