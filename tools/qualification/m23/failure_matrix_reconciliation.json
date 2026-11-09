@@ -30,11 +30,11 @@
     {
       "id": "03",
       "category": "nonfinite_dsp_input",
-      "static_coverage": "partial",
-      "ctest": "rgsml_render_preview_tests",
-      "source": "tests/unit/render/test_render_preview.cpp",
-      "slot": "nonfiniteActiveGainInputFailsWithoutResult",
-      "rationale": "Genuine MANUAL Gain renderer rejects injected NaN/+Inf/-Inf with InvalidAudioSample, no PREVIEW, Source bits unchanged; Product FULL failure provenance with no M17 verified stage remains to be demonstrated."
+      "static_coverage": "existing",
+      "ctest": "rgsml_project_session_tests",
+      "source": "tests/integration/app/test_project_session.cpp",
+      "slot": "m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation",
+      "rationale": "real Windows M22 Product 4-DSP Manual upstream rejects injected NaN/+Inf/-Inf (InvalidAudioSample) before Selector publication and M17 stage minting; same test afterward proves a healthy complete Product verified stage and real M18 export, preventing injection from turning into false successful FULL"
     },
     {
       "id": "04",
