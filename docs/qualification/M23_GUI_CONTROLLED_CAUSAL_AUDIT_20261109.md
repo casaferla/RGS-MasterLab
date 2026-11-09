@@ -130,3 +130,58 @@ FIR or old qualified GUI is modified. Read bounded artifacts only.
 
 **NO release or merge, PR #99 remains Draft; goal is causal explanation
 before any changes to qualified GUI or speculative permanence policy.**
+
+## Results — CI #29, identical executables fail only via CMake wrapper
+
+CI #29: https://github.com/casaferla/RGS-MasterLab/actions/runs/42680094592
+SHA `4209fc6d2b69182272a1319890c4ff29d00347a0`.
+Linux portable CTest PASS; Windows strict original smoke FAIL (10/11 CTests PASS,
+EQ 992x612 at (12,12) in 732x475 host). Bounded Windows artifact
+`13702468852` includes `m23-controlled-matrix.txt`,
+`m23-gui-context.txt` and `m23-failure-bounded.txt`.
+
+The repeated clean immutable FQ99/candidate control matrix remains 5/5 GREEN,
+each arm 16/16 QTest, screenshot ON and OFF. The six **same binary** launch-context
+arms gave the essential distinction:
+
+| Arm | Executable | Same Qt full suite, screenshot OFF | Result |
+| --- | --- | --- | --- |
+| C0 | original M23 multi-target build | PowerShell direct, repo root | PASS 16/16 |
+| C1 | original M23 multi-target build | PowerShell direct, CTest tests cwd | PASS 16/16 |
+| C2 | original M23 multi-target build | CMake wrapper, same tests cwd | FAIL 15/16, EQ overflow |
+| C3 | clean immutable #27 focused build | PowerShell direct, repo root | PASS 16/16 |
+| C4 | clean immutable #27 focused build | PowerShell direct, tests cwd | PASS 16/16 |
+| C5 | clean immutable #27 focused build | CMake wrapper, same tests cwd | FAIL 15/16, EQ overflow |
+
+Binary SHA256 for gate and clean builds are different, but **each exact binary**
+reproduces the PASS direct vs FAIL CMake distinction. The test directory itself
+does not account for this divergence. This strongly localizes the difference to
+the CMake parent process / `execute_process` invocation and/or stdout/stderr
+capture. The precise mechanism is **NOT YET proven**. It does not justify
+blaming M19-M21 or changing the frozen Parametric EQ.
+
+The existing diagnostic CMake wrapper
+`tests/cmake/m16_c2_smoke_ctest_diagnostic.cmake` invokes the unchanged Qt
+executable via `execute_process(COMMAND ... RESULT_VARIABLE ... OUTPUT_VARIABLE ...
+ERROR_VARIABLE ...)`. The wrapper emits a bounded Qt failure neighborhood
+only after the executable exits. Its behavior as process launcher or output
+capture mechanism is now the subject of phase 3.
+
+**Pre-registered next diagnostic**, limited to the same built original gate
+executable, same tests CWD, full 16-case Qt smoke, screenshots explicitly OFF,
+same Windows Qt/native backend, repeated cases:
+P0 PowerShell direct; P1 CMake execute_process with result only/no capture;
+P2 CMake execute_process capture OUTPUT_VARIABLE+ERROR_VARIABLE (as in original);
+P3 CMake execute_process OUTPUT_FILE+ERROR_FILE; P4 stdout-variable only;
+P5 no-capture repeat; P6 both variables repeat; P7 direct repeat.
+CMake driver and PowerShell probe are diagnostic-only; the original wrapper,
+CTest gate, application QML and all C++ test assertions remain UNCHANGED.
+
+Interpretation must account for nondeterminism: if all CMake launch modes fail
+but direct passes, investigate CMake as parent process and native window exposure;
+if only variable capture fails, investigate stdout/stderr pipe configuration
+and affected GUI scheduling. If results fluctuate, characterize run-order and
+timing instead of modifying geometry. **Never turn an observational diagnostic
+PASS into a release/FQ pass**.
+
+No changes to `main` or qualified modules, no automatic merge, PR #99 Draft.
