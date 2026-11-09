@@ -15,6 +15,7 @@ Rectangle {
     property var eqViewModel: null
     property var compressorViewModel: null
     property var spectrumViewModel: null
+    property var analysisStatusViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
@@ -170,7 +171,10 @@ Rectangle {
         && (root.activeModule.editorContentKey === "STEREO_MS"
             || root.activeModule.editorContentKey === "TRUE_PEAK_METER"
             || root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER"
-            || root.activeModule.editorContentKey === "MASTER_MONITOR")
+            || root.activeModule.editorContentKey === "MASTER_MONITOR"
+            || root.activeModule.editorContentKey === "M19_ANALYSIS"
+            || root.activeModule.editorContentKey === "M20_ANALYSIS"
+            || root.activeModule.editorContentKey === "M21_ANALYSIS")
 
     ColumnLayout {
         anchors.fill: parent
@@ -698,6 +702,26 @@ Rectangle {
             grTimelineScope: root.m17GrTimelineScope
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive
+        }
+
+        // Independent M19/M20/M21 Product navigators share the existing
+        // dockable host. The read-only bridge never publishes fixture data.
+        AnalysisStatusEditor {
+            id: productAnalysisEditor
+            objectName: "m19M21ProductAnalysisEditor"
+            visible: root.activeModule && (
+                root.activeModule.editorContentKey === "M19_ANALYSIS"
+                || root.activeModule.editorContentKey === "M20_ANALYSIS"
+                || root.activeModule.editorContentKey === "M21_ANALYSIS")
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+            panelIndex: root.activeModule
+                && root.activeModule.editorContentKey === "M20_ANALYSIS" ? 1
+                : root.activeModule
+                && root.activeModule.editorContentKey === "M21_ANALYSIS" ? 2 : 0
+            statusViewModel: root.analysisStatusViewModel
         }
 
         MonitorEditor {
