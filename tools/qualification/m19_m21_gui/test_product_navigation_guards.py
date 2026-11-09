@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""M17→M19→M20→M21→MONITOR Product navigation source guard.
+
+Nonrelease smoke. Does not certify numerical M19/M20/M21 Phase-6.
+"""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_visual_order_and_no_chain_mutation() -> None:
+    c = read("app/src/dsp_chain_adapter_model.cpp")
+    before = c.index("// Terminal instance is separate from the MANUAL")
+    m17 = c.index("terminalLimiterState_ && terminalLimiterViewModel_", before)
+    new = c.index("for(const int milestone:{19,20,21})", m17)
+    after = c.index("if (terminalMonitorViewModel_)", new)
+    assert m17 < new < after
+    assert "ProductAnalysisModuleAdapter" in c
+    assert "MasteringChainState::insert" not in c
+    adapter = read("app/src/dsp_module_adapter.hpp")
+    part = adapter[adapter.index("class ProductAnalysisModuleAdapter"):
+                   adapter.index("class MonitorServiceModuleAdapter")]
+    for term in ("non_processing_service() const noexcept override{return true;}",
+                 "bypass_supported() const noexcept override{return false;}",
+                 "void setBypass(bool) override {}",
+                 "QStringLiteral(\"Not yet qualified\")"):
+        assert term in part, term
+
+
+def test_product_binds_status_without_demo() -> None:
+    main = read("app/src/main.cpp")
+    assert "bindAnalysisStatusViewModel(\n        &m21ProductStatusViewModel)" in main
+    assert "m21ProductStatusViewModel" in read("ui/qml/Main.qml")
+    editor = read("ui/qml/AnalysisStatusEditor.qml")
+    assert "productionAuthorized === true" in editor
+    assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
+    assert "selectPanelSource(" in editor
+    assert "fixtureMode" not in editor
+    ui = read("ui/CMakeLists.txt")
+    assert "qml/AnalysisStatusEditor.qml" in ui
+    assert "qml/M19M21AnalysisWorkbenchPreview.qml" not in ui
+    preview = read("ui/qml/M19M21AnalysisWorkbenchPreview.qml")
+    assert "fixtureMode: true" in preview
+
+
+def test_export_permission_unchanged() -> None:
+    qml = read("ui/qml/Main.qml")
+    assert "root.appM18ExportModel.canExport" in qml
+    assert "root.appM18ExportModel.exportReadinessReason" in qml
+    binder = read("app/src/internal/m18_product_complete_binding.hpp")
+    assert "can_offer_verified_master(" in binder
+    assert "fanout.m17_verified_epoch_current()" in binder
+    assert "verified==c.candidates.staged()" in binder
+    assert "export_readiness_reason(" in binder
+    assert "VERIFY" not in qml[0:0]  # no-op; never grants permission
+
+
+def test_guarded_open_shortcut() -> None:
+    qml = read("ui/qml/Main.qml")
+    assert 'sequence: StandardKey.Open' in qml
+    assert 'enabled: !root.monitorExclusive' in qml
+    assert "onActivated: sourceDialog.open()" in qml
+
+
+if __name__ == "__main__":
+    for test in (
+        test_visual_order_and_no_chain_mutation,
+        test_product_binds_status_without_demo,
+        test_export_permission_unchanged,
+        test_guarded_open_shortcut,
+    ):
+        test()
+    print("M19_M21_PRODUCT_NAVIGATION_SOURCE_GUARD_NONRELEASE_PASS")
