@@ -164,3 +164,56 @@ qualifications can be accepted. Even with a green CI, M23 Gate I/P/M,
 physical Windows PO Gate M, official cold Windows FQ, M22/Q1–Q6 formal
 acceptance and Phase-6 Gate G remain independently controlled. No automatic
 merge to main, no release approval, no hidden DSP/SRC/encoder replacement.
+
+## 9. Official cold Windows FQ #98 — first full-suite architecture failure and scoped repair
+
+The PO dispatched [official Windows FQ #98](https://github.com/casaferla/RGS-MasterLab/actions/runs/42586213005)
+against the exact #9 dual-green M23 candidate
+`73e4388d942f8ec739668c972960ce9704586609`.
+This FQ is **COMPLETED FAILURE**. On the actual full Visual Studio Debug
+path, configuration, native MSVC build and Qt UI smoke **PASSED**. The
+canonical Debug CTest suite **FAILED** on exactly
+`107/144 render_forbidden_public_contract`. The only relevant bounded
+artifact is `RGS-FQ-Debug-Test-Errors-98-73e4388d...`
+(ID `13661956208`). It identifies an *architectural dependency guard*,
+not a numerical/rendering failure:
+
+```
+RGSML_FORBIDDEN_INCLUDE:
+render/src/internal/m22_m18_offline_export_port_candidate.hpp
+includes filesystem
+```
+
+The Render layer must remain free of filesystem, fstream, Qt, Platform and
+Project includes/types. **Do not relax, delete, exclude, or bypass this
+test.** The offending M22 adapter was qualification-only: its sole
+intended consumer was
+`tools/qualification/m22/m22_real_m18_wav_export_selftest.cpp`, not
+the actual Product renderer. Surgical writer-only fix:
+
+1. Move the unchanged functional M22 private WAV export adapter from
+   `render/src/internal/` into the owning
+   `tools/qualification/m22/` test harness (same basename). The
+   existing standalone M22 disk selftest resolves its header locally and
+   still obtains `m22_request_plan_candidate.hpp` from the existing
+   `-Irender/src/internal` include path.
+2. Delete the original misplaced header under `render/src/internal/`;
+   do not change M09/M17/M18/M22 production DSP, export semantics, 16
+   FIR, user UI or persisted GOLD identifiers.
+3. Add the actual `render_forbidden_public_contract` CTest to **both**
+   M23-focused Windows/Linux JUnit executions to catch future misplaced
+   file/Qt dependencies *before* another expensive full FQ.
+4. Compile and execute the actual standalone 24-combination M22/M18 disk
+   selftest with the relocated header on **both** native compiler paths
+   (MSVC and GCC), before Qt CTest, with bounded failure artifacts.
+
+After this writer patch, the only defensible status is **FIX PENDING
+FOCUSED CI**. The official FQ #98 did *not* reach Release Ninja, full
+Release CTest, Tests-OFF deployment, installed 16-FIR audit or staged
+artifact. Any new official cold FQ must be dispatched separately on
+the final new SHA; never rerun old #98 as if it tested repaired code.
+
+The **manual Windows cumulative M17→M23 gate remains OPEN**, including
+all M18 A01–A15 and postponed M17-UX/M19–M22 functional/GUI/audio
+checks, M23 Gate M and later M24 acceptance. A green focused CI or
+the fixed render-guard alone does not certify the full gate.
