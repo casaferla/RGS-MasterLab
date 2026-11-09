@@ -6985,6 +6985,15 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     rgsml::tests::SourceMetadataPanelSmokeTest test;
+    // Screenshot-only lane: the full unchanged CTest smoke has ALREADY
+    // executed in the mandatory native M23 gate without screenshot env.
+    // Select just its real Main M19-M21 visual/geometry test here. Do not
+    // interpret the scoped capture as a second full-suite qualification.
+    if (qEnvironmentVariable("RGSML_MAIN_VISUAL_CAPTURE_ONLY") == "1") {
+        char selectedTest[] = "emptyReadyErrorAndWindowLifecycle";
+        char* selectedArgs[]{argv[0], selectedTest};
+        return QTest::qExec(&test, 2, selectedArgs);
+    }
     return QTest::qExec(&test, argc, argv);
 }
 
