@@ -49,8 +49,10 @@ def test_product_binds_status_without_demo() -> None:
 
 def test_export_permission_unchanged() -> None:
     qml = read("ui/qml/Main.qml")
+    # FQ99 Main status-bar chrome is frozen: export diagnostics belong to
+    # evidence and ViewModels, not a new layout-consuming status label.
     assert "root.appM18ExportModel.canExport" in qml
-    assert "root.appM18ExportModel.exportReadinessReason" in qml
+    assert 'objectName: "m18ExportEligibilityDiagnostic"' not in qml
     binder = read("app/src/internal/m18_product_complete_binding.hpp")
     assert "can_offer_verified_master(" in binder
     assert "fanout.m17_verified_epoch_current()" in binder
@@ -58,11 +60,14 @@ def test_export_permission_unchanged() -> None:
     assert "export_readiness_reason(" in binder
 
 
-def test_guarded_open_shortcut() -> None:
+def test_original_source_open_guard_preserved() -> None:
     qml = read("ui/qml/Main.qml")
-    assert 'sequence: StandardKey.Open' in qml
+    # The unqualified Ctrl+O Shortcut would mutate an already qualified
+    # Main.qml. Retain its existing guarded Open Source button instead.
+    assert 'id: sourceOpenButton' in qml
     assert 'enabled: !root.monitorExclusive' in qml
-    assert "onActivated: sourceDialog.open()" in qml
+    assert "onClicked: sourceDialog.open()" in qml
+    assert 'objectName: "openSourceStandardShortcut"' not in qml
 
 
 if __name__ == "__main__":
@@ -70,7 +75,7 @@ if __name__ == "__main__":
         test_visual_order_and_no_chain_mutation,
         test_product_binds_status_without_demo,
         test_export_permission_unchanged,
-        test_guarded_open_shortcut,
+        test_original_source_open_guard_preserved,
     ):
         test()
     print("M19_M21_PRODUCT_NAVIGATION_SOURCE_GUARD_NONRELEASE_PASS")
