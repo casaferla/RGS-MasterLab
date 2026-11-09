@@ -1117,38 +1117,6 @@ ApplicationWindow {
         }
     }
 
-    // M19–M21: new analysis content lives at the DOCK-SLOT layer.
-    // Do NOT insert any child (even an inactive Loader) into the FQ99
-    // DspEditorHost scenegraph: the native minimum-window test proves
-    // such new children perturb the qualified Parametric EQ allocation.
-    // This overlay is strictly limited to NEW analysis selections.
-    Loader {
-        id: dockedProductAnalysis
-        objectName: "m19M21DockSlotAnalysisLoader"
-        parent: root.activeDockSlot()
-        readonly property bool analysisSelected:
-            root.statusDspKey === "M19_ANALYSIS"
-            || root.statusDspKey === "M20_ANALYSIS"
-            || root.statusDspKey === "M21_ANALYSIS"
-        active: analysisSelected && !root.editorDetached
-        visible: active
-        asynchronous: false
-        z: 10
-        anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-        anchors.bottomMargin: 12
-        anchors.topMargin: 60
-        sourceComponent: Component {
-            AnalysisStatusEditor {
-                objectName: "m19M21ProductAnalysisEditor"
-                panelIndex: root.statusDspKey === "M20_ANALYSIS" ? 1
-                    : root.statusDspKey === "M21_ANALYSIS" ? 2 : 0
-                statusViewModel: realDspWorkspace.analysisStatusViewModel
-            }
-        }
-    }
-
     // The FIRST floating module retains the exact original Main host.
     // Subsequent native windows are created only for other instance IDs.
     DspFloatingModuleWindow {
