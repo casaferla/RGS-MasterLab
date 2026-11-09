@@ -73,6 +73,9 @@ Rectangle {
         case "STEREO_MS": return "module-stereo"
         case "TRUE_PEAK_METER": return "module-peak-meter"
         case "TRUE_PEAK_LIMITER": return "module-limiter"
+        case "M19_ANALYSIS": return "module-peak-meter"
+        case "M20_ANALYSIS": return "module-stereo"
+        case "M21_ANALYSIS": return "module-peak-meter"
         case "MASTER_MONITOR": return "module-headphones"
         default: return ""
         }
