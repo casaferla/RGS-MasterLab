@@ -1,7 +1,7 @@
 # Nonrelease, nonauthorizing A/B experiment. Run EXACT current source in
-# a detached TEMP worktree, but remove ONLY the newly-added M19/20/21
-# AnalysisStatusEditor child from DspEditorHost's ColumnLayout.
-# All FQ99-qualified QML source text and the original candidate stay intact.
+# a detached TEMP worktree, but remove ONLY the new M19/M20/M21
+# sibling Loader overlay. All FQ99-qualified QML and the original
+# candidate remain intact, and candidate failure stays fatal.
 param([Parameter(Mandatory=$true)][string]$QtRoot,
       [Parameter(Mandatory=$true)][string]$BoundedEvidence)
 $ErrorActionPreference="Continue"
@@ -14,13 +14,13 @@ function Note([string]$s) {
     Add-Content -Path $BoundedEvidence -Value ("M19_CHILD_AB: "+$s)
 }
 Note "CANDIDATE_SHA=$env:GITHUB_SHA"
-Note "EXPERIMENT=REMOVE_NEW_M19_M20_M21_CHILD_ONLY_IN_TEMP_WORKTREE"
+Note "EXPERIMENT=REMOVE_NEW_M19_M20_M21_LAZY_OVERLAY_ONLY_IN_TEMP_WORKTREE"
 & git worktree add --detach $src $env:GITHUB_SHA *> $setup
 if($LASTEXITCODE -ne 0) {Note "INCONCLUSIVE_WORKTREE_FAILED";exit 0}
 $p=Join-Path $src "ui/qml/DspEditorHost.qml"
 $s=[System.IO.File]::ReadAllText($p)
-$start='        // Independent M19/M20/M21 Product navigators share the existing'
-$finish='        MonitorEditor {'
+$start='    // M19–M21 are independent analysis surfaces, NOT ColumnLayout children.'
+$finish='    // M17 popover uses the SAME copper/teal family rule'
 $idx=$s.IndexOf($start,[System.StringComparison]::Ordinal)
 if($idx -lt 0) {Note "INCONCLUSIVE_NEW_CHILD_NOT_FOUND";exit 0}
 $end=$s.IndexOf($finish,$idx,[System.StringComparison]::Ordinal)
@@ -28,9 +28,9 @@ if($end -lt 0 -or $s.IndexOf($start,$idx+1,[System.StringComparison]::Ordinal) -
     Note "INCONCLUSIVE_NEW_CHILD_AMBIGUOUS";exit 0
 }
 $removed=$s.Substring($idx,$end-$idx)
-if(!$removed.Contains('objectName: "m19M21ProductAnalysisEditor"') -or
+if(!$removed.Contains('objectName: "m19M21ProductAnalysisOverlay"') -or
    !$removed.Contains('AnalysisStatusEditor {') -or
-   !$removed.Contains('Layout.fillHeight: true')) {
+   !$removed.Contains('active: analysisSelected')) {
     Note "INCONCLUSIVE_UNEXPECTED_CHILD_CONTENT";exit 0
 }
 $s=$s.Remove($idx,$end-$idx)
