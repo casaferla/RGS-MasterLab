@@ -112,3 +112,55 @@ before any qualified PASS; source code or static audit alone proves nothing.
 M23 I+P+M, Gate M physical, M24, Q1-Q6, Phase-6 Gate G and official cold FQ
 remain separate **OPEN** gates. PR #99 remains Draft, main unchanged;
 the candidate may be behind this writer while the previous CI completes.
+
+## 8. After verified M23 #7 — reuse first, Product-specific coverage on writer only
+
+The preceding [M23 #7](https://github.com/casaferla/RGS-MasterLab/actions/runs/42534362615)
+`5639bd7ea9d78e94a810c4e968aaa536c95e512e` is **completed
+SUCCESS Windows + Linux**. That qualified the prior 15/5 source matrix and
+native M23 diagnostic/close/reopen/candidate corruption checks, not this new
+unqualified writer-only batch.
+
+M23 rechecked original M09 and M10 tests before implementing new code:
+
+- `tests/unit/audio/test_wav_writer.cpp` already proves actual
+  `IResourceWriter` short byte transfers are completed losslessly and
+  zero-progress writes fail with canonical `IoFailure`. Its original native
+  CTest target has been added to the M23 workflow on **both** Windows and
+  Linux; the existing M09 exporter injected WRITER_IO still covers
+  transaction cleanup.
+- `ProjectSessionTest::atomic_rejection` already creates a real .rgsml
+  containing an unknown **active** sound-changing module, then proves the
+  current live Source/mastering chain remains unchanged after failed open.
+  `future_opaque_preservation_and_non_degraded_b4` independently proves
+  intentionally future opaque *non-sound* content is preserved. These
+  existing tests are reused, not copied.
+- Real four-active-DSP M22 Product test now binds an independent physically
+  selected REFERENCE/GOLD WAV, and after an original-Q0 48k->44.1k M17
+  checked master it attempts explicitly consented FULL M18 output both
+  **directly to GOLD** and to a **Win32 CreateHardLinkW alias**. The
+  original FAILED terminal worker error must be `InvalidState`; no
+  verified-destination receipt is permitted; the actual SOURCE and
+  REFERENCE/GOLD file bytes and alias bytes remain unchanged. The worker
+  code is projected to a no-release `AlphaDiagnosticReport`, with all
+  unproven safety flags deliberately UNKNOWN. Both attempts are ACKed
+  before the existing independent successful F32 and PCM24 exports.
+- The same real four-DSP upstream renderer now injects NaN, +Inf and -Inf
+  before any PROCESSED stage publication. It must fail
+  `InvalidAudioSample`; the source buffer is then restored for the
+  original successful FULL path. No M17 authorization is falsely minted
+  from a failed manual render.
+
+The 20-category **source-code inventory** on this new candidate is now
+**19 existing / 1 partial / 0 uncovered**. The only remaining partial is
+`alpha_diagnostic_report` **full** Product/Project persistence and
+build/baseline diagnostic-lifecycle integration. It cannot be converted
+to a fully qualified gate merely because the worker code reaches the
+nonrelease diagnostic reporter. For Product diagnostics, especially
+physical cleanup outcomes, unobserved facts remain UNKNOWN.
+
+These changes MUST pass new actual Windows+Linux CTest before source
+qualifications can be accepted. Even with a green CI, M23 Gate I/P/M,
+physical Windows PO Gate M, official cold Windows FQ, M22/Q1–Q6 formal
+acceptance and Phase-6 Gate G remain independently controlled. No automatic
+merge to main, no release approval, no hidden DSP/SRC/encoder replacement.
