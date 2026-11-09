@@ -1895,7 +1895,23 @@ Window {
             const auto m17Rect=hostRect(limiterEditor,sameAnchors[i]);
             QVERIFY2(!m16Rects[i].isEmpty() && !m17Rect.isEmpty(),
                      qPrintable(sameAnchors[i]));
-            QCOMPARE(m16Rects[i],m17Rect);
+            // Preserve exact physical-coordinate equality, with the
+            // specific rail/editor geometry available in a bounded failure.
+            auto* m16Rail=qobject_cast<QQuickItem*>(find_child_by_name(
+                meterEditor,QStringLiteral("truePeakMeterSharedRail")));
+            auto* m17Rail=qobject_cast<QQuickItem*>(find_child_by_name(
+                limiterEditor,QStringLiteral("truePeakMeterSharedRail")));
+            const QString tpParity=QStringLiteral(
+                "M16/M17 %1: M16=%2 M17=%3; editors %4x%5/%6x%7; rails %8x%9/%10x%11")
+                .arg(sameAnchors[i])
+                .arg(m16Rects[i].toString()).arg(m17Rect.toString())
+                .arg(meterEditor->width()).arg(meterEditor->height())
+                .arg(limiterEditor->width()).arg(limiterEditor->height())
+                .arg(m16Rail ? m16Rail->width() : -1.0)
+                .arg(m16Rail ? m16Rail->x() : -1.0)
+                .arg(m17Rail ? m17Rail->width() : -1.0)
+                .arg(m17Rail ? m17Rail->x() : -1.0);
+            QVERIFY2(m16Rects[i]==m17Rect,qPrintable(tpParity));
         }
     }
     host->setHeight(652);
@@ -5204,8 +5220,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!gainHostRedoBtn->property("enabled").toBool());
     QCOMPARE(dspHostModuleTitleItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), moduleTitlePosGain);
     QCOMPARE(dspHostWorkflowContextItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), workflowContextPosGain);
-    QCOMPARE(gainHostUndoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), undoPosGain);
-    QCOMPARE(gainHostRedoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), redoPosGain);
+    const QPointF undoPosEq=gainHostUndoItem->mapToItem(
+        dspEditorHostItem,QPointF{0.0,0.0});
+    const QPointF redoPosEq=gainHostRedoItem->mapToItem(
+        dspEditorHostItem,QPointF{0.0,0.0});
+    const QString headerParity=QStringLiteral(
+        "M12C host header: Undo %1->%2, Redo %3->%4, host width=%5, title width=%6")
+        .arg(QStringLiteral("(%1,%2)").arg(undoPosGain.x()).arg(undoPosGain.y()))
+        .arg(QStringLiteral("(%1,%2)").arg(undoPosEq.x()).arg(undoPosEq.y()))
+        .arg(QStringLiteral("(%1,%2)").arg(redoPosGain.x()).arg(redoPosGain.y()))
+        .arg(QStringLiteral("(%1,%2)").arg(redoPosEq.x()).arg(redoPosEq.y()))
+        .arg(dspEditorHostItem->width())
+        .arg(dspHostModuleTitleItem->width());
+    QVERIFY2(undoPosEq==undoPosGain,qPrintable(headerParity));
+    QVERIFY2(redoPosEq==redoPosGain,qPrintable(headerParity));
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
