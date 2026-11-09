@@ -35,6 +35,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFont>
 #include <QGuiApplication>
 #include <QImage>
 #include <QLibraryInfo>
@@ -1537,12 +1538,8 @@ Window {
     width: 640
     height: 460
     property bool detached: false
-    // Explicit QML-owned identities: a native child Window may not appear in
-    // QObject::children() when transientParent is intentionally null.
-    // The smoke still verifies the actual same editor across dock/undock.
-    property alias dockingProofEditorObject: realEditor
-    property alias dockingProofFloatingObject: floatingWindow
-    property alias dockingProofDockProxyObject: dockProxy
+    // A native Window may not be a QObject child if transientParent is
+    // intentionally null. The fixture still holds one editor and one Window.
 
     // A single persistent control created ONCE, never duplicated by Window.
     Rectangle {
@@ -1584,25 +1581,25 @@ Window {
     QVERIFY2(owned,qPrintable(component.errorString()));
     auto* dockWindow=qobject_cast<QQuickWindow*>(owned.data());
     QVERIFY(dockWindow);
-    // QML object aliases are typed QQuickItem*/QQuickWindow* QVariant
-    // values; requesting QObject* alone can return nullptr on Qt 6 MSVC.
-    // Read the actual alias type first, then its QObject* base if exposed.
-    const auto editorAlias=owned->property("dockingProofEditorObject");
-    const auto windowAlias=owned->property("dockingProofFloatingObject");
-    const auto proxyAlias=owned->property("dockingProofDockProxyObject");
-    auto* editor=editorAlias.value<QQuickItem*>();
-    if(!editor)editor=qobject_cast<QQuickItem*>(editorAlias.value<QObject*>());
-    auto* floating=windowAlias.value<QQuickWindow*>();
-    if(!floating)floating=qobject_cast<QQuickWindow*>(windowAlias.value<QObject*>());
-    auto* dockProxy=proxyAlias.value<QQuickItem*>();
-    if(!dockProxy)dockProxy=qobject_cast<QQuickItem*>(proxyAlias.value<QObject*>());
-    const QString aliasTypes=QStringLiteral("alias metatypes editor=%1 window=%2 proxy=%3")
-        .arg(QString::fromUtf8(editorAlias.metaType().name()))
-        .arg(QString::fromUtf8(windowAlias.metaType().name()))
-        .arg(QString::fromUtf8(proxyAlias.metaType().name()));
-    QVERIFY2(editor,qPrintable(QStringLiteral("Persistent editor missing; ")+aliasTypes));
-    QVERIFY2(floating,qPrintable(QStringLiteral("Floating Window missing; ")+aliasTypes));
-    QVERIFY2(dockProxy,qPrintable(QStringLiteral("Dock proxy missing; ")+aliasTypes));
+    // Real native Window has transientParent=null: Qt does not guarantee
+    // QObject::children() or a QML alias QVariant exposes it on Windows.
+    // Use QObject child lookup ONLY for rooted Items and the application
+    // native-window registry for the unique detached QQuickWindow.
+    auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
+        owned.data(),QStringLiteral("dockingProofRealEditor")));
+    auto* dockProxy=qobject_cast<QQuickItem*>(find_child_by_name(
+        owned.data(),QStringLiteral("dockingProofDockProxy")));
+    QQuickWindow* floating=nullptr;
+    for(QWindow* candidate:QGuiApplication::allWindows()) {
+        if(candidate->objectName()==QStringLiteral("dockingProofFloatingWindow")) {
+            floating=qobject_cast<QQuickWindow*>(candidate);
+            if(floating)break;
+        }
+    }
+    QVERIFY2(editor,"The single QML-owned editor Item must exist");
+    QVERIFY2(floating,"The real floating QQuickWindow must be registered");
+    QVERIFY2(dockProxy,"The actual LayoutItemProxy must exist");
+    QVERIFY(floating!=dockWindow);
     dockWindow->show();
     QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
     QCOMPARE(editor->property("edits").toInt(),17);
@@ -3020,6 +3017,10 @@ Window {
 
     // The same REAL typed DSP can be enabled and re-bypassed. Its controls
     // and host do not shift; parameters, IDs and three predecessors persist.
+    // A grabbed Qt frame is not by itself a guarantee that every nested
+    // RowLayout has completed polish on the Windows offscreen backend.
+    QTRY_VERIFY_WITH_TIMEOUT(host->width()>0.0 && host->height()>0.0
+        && controls->width()>0.0 && controls->height()>0.0,5000);
     QVERIFY2(!window->grabWindow().isNull(), "M15 baseline render required");
     const QRectF hostBefore{host->mapToScene(QPointF{}), host->size()};
     const QRectF controlsBefore{controls->mapToScene(QPointF{}), controls->size()};
@@ -4670,7 +4671,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const qreal eqIconXBefore = chainEqIcon->mapToItem(
         qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x();
 
-    // 12px title in 164px sidebar: BYP badge (and 28px spacer) removed.
+    // 12px full title in 164px sidebar: use natural word wrap,
+    // not smaller fonts, clipping, ellipses, or a substitute tooltip.
     auto* chainEqTitle = qobject_cast<QQuickItem*>(
         dspChainRow1->findChild<QObject*>(
             QStringLiteral("dspChainModuleTitle_1")));
@@ -4680,14 +4682,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     window->resize(QSize{1184, 688});
     QTest::qWait(80);
     const QString eqTitleGeometry=QStringLiteral(
-        "FIX-UI-004: title=%1, rendered width=%2, implicit width=%3, chain width=%4")
+        "FIX-UI-004: title=%1, layout width=%2, rendered content=%3x%4, item height=%5, chain width=%6")
         .arg(chainEqTitle->property("text").toString())
-        .arg(chainEqTitle->width()).arg(chainEqTitle->implicitWidth())
+        .arg(chainEqTitle->width())
+        .arg(chainEqTitle->property("contentWidth").toDouble())
+        .arg(chainEqTitle->property("contentHeight").toDouble())
+        .arg(chainEqTitle->height())
         .arg(dspChainRow1->property("width").toDouble());
+    // Actual full text must fit inside its QQuickText item at the original
+    // 12 px pixel size, including its second wrapped line.
+    QCOMPARE(chainEqTitle->property("font").value<QFont>().pixelSize(),12);
     QVERIFY2(!chainEqTitle->property("truncated").toBool(),
              qPrintable(eqTitleGeometry));
-    QVERIFY2(chainEqTitle->implicitWidth() <= chainEqTitle->width() + 0.5,
-             qPrintable(eqTitleGeometry));
+    QVERIFY2(chainEqTitle->property("contentWidth").toDouble()
+        <= chainEqTitle->width()+0.5,qPrintable(eqTitleGeometry));
+    QVERIFY2(chainEqTitle->property("contentHeight").toDouble()
+        <= chainEqTitle->height()+0.5,qPrintable(eqTitleGeometry));
 
     // Verify Compressor Editor components
     auto* compressorEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("compressorEditor"));
