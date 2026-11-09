@@ -4683,7 +4683,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "FIX-UI-004: title=%1, rendered width=%2, implicit width=%3, chain width=%4")
         .arg(chainEqTitle->property("text").toString())
         .arg(chainEqTitle->width()).arg(chainEqTitle->implicitWidth())
-        .arg(dspChainRow1->width());
+        .arg(dspChainRow1->property("width").toDouble());
     QVERIFY2(!chainEqTitle->property("truncated").toBool(),
              qPrintable(eqTitleGeometry));
     QVERIFY2(chainEqTitle->implicitWidth() <= chainEqTitle->width() + 0.5,
