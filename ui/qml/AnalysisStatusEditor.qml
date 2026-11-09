@@ -24,8 +24,8 @@ Item {
         ? String(frame.sourceRole) : "PREPARED"
     readonly property string lifecycle: frame && frame.privateEvidenceStatus
         ? String(frame.privateEvidenceStatus) : "MISSING"
-    implicitWidth: 640
-    implicitHeight: 360
+    implicitWidth: 0
+    implicitHeight: 0
 
     Rectangle {
         anchors.fill: parent
@@ -58,7 +58,7 @@ Item {
                     color: "#E4EDF5"
                 }
                 Text {
-                    text: "ANALYSIS ONLY · NEVER CHANGES THE MASTERING CHAIN"
+                    text: "READ-ONLY ANALYSIS · NO AUDIO MUTATION"
                     font.family: "Segoe UI"
                     font.pixelSize: 10
                     color: "#9DB8C8"
@@ -67,7 +67,7 @@ Item {
             Item {Layout.fillWidth: true}
             Text {
                 objectName: "analysisProductAuthorityLabel"
-                text: root.authorized ? "PRODUCT DATA" : "AWAITING PRODUCT GATE"
+                text: root.authorized ? "PRODUCT DATA" : "NO PRODUCT NUMBERS"
                 font.family: "Segoe UI"
                 font.pixelSize: 10
                 color: root.authorized ? "#B6D6CA" : "#F0C87D"
@@ -103,50 +103,20 @@ Item {
             Item {Layout.fillWidth: true}
         }
 
-        Rectangle {
+        // Approved independent Product visuals, clipped and scrollable INSIDE
+        // the existing host. Keep this editor instance permanently alive.
+        AnalysisApprovedContent {
+            objectName: "analysisApprovedContent"
+            panelIndex: root.panelIndex
+            lifecycle: root.lifecycle
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 120
-            color: "#091723"
-            radius: 5
-            border.color: "#27465F"
-            ColumnLayout {
-                anchors.centerIn: parent
-                spacing: 9
-                Text {
-                    objectName: "analysisUnavailableTitle"
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "VERIFIED ANALYSIS UNAVAILABLE"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 17
-                    font.bold: true
-                    color: "#D5E2EC"
-                }
-                Text {
-                    objectName: "analysisUnavailableExplanation"
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.maximumWidth: 590
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.WordWrap
-                    text: root.panelId + " · " + root.selectedRole
-                        + ": real metrics, graphs and deltas will become visible"
-                        + " only after canonical Product/Phase-6 publication."
-                    color: "#A4BBCB"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 12
-                }
-                Text {
-                    objectName: "analysisEvidenceState"
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "PRIVATE EVIDENCE: " + root.lifecycle
-                        + " · NO PRODUCT NUMERIC AUTHORITY"
-                    color: "#F0C87D"
-                    font.family: "Consolas"
-                    font.pixelSize: 11
-                }
-            }
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
         }
         Text {
+            objectName: "analysisEvidenceState"
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             text: "This panel is read-only. Source selection cannot prepare, "

@@ -15,18 +15,20 @@ Item {
     readonly property int numericPixelSize: root.heroReadout ? 36 : 13
     readonly property bool readOnly: true
     implicitWidth: 150
-    implicitHeight: root.heroReadout ? 84 : 48
+    implicitHeight: root.heroReadout ? 102 : 48
     Column {
         anchors.fill: parent
         spacing: root.heroReadout ? 5 : 3
         Text {
-            width: parent.width; height: root.heroReadout ? 16 : 14
+            width: parent.width; height: root.heroReadout ? 30 : 14
             text: root.labelText
             color: "#A1B5C9"; font.family: "Segoe UI"
             font.pixelSize: root.heroReadout ? 11 : 10
             font.bold: true
             horizontalAlignment: root.heroReadout ? Text.AlignHCenter : Text.AlignLeft
-            elide: Text.ElideRight
+            wrapMode: root.heroReadout ? Text.WordWrap : Text.NoWrap
+            verticalAlignment: Text.AlignVCenter
+            elide: root.heroReadout ? Text.ElideNone : Text.ElideRight
         }
         Row {
             width: parent.width; height: root.heroReadout ? 50 : 26; spacing: 6
