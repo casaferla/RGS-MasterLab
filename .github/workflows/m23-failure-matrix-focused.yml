@@ -102,7 +102,7 @@ jobs:
   windows-reconciliation:
     name: Windows - M23 true file faults, alias, epoch and persistence
     runs-on: windows-2022
-    timeout-minutes: 40
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
@@ -169,6 +169,21 @@ jobs:
             throw 'M23_BUILD_FAILED'
           }
           Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 5
+      - name: Controlled FQ99/candidate native Qt GUI A1/A2/B1/B2 matrix (diagnostic, nonrelease)
+        shell: pwsh
+        run: |
+          # Critical: ALL arms run the FULL Qt smoke with the SAME -v2/-o
+          # args and a fresh process. Only revision and screenshot variable
+          # change. No production QML, layout hint or CTest assertion altered.
+          $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          & pwsh -NoProfile -File tools/qualification/m23/probe_fq99_candidate_controlled_matrix.ps1 -QtRoot $qtRoot -CandidateBuild "$env:GITHUB_WORKSPACE/build/m23-native" -BoundedReceipt "$env:RUNNER_TEMP/m23-controlled-matrix.txt"
+          if ($LASTEXITCODE -ne 0) {
+            Add-Content "$env:RUNNER_TEMP/m23-controlled-matrix.txt" "MATRIX_PROBE=INCONCLUSIVE_SCRIPT_EXIT_$LASTEXITCODE"
+          }
+          # Diagnostic does not substitute for the strict CTest gate below.
+          if (Test-Path "$env:RUNNER_TEMP/m23-controlled-matrix.txt") {
+            Get-Content "$env:RUNNER_TEMP/m23-controlled-matrix.txt" -Tail 18
+          }
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
         run: |
@@ -193,15 +208,9 @@ jobs:
               Select-String -Pattern 'QT_LINE_[0-9]+: FAIL!' -Context 2,14 |
               Select-Object -First 12 | Out-String -Width 240 |
               Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
-            # FQ99 on this exact runner already PASSed in #22. Now isolate
-            # the only newly-created Layout child without touching approved
-            # QML: one same-SHA temporary worktree, one TEMP-only removal,
-            # same native Qt build/smoke. Even a passing A/B leaves the
-            # candidate real CTest RED; its artifact records the distinction.
-            & pwsh -NoProfile -File tools/qualification/m23/probe_current_without_analysis_child.ps1 -QtRoot $qtRoot -BoundedEvidence "$env:RUNNER_TEMP/m23-failure-bounded.txt"
-            if ($LASTEXITCODE -ne 0) {
-              Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt" "M19_CHILD_AB: PROBE_SCRIPT_EXIT=$LASTEXITCODE"
-            }
+            # The old one-case/screenshots-on A/B was NOT controlled.
+            # Retain real candidate failure; controlled matrix has its
+            # separate bounded artifact and cannot greenwash this gate.
             throw 'M23_REAL_FAULT_CTEST_FAILED'
           }
           python tools/qualification/m23/audit_failure_matrix.py --platform windows --expected-source-sha "$env:GITHUB_SHA" --require-existing-executed --junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" --out "$env:RUNNER_TEMP/m23-receipt-windows.json" *> "$env:RUNNER_TEMP/m23-audit.log"
@@ -222,5 +231,6 @@ jobs:
           path: |
             ${{ runner.temp }}/m23-receipt-windows.json
             ${{ runner.temp }}/m23-failure-bounded.txt
+            ${{ runner.temp }}/m23-controlled-matrix.txt
           if-no-files-found: ignore
           retention-days: 7
