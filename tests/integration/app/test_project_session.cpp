@@ -15,6 +15,7 @@
 #include "m21_product_status_view_model.hpp"
 #include "internal/m21_product_spectrum_evidence.hpp"
 #include "internal/m18_private_product_export_action.hpp"
+#include "internal/m23_alpha_diagnostic_report.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
@@ -2238,6 +2239,31 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
             30000);
         QCOMPARE(exporter.snapshot().failure_code,
                  std::optional{core::ErrorCode::InvalidState});
+        // Read-only M23 diagnostic projection from the ACTUAL Product
+        // worker's terminal failure code. The worker intentionally does
+        // not expose untrusted raw paths or private Error.message().
+        const auto failedSnapshot=exporter.snapshot();
+        const auto observedFailure=core::Status::failure(
+            core::Error{*failedSnapshot.failure_code});
+        const std::array failures{
+            app::internal::M23FailedStatus{
+                app::internal::M23Operation::EXPORT,
+                app::internal::M23Stage::PREFLIGHT,&observedFailure}};
+        app::internal::M23SafetyEvidence diagnosticEvidence{};
+        diagnosticEvidence.source=app::internal::M23Evidence::VERIFIED_UNCHANGED;
+        diagnosticEvidence.gold=app::internal::M23Evidence::VERIFIED_UNCHANGED;
+        diagnosticEvidence.preexisting_destination=
+            app::internal::M23Evidence::VERIFIED_UNCHANGED;
+        // The Project and cleanup are NOT asserted without direct proof;
+        // a FAILED worker is never a positive release receipt.
+        const auto diagnostic=app::internal::AlphaDiagnosticReport::
+            from_failed_statuses(failures,diagnosticEvidence);
+        QVERIFY(diagnostic);
+        QCOMPARE(diagnostic.value()->findings().size(),std::size_t{1});
+        QCOMPARE(diagnostic.value()->findings()[0].canonical_code,
+                 core::ErrorCode::InvalidState);
+        QVERIFY(!diagnostic.value()->safe_failure_evidence_complete());
+        QVERIFY(!diagnostic.value()->authorizes_release());
         QVERIFY(!exporter.snapshot().verified_file_size_bytes);
         QCOMPARE(exporter.snapshot().verified_encoded_sha256,std::string{});
         QCOMPARE(readBytes(sourcePath),originalBytes);
