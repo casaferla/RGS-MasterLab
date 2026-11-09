@@ -1,7 +1,7 @@
 # Nonrelease, nonauthorizing A/B experiment. Run EXACT current source in
-# a detached TEMP worktree, but remove ONLY the NEW M19/M20/M21
-# dock-slot Loader in Main. All qualified legacy QML content, including
-# DspEditorHost, and the original candidate remain intact.
+# a detached TEMP worktree, but remove ONLY the NEW nonvisual
+# analysis Component factory plus lifecycle hook in DspEditorHost.
+# All qualified FQ99 GUI lines remain intact in the candidate.
 param([Parameter(Mandatory=$true)][string]$QtRoot,
       [Parameter(Mandatory=$true)][string]$BoundedEvidence)
 $ErrorActionPreference="Continue"
@@ -14,13 +14,13 @@ function Note([string]$s) {
     Add-Content -Path $BoundedEvidence -Value ("M19_CHILD_AB: "+$s)
 }
 Note "CANDIDATE_SHA=$env:GITHUB_SHA"
-Note "EXPERIMENT=REMOVE_NEW_M19_M20_M21_MAIN_DOCK_LOADER_ONLY_IN_TEMP_WORKTREE"
+Note "EXPERIMENT=REMOVE_NEW_M19_M20_M21_NONVISUAL_FACTORY_ONLY_IN_TEMP_WORKTREE"
 & git worktree add --detach $src $env:GITHUB_SHA *> $setup
 if($LASTEXITCODE -ne 0) {Note "INCONCLUSIVE_WORKTREE_FAILED";exit 0}
-$p=Join-Path $src "ui/qml/Main.qml"
+$p=Join-Path $src "ui/qml/DspEditorHost.qml"
 $s=[System.IO.File]::ReadAllText($p)
-$start='    // M19–M21: new analysis content lives at the DOCK-SLOT layer.'
-$finish='    // The FIRST floating module retains the exact original Main host.'
+$start='    // M19–M21: no new QQuickItem or Loader is present while any FQ99'
+$finish='    // M17 popover uses the SAME copper/teal family rule'
 $idx=$s.IndexOf($start,[System.StringComparison]::Ordinal)
 if($idx -lt 0) {Note "INCONCLUSIVE_NEW_CHILD_NOT_FOUND";exit 0}
 $end=$s.IndexOf($finish,$idx,[System.StringComparison]::Ordinal)
@@ -28,9 +28,9 @@ if($end -lt 0 -or $s.IndexOf($start,$idx+1,[System.StringComparison]::Ordinal) -
     Note "INCONCLUSIVE_NEW_CHILD_AMBIGUOUS";exit 0
 }
 $removed=$s.Substring($idx,$end-$idx)
-if(!$removed.Contains('objectName: "m19M21DockSlotAnalysisLoader"') -or
+if(!$removed.Contains('id: productAnalysisFactory') -or
    !$removed.Contains('AnalysisStatusEditor {') -or
-   !$removed.Contains('active: analysisSelected && !root.editorDetached')) {
+   !$removed.Contains('root.productAnalysisSurface.destroy()')) {
     Note "INCONCLUSIVE_UNEXPECTED_CHILD_CONTENT";exit 0
 }
 $s=$s.Remove($idx,$end-$idx)
