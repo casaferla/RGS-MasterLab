@@ -81,3 +81,45 @@ epoch and source result authority stay in canonical ViewModels/backend.
   keyboard focus, and memory stability. User currently not at PC.
 - No full FQ, release ticket, main merge, numerical M19-M21 qualification
   or M23 closure is implied by a focused green CI. PR #99 remains Draft.
+
+## Native Product-Main visual gate — next scoped step after green #33
+
+PO operating rule: immediately initiate the next feasible step after each
+completed output, without requiring another "prosegui"; never bypass formal
+PO gates, physical checks, or single-writer CAS.
+
+A focused post-#33 visual capture check is prepared on the isolated staging
+writer. **Unlike the pre-existing M19-M21 screenshot workflow, which captures
+a demonstration-only QML workbench**, this new step captures the actual
+`Main.qml` + `DspWorkspace` + `DspEditorHost` + three permanently inserted
+`AnalysisStatusEditor` objects by selecting real
+`ProductAnalysisModuleAdapter` identities
+`analysis:rgsml.m19`, `analysis:rgsml.m20`, `analysis:rgsml.m21`.
+
+The existing giant `tests/ui_smoke/test_source_metadata_panel.cpp` remains
+unchanged through its historical FQ99 legacy checks; only after they finish
+it binds a fail-closed `UnavailableAnalysisVisualFixture` (read-only, real
+Product QML but synthetic status ONLY, no numeric Product data), then adds
+the three real analysis rows to the existing adapter model. For each:
+- verify corresponding active editorContentKey and exactly one visible
+  enabled new panel, other two hidden/disabled;
+- verify read-only Product authority=false, lifecycle=MISSING;
+- capture native Windows Main at 1184x688 and 1440x900;
+- assert the actual selected panel stays within its original host;
+- roundtrip to M19 and back to the frozen Parametric EQ, verifying persistent
+  QQuickItem identity and legacy EQ geometry after navigation.
+The screenshots are explicitly titled
+`PRODUCT_REAL_MAIN_m19-levels|m20-tonal-stereo|m21-metrics-delta_WIDTHxHEIGHT_UNAVAILABLE.png`;
+they are NOT generated-demo artwork, not screenshots of a fully authorized
+Phase-6 result, and not a physical user's PC.
+
+The workflow first executes ALL original strict M23 Windows CTests with no
+screenshot environment (unchanged), then performs a SEPARATE strict CTest
+run of only the already-existing complete 16-case native Qt smoke with
+`RGSML_GUI01_EVIDENCE_DIR` enabled. It uploads ONLY the six Product Main
+PNG images, never the many pre-existing additional capture files or complete
+job logs. Linux and original FQ99 byte-freeze controls remain intact.
+Any failure is RED, not silently translated into an automatic approval.
+No source change to app, Main, DSP, FIR, product analysis authority, Qt
+geometry or CTest wrapper. Focused green remains nonrelease; PO can review
+real captured panels and separately authorize later icon/full-FQ/physical work.
