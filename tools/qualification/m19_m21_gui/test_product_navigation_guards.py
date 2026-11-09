@@ -56,7 +56,6 @@ def test_export_permission_unchanged() -> None:
     assert "fanout.m17_verified_epoch_current()" in binder
     assert "verified==c.candidates.staged()" in binder
     assert "export_readiness_reason(" in binder
-    assert "VERIFY" not in qml[0:0]  # no-op; never grants permission
 
 
 def test_guarded_open_shortcut() -> None:
