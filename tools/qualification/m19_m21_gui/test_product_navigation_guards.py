@@ -65,7 +65,10 @@ def test_product_binds_status_without_demo() -> None:
         assert f'case "{key}": return "{kind}"' in selector
         assert f'kind === "{kind}"' in vectors
     assert 'AnalysisModuleIcon {' in selector
-    assert 'anchors.fill: parent' in vectors
+    # The 16px slot belongs to the EXISTING StudioIcon in the selector;
+    # the 24px vector master is centered in its own Shape component.
+    assert 'anchors.fill: parent' in selector
+    assert 'anchors.centerIn: parent' in vectors
     assert 'import QtQuick.Shapes' in vectors
     assert 'PathSvg { path: root.vectorPath }' in vectors
     assert 'readonly property bool small:' in vectors
