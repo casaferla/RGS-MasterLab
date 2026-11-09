@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 from audit_failure_matrix import (
     M23ContractError, WINDOWS_ONLY, build_report, parse_junit, read_manifest,
-    run, safe_path,
+    run, safe_path, verify_exact_checked_out_source,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -28,6 +29,24 @@ class M23EvidenceSelfTests(unittest.TestCase):
         counts = {k: sum(c["static_coverage"] == k for c in manifest["cases"])
                   for k in ("existing", "partial", "gap")}
         self.assertEqual(counts, {"existing": 19, "partial": 1, "gap": 0})
+
+    def test_exact_git_head_identity_cannot_be_spoofed(self):
+        with self.assertRaises(M23ContractError):
+            verify_exact_checked_out_source(ROOT, "not-a-sha")
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip()
+        self.assertEqual(verify_exact_checked_out_source(ROOT, head), head)
+        forged = "0" * 40 if head != "0" * 40 else "1" * 40
+        with self.assertRaises(M23ContractError):
+            verify_exact_checked_out_source(ROOT, forged)
+        without = run(ROOT, MATRIX, [], "windows", False)
+        self.assertFalse(without["exact_source_sha_verified"])
+        self.assertIsNone(without["exact_source_sha"])
+        with_identity = run(ROOT, MATRIX, [], "windows", False, head)
+        self.assertTrue(with_identity["exact_source_sha_verified"])
+        self.assertEqual(with_identity["exact_source_sha"], head)
+        self.assertFalse(with_identity["release_qualified"])
 
     def test_fake_release_and_manual_verdict_never_accepted(self):
         baseline = json.loads(MATRIX.read_text(encoding="utf-8"))
