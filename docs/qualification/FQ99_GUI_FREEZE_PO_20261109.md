@@ -59,3 +59,38 @@ Esplorazioni NON pubblicate che collocavano overlay in `Main.qml` o `DspFloating
 - Modifica scelta: cancellare completamente il nuovo Main Loader; definire nel DspEditorHost **solo un `Component` QML non visuale**, e istanziare dinamicamente `AnalysisStatusEditor` con `createObject(root)` **esclusivamente** quando `activeModule.editorContentKey` è uno dei tre M19/M20/M21. Al cambio di selezione verso qualunque modulo FQ99, chiamare `destroy()` sull'istanza e azzerare il riferimento. Non c'è QQuickItem o Loader aggiuntivo mentre EQ o M16 sono selezionati. La superficie d'analisi attiva è figlia di host solo quando l'analizzatore nuovo è effettivamente selezionato, dunque può seguire lo stesso host nella modalità dock/undock senza riscrivere la finestra floating.
 - Resta solo wiring additivo M19–M21, il factory non visuale e i test source. Verifica indipendente sui file GitHub: rimuovendo virtualmente il blocco factory e i soli collegamenti M19–M21, `DspEditorHost.qml`, `Main.qml`, `DspWorkspace.qml`, `DspChainSelector.qml` sono byte-identici alla FQ99; `DspFloatingModuleWindow.qml` è invariato nativamente.
 - **NON qualificato ancora**: questo è un candidato da sottoporre ai veri CTest Windows/Linux, poi FQ sul PC e visual approval degli analizzatori. Il test A/B in caso di fallimento sottrae soltanto factory/hook nella COPIA TEMP dello stesso SHA e mantiene ROSSA la CI originale. PR #99 resta Draft; nessun merge main.
+
+## Correzione della diagnosi e integrazione permanente (9 novembre, dopo CI #32)
+
+**Rettifica esplicita alle conclusioni provvisorie precedenti di questo
+documento:** non era stato dimostrato che l'esistenza dei nuovi QQuickItem
+o Loader invisibili causasse la regressione. Quei vecchi confronti A/B
+confondevano codice, invocazione del test, screenshot e ordine dei casi.
+La matrice controllata #28 ha passato tutti i 16 QTest anche con il
+candidato completo M19–M21 e screenshot OFF; #29/#30 hanno isolato il
+launcher; #31 ha provato l'identico errore anche sulla **FQ99 originale**
+quando avviata direttamente come processo figlio di CMake, mentre
+`CMake → PowerShell → Qt` passava 16/16 su entrambe le revisioni.
+La #32, dopo la correzione minima del launcher nativo Windows, ha
+PASSato tutti gli 11 CTests Windows e il job Linux su
+`4a0b0458d14771d40ccecf8f894eea55d59d10d5`. La causa di basso
+livello del diverso scheduling/esposizione Qt sotto CMake non è
+formalmente ricostruita; il contesto di test è stato corretto
+senza modificare le asserzioni.
+
+**Decisione PO ora implementata su branch isolato, NON qualificata:**
+tornare al contratto M16 per le nuove sole tre pagine M19/M20/M21,
+permanenti durante la vita di ogni host, direttamente nel ColumnLayout,
+visibili esclusivamente per il rispettivo editorContentKey, inattive
+quando nascoste. Rimosso completamente l'overlay dinamico
+`Component/createObject/destroy`. Nessuna modifica ai figli originali
+Parametric EQ, M16, M17, Monitor o al sistema di docking/floating
+qualificato. Il source guard richiede l'identità *byte per byte* con la
+FQ99 una volta sottratta esattamente la nuova aggiunta approvata.
+Dettagli in `docs/qualification/M19_M21_PERSISTENT_GUI_M16_HOST_20261109.md`.
+
+**Gate aperti:** la nuova integrazione permanente deve passare una
+propria CI focused Windows+Linux, le GUI M19–M21 non sono approvate
+fisicamente, le icone specifiche già approvate devono ancora essere
+recuperate da Drive, la FQ completa è rinviata. PR #99 Draft, nessun
+merge su main, M23 NON formalmente chiusa.
