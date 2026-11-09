@@ -1537,6 +1537,12 @@ Window {
     width: 640
     height: 460
     property bool detached: false
+    // Explicit QML-owned identities: a native child Window may not appear in
+    // QObject::children() when transientParent is intentionally null.
+    // The smoke still verifies the actual same editor across dock/undock.
+    property alias dockingProofEditorObject: realEditor
+    property alias dockingProofFloatingObject: floatingWindow
+    property alias dockingProofDockProxyObject: dockProxy
 
     // A single persistent control created ONCE, never duplicated by Window.
     Rectangle {
@@ -1578,13 +1584,15 @@ Window {
     QVERIFY2(owned,qPrintable(component.errorString()));
     auto* dockWindow=qobject_cast<QQuickWindow*>(owned.data());
     QVERIFY(dockWindow);
-    auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
-        owned.data(),QStringLiteral("dockingProofRealEditor")));
-    auto* floating=qobject_cast<QQuickWindow*>(find_child_by_name(
-        owned.data(),QStringLiteral("dockingProofFloatingWindow")));
-    auto* dockProxy=qobject_cast<QQuickItem*>(find_child_by_name(
-        owned.data(),QStringLiteral("dockingProofDockProxy")));
-    QVERIFY(editor && floating && dockProxy);
+    auto* editor=qobject_cast<QQuickItem*>(
+        owned->property("dockingProofEditorObject").value<QObject*>());
+    auto* floating=qobject_cast<QQuickWindow*>(
+        owned->property("dockingProofFloatingObject").value<QObject*>());
+    auto* dockProxy=qobject_cast<QQuickItem*>(
+        owned->property("dockingProofDockProxyObject").value<QObject*>());
+    QVERIFY2(editor,"QML fixture must expose the real persistent editor");
+    QVERIFY2(floating,"QML fixture must expose its real native floating Window");
+    QVERIFY2(dockProxy,"QML fixture must expose the actual dock LayoutItemProxy");
     dockWindow->show();
     QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
     QCOMPARE(editor->property("edits").toInt(),17);
