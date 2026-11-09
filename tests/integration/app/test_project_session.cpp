@@ -62,6 +62,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <string>
 #include <stdexcept>
 #include <thread>
@@ -1996,6 +1997,30 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
             *request.error());
         return render::render_preview(*request.value(),*registry.value());
     };
+    // M23: inject nonfinite samples through the ACTUAL four-DSP Product
+    // manual chain before any verified M17 Product stage can be minted.
+    // These input failures must remain failed statuses, never a PREVIEW
+    // or a stale successful FULL output, and may not mutate physical Source.
+    auto mutableSource=sourcePcm.value()->mutable_view().channel(0);
+    QVERIFY(mutableSource);
+    const double originalFirst=(*mutableSource.value())[0];
+    for(const double bad:{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity()}) {
+        (*mutableSource.value())[0]=bad;
+        const auto rejected=renderManual(
+            session.masteringChainState->chain(),
+            session.masteringChainState->execution_bindings());
+        QVERIFY(!rejected);
+        QVERIFY(rejected.error()!=nullptr);
+        QCOMPARE(rejected.error()->code(),
+                 core::ErrorCode::InvalidAudioSample);
+        // No Selector::set_processed_realization on the error path:
+        // real Product verification only accepts an actual published result.
+        QVERIFY(!session.selector.processed_realization_snapshot());
+    }
+    (*mutableSource.value())[0]=originalFirst;
     auto prepared=renderManual(*neutral.value(),{});
     auto processed=renderManual(
         session.masteringChainState->chain(),
