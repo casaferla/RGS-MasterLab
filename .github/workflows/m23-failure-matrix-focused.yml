@@ -184,6 +184,19 @@ jobs:
           if (Test-Path "$env:RUNNER_TEMP/m23-controlled-matrix.txt") {
             Get-Content "$env:RUNNER_TEMP/m23-controlled-matrix.txt" -Tail 18
           }
+      - name: Compare same Qt GUI binaries via repository cwd, CTest cwd and CMake wrapper (diagnostic)
+        shell: pwsh
+        run: |
+          # Controlled-matrix phase 2: all previous A/B arms passed.
+          # Do not change GUI sources or weaken the original CTest gate.
+          $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          & pwsh -NoProfile -File tools/qualification/m23/probe_native_gui_invocation_context.ps1 -QtRoot $qtRoot -OriginalBuild "$env:GITHUB_WORKSPACE/build/m23-native" -CleanCandidateBuild "$env:RUNNER_TEMP/rgsml-ab-cand27-build" -BoundedReport "$env:RUNNER_TEMP/m23-gui-context.txt"
+          if ($LASTEXITCODE -ne 0) {
+            Add-Content "$env:RUNNER_TEMP/m23-gui-context.txt" "CONTEXT_PROBE=INCONCLUSIVE_EXIT_$LASTEXITCODE"
+          }
+          if (Test-Path "$env:RUNNER_TEMP/m23-gui-context.txt") {
+            Get-Content "$env:RUNNER_TEMP/m23-gui-context.txt" -Tail 16
+          }
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
         run: |
@@ -232,5 +245,6 @@ jobs:
             ${{ runner.temp }}/m23-receipt-windows.json
             ${{ runner.temp }}/m23-failure-bounded.txt
             ${{ runner.temp }}/m23-controlled-matrix.txt
+            ${{ runner.temp }}/m23-gui-context.txt
           if-no-files-found: ignore
           retention-days: 7
