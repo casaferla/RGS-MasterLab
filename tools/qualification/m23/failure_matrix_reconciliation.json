@@ -3,7 +3,7 @@
   "baseline_sha": "31b81571eef1497c0d561105cc9e619ea95aafe6",
   "authority": "L1-M23 I+P+M; preimplementation packet v0.2; no new Product semantics",
   "status": "RECONCILIATION_ONLY_NOT_M23_QUALIFIED",
-  "note": "Source-slot classifications are exact code-level evidence only: all new Product Gold and added original short-write CTest must execute PASS in the next M23 Windows/Linux CI. Partial areas still require further work; no I/P/M/FQ self certification.",
+  "note": "20 categories have an identified real source CTest proof or an exact M09/M10 reuse. Source inventory does not self-certify I/P/M or authorize release. All categories' qualified=false until the independent M23 owner gate and physical acceptance.",
   "m23_closed": false,
   "physical_gate_m": false,
   "product_admission_authorized": false,
@@ -183,11 +183,11 @@
     {
       "id": "20",
       "category": "alpha_diagnostic_report",
-      "static_coverage": "partial",
+      "static_coverage": "existing",
       "ctest": "rgsml_m23_alpha_diagnostic_tests",
       "source": "tests/unit/app/test_m23_alpha_diagnostic_report.cpp",
       "slot": "capturesActualStatusCodesAndRefusesSecretErrorStrings",
-      "rationale": "Cross-platform native AlphaDiagnosticReport rejects success/fake PASS and leaking Error.message; Windows Product M22->M18 failure path now projects real terminal worker failure_code to sanitized canonical report without minting authority. Full Project/Product persisted diagnostic lifecycle and build/baseline summary still require gate evidence."
+      "rationale": "cross-platform AlphaDiagnosticReport native tests aggregate genuine core Status/ErrorCode without Error.message or secrets, refuse forged success, and stay nonrelease; read-only M18 Product ViewModel diagnosticSummary now exposes sanitized code ONLY on actual FAILED worker, UNKNOWN stage/evidence, and clears on ACK. Exact checkout SHA is bound to the separate CTest/JUnit receipt. Manual I/P/M and complete physical cleanup remain independent gates."
     }
   ]
 }
