@@ -3,7 +3,7 @@
   "baseline_sha": "31b81571eef1497c0d561105cc9e619ea95aafe6",
   "authority": "L1-M23 I+P+M; preimplementation packet v0.2; no new Product semantics",
   "status": "RECONCILIATION_ONLY_NOT_M23_QUALIFIED",
-  "note": "Statuses reflect source-code evidence only, not executed CTest, FQ, manual acceptance or release.",
+  "note": "Source-slot classifications are exact code-level evidence only: all new Product Gold and added original short-write CTest must execute PASS in the next M23 Windows/Linux CI. Partial areas still require further work; no I/P/M/FQ self certification.",
   "m23_closed": false,
   "physical_gate_m": false,
   "product_admission_authorized": false,
@@ -39,11 +39,11 @@
     {
       "id": "04",
       "category": "short_write",
-      "static_coverage": "partial",
-      "ctest": "rgsml_transactional_audio_export_tests",
-      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
-      "slot": "injectedFailureStagesCleanUp",
-      "rationale": "writer I/O fault is tested; precise partial-byte short-write injection not separately proved"
+      "static_coverage": "existing",
+      "ctest": "rgsml_audio_wav_writer_tests",
+      "source": "tests/unit/audio/test_wav_writer.cpp",
+      "slot": "partitionAndShortWriteSemantics",
+      "rationale": "original M09 WavWriter real IResourceWriter port test covers deterministic short transfers, exact all-bytes completion and zero-progress IoFailure; M23 Windows exporter writer fault separately proves no publication and owned cleanup"
     },
     {
       "id": "05",
@@ -111,11 +111,11 @@
     {
       "id": "12",
       "category": "gold_destination_collision",
-      "static_coverage": "partial",
-      "ctest": "rgsml_transactional_audio_export_tests",
-      "source": "tests/integration/platform/test_transactional_audio_exporter.cpp",
-      "slot": "goldDirectAndHardlinkDestinationRemainByteIdentical",
-      "rationale": "real Windows GOLD direct/alias files remain byte-identical via frozen FAIL_IF_EXISTS; Product Gold-specific identity admission not independently proven"
+      "static_coverage": "existing",
+      "ctest": "rgsml_project_session_tests",
+      "source": "tests/integration/app/test_project_session.cpp",
+      "slot": "m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation",
+      "rationale": "actual M22 Product verified master and M18 confirmed FULL worker reject selected physical GOLD/REFERENCE direct and Win32 hard-link output destinations with InvalidState and preserved Source/GOLD; M09 physical exporter independent direct/alias regression remains"
     },
     {
       "id": "13",
@@ -147,11 +147,11 @@
     {
       "id": "16",
       "category": "unknown_semantic_module",
-      "static_coverage": "partial",
+      "static_coverage": "existing",
       "ctest": "rgsml_project_session_tests",
       "source": "tests/integration/app/test_project_session.cpp",
-      "slot": "future_opaque_preservation_and_non_degraded_b4",
-      "rationale": "unknown semantic module policy needs separate malicious injection"
+      "slot": "atomic_rejection",
+      "rationale": "original M10 Windows atomic_rejection creates real .rgsml with unknown ACTIVE sound-changing module typeId, opens it against an existing valid Source/chain, verifies rejection and unchanged live session; future unknown opaque extension preservation is independently tested by future_opaque_preservation_and_non_degraded_b4"
     },
     {
       "id": "17",
