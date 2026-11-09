@@ -512,6 +512,29 @@ struct LayoutEvalResult {
 
 }  // namespace
 
+// Visual-only, fail-closed status fixture for screenshots of REAL Product
+// AnalysisStatusEditor pages inside the REAL Main/DspEditorHost. Never
+// authorizes numbers or substitutes for the canonical M21 Product owner.
+class UnavailableAnalysisVisualFixture final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(bool productionAuthorized READ productionAuthorized CONSTANT)
+    Q_PROPERTY(QVariantMap m19 READ m19 NOTIFY changed)
+    Q_PROPERTY(QVariantMap m20 READ m20 NOTIFY changed)
+    Q_PROPERTY(QVariantMap m21 READ m21 NOTIFY changed)
+public:
+    [[nodiscard]] bool productionAuthorized() const noexcept { return false; }
+    [[nodiscard]] QVariantMap unavailable() const {
+        return {{QStringLiteral("sourceRole"),QStringLiteral("PREPARED")},
+                {QStringLiteral("privateEvidenceStatus"),QStringLiteral("MISSING")}};
+    }
+    [[nodiscard]] QVariantMap m19() const { return unavailable(); }
+    [[nodiscard]] QVariantMap m20() const { return unavailable(); }
+    [[nodiscard]] QVariantMap m21() const { return unavailable(); }
+    Q_INVOKABLE bool selectPanelSource(int,const QString&) { return false; }
+signals:
+    void changed();
+};
+
 class SourceMetadataPanelSmokeTest final : public QObject {
     Q_OBJECT
 
@@ -3920,8 +3943,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         [&waveformPresentation, &auditionRegion] {
             waveformPresentation.set_displayed_region(auditionRegion.region());
         });
+    // Product screenshots use the real Main/QML/module adapter paths,
+    // but a deliberately NON-AUTHORIZING status object and no fake numbers.
+    UnavailableAnalysisVisualFixture unavailableAnalysisFixture;
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m21ProductStatusViewModel"),&unavailableAnalysisFixture);
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"), &model);
     engine.rootContext()->setContextProperty(
@@ -6796,6 +6824,87 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* m17ReturnAction=find_child_by_name(root,
         QStringLiteral("m17ReturnSourceButton"));
     QVERIFY(m17MasterAction && m17ReturnAction);
+
+    // Genuine Main/DspEditorHost integration review, NOT the old demo
+    // workbench: add all three genuine analysis adapters only AFTER the
+    // FQ99-qualified legacy test sequence has finished. No DSP mutation.
+    dspChainAdapterModel.bindAnalysisStatusViewModel(&unavailableAnalysisFixture);
+    QCoreApplication::processEvents();
+    const std::array<QString,3> analysisKeys{
+        QStringLiteral("M19_ANALYSIS"),QStringLiteral("M20_ANALYSIS"),
+        QStringLiteral("M21_ANALYSIS")};
+    const std::array<QString,3> analysisInstanceIds{
+        QStringLiteral("analysis:rgsml.m19"),
+        QStringLiteral("analysis:rgsml.m20"),
+        QStringLiteral("analysis:rgsml.m21")};
+    const std::array<QString,3> analysisQmlNames{
+        QStringLiteral("m19LevelProductAnalysisEditor"),
+        QStringLiteral("m20TonalStereoProductAnalysisEditor"),
+        QStringLiteral("m21MetricsDeltaProductAnalysisEditor")};
+    const std::array<QString,3> screenshotStems{
+        QStringLiteral("m19-levels"),QStringLiteral("m20-tonal-stereo"),
+        QStringLiteral("m21-metrics-delta")};
+    std::array<QQuickItem*,3> originalPages{};
+    for(int i=0;i<3;++i) {
+        originalPages[static_cast<std::size_t>(i)] =
+            qobject_cast<QQuickItem*>(
+                find_child_by_name(dspEditorHostObj,analysisQmlNames[static_cast<std::size_t>(i)]));
+        QVERIFY2(originalPages[static_cast<std::size_t>(i)]!=nullptr,
+            "Permanent Product analysis page not found in real Main");
+    }
+    for(int i=0;i<3;++i) {
+        const auto index=static_cast<std::size_t>(i);
+        dspChainAdapterModel.selectModuleByInstanceId(analysisInstanceIds[index]);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            dspChainAdapterModel.selected_module()!=nullptr
+                && dspChainAdapterModel.selected_module()->editor_content_key()
+                    ==analysisKeys[index],5000);
+        QTRY_VERIFY_WITH_TIMEOUT(originalPages[index]->isVisible(),5000);
+        QVERIFY(originalPages[index]->isEnabled());
+        QCOMPARE(originalPages[index]->property("authorized").toBool(),false);
+        QCOMPARE(originalPages[index]->property("lifecycle").toString(),
+                 QStringLiteral("MISSING"));
+        QCOMPARE(originalPages[index]->parentItem(),
+                 originalPages[0]->parentItem());
+        for(int j=0;j<3;++j) {
+            if(i==j)continue;
+            const auto other=static_cast<std::size_t>(j);
+            QVERIFY2(!originalPages[other]->isVisible(),
+                "Unselected permanent analysis page must remain hidden");
+            QVERIFY(!originalPages[other]->isEnabled());
+        }
+        for(const QSize size : {QSize{1184,688},QSize{1440,900}}) {
+            const auto png=QStringLiteral("PRODUCT_REAL_MAIN_%1_%2x%3_UNAVAILABLE.png")
+                .arg(screenshotStems[index]).arg(size.width()).arg(size.height());
+            QVERIFY2(capture_visual_evidence(window,png,size),
+                     "Failed genuine Main selected-analysis screenshot");
+            QVERIFY2(check_item_contained_in_ancestor(
+                         originalPages[index],qobject_cast<QQuickItem*>(dspEditorHostObj)),
+                     "Selected genuine analysis page must fit real DSP host");
+        }
+    }
+    dspChainAdapterModel.selectModuleByInstanceId(
+        QStringLiteral("analysis:rgsml.m19"));
+    QTRY_VERIFY_WITH_TIMEOUT(originalPages[0]->isVisible(),5000);
+    for(int i=0;i<3;++i) {
+        QCOMPARE(qobject_cast<QQuickItem*>(
+            find_child_by_name(dspEditorHostObj,analysisQmlNames[static_cast<std::size_t>(i)])),
+            originalPages[static_cast<std::size_t>(i)]);
+    }
+    dspChainAdapterModel.setSelectedIndex(1);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        dspChainAdapterModel.selected_module()!=nullptr
+            && dspChainAdapterModel.selected_module()->editor_content_key()
+                ==QStringLiteral("PARAMETRIC_EQ"),5000);
+    for(auto* page:originalPages) {
+        QVERIFY(!page->isVisible());
+        QVERIFY(!page->isEnabled());
+    }
+    QVERIFY2(check_item_contained_in_ancestor(
+                 qobject_cast<QQuickItem*>(find_child_by_name(
+                     dspEditorHostObj,QStringLiteral("parametricEqEditor"))),
+                 qobject_cast<QQuickItem*>(dspEditorHostObj)),
+             "Original EQ must remain contained after analysis navigation");
 
     window->close();
     QCoreApplication::processEvents();
