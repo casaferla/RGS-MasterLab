@@ -102,7 +102,7 @@ jobs:
   windows-reconciliation:
     name: Windows - M23 true file faults, alias, epoch and persistence
     runs-on: windows-2022
-    timeout-minutes: 75
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
@@ -169,33 +169,18 @@ jobs:
             throw 'M23_BUILD_FAILED'
           }
           Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 5
-      - name: Controlled FQ99/candidate native Qt GUI A1/A2/B1/B2 matrix (diagnostic, nonrelease)
+      - name: Same-binary native Qt execute_process capture-mode matrix (diagnostic, nonrelease)
         shell: pwsh
         run: |
-          # Critical: ALL arms run the FULL Qt smoke with the SAME -v2/-o
-          # args and a fresh process. Only revision and screenshot variable
-          # change. No production QML, layout hint or CTest assertion altered.
+          # #29 proved same EXE & cwd PASS directly, FAIL via CMake wrapper.
+          # Isolate output handling, keeping the whole Qt test unchanged.
           $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
-          & pwsh -NoProfile -File tools/qualification/m23/probe_fq99_candidate_controlled_matrix.ps1 -QtRoot $qtRoot -BoundedReceipt "$env:RUNNER_TEMP/m23-controlled-matrix.txt"
+          & pwsh -NoProfile -File tools/qualification/m23/probe_qt_process_capture_modes.ps1 -QtRoot $qtRoot -OriginalBuild "$env:GITHUB_WORKSPACE/build/m23-native" -BoundedReport "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt"
           if ($LASTEXITCODE -ne 0) {
-            Add-Content "$env:RUNNER_TEMP/m23-controlled-matrix.txt" "MATRIX_PROBE=INCONCLUSIVE_SCRIPT_EXIT_$LASTEXITCODE"
+            Add-Content "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt" "CAPTURE_MODE_PROBE=INCONCLUSIVE_EXIT_$LASTEXITCODE"
           }
-          # Diagnostic does not substitute for the strict CTest gate below.
-          if (Test-Path "$env:RUNNER_TEMP/m23-controlled-matrix.txt") {
-            Get-Content "$env:RUNNER_TEMP/m23-controlled-matrix.txt" -Tail 18
-          }
-      - name: Compare same Qt GUI binaries via repository cwd, CTest cwd and CMake wrapper (diagnostic)
-        shell: pwsh
-        run: |
-          # Controlled-matrix phase 2: all previous A/B arms passed.
-          # Do not change GUI sources or weaken the original CTest gate.
-          $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
-          & pwsh -NoProfile -File tools/qualification/m23/probe_native_gui_invocation_context.ps1 -QtRoot $qtRoot -OriginalBuild "$env:GITHUB_WORKSPACE/build/m23-native" -CleanCandidateBuild "$env:RUNNER_TEMP/rgsml-ab-cand27-build" -BoundedReport "$env:RUNNER_TEMP/m23-gui-context.txt"
-          if ($LASTEXITCODE -ne 0) {
-            Add-Content "$env:RUNNER_TEMP/m23-gui-context.txt" "CONTEXT_PROBE=INCONCLUSIVE_EXIT_$LASTEXITCODE"
-          }
-          if (Test-Path "$env:RUNNER_TEMP/m23-gui-context.txt") {
-            Get-Content "$env:RUNNER_TEMP/m23-gui-context.txt" -Tail 16
+          if (Test-Path "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt") {
+            Get-Content "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt" -Tail 18
           }
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
@@ -244,7 +229,6 @@ jobs:
           path: |
             ${{ runner.temp }}/m23-receipt-windows.json
             ${{ runner.temp }}/m23-failure-bounded.txt
-            ${{ runner.temp }}/m23-controlled-matrix.txt
-            ${{ runner.temp }}/m23-gui-context.txt
+            ${{ runner.temp }}/m23-cmake-capture-modes.txt
           if-no-files-found: ignore
           retention-days: 7
