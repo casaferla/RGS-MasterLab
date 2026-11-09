@@ -234,7 +234,11 @@ jobs:
           foreach($png in $pngs) {
             if ($png.Length -lt 9000) { throw "M19_M21_REAL_MAIN_POSSIBLY_BLANK_$($png.Name)" }
           }
-          "M19_M21_REAL_MAIN_NATIVE_QT_6_SCREENSHOTS_PASS_UNAVAILABLE_STATUS_ONLY"
+          python tools/qualification/m23/check_real_main_png_dimensions.py "$shots"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'M19_M21_REAL_MAIN_PNG_DIMENSION_OR_IDENTITY_MISMATCH'
+          }
+          "M19_M21_REAL_MAIN_QT_6_EXACT_PIXEL_SCREENSHOTS_PASS_NON_FQ"
           Get-Content "$env:RUNNER_TEMP/m19-m21-real-main-ctest.txt" -Tail 4
       - name: Publish six real Windows Main M19-M21 screenshots (visual review only)
         uses: actions/upload-artifact@v4

@@ -6844,6 +6844,74 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const std::array<QString,3> screenshotStems{
         QStringLiteral("m19-levels"),QStringLiteral("m20-tonal-stereo"),
         QStringLiteral("m21-metrics-delta")};
+    // Product Main visual evidence ONLY (non-FQ). The hosted Windows
+    // desktop can clamp a requested 1440x900 top-level window to 1184x749.
+    // Never upscale the clamped native screenshot or silently mislabel it.
+    // If clamped, render the same genuine live Main scenegraph on an
+    // explicitly resized offscreen QtQuick content canvas. Verify that
+    // the elastic DSP host actually reflows, not just the pixel array.
+    const auto captureProductMainAtExactSize =
+        [window,dspEditorHostObj](const QString& name, const QSize target) -> bool {
+        const auto directory=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if(directory.isEmpty()) return true;
+        if(!QDir{}.mkpath(directory)) return false;
+        auto* quick=qobject_cast<QQuickWindow*>(window);
+        auto* host=qobject_cast<QQuickItem*>(dspEditorHostObj);
+        if(!quick||!host) return false;
+        window->resize(target);
+        window->show();
+        QTest::qWait(180);
+        QCoreApplication::processEvents();
+        const QImage native=quick->grabWindow();
+        if(!native.isNull() && native.size()==target) {
+            qInfo().noquote() << "REAL_MAIN_EXACT_NATIVE"
+                << target.width() << target.height();
+            return native.save(QDir{directory}.filePath(name),"PNG");
+        }
+        const QSize actualWindow=window->size();
+        auto* canvas=quick->contentItem();
+        if(!canvas) return false;
+        const QSizeF previousCanvas=canvas->size();
+        const qreal previousHostWidth=host->width();
+        const QSizeF targetCanvas{qreal(target.width()),qreal(target.height())};
+        canvas->setSize(targetCanvas);
+        QTest::qWait(220);
+        QCoreApplication::processEvents();
+        const qreal offscreenHostWidth=host->width();
+        const bool trueReflow=canvas->size()==targetCanvas
+            && (target.width()<=actualWindow.width()
+                || offscreenHostWidth >= previousHostWidth
+                     + (target.width()-actualWindow.width())*0.50);
+        if(!trueReflow) {
+            qWarning().noquote() << "REAL_MAIN_OFFSCREEN_NO_REFLOW"
+                << "requested" << target << "window" << actualWindow
+                << "host-before" << previousHostWidth
+                << "host-after" << offscreenHostWidth
+                << "canvas" << canvas->size();
+            canvas->setSize(previousCanvas);
+            QCoreApplication::processEvents();
+            return false;
+        }
+        const auto grab=canvas->grabToImage(target);
+        if(!grab) {
+            canvas->setSize(previousCanvas);
+            return false;
+        }
+        QSignalSpy ready{grab.data(),&QQuickItemGrabResult::ready};
+        const bool completed=!ready.empty()||ready.wait(15000);
+        const QImage rendered=completed?grab->image():QImage{};
+        canvas->setSize(previousCanvas);
+        QCoreApplication::processEvents();
+        if(rendered.size()!=target) {
+            qWarning().noquote() << "REAL_MAIN_OFFSCREEN_WRONG_PIXELS"
+                << "requested" << target << "actual" << rendered.size();
+            return false;
+        }
+        qInfo().noquote() << "REAL_MAIN_EXACT_OFFSCREEN_NOT_PHYSICAL"
+            << target.width() << target.height()
+            << "native-viewport" << actualWindow;
+        return rendered.save(QDir{directory}.filePath(name),"PNG");
+    };
     std::array<QQuickItem*,3> originalPages{};
     for(int i=0;i<3;++i) {
         originalPages[static_cast<std::size_t>(i)] =
@@ -6876,8 +6944,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         for(const QSize size : {QSize{1184,688},QSize{1440,900}}) {
             const auto png=QStringLiteral("PRODUCT_REAL_MAIN_%1_%2x%3_UNAVAILABLE.png")
                 .arg(screenshotStems[index]).arg(size.width()).arg(size.height());
-            QVERIFY2(capture_visual_evidence(window,png,size),
-                     "Failed genuine Main selected-analysis screenshot");
+            QVERIFY2(captureProductMainAtExactSize(png,size),
+                     "Product Main capture must contain exact native pixels or a genuine enlarged offscreen-reflowed scenegraph");
             QVERIFY2(check_item_contained_in_ancestor(
                          originalPages[index],qobject_cast<QQuickItem*>(dspEditorHostObj)),
                      "Selected genuine analysis page must fit real DSP host");
