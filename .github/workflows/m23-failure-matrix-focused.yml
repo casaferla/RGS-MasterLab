@@ -102,7 +102,7 @@ jobs:
   windows-reconciliation:
     name: Windows - M23 true file faults, alias, epoch and persistence
     runs-on: windows-2022
-    timeout-minutes: 50
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
         with:
@@ -169,18 +169,19 @@ jobs:
             throw 'M23_BUILD_FAILED'
           }
           Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 5
-      - name: Same-binary native Qt execute_process capture-mode matrix (diagnostic, nonrelease)
+      - name: Baseline FQ99 and candidate parent-process launch matrix (diagnostic only)
         shell: pwsh
         run: |
-          # #29 proved same EXE & cwd PASS directly, FAIL via CMake wrapper.
-          # Isolate output handling, keeping the whole Qt test unchanged.
+          # #30: all CMake launch modes FAIL, including NO_CAPTURE.
+          # Compare exact immutable baseline and candidate with/without
+          # PowerShell intermediary; do not touch real Qt test or product.
           $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
-          & pwsh -NoProfile -File tools/qualification/m23/probe_qt_process_capture_modes.ps1 -QtRoot $qtRoot -OriginalBuild "$env:GITHUB_WORKSPACE/build/m23-native" -BoundedReport "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt"
+          & pwsh -NoProfile -File tools/qualification/m23/probe_fq99_parent_chain.ps1 -QtRoot $qtRoot -CandidateBuild "$env:GITHUB_WORKSPACE/build/m23-native" -BoundedReport "$env:RUNNER_TEMP/m23-parent-chain.txt"
           if ($LASTEXITCODE -ne 0) {
-            Add-Content "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt" "CAPTURE_MODE_PROBE=INCONCLUSIVE_EXIT_$LASTEXITCODE"
+            Add-Content "$env:RUNNER_TEMP/m23-parent-chain.txt" "PARENT_CHAIN=INCONCLUSIVE_SCRIPT_EXIT_$LASTEXITCODE"
           }
-          if (Test-Path "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt") {
-            Get-Content "$env:RUNNER_TEMP/m23-cmake-capture-modes.txt" -Tail 18
+          if (Test-Path "$env:RUNNER_TEMP/m23-parent-chain.txt") {
+            Get-Content "$env:RUNNER_TEMP/m23-parent-chain.txt" -Tail 22
           }
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
@@ -229,6 +230,6 @@ jobs:
           path: |
             ${{ runner.temp }}/m23-receipt-windows.json
             ${{ runner.temp }}/m23-failure-bounded.txt
-            ${{ runner.temp }}/m23-cmake-capture-modes.txt
+            ${{ runner.temp }}/m23-parent-chain.txt
           if-no-files-found: ignore
           retention-days: 7
