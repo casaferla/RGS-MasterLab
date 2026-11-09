@@ -169,10 +169,12 @@ jobs:
           ctest --test-dir build/m23-native -C Release --output-on-failure --output-junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" -R '^(rgsml_audio_wav_writer_tests|rgsml_transactional_audio_export_tests|rgsml_m18_windows_candidate_delivery_tests|rgsml_project_session_tests|rgsml_project_package_tests|rgsml_project_json_tests|rgsml_render_preview_tests|rgsml_m23_alpha_diagnostic_tests|render_forbidden_public_contract|rgsml_dsp_module_adapter_tests|rgsml_source_metadata_panel_smoke)$' *> "$env:RUNNER_TEMP/m23-ctest.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-ctest.log" -Tail 60 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
-            # Retain failing Qt assertions even if the CTest summary is long.
+            # The Qt wrapper emits bounded QT_LINE_* failure neighborhoods;
+            # preserve the lines AFTER FAIL! (actual/expected/source) too.
+            # Do not archive or download the complete verbose Qt log.
             Get-Content "$env:RUNNER_TEMP/m23-ctest.log" |
-              Select-String -Pattern 'FAIL!|QFAIL|QWARN|\\.cpp\\([0-9]+\\)|The following tests FAILED' -Context 2,2 |
-              Select-Object -First 25 | Out-String |
+              Select-String -Pattern 'QT_LINE_[0-9]+: FAIL!' -Context 2,14 |
+              Select-Object -First 12 | Out-String -Width 240 |
               Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_REAL_FAULT_CTEST_FAILED'
           }
