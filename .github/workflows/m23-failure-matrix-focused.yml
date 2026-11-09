@@ -60,7 +60,7 @@ jobs:
             tail -n 55 "$RUNNER_TEMP/m23-ctest.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           fi
-          python3 tools/qualification/m23/audit_failure_matrix.py --platform linux --require-existing-executed --junit "$RUNNER_TEMP/m23-ctest-linux.xml" --out "$RUNNER_TEMP/m23-receipt-linux.json" >"$RUNNER_TEMP/m23-audit.log" 2>&1 || {
+          python3 tools/qualification/m23/audit_failure_matrix.py --platform linux --expected-source-sha "$GITHUB_SHA" --require-existing-executed --junit "$RUNNER_TEMP/m23-ctest-linux.xml" --out "$RUNNER_TEMP/m23-receipt-linux.json" >"$RUNNER_TEMP/m23-audit.log" 2>&1 || {
             tail -n 55 "$RUNNER_TEMP/m23-audit.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           }
@@ -133,7 +133,7 @@ jobs:
             Get-Content "$env:RUNNER_TEMP/m23-ctest.log" -Tail 60 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_REAL_FAULT_CTEST_FAILED'
           }
-          python tools/qualification/m23/audit_failure_matrix.py --platform windows --require-existing-executed --junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" --out "$env:RUNNER_TEMP/m23-receipt-windows.json" *> "$env:RUNNER_TEMP/m23-audit.log"
+          python tools/qualification/m23/audit_failure_matrix.py --platform windows --expected-source-sha "$env:GITHUB_SHA" --require-existing-executed --junit "$env:RUNNER_TEMP/m23-ctest-windows.xml" --out "$env:RUNNER_TEMP/m23-receipt-windows.json" *> "$env:RUNNER_TEMP/m23-audit.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-audit.log" -Tail 55 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_EVIDENCE_CONTRACT_FAILED'
