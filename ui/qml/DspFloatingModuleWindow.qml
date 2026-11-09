@@ -10,7 +10,6 @@ Window {
     id: root
     objectName: "dspFloatingModuleWindow"
     property Item editorTarget: null
-    property var analysisStatusViewModel: null
     property string moduleInstanceId: ""
     property string moduleTitle: "Module"
     property color familyAccent: "#718092"
@@ -100,33 +99,5 @@ Window {
         anchors.margins: 10
         visible: root.detached && root.editorTarget !== null
         target: root.editorTarget
-    }
-    // Additive M19–M21 analysis overlay lives in the floating Window,
-    // NOT inside the FQ99-qualified editor host or its ColumnLayout.
-    // Existing floating proxies and qualified editors stay untouched.
-    Loader {
-        id: floatingAnalysisOverlay
-        objectName: "m19M21FloatingProductAnalysisOverlay"
-        readonly property bool analysisSelected:
-            root.editorKind === "M19_ANALYSIS"
-            || root.editorKind === "M20_ANALYSIS"
-            || root.editorKind === "M21_ANALYSIS"
-        active: root.detached && analysisSelected
-        visible: active
-        asynchronous: false
-        z: 10
-        anchors.fill: parent
-        anchors.leftMargin: 22
-        anchors.rightMargin: 22
-        anchors.bottomMargin: 22
-        anchors.topMargin: 70
-        sourceComponent: Component {
-            AnalysisStatusEditor {
-                objectName: "m19M21FloatingProductAnalysisEditor"
-                panelIndex: root.editorKind === "M20_ANALYSIS" ? 1
-                    : root.editorKind === "M21_ANALYSIS" ? 2 : 0
-                statusViewModel: root.analysisStatusViewModel
-            }
-        }
     }
 }
