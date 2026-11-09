@@ -18,6 +18,7 @@ Rectangle {
     property var gainViewModel: null
     property var eqViewModel: null
     property var spectrumViewModel: null
+    property var analysisStatusViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
@@ -55,6 +56,7 @@ Rectangle {
             eqViewModel: root.eqViewModel
             errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
+            analysisStatusViewModel: root.analysisStatusViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
             truePeakLiveViewModel: root.truePeakLiveViewModel
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
@@ -111,6 +113,7 @@ Rectangle {
             eqViewModel: root.eqViewModel
             errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
+            analysisStatusViewModel: root.analysisStatusViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
             truePeakLiveViewModel: root.truePeakLiveViewModel
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
