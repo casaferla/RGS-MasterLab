@@ -12,6 +12,7 @@ namespace rgsml::app {
 class M18ProductExportViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool canExport READ can_export NOTIFY changed)
+    Q_PROPERTY(QString exportReadinessReason READ export_readiness_reason NOTIFY changed)
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
     Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
     Q_PROPERTY(bool exportInProgress READ export_in_progress NOTIFY changed)
@@ -29,6 +30,7 @@ public:
         QObject* parent=nullptr);
 
     [[nodiscard]] bool can_export() const;
+    [[nodiscard]] QString export_readiness_reason() const;
     [[nodiscard]] bool can_cancel() const;
     [[nodiscard]] bool can_acknowledge() const;
     [[nodiscard]] bool export_in_progress() const;
