@@ -11,6 +11,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from xml.etree import ElementTree as ET
 
@@ -138,8 +139,28 @@ def parse_junit(paths: list[Path]) -> dict[str, str]:
     return observations
 
 
+def verify_exact_checked_out_source(root: Path, expected_sha: str | None) -> str | None:
+    """Admit a CI receipt SHA only when Git HEAD matches the runner claim."""
+    if expected_sha is None:
+        return None
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha):
+        raise M23ContractError("M23 expected source SHA must be canonical 40-hex")
+    try:
+        actual = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root, text=True, capture_output=True,
+            check=True, timeout=8,
+        ).stdout.strip()
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise M23ContractError("M23 source identity unavailable") from exc
+    if actual != expected_sha:
+        raise M23ContractError("M23 source SHA differs from checked out HEAD")
+    return actual
+
+
 def build_report(
-    manifest: dict, observations: dict[str, str], platform: str
+    manifest: dict, observations: dict[str, str], platform: str,
+    exact_source_sha: str | None = None
 ) -> dict:
     cases = []
     for c in manifest["cases"]:
@@ -171,6 +192,8 @@ def build_report(
         "baseline_sha": manifest["baseline_sha"],
         "platform": platform,
         "source_contract_valid": True,
+        "exact_source_sha": exact_source_sha,
+        "exact_source_sha_verified": exact_source_sha is not None,
         "passed_existing_suites": sorted(
             k for k,v in observations.items() if v == "EXECUTED_PASS"
         ),
@@ -188,11 +211,13 @@ def build_report(
 
 def run(
     root: Path, matrix: Path, junit: list[Path], platform: str,
-    require_existing_executed: bool
+    require_existing_executed: bool,
+    expected_source_sha: str | None = None
 ) -> dict:
+    verified_sha = verify_exact_checked_out_source(root, expected_source_sha)
     manifest = read_manifest(root, matrix)
     observations = parse_junit(junit)
-    report = build_report(manifest, observations, platform)
+    report = build_report(manifest, observations, platform, verified_sha)
     if require_existing_executed and report["unexecuted_existing_categories"]:
         raise M23ContractError(
             "genuine existing CTest suites not executed cleanly: "
@@ -209,11 +234,12 @@ def main() -> None:
     parser.add_argument("--junit", action="append", default=[], type=Path)
     parser.add_argument("--platform", choices=("windows", "linux"), required=True)
     parser.add_argument("--require-existing-executed", action="store_true")
+    parser.add_argument("--expected-source-sha", type=str)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     result = run(
         args.root, args.matrix, args.junit, args.platform,
-        args.require_existing_executed
+        args.require_existing_executed, args.expected_source_sha
     )
     raw = json.dumps(result, sort_keys=True, indent=2) + "\n"
     if args.out:
