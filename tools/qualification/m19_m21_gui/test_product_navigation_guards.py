@@ -67,7 +67,7 @@ def test_product_binds_status_without_demo() -> None:
     for name, key, index in names:
         assert host.count('objectName: "' + name + '"') == 1
         start = host.index('objectName: "' + name + '"')
-        end = host.index("\\n        }", start)
+        end = host.index("\n        }", start)
         block = host[start:end]
         for fragment in (
             "panelIndex: " + str(index),
