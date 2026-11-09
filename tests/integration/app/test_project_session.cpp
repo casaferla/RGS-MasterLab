@@ -2250,10 +2250,8 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
                 app::internal::M23Operation::EXPORT,
                 app::internal::M23Stage::PREFLIGHT,&observedFailure}};
         app::internal::M23SafetyEvidence diagnosticEvidence{};
-        diagnosticEvidence.source=app::internal::M23Evidence::VERIFIED_UNCHANGED;
-        diagnosticEvidence.gold=app::internal::M23Evidence::VERIFIED_UNCHANGED;
-        diagnosticEvidence.preexisting_destination=
-            app::internal::M23Evidence::VERIFIED_UNCHANGED;
+        // All safety flags stay UNKNOWN until independent byte evidence
+        // is checked below; worker failure alone is not a safety proof.
         // The Project and cleanup are NOT asserted without direct proof;
         // a FAILED worker is never a positive release receipt.
         const auto diagnostic=app::internal::AlphaDiagnosticReport::
