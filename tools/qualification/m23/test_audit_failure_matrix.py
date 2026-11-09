@@ -28,7 +28,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(manifest["release_qualified"])
         counts = {k: sum(c["static_coverage"] == k for c in manifest["cases"])
                   for k in ("existing", "partial", "gap")}
-        self.assertEqual(counts, {"existing": 19, "partial": 1, "gap": 0})
+        self.assertEqual(counts, {"existing": 20, "partial": 0, "gap": 0})
 
     def test_exact_git_head_identity_cannot_be_spoofed(self):
         with self.assertRaises(M23ContractError):
@@ -109,12 +109,12 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(report["m23_closed"])
         self.assertFalse(report["release_qualified"])
         self.assertFalse(report["full_fq_passed"])
-        self.assertEqual(len(report["unexecuted_existing_categories"]), 19)
-        self.assertEqual(len(report["unresolved_categories"]), 1)
+        self.assertEqual(len(report["unexecuted_existing_categories"]), 20)
+        self.assertEqual(len(report["unresolved_categories"]), 0)
         with self.assertRaises(M23ContractError):
             run(ROOT, MATRIX, [], "windows", True)
 
-    def test_real_ctest_names_but_unresolved_gaps_remain_not_qualified(self):
+    def test_all_source_slots_green_still_cannot_mint_release_gate(self):
         manifest = read_manifest(ROOT, MATRIX)
         names = sorted(set(
             c["ctest"] for c in manifest["cases"] if c["ctest"]
@@ -124,7 +124,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
             self.make_junit(junit, names)
             evidence = run(ROOT, MATRIX, [junit], "windows", True)
             self.assertEqual(evidence["unexecuted_existing_categories"], [])
-            self.assertEqual(len(evidence["unresolved_categories"]), 1)
+            self.assertEqual(len(evidence["unresolved_categories"]), 0)
             self.assertEqual(len(evidence["passed_existing_suites"]),len(names))
             self.assertFalse(evidence["m23_closed"])
             self.assertFalse(evidence["frozen_m23_i_p_m_passed"])
