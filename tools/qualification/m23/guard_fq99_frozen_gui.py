@@ -70,46 +70,58 @@ def normalize(path: str, text: str) -> str:
             || root.activeModule.editorContentKey === "M21_ANALYSIS")''',
             '''            || root.activeModule.editorContentKey === "MASTER_MONITOR")''',
         )
-        return text
-    if path == "ui/qml/DspWorkspace.qml":
-        text = remove_exact(text, "    property var analysisStatusViewModel: null\n")
-        return remove_exact(text, "            analysisStatusViewModel: root.analysisStatusViewModel\n", count=2)
-    if path == "ui/qml/Main.qml":
-        # New analysis is hosted in the existing MAIN dock slot, never
-        # in the previously qualified DSP host scenegraph.
-        text = remove_exact(text, '''    // M19–M21: new analysis content lives at the DOCK-SLOT layer.
-    // Do NOT insert any child (even an inactive Loader) into the FQ99
-    // DspEditorHost scenegraph: the native minimum-window test proves
-    // such new children perturb the qualified Parametric EQ allocation.
-    // This overlay is strictly limited to NEW analysis selections.
-    Loader {
-        id: dockedProductAnalysis
-        objectName: "m19M21DockSlotAnalysisLoader"
-        parent: root.activeDockSlot()
-        readonly property bool analysisSelected:
-            root.statusDspKey === "M19_ANALYSIS"
-            || root.statusDspKey === "M20_ANALYSIS"
-            || root.statusDspKey === "M21_ANALYSIS"
-        active: analysisSelected && !root.editorDetached
-        visible: active
-        asynchronous: false
-        z: 10
-        anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-        anchors.bottomMargin: 12
-        anchors.topMargin: 60
-        sourceComponent: Component {
-            AnalysisStatusEditor {
-                objectName: "m19M21ProductAnalysisEditor"
-                panelIndex: root.statusDspKey === "M20_ANALYSIS" ? 1
-                    : root.statusDspKey === "M21_ANALYSIS" ? 2 : 0
-                statusViewModel: realDspWorkspace.analysisStatusViewModel
+        return remove_exact(text, '''    // M19–M21: no new QQuickItem or Loader is present while any FQ99
+    // module (including EQ and M16) is selected. Only this inert QML
+    // Component definition is retained. Instantiate its view ON DEMAND,
+    // then destroy it before returning to a qualified module. The FQ99
+    // ColumnLayout and its existing children remain completely unchanged.
+    property var productAnalysisSurface: null
+
+    function syncProductAnalysisSurface() {
+        const key = root.activeModule
+            ? root.activeModule.editorContentKey : ""
+        const analysisSelected = key === "M19_ANALYSIS"
+            || key === "M20_ANALYSIS" || key === "M21_ANALYSIS"
+        if (!analysisSelected) {
+            if (root.productAnalysisSurface) {
+                root.productAnalysisSurface.destroy()
+                root.productAnalysisSurface = null
             }
+            return
+        }
+        if (!root.productAnalysisSurface)
+            root.productAnalysisSurface = productAnalysisFactory.createObject(root)
+    }
+
+    onActiveModuleChanged: root.syncProductAnalysisSurface()
+    Component.onCompleted: root.syncProductAnalysisSurface()
+
+    Component {
+        id: productAnalysisFactory
+        AnalysisStatusEditor {
+            objectName: "m19M21ProductAnalysisEditor"
+            z: 10
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.top: parent.top
+            anchors.leftMargin: root.height < 470 ? 8 : 12
+            anchors.rightMargin: anchors.leftMargin
+            anchors.bottomMargin: anchors.leftMargin
+            anchors.topMargin: root.height < 470 ? 47 : 60
+            panelIndex: root.activeModule
+                && root.activeModule.editorContentKey === "M20_ANALYSIS" ? 1
+                : root.activeModule
+                && root.activeModule.editorContentKey === "M21_ANALYSIS" ? 2 : 0
+            statusViewModel: root.analysisStatusViewModel
         }
     }
 
 ''')
+    if path == "ui/qml/DspWorkspace.qml":
+        text = remove_exact(text, "    property var analysisStatusViewModel: null\n")
+        return remove_exact(text, "            analysisStatusViewModel: root.analysisStatusViewModel\n", count=2)
+    if path == "ui/qml/Main.qml":
         return remove_exact(
             text,
             '''            analysisStatusViewModel: typeof m21ProductStatusViewModel !== "undefined"
