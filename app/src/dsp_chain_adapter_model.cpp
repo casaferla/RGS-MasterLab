@@ -97,6 +97,18 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         moduleAdapters_.push_back(std::move(limiter));
     }
 
+    // Visual order: M17, M19 Levels, M20 Tonal/Stereo, M21 Delta,
+    // Master Audition. These observers are not ProcessingChain modules.
+    if(analysisStatusViewModel_) {
+        for(const int milestone:{19,20,21}) {
+            auto panel=std::make_unique<ProductAnalysisModuleAdapter>(
+                milestone,analysisStatusViewModel_,workflowContext_);
+            connect(panel.get(),&DspModuleAdapter::changed,
+                    this,&DspChainAdapterModel::changed);
+            moduleAdapters_.push_back(std::move(panel));
+        }
+    }
+
     // The utility comes after M17 in the VISUAL chain only.
     // No ModuleRegistry/ProcessingChain insert and no audio transform.
     if (terminalMonitorViewModel_) {
@@ -199,6 +211,14 @@ void DspChainAdapterModel::selectModuleByInstanceId(const QString& instanceId)
             return;
         }
     }
+}
+
+void DspChainAdapterModel::bindAnalysisStatusViewModel(QObject* statusVm)
+{
+    if(analysisStatusViewModel_==statusVm)return;
+    analysisStatusViewModel_=statusVm;
+    rebuild_adapters_from_authority();
+    emit changed();
 }
 
 void DspChainAdapterModel::refreshFromAuthority()
