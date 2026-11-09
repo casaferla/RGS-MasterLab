@@ -176,7 +176,7 @@ jobs:
           # args and a fresh process. Only revision and screenshot variable
           # change. No production QML, layout hint or CTest assertion altered.
           $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
-          & pwsh -NoProfile -File tools/qualification/m23/probe_fq99_candidate_controlled_matrix.ps1 -QtRoot $qtRoot -CandidateBuild "$env:GITHUB_WORKSPACE/build/m23-native" -BoundedReceipt "$env:RUNNER_TEMP/m23-controlled-matrix.txt"
+          & pwsh -NoProfile -File tools/qualification/m23/probe_fq99_candidate_controlled_matrix.ps1 -QtRoot $qtRoot -BoundedReceipt "$env:RUNNER_TEMP/m23-controlled-matrix.txt"
           if ($LASTEXITCODE -ne 0) {
             Add-Content "$env:RUNNER_TEMP/m23-controlled-matrix.txt" "MATRIX_PROBE=INCONCLUSIVE_SCRIPT_EXIT_$LASTEXITCODE"
           }
