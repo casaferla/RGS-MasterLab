@@ -1117,45 +1117,11 @@ ApplicationWindow {
         }
     }
 
-    // M19–M21 remain OUTSIDE every FQ99-qualified DspEditorHost:
-    // their observer is created only when an analysis row is selected.
-    // The legacy host, its LayoutItemProxy and ALL its children are untouched.
-    // Parent to the existing dock slot, never to the DSP host or a Layout.
-    Loader {
-        id: mainProductAnalysisOverlay
-        objectName: "m19M21MainProductAnalysisOverlay"
-        parent: root.activeDockSlot()
-        readonly property bool analysisSelected:
-            root.statusDspKey === "M19_ANALYSIS"
-            || root.statusDspKey === "M20_ANALYSIS"
-            || root.statusDspKey === "M21_ANALYSIS"
-        active: analysisSelected && !root.editorDetached
-        visible: active
-        asynchronous: false
-        z: 10
-        anchors.fill: parent
-        anchors.leftMargin: root.dockedEditorHost
-            && root.dockedEditorHost.height < 470 ? 8 : 12
-        anchors.rightMargin: anchors.leftMargin
-        anchors.bottomMargin: anchors.leftMargin
-        anchors.topMargin: root.dockedEditorHost
-            && root.dockedEditorHost.height < 470 ? 47 : 60
-        sourceComponent: Component {
-            AnalysisStatusEditor {
-                objectName: "m19M21ProductAnalysisEditor"
-                panelIndex: root.statusDspKey === "M20_ANALYSIS" ? 1
-                    : root.statusDspKey === "M21_ANALYSIS" ? 2 : 0
-                statusViewModel: realDspWorkspace.analysisStatusViewModel
-            }
-        }
-    }
-
     // The FIRST floating module retains the exact original Main host.
     // Subsequent native windows are created only for other instance IDs.
     DspFloatingModuleWindow {
         id: floatingModuleWindow
         editorTarget: realDspWorkspace.editorHost
-        analysisStatusViewModel: realDspWorkspace.analysisStatusViewModel
         moduleInstanceId: root.primaryDetachedInstanceId
         editorKind: root.primaryDetachedModule
             ? root.primaryDetachedModule.editorContentKey : ""
@@ -1171,7 +1137,6 @@ ApplicationWindow {
     Component {
         id: additionalFloatingWindowFactory
         DspFloatingModuleWindow {
-            analysisStatusViewModel: realDspWorkspace.analysisStatusViewModel
             onRedockRequested: function(id) { root.dockFloatingById(id) }
         }
     }
