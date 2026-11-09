@@ -227,13 +227,6 @@ Rectangle {
             }
 
             ColumnLayout {
-                // One fixed title slot prevents Input Gain -> Parametric EQ
-                // (or any other selection) from pushing Undo/Redo sideways
-                // when the header is close to its minimum usable width.
-                // The 22-DIP undock slot and the A/B controls stay unchanged.
-                Layout.minimumWidth: 188
-                Layout.preferredWidth: 188
-                Layout.maximumWidth: 188
                 spacing: 1
                 Text {
                     objectName: "dspHostModuleTitle"
@@ -451,8 +444,7 @@ Rectangle {
                 visible: root.isLimiterEditor && !root.m17Preparing
                 objectName: "m17PrepareButton"
                 text: "Prepare"
-                // Shared physical slot, including Qt font metrics on Windows.
-                minimumControlWidth: 124
+                minimumControlWidth: 86
                 accentColor: "#C4774A"
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
@@ -486,7 +478,7 @@ Rectangle {
                 text: "Cancel"
                 // Same fixed slot as Prepare: Rate & Time must never jump
                 // horizontally during an in-flight full-resource job.
-                minimumControlWidth: 124
+                minimumControlWidth: 86
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
