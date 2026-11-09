@@ -40,26 +40,52 @@ def test_product_binds_status_without_demo() -> None:
     assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
     assert "selectPanelSource(" in editor
     assert "fixtureMode" not in editor
-    # Candidate #27: unlike an inactive Loader, a QML Component is NOT a
-    # QQuickItem. Legacy FQ99 selections never instantiate the new view:
-    # selection change destroys it before returning to the old editor.
+    # Permanent M16-pattern pages: exactly one M19/M20/M21 instance per
+    # host, created declaratively once and kept when a different DSP is
+    # selected. The existing qualified ColumnLayout is the geometry owner;
+    # hiding the page excludes it from layout allocation.
     host = read("ui/qml/DspEditorHost.qml")
     main_qml = read("ui/qml/Main.qml")
-    assert 'objectName: "m19M21DockSlotAnalysisLoader"' not in main_qml
-    assert 'objectName: "m19M21ProductAnalysisLoader"' not in host
-    assert "property var productAnalysisSurface: null" in host
-    assert "Component {\n        id: productAnalysisFactory" in host
-    assert "productAnalysisFactory.createObject(root)" in host
-    assert "root.productAnalysisSurface.destroy()" in host
-    assert "onActiveModuleChanged: root.syncProductAnalysisSurface()" in host
-    assert 'objectName: "m19M21ProductAnalysisEditor"' in host
-    # No new layout child is inserted between any frozen M16/M17/Monitor
-    # editor siblings. The factory follows the old ColumnLayout close.
-    assert host.index('objectName: "stereoMsEditor"') < host.index(
-        "property var productAnalysisSurface: null"
+    names = (
+        ("m19LevelProductAnalysisEditor", "M19_ANALYSIS", 0),
+        ("m20TonalStereoProductAnalysisEditor", "M20_ANALYSIS", 1),
+        ("m21MetricsDeltaProductAnalysisEditor", "M21_ANALYSIS", 2),
     )
-    assert host.index("property var productAnalysisSurface: null") < host.index(
-        'objectName: "m17RateTimePopup"'
+    assert host.count("AnalysisStatusEditor {") == 3
+    assert 'objectName: "m19M21DockSlotAnalysisLoader"' not in main_qml
+    assert "property var productAnalysisSurface" not in host
+    assert "productAnalysisFactory" not in host
+    assert ".createObject(" not in host
+    assert ".destroy()" not in host
+    assert "onActiveModuleChanged: root.syncProductAnalysisSurface()" not in host
+    assert host.index('objectName: "truePeakLimiterEditor"') < host.index(
+        'objectName: "m19LevelProductAnalysisEditor"'
+    )
+    assert host.index('objectName: "m21MetricsDeltaProductAnalysisEditor"') < host.index(
+        'objectName: "monitorEditor"'
+    )
+    for name, key, index in names:
+        assert host.count('objectName: "' + name + '"') == 1
+        start = host.index('objectName: "' + name + '"')
+        end = host.index("\\n        }", start)
+        block = host[start:end]
+        for fragment in (
+            "panelIndex: " + str(index),
+            'editorContentKey === "' + key + '"',
+            "statusViewModel: root.analysisStatusViewModel",
+            "enabled: visible",
+            "Layout.fillWidth: true",
+            "Layout.fillHeight: true",
+            "Layout.minimumWidth: 0",
+            "Layout.minimumHeight: 0",
+            "Layout.preferredHeight: 0",
+        ):
+            assert fragment in block, (name, fragment)
+    assert host.index('objectName: "m19LevelProductAnalysisEditor"') < host.index(
+        'objectName: "m20TonalStereoProductAnalysisEditor"'
+    )
+    assert host.index('objectName: "m20TonalStereoProductAnalysisEditor"') < host.index(
+        'objectName: "m21MetricsDeltaProductAnalysisEditor"'
     )
     ui = read("ui/CMakeLists.txt")
     assert "qml/AnalysisStatusEditor.qml" in ui
