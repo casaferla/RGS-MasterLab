@@ -47,6 +47,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QDir>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -68,6 +69,10 @@
 #include <vector>
 #include <utility>
 #include <type_traits>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
 
 static_assert(std::is_same_v<
     decltype(&rgsml::app::internal::M18ProductCompleteBinding::bind),
@@ -1864,12 +1869,20 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     const auto originalBytes=inputBefore.readAll();
     inputBefore.close();
     QVERIFY(!originalBytes.isEmpty());
+    // Independent on-disk REFERENCE/GOLD: byte-identical contents, distinct
+    // Windows file identity. Both direct and hard-link output aliases must
+    // be rejected by the actual Product's exported WAV transaction.
+    const auto m23GoldPath=directory.filePath(
+        QStringLiteral("m23-product-REFERENCE.wav"));
+    QVERIFY(QFile::copy(sourcePath,m23GoldPath));
 
     Session session;
     // SOURCE commits in the actual application reset defaults for the
     // incoming file. Configure the four active DSPs only AFTER that reset.
     session.source.selectSource(QUrl::fromLocalFile(sourcePath));
     QVERIFY(session.source.has_source());
+    session.gold.selectGold(QUrl::fromLocalFile(m23GoldPath));
+    QVERIFY(session.gold.has_gold());
     // The actual product session's installed four-module chain must be
     // exercised, not four manually synthesized test-only DSP instances.
     // Fixed Input Gain stays first; the remaining user-editable modules
@@ -2197,6 +2210,43 @@ m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation()
     QVERIFY(rejectedWorker);
 
     M18PrivateProductExportAction exporter{bound,fanout};
+    // M23 real Product FULL rejection against selected REFERENCE/GOLD,
+    // including a second pathname to its same Windows file identity.
+    const auto m23AliasPath=directory.filePath(
+        QStringLiteral("m23-product-REFERENCE-hardlink.wav"));
+    const auto goldNative=QDir::toNativeSeparators(m23GoldPath);
+    const auto aliasNative=QDir::toNativeSeparators(m23AliasPath);
+    QVERIFY(::CreateHardLinkW(
+        reinterpret_cast<LPCWSTR>(aliasNative.utf16()),
+        reinterpret_cast<LPCWSTR>(goldNative.utf16()),nullptr)!=FALSE);
+    const auto readBytes=[](const QString& path) {
+        QFile file{path};
+        if(!file.open(QIODevice::ReadOnly))return QByteArray{};
+        return file.readAll();
+    };
+    for(const auto& rejectedPath:{m23GoldPath,m23AliasPath}) {
+        const auto deniedRef=platform::windows::WindowsResourceWriter::
+            make_write_reference(rejectedPath.toUtf8().toStdString(),
+                QFileInfo{rejectedPath}.fileName().toUtf8().toStdString());
+        QVERIFY(deniedRef);
+        QVERIFY(M22ProductVerifiedDispatch::begin_full(
+            bound,fanout,exporter,verified,*deniedRef.value(),
+            audio::WavSampleFormat::IEEE_F32,std::nullopt,
+            terminal.value()->parameters().ceiling_db_tp(),true));
+        QTRY_VERIFY_WITH_TIMEOUT(exporter.snapshot().phase==
+            app::internal::M18PrivateAsyncExportSession::Phase::FAILED,
+            30000);
+        QCOMPARE(exporter.snapshot().failure_code,
+                 std::optional{core::ErrorCode::InvalidState});
+        QVERIFY(!exporter.snapshot().verified_file_size_bytes);
+        QCOMPARE(exporter.snapshot().verified_encoded_sha256,std::string{});
+        QCOMPARE(readBytes(sourcePath),originalBytes);
+        QCOMPARE(readBytes(m23GoldPath),originalBytes);
+        QCOMPARE(readBytes(m23AliasPath),originalBytes);
+        QVERIFY(exporter.acknowledge());
+        QVERIFY(M18ProductCompleteBinding::can_offer_verified_master(
+            bound,fanout));
+    }
     const auto filePath=directory.filePath(
         QStringLiteral("m22-real-output-44100-f32.wav"));
     auto destination=platform::windows::WindowsResourceWriter::
