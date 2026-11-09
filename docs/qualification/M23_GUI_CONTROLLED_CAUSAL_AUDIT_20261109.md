@@ -77,3 +77,56 @@ diagnostic identify the first layout divergence, with object identity,
 `ColumnLayout` geometry and bounded polish trace. A future permanent
 M16-style panel integration is the preferred architectural objective,
 subject to actual evidence and PO approval.
+
+## Results — CI #28 and next discriminating experiment (9 November 2026)
+
+CI #28 https://github.com/casaferla/RGS-MasterLab/actions/runs/42674647315
+SHA `321161cd32eca9868a69a20a5ba4ea3b3267cebf`:
+Linux portable source/CTest job PASS. Windows original FULL M23 CTest gate still FAIL
+only `rgsml_source_metadata_panel_smoke`; 10 of 11 CTests pass, same EQ
+992x612 inside host 732x475. Artifact Windows `13701880038`:
+`m23-failure-bounded.txt` and `m23-controlled-matrix.txt`.
+
+**Controlled matrix observed (all FULL 16-case native Qt smoke):**
+- B1 candidate #27, screenshot explicitly OFF: PASS, 16/16, 22.4 seconds.
+- B2 SAME candidate binary, screenshot ON: PASS, 16/16, 67.2 seconds.
+- A1 FQ99, screenshot explicitly OFF: PASS, 16/16, 19 seconds.
+- A2 SAME FQ99 binary, screenshot ON: PASS, 16/16, 66.9 seconds.
+- Repeated B1 candidate screenshot OFF: PASS, 16/16, 18.9 seconds.
+Both immutable SHA builds succeeded; Qt 6.8.3 MSVC and native backend,
+same working directory and full test invocation were used.
+
+**Updated inference:** screenshot capture is NOT required for candidate #27 to
+pass. A clean candidate #27 independently built without any analysis QML
+ablation passes the complete Qt smoke. The original workflow's failure is
+therefore conditional on a DIFFERENCE NOT CONTROLLED in the previous matrix:
+(1) binary/build graph (original M23 multi-target build versus clean focused
+smoke build), (2) working directory (CTest's test directory versus matrix's
+repository root), (3) CMake wrapper/CTest execution/environment. The results
+DO NOT establish which of these factors is causal. No GUI patch authorized.
+
+**Pre-registered follow-up, no production edits:** phase-2 invocation-context
+probe `tools/qualification/m23/probe_native_gui_invocation_context.ps1`
+runs the EXACT SAME compiled executable from root and from CTest's test cwd,
+then via the unmodified CMake wrapper in that test cwd, screenshot OFF, full
+suite, bounded failures/totals. Repeat for (i) original M23 gate binary and
+(ii) clean candidate #27 matrix binary. Record executable SHA256, Qt root and
+workdir. Six arms C0–C5; original strict M23 CTest still executes and may fail,
+which must never be concealed by diagnostic PASS. No app, QML, C++ test, DSP,
+FIR or old qualified GUI is modified. Read bounded artifacts only.
+
+### Interpretation
+- Original binary FAILS in all contexts, clean candidate binary PASSES:
+  investigate build graph / QML generated resources / cache identity.
+- Same binary passes from root, FAILS from test directory: investigate cwd
+  and relative resource/bootstrap paths; test fidelity versus product behavior.
+- Same binary passes direct but FAILS through wrapper: investigate wrapper
+  Qt QML environment / timing / test process semantics.
+- Both variants pass in controlled context and CTest remains RED:
+  inspect CTest environment modification and prior-test/order interactions,
+  maintaining the original strict geometry assertion.
+- If results fluctuate across repeated equivalent runs, characterize
+  scheduling or nondeterminism rather than changing editor geometry.
+
+**NO release or merge, PR #99 remains Draft; goal is causal explanation
+before any changes to qualified GUI or speculative permanence policy.**
