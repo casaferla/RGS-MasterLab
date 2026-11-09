@@ -40,21 +40,24 @@ def test_product_binds_status_without_demo() -> None:
     assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
     assert "selectPanelSource(" in editor
     assert "fixtureMode" not in editor
-    # Regression #23: the merely hidden analysis child in the existing
-    # ColumnLayout prevented FQ99 Parametric EQ from resizing on native
-    # Windows. New analysis may only be instantiated lazily as an overlay
-    # OUTSIDE that existing layout, leaving original child allocation alone.
+    # M16 is the proven analysis integration. M19-M21 use the same
+    # host/ColumnLayout allocation contract, but the NEW AnalysisStatusEditor
+    # is never instantiated during selection of pre-FQ99 DSPs. Without
+    # this lazy gate, its implicit 640x360 dimensions distorted the EQ host.
     host = read("ui/qml/DspEditorHost.qml")
-    assert 'objectName: "m19M21ProductAnalysisOverlay"' in host
-    assert "Loader {" in host
+    assert 'objectName: "m19M21ProductAnalysisLoader"' in host
     assert "active: analysisSelected" in host
+    assert "visible: analysisSelected" in host
+    assert "Layout.minimumHeight: 0" in host
+    assert "Layout.preferredHeight: 0" in host
     assert 'objectName: "m19M21ProductAnalysisEditor"' in host
-    assert host.index('objectName: "stereoMsEditor"') < host.index(
-        'objectName: "m19M21ProductAnalysisOverlay"'
+    assert host.index('objectName: "truePeakMeterEditor"') < host.index(
+        'objectName: "m19M21ProductAnalysisLoader"'
     )
-    assert host.index('objectName: "m19M21ProductAnalysisOverlay"') < host.index(
-        'objectName: "m17RateTimePopup"'
+    assert host.index('objectName: "m19M21ProductAnalysisLoader"') < host.index(
+        'objectName: "monitorEditor"'
     )
+    assert 'objectName: "m19M21ProductAnalysisOverlay"' not in host
     ui = read("ui/CMakeLists.txt")
     assert "qml/AnalysisStatusEditor.qml" in ui
     assert "qml/M19M21AnalysisWorkbenchPreview.qml" not in ui
