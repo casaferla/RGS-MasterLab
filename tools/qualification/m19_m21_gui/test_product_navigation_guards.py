@@ -40,6 +40,21 @@ def test_product_binds_status_without_demo() -> None:
     assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
     assert "selectPanelSource(" in editor
     assert "fixtureMode" not in editor
+    # Regression #23: the merely hidden analysis child in the existing
+    # ColumnLayout prevented FQ99 Parametric EQ from resizing on native
+    # Windows. New analysis may only be instantiated lazily as an overlay
+    # OUTSIDE that existing layout, leaving original child allocation alone.
+    host = read("ui/qml/DspEditorHost.qml")
+    assert 'objectName: "m19M21ProductAnalysisOverlay"' in host
+    assert "Loader {" in host
+    assert "active: analysisSelected" in host
+    assert 'objectName: "m19M21ProductAnalysisEditor"' in host
+    assert host.index('objectName: "stereoMsEditor"') < host.index(
+        'objectName: "m19M21ProductAnalysisOverlay"'
+    )
+    assert host.index('objectName: "m19M21ProductAnalysisOverlay"') < host.index(
+        'objectName: "m17RateTimePopup"'
+    )
     ui = read("ui/CMakeLists.txt")
     assert "qml/AnalysisStatusEditor.qml" in ui
     assert "qml/M19M21AnalysisWorkbenchPreview.qml" not in ui
