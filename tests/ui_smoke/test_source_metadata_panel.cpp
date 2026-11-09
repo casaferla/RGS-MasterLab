@@ -1584,15 +1584,25 @@ Window {
     QVERIFY2(owned,qPrintable(component.errorString()));
     auto* dockWindow=qobject_cast<QQuickWindow*>(owned.data());
     QVERIFY(dockWindow);
-    auto* editor=qobject_cast<QQuickItem*>(
-        owned->property("dockingProofEditorObject").value<QObject*>());
-    auto* floating=qobject_cast<QQuickWindow*>(
-        owned->property("dockingProofFloatingObject").value<QObject*>());
-    auto* dockProxy=qobject_cast<QQuickItem*>(
-        owned->property("dockingProofDockProxyObject").value<QObject*>());
-    QVERIFY2(editor,"QML fixture must expose the real persistent editor");
-    QVERIFY2(floating,"QML fixture must expose its real native floating Window");
-    QVERIFY2(dockProxy,"QML fixture must expose the actual dock LayoutItemProxy");
+    // QML object aliases are typed QQuickItem*/QQuickWindow* QVariant
+    // values; requesting QObject* alone can return nullptr on Qt 6 MSVC.
+    // Read the actual alias type first, then its QObject* base if exposed.
+    const auto editorAlias=owned->property("dockingProofEditorObject");
+    const auto windowAlias=owned->property("dockingProofFloatingObject");
+    const auto proxyAlias=owned->property("dockingProofDockProxyObject");
+    auto* editor=editorAlias.value<QQuickItem*>();
+    if(!editor)editor=qobject_cast<QQuickItem*>(editorAlias.value<QObject*>());
+    auto* floating=windowAlias.value<QQuickWindow*>();
+    if(!floating)floating=qobject_cast<QQuickWindow*>(windowAlias.value<QObject*>());
+    auto* dockProxy=proxyAlias.value<QQuickItem*>();
+    if(!dockProxy)dockProxy=qobject_cast<QQuickItem*>(proxyAlias.value<QObject*>());
+    const QString aliasTypes=QStringLiteral("alias metatypes editor=%1 window=%2 proxy=%3")
+        .arg(QString::fromUtf8(editorAlias.metaType().name()))
+        .arg(QString::fromUtf8(windowAlias.metaType().name()))
+        .arg(QString::fromUtf8(proxyAlias.metaType().name()));
+    QVERIFY2(editor,qPrintable(QStringLiteral("Persistent editor missing; ")+aliasTypes));
+    QVERIFY2(floating,qPrintable(QStringLiteral("Floating Window missing; ")+aliasTypes));
+    QVERIFY2(dockProxy,qPrintable(QStringLiteral("Dock proxy missing; ")+aliasTypes));
     dockWindow->show();
     QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
     QCOMPARE(editor->property("edits").toInt(),17);
@@ -4669,10 +4679,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
              QStringLiteral("Parametric EQ"));
     window->resize(QSize{1184, 688});
     QTest::qWait(80);
+    const QString eqTitleGeometry=QStringLiteral(
+        "FIX-UI-004: title=%1, rendered width=%2, implicit width=%3, chain width=%4")
+        .arg(chainEqTitle->property("text").toString())
+        .arg(chainEqTitle->width()).arg(chainEqTitle->implicitWidth())
+        .arg(dspChainRow1->width());
     QVERIFY2(!chainEqTitle->property("truncated").toBool(),
-             "FIX-UI-004: Parametric EQ title must not be elided");
+             qPrintable(eqTitleGeometry));
     QVERIFY2(chainEqTitle->implicitWidth() <= chainEqTitle->width() + 0.5,
-             "FIX-UI-004: full 12px title must fit without scaling");
+             qPrintable(eqTitleGeometry));
 
     // Verify Compressor Editor components
     auto* compressorEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("compressorEditor"));
