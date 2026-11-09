@@ -46,12 +46,19 @@ Rectangle {
         // than reserving a permanently empty footer.
         spacing: 2
 
-        // Unified toolbar: fixed control scale at every supported width.
-        RowLayout {
+        // The six immutable-size controls require more width than the native
+        // 1184px window allocates to this editor. Reflow the same real
+        // controls into two rows when narrow, never shrink, clip, elide or
+        // horizontally scroll them. The wide layout remains one row.
+        GridLayout {
+            id: eqTopToolbar
             objectName: "eqTopToolbarRegion"
+            readonly property bool compact: root.width < 740
+            columns: compact ? 3 : 8
             Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            spacing: 6
+            Layout.preferredHeight: compact ? 66 : 32
+            columnSpacing: 6
+            rowSpacing: 2
 
             StudioToggle {
                 objectName: "bandEnabledToggle"
@@ -61,7 +68,10 @@ Rectangle {
                 Accessible.name: "Enable or disable band"
             }
 
-            Item { Layout.fillWidth: true }
+            Item {
+                visible: !eqTopToolbar.compact
+                Layout.fillWidth: true
+            }
 
             StudioButton {
                 objectName: "eqResetFlatButton"
@@ -133,7 +143,12 @@ Rectangle {
                 }
             }
 
-            Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
+            Rectangle {
+                visible: !eqTopToolbar.compact
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 20
+                color: "#2C5A78"
+            }
 
             StudioButton {
                 objectName: "addBandButton"
