@@ -211,10 +211,9 @@ jobs:
       - name: Capture real Main selected M19-M21 pages at 1184 and 1440 (non-FQ)
         shell: pwsh
         run: |
-          # Strict M23 native CTest above already PASSED without screenshot
-          # environment. This is a separate full Qt smoke visualization pass.
-          # Genuine Main / actual AnalysisStatusEditor, not demo workbench;
-          # injected status fixture is fail-closed (NO numeric Product authority).
+          # Original strict M23 native CTests run first, unchanged and
+          # without screenshot env. This is an independent full Qt smoke
+          # visualization pass, never a replacement for qualification.
           $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
           $env:PATH="$qtRoot/bin;$env:PATH"
           $env:QML2_IMPORT_PATH="$qtRoot/qml"
@@ -223,16 +222,7 @@ jobs:
           $shots="$env:RUNNER_TEMP/m19-m21-real-main-screenshots"
           New-Item -ItemType Directory -Path $shots -Force | Out-Null
           $env:RGSML_GUI01_EVIDENCE_DIR=$shots
-          ctest --test-dir build/m23-native -C Release --output-on-failure -R '^rgsml_source_metadata_panel_smoke        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: RGS-M23-Bounded-Windows
-          path: |
-            ${{ runner.temp }}/m23-receipt-windows.json
-            ${{ runner.temp }}/m23-failure-bounded.txt
-          if-no-files-found: ignore
-          retention-days: 7
- *> "$env:RUNNER_TEMP/m19-m21-real-main-ctest.txt"
+          ctest --test-dir build/m23-native -C Release --output-on-failure -R '^rgsml_source_metadata_panel_smoke$' *> "$env:RUNNER_TEMP/m19-m21-real-main-ctest.txt"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m19-m21-real-main-ctest.txt" -Tail 35 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M19_M21_REAL_MAIN_VISUAL_SMOKE_FAILED'
