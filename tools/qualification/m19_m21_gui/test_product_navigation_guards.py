@@ -40,22 +40,26 @@ def test_product_binds_status_without_demo() -> None:
     assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
     assert "selectPanelSource(" in editor
     assert "fixtureMode" not in editor
-    # Windows A/B #23/#24/#25 demonstrated that even an inactive NEW
-    # QQuickItem/Loader anywhere inside FQ99's DspEditorHost tree
-    # makes the legacy Parametric EQ stop shrinking to dock allocation.
-    # M16 remains the prior validated non-processing analysis service;
-    # new M19-21 content must be hosted independently in Main dock slot.
+    # Candidate #27: unlike an inactive Loader, a QML Component is NOT a
+    # QQuickItem. Legacy FQ99 selections never instantiate the new view:
+    # selection change destroys it before returning to the old editor.
     host = read("ui/qml/DspEditorHost.qml")
     main_qml = read("ui/qml/Main.qml")
+    assert 'objectName: "m19M21DockSlotAnalysisLoader"' not in main_qml
     assert 'objectName: "m19M21ProductAnalysisLoader"' not in host
-    assert 'objectName: "m19M21ProductAnalysisOverlay"' not in host
-    assert 'AnalysisStatusEditor {' not in host
-    assert 'objectName: "m19M21DockSlotAnalysisLoader"' in main_qml
-    assert 'parent: root.activeDockSlot()' in main_qml
-    assert 'active: analysisSelected && !root.editorDetached' in main_qml
-    assert 'objectName: "m19M21ProductAnalysisEditor"' in main_qml
-    assert main_qml.index('objectName: "m19M21DockSlotAnalysisLoader"') < main_qml.index(
-        'id: floatingModuleWindow'
+    assert "property var productAnalysisSurface: null" in host
+    assert "Component {\n        id: productAnalysisFactory" in host
+    assert "productAnalysisFactory.createObject(root)" in host
+    assert "root.productAnalysisSurface.destroy()" in host
+    assert "onActiveModuleChanged: root.syncProductAnalysisSurface()" in host
+    assert 'objectName: "m19M21ProductAnalysisEditor"' in host
+    # No new layout child is inserted between any frozen M16/M17/Monitor
+    # editor siblings. The factory follows the old ColumnLayout close.
+    assert host.index('objectName: "stereoMsEditor"') < host.index(
+        "property var productAnalysisSurface: null"
+    )
+    assert host.index("property var productAnalysisSurface: null") < host.index(
+        'objectName: "m17RateTimePopup"'
     )
     ui = read("ui/CMakeLists.txt")
     assert "qml/AnalysisStatusEditor.qml" in ui
