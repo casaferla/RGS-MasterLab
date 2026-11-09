@@ -1904,7 +1904,12 @@ Window {
             const QString tpParity=QStringLiteral(
                 "M16/M17 %1: M16=%2 M17=%3; editors %4x%5/%6x%7; rails %8x%9/%10x%11")
                 .arg(sameAnchors[i])
-                .arg(m16Rects[i].toString()).arg(m17Rect.toString())
+                .arg(QStringLiteral("(%1,%2 %3x%4)")
+                    .arg(m16Rects[i].x()).arg(m16Rects[i].y())
+                    .arg(m16Rects[i].width()).arg(m16Rects[i].height()))
+                .arg(QStringLiteral("(%1,%2 %3x%4)")
+                    .arg(m17Rect.x()).arg(m17Rect.y())
+                    .arg(m17Rect.width()).arg(m17Rect.height()))
                 .arg(meterEditor->width()).arg(meterEditor->height())
                 .arg(limiterEditor->width()).arg(limiterEditor->height())
                 .arg(m16Rail ? m16Rail->width() : -1.0)
