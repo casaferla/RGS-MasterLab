@@ -227,6 +227,13 @@ Rectangle {
             }
 
             ColumnLayout {
+                // One fixed title slot prevents Input Gain -> Parametric EQ
+                // (or any other selection) from pushing Undo/Redo sideways
+                // when the header is close to its minimum usable width.
+                // The 22-DIP undock slot and the A/B controls stay unchanged.
+                Layout.minimumWidth: 188
+                Layout.preferredWidth: 188
+                Layout.maximumWidth: 188
                 spacing: 1
                 Text {
                     objectName: "dspHostModuleTitle"
