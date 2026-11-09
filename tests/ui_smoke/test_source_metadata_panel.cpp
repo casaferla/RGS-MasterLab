@@ -5817,6 +5817,47 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             qPrintable(name + QStringLiteral(" must stay inside dspEditorHost at minimum size")));
     }
 
+    // The 1184px product assigns too little horizontal room for the six
+    // fixed-size EQ toolbar controls in one row. All six must reflow visibly
+    // inside the same REAL editor, not disappear, shrink or require scrolling.
+    auto* eqToolbarNative=qobject_cast<QQuickItem*>(
+        find_child_by_name(eqEditor,QStringLiteral("eqTopToolbarRegion")));
+    QVERIFY2(eqToolbarNative,"The real EQ toolbar must exist at minimum size");
+    QVERIFY2(check_item_contained_in_ancestor(eqToolbarNative,eqEditorNative),
+             "Compact two-row EQ toolbar must stay within the editor");
+    for(const auto& controlName:{
+            QStringLiteral("bandEnabledToggle"),
+            QStringLiteral("eqResetFlatButton"),
+            QStringLiteral("eqOverallToggleButton"),
+            QStringLiteral("eqSpectrumToggleButton"),
+            QStringLiteral("addBandButton"),
+            QStringLiteral("removeBandButton")}) {
+        auto* control=qobject_cast<QQuickItem*>(
+            find_child_by_name(eqEditor,controlName));
+        QVERIFY2(control,qPrintable(controlName));
+        const QPointF origin=control->mapToItem(eqEditorNative,QPointF{});
+        const QString bounds=QStringLiteral(
+            "%1 at (%2,%3) size %4x%5; editor %6x%7; toolbar %8x%9")
+            .arg(controlName)
+            .arg(origin.x()).arg(origin.y())
+            .arg(control->width()).arg(control->height())
+            .arg(eqEditorNative->width()).arg(eqEditorNative->height())
+            .arg(eqToolbarNative->width()).arg(eqToolbarNative->height());
+        QVERIFY2(control->isVisible(),qPrintable(bounds));
+        QVERIFY2(check_item_contained_in_ancestor(control,eqToolbarNative),
+                 qPrintable(bounds));
+        QVERIFY2(check_item_contained_in_ancestor(control,eqEditorNative),
+                 qPrintable(bounds));
+    }
+    // The reflow is intentional: row two follows row one at compact width.
+    auto* eqSpectrumCompact=qobject_cast<QQuickItem*>(
+        find_child_by_name(eqEditor,QStringLiteral("eqSpectrumToggleButton")));
+    auto* eqResetCompact=qobject_cast<QQuickItem*>(
+        find_child_by_name(eqEditor,QStringLiteral("eqResetFlatButton")));
+    QVERIFY(eqSpectrumCompact && eqResetCompact);
+    QVERIFY2(eqSpectrumCompact->mapToItem(eqToolbarNative,QPointF{}).y()
+                 > eqResetCompact->mapToItem(eqToolbarNative,QPointF{}).y(),
+             "EQ compact toolbar must use two full-height control rows");
     QVERIFY2(check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(addBandBtn), eqEditorNative),
         "Add Band must stay inside Parametric EQ editor at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(removeBandBtn), eqEditorNative),
