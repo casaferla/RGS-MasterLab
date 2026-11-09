@@ -37,9 +37,28 @@ def test_product_binds_status_without_demo() -> None:
     assert "m21ProductStatusViewModel" in read("ui/qml/Main.qml")
     editor = read("ui/qml/AnalysisStatusEditor.qml")
     assert "productionAuthorized === true" in editor
-    assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
     assert "selectPanelSource(" in editor
     assert "fixtureMode" not in editor
+    assert "AnalysisApprovedContent {" in editor
+    assert 'objectName: "analysisApprovedContent"' in editor
+    visuals = read("ui/qml/AnalysisApprovedContent.qml")
+    # Preserve the original explicit unavailable visual gate, now owned
+    # by the approved Product read-only content rather than the wrapper.
+    assert "VERIFIED ANALYSIS UNAVAILABLE" in visuals
+    assert "fixtureMode" not in visuals
+    assert "rawText: \"\"" in visuals
+    assert "dataAvailable: false" in visuals
+    assert "dataAvailable: true" not in visuals
+    assert "m19MetricValue_" in visuals and "heroReadout: true" in visuals
+    assert "m20WorkbenchSpectrum" in visuals
+    assert "m20MissingSpectrumNotice" in visuals
+    assert "m20MissingProfileNotice" in visuals
+    assert "m21MissingComparisonNotice" in visuals
+    assert "m21MetricRow_" in visuals
+    readout = read("ui/qml/StudioReadOnlyMeasurement.qml")
+    assert "root.heroReadout ? 36 : 13" in readout
+    assert "root.heroReadout ? 11 : 10" in readout
+    assert "readonly property bool readOnly: true" in readout
     # Permanent M16-pattern pages: exactly one M19/M20/M21 instance per
     # host, created declaratively once and kept when a different DSP is
     # selected. The existing qualified ColumnLayout is the geometry owner;

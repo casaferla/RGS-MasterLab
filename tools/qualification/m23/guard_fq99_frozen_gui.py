@@ -21,7 +21,13 @@ SHARED = {
     "ui/qml/DspWorkspace.qml",
     "ui/qml/Main.qml",
 }
-NEW = {"ui/qml/AnalysisStatusEditor.qml"}
+# Two PO-approved analysis-specific QML entries and the sole approved
+# Input Gain-hero layout adaptation are additive to the FQ99 GUI.
+NEW = {
+    "ui/qml/AnalysisStatusEditor.qml",
+    "ui/qml/AnalysisApprovedContent.qml",
+    "ui/qml/StudioReadOnlyMeasurement.qml",
+}
 ALLOWED = SHARED | NEW
 
 
@@ -160,14 +166,54 @@ def main() -> int:
     # removed, shuffled, or replaced.
     current_cmake = blob("HEAD", "ui/CMakeLists.txt")
     old_cmake = blob(FQ99, "ui/CMakeLists.txt")
-    current_cmake = remove_exact(
-        current_cmake, "        qml/AnalysisStatusEditor.qml\n"
-    )
+    for approved_qml in (
+        "        qml/AnalysisStatusEditor.qml\n",
+        "        qml/StudioReadOnlyMeasurement.qml\n",
+        "        qml/AnalysisApprovedContent.qml\n",
+    ):
+        current_cmake = remove_exact(current_cmake, approved_qml)
     if current_cmake != old_cmake:
         raise AssertionError("QUALIFIED_GUI_QML_REGISTRY_CHANGED")
 
-    if not Path("ui/qml/AnalysisStatusEditor.qml").is_file():
-        raise AssertionError("APPROVED_NEW_ANALYSIS_PANEL_MISSING")
+    for approved in NEW:
+        if not Path(approved).is_file():
+            raise AssertionError("APPROVED_ANALYSIS_QML_MISSING " + approved)
+
+    # The originally qualified M19 read-only widget is changed only to
+    # allow its 36px Input Gain label to wrap at the compact editor width.
+    # Normalize precisely that PO-approved layout change back to FQ99.
+    current_readout = blob("HEAD", "ui/qml/StudioReadOnlyMeasurement.qml")
+    current_readout = remove_exact(
+        current_readout,
+        "    implicitHeight: root.heroReadout ? 102 : 48",
+        "    implicitHeight: root.heroReadout ? 84 : 48")
+    current_readout = remove_exact(
+        current_readout,
+        "            width: parent.width; height: root.heroReadout ? 30 : 14",
+        "            width: parent.width; height: root.heroReadout ? 16 : 14")
+    current_readout = remove_exact(
+        current_readout,
+        "            wrapMode: root.heroReadout ? Text.WordWrap : Text.NoWrap\n"
+        "            verticalAlignment: Text.AlignVCenter\n"
+        "            elide: root.heroReadout ? Text.ElideNone : Text.ElideRight",
+        "            elide: Text.ElideRight")
+    if current_readout != blob(FQ99, "ui/qml/StudioReadOnlyMeasurement.qml"):
+        raise AssertionError("QUALIFIED_STUDIO_READOUT_UNAPPROVED_CHANGE")
+
+    approved_content = blob("HEAD", "ui/qml/AnalysisApprovedContent.qml")
+    for required in (
+        'objectName: "m19LevelsPage"',
+        'objectName: "m20TonalStereoPage"',
+        'objectName: "m21ComparisonPage"',
+        'heroReadout: true',
+        'dataAvailable: false',
+        'VERIFIED ANALYSIS UNAVAILABLE',
+    ):
+        if required not in approved_content:
+            raise AssertionError("APPROVED_ANALYSIS_CONTENT_MISSING " + required)
+    for forbidden in ("fixtureMode", "presentation: ({", "dataAvailable: true"):
+        if forbidden in approved_content:
+            raise AssertionError("UNAUTHORIZED_PRODUCT_NUMERIC_DISPLAY " + forbidden)
     print(
         "FQ99_FROZEN_GUI_GUARD=PASS "
         "qualified_widgets_byte_identical=YES "
