@@ -5798,7 +5798,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     int eqPolishIterations=0;
     while(!check_item_contained_in_ancestor(eqEditorNative,dspEditorHostNative)
           && eqPolishIterations<50) {
-        window->update();
+        window->requestUpdate();
         QTest::qWait(50);
         QCoreApplication::processEvents();
         ++eqPolishIterations;
