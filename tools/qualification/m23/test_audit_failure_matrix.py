@@ -27,7 +27,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(manifest["release_qualified"])
         counts = {k: sum(c["static_coverage"] == k for c in manifest["cases"])
                   for k in ("existing", "partial", "gap")}
-        self.assertEqual(counts, {"existing": 18, "partial": 2, "gap": 0})
+        self.assertEqual(counts, {"existing": 19, "partial": 1, "gap": 0})
 
     def test_fake_release_and_manual_verdict_never_accepted(self):
         baseline = json.loads(MATRIX.read_text(encoding="utf-8"))
@@ -90,8 +90,8 @@ class M23EvidenceSelfTests(unittest.TestCase):
         self.assertFalse(report["m23_closed"])
         self.assertFalse(report["release_qualified"])
         self.assertFalse(report["full_fq_passed"])
-        self.assertEqual(len(report["unexecuted_existing_categories"]), 18)
-        self.assertEqual(len(report["unresolved_categories"]), 2)
+        self.assertEqual(len(report["unexecuted_existing_categories"]), 19)
+        self.assertEqual(len(report["unresolved_categories"]), 1)
         with self.assertRaises(M23ContractError):
             run(ROOT, MATRIX, [], "windows", True)
 
@@ -105,7 +105,7 @@ class M23EvidenceSelfTests(unittest.TestCase):
             self.make_junit(junit, names)
             evidence = run(ROOT, MATRIX, [junit], "windows", True)
             self.assertEqual(evidence["unexecuted_existing_categories"], [])
-            self.assertEqual(len(evidence["unresolved_categories"]), 2)
+            self.assertEqual(len(evidence["unresolved_categories"]), 1)
             self.assertEqual(len(evidence["passed_existing_suites"]),len(names))
             self.assertFalse(evidence["m23_closed"])
             self.assertFalse(evidence["frozen_m23_i_p_m_passed"])
