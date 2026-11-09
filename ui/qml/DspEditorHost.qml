@@ -704,6 +704,37 @@ Rectangle {
             liveProvider: root.truePeakCurrentLive
         }
 
+        // M19–M21 follow the proven M16 analysis-in-host model, but
+        // unlike a permanently-instantiated hidden Item, this Loader
+        // contributes NO AnalysisStatusEditor or implicit 640x360 size
+        // while an existing FQ99-qualified module is selected.
+        // Never change any original FQ99 ColumnLayout child or control.
+        Loader {
+            id: productAnalysisEditorLoader
+            objectName: "m19M21ProductAnalysisLoader"
+            readonly property bool analysisSelected: root.activeModule
+                && (root.activeModule.editorContentKey === "M19_ANALYSIS"
+                    || root.activeModule.editorContentKey === "M20_ANALYSIS"
+                    || root.activeModule.editorContentKey === "M21_ANALYSIS")
+            active: analysisSelected
+            visible: analysisSelected
+            asynchronous: false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+            sourceComponent: Component {
+                AnalysisStatusEditor {
+                    objectName: "m19M21ProductAnalysisEditor"
+                    panelIndex: root.activeModule
+                        && root.activeModule.editorContentKey === "M20_ANALYSIS" ? 1
+                        : root.activeModule
+                        && root.activeModule.editorContentKey === "M21_ANALYSIS" ? 2 : 0
+                    statusViewModel: root.analysisStatusViewModel
+                }
+            }
+        }
+
         MonitorEditor {
             id: monitorEditor
             objectName: "monitorEditor"
