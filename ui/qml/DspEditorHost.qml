@@ -734,45 +734,6 @@ Rectangle {
         }
     }
 
-    // M19–M21 are independent analysis surfaces, NOT ColumnLayout children.
-    // The FQ99-QUALIFIED editor ColumnLayout above remains byte-identical
-    // (including its exact geometry, button distribution and priorities).
-    // Creating a hidden AnalysisStatusEditor in that ColumnLayout interfered
-    // with the pre-existing Parametric EQ size negotiation on Windows.
-    // This Loader is a sibling overlay and creates its item ONLY while a
-    // new analysis module is selected, so legacy DSP layout is unaffected.
-    Loader {
-        id: productAnalysisOverlay
-        objectName: "m19M21ProductAnalysisOverlay"
-        readonly property bool analysisSelected: root.activeModule
-            && (root.activeModule.editorContentKey === "M19_ANALYSIS"
-                || root.activeModule.editorContentKey === "M20_ANALYSIS"
-                || root.activeModule.editorContentKey === "M21_ANALYSIS")
-        active: analysisSelected
-        visible: active
-        asynchronous: false
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.top: parent.top
-        anchors.leftMargin: root.compactTallerEditor && root.height < 470 ? 8 : 12
-        anchors.rightMargin: anchors.leftMargin
-        anchors.bottomMargin: anchors.leftMargin
-        // Stay below the FQ99 header without reflowing that header. The
-        // new view only draws its own UI when an M19–M21 tab is active.
-        anchors.topMargin: root.height < 470 ? 47 : 60
-        sourceComponent: Component {
-            AnalysisStatusEditor {
-                objectName: "m19M21ProductAnalysisEditor"
-                panelIndex: root.activeModule
-                    && root.activeModule.editorContentKey === "M20_ANALYSIS" ? 1
-                    : root.activeModule
-                    && root.activeModule.editorContentKey === "M21_ANALYSIS" ? 2 : 0
-                statusViewModel: root.analysisStatusViewModel
-            }
-        }
-    }
-
     // M17 popover uses the SAME copper/teal family rule and Studio controls
     // as the parent editor, not a separate accent palette. Memory is a measured
     // per-rate PCM/FIR LOWER BOUND, not peak process RSS or DSP reserve.
