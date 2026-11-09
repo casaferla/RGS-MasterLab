@@ -444,7 +444,8 @@ Rectangle {
                 visible: root.isLimiterEditor && !root.m17Preparing
                 objectName: "m17PrepareButton"
                 text: "Prepare"
-                minimumControlWidth: 86
+                // Shared physical slot, including Qt font metrics on Windows.
+                minimumControlWidth: 124
                 accentColor: "#C4774A"
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
@@ -478,7 +479,7 @@ Rectangle {
                 text: "Cancel"
                 // Same fixed slot as Prepare: Rate & Time must never jump
                 // horizontally during an in-flight full-resource job.
-                minimumControlWidth: 86
+                minimumControlWidth: 124
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
