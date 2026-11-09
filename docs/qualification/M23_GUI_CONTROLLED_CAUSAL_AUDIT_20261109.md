@@ -241,3 +241,54 @@ Potential discriminators:
   an infrastructure fix.
 No workaround may weaken the containment assertion, and no GUI change is
 authorized without evidence. PR #99 Draft, main frozen.
+
+## Results — CI #31: FQ99 and candidate BOTH fail as direct CMake child
+
+CI #31: https://github.com/casaferla/RGS-MasterLab/actions/runs/42688132408,
+SHA `b75c407c748ff884c4ca6aa2cabf81ebfce71649`.
+Linux portable tests passed. Windows original strict M23 CTest remained RED with
+the same Parametric EQ geometry 992x612 inside 732x475. Bounded Windows artifact
+`13706930468`, file `m23-parent-chain.txt`.
+
+**Same runner, Qt 6.8.3 MSVC native QPA, full 16-case smoke, screenshots OFF,
+same cwd within each triple, unmodified executable / source:**
+
+| Qt launch path | FQ99 immutable baseline | Candidate #27 |
+| --- | --- | --- |
+| PowerShell -> Qt executable | PASS 16/16 | PASS 16/16 |
+| CMake -> Qt executable | FAIL 15/16 | FAIL 15/16 |
+| CMake -> pwsh -> Qt executable | PASS 16/16 | PASS 16/16 |
+
+Candidate CMake-direct FAIL repeats, and direct PowerShell PASS repeats. All
+failure cases hit the SAME original FQ99 EQ containment invariant. This
+demonstrates that the test-launch path alone is sufficient to reproduce this
+specific failure even in the qualified baseline. There is NO basis from these
+observations to attribute the symptom to M19–M21 scenegraph integration.
+The low-level Windows/Qt scheduling or exposure difference under the
+CMake child remains unproven; do not mislabel an OS/Qt bug as proven.
+
+### Evidence-backed minimum test-infrastructure correction
+
+A narrow Windows-only change was prepared on the isolated writer:
+- `tests/cmake/qt_smoke_native_windows_launcher.ps1` creates a PowerShell
+  intermediate process with exactly the same `-v2 -o "log,txt"` Qt test
+  invocation, and returns `$LASTEXITCODE`.
+- `tests/cmake/m16_c2_smoke_ctest_diagnostic.cmake` uses CMake -> pwsh ->
+  unchanged QtTest on Windows, with the same `RESULT_VARIABLE`,
+  `OUTPUT_VARIABLE`, `ERROR_VARIABLE`, bounded failure reporting and
+  strict nonzero exit assertion. Non-Windows retains historical execution.
+  PowerShell 7 (`pwsh`) is an explicit Windows test-runner dependency; if
+  absent the wrapper fails closed, rather than silently marking green.
+- The focused M23 workflow removes the now-completed expensive experimental
+  matrix; the original **all 11 real Windows CTests remain untouched**,
+  including source-metadata Qt smoke and its original EQ containment
+  assertions. The Linux portable suite is unchanged.
+
+This is a correction to the TEST LAUNCH CONTEXT, not to a qualified GUI
+or to the audio application. It is not a full product/FQ acceptance; the
+focused CI will still fail if Qt reports a genuine failing assertion,
+missing log, or nonzero exit. If this gate goes green, the next separate
+architectural decision remains how to replace the experimental M19–M21
+create/destroy integration with a persistent M16-style presentation once
+the real visual panels and icons have been reviewed and physically tested.
+No automatic merge or FQ claim. PR #99 stays Draft.
