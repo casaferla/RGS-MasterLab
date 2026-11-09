@@ -40,24 +40,23 @@ def test_product_binds_status_without_demo() -> None:
     assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
     assert "selectPanelSource(" in editor
     assert "fixtureMode" not in editor
-    # M16 is the proven analysis integration. M19-M21 use the same
-    # host/ColumnLayout allocation contract, but the NEW AnalysisStatusEditor
-    # is never instantiated during selection of pre-FQ99 DSPs. Without
-    # this lazy gate, its implicit 640x360 dimensions distorted the EQ host.
+    # Windows A/B #23/#24/#25 demonstrated that even an inactive NEW
+    # QQuickItem/Loader anywhere inside FQ99's DspEditorHost tree
+    # makes the legacy Parametric EQ stop shrinking to dock allocation.
+    # M16 remains the prior validated non-processing analysis service;
+    # new M19-21 content must be hosted independently in Main dock slot.
     host = read("ui/qml/DspEditorHost.qml")
-    assert 'objectName: "m19M21ProductAnalysisLoader"' in host
-    assert "active: analysisSelected" in host
-    assert "visible: analysisSelected" in host
-    assert "Layout.minimumHeight: 0" in host
-    assert "Layout.preferredHeight: 0" in host
-    assert 'objectName: "m19M21ProductAnalysisEditor"' in host
-    assert host.index('objectName: "truePeakMeterEditor"') < host.index(
-        'objectName: "m19M21ProductAnalysisLoader"'
-    )
-    assert host.index('objectName: "m19M21ProductAnalysisLoader"') < host.index(
-        'objectName: "monitorEditor"'
-    )
+    main_qml = read("ui/qml/Main.qml")
+    assert 'objectName: "m19M21ProductAnalysisLoader"' not in host
     assert 'objectName: "m19M21ProductAnalysisOverlay"' not in host
+    assert 'AnalysisStatusEditor {' not in host
+    assert 'objectName: "m19M21DockSlotAnalysisLoader"' in main_qml
+    assert 'parent: root.activeDockSlot()' in main_qml
+    assert 'active: analysisSelected && !root.editorDetached' in main_qml
+    assert 'objectName: "m19M21ProductAnalysisEditor"' in main_qml
+    assert main_qml.index('objectName: "m19M21DockSlotAnalysisLoader"') < main_qml.index(
+        'id: floatingModuleWindow'
+    )
     ui = read("ui/CMakeLists.txt")
     assert "qml/AnalysisStatusEditor.qml" in ui
     assert "qml/M19M21AnalysisWorkbenchPreview.qml" not in ui
