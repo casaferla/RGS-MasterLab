@@ -18,6 +18,8 @@ class M18ProductExportViewModel final : public QObject {
     Q_PROPERTY(double encodedProgress READ encoded_progress NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
+    // M23 read-only, sanitized failure code. Never authorizes export.
+    Q_PROPERTY(QString diagnosticSummary READ diagnostic_summary NOTIFY changed)
     Q_PROPERTY(QString verifiedSha256 READ verified_sha256 NOTIFY changed)
     Q_PROPERTY(qulonglong verifiedBytes READ verified_bytes NOTIFY changed)
 public:
@@ -33,6 +35,7 @@ public:
     [[nodiscard]] double encoded_progress() const;
     [[nodiscard]] QString status_text() const;
     [[nodiscard]] QString error_text() const;
+    [[nodiscard]] QString diagnostic_summary() const;
     [[nodiscard]] QString verified_sha256() const;
     [[nodiscard]] qulonglong verified_bytes() const;
 
