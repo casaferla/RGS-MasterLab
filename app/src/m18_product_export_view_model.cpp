@@ -39,6 +39,12 @@ bool M18ProductExportViewModel::can_export() const
     return owner_thread()&&action_->can_begin_verified_export();
 }
 
+QString M18ProductExportViewModel::export_readiness_reason() const
+{
+    if(!owner_thread())return QStringLiteral("OWNER THREAD");
+    return action_->export_readiness_reason();
+}
+
 bool M18ProductExportViewModel::can_cancel() const
 {
     return owner_thread()&&action_->can_cancel();
