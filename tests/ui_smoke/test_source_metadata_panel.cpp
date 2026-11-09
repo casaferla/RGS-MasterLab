@@ -58,6 +58,7 @@
 #include <QWheelEvent>
 
 #include <array>
+#include <vector>
 #include <utility>
 #include <cmath>
 #include <memory>
@@ -6991,8 +6992,17 @@ int main(int argc, char* argv[])
     // interpret the scoped capture as a second full-suite qualification.
     if (qEnvironmentVariable("RGSML_MAIN_VISUAL_CAPTURE_ONLY") == "1") {
         char selectedTest[] = "emptyReadyErrorAndWindowLifecycle";
-        char* selectedArgs[]{argv[0], selectedTest};
-        return QTest::qExec(&test, 2, selectedArgs);
+        // Preserve the original QtTest -v2 / -o <path>,txt options.
+        // Without forwarding them, the existing CMake wrapper correctly
+        // rejects a missing Qt log even if the selected case passed.
+        std::vector<char*> selectedArgs;
+        selectedArgs.reserve(static_cast<std::size_t>(argc) + 1);
+        selectedArgs.push_back(argv[0]);
+        selectedArgs.push_back(selectedTest);
+        for (int i = 1; i < argc; ++i)
+            selectedArgs.push_back(argv[i]);
+        return QTest::qExec(&test,
+            static_cast<int>(selectedArgs.size()), selectedArgs.data());
     }
     return QTest::qExec(&test, argc, argv);
 }
