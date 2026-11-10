@@ -75,3 +75,14 @@ The actual **remaining operator-dependent gates** are Windows native screenshot/
 The current candidate tightens the development M20 PSD admission to require the same nonempty resource identity and nonzero measured scope as numeric scalar cells. Its source guard explicitly protects those predicates. This is a real consistency defect fix, not a new analyzer, fabricated band profile, M16 True Peak authority or Gate G.
 
 **Exit rule:** Before any further CI, audit outstanding actionable code gaps against existing tests and documentation; group all independent fixes into a single candidate. Do not create artificial commits or run a CI for documentation-only or cosmetic changes. When all automatable gates are complete, request the PO's physical FQ rather than endlessly issuing micro-CIs. PR #99 remains Draft and `main` untouched.
+
+## 9. PO research separation and current L1 FQ readiness
+
+The 2026-11-10 PO decision **PARALLEL RESEARCH AUTHORIZED / NON FROZEN DSP** is authoritative at:
+https://docs.google.com/document/d/1iYhmqTtwuSdEwZ25pv8Cgp3eGs_C2rD2p3hd5nTBHM4/edit
+
+The proposed Streaming True Peak Limiter is **research only**, isolated from the L1 writer. It does not authorize edits to M16/M17, Final SRC/FIR, frozen L3-M05–M13 contracts, any new production DSP, or the M17 terminal role. An independent Work study has no writer access. Future integration requires a distinct PO GO after mathematical proof/counterexamples, comparative testing, cost/latency audit and architectural review. Carry this reference in the next operational handoff; do not block L1-M18–M24.
+
+The PO confirmed focused CI green at `63d105d4cdc01f0f2668597be9102720a84a04b8`. The final development-display consistency fix makes *both* signs of sub-display-precision M21 deltas neutral zero, while preserving underlying unrounded REFERENCE-minus-CURRENT mathematics. The source guard checks the display contract. This is not Phase-6 Gate G, M16 TP authority or physical FQ.
+
+**Handoff FQ gates:** run the actual native Windows minimum-size GUI/screenshots (1184×688), M18 verified export/readback, M23 fault matrix and M24 complete master/listening 17-step procedure; record physical verdict and only then decide release/merge. Existing focused CI covers 11 Windows M23 CTests, three M19/M20/reference suites, Linux portable CTests, M22 disk harness, frozen-GUI and source guards. Do not infer physical PASS from CI. Preserve Draft PR #99, Single-Writer Epoch, and `main`.
