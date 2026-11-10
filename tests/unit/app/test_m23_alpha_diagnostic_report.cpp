@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessNeverRelabelsAnUnknownColumn();
     void m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus();
     void m21ReadinessRetiresStaleGenerationWithoutAffectingReference();
     void m21ReadinessTracksNineDistinctMetricQualities();
@@ -819,6 +820,29 @@ m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus()
     QVERIFY(valid[0]);
     QVERIFY(valid[0]->lifecycle==m21::Lifecycle::current);
     QCOMPARE(valid[0]->generation_token,std::uint64_t{2});
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessNeverRelabelsAnUnknownColumn()
+{
+    m21::PrivatePublicationGuard guard;
+    auto g=private_m21_fixture(m21::Column::gold,7);
+    QVERIFY(guard.expect(m21::Column::gold,7));
+    QVERIFY(guard.publish(g));
+    const auto receipt=guard.readiness_columns();
+    QVERIFY(!receipt[0]);
+    QVERIFY(receipt[1]);
+    QVERIFY(!receipt[2]);
+    QVERIFY(receipt[1]->column==m21::Column::gold);
+    QCOMPARE(receipt[1]->generation_token,std::uint64_t{7});
+    auto bad=private_m21_fixture(
+        static_cast<m21::Column>(240),8);
+    QVERIFY(!guard.publish(bad));
+    const auto after=guard.readiness_columns();
+    QVERIFY(!after[0]&&!after[2]);
+    QVERIFY(after[1]);
+    QVERIFY(after[1]->column==m21::Column::gold);
 
 }
 
