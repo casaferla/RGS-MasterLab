@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PublicationRejectsContradictoryScalarStates();
     void m21PublicationRejectsScopeOverflowAndBadRate();
     void m21PublicationStaysStaleAfterMalformedResult();
     void m21TonalRejectsNonFiniteShape();
@@ -493,6 +494,24 @@ m21PublicationRejectsScopeOverflowAndBadRate()
     QVERIFY(!guard.publish(s));
     s.scope_frames=48000;
     QVERIFY(guard.publish(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PublicationRejectsContradictoryScalarStates()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture();
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    s.metrics[2]={0.0,m21::Quality::missing,"No peak"};
+    QVERIFY(!guard.publish(s));
+    s.metrics[2]={{},m21::Quality::present,{}};
+    QVERIFY(!guard.publish(s));
+    s.metrics[2]={std::numeric_limits<double>::infinity(),
+                   m21::Quality::present,{}};
+    QVERIFY(!guard.publish(s));
+    s.metrics[2]={0.,m21::Quality::present,{}};
+    QVERIFY(guard.publish(s));
+    QVERIFY(!guard.publish(s));
 }
 
 } // namespace
