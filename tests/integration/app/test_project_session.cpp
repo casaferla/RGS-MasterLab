@@ -797,6 +797,116 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
+
+    // M21 B4 Product acceptance, not merely an analyzer unit test:
+    // select an independent real disk-backed REFERENCE >128MiB of decoded
+    // binary64 PCM, capture on its Qt owner, measure via the exact worker,
+    // and admit the result into the existing owner-validated inbox.
+    // Sparse RIFF/PCM16 data limits test disk traffic; WavReader decodes
+    // every actual frame on the worker, without an application PCM alias.
+    constexpr std::uint64_t kLongStereoFrames=
+        128ULL*1024ULL*1024ULL/(sizeof(double)*2ULL)+257ULL;
+    constexpr std::uint64_t kLongDataBytes=kLongStereoFrames*4ULL;
+    constexpr std::uint64_t kBurstStart=192000ULL*2ULL;
+    constexpr std::size_t kBurstFrames=192000U/2U;
+    static_assert(kBurstStart+kBurstFrames<kLongStereoFrames);
+    const auto longReferencePath=dir.filePath(
+        QStringLiteral("m21-independent-long-REFERENCE-stereo-192k.wav"));
+    wav_support::Bytes riffHeader;
+    wav_support::append_fourcc(riffHeader,wav_support::fourcc("RIFF"));
+    wav_support::append_u32(riffHeader,
+        static_cast<std::uint32_t>(kLongDataBytes+36ULL));
+    wav_support::append_fourcc(riffHeader,wav_support::fourcc("WAVE"));
+    const auto longFmt=wav_support::make_fmt_payload(1U,2U,192000U,16U);
+    wav_support::append_chunk(
+        riffHeader,wav_support::fourcc("fmt "),longFmt);
+    wav_support::append_fourcc(riffHeader,wav_support::fourcc("data"));
+    wav_support::append_u32(riffHeader,
+        static_cast<std::uint32_t>(kLongDataBytes));
+    QCOMPARE(riffHeader.size(),std::size_t{44});
+    {
+        QFile disk{longReferencePath};
+        QVERIFY(disk.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+        QCOMPARE(disk.write(
+            reinterpret_cast<const char*>(riffHeader.data()),
+            static_cast<qint64>(riffHeader.size())),
+            static_cast<qint64>(riffHeader.size()));
+        QVERIFY(disk.resize(static_cast<qint64>(44ULL+kLongDataBytes)));
+        QVERIFY(disk.seek(static_cast<qint64>(
+            44ULL+kBurstStart*4ULL)));
+        QByteArray burst(static_cast<qsizetype>(kBurstFrames*4U),'\0');
+        for(std::size_t i=0;i<kBurstFrames;++i){
+            const auto j=static_cast<qsizetype>(4U*i);
+            burst[j+0]=char(0x00);
+            burst[j+1]=char(0x40); // L=+0.5, real PCM16
+            burst[j+2]=char(0x00);
+            burst[j+3]=char(0xE0); // R=-0.25: width P06 = 3
+        }
+        QCOMPARE(disk.write(burst),static_cast<qint64>(burst.size()));
+        disk.close();
+    }
+    session.gold.selectGold(QUrl::fromLocalFile(longReferencePath));
+    QVERIFY2(session.gold.has_gold(),
+             session.gold.error_message().toUtf8().constData());
+    const auto longGold=M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY2(longGold,longGold?"":longGold.error()->message().c_str());
+    QCOMPARE(longGold.value()->full_frames,
+             static_cast<std::int64_t>(kLongStereoFrames));
+    QCOMPARE(longGold.value()->sample_rate_hz,192000U);
+    QCOMPARE(longGold.value()->channels,std::size_t{2});
+    QVERIFY(longGold.value()->owner.epoch!=selectedGold.value()->owner.epoch);
+    QVERIFY(M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,*longGold.value()));
+
+    std::optional<core::Result<app::m21_private::Snapshot>> longMeasured;
+    std::thread longWorker([&] {
+        longMeasured.emplace(M21Owners::measure_gold_worker(
+            *longGold.value()));
+    });
+    longWorker.join();
+    QVERIFY(longMeasured.has_value());
+    QVERIFY2(*longMeasured,
+             *longMeasured?"":longMeasured->error()->message().c_str());
+    QCOMPARE(longMeasured->value()->column,app::m21_private::Column::gold);
+    QCOMPARE(longMeasured->value()->sample_rate_hz,192000U);
+    QCOMPARE(longMeasured->value()->scope_frames,kLongStereoFrames);
+    QVERIFY(longMeasured->value()->metrics[0].unrounded.has_value());
+    QCOMPARE(longMeasured->value()->metrics[3].quality,
+             app::m21_private::Quality::missing); // no M16 qualification
+    QCOMPARE(longMeasured->value()->metrics[5].quality,
+             app::m21_private::Quality::present);
+    QVERIFY(longMeasured->value()->metrics[5].unrounded.has_value());
+    QVERIFY(std::abs(
+        *longMeasured->value()->metrics[5].unrounded-3.0)<1e-12);
+    QVERIFY(longMeasured->value()->metrics[7].unrounded.has_value());
+    QVERIFY(std::abs(
+        *longMeasured->value()->metrics[7].unrounded+1.0)<1e-12);
+    app::internal::M21ProductPublicationInbox longInbox;
+    QVERIFY(longInbox.accept_gold(
+        controllers,fanout,session.selector,session.gold,
+        *longGold.value(),*longMeasured->value()));
+    const auto longCurrent=longInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(longCurrent.columns[1].has_value());
+    QCOMPARE(longCurrent.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QVERIFY(!longCurrent.columns[0]);
+    QVERIFY(!longCurrent.columns[2]);
+    // Product may hold private numerical results, never publish them to QML
+    // while official canonical Phase-6 authority is absent.
+    app::M21ProductStatusViewModel longStatus{
+        controllers,fanout,session.selector,session.gold,longInbox};
+    QVERIFY(!longStatus.production_authorized());
+    QVERIFY(longStatus.m21().value("metrics").toList().isEmpty());
+    session.gold.clearGold();
+    QVERIFY(!M21Owners::gold_still_current(
+        controllers,fanout,session.selector,session.gold,*longGold.value()));
+    const auto longRetired=longInbox.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(longRetired.columns[1].has_value());
+    QCOMPARE(longRetired.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::stale);
 }
 
 void ProjectSessionTest::
