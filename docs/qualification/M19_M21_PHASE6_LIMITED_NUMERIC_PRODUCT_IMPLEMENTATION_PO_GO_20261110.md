@@ -65,3 +65,13 @@ Native Product tests must prove **both** the visible observed data with genuine 
 ## 7. PO continuous CI iteration — M21 delta sign presentation
 
 After the PO-confirmed green for `1bdebf702ab579d3a7737e000c67314ec864e3df`, the next focused lot makes the two M21 `REFERENCE − CURRENT` delta columns **visibly signed**: strictly positive values show `+`, negative values retain `−`, and zeros or values rounded to zero remain neutral. The underlying `m21_private::Comparison` unrounded delta is never modified; this is presentation-only. Correlation/width continue to use three decimals and levels two decimals. Guarded by `test_product_navigation_guards.py`. No M16 qualification, Phase-6 Gate G or main merge implied. Continue CI iteration until the user is ready to run the complete FQ on Windows.
+
+## 8. Pre-FQ consolidation audit — 2026-11-10
+
+The PO's target is **few, substantial CI candidates before one complete physical FQ**, not a quota of commits. The currently green-focused M23 workflow already executes the native Windows 11-case M23 receipt suite, three real M19/M20/reference analyzer suites on both operating systems, the M22 disk-export harness, FQ99 GUI byte guard, and the M19–M21 Product source guard. Re-running or recreating these as separate tiny jobs would not add qualification.
+
+The actual **remaining operator-dependent gates** are Windows native screenshot/geometry inspection at minimum 1184×688, physical M18 verified WAV export/readback, M23 operator fault matrix, M24 complete real-master/listening procedure, and the overall FQ verdict. A green focused CI does **not** close these.
+
+The current candidate tightens the development M20 PSD admission to require the same nonempty resource identity and nonzero measured scope as numeric scalar cells. Its source guard explicitly protects those predicates. This is a real consistency defect fix, not a new analyzer, fabricated band profile, M16 True Peak authority or Gate G.
+
+**Exit rule:** Before any further CI, audit outstanding actionable code gaps against existing tests and documentation; group all independent fixes into a single candidate. Do not create artificial commits or run a CI for documentation-only or cosmetic changes. When all automatable gates are complete, request the PO's physical FQ rather than endlessly issuing micro-CIs. PR #99 remains Draft and `main` untouched.
