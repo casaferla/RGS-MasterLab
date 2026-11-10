@@ -8,10 +8,32 @@
 #include <QtTest/QTest>
 #include <array>
 #include <string>
+#include <limits>
 
 namespace rgsml::tests {
 namespace {
 using namespace rgsml::app::internal;
+
+
+namespace m21 = rgsml::app::m21_private;
+
+// Pure private test fixture: it conveys NO authentic Product owner proof
+// and is never exported to QML or a Phase-6 feature registry.
+inline m21::Snapshot private_m21_fixture(
+    m21::Column column=m21::Column::prepared,
+    std::uint64_t generation=1)
+{
+    m21::Snapshot s;
+    s.column=column;
+    s.generation_token=generation;
+    s.resource_identity="fixture:independent-evidence";
+    s.analysis_scope_label="Full Track";
+    s.scope_frames=48000;
+    s.sample_rate_hz=48000;
+    s.lifecycle=m21::Lifecycle::current;
+    s.metrics[3]={{},m21::Quality::missing,"M16 not qualified"};
+    return s;
+}
 
 class M23AlphaDiagnosticReportTest final : public QObject {
     Q_OBJECT
