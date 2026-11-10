@@ -156,7 +156,7 @@ public:
                       ? QStringLiteral("M16 UNQUALIFIED")
                       : QString::fromStdString(
                           m21_private::ui_candidate::quality_label(
-                              s.metrics[metric].quality));
+                              s.metric_quality[metric]));
                     quality.insert(QString::fromLatin1(names[metric]),tag);
                 }
                 result.panels[i].insert("privateQualityOnly",quality);
