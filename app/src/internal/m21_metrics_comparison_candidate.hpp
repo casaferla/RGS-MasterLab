@@ -93,7 +93,13 @@ struct ReadinessSnapshot final {
     std::uint64_t scope_frames{};
     std::uint32_t sample_rate_hz{};
     Lifecycle lifecycle{Lifecycle::missing};
-    std::array<Quality,9> metric_quality{};
+    // Quality::present is enum zero: value-initializing an array would
+    // accidentally claim nine AVAILABLE metrics before any producer ran.
+    // A default status receipt MUST be fail-closed.
+    std::array<Quality,9> metric_quality{{
+        Quality::missing,Quality::missing,Quality::missing,
+        Quality::missing,Quality::missing,Quality::missing,
+        Quality::missing,Quality::missing,Quality::missing}};
 };
 
 inline Cell state_cell(Lifecycle lifecycle) {
