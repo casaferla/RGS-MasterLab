@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PublicationRejectsRelabeledColumnAndUnknownRole();
     void m21PublicationPreservesIndependentGoldScope();
     void m21TonalRejectsOrphanPairProof();
     void m21PublicationRejectsContradictoryScalarStates();
@@ -556,6 +557,25 @@ m21PublicationPreservesIndependentGoldScope()
     QCOMPARE(stale.columns[1]->lifecycle,m21::Lifecycle::stale);
     QCOMPARE(stale.prepared_to_gold[0].quality,m21::Quality::stale);
     QVERIFY(!stale.prepared_to_gold[0].unrounded);
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PublicationRejectsRelabeledColumnAndUnknownRole()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture(m21::Column::prepared,1);
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    s.column=m21::Column::gold;
+    QVERIFY(!guard.publish(s));
+    s.column=static_cast<m21::Column>(255);
+    QVERIFY(!guard.expect(s.column,1));
+    QVERIFY(!guard.publish(s));
+    s.column=m21::Column::prepared;
+    QVERIFY(guard.publish(s));
+    const auto readback=guard.view();
+    QVERIFY(readback.columns[0]);
+    QCOMPARE(readback.columns[0]->column,m21::Column::prepared);
+    QVERIFY(!readback.columns[1]);
 }
 
 } // namespace
