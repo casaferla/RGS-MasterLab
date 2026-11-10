@@ -18,6 +18,7 @@ private slots:
     void fullOwningResourceUsesActualM16OnlyAcrossSixRates();
     void scopedSubviewNeverReportsFakeRegionalTruePeak();
     void silenceAndInsufficientScopeRemainTyped();
+    void silentLoudnessGateIsAuthoritativelyEmpty();
     void loudnessUnavailableIsNotAnInventedRetainedUnion();
     void retainedLoudnessUnionIsAbsoluteAndFullAtSixRates();
 };
@@ -208,6 +209,30 @@ loudnessUnavailableIsNotAnInventedRetainedUnion()
     QVERIFY(out.value()->retained_block_union.empty());
     QVERIFY(out.value()->integrated_lufs.state==
             BasicLevelValueState::INSUFFICIENT_DURATION);
+}
+
+void BasicLevelAnalyzerTest::
+silentLoudnessGateIsAuthoritativelyEmpty()
+{
+    using namespace analysis;
+    auto rate=core::SampleRate::create(48000);
+    auto format=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    auto frames=core::FrameCount::create(48000);
+    QVERIFY(rate&&format&&frames);
+    auto pcm=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{2002},*frames.value());
+    QVERIFY(pcm);
+    auto out=measure_basic_level_scope(
+        pcm.value()->view(),core::FrameIndex{2002},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(out);
+    QVERIFY(out.value()->retained_block_disclosure_complete);
+    QVERIFY(out.value()->retained_block_union.empty());
+    QVERIFY(!out.value()->integrated_lufs.db);
+    QVERIFY(out.value()->integrated_lufs.state==
+            BasicLevelValueState::BELOW_LOUDNESS_GATE);
 }
 
 } // namespace rgsml::tests
