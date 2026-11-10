@@ -93,6 +93,31 @@ def test_product_binds_status_without_demo() -> None:
     assert "inbox_->accept_render(" in driver
     assert "std::thread([state,task=std::move(task)]" in single_flight
     assert "state_->finished.load(std::memory_order_acquire)" in single_flight
+    # Private M21 evidence validator is structural, not a second
+    # canonical Phase-6 registry or numeric UI publication authority.
+    integrity = read("app/src/internal/m21_metrics_comparison_candidate.hpp")
+    for required in (
+        "valid_private_spectrum(const Snapshot& s)",
+        "valid_private_tonal_profile(const Snapshot& s)",
+        "point.hz<=previous",
+        "point.hz>nyquist",
+        "s.tonal_profile[j].band_id==b.band_id",
+        "!valid_private_tonal_profile(incoming)",
+        "!valid_private_spectrum(incoming)",
+    ):
+        assert required in integrity
+    native = read("tests/unit/app/test_m23_alpha_diagnostic_report.cpp")
+    for required in (
+        "m21PsdRejectsDuplicateAndDescending",
+        "m21PsdRejectsOutOfBandAndNonFinite",
+        "m21TonalRejectsDuplicateIds",
+        "m21PublicationStaysStaleAfterMalformedResult",
+        "m21PublicationPreservesIndependentGoldScope",
+        "m21PublicationRejectsRelabeledColumnAndUnknownRole",
+    ):
+        assert required in native
+    assert "production_authorized() const noexcept {return false;}" in read(
+        "app/src/m21_product_status_view_model.hpp")
     assert "M21PrivateSingleFlight::matches_expected(" in driver
     assert "completed.result->column==column" in single_flight
     assert "completed.result->generation_token==generation" in single_flight
