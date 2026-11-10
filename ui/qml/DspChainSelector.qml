@@ -354,14 +354,21 @@ Rectangle {
                             opacity: (rowItem.permanentlyLit ? 1.0
                                 : rowItem.isDefaultState ? 0.58 : 1.0)
                                 * (rowItem.isBypassed ? 0.7 : 1.0)
+                            // M16/M19/M20/M21 are permanent observers.
+                            // A read-only service must NEVER claim Manual
+                            // settings just because it has no Default state.
                             Accessible.name: rowItem.moduleAdapter
                                 ? rowItem.moduleAdapter.displayName + " · "
-                                    + (rowItem.isDefaultState ? "Default" : "Manual")
+                                    + (rowItem.permanentlyLit
+                                        ? "Always on · Read-only"
+                                        : rowItem.isDefaultState ? "Default" : "Manual")
                                 : "Module icon"
                             ToolTip.text: rowItem.moduleAdapter
                                 ? rowItem.moduleAdapter.displayName + " · "
-                                    + (rowItem.isDefaultState
-                                        ? "Default settings" : "Manual non-default settings")
+                                    + (rowItem.permanentlyLit
+                                        ? "Always on · Read-only analysis / service"
+                                        : rowItem.isDefaultState
+                                            ? "Default settings" : "Manual non-default settings")
                                     + (rowItem.isBypassed ? " · Bypassed" : "")
                                 : "Module"
                             ToolTip.visible: moduleSymbolHover.hovered && moduleSymbolTooltipDwell.ready
