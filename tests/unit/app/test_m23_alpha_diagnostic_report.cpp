@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus();
     void m21ReadinessRetiresStaleGenerationWithoutAffectingReference();
     void m21ReadinessTracksNineDistinctMetricQualities();
     void m21ReadinessDoesNotCloneSpectrumOrTonalProfile();
@@ -789,6 +790,35 @@ m21ReadinessRetiresStaleGenerationWithoutAffectingReference()
     QVERIFY(after[1]->lifecycle==m21::Lifecycle::current);
     QCOMPARE(after[0]->generation_token,std::uint64_t{8});
     QCOMPARE(after[1]->generation_token,std::uint64_t{3});
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus()
+{
+    m21::PrivatePublicationGuard guard;
+    auto p=private_m21_fixture(m21::Column::prepared,1);
+    p.metrics[0]={-13.,m21::Quality::present,{}};
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(p));
+    QVERIFY(guard.expect(m21::Column::prepared,2));
+    p.generation_token=2;
+    p.average_spectrum={{300.,{2.,m21::Quality::present,{}}},
+                        {299.,{2.,m21::Quality::present,{}}}};
+    QVERIFY(!guard.publish(p));
+    const auto bad=guard.readiness_columns();
+    QVERIFY(bad[0]);
+    QVERIFY(bad[0]->lifecycle==m21::Lifecycle::stale);
+    QCOMPARE(bad[0]->generation_token,std::uint64_t{1});
+    const auto full=guard.view();
+    QVERIFY(full.columns[0]);
+    QCOMPARE(*full.columns[0]->metrics[0].unrounded,-13.);
+    p.average_spectrum[1].hz=301.;
+    QVERIFY(guard.publish(p));
+    const auto valid=guard.readiness_columns();
+    QVERIFY(valid[0]);
+    QVERIFY(valid[0]->lifecycle==m21::Lifecycle::current);
+    QCOMPARE(valid[0]->generation_token,std::uint64_t{2});
 
 }
 
