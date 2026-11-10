@@ -61,6 +61,13 @@ def test_product_binds_status_without_demo() -> None:
                    "crest", "width", "P10", "P50", "P90"):
         assert 'case "' + metric + '":' in visuals
     assert 'REFERENCE minus PREPARED or PROCESSED' in visuals
+    # Distinguish absolute source metrics from signed REFERENCE−CURRENT
+    # deltas; do not display rounded-away positive values as +0.00.
+    assert 'function deltaText(value, key)' in visuals
+    assert 'value > 0 && Number(shown) > 0' in visuals
+    assert 'root.deltaText(m21MetricRow.observed.deltaPrepared,' in visuals
+    assert 'root.deltaText(m21MetricRow.observed.deltaProcessed,' in visuals
+    assert 'root.metricText(m21MetricRow.observed.reference,' in visuals
     assert 'ToolTip.visible: sourceChoiceDwell.ready' in editor
     assert editor.count('StudioTooltipDwell {') >= 1
     dwell = read("ui/qml/StudioTooltipDwell.qml")
