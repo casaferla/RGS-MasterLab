@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21TonalRejectsOrphanPairProof();
     void m21PublicationRejectsContradictoryScalarStates();
     void m21PublicationRejectsScopeOverflowAndBadRate();
     void m21PublicationStaysStaleAfterMalformedResult();
@@ -512,6 +513,20 @@ m21PublicationRejectsContradictoryScalarStates()
     s.metrics[2]={0.,m21::Quality::present,{}};
     QVERIFY(guard.publish(s));
     QVERIFY(!guard.publish(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21TonalRejectsOrphanPairProof()
+{
+    auto s=private_m21_fixture();
+    QVERIFY(m21::valid_private_tonal_profile(s));
+    s.common_comparison_support_id="claim-without-resolution";
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.profile_denominator=12;
+    QVERIFY(m21::valid_private_tonal_profile(s));
+    s.profile_denominator=0;
+    s.common_comparison_support_id.clear();
+    QVERIFY(m21::valid_private_tonal_profile(s));
 }
 
 } // namespace
