@@ -210,6 +210,12 @@ inline bool valid_private_spectrum(const Snapshot& s) {
 // far smaller, and no unsupported 'shape dB' is synthesized here.
 inline bool valid_private_tonal_profile(const Snapshot& s) {
     if(s.tonal_profile.size()>4096U)return false;
+    // No canonical profile resolution means no valid pair-scoped
+    // comparison witness. Reject a misleading orphan proof ID even if
+    // the profile is empty (M19/M20 level-only evidence stays valid).
+    if(s.profile_denominator==0 &&
+       (!s.tonal_profile.empty()||
+        !s.common_comparison_support_id.empty()))return false;
     if(s.profile_denominator!=0 &&s.profile_denominator!=3 &&
        s.profile_denominator!=12)return false;
     if(!s.tonal_profile.empty() &&
