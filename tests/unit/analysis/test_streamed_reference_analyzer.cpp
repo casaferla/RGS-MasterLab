@@ -34,7 +34,8 @@ using namespace analysis;
         auto src=owner.view().subview(start,dst.frame_count());
         if(!src)return R::failure(*src.error());
         for(std::size_t ch=0;ch<dst.format().channel_count();++ch){
-            auto s=src.value()->channel(ch),d=dst.channel(ch);
+            auto s=src.value()->channel(ch);
+            auto d=dst.channel(ch);
             if(!s)return R::failure(*s.error());
             if(!d)return R::failure(*d.error());
             std::copy(s.value()->begin(),s.value()->end(),d.value()->begin());
