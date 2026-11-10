@@ -56,6 +56,12 @@ def test_product_binds_status_without_demo() -> None:
     assert 'StudioTooltipDwell {' in visuals
     assert visuals.count('StudioTooltipDwell {') >= 4
     assert 'ToolTip.visible:' in visuals
+    assert 'ToolTip.visible: sourceChoiceDwell.ready' in editor
+    assert editor.count('StudioTooltipDwell {') >= 1
+    dwell = read("ui/qml/StudioTooltipDwell.qml")
+    assert 'interval: 1000' in dwell
+    assert 'onPointChanged: guard.resetDwell()' in dwell
+    assert 'onHoveredChanged: guard.resetDwell()' in dwell
     assert 'dataAvailable: true' not in visuals
     assert 'fixtureMode' not in visuals
     assert "m19MetricValue_" in visuals and "heroReadout: true" in visuals
