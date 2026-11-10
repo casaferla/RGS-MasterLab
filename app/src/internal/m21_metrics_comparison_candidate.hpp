@@ -256,20 +256,8 @@ public:
             return false;
         for(const auto& c:incoming.metrics)
             if(!valid_cell_storage(c)) return false;
-        for(const auto& b:incoming.tonal_profile)
-            if(!valid_cell_storage(b.normalized_shape_db) ||
-               (!b.in_common_support && b.normalized_shape_db.unrounded))
-                return false;
-        for(const auto& p:incoming.average_spectrum)
-            if(!std::isfinite(p.hz) || p.hz<0 ||
-               !valid_cell_storage(p.power_density) ||
-               (p.power_density.unrounded && *p.power_density.unrounded<0))
-                return false;
-        if(incoming.profile_denominator!=0 &&
-           incoming.profile_denominator!=3 && incoming.profile_denominator!=12) return false;
-        if(!incoming.tonal_profile.empty() &&
-           (incoming.profile_denominator==0 ||
-            incoming.common_comparison_support_id.empty())) return false;
+        if(!valid_private_tonal_profile(incoming)||
+           !valid_private_spectrum(incoming))return false;
         slots_[i]=incoming;
         return true;
     }
