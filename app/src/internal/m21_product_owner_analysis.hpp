@@ -11,6 +11,7 @@
 #include "gold_selection_view_model.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
+#include <rgsml/analysis/streamed_reference_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
@@ -206,7 +207,7 @@ public:
     measure_gold_worker(const GoldCapture& captured)
     {
         using R=core::Result<m21_private::Snapshot>;
-        constexpr std::uint64_t kMaxDecodedPcmBytes=128ULL*1024ULL*1024ULL;
+        constexpr std::uint64_t kMaxWholePcmBytes=128ULL*1024ULL*1024ULL;
         const auto frameCount=captured.full_frames;
         const auto channels=captured.channels;
         if(!captured.gold.permissions().can_read()
@@ -218,11 +219,14 @@ public:
               &&captured.sample_rate_hz!=88200U
               &&captured.sample_rate_hz!=96000U
               &&captured.sample_rate_hz!=176400U
-              &&captured.sample_rate_hz!=192000U)
-           ||static_cast<std::uint64_t>(frameCount)>
-                kMaxDecodedPcmBytes/(sizeof(double)*channels))
-            return R::failure(failed("M21_GOLD_WHOLE_PCM_MEMORY_OR_FORMAT_LIMIT"));
-
+              &&captured.sample_rate_hz!=192000U))
+            return R::failure(failed("M21_GOLD_INVALID_CAPTURE_OR_WAV_FORMAT"));
+        // Keep the already validated original path for small WAVs. Use
+        // bounded PCM only where old whole-resource storage was unsafe.
+        // This is not a replacement M16 True Peak implementation.
+        const bool streaming=
+            static_cast<std::uint64_t>(frameCount)>
+                kMaxWholePcmBytes/(sizeof(double)*channels);
         auto endpoint=platform::windows::WindowsResourceReader::
             open_read_only(captured.gold);
         if(!endpoint)return R::failure(*endpoint.error());
@@ -237,24 +241,41 @@ public:
                 static_cast<std::int64_t>(captured.sample_rate_hz)
            ||info.audio_format().channel_count()!=channels)
             return R::failure(failed("M21_GOLD_WAV_CHANGED_SINCE_OWNER_CAPTURE"));
-        auto pcm=audio::AudioBuffer::create(
-            info.audio_format(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            core::FrameIndex{0},info.frame_count());
-        if(!pcm)return R::failure(*pcm.error());
-        const auto decoded=wave.read_frames(
-            core::FrameIndex{0},pcm.value()->mutable_view());
-        if(!decoded)return R::failure(*decoded.error());
-        if(*decoded.value()!=info.frame_count())
-            return R::failure(failed("M21_GOLD_WAV_SHORT_OR_PARTIAL_DECODE"));
+
+        analysis::BasicLevelAnalysisResult level;
+        analysis::TonalStereoAnalysisResult stereo;
+        if(streaming){
+            // Same independent WavReader across all absolute-frame passes.
+            // The adapter checks each full read and never retains track PCM.
+            auto measured=analysis::measure_streamed_reference_scope(
+                info.audio_format(),info.frame_count(),
+                [&wave](core::FrameIndex start,audio::MutableAudioBufferView view) {
+                    return wave.read_frames(start,view);
+                });
+            if(!measured)return R::failure(*measured.error());
+            level=std::move(measured.value()->level);
+            stereo=std::move(measured.value()->tonal);
+        }else{
+            auto pcm=audio::AudioBuffer::create(
+                info.audio_format(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                core::FrameIndex{0},info.frame_count());
+            if(!pcm)return R::failure(*pcm.error());
+            const auto decoded=wave.read_frames(
+                core::FrameIndex{0},pcm.value()->mutable_view());
+            if(!decoded)return R::failure(*decoded.error());
+            if(*decoded.value()!=info.frame_count())
+                return R::failure(failed("M21_GOLD_WAV_SHORT_OR_PARTIAL_DECODE"));
+            auto measuredLevel=analysis::measure_basic_level_full_resource(
+                *pcm.value());
+            if(!measuredLevel)return R::failure(*measuredLevel.error());
+            auto measuredTonal=measure_tonal_with_existing_m19_gate(
+                pcm.value()->view(),*measuredLevel.value());
+            if(!measuredTonal)return R::failure(*measuredTonal.error());
+            level=std::move(*measuredLevel.value());
+            stereo=std::move(*measuredTonal.value());
+        }
         const auto closed=wave.close();
         if(!closed)return R::failure(*closed.error());
-        const auto level=analysis::measure_basic_level_full_resource(
-            *pcm.value());
-        if(!level)return R::failure(*level.error());
-        const auto view=pcm.value()->view();
-        const auto stereo=measure_tonal_with_existing_m19_gate(
-            view,*level.value());
-        if(!stereo)return R::failure(*stereo.error());
 
         m21_private::ProductMetricsOwnerClaim claim;
         claim.column=Column::gold;
@@ -265,7 +286,7 @@ public:
         claim.scope_label="Full Track";
         claim.external_product_owner_confirmed=true;
         auto imported=m21_private::import_real_product_metrics(
-            *level.value(),*stereo.value(),claim);
+            level,stereo,claim);
         if(!imported.snapshot)
             return R::failure(failed("M21_GOLD_TYPED_IMPORT_REFUSED"));
         return R::success(std::move(*imported.snapshot));
