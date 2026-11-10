@@ -557,6 +557,13 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
 target_include_directories(rgsml_source_metadata_panel_smoke
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        # The M21 *read-only* frame tests include the authentic Product
+        # owner header, whose private dependencies are already compiled
+        # in rgsml_app. Mirror only that target's private search paths;
+        # no new library, DSP algorithm or UI production dependency.
+        ${CMAKE_SOURCE_DIR}/audio/src
+        ${CMAKE_SOURCE_DIR}/platform/windows/src
+        ${CMAKE_SOURCE_DIR}/analysis/src
         ${CMAKE_BINARY_DIR}/app/generated
 )
 target_link_libraries(rgsml_source_metadata_panel_smoke
