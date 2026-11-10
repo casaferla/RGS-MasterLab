@@ -197,9 +197,10 @@ public:
     // canonical WavReader, M19 and M20. It does not call the renderer,
     // create a Gold playback identity, or substitute SOURCE PCM.
     //
-    // The current whole-resource M16 API requires an owning AudioBuffer:
-    // until a bounded block-streaming implementation exists, refuse any
-    // decode over 128 MiB rather than allocating unbounded track storage.
+    // The current whole-resource M16 API requires an owning AudioBuffer.
+    // At up to 128 MiB the original full-PCM analysis path remains; above
+    // that boundary M19/M20 use bounded decoded blocks and M16 stays
+    // explicitly unavailable, never simulated from sample peak.
     // Never schedule this function on the UI thread for real programmes.
     // After worker completion the Qt owner MUST call gold_still_current
     // before publishing the returned Snapshot.
