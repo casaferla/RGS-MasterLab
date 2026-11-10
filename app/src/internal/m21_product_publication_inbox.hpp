@@ -114,6 +114,22 @@ public:
         return m21_private::compose(latest.columns);
     }
 
+    // Read-only Qt status path. A lightweight typed receipt contains ONLY
+    // resource identity, source scope, lifecycle and quality flags.
+    // All three roles undergo the SAME live M18/Gold Qt-owner retirement
+    // as view_current(), but no PSD, tonal curve, scalar or delta is copied.
+    [[nodiscard]] std::array<
+        std::optional<m21_private::ReadinessSnapshot>,3>
+    view_current_readiness(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold) const
+    {
+        auto latest=publisher_.readiness_columns();
+        retire_stale(latest,product,fanout,selector,gold);
+        return latest;
+    }
+
 private:
     // One and only one Qt-owner stale gate serves BOTH full private
     // comparison evidence and the numeric-free readiness receipt.
