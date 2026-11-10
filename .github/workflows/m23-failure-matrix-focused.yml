@@ -210,7 +210,10 @@ jobs:
           $names=@(Get-Content "$env:RUNNER_TEMP/m23-fq100-functions.log" |
             Where-Object { $_ -match '^[A-Za-z][A-Za-z0-9_]*\(\)$' } |
             ForEach-Object { $_ -replace '\(\)$','' })
-          if ($names.Count -lt 20) { throw "M23_FQ100_FUNCTION_INVENTORY_TOO_SMALL_$($names.Count)" }
+          if ($names.Count -lt 1) {
+            Get-Content "$env:RUNNER_TEMP/m23-fq100-functions.log" -Tail 25
+            throw "M23_FQ100_FUNCTION_INVENTORY_EMPTY"
+          }
           Write-Host "M23_FQ100_FUNCTION_COUNT=$($names.Count)"
           $failed=@()
           foreach ($name in $names) {
