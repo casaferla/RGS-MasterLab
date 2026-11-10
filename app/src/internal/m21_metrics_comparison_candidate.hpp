@@ -204,6 +204,27 @@ inline bool valid_private_spectrum(const Snapshot& s) {
     }
     return true;
 }
+// Band identities are producer-owned, not inferred from Hz by this
+// consumer. An unordered set of unique IDs is legal; duplicates are not.
+// The cap bounds the private validation cost; six-rate M20 profiles are
+// far smaller, and no unsupported 'shape dB' is synthesized here.
+inline bool valid_private_tonal_profile(const Snapshot& s) {
+    if(s.tonal_profile.size()>4096U)return false;
+    if(s.profile_denominator!=0 &&s.profile_denominator!=3 &&
+       s.profile_denominator!=12)return false;
+    if(!s.tonal_profile.empty() &&
+       (s.profile_denominator==0 ||
+        s.common_comparison_support_id.empty()))return false;
+    for(std::size_t i=0;i<s.tonal_profile.size();++i) {
+        const auto& b=s.tonal_profile[i];
+        if(!valid_cell_storage(b.normalized_shape_db)||
+           (!b.in_common_support&&b.normalized_shape_db.unrounded))
+            return false;
+        for(std::size_t j=0;j<i;++j)
+            if(s.tonal_profile[j].band_id==b.band_id)return false;
+    }
+    return true;
+}
 class PrivatePublicationGuard {
 public:
     bool expect(Column column,std::uint64_t monotonic_token) {
