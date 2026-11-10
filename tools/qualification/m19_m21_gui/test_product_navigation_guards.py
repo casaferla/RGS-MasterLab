@@ -64,7 +64,8 @@ def test_product_binds_status_without_demo() -> None:
     # Distinguish absolute source metrics from signed REFERENCE−CURRENT
     # deltas; do not display rounded-away positive values as +0.00.
     assert 'function deltaText(value, key)' in visuals
-    assert 'value > 0 && Number(shown) > 0' in visuals
+    assert 'if(Number(shown) === 0)' in visuals
+    assert 'return value > 0 ? "+" + shown : shown' in visuals
     assert 'root.deltaText(m21MetricRow.observed.deltaPrepared,' in visuals
     assert 'root.deltaText(m21MetricRow.observed.deltaProcessed,' in visuals
     assert 'root.metricText(m21MetricRow.observed.reference,' in visuals
