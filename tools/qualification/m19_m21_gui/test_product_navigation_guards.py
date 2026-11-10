@@ -100,6 +100,7 @@ def test_product_binds_status_without_demo() -> None:
         "a.panels==b.panels",
     ):
         assert token in bridge
+    smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     for slot in (
         "m21ReadinessFrameDetectsMasterRateIdentity",
         "m21ReadinessFrameDetectsProjectAndSourceGenerations",
@@ -108,7 +109,6 @@ def test_product_binds_status_without_demo() -> None:
     ):
         assert slot in smoke
     assert "TerminalLimiterViewModel::acceptedStateChanged" in main
-    smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     for test_name in ("m21IdenticalReadinessFrameDoesNotRequireRepaint",
                       "m21ReadinessFrameDetectsProductMutation",
                       "m21ReadinessFrameDetectsPanelRoutingAndQuality"):
