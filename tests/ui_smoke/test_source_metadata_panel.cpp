@@ -546,6 +546,7 @@ private slots:
     void m21IdenticalReadinessFrameDoesNotRequireRepaint();
     void m21ReadinessFrameDetectsProductMutation();
     void m21ReadinessFrameDetectsPanelRoutingAndQuality();
+    void m21ReadinessFrameDetectsReferenceScope();
     void m21ReadinessFrameDetectsProjectAndSourceGenerations();
     void m21ReadinessFrameDetectsMasterRateIdentity();
 
@@ -664,6 +665,29 @@ m21ReadinessFrameDetectsProjectAndSourceGenerations()
     a.owner_identity.master_generation=4;
     QVERIFY(!Bridge::same_visible_frame(a,b));
     b.owner_identity.master_generation=4;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsReferenceScope()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.identities[1].scope="Full Track";
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].scope="Full Track";
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].sample_rate=44100U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].sample_rate=44100U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].frames=88200U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].frames=88200U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].start=1234U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].start=1234U;
     QVERIFY(Bridge::same_visible_frame(a,b));
 }
 
