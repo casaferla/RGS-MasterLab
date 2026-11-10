@@ -111,6 +111,26 @@ void DspModuleAdapterTest::testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMo
             QVERIFY(!item->bypass());
         }
     }
+    // M16 and M19-M21 are all permanent non-processing observers.
+    // A missing or unqualified metric never creates a sonic bypass.
+    const auto* m16=qobject_cast<DspModuleAdapter*>(
+        model.modules().at(4).value<QObject*>());
+    QVERIFY(m16);
+    QVERIFY(m16->non_processing_service());
+    QVERIFY(!m16->bypass_supported());
+    QVERIFY(!m16->bypass());
+    for(qsizetype n=6;n<=8;++n) {
+        auto* observer=qobject_cast<DspModuleAdapter*>(
+            model.modules().at(n).value<QObject*>());
+        QVERIFY(observer);
+        QCOMPARE(observer->non_processing_service(),
+                 m16->non_processing_service());
+        QCOMPARE(observer->bypass_supported(),m16->bypass_supported());
+        QCOMPARE(observer->bypass(),m16->bypass());
+        QCOMPARE(observer->configuration_state(),QStringLiteral("Read-only"));
+        observer->setBypass(true);
+        QVERIFY(!observer->bypass());
+    }
     QCOMPARE(stableIds.at(6),QStringLiteral("analysis:rgsml.m19"));
     QCOMPARE(stableIds.at(7),QStringLiteral("analysis:rgsml.m20"));
     QCOMPARE(stableIds.at(8),QStringLiteral("analysis:rgsml.m21"));
