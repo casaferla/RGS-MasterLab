@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PsdAcceptsZeroAndNyquist();
 
 
 };
@@ -292,6 +293,23 @@ m21WorkerExceptionCannotPublish()
     QVERIFY(!completed->result);
     QVERIFY(!M21PrivateSingleFlight::matches_expected(
         *completed,113,rgsml::app::m21_private::Column::prepared,1));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PsdAcceptsZeroAndNyquist()
+{
+    auto s=private_m21_fixture();
+    s.average_spectrum={{0.,{0.,m21::Quality::present,{}}},
+                        {100.,{1.e-9,m21::Quality::present,{}}},
+                        {24000.,{0.,m21::Quality::present,{}}}};
+    QVERIFY(m21::valid_private_spectrum(s));
+    m21::PrivatePublicationGuard guard;
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(s));
+    const auto view=guard.view();
+    QVERIFY(view.columns[0]);
+    QCOMPARE(view.columns[0]->average_spectrum.size(),std::size_t{3});
+    QCOMPARE(view.columns[0]->average_spectrum.back().hz,24000.);
 }
 
 } // namespace
