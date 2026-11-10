@@ -109,9 +109,15 @@ public:
             const auto& evidence=*captured.value();
             if(column==Column::processed &&!evidence.processed)
                 continue;
-            const auto key=render_key(evidence,column);
+            // Exact immutable render identity is independent of the M18
+            // owner epoch. A new render can be installed in the SAME
+            // epoch: suppress only when BOTH the key and retained PCM
+            // owner are identical. Weak ownership avoids pinning old PCM.
+            const auto render=column==Column::prepared
+                ?evidence.prepared:evidence.processed;
+            auto key=render_key(evidence,column);
             const auto index=static_cast<std::size_t>(column);
-            if(attempted_[index] &&*attempted_[index]==key)continue;
+            if(renderAttempts_[index].matches(key,render))continue;
             auto task=[evidence,column]() -> std::optional<Snapshot> {
                 auto result=Product::measure_render_worker(evidence,column);
                 if(!result)return std::nullopt;
@@ -121,7 +127,7 @@ public:
             if(!worker_.start(id,std::move(task)))return;
             next_request_id_+=1;
             active_=Active{id,column,evidence,std::nullopt};
-            attempted_[index]=key;
+            renderAttempts_[index].remember(std::move(key),render);
             return;
         }
     }
@@ -182,7 +188,10 @@ private:
     QThread* owner_;
     M21PrivateSingleFlight worker_;
     std::uint64_t next_request_id_{1};
+    // REFERENCE comes from an independently selected WAV file, so its
+    // attempt key is a resource+epoch identity rather than a RenderResult.
     std::array<std::optional<std::string>,3> attempted_{};
+    std::array<M21PrivateRenderAttempt,3> renderAttempts_{};
     std::optional<Active> active_{};
 };
 } // namespace rgsml::app::internal
