@@ -181,6 +181,31 @@ jobs:
             throw 'M23_BUILD_FAILED'
           }
           Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 5
+      - name: Reproduce FQ100 M23 diagnostic under canonical Windows Debug
+        shell: pwsh
+        run: |
+          # FQ100 failed 1/141 in VS Debug (0xC0000409), while focused
+          # Release was green. Do not treat Release as a Debug substitute.
+          $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          $env:PATH="$qtRoot/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qtRoot/qml"
+          Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+          Remove-Item Env:QT_QUICK_BACKEND -ErrorAction SilentlyContinue
+          cmake -S . -B build/m23-fq100-debug -G "Visual Studio 17 2022" -A x64 -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$qtRoot" *> "$env:RUNNER_TEMP/m23-debug-configure.log"
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content "$env:RUNNER_TEMP/m23-debug-configure.log" -Tail 35
+            throw 'M23_FQ100_DEBUG_CONFIGURE_FAILED'
+          }
+          cmake --build build/m23-fq100-debug --config Debug --parallel 4 --target rgsml_m23_alpha_diagnostic_tests *> "$env:RUNNER_TEMP/m23-debug-build.log"
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content "$env:RUNNER_TEMP/m23-debug-build.log" -Tail 45
+            throw 'M23_FQ100_DEBUG_BUILD_FAILED'
+          }
+          $exe="build/m23-fq100-debug/Debug/rgsml_m23_alpha_diagnostic_tests.exe"
+          & $exe -v1 *> "$env:RUNNER_TEMP/m23-fq100-debug-case.log"
+          $result=$LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/m23-fq100-debug-case.log" -Tail 70
+          if ($result -ne 0) { throw "M23_FQ100_DEBUG_REPRODUCED_EXIT_$result" }
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
         run: |
