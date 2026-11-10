@@ -709,13 +709,13 @@ m21ReadinessRetainsExactRoleAndScope()
     QVERIFY(status[0]->column==m21::Column::prepared);
     QVERIFY(status[1]->column==m21::Column::gold);
     QVERIFY(status[2]->column==m21::Column::processed);
-    QCOMPARE(status[0]->resource_identity,std::string("prepared:new"));
-    QCOMPARE(status[1]->resource_identity,std::string("gold:independent"));
-    QCOMPARE(status[2]->resource_identity,std::string("processed:genuine"));
+    QVERIFY(status[0]->resource_identity==std::string("prepared:new"));
+    QVERIFY(status[1]->resource_identity==std::string("gold:independent"));
+    QVERIFY(status[2]->resource_identity==std::string("processed:genuine"));
     QCOMPARE(status[1]->sample_rate_hz,std::uint32_t{44100});
     QCOMPARE(status[1]->absolute_scope_begin,std::uint64_t{789});
     QCOMPARE(status[1]->scope_frames,std::uint64_t{88200});
-    QCOMPARE(status[1]->analysis_scope_label,std::string("Region"));
+    QVERIFY(status[1]->analysis_scope_label==std::string("Region"));
 
 }
 
@@ -863,7 +863,7 @@ m21ReadinessIsOnlyCopyOfIdentityAndQuality()
     light[0]->lifecycle=m21::Lifecycle::stale;
     const auto fresh=guard.readiness_columns();
     QVERIFY(fresh[0]);
-    QCOMPARE(fresh[0]->resource_identity,std::string("immutable:private:a"));
+    QVERIFY(fresh[0]->resource_identity==std::string("immutable:private:a"));
     QVERIFY(fresh[0]->metric_quality[1]==m21::Quality::present);
     QVERIFY(fresh[0]->lifecycle==m21::Lifecycle::current);
     const auto full=guard.view();
