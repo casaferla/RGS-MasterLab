@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21RenderAttemptDeduplicatesSamePhysicalOwner();
     void m21PublicationRejectsRelabeledColumnAndUnknownRole();
     void m21PublicationPreservesIndependentGoldScope();
     void m21TonalRejectsOrphanPairProof();
@@ -576,6 +577,19 @@ m21PublicationRejectsRelabeledColumnAndUnknownRole()
     QVERIFY(readback.columns[0]);
     QVERIFY(readback.columns[0]->column==m21::Column::prepared);
     QVERIFY(!readback.columns[1]);
+}
+
+void M23AlphaDiagnosticReportTest::
+m21RenderAttemptDeduplicatesSamePhysicalOwner()
+{
+    M21PrivateRenderAttempt attempt;
+    const auto pcm=std::make_shared<const int>(11);
+    QVERIFY(!attempt.matches("epoch:21|source:A",pcm));
+    attempt.remember("epoch:21|source:A",pcm);
+    QVERIFY(attempt.matches("epoch:21|source:A",pcm));
+    const std::shared_ptr<const int> alias=pcm;
+    QVERIFY(attempt.matches("epoch:21|source:A",alias));
+    QVERIFY(!attempt.matches("epoch:22|source:A",pcm));
 }
 
 } // namespace
