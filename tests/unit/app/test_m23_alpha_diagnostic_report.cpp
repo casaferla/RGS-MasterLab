@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21RenderAttemptAcceptsReplacementInsideSameEpoch();
     void m21RenderAttemptDeduplicatesSamePhysicalOwner();
     void m21PublicationRejectsRelabeledColumnAndUnknownRole();
     void m21PublicationPreservesIndependentGoldScope();
@@ -590,6 +591,20 @@ m21RenderAttemptDeduplicatesSamePhysicalOwner()
     const std::shared_ptr<const int> alias=pcm;
     QVERIFY(attempt.matches("epoch:21|source:A",alias));
     QVERIFY(!attempt.matches("epoch:22|source:A",pcm));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21RenderAttemptAcceptsReplacementInsideSameEpoch()
+{
+    M21PrivateRenderAttempt attempt;
+    const auto original=std::make_shared<const int>(17);
+    const auto replacement=std::make_shared<const int>(17);
+    attempt.remember("source:A|epoch:8|prepared",original);
+    QVERIFY(attempt.matches("source:A|epoch:8|prepared",original));
+    QVERIFY(!attempt.matches("source:A|epoch:8|prepared",replacement));
+    attempt.remember("source:A|epoch:8|prepared",replacement);
+    QVERIFY(attempt.matches("source:A|epoch:8|prepared",replacement));
+    QVERIFY(!attempt.matches("source:A|epoch:8|prepared",original));
 }
 
 } // namespace
