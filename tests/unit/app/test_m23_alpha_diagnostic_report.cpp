@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21TonalRejectsMissingProofAndBadResolution();
     void m21TonalRejectsDuplicateIds();
     void m21TonalAcceptsUnsortedCertifiedBands();
     void m21PsdRejectsBadPowerAndMissingValue();
@@ -389,6 +390,22 @@ m21TonalRejectsDuplicateIds()
                      {100,true,{3.,m21::Quality::present,{}}}};
     QVERIFY(!m21::valid_private_tonal_profile(s));
     s.tonal_profile[2].band_id=201;
+    QVERIFY(m21::valid_private_tonal_profile(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21TonalRejectsMissingProofAndBadResolution()
+{
+    auto s=private_m21_fixture();
+    s.tonal_profile={{100,true,{1.,m21::Quality::present,{}}}};
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.profile_denominator=12;
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.common_comparison_support_id="external-pair-proof";
+    QVERIFY(m21::valid_private_tonal_profile(s));
+    s.profile_denominator=7;
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.profile_denominator=3;
     QVERIFY(m21::valid_private_tonal_profile(s));
 }
 
