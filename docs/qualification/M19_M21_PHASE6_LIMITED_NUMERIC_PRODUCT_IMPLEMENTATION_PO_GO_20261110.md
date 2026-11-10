@@ -34,3 +34,16 @@ Any UI binding added ahead of Gate G must be non-activatable in current Product 
 Build/run existing CTest and M23 source guards on Windows and Linux, including M19 full-scope six-rate tests, M20 stereo/P06, independent >128-MiB WAV REFERENCE real decoder + owner/inbox, nonprocessing module adapter parity, vector-QML geometry and new limited numeric candidate validation. Keep user-visible numbers gated until a separate official Gate G result. No automatic merge of PR #99, no change to `main`, no FQ PASS without PO physical Windows M18/M23 and M24 17-step/listening verdict. No false closure from code coverage.
 
 Implementation staging follows the single-writer epoch; make substantial batches, one CI promotion per coherent candidate, no invented commit counts. Record actual result in Drive.
+
+## 5. First staged implementation checkpoint (nonrelease)
+
+Implemented on the current single-writer branch, in the **existing** `app/src/m21_product_status_view_model.hpp/.cpp`, as the `phase6ReleaseReadouts` Qt property and `phase6_release_readouts()` method. The method first checks `production_authorized()`, the real Qt owner thread and the one authentic inbox; current `production_authorized()` stays hard **false**. When future certified authority is granted, the implementation is prepared to project:
+- M19 current selected source's available non-M16 LUFS/RMS/sample peak/crest values;
+- M20 current selected source's P06 Width and Grid100 p10/p50/p90 and authentic linear static PSD, while never inventing unsupported normalized 1/12-octave dB;
+- M21 one 9-row table for PREPARED/REFERENCE/PROCESSED and the preexisting REF-minus-current deltas, only for strictly `Quality::present`, finite, current owner/scope cells; row 3 M16 TP stays masked.
+
+Current returned map is **always empty** and is not consumed in QML. The existing status-only lightweight readiness bridge is unchanged. The native Windows real-REFERENCE integration test now asserts an empty C++ readout AND an empty Qt property even after legitimate short and >128-MiB REFERENCE analysis. Source guard checks the strict release guard and no QML binding. This is real Product presentation preparation but **not** official Phase-6 FeatureStatus/Gate G, not a release, and not a visible new numeric widget.
+
+The existing M16/M19–M21 selector `permanentlyLit` rule already ensured correct no-bypass row brightness and icon glow. A PO-requested text-only accessibility/tooltip correction prevents the three read-only analyzers from being mislabeled Manual; the frozen FQ99 GUI guard now normalizes only this exact text delta and the previously approved vector addition. Analyzer geometry, opacity/glow expressions, processing chain and all old core icon silhouettes remain unchanged. Additional native and source guard tests assert this precise parity.
+
+No other changes to Phase-6 mathematical policy or calculation are authorized by this checkpoint. Follow-up implementation must reconcile a genuine existing canonical registry/official numeric Gate G authority and only then activate `phase6ReleaseReadouts` in the QML controls. Do not set `production_authorized()` true merely to demonstrate numbers in screenshots.
