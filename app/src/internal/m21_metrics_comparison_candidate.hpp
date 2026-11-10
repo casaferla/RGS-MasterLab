@@ -186,6 +186,24 @@ inline bool valid_cell_storage(const Cell& c) {
       c.unrounded && std::isfinite(*c.unrounded) :
       !c.unrounded;
 }
+// Structural evidence only, NEVER a Phase-6 producer or FeatureStatus.
+// A static PSD must have increasing physical frequencies within Nyquist.
+// Missing-valued bins may remain absent; they cannot carry phantom numbers.
+inline bool valid_private_spectrum(const Snapshot& s) {
+    if(s.average_spectrum.size()>1048576U)return false;
+    const double nyquist=static_cast<double>(s.sample_rate_hz)*0.5;
+    double previous=-1.;
+    for(const auto& point:s.average_spectrum) {
+        if(!std::isfinite(point.hz)||point.hz<0.||
+           point.hz<=previous||point.hz>nyquist||
+           !valid_cell_storage(point.power_density)||
+           (point.power_density.unrounded &&
+            *point.power_density.unrounded<0.))
+            return false;
+        previous=point.hz;
+    }
+    return true;
+}
 class PrivatePublicationGuard {
 public:
     bool expect(Column column,std::uint64_t monotonic_token) {
