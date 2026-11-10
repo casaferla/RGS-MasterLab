@@ -56,6 +56,11 @@ def test_product_binds_status_without_demo() -> None:
     assert 'StudioTooltipDwell {' in visuals
     assert visuals.count('StudioTooltipDwell {') >= 4
     assert 'ToolTip.visible:' in visuals
+    assert 'root.metricExplanation(m21MetricRow.observed.key)' in visuals
+    for metric in ("lufs", "rms", "samplePeak", "truePeak",
+                   "crest", "width", "P10", "P50", "P90"):
+        assert 'case "' + metric + '":' in visuals
+    assert 'REFERENCE minus PREPARED or PROCESSED' in visuals
     assert 'ToolTip.visible: sourceChoiceDwell.ready' in editor
     assert editor.count('StudioTooltipDwell {') >= 1
     dwell = read("ui/qml/StudioTooltipDwell.qml")
