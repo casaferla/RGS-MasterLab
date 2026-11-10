@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessRetainsExactRoleAndScope();
     void m21ReadinessReceiptIsSmallerThanNumericEvidence();
     void m21RenderAttemptNoOwnerIsNeverCurrent();
     void m21RenderAttemptChangesKeysAndSupportsReset();
@@ -674,6 +675,41 @@ m21ReadinessReceiptIsSmallerThanNumericEvidence()
     QVERIFY(status[0]->metric_quality[3]==m21::Quality::missing);
     const auto full=guard.view();
     QCOMPARE(*full.columns[0]->metrics[0].unrounded,-17.5);
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessRetainsExactRoleAndScope()
+{
+    m21::PrivatePublicationGuard guard;
+    auto p=private_m21_fixture(m21::Column::prepared,2);
+    auto g=private_m21_fixture(m21::Column::gold,3);
+    auto x=private_m21_fixture(m21::Column::processed,4);
+    p.resource_identity="prepared:new";
+    g.resource_identity="gold:independent";
+    x.resource_identity="processed:genuine";
+    g.sample_rate_hz=44100;
+    g.scope_frames=88200;
+    g.absolute_scope_begin=789;
+    g.analysis_scope_label="Region";
+    QVERIFY(guard.expect(m21::Column::prepared,2));
+    QVERIFY(guard.expect(m21::Column::gold,3));
+    QVERIFY(guard.expect(m21::Column::processed,4));
+    QVERIFY(guard.publish(p));
+    QVERIFY(guard.publish(g));
+    QVERIFY(guard.publish(x));
+    const auto status=guard.readiness_columns();
+    for(std::size_t i=0;i<3;++i)QVERIFY(status[i]);
+    QVERIFY(status[0]->column==m21::Column::prepared);
+    QVERIFY(status[1]->column==m21::Column::gold);
+    QVERIFY(status[2]->column==m21::Column::processed);
+    QCOMPARE(status[0]->resource_identity,std::string("prepared:new"));
+    QCOMPARE(status[1]->resource_identity,std::string("gold:independent"));
+    QCOMPARE(status[2]->resource_identity,std::string("processed:genuine"));
+    QCOMPARE(status[1]->sample_rate_hz,std::uint32_t{44100});
+    QCOMPARE(status[1]->absolute_scope_begin,std::uint64_t{789});
+    QCOMPARE(status[1]->scope_frames,std::uint64_t{88200});
+    QCOMPARE(status[1]->analysis_scope_label,std::string("Region"));
 
 }
 
