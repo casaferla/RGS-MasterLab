@@ -363,6 +363,74 @@ private:
     QString workflowContext_;
 };
 
+// Product analysis navigation only. These rows live in the visual chain
+// between M17 and MONITOR, never in ProcessingChain or Project serialization.
+// They do not publish fictional measurements: actual numerical authority
+// remains with the canonical M19/M20/M21 Product/Phase-6 owner.
+class ProductAnalysisModuleAdapter final : public DspModuleAdapter {
+public:
+    ProductAnalysisModuleAdapter(int milestone,QObject* statusVm,
+        QString context,QObject* parent=nullptr)
+      :DspModuleAdapter(parent),milestone_(milestone),
+       statusVm_(statusVm),context_(std::move(context))
+    {
+        if(statusVm_)QObject::connect(statusVm_,SIGNAL(changed()),
+            this,SIGNAL(changed()));
+    }
+    [[nodiscard]] QString instance_id() const override
+    {return QStringLiteral("analysis:rgsml.m%1").arg(milestone_);}
+    [[nodiscard]] QString type_id() const override
+    {return QStringLiteral("rgsml.analysis.m%1").arg(milestone_);}
+    [[nodiscard]] QString display_name() const override {
+        switch(milestone_) {
+        case 19:return QStringLiteral("M19 · Levels");
+        case 20:return QStringLiteral("M20 · Tonal/Stereo");
+        default:return QStringLiteral("M21 · Metrics/Delta");
+        }
+    }
+    [[nodiscard]] QString workspace_context_label() const override
+    {return context_+QStringLiteral(" · Read-only analysis");}
+    [[nodiscard]] QString configuration_state() const override
+    {return QStringLiteral("Read-only");}
+    [[nodiscard]] bool bypass_supported() const noexcept override{return false;}
+    [[nodiscard]] bool non_processing_service() const noexcept override{return true;}
+    [[nodiscard]] bool bypass() const noexcept override{return false;}
+    [[nodiscard]] bool preview_supported() const noexcept override{return false;}
+    [[nodiscard]] QString preview_status() const override
+    {return QStringLiteral("NO_PREVIEW");}
+    [[nodiscard]] QString preview_error() const override{return {};}
+    [[nodiscard]] bool history_supported() const noexcept override{return false;}
+    [[nodiscard]] bool can_undo() const noexcept override{return false;}
+    [[nodiscard]] bool can_redo() const noexcept override{return false;}
+    [[nodiscard]] bool reset_supported() const noexcept override{return false;}
+    [[nodiscard]] QString editor_content_key() const override
+    {return QStringLiteral("M%1_ANALYSIS").arg(milestone_);}
+    [[nodiscard]] QString live_change_policy() const override
+    {return QStringLiteral("ANALYSIS_READ_ONLY_NO_DSP_MUTATION");}
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override{return nullptr;}
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override{return nullptr;}
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override{return nullptr;}
+    [[nodiscard]] QString family_accent() const override
+    {return QStringLiteral("#6CBCCF");}
+    [[nodiscard]] QString state_text() const override {
+        if(!statusVm_)return QStringLiteral("UNAVAILABLE");
+        // All existing M21 status maps are deliberately NON-authorizing.
+        // A current private result cannot be marketed as a Product analysis.
+        return statusVm_->property("productionAuthorized").toBool()
+            ?QStringLiteral("Analysis ready")
+            :QStringLiteral("Not yet qualified");
+    }
+    [[nodiscard]] bool has_error() const noexcept override{return false;}
+    void setBypass(bool) override {}
+    void undo() override {}
+    void redo() override {}
+    void resetToDefault() override {}
+private:
+    int milestone_{19};
+    QObject* statusVm_{nullptr};
+    QString context_;
+};
+
 // MONITOR is a selectable workflow/service row, NOT a sonic DSP module.
 // This adapter exists only at presentation level; it is never installed
 // in MasteringChainState, ModuleRegistry or a render ProcessingChain.

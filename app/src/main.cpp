@@ -30,6 +30,7 @@
 #include "terminal_private_product_session.hpp"
 #include "m18_product_export_view_model.hpp"
 #include "m21_product_status_view_model.hpp"
+#include "internal/m21_private_product_analysis_coordinator.hpp"
 #include "internal/m18_product_complete_binding.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"
@@ -937,6 +938,34 @@ int main(int argc, char* argv[])
     rgsml::app::M21ProductStatusViewModel m21ProductStatusViewModel{
         m18Controllers,m18Fanout,auditionSelector,goldSelection,
         m21ProductInbox};
+    // Private Product evidence only: a single Qt-free worker analyzes
+    // immutable PREPARED, independent REFERENCE, or genuine PROCESSED.
+    // The 250ms owner loop never performs PCM I/O or numerical DSP;
+    // successful completions are accepted only if the M18 owner still
+    // matches. QML remains numerically masked pending Phase-6 gates.
+    rgsml::app::internal::M21PrivateProductAnalysisCoordinator
+        m21AnalysisCoordinator{
+            m18Controllers,m18Fanout,auditionSelector,goldSelection,
+            m21ProductInbox,m21ProductStatusViewModel};
+    QTimer m21AnalysisPollTimer;
+    m21AnalysisPollTimer.setInterval(250);
+    QObject::connect(&m21AnalysisPollTimer,&QTimer::timeout,
+        &application,[&m21AnalysisCoordinator] {
+            m21AnalysisCoordinator.tick();
+        });
+    m21AnalysisPollTimer.start();
+    // PO: the three analysis panels precede Master Audition in the VISUAL
+    // selector; real numeric publication still requires Phase-6 Product gates.
+    dspChainAdapterModel.bindAnalysisStatusViewModel(
+        &m21ProductStatusViewModel);
+    // Direct SOURCE commit observer: some successful source batches
+    // retire old PCM before audition routing emits its own changed().
+    // Queue until the Product-wide mutation/epoch lease has unwound.
+    QObject::connect(&sourceSelection,
+        &rgsml::app::SourceSelectionViewModel::sourceChanged,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
         &m21ProductStatusViewModel,
@@ -954,6 +983,20 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
     QObject::connect(&previewController,
         &rgsml::app::MasteringPreviewController::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+    // Master clock and M17 terminal revisions can stale M21 Product
+    // evidence without a SOURCE/REFERENCE picker event. The genuine
+    // owner gates in Bridge::capture decide which states are current;
+    // the queued observer only refreshes the status-only view.
+    QObject::connect(&masterOutputRate,
+        &rgsml::app::MasterOutputRateState::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &m21ProductStatusViewModel,
         &rgsml::app::M21ProductStatusViewModel::refresh,
         Qt::QueuedConnection);

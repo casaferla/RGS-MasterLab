@@ -15,6 +15,7 @@ Rectangle {
     property var eqViewModel: null
     property var compressorViewModel: null
     property var spectrumViewModel: null
+    property var analysisStatusViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
@@ -170,7 +171,10 @@ Rectangle {
         && (root.activeModule.editorContentKey === "STEREO_MS"
             || root.activeModule.editorContentKey === "TRUE_PEAK_METER"
             || root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER"
-            || root.activeModule.editorContentKey === "MASTER_MONITOR")
+            || root.activeModule.editorContentKey === "MASTER_MONITOR"
+            || root.activeModule.editorContentKey === "M19_ANALYSIS"
+            || root.activeModule.editorContentKey === "M20_ANALYSIS"
+            || root.activeModule.editorContentKey === "M21_ANALYSIS")
 
     ColumnLayout {
         anchors.fill: parent
@@ -698,6 +702,56 @@ Rectangle {
             grTimelineScope: root.m17GrTimelineScope
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive
+        }
+
+        // M19–M21: three persistent read-only pages, like the qualified
+        // M16 TruePeakMeterEditor. The existing ColumnLayout is the only
+        // geometry owner: hidden pages are excluded from its allocation.
+        // Pages belong to the host throughout its dock/floating lifetime,
+        // preserving view state across navigation without create/destroy.
+        AnalysisStatusEditor {
+            id: m19LevelAnalysisEditor
+            objectName: "m19LevelProductAnalysisEditor"
+            panelIndex: 0
+            statusViewModel: root.analysisStatusViewModel
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "M19_ANALYSIS" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+        }
+
+        AnalysisStatusEditor {
+            id: m20TonalStereoAnalysisEditor
+            objectName: "m20TonalStereoProductAnalysisEditor"
+            panelIndex: 1
+            statusViewModel: root.analysisStatusViewModel
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "M20_ANALYSIS" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+        }
+
+        AnalysisStatusEditor {
+            id: m21MetricsDeltaAnalysisEditor
+            objectName: "m21MetricsDeltaProductAnalysisEditor"
+            panelIndex: 2
+            statusViewModel: root.analysisStatusViewModel
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "M21_ANALYSIS" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
         }
 
         MonitorEditor {

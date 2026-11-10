@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 
 namespace rgsml::tests {
 
@@ -18,6 +19,9 @@ private slots:
     void fullOwningResourceUsesActualM16OnlyAcrossSixRates();
     void scopedSubviewNeverReportsFakeRegionalTruePeak();
     void silenceAndInsufficientScopeRemainTyped();
+    void silentLoudnessGateIsAuthoritativelyEmpty();
+    void loudnessUnavailableIsNotAnInventedRetainedUnion();
+    void retainedLoudnessUnionIsAbsoluteAndFullAtSixRates();
 };
 
 void BasicLevelAnalyzerTest::
@@ -145,6 +149,94 @@ silenceAndInsufficientScopeRemainTyped()
     QVERIFY(!result.value()->true_peak_db_tp.db);
     QCOMPARE(result.value()->true_peak_db_tp.state,
              BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED);
+}
+
+void BasicLevelAnalyzerTest::
+retainedLoudnessUnionIsAbsoluteAndFullAtSixRates()
+{
+    using namespace analysis;
+    for(const int hz:{44100,48000,88200,96000,176400,192000}) {
+        auto rate=core::SampleRate::create(hz);
+        QVERIFY(rate);
+        auto format=audio::AudioFormat::create(
+            *rate.value(),audio::ChannelLayout::STEREO_LR);
+        auto count=core::FrameCount::create(hz/2);
+        QVERIFY(format&&count);
+        auto pcm=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{317},*count.value());
+        QVERIFY(pcm);
+        auto frame=pcm.value()->mutable_view();
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto plane=frame.channel(ch);
+            QVERIFY(plane);
+            for(std::size_t i=0;i<plane.value()->size();++i) {
+                (*plane.value())[i]=0.5*std::sin(
+                    2.0*std::numbers::pi*440.0*static_cast<double>(i)/hz);
+            }
+        }
+        auto out=measure_basic_level_scope(
+            pcm.value()->view(),core::FrameIndex{317},*count.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+        QVERIFY(out);
+        QVERIFY(out.value()->integrated_lufs.db);
+        QVERIFY(out.value()->retained_block_disclosure_complete);
+        QCOMPARE(out.value()->retained_block_union.size(),std::size_t{1});
+        QCOMPARE(out.value()->retained_block_union[0].begin,
+                 std::uint64_t{317});
+        QCOMPARE(out.value()->retained_block_union[0].end,
+                 static_cast<std::uint64_t>(317+hz/2));
+    }
+}
+
+void BasicLevelAnalyzerTest::
+loudnessUnavailableIsNotAnInventedRetainedUnion()
+{
+    using namespace analysis;
+    auto rate=core::SampleRate::create(48000);
+    auto format=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    auto frames=core::FrameCount::create(4800);
+    QVERIFY(rate&&format&&frames);
+    auto pcm=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{1001},*frames.value());
+    QVERIFY(pcm);
+    auto samples=pcm.value()->mutable_view().channel(0);
+    QVERIFY(samples);
+    std::fill(samples.value()->begin(),samples.value()->end(),0.5);
+    const auto out=measure_basic_level_scope(
+        pcm.value()->view(),core::FrameIndex{1001},*frames.value(),
+        audio::FrameDomainId::OUTPUT_RATE);
+    QVERIFY(out);
+    QVERIFY(!out.value()->retained_block_disclosure_complete);
+    QVERIFY(out.value()->retained_block_union.empty());
+    QVERIFY(out.value()->integrated_lufs.state==
+            BasicLevelValueState::INSUFFICIENT_DURATION);
+}
+
+void BasicLevelAnalyzerTest::
+silentLoudnessGateIsAuthoritativelyEmpty()
+{
+    using namespace analysis;
+    auto rate=core::SampleRate::create(48000);
+    auto format=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    auto frames=core::FrameCount::create(48000);
+    QVERIFY(rate&&format&&frames);
+    auto pcm=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{2002},*frames.value());
+    QVERIFY(pcm);
+    auto out=measure_basic_level_scope(
+        pcm.value()->view(),core::FrameIndex{2002},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(out);
+    QVERIFY(out.value()->retained_block_disclosure_complete);
+    QVERIFY(out.value()->retained_block_union.empty());
+    QVERIFY(!out.value()->integrated_lufs.db);
+    QVERIFY(out.value()->integrated_lufs.state==
+            BasicLevelValueState::BELOW_LOUDNESS_GATE);
 }
 
 } // namespace rgsml::tests

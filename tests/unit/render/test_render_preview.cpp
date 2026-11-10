@@ -456,6 +456,7 @@ class RenderPreviewTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void nonfiniteActiveGainInputFailsWithoutResult();
     void validatesBindingsAndWindowAtomically();
     void emptyAndBypassedChainsAreExactIdentity();
     void activeGainIsChunkInvariantAndSourceImmutable();
@@ -508,6 +509,37 @@ private slots:
     void audibleCompressorTelemetryResolverContract();
     void compressorTopologyAndBypassProvenanceGate();
 };
+
+void RenderPreviewTest::nonfiniteActiveGainInputFailsWithoutResult()
+{
+    // M23 genuine MANUAL renderer rejection, not a Product FULL release
+    // proof. Infinities and NaNs must never produce a successful PREVIEW.
+    auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=empty_chain(*registry.value());
+    const auto id=make_id("23000000-0000-0000-0000-000000000023");
+    QVERIFY(chain.add(id,"rgsml.dsp.gain",0));
+    for(const double invalid:{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity()}) {
+        const std::array samples{0.125,invalid,-0.5,0.25};
+        auto source=make_buffer(rgsml::audio::ChannelLayout::MONO_C,0,samples);
+        QVERIFY(source);
+        const auto before=bits(source.value()->view());
+        auto request=rgsml::render::RenderRequest::create(
+            source.value()->view(),frame_range(0,4),chain,
+            {{id,gain(0.0)}},frame_count(2));
+        QVERIFY(request);
+        const auto result=rgsml::render::render_preview(
+            *request.value(),*registry.value());
+        QVERIFY(!result);
+        QVERIFY(result.error()!=nullptr);
+        QCOMPARE(result.error()->code(),
+                 rgsml::core::ErrorCode::InvalidAudioSample);
+        QCOMPARE(bits(source.value()->view()),before);
+    }
+}
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
 {

@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace rgsml::analysis {
 
@@ -33,6 +34,11 @@ struct BasicLevelValue final {
     BasicLevelValueState state{BasicLevelValueState::NUMERIC_UNDEFINED};
 };
 
+struct BasicLevelRetainedInterval final {
+    std::uint64_t begin{0};
+    std::uint64_t end{0};
+};
+
 struct BasicLevelAnalysisResult final {
     // Absolute, frame-domain-specific AnalysisScope identity. Never
     // silently compare SOURCE, PREPARED and OUTPUT_RATE frame positions.
@@ -48,6 +54,12 @@ struct BasicLevelAnalysisResult final {
     BasicLevelValue sample_peak_dbfs{};
     BasicLevelValue true_peak_db_tp{};
     BasicLevelValue sample_peak_crest_db{};
+    // Exact final retained 400-ms block union from THIS M19 producer.
+    // An unavailable gate is distinct from an available but empty union.
+    // These are observation-only scope positions; still NOT a canonical
+    // Phase-6 FeatureStatus or producer signature.
+    bool retained_block_disclosure_complete{false};
+    std::vector<BasicLevelRetainedInterval> retained_block_union{};
 };
 
 // Selected read-only AnalysisScope: four metrics and a typed explicit

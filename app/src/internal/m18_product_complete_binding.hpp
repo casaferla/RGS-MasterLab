@@ -8,6 +8,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <QThread>
+#include <QString>
 
 namespace rgsml::app::internal {
 
@@ -116,6 +117,63 @@ struct M18ProductCompleteBinding final {
                 ==c.upstream.terminal.parameters().ceiling_db_tp()
             &&!c.upstream.terminal.bypassed()
             &&verified->rendered.output_rate==*selected.value();
+    }
+
+    // Diagnostic ONLY: report the first missing authorizer predicate.
+    // This method never advances epochs, changes UI eligibility or mints
+    // a ticket. Fixed vocabulary: no file path, PCM or arbitrary log text.
+    [[nodiscard]] static QString export_readiness_reason(
+        const Controllers& c,const Fanout& fanout)
+    {
+        if(!Upstream::owner_thread_current(c.upstream)
+           ||QThread::currentThread()!=c.session.thread()
+           ||!c.candidates.m18_owner_thread_current())
+            return QStringLiteral("OWNER THREAD");
+        if(!installed(c))return QStringLiteral("GUARDS NOT INSTALLED");
+        if(!fanout.can_install_full_product_guards())
+            return QStringLiteral("PRODUCT MUTATION OR TICKET");
+        if(!fanout.m17_verified_epoch_current())
+            return QStringLiteral("M17 VERIFIED EPOCH NOT CURRENT");
+        const auto snapshot=fanout.current_owner_snapshot();
+        if(!snapshot||!snapshot->identity.valid())
+            return QStringLiteral("PRODUCT IDENTITY MISSING");
+        const auto& id=snapshot->identity;
+        const auto& rate=c.upstream.rate;
+        if(!rate.has_supported_master_rate())
+            return QStringLiteral("MASTER RATE NOT SELECTED");
+        const auto selected=core::SampleRate::create(rate.master_rate_hz());
+        const auto* source=c.upstream.source.source_resource();
+        if(!selected||!source||!source->reference().permissions().can_read())
+            return QStringLiteral("SOURCE OR RATE UNAVAILABLE");
+        if(id.master_rate_hz!=static_cast<std::uint32_t>(rate.master_rate_hz())
+           ||id.master_rate_revision!=rate.rate_revision()
+           ||id.chain_revision!=c.upstream.chain.chain().revision())
+            return QStringLiteral("PROJECT RATE OR CHAIN REVISION STALE");
+        const auto verified=c.session.capture_m18_verified_stage_for_worker(
+            *selected.value());
+        if(!verified)return QStringLiteral("VERIFIED M17 STAGE MISSING");
+        if(verified!=c.candidates.staged())
+            return QStringLiteral("M17 CANDIDATE IDENTITY STALE");
+        if(!verified->rendered.terminal.checked.final_check)
+            return QStringLiteral("M16 FINAL CHECK MISSING");
+        if(verified->rendered.terminal.checked.terminal.bypassed)
+            return QStringLiteral("VERIFIED M17 BYPASSED");
+        if(verified->rendered.manual_chain_revision!=id.chain_revision
+           ||verified->rendered.terminal.terminal_chain_revision
+               !=c.upstream.terminal.chain().revision())
+            return QStringLiteral("M17 CHAIN REVISION STALE");
+        if(verified->rendered.terminal.limiter_instance_id
+               !=c.upstream.terminal.instance_id()
+           ||verified->accepted_terminal_parameter_revision
+               !=c.upstream.terminal.parameter_revision()
+           ||verified->accepted_ceiling_db_tp
+               !=c.upstream.terminal.parameters().ceiling_db_tp())
+            return QStringLiteral("M17 LIMITER OR CEILING STALE");
+        if(c.upstream.terminal.bypassed())
+            return QStringLiteral("M17 LIMITER BYPASSED");
+        if(verified->rendered.output_rate!=*selected.value())
+            return QStringLiteral("M17 MASTER RATE STALE");
+        return QStringLiteral("READY");
     }
 
     // A legitimate user Export click is only eligible when the EXACT

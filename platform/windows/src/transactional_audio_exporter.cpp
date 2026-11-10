@@ -719,8 +719,25 @@ TransactionalAudioExporter::export_impl(
         return cleanup_failure(*finalize.error(), *candidatePath.value(), false);
     }
     auto close = writer.value()->get()->close();
-    if (!close) {
-        return cleanup_failure(*close.error(), *candidatePath.value(), false);
+    // M23 test injection at the actual close result boundary. The real
+    // candidate handle is closed first, so cleanup cannot race an open file.
+    if (!close || g_failure_point == ExportFailurePoint::FLUSH_CLOSE) {
+        return cleanup_failure(!close ? *close.error() : core::Error{
+            core::ErrorCode::IoFailure,
+            "candidate_flush_close_failed: injected close/flush failure."},
+            *candidatePath.value(), false);
+    }
+    // Owned candidate-only corruption *after* final close. Validation
+    // must genuinely reopen and reject this physically truncated WAV.
+    if (g_failure_point == ExportFailurePoint::CANDIDATE_TRUNCATED_WAV) {
+        QFile damaged{*candidatePath.value()};
+        if (!damaged.open(QIODevice::ReadWrite) || !damaged.resize(8)) {
+            damaged.close();
+            return cleanup_failure(core::Error{core::ErrorCode::IoFailure,
+                "m23_candidate_truncation_injection_failed"},
+                *candidatePath.value(),false);
+        }
+        damaged.close();
     }
     if (g_failure_point == ExportFailurePoint::VALIDATION) {
         return cleanup_failure(
@@ -733,6 +750,13 @@ TransactionalAudioExporter::export_impl(
         core::ErrorCode::InvalidState,
         "m18_export_cancelled_before_validation"},
         *candidatePath.value(),false);
+    // Distinct from malformed-WAV validation: fail at candidate reopen
+    // boundary after final close and before any commit or final destination.
+    if (g_failure_point == ExportFailurePoint::CANDIDATE_REOPEN) {
+        return cleanup_failure(core::Error{core::ErrorCode::IoFailure,
+            "candidate_reopen_failed: injected reader reopen failure."},
+            *candidatePath.value(), false);
+    }
     auto evidence = validate_candidate(
         *candidatePath.value(), payload, expectedSize,
         m18?std::optional<audio::WavSampleFormat>{format}:std::nullopt,

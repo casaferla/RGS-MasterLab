@@ -58,6 +58,10 @@ public:
     Q_INVOKABLE void setSelectedIndex(int index);
     Q_INVOKABLE void selectModuleByInstanceId(const QString& instanceId);
 
+    // Call after canonical Product owner is constructed, before Main QML.
+    // Three independent non-processing GUI rows, never project DSP instances.
+    void bindAnalysisStatusViewModel(QObject* statusVm);
+
     void refreshFromAuthority();
     void resetForNewSource();
 
@@ -75,6 +79,7 @@ private:
     TerminalLimiterState* terminalLimiterState_{nullptr};
     TerminalLimiterViewModel* terminalLimiterViewModel_{nullptr};
     QObject* terminalMonitorViewModel_{nullptr};
+    QObject* analysisStatusViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
 

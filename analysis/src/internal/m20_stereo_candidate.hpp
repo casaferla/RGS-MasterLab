@@ -58,54 +58,90 @@ struct CorrelationResult {
   for(double x:s.right) if(!std::isfinite(x)) return false;
   return true;
 }
-[[nodiscard]] inline std::optional<std::vector<Interval>> selected_union(const StereoScope& s) {
-  const auto last=s.origin+static_cast<std::uint64_t>(s.left.size());
-  if(!s.gate_available) return std::vector<Interval>{{s.origin,last}};
+// The same P06 selected-union and binary64 arithmetic serve contiguous
+// AudioBufferView measurement and disk-backed multi-pass REFERENCE. This is
+// a refactor of the EXISTING width engine, not another width estimator.
+[[nodiscard]] inline std::optional<std::vector<Interval>> selected_union_frames(
+    std::uint64_t origin,std::uint64_t frames,bool gate_available,
+    std::span<const Interval> retained)
+{
+  if(frames==0||frames>std::numeric_limits<std::uint64_t>::max()-origin)
+    return std::nullopt;
+  const auto last=origin+frames;
+  if(!gate_available)return std::vector<Interval>{{origin,last}};
   std::vector<Interval> v;
-  for(const auto& block:s.retained_loudness_blocks) {
-    if(block.end<block.begin) return std::nullopt;
-    const auto a=std::max(block.begin,s.origin),b=std::min(block.end,last);
-    if(a<b) v.push_back({a,b});
+  for(const auto& block:retained){
+    if(block.end<block.begin)return std::nullopt;
+    const auto a=std::max(block.begin,origin),b=std::min(block.end,last);
+    if(a<b)v.push_back({a,b});
   }
   std::sort(v.begin(),v.end(),[](const Interval& a,const Interval& b){
     return a.begin<b.begin||(a.begin==b.begin&&a.end<b.end);
   });
   std::vector<Interval> merged;
-  for(const auto& b:v) {
-    if(merged.empty()||b.begin>merged.back().end) merged.push_back(b);
+  for(const auto& b:v){
+    if(merged.empty()||b.begin>merged.back().end)merged.push_back(b);
     else merged.back().end=std::max(merged.back().end,b.end);
   }
   return merged;
 }
+[[nodiscard]] inline std::optional<std::vector<Interval>> selected_union(
+    const StereoScope& s)
+{
+  return selected_union_frames(s.origin,static_cast<std::uint64_t>(s.left.size()),
+                               s.gate_available,s.retained_loudness_blocks);
+}
+
+class WidthTwoPassAccumulator final {
+public:
+  void observe(double l,double r) noexcept {
+    scale_=std::max({scale_,std::abs(l),std::abs(r)});
+  }
+  void add(double l,double r) noexcept {
+    if(scale_==0)return;
+    const double nl=l/scale_,nr=r/scale_;
+    const double mid=nl+nr,side=nl-nr; // 1/sqrt(2) cancels
+    mid_+=mid*mid;
+    side_+=side*side;
+  }
+  [[nodiscard]] WidthResult finish(std::uint64_t selected,bool fallback) const noexcept {
+    WidthResult out;
+    out.used_all_scope_fallback=fallback;
+    out.selected_frames=selected;
+    if(selected==0){out.diagnostic=Diagnostic::insufficient_content;return out;}
+    if(scale_==0){out.diagnostic=Diagnostic::undefined_denominator;return out;}
+    if(!std::isfinite(mid_)||!std::isfinite(side_))return out;
+    if(mid_==0){out.diagnostic=Diagnostic::undefined_denominator;return out;}
+    const auto ratio=std::sqrt(side_/mid_);
+    if(!std::isfinite(ratio))return out;
+    out.diagnostic=Diagnostic::valid;
+    out.ratio=ratio;
+    return out;
+  }
+private:
+  double scale_{0},mid_{0},side_{0};
+};
 [[nodiscard]] inline WidthResult width_ratio(const StereoScope& s) {
-  WidthResult out;
-  if(!valid_scope(s)) return out;
-  if(s.right.empty()){out.diagnostic=Diagnostic::not_applicable;return out;}
-  out.used_all_scope_fallback=!s.gate_available;
+  WidthResult invalid;
+  if(!valid_scope(s))return invalid;
+  if(s.right.empty()){invalid.diagnostic=Diagnostic::not_applicable;return invalid;}
   const auto intervals=selected_union(s);
-  if(!intervals) return out;
-  double scale=0;
-  for(const auto& part:*intervals) {
-    out.selected_frames+=part.end-part.begin;
+  if(!intervals)return invalid;
+  WidthTwoPassAccumulator acc;
+  std::uint64_t selected=0;
+  for(const auto& part:*intervals){
+    selected+=part.end-part.begin;
     for(auto absolute=part.begin;absolute<part.end;++absolute){
       const auto i=static_cast<std::size_t>(absolute-s.origin);
-      scale=std::max({scale,std::abs(s.left[i]),std::abs(s.right[i])});
+      acc.observe(s.left[i],s.right[i]);
     }
   }
-  if(out.selected_frames==0){out.diagnostic=Diagnostic::insufficient_content;return out;}
-  if(scale==0){out.diagnostic=Diagnostic::undefined_denominator;return out;}
-  double mid=0,side=0;
-  for(const auto& part:*intervals) for(auto absolute=part.begin;absolute<part.end;++absolute){
-    const auto i=static_cast<std::size_t>(absolute-s.origin);
-    const double l=s.left[i]/scale,r=s.right[i]/scale;
-    const double m=l+r,d=l-r; // common 1/sqrt(2) cancels in ratio
-    mid+=m*m;side+=d*d;
-  }
-  if(!std::isfinite(mid)||!std::isfinite(side)) return out;
-  if(mid==0){out.diagnostic=Diagnostic::undefined_denominator;return out;}
-  const double ratio=std::sqrt(side/mid);
-  if(!std::isfinite(ratio)) return out;
-  out.diagnostic=Diagnostic::valid;out.ratio=ratio;return out;
+  for(const auto& part:*intervals)
+    for(auto absolute=part.begin;absolute<part.end;++absolute){
+      const auto i=static_cast<std::size_t>(absolute-s.origin);
+      acc.add(s.left[i],s.right[i]);
+    }
+  return acc.finish(selected,!s.gate_available);
 }
 [[nodiscard]] inline double type7(std::vector<double> v,double p) {
   std::sort(v.begin(),v.end());

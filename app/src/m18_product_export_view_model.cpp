@@ -1,8 +1,10 @@
 #include "m18_product_export_view_model.hpp"
+#include "internal/m23_alpha_diagnostic_report.hpp"
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include <QFileInfo>
 #include <QThread>
 #include <algorithm>
+#include <array>
 #include <utility>
 
 namespace rgsml::app {
@@ -35,6 +37,12 @@ bool M18ProductExportViewModel::can_export() const
     // This MUST agree with Product consent authority. M17 READY alone
     // cannot prove that the chain, source or rate still owns its stage.
     return owner_thread()&&action_->can_begin_verified_export();
+}
+
+QString M18ProductExportViewModel::export_readiness_reason() const
+{
+    if(!owner_thread())return QStringLiteral("OWNER THREAD");
+    return action_->export_readiness_reason();
 }
 
 bool M18ProductExportViewModel::can_cancel() const
@@ -125,6 +133,25 @@ QString M18ProductExportViewModel::error_text() const
     return QStringLiteral(
         "WAV delivery failed. Check the destination, free disk space "
         "and filename; existing files are never overwritten.");
+}
+
+QString M18ProductExportViewModel::diagnostic_summary() const
+{
+    // M23 read-only local projection of the actual M18 terminal failure
+    // code. The worker discards untrusted raw Error.message and never
+    // publishes a stage-specific fault location: preserve UNKNOWN.
+    if(!owner_thread())return {};
+    const auto outcome=action_->snapshot();
+    if(outcome.phase!=internal::M18PrivateAsyncExportSession::Phase::FAILED
+       ||!outcome.failure_code)return {};
+    const auto status=core::Status::failure(core::Error{*outcome.failure_code});
+    const std::array observed{
+        internal::M23FailedStatus{internal::M23Operation::EXPORT,
+            internal::M23Stage::UNKNOWN,&status}};
+    const auto report=internal::AlphaDiagnosticReport::from_failed_statuses(
+        observed,internal::M23SafetyEvidence{});
+    if(!report)return {};
+    return QString::fromStdString(report.value()->sanitized_summary());
 }
 
 QString M18ProductExportViewModel::verified_sha256() const

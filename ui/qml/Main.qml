@@ -1094,6 +1094,8 @@ ApplicationWindow {
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
+            analysisStatusViewModel: typeof m21ProductStatusViewModel !== "undefined"
+                ? m21ProductStatusViewModel : null
             errorsInGlobalStatusBar: true
             truePeakStaticViewModel: typeof truePeakStatic !== "undefined"
                 ? truePeakStatic : null

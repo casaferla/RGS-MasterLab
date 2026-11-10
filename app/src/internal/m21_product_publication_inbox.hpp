@@ -110,25 +110,54 @@ public:
         const GoldSelectionViewModel& gold) const
     {
         auto latest=publisher_.view();
-        if(latest.columns[0] &&
-           (!preparedCapture_ ||
-            !Product::still_current(
-                product,fanout,selector,*preparedCapture_)))
-            latest.columns[0]->lifecycle=m21_private::Lifecycle::stale;
-        if(latest.columns[1] &&
-           (!goldCapture_ ||
-            !Product::gold_still_current(
-                product,fanout,selector,gold,*goldCapture_)))
-            latest.columns[1]->lifecycle=m21_private::Lifecycle::stale;
-        if(latest.columns[2] &&
-           (!processedCapture_ ||
-            !Product::still_current(
-                product,fanout,selector,*processedCapture_)))
-            latest.columns[2]->lifecycle=m21_private::Lifecycle::stale;
+        retire_stale(latest.columns,product,fanout,selector,gold);
         return m21_private::compose(latest.columns);
     }
 
+    // Read-only Qt status path. A lightweight typed receipt contains ONLY
+    // resource identity, source scope, lifecycle and quality flags.
+    // All three roles undergo the SAME live M18/Gold Qt-owner retirement
+    // as view_current(), but no PSD, tonal curve, scalar or delta is copied.
+    [[nodiscard]] std::array<
+        std::optional<m21_private::ReadinessSnapshot>,3>
+    view_current_readiness(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold) const
+    {
+        auto latest=publisher_.readiness_columns();
+        retire_stale(latest,product,fanout,selector,gold);
+        return latest;
+    }
+
 private:
+    // One and only one Qt-owner stale gate serves BOTH full private
+    // comparison evidence and the numeric-free readiness receipt.
+    // This prevents a status-only shortcut from calling obsolete evidence
+    // CURRENT when a SOURCE/REFERENCE/chain/epoch changes.
+    template<class T>
+    void retire_stale(std::array<std::optional<T>,3>& latest,
+                      const Controllers& product,const Fanout& fanout,
+                      const AuditionSourceSelector& selector,
+                      const GoldSelectionViewModel& gold) const
+    {
+        if(latest[0] &&
+           (!preparedCapture_ ||
+            !Product::still_current(
+                product,fanout,selector,*preparedCapture_)))
+            latest[0]->lifecycle=m21_private::Lifecycle::stale;
+        if(latest[1] &&
+           (!goldCapture_ ||
+            !Product::gold_still_current(
+                product,fanout,selector,gold,*goldCapture_)))
+            latest[1]->lifecycle=m21_private::Lifecycle::stale;
+        if(latest[2] &&
+           (!processedCapture_ ||
+            !Product::still_current(
+                product,fanout,selector,*processedCapture_)))
+            latest[2]->lifecycle=m21_private::Lifecycle::stale;
+    }
+
     m21_private::PrivatePublicationGuard publisher_{};
     std::optional<Product::Capture> preparedCapture_{};
     std::optional<Product::Capture> processedCapture_{};

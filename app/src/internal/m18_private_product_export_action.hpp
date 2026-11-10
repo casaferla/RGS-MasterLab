@@ -39,6 +39,13 @@ public:
             &&Binder::can_offer_verified_master(controllers_,*fanout_);
     }
 
+    [[nodiscard]] QString export_readiness_reason() const {
+        if(QThread::currentThread()!=controllers_.session.thread())
+            return QStringLiteral("OWNER THREAD");
+        if(ticket_)return QStringLiteral("ACK PREVIOUS EXPORT");
+        return Binder::export_readiness_reason(controllers_,*fanout_);
+    }
+
     // A real user choice is a single event, NOT a sticky global boolean.
     // Reject invalid formats before revoking Product export consent.
     // SOURCE is obtained exclusively from the guarded Product selector,

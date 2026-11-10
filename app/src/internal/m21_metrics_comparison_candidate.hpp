@@ -80,6 +80,28 @@ struct Snapshot {
     std::vector<TonalBand> tonal_profile{};
     std::vector<SpectrumPoint> average_spectrum{};
 };
+// Qt UI STATUS-ONLY projection. A receipt has no double, spectral
+// vector, tonal profile, metric Cell, reference audio or producer permission.
+// Numeric evidence remains strictly inside the existing private inbox.
+// Do not extend this type to carry sampled values before Phase-6 Gate G.
+struct ReadinessSnapshot final {
+    Column column{Column::prepared};
+    std::uint64_t generation_token{};
+    std::string resource_identity{};
+    std::string analysis_scope_label{};
+    std::uint64_t absolute_scope_begin{};
+    std::uint64_t scope_frames{};
+    std::uint32_t sample_rate_hz{};
+    Lifecycle lifecycle{Lifecycle::missing};
+    // Quality::present is enum zero: value-initializing an array would
+    // accidentally claim nine AVAILABLE metrics before any producer ran.
+    // A default status receipt MUST be fail-closed.
+    std::array<Quality,9> metric_quality{{
+        Quality::missing,Quality::missing,Quality::missing,
+        Quality::missing,Quality::missing,Quality::missing,
+        Quality::missing,Quality::missing,Quality::missing}};
+};
+
 inline Cell state_cell(Lifecycle lifecycle) {
     if(lifecycle==Lifecycle::stale) return {{},Quality::stale,"STALE artifact"};
     if(lifecycle==Lifecycle::invalid) return {{},Quality::invalid,"INVALID artifact"};
@@ -186,6 +208,51 @@ inline bool valid_cell_storage(const Cell& c) {
       c.unrounded && std::isfinite(*c.unrounded) :
       !c.unrounded;
 }
+// Structural evidence only, NEVER a Phase-6 producer or FeatureStatus.
+// A static PSD must have increasing physical frequencies within Nyquist.
+// Missing-valued bins may remain absent; they cannot carry phantom numbers.
+inline bool valid_private_spectrum(const Snapshot& s) {
+    if(s.average_spectrum.size()>1048576U)return false;
+    const double nyquist=static_cast<double>(s.sample_rate_hz)*0.5;
+    double previous=-1.;
+    for(const auto& point:s.average_spectrum) {
+        if(!std::isfinite(point.hz)||point.hz<0.||
+           point.hz<=previous||point.hz>nyquist||
+           !valid_cell_storage(point.power_density)||
+           (point.power_density.unrounded &&
+            *point.power_density.unrounded<0.))
+            return false;
+        previous=point.hz;
+    }
+    return true;
+}
+// Band identities are producer-owned, not inferred from Hz by this
+// consumer. An unordered set of unique IDs is legal; duplicates are not.
+// The cap bounds the private validation cost; six-rate M20 profiles are
+// far smaller, and no unsupported 'shape dB' is synthesized here.
+inline bool valid_private_tonal_profile(const Snapshot& s) {
+    if(s.tonal_profile.size()>4096U)return false;
+    // No canonical profile resolution means no valid pair-scoped
+    // comparison witness. Reject a misleading orphan proof ID even if
+    // the profile is empty (M19/M20 level-only evidence stays valid).
+    if(s.profile_denominator==0 &&
+       (!s.tonal_profile.empty()||
+        !s.common_comparison_support_id.empty()))return false;
+    if(s.profile_denominator!=0 &&s.profile_denominator!=3 &&
+       s.profile_denominator!=12)return false;
+    if(!s.tonal_profile.empty() &&
+       (s.profile_denominator==0 ||
+        s.common_comparison_support_id.empty()))return false;
+    for(std::size_t i=0;i<s.tonal_profile.size();++i) {
+        const auto& b=s.tonal_profile[i];
+        if(!valid_cell_storage(b.normalized_shape_db)||
+           (!b.in_common_support&&b.normalized_shape_db.unrounded))
+            return false;
+        for(std::size_t j=0;j<i;++j)
+            if(s.tonal_profile[j].band_id==b.band_id)return false;
+    }
+    return true;
+}
 class PrivatePublicationGuard {
 public:
     bool expect(Column column,std::uint64_t monotonic_token) {
@@ -217,24 +284,38 @@ public:
             return false;
         for(const auto& c:incoming.metrics)
             if(!valid_cell_storage(c)) return false;
-        for(const auto& b:incoming.tonal_profile)
-            if(!valid_cell_storage(b.normalized_shape_db) ||
-               (!b.in_common_support && b.normalized_shape_db.unrounded))
-                return false;
-        for(const auto& p:incoming.average_spectrum)
-            if(!std::isfinite(p.hz) || p.hz<0 ||
-               !valid_cell_storage(p.power_density) ||
-               (p.power_density.unrounded && *p.power_density.unrounded<0))
-                return false;
-        if(incoming.profile_denominator!=0 &&
-           incoming.profile_denominator!=3 && incoming.profile_denominator!=12) return false;
-        if(!incoming.tonal_profile.empty() &&
-           (incoming.profile_denominator==0 ||
-            incoming.common_comparison_support_id.empty())) return false;
+        if(!valid_private_tonal_profile(incoming)||
+           !valid_private_spectrum(incoming))return false;
         slots_[i]=incoming;
         return true;
     }
     Comparison view()const{return compose(slots_);}
+
+    // Project only the seven provenance fields + nine quality enums
+    // needed by the read-only Qt panels. Never copy PSD, tonal bands,
+    // Metric Cells or source PCM to the GUI status-refresh path.
+    // Returns the exact generation and lifecycle of each stored slot.
+    [[nodiscard]] std::array<std::optional<ReadinessSnapshot>,3>
+    readiness_columns() const {
+        std::array<std::optional<ReadinessSnapshot>,3> out{};
+        for(std::size_t column=0;column<out.size();++column) {
+            if(!slots_[column])continue;
+            const auto& s=*slots_[column];
+            ReadinessSnapshot next;
+            next.column=s.column;
+            next.generation_token=s.generation_token;
+            next.resource_identity=s.resource_identity;
+            next.analysis_scope_label=s.analysis_scope_label;
+            next.absolute_scope_begin=s.absolute_scope_begin;
+            next.scope_frames=s.scope_frames;
+            next.sample_rate_hz=s.sample_rate_hz;
+            next.lifecycle=s.lifecycle;
+            for(std::size_t metric=0;metric<next.metric_quality.size();++metric)
+                next.metric_quality[metric]=s.metrics[metric].quality;
+            out[column]=std::move(next);
+        }
+        return out;
+    }
 private:
     std::array<std::uint64_t,3> expected_{};
     std::array<std::optional<Snapshot>,3> slots_{};

@@ -29,6 +29,15 @@ enum class LoudnessPreproductionState {
     k_numerically_undefined
 };
 
+struct RetainedLoudnessFrameInterval final {
+    std::uint64_t begin{0};
+    std::uint64_t end{0};
+};
+
+// PREPRODUCTION producer-owned disclosure. These exact intervals are
+// derived from the already-computed M19 final retained 400-ms blocks.
+// They are not a canonical FeatureStatus, a Phase-6 signature or a
+// guess reconstructed from an integrated LUFS value.
 struct BasicLevelPreproductionSnapshot {
     std::uint64_t scope_begin_frame{0};
     std::uint64_t scope_frames{0};
@@ -45,6 +54,8 @@ struct BasicLevelPreproductionSnapshot {
     std::string_view k_weighting_bank_sha256{};
     LoudnessPreproductionState loudness_state{
         LoudnessPreproductionState::not_finalized};
+    bool retained_block_disclosure_complete{false};
+    std::vector<RetainedLoudnessFrameInterval> retained_block_union{};
 };
 
 // Private gate evidence for independent numerical adversaries. All comparisons
@@ -54,6 +65,9 @@ struct GatedBlockCandidateEvidence {
     std::optional<double> integrated_lufs{};
     std::size_t absolute_count{0};
     std::size_t final_count{0};
+    // The same strict one-pass predicates used to obtain final_count.
+    // Indices are M19 canonical 100-ms starts, not synthesized by M20.
+    std::vector<std::size_t> retained_block_indices{};
 };
 
 // Strict positive block-energy mean with a compensated direct path and a
@@ -158,6 +172,15 @@ gate_complete_400ms_block_powers(std::span<const double> powers)
         });
     if (!retained || retained->count == 0U) return std::nullopt;
     evidence.final_count = retained->count;
+    // Identity-only disclosure: never recompute or revise integrated LUFS.
+    // One extra index scan uses the exact already-frozen strict power
+    // predicates and cannot change mean, count, threshold, or K state.
+    evidence.retained_block_indices.reserve(retained->count);
+    for(std::size_t i=0;i<powers.size();++i)
+        if(powers[i]>absolutePower &&powers[i]>relativePower)
+            evidence.retained_block_indices.push_back(i);
+    if(evidence.retained_block_indices.size()!=retained->count)
+        return std::nullopt;
     const double loudness =
         -0.691 + 10.0 * std::log10(retained->mean);
     if (!std::isfinite(loudness)) return std::nullopt;
@@ -334,12 +357,38 @@ public:
                 out.loudness_state = LoudnessPreproductionState::k_numerically_undefined;
                 return out;
             }
+            // A finalized available/empty M19 gate is evidence that
+            // retained intervals have been *decided* by this producer,
+            // independently from a future official Phase-6 qualification.
+            out.retained_block_disclosure_complete = true;
             if (gated->integrated_lufs) {
                 out.integrated_lufs = gated->integrated_lufs;
                 out.loudness_state = LoudnessPreproductionState::available;
+                const auto scopeEnd=scope_begin_+scope_frames_;
+                const std::uint64_t quarter=quarter_frames_;
+                const std::uint64_t block=quarter*4U;
+                for(const auto blockIndex:gated->retained_block_indices) {
+                    if(blockIndex>scope_frames_/quarter)
+                        return std::nullopt;
+                    const auto start=scope_begin_+
+                        static_cast<std::uint64_t>(blockIndex)*quarter;
+                    if(start>scopeEnd ||block>scopeEnd-start)
+                        return std::nullopt; // never invent a partial block
+                    const auto end=start+block;
+                    if(out.retained_block_union.empty() ||
+                       start>out.retained_block_union.back().end) {
+                        out.retained_block_union.push_back({start,end});
+                    }else if(end>out.retained_block_union.back().end) {
+                        out.retained_block_union.back().end=end;
+                    }
+                }
+                if(out.retained_block_union.empty())
+                    return std::nullopt; // available LUFS must have retained data
             } else {
                 out.loudness_state =
                     LoudnessPreproductionState::no_absolute_gated_blocks;
+                // Explicitly empty != unavailable; M20 may not silently
+                // fall back to ALL_SCOPE when the loudness gate is empty.
             }
         }
         return out;

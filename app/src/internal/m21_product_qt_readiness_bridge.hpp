@@ -52,6 +52,23 @@ public:
         std::array<QVariantMap,3> panels{};
     };
 
+    // Equality includes every field observable by QML *and* the complete
+    // owner/routing identity. Never suppress a genuine SOURCE, REFERENCE,
+    // Product epoch, quality, scope or per-panel status transition.
+    // This is only a notification coalescer, NOT an owner authority.
+    [[nodiscard]] static bool same_visible_frame(
+        const Frame& a,const Frame& b)
+    {
+        return a.owner_epoch==b.owner_epoch
+            &&a.owner_identity==b.owner_identity
+            &&a.routing_revision==b.routing_revision
+            &&a.current_product_owner==b.current_product_owner
+            &&a.product_ui_authorized==b.product_ui_authorized
+            &&a.selected==b.selected
+            &&a.identities==b.identities
+            &&a.panels==b.panels;
+    }
+
     // Must be called on the true Qt Product owner, not a numerical worker.
     // Missing, invalid and stale evidence must never turn into fake zeros.
     [[nodiscard]] static Frame capture(
@@ -102,12 +119,15 @@ public:
         result.current_product_owner=true;
         result.owner_epoch=owner->epoch;
         result.owner_identity=owner->identity;
-        const auto current=inbox.view_current(
+        // This is the status-only lightweight path: never copy full
+        // M20 PSD/tonal curves or M21 double-valued comparisons for
+        // a Qt label refresh. Full evidence remains private in the inbox.
+        const auto current=inbox.view_current_readiness(
             product,fanout,selector,gold);
         for(std::size_t i=0;i<3;++i) {
             const auto index=static_cast<std::size_t>(result.selected[i]);
-            if(index>=current.columns.size())continue;
-            const auto& selected=current.columns[index];
+            if(index>=current.size())continue;
+            const auto& selected=current[index];
             if(!selected)continue;
             const auto& s=*selected;
             result.identities[i]=Identity{
@@ -136,7 +156,7 @@ public:
                       ? QStringLiteral("M16 UNQUALIFIED")
                       : QString::fromStdString(
                           m21_private::ui_candidate::quality_label(
-                              s.metrics[metric].quality));
+                              s.metric_quality[metric]));
                     quality.insert(QString::fromLatin1(names[metric]),tag);
                 }
                 result.panels[i].insert("privateQualityOnly",quality);

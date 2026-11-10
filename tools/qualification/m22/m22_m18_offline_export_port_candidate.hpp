@@ -1,4 +1,6 @@
-// M22 private, non-production binding to existing M18 transactional WAV exporter.
+// M22 qualification-only, non-production binding to existing M18 transactional WAV exporter.
+// Owned by the qualification harness, NEVER render/src: it requires native
+// filesystem destinations and may not cross the RENDER dependency boundary.
 // NOT proof of M17, actual Source/Gold read-only ownership or canonical Gate I/G/L.
 #pragma once
 #include "m22_request_plan_candidate.hpp"

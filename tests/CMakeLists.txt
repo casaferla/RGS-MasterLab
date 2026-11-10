@@ -63,6 +63,21 @@ add_test(NAME rgsml_project_dependency_contract_tests
 set_tests_properties(rgsml_project_dependency_contract_tests PROPERTIES
     RUN_SERIAL TRUE LABELS "dependency_contract;project")
 
+# M23 nonrelease diagnostic projection consumes only real core ErrorCode/Status.
+# It never grants a Product export ticket, physical acceptance or I+P+M PASS.
+qt_add_executable(rgsml_m23_alpha_diagnostic_tests
+    unit/app/test_m23_alpha_diagnostic_report.cpp)
+target_include_directories(rgsml_m23_alpha_diagnostic_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_m23_alpha_diagnostic_tests PRIVATE
+    rgsml_core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m23_alpha_diagnostic_tests)
+add_test(NAME rgsml_m23_alpha_diagnostic_tests
+    COMMAND rgsml_m23_alpha_diagnostic_tests)
+set_tests_properties(rgsml_m23_alpha_diagnostic_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "m23;diagnostic;nonrelease")
+
 qt_add_executable(rgsml_project_json_tests unit/project/test_project_json.cpp)
 
 qt_add_executable(rgsml_project_roundtrip_tests unit/project/test_project_json.cpp)
@@ -305,6 +320,7 @@ qt_add_executable(rgsml_transactional_audio_export_tests
 target_include_directories(rgsml_transactional_audio_export_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/platform/windows/src
+        ${CMAKE_SOURCE_DIR}/app/src
 )
 target_compile_definitions(rgsml_transactional_audio_export_tests
     PRIVATE
@@ -541,6 +557,13 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
 target_include_directories(rgsml_source_metadata_panel_smoke
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        # The M21 *read-only* frame tests include the authentic Product
+        # owner header, whose private dependencies are already compiled
+        # in rgsml_app. Mirror only that target's private search paths;
+        # no new library, DSP algorithm or UI production dependency.
+        ${CMAKE_SOURCE_DIR}/audio/src
+        ${CMAKE_SOURCE_DIR}/platform/windows/src
+        ${CMAKE_SOURCE_DIR}/analysis/src
         ${CMAKE_BINARY_DIR}/app/generated
 )
 target_link_libraries(rgsml_source_metadata_panel_smoke
@@ -2018,6 +2041,20 @@ add_test(NAME rgsml_basic_level_analyzer_tests
 set_tests_properties(rgsml_basic_level_analyzer_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "analysis;m19;basic_level;real_m16;scope;unit")
+
+# M21 independent long REFERENCE WAV streaming. Native real decoder, all
+# six Fs, mono/stereo and whole-scope M19/M20 numerical equivalence.
+# This is not the official Phase-6 Gate G or M16 qualification.
+qt_add_executable(rgsml_streamed_reference_analyzer_tests
+    unit/analysis/test_streamed_reference_analyzer.cpp)
+target_link_libraries(rgsml_streamed_reference_analyzer_tests PRIVATE
+    rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_streamed_reference_analyzer_tests)
+add_test(NAME rgsml_streamed_reference_analyzer_tests
+    COMMAND rgsml_streamed_reference_analyzer_tests)
+set_tests_properties(rgsml_streamed_reference_analyzer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;m19;m20;m21;reference;streaming;real_wav;nonrelease")
 
 qt_add_executable(rgsml_true_peak_gate_g_edge_tests
     unit/analysis/test_true_peak_gate_g_edges.cpp
