@@ -226,7 +226,17 @@ jobs:
               $failed+=("$name/$result")
             } else { Write-Host "M23_FQ100_PASS=$name" }
           }
+          if ($failed.Count -gt 0) {
+            $cdb="C:/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+            if (Test-Path $cdb) {
+              Write-Host "M23_FQ100_CDB_STACK_BEGIN"
+              $case=$failed[0].Split("/")[0]
+              & $cdb -o -G -g -c ".symfix; .reload; !analyze -v; kv 20; q" $exe $case -v1 *> "$env:RUNNER_TEMP/m23-fq100-stack.log"
+              Get-Content "$env:RUNNER_TEMP/m23-fq100-stack.log" -Tail 100
+              Write-Host "M23_FQ100_CDB_STACK_END"
+            } else { Write-Host "M23_FQ100_CDB_NOT_INSTALLED" }
           if ($failed.Count -gt 0) { throw "M23_FQ100_ISOLATED_FAILURES=$($failed -join ',')" }
+          }
       - name: Execute real Qt fault suites with machine-readable M23 receipt
         shell: pwsh
         run: |
