@@ -110,21 +110,7 @@ public:
         const GoldSelectionViewModel& gold) const
     {
         auto latest=publisher_.view();
-        if(latest.columns[0] &&
-           (!preparedCapture_ ||
-            !Product::still_current(
-                product,fanout,selector,*preparedCapture_)))
-            latest.columns[0]->lifecycle=m21_private::Lifecycle::stale;
-        if(latest.columns[1] &&
-           (!goldCapture_ ||
-            !Product::gold_still_current(
-                product,fanout,selector,gold,*goldCapture_)))
-            latest.columns[1]->lifecycle=m21_private::Lifecycle::stale;
-        if(latest.columns[2] &&
-           (!processedCapture_ ||
-            !Product::still_current(
-                product,fanout,selector,*processedCapture_)))
-            latest.columns[2]->lifecycle=m21_private::Lifecycle::stale;
+        retire_stale(latest.columns,product,fanout,selector,gold);
         return m21_private::compose(latest.columns);
     }
 
