@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21TonalAcceptsUnsortedCertifiedBands();
     void m21PsdRejectsBadPowerAndMissingValue();
     void m21PsdRejectsOutOfBandAndNonFinite();
     void m21PsdRejectsDuplicateAndDescending();
@@ -355,6 +356,25 @@ m21PsdRejectsBadPowerAndMissingValue()
     QVERIFY(!m21::valid_private_spectrum(s));
     s.average_spectrum[0].power_density={{},m21::Quality::missing,"no value"};
     QVERIFY(m21::valid_private_spectrum(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21TonalAcceptsUnsortedCertifiedBands()
+{
+    auto s=private_m21_fixture();
+    s.profile_denominator=12;
+    s.common_comparison_support_id="pair-evidence";
+    s.tonal_profile={{205,true,{3.,m21::Quality::present,{}}},
+                     {100,false,{{},m21::Quality::missing,"no support"}},
+                     {202,true,{4.,m21::Quality::present,{}}}};
+    QVERIFY(m21::valid_private_tonal_profile(s));
+    m21::PrivatePublicationGuard guard;
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(s));
+    const auto view=guard.view();
+    QVERIFY(view.columns[0]);
+    QCOMPARE(view.columns[0]->tonal_profile[1].band_id,100U);
+    QVERIFY(!view.columns[0]->tonal_profile[1].normalized_shape_db.unrounded);
 }
 
 } // namespace
