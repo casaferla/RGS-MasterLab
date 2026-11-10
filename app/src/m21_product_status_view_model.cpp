@@ -113,7 +113,8 @@ QVariantMap M21ProductStatusViewModel::analysis_readouts() const
     if(m20Role<evidence.columns.size() &&evidence.columns[m20Role]) {
         const auto& s=*evidence.columns[m20Role];
         if(s.lifecycle==m21_private::Lifecycle::current &&
-           s.generation_token!=0 &&s.sample_rate_hz>0 &&
+           s.generation_token!=0 &&!s.resource_identity.empty() &&
+           s.scope_frames>0 &&s.sample_rate_hz>0 &&
            s.average_spectrum.size()<=65537U) {
             double previous=-1.0;
             bool valid=true;
