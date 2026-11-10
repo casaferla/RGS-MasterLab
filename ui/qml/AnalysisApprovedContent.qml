@@ -512,9 +512,11 @@ Flickable {
                 objectName: "m21MissingComparisonNotice"
                 width: parent.width
                 height: 37
-                text: root.lifecycle === "STALE"
+                text: root.anyRowValue()
+                    ? "CURRENT MEASUREMENTS · MISSING CELLS SHOWN AS —"
+                    : root.lifecycle === "STALE"
                     ? "METRICS STALE · REANALYZE ALL SELECTED SOURCES"
-                    : "METRICS UNAVAILABLE · NO AUTHENTICATED PRODUCT DATA"
+                    : "METRICS UNAVAILABLE · SELECT AND ANALYZE SOURCES"
                 color: root.amber
                 font.family: "Segoe UI"
                 font.pixelSize: 11
@@ -527,14 +529,29 @@ Flickable {
                         "True Peak · M16","Crest Factor","Stereo Width",
                         "Correlation P10","Correlation P50","Correlation P90"]
                 delegate: Rectangle {
+                    id: m21MetricRow
                     objectName: "m21MetricRow_" + index
+                    readonly property int metricIndex: index
+                    readonly property string metricName: modelData
+                    readonly property var observed: root.m21Rows.length > metricIndex
+                        ? root.m21Rows[metricIndex] : ({})
                     width: m21.width
                     height: 28
                     color: index%2===0 ? "#14232F" : "#0E1C26"
                     Row {
                         anchors.fill: parent
                         Repeater {
-                            model: [modelData,"—","—","—","—","—"]
+                            model: [m21MetricRow.metricName,
+                                root.metricText(m21MetricRow.observed.prepared,
+                                                m21MetricRow.observed.key),
+                                root.metricText(m21MetricRow.observed.reference,
+                                                m21MetricRow.observed.key),
+                                root.metricText(m21MetricRow.observed.processed,
+                                                m21MetricRow.observed.key),
+                                root.metricText(m21MetricRow.observed.deltaPrepared,
+                                                m21MetricRow.observed.key),
+                                root.metricText(m21MetricRow.observed.deltaProcessed,
+                                                m21MetricRow.observed.key)]
                             delegate: Text {
                                 width: parent.width/6
                                 height: parent.height
@@ -551,6 +568,17 @@ Flickable {
                                 elide: Text.ElideRight
                             }
                         }
+                    }
+                    ToolTip.text: m21MetricRow.metricName
+                        + " · PREPARED, independent REFERENCE and PROCESSED. "
+                        + "Deltas are REFERENCE minus the corresponding current "
+                        + "measurement, computed from unrounded values. "
+                        + "Missing, stale or incompatible values are —."
+                    ToolTip.visible: m21RowDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: m21RowDwell
+                        anchors.fill: parent
                     }
                 }
             }
@@ -576,7 +604,9 @@ Flickable {
                 spacing: 5
                 Text {
                     objectName: "analysisUnavailableTitle"
-                    text: root.lifecycle === "STALE"
+                    text: root.panelHasData
+                        ? "READ-ONLY ANALYSIS · MEASUREMENTS AVAILABLE"
+                        : root.lifecycle === "STALE"
                         ? "STALE · REANALYZE"
                         : "VERIFIED ANALYSIS UNAVAILABLE"
                     color: root.amber
@@ -586,7 +616,9 @@ Flickable {
                 }
                 Text {
                     objectName: "analysisUnavailableExplanation"
-                    text: "Awaiting canonical Product/Phase-6 numerical publication"
+                    text: root.panelHasData
+                        ? "Genuine selected-scope results; qualification tracked separately."
+                        : "Select and analyze an authentic source to populate values."
                     color: root.dim
                     font.family: "Segoe UI"
                     font.pixelSize: 10
