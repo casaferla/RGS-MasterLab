@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21RenderAttemptNoOwnerIsNeverCurrent();
     void m21RenderAttemptChangesKeysAndSupportsReset();
     void m21RenderAttemptDoesNotPinRetiredPcm();
     void m21RenderAttemptAcceptsReplacementInsideSameEpoch();
@@ -638,6 +639,20 @@ m21RenderAttemptChangesKeysAndSupportsReset()
     QVERIFY(!attempt.matches("epoch:12|prepared|full",sample));
     attempt.remember("epoch:12|processed|full",sample);
     QVERIFY(attempt.matches("epoch:12|processed|full",sample));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21RenderAttemptNoOwnerIsNeverCurrent()
+{
+    M21PrivateRenderAttempt attempt;
+    const std::shared_ptr<const int> empty;
+    QVERIFY(!attempt.matches("same-key",empty));
+    attempt.remember("same-key",empty);
+    QVERIFY(!attempt.matches("same-key",empty));
+    const auto valid=std::make_shared<const int>(100);
+    QVERIFY(!attempt.matches("same-key",valid));
+    attempt.remember("same-key",valid);
+    QVERIFY(attempt.matches("same-key",valid));
 }
 
 } // namespace
