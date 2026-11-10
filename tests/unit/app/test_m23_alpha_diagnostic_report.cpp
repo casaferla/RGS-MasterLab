@@ -1,6 +1,7 @@
 #include "internal/m23_alpha_diagnostic_report.hpp"
 #include "internal/m21_private_single_flight.hpp"
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <thread>
 #include <rgsml/core/error.hpp>
@@ -14,6 +15,20 @@
 namespace rgsml::tests {
 namespace {
 using namespace rgsml::app::internal;
+
+// QTEST_APPLESS_MAIN has no event dispatcher. QTRY_* requires one in
+// Qt6Cored Debug, so use bounded std::thread-only polling.
+template<class Predicate>
+bool wait_for_worker(Predicate&& predicate,int timeout_ms)
+{
+    const auto deadline=std::chrono::steady_clock::now()
+        +std::chrono::milliseconds(timeout_ms);
+    while(!predicate()) {
+        if(std::chrono::steady_clock::now()>=deadline)return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
 
 
 namespace m21 = rgsml::app::m21_private;
@@ -206,7 +221,7 @@ m21AsyncSingleFlightIsBoundedAndOwnerOnly()
         s.generation_token=19;
         return std::optional<rgsml::app::m21_private::Snapshot>{std::move(s)};
     }));
-    QTRY_VERIFY_WITH_TIMEOUT(entered->load(std::memory_order_acquire),2000);
+    QVERIFY(wait_for_worker([&] { return entered->load(std::memory_order_acquire); },2000));
     QVERIFY(queue.busy());
     QVERIFY(!queue.finished());
     QVERIFY(!queue.take_finished());
@@ -222,7 +237,7 @@ m21AsyncSingleFlightIsBoundedAndOwnerOnly()
     foreign.join();
     QVERIFY(!foreignAdmitted.load(std::memory_order_acquire));
     gate->store(true,std::memory_order_release);
-    QTRY_VERIFY_WITH_TIMEOUT(queue.finished(),2500);
+    QVERIFY(wait_for_worker([&] { return queue.finished(); },2500));
     const auto result=queue.take_finished();
     QVERIFY(result);
     QCOMPARE(result->request_id,std::uint64_t{19});
@@ -233,7 +248,7 @@ m21AsyncSingleFlightIsBoundedAndOwnerOnly()
     QVERIFY(queue.start(22,[] {
         return std::optional<rgsml::app::m21_private::Snapshot>{};
     }));
-    QTRY_VERIFY_WITH_TIMEOUT(queue.finished(),2500);
+    QVERIFY(wait_for_worker([&] { return queue.finished(); },2500));
     const auto empty=queue.take_finished();
     QVERIFY(empty);
     QCOMPARE(empty->request_id,std::uint64_t{22});
@@ -255,10 +270,10 @@ m21AsyncDestructorCannotTouchDeadOwner()
             done->store(true,std::memory_order_release);
             return std::optional<rgsml::app::m21_private::Snapshot>{};
         }));
-        QTRY_VERIFY_WITH_TIMEOUT(entered->load(std::memory_order_acquire),2000);
+        QVERIFY(wait_for_worker([&] { return entered->load(std::memory_order_acquire); },2000));
     } // No worker thread may retain the destroyed queue/Qt owner.
     release->store(true,std::memory_order_release);
-    QTRY_VERIFY_WITH_TIMEOUT(done->load(std::memory_order_acquire),2500);
+    QVERIFY(wait_for_worker([&] { return done->load(std::memory_order_acquire); },2500));
 }
 
 void M23AlphaDiagnosticReportTest::
@@ -315,7 +330,7 @@ m21WorkerExceptionCannotPublish()
         rgsml::app::m21_private::Snapshot> {
         throw 1;
     }));
-    QTRY_VERIFY_WITH_TIMEOUT(worker.finished(),2500);
+    QVERIFY(wait_for_worker([&] { return worker.finished(); },2500));
     const auto completed=worker.take_finished();
     QVERIFY(completed);
     QCOMPARE(completed->request_id,std::uint64_t{113});
