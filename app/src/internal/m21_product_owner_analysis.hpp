@@ -25,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace rgsml::app::internal {
 
@@ -251,9 +252,8 @@ public:
             *pcm.value());
         if(!level)return R::failure(*level.error());
         const auto view=pcm.value()->view();
-        const auto stereo=analysis::measure_tonal_stereo_scope(
-            view,view.absolute_start_frame(),view.frame_count(),
-            view.timebase().frame_domain_id());
+        const auto stereo=measure_tonal_with_existing_m19_gate(
+            view,*level.value());
         if(!stereo)return R::failure(*stereo.error());
 
         m21_private::ProductMetricsOwnerClaim claim;
@@ -300,9 +300,8 @@ public:
         const auto level=analysis::measure_basic_level_full_resource(
             render->buffer());
         if(!level)return R::failure(*level.error());
-        const auto tonal=analysis::measure_tonal_stereo_scope(
-            view,view.absolute_start_frame(),view.frame_count(),
-            view.timebase().frame_domain_id());
+        const auto tonal=measure_tonal_with_existing_m19_gate(
+            view,*level.value());
         if(!tonal)return R::failure(*tonal.error());
         m21_private::ProductMetricsOwnerClaim claim;
         claim.column=column;
@@ -355,6 +354,28 @@ public:
         return result;
     }
 private:
+    // The REAL existing M19 LUFS producer decides the P06 active union.
+    // M20 consumes those exact intervals through its ALREADY published
+    // TonalStereoTrustedSupport: no second K gate or PSD/FFT engine.
+    // Do not claim a canonical spectral-frame mask or per-band support
+    // from interval evidence; those separate inputs stay absent/masked.
+    [[nodiscard]] static core::Result<analysis::TonalStereoAnalysisResult>
+    measure_tonal_with_existing_m19_gate(
+        const audio::AudioBufferView& view,
+        const analysis::BasicLevelAnalysisResult& level)
+    {
+        std::vector<analysis::TonalStereoRetainedInterval> retained;
+        retained.reserve(level.retained_block_union.size());
+        for(const auto& interval:level.retained_block_union)
+            retained.push_back({interval.begin,interval.end});
+        const analysis::TonalStereoTrustedSupport supplied{
+            false,{},level.retained_block_disclosure_complete,
+            retained,{}};
+        return analysis::measure_tonal_stereo_scope(
+            view,view.absolute_start_frame(),view.frame_count(),
+            view.timebase().frame_domain_id(),supplied);
+    }
+
     [[nodiscard]] static core::Error failed(const char* msg) {
         return core::Error{core::ErrorCode::InvalidState,msg};
     }
