@@ -63,8 +63,41 @@ def remove_exact(text: str, original: str, replacement: str = "",
 
 def normalize(path: str, text: str) -> str:
     if path == "ui/qml/DspChainSelector.qml":
+        # PO GO 2026-11-10: precise text-only correction for M16-parity
+        # ALWAYS-ON service accessibility. Identical row dim, icon glow,
+        # silhouettes, geometry, input events and module ownership.
+        # Restore exact frozen wording before comparing FQ99 bytes.
+        text = remove_exact(text, '''                            // M16/M19/M20/M21 are permanent observers.
+                            // A read-only service must NEVER claim Manual
+                            // settings just because it has no Default state.
+                            Accessible.name: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.displayName + " · "
+                                    + (rowItem.permanentlyLit
+                                        ? "Always on · Read-only"
+                                        : rowItem.isDefaultState ? "Default" : "Manual")
+                                : "Module icon"
+                            ToolTip.text: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.displayName + " · "
+                                    + (rowItem.permanentlyLit
+                                        ? "Always on · Read-only analysis / service"
+                                        : rowItem.isDefaultState
+                                            ? "Default settings" : "Manual non-default settings")
+                                    + (rowItem.isBypassed ? " · Bypassed" : "")
+                                : "Module"
+''', '''                            Accessible.name: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.displayName + " · "
+                                    + (rowItem.isDefaultState ? "Default" : "Manual")
+                                : "Module icon"
+                            ToolTip.text: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.displayName + " · "
+                                    + (rowItem.isDefaultState
+                                        ? "Default settings" : "Manual non-default settings")
+                                    + (rowItem.isBypassed ? " · Bypassed" : "")
+                                : "Module"
+''')
         # Exact PO-authorized additional vector CHILD. The original
-        # StudioIcon Canvas, layout and tooltip remain byte-identical.
+        # StudioIcon Canvas, geometry, icon-kind routing and dim/glow
+        # formulas are byte-identical to the previously qualified GUI.
         text = remove_exact(text, '''                            // Three approved analysis glyphs share the
                             // EXISTING 16px StudioIcon slot, tooltip, focus,
                             // brightness and bypass semantics. Canvas has no
