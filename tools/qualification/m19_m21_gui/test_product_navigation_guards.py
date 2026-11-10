@@ -78,6 +78,22 @@ def test_product_binds_status_without_demo() -> None:
     assert 'case "M22_ANALYSIS"' not in selector
     assert "Image {" not in vectors and ".png" not in vectors
     assert "qml/AnalysisModuleIcon.qml" in read("ui/CMakeLists.txt")
+    # Real Product dispatch remains ONE flight; no workers own QObjects
+    # or publish private metrics into QML before Phase-6 U/G/owner gates.
+    driver = read("app/src/internal/m21_private_product_analysis_coordinator.hpp")
+    single_flight = read("app/src/internal/m21_private_single_flight.hpp")
+    main = read("app/src/main.cpp")
+    assert "M21PrivateProductAnalysisCoordinator" in main
+    assert "m21AnalysisPollTimer.setInterval(250);" in main
+    assert "Product::capture_gold(" in driver
+    assert "Product::capture(" in driver
+    assert "Product::measure_gold_worker(evidence)" in driver
+    assert "Product::measure_render_worker(evidence,column)" in driver
+    assert "inbox_->accept_gold(" in driver
+    assert "inbox_->accept_render(" in driver
+    assert "std::thread([state,task=std::move(task)]" in single_flight
+    assert "state_->finished.load(std::memory_order_acquire)" in single_flight
+    assert 'return false;' in read("app/src/m21_product_status_view_model.hpp")
     readout = read("ui/qml/StudioReadOnlyMeasurement.qml")
     assert "root.heroReadout ? 36 : 13" in readout
     assert "root.heroReadout ? 11 : 10" in readout
