@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessIsOnlyCopyOfIdentityAndQuality();
     void m21ReadinessNeverRelabelsAnUnknownColumn();
     void m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus();
     void m21ReadinessRetiresStaleGenerationWithoutAffectingReference();
@@ -843,6 +844,30 @@ m21ReadinessNeverRelabelsAnUnknownColumn()
     QVERIFY(!after[0]&&!after[2]);
     QVERIFY(after[1]);
     QVERIFY(after[1]->column==m21::Column::gold);
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessIsOnlyCopyOfIdentityAndQuality()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture();
+    s.resource_identity="immutable:private:a";
+    s.metrics[1]={-12.,m21::Quality::present,{}};
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(s));
+    auto light=guard.readiness_columns();
+    QVERIFY(light[0]);
+    light[0]->resource_identity="different";
+    light[0]->metric_quality[1]=m21::Quality::invalid;
+    light[0]->lifecycle=m21::Lifecycle::stale;
+    const auto fresh=guard.readiness_columns();
+    QVERIFY(fresh[0]);
+    QCOMPARE(fresh[0]->resource_identity,std::string("immutable:private:a"));
+    QVERIFY(fresh[0]->metric_quality[1]==m21::Quality::present);
+    QVERIFY(fresh[0]->lifecycle==m21::Lifecycle::current);
+    const auto full=guard.view();
+    QCOMPARE(*full.columns[0]->metrics[1].unrounded,-12.);
 
 }
 
