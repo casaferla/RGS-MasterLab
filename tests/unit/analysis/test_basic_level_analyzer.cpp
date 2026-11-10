@@ -18,6 +18,7 @@ private slots:
     void fullOwningResourceUsesActualM16OnlyAcrossSixRates();
     void scopedSubviewNeverReportsFakeRegionalTruePeak();
     void silenceAndInsufficientScopeRemainTyped();
+    void retainedLoudnessUnionIsAbsoluteAndFullAtSixRates();
 };
 
 void BasicLevelAnalyzerTest::
@@ -145,6 +146,41 @@ silenceAndInsufficientScopeRemainTyped()
     QVERIFY(!result.value()->true_peak_db_tp.db);
     QCOMPARE(result.value()->true_peak_db_tp.state,
              BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED);
+}
+
+void BasicLevelAnalyzerTest::
+retainedLoudnessUnionIsAbsoluteAndFullAtSixRates()
+{
+    using namespace analysis;
+    for(const int hz:{44100,48000,88200,96000,176400,192000}) {
+        auto rate=core::SampleRate::create(hz);
+        QVERIFY(rate);
+        auto format=audio::AudioFormat::create(
+            *rate.value(),audio::ChannelLayout::STEREO_LR);
+        auto count=core::FrameCount::create(hz/2);
+        QVERIFY(format&&count);
+        auto pcm=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{317},*count.value());
+        QVERIFY(pcm);
+        auto frame=pcm.value()->mutable_view();
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto plane=frame.channel(ch);
+            QVERIFY(plane);
+            std::fill(plane.value()->begin(),plane.value()->end(),0.5);
+        }
+        auto out=measure_basic_level_scope(
+            pcm.value()->view(),core::FrameIndex{317},*count.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+        QVERIFY(out);
+        QVERIFY(out.value()->integrated_lufs.db);
+        QVERIFY(out.value()->retained_block_disclosure_complete);
+        QCOMPARE(out.value()->retained_block_union.size(),std::size_t{1});
+        QCOMPARE(out.value()->retained_block_union[0].begin,
+                 std::uint64_t{317});
+        QCOMPARE(out.value()->retained_block_union[0].end,
+                 static_cast<std::uint64_t>(317+hz/2));
+    }
 }
 
 } // namespace rgsml::tests
