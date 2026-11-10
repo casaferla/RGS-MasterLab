@@ -18,6 +18,10 @@ class M21ProductStatusViewModel final : public QObject {
     // Phase-6 Gate G issuer may activate this release-only readout path.
     Q_PROPERTY(QVariantMap phase6ReleaseReadouts READ phase6_release_readouts
                NOTIFY changed)
+    // PO-authorized DEVELOPMENT OBSERVATION of genuine current results.
+    // Unlike certified Phase-6 release, this property is intentionally
+    // usable before Gate G and never claims mathematical qualification.
+    Q_PROPERTY(QVariantMap analysisReadouts READ analysis_readouts NOTIFY changed)
 public:
     using Bridge=internal::M21ProductQtReadinessBridge;
     using Controllers=Bridge::Controllers;
@@ -36,6 +40,7 @@ public:
     // Existing authenticated inbox is the ONE eventual numerical source.
     // Current code does not issue a FeatureStatus or unlock Gate G.
     [[nodiscard]] QVariantMap phase6_release_readouts() const;
+    [[nodiscard]] QVariantMap analysis_readouts() const;
 
     // Product-linked status is refreshed on the real Qt owner. An
     // invalid or stale source never leaks numerical M19/20/21 payloads.
