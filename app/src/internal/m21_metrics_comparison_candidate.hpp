@@ -80,6 +80,22 @@ struct Snapshot {
     std::vector<TonalBand> tonal_profile{};
     std::vector<SpectrumPoint> average_spectrum{};
 };
+// Qt UI STATUS-ONLY projection. A receipt has no double, spectral
+// vector, tonal profile, metric Cell, reference audio or producer permission.
+// Numeric evidence remains strictly inside the existing private inbox.
+// Do not extend this type to carry sampled values before Phase-6 Gate G.
+struct ReadinessSnapshot final {
+    Column column{Column::prepared};
+    std::uint64_t generation_token{};
+    std::string resource_identity{};
+    std::string analysis_scope_label{};
+    std::uint64_t absolute_scope_begin{};
+    std::uint64_t scope_frames{};
+    std::uint32_t sample_rate_hz{};
+    Lifecycle lifecycle{Lifecycle::missing};
+    std::array<Quality,9> metric_quality{};
+};
+
 inline Cell state_cell(Lifecycle lifecycle) {
     if(lifecycle==Lifecycle::stale) return {{},Quality::stale,"STALE artifact"};
     if(lifecycle==Lifecycle::invalid) return {{},Quality::invalid,"INVALID artifact"};
