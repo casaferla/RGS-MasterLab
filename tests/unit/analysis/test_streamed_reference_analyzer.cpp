@@ -22,6 +22,7 @@ private slots:
     void silentEmptyGateAndPartialBlock();
     void shortReadMustFail();
     void realSparseWavDecodedLargerThan128MiB();
+    void realStereoReferenceOver128MiBHasAuthenticGatedWidth();
 };
 
 namespace {
@@ -239,6 +240,74 @@ void StreamedReferenceAnalyzerTest::realSparseWavDecodedLargerThan128MiB()
     QVERIFY(result.value()->max_decoded_block_frames<=4096U);
     QVERIFY(control->largestReadRequest<=4096U*2U);
     auto closed=wav.close();
+    QVERIFY(closed);
+}
+
+void StreamedReferenceAnalyzerTest::
+realStereoReferenceOver128MiBHasAuthenticGatedWidth()
+{
+    // A syntactically real independent stereo PCM16 RIFF file: the backing
+    // bytes are sparse, but every decoded sample passes WavReader. A short
+    // nonzero region in the otherwise silent >128-MiB binary64 programme
+    // makes M19 select real P06 intervals and exercises width/correlation.
+    using namespace wav_support;
+    constexpr std::uint64_t frames=
+        128ULL*1024ULL*1024ULL/(sizeof(double)*2ULL)+257ULL;
+    constexpr std::uint64_t dataBytes=frames*4ULL;
+    constexpr std::uint64_t firstBurstFrame=192000ULL*2ULL;
+    constexpr std::size_t burstFrames=192000U*3U/4U;
+    static_assert(firstBurstFrame+burstFrames<frames);
+    Bytes header;
+    append_fourcc(header,fourcc("RIFF"));
+    append_u32(header,static_cast<std::uint32_t>(dataBytes+36ULL));
+    append_fourcc(header,fourcc("WAVE"));
+    const auto fmt=make_fmt_payload(1U,2U,192000U,16U);
+    append_chunk(header,fourcc("fmt "),fmt);
+    append_fourcc(header,fourcc("data"));
+    append_u32(header,static_cast<std::uint32_t>(dataBytes));
+    QCOMPARE(header.size(),std::size_t{44});
+
+    // L=+0.5, R=-0.25, surrounded by zero. Inside any M19 selected union:
+    // (L-R)/(L+R)=3; valid Grid100 windows spanning a boundary have rho=-1.
+    Bytes burst(burstFrames*4U);
+    for(std::size_t i=0;i<burstFrames;++i){
+        burst[i*4U+0U]=std::byte{0x00};
+        burst[i*4U+1U]=std::byte{0x40};
+        burst[i*4U+2U]=std::byte{0x00};
+        burst[i*4U+3U]=std::byte{0xE0};
+    }
+    auto control=std::make_shared<ReaderControl>();
+    std::vector<SparseSegment> segments;
+    segments.push_back({0,std::move(header)});
+    segments.push_back({44ULL+firstBurstFrame*4ULL,std::move(burst)});
+    auto opened=audio::WavReader::open(std::make_unique<SparseReader>(
+        44ULL+dataBytes,std::move(segments),control));
+    QVERIFY(opened);
+    auto& wav=**opened.value();
+    QCOMPARE(wav.info().frame_count().value(),
+             static_cast<std::int64_t>(frames));
+    const auto measured=measure_streamed_reference_scope(
+        wav.info().audio_format(),wav.info().frame_count(),
+        [&wav](core::FrameIndex first,audio::MutableAudioBufferView dest){
+            return wav.read_frames(first,dest);
+        });
+    QVERIFY2(measured,measured?"":measured.error()->message().c_str());
+    QVERIFY(measured.value()->level.integrated_lufs.db.has_value());
+    QVERIFY(measured.value()->level.retained_block_disclosure_complete);
+    QVERIFY(!measured.value()->level.retained_block_union.empty());
+    QCOMPARE(measured.value()->tonal.width_all_scope_fallback,false);
+    QCOMPARE(measured.value()->tonal.width_ratio.state,
+             TonalStereoMetricState::AVAILABLE);
+    QVERIFY(measured.value()->tonal.width_ratio.value);
+    QVERIFY(std::abs(*measured.value()->tonal.width_ratio.value-3.0)<1e-12);
+    QVERIFY(measured.value()->tonal.correlation_p50.value.has_value());
+    QVERIFY(std::abs(*measured.value()->tonal.correlation_p50.value+1.0)<1e-12);
+    QCOMPARE(measured.value()->level.true_peak_db_tp.state,
+             BasicLevelValueState::M16_SCOPE_UNAVAILABLE);
+    QVERIFY(measured.value()->max_decoded_block_frames<=4096U);
+    QVERIFY(measured.value()->max_correlation_window_frames<=76800U);
+    QVERIFY(control->largestReadRequest<=4096U*4U);
+    const auto closed=wav.close();
     QVERIFY(closed);
 }
 } // namespace rgsml::tests
