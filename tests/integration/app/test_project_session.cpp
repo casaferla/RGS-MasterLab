@@ -840,7 +840,7 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
             burst[j+0]=char(0x00);
             burst[j+1]=char(0x40); // L=+0.5, real PCM16
             burst[j+2]=char(0x00);
-            burst[j+3]=char(0xE0); // R=-0.25: width P06 = 3
+            burst[j+3]=std::bit_cast<char>(std::uint8_t{0xE0}); // R=-0.25: width P06 = 3
         }
         QCOMPARE(disk.write(burst),static_cast<qint64>(burst.size()));
         disk.close();
