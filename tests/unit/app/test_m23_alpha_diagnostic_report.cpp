@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PublicationRejectsScopeOverflowAndBadRate();
     void m21PublicationStaysStaleAfterMalformedResult();
     void m21TonalRejectsNonFiniteShape();
     void m21TonalRejectsUnsupportedNumericBand();
@@ -470,6 +471,28 @@ m21PublicationStaysStaleAfterMalformedResult()
     QVERIFY(restored.columns[0]);
     QCOMPARE(restored.columns[0]->lifecycle,m21::Lifecycle::current);
     QCOMPARE(*restored.columns[0]->metrics[0].unrounded,-11.);
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PublicationRejectsScopeOverflowAndBadRate()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture();
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    s.absolute_scope_begin=
+        (std::numeric_limits<std::uint64_t>::max)()-100;
+    QVERIFY(!guard.publish(s));
+    s.absolute_scope_begin=0;
+    s.analysis_scope_label="Unknown";
+    QVERIFY(!guard.publish(s));
+    s.analysis_scope_label="Full Track";
+    s.sample_rate_hz=32000;
+    QVERIFY(!guard.publish(s));
+    s.sample_rate_hz=48000;
+    s.scope_frames=0;
+    QVERIFY(!guard.publish(s));
+    s.scope_frames=48000;
+    QVERIFY(guard.publish(s));
 }
 
 } // namespace
