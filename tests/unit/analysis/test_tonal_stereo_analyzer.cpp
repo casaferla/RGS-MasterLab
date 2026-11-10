@@ -1,4 +1,5 @@
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
+#include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <QtTest>
@@ -18,6 +19,7 @@ private slots:
     void boundedRealPsdAndStereoSixRates();
     void explicitGateAndNormalizedSupportAreNeverInferred();
     void monoScopeAndOutOfScopePoison();
+    void realM19RetainedBlocksDriveP06WidthAtSixRates();
 };
 
 void TonalStereoAnalyzerTest::boundedRealPsdAndStereoSixRates()
@@ -174,6 +176,52 @@ void TonalStereoAnalyzerTest::monoScopeAndOutOfScopePoison()
     QVERIFY(!measure_tonal_stereo_scope(
         owner.value()->view(),core::FrameIndex{5000},
         *selected.value(),audio::FrameDomainId::OUTPUT_RATE));
+}
+
+void TonalStereoAnalyzerTest::
+realM19RetainedBlocksDriveP06WidthAtSixRates()
+{
+    using namespace analysis;
+    for(const int hz:{44100,48000,88200,96000,176400,192000}) {
+        const auto rate=core::SampleRate::create(hz);
+        QVERIFY(rate);
+        const auto format=audio::AudioFormat::create(
+            *rate.value(),audio::ChannelLayout::STEREO_LR);
+        const auto count=core::FrameCount::create(hz/2);
+        QVERIFY(format&&count);
+        auto pcm=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{643},*count.value());
+        QVERIFY(pcm);
+        auto view=pcm.value()->mutable_view();
+        auto l=view.channel(0),r=view.channel(1);
+        QVERIFY(l&&r);
+        for(std::size_t i=0;i<l.value()->size();++i) {
+            const double x=0.4*std::sin(
+                2.0*std::numbers::pi*440.0*static_cast<double>(i)/hz);
+            (*l.value())[i]=x;
+            (*r.value())[i]=-x;
+        }
+        auto m19=measure_basic_level_scope(
+            pcm.value()->view(),core::FrameIndex{643},*count.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+        QVERIFY(m19);
+        QVERIFY(m19.value()->retained_block_disclosure_complete);
+        QVERIFY(!m19.value()->retained_block_union.empty());
+        std::vector<TonalStereoRetainedInterval> exact;
+        for(const auto& interval:m19.value()->retained_block_union)
+            exact.push_back({interval.begin,interval.end});
+        const auto m20=measure_tonal_stereo_scope(
+            pcm.value()->view(),core::FrameIndex{643},*count.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            TonalStereoTrustedSupport{false,{},true,exact,{}});
+        QVERIFY(m20);
+        QVERIFY(!m20.value()->width_all_scope_fallback);
+        QVERIFY(m20.value()->spectral_all_frames_fallback);
+        QVERIFY(m20.value()->width_ratio.state==
+                TonalStereoMetricState::AVAILABLE);
+        QVERIFY(m20.value()->width_ratio.value);
+    }
 }
 
 } // namespace rgsml::tests
