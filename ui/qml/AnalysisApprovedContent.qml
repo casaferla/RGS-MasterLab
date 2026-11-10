@@ -10,6 +10,53 @@ Flickable {
     objectName: "approvedAnalysisProductContent"
     property int panelIndex: 0
     property string lifecycle: "MISSING"
+    // These are observed, authentic M19–M21 Product measurements under
+    // the PO's development GO. Official Phase-6 Gate G remains separate.
+    property var observedReadouts: ({})
+    readonly property var m19Values: observedReadouts && observedReadouts.m19
+        ? observedReadouts.m19 : ({})
+    readonly property var m20Values: observedReadouts && observedReadouts.m20
+        ? observedReadouts.m20 : ({})
+    readonly property var m21Rows: observedReadouts && observedReadouts.m21Rows
+        ? observedReadouts.m21Rows : []
+    readonly property var spectrumPoints: observedReadouts
+        && observedReadouts.m20StaticPsd
+        ? observedReadouts.m20StaticPsd : []
+    readonly property bool hasSpectrum: spectrumPoints.length > 1
+    function hasNumber(value) {
+        return typeof value === "number" && Number.isFinite(value)
+    }
+    function metricText(value, key) {
+        if(!hasNumber(value)) return "—"
+        return Number(value).toFixed(
+            key === "width" || key === "P10"
+            || key === "P50" || key === "P90" ? 3 : 2)
+    }
+    function availableInRole(role,from,to) {
+        if(!m21Rows || m21Rows.length < to) return false
+        for(let i=from;i<to;++i)
+            if(hasNumber(m21Rows[i][role])) return true
+        return false
+    }
+    function anyRowValue() {
+        if(!m21Rows || !m21Rows.length) return false
+        for(let i=0;i<m21Rows.length;++i) {
+            const row=m21Rows[i]
+            if(hasNumber(row.prepared)||hasNumber(row.reference)
+                ||hasNumber(row.processed)
+                ||hasNumber(row.deltaPrepared)
+                ||hasNumber(row.deltaProcessed)) return true
+        }
+        return false
+    }
+    readonly property bool panelHasData: panelIndex === 0
+        ? (hasNumber(m19Values.lufs) || hasNumber(m19Values.rms)
+           || hasNumber(m19Values.samplePeak) || hasNumber(m19Values.crest))
+        : panelIndex === 1
+        ? (hasSpectrum || hasNumber(m20Values.width)
+           || hasNumber(m20Values.P10) || hasNumber(m20Values.P50)
+           || hasNumber(m20Values.P90))
+        : anyRowValue()
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -19,8 +66,9 @@ Flickable {
     readonly property color panel: "#0E1A24"
     readonly property color raised: "#12243F"
 
-    // The bridge has only Product readiness/quality, never numeric payloads.
-    // All visual readouts remain fail-closed irrespective of lifecycle.
+    // Every displayed number comes from the existing authenticated inbox:
+    // current owner, real source, live PCM and finite cell are mandatory.
+    // Missing, stale and unmeasured values stay visibly unavailable.
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     contentWidth: width
@@ -50,11 +98,21 @@ Flickable {
                 rowSpacing: 8
                 Repeater {
                     model: [
-                        {name:"INTEGRATED LOUDNESS",key:"lufs",unit:"LUFS",hint:"EBU · INTEGRATED"},
-                        {name:"RMS LEVEL",key:"rms",unit:"dBFS",hint:"FULL SELECTED SCOPE"},
-                        {name:"SAMPLE PEAK",key:"samplePeak",unit:"dBFS",hint:"DISCRETE PEAK"},
-                        {name:"TRUE PEAK",key:"truePeak",unit:"dBTP",hint:"M16 GATE REQUIRED"},
-                        {name:"CREST FACTOR",key:"crest",unit:"dB",hint:"PEAK − RMS"}
+                        {name:"INTEGRATED LOUDNESS",key:"lufs",unit:"LUFS",
+                         hint:"EBU · INTEGRATED",
+                         tooltip:"Integrated K-weighted loudness over the selected analysis scope. EBU loudness gate; no playback gain is changed."},
+                        {name:"RMS LEVEL",key:"rms",unit:"dBFS",
+                         hint:"FULL SELECTED SCOPE",
+                         tooltip:"Root-mean-square signal level of the selected source and scope in dBFS."},
+                        {name:"SAMPLE PEAK",key:"samplePeak",unit:"dBFS",
+                         hint:"DISCRETE PEAK",
+                         tooltip:"Highest absolute discrete PCM sample, in dBFS. This is not an interpolated True Peak."},
+                        {name:"TRUE PEAK",key:"truePeak",unit:"dBTP",
+                         hint:"M16 GATE REQUIRED",
+                         tooltip:"True Peak is a separate M16 measurement. This cell remains unavailable until its numerical evidence is supported; sample peak is not a substitute."},
+                        {name:"CREST FACTOR",key:"crest",unit:"dB",
+                         hint:"PEAK − RMS",
+                         tooltip:"Sample-peak level minus full-scope RMS level, expressed in dB."}
                     ]
                     delegate: Rectangle {
                         width: (levelGrid.width
@@ -75,10 +133,10 @@ Flickable {
                                 heroReadout: true
                                 labelText: modelData.name
                                 unitText: modelData.unit
-                                // Product M21 Qt readiness bridge forbids numeric
-                                // presentation until canonical owner authority.
-                                rawText: ""
-                                dataAvailable: false
+                                rawText: root.metricText(
+                                    root.m19Values[modelData.key],modelData.key)
+                                dataAvailable: root.hasNumber(
+                                    root.m19Values[modelData.key])
                                 accentColor: modelData.key === "truePeak"
                                     ? root.amber : root.cyan
                             }
@@ -91,6 +149,13 @@ Flickable {
                                 font.pixelSize: 10
                                 wrapMode: Text.WordWrap
                             }
+                        }
+                        ToolTip.text: modelData.tooltip
+                        ToolTip.visible: m19CardDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: m19CardDwell
+                            anchors.fill: parent
                         }
                     }
                 }
@@ -137,8 +202,16 @@ Flickable {
                             }
                             Text {
                                 width: Math.max(20,parent.width-125)
-                                text: "UNAVAILABLE · NO AUTHENTICATED MEASUREMENT"
-                                color: root.amber
+                                text: root.m21Rows.length > 0
+                                    && root.hasNumber(root.m21Rows[0][
+                                        modelData.name.toLowerCase()])
+                                    ? root.metricText(root.m21Rows[0][
+                                        modelData.name.toLowerCase()],"lufs") + " LUFS"
+                                    : "UNAVAILABLE"
+                                color: root.m21Rows.length > 0
+                                    && root.hasNumber(root.m21Rows[0][
+                                        modelData.name.toLowerCase()])
+                                    ? root.ink : root.amber
                                 font.family: "Consolas"
                                 font.pixelSize: 10
                                 elide: Text.ElideRight
