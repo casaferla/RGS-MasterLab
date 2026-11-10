@@ -546,6 +546,7 @@ private slots:
     void m21IdenticalReadinessFrameDoesNotRequireRepaint();
     void m21ReadinessFrameDetectsProductMutation();
     void m21ReadinessFrameDetectsPanelRoutingAndQuality();
+    void m21ReadinessFrameDetectsMasterRateIdentity();
 
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
@@ -623,6 +624,26 @@ m21ReadinessFrameDetectsPanelRoutingAndQuality()
                        QVariantMap{{QStringLiteral("lufs"),QStringLiteral("MISSING")}});
     QVERIFY(!Bridge::same_visible_frame(a,b));
     b.panels[2]=a.panels[2];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsMasterRateIdentity()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.master_rate_hz=48000U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.master_rate_hz=48000U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.master_rate_revision=11;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.master_rate_revision=11;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.chain_revision=15;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.chain_revision=15;
     QVERIFY(Bridge::same_visible_frame(a,b));
 }
 
