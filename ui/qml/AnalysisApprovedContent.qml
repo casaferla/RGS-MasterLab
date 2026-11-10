@@ -45,8 +45,12 @@ Flickable {
     function deltaText(value, key) {
         if(!hasNumber(value)) return "—"
         const shown=metricText(value,key)
-        return value > 0 && Number(shown) > 0
-            ? "+" + shown : shown
+        // Rounded signed zero is neutral in BOTH directions. A negative
+        // sub-display-precision delta must never appear as "-0.00".
+        if(Number(shown) === 0) return Number(0).toFixed(
+            key === "width" || key === "P10"
+            || key === "P50" || key === "P90" ? 3 : 2)
+        return value > 0 ? "+" + shown : shown
     }
     function metricExplanation(key) {
         switch(key) {
