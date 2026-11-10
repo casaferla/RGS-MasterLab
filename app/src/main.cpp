@@ -978,6 +978,20 @@ int main(int argc, char* argv[])
         &m21ProductStatusViewModel,
         &rgsml::app::M21ProductStatusViewModel::refresh,
         Qt::QueuedConnection);
+    // Master clock and M17 terminal revisions can stale M21 Product
+    // evidence without a SOURCE/REFERENCE picker event. The genuine
+    // owner gates in Bridge::capture decide which states are current;
+    // the queued observer only refreshes the status-only view.
+    QObject::connect(&masterOutputRate,
+        &rgsml::app::MasterOutputRateState::changed,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
 
     // Invalidate the *visible* Export affordance whenever a Product
     // signal can retire the current verified M17 stage. The real Product

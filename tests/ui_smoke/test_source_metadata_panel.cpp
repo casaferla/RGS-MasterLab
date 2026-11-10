@@ -23,6 +23,7 @@
 #include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "internal/m18_owner_source_snapshot.hpp"
+#include "internal/m21_product_qt_readiness_bridge.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
@@ -542,6 +543,10 @@ private slots:
     void childNameLookupVisitsQObjectOnce();
     void hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm();
     void m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly();
+    void m21IdenticalReadinessFrameDoesNotRequireRepaint();
+    void m21ReadinessFrameDetectsProductMutation();
+    void m21ReadinessFrameDetectsPanelRoutingAndQuality();
+
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
     void referenceTerminologyOnRealMain();
@@ -559,6 +564,67 @@ private slots:
 
 
 
+
+void SourceMetadataPanelSmokeTest::
+m21IdenticalReadinessFrameDoesNotRequireRepaint()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[0].insert(QStringLiteral("privateEvidenceStatus"),
+                       QStringLiteral("MISSING"));
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsProductMutation()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.owner_epoch=1;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_epoch=1;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.current_product_owner=true;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.current_product_owner=true;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].resource="independent-reference";
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1]=a.identities[1];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].generation=11;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].generation=11;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsPanelRoutingAndQuality()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    using Column=app::m21_private::Column;
+    Bridge::Frame a,b;
+    a.routing_revision=1;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.routing_revision=1;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.selected[2]=Column::gold;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.selected[2]=Column::gold;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[0].lifecycle=app::m21_private::Lifecycle::stale;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[0].lifecycle=app::m21_private::Lifecycle::stale;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[2].insert(QStringLiteral("privateQualityOnly"),
+                       QVariantMap{{QStringLiteral("lufs"),QStringLiteral("MISSING")}});
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[2]=a.panels[2];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
 
 void SourceMetadataPanelSmokeTest::
 m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly()

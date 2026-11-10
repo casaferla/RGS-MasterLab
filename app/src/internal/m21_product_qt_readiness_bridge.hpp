@@ -52,6 +52,23 @@ public:
         std::array<QVariantMap,3> panels{};
     };
 
+    // Equality includes every field observable by QML *and* the complete
+    // owner/routing identity. Never suppress a genuine SOURCE, REFERENCE,
+    // Product epoch, quality, scope or per-panel status transition.
+    // This is only a notification coalescer, NOT an owner authority.
+    [[nodiscard]] static bool same_visible_frame(
+        const Frame& a,const Frame& b)
+    {
+        return a.owner_epoch==b.owner_epoch
+            &&a.owner_identity==b.owner_identity
+            &&a.routing_revision==b.routing_revision
+            &&a.current_product_owner==b.current_product_owner
+            &&a.product_ui_authorized==b.product_ui_authorized
+            &&a.selected==b.selected
+            &&a.identities==b.identities
+            &&a.panels==b.panels;
+    }
+
     // Must be called on the true Qt Product owner, not a numerical worker.
     // Missing, invalid and stale evidence must never turn into fake zeros.
     [[nodiscard]] static Frame capture(

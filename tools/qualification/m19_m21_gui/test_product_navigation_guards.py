@@ -85,6 +85,19 @@ def test_product_binds_status_without_demo() -> None:
     main = read("app/src/main.cpp")
     assert "M21PrivateProductAnalysisCoordinator" in main
     assert "m21AnalysisPollTimer.setInterval(250);" in main
+    view_cpp = read("app/src/m21_product_status_view_model.cpp")
+    bridge = read("app/src/internal/m21_product_qt_readiness_bridge.hpp")
+    assert "Bridge::same_visible_frame(frame_,next)" in view_cpp
+    assert "a.panels==b.panels" in bridge
+    assert "a.owner_identity==b.owner_identity" in bridge
+    assert "MasterOutputRateState::changed" in main
+    assert "TerminalLimiterViewModel::acceptedStateChanged" in main
+    smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
+    for test_name in ("m21IdenticalReadinessFrameDoesNotRequireRepaint",
+                      "m21ReadinessFrameDetectsProductMutation",
+                      "m21ReadinessFrameDetectsPanelRoutingAndQuality"):
+        assert test_name in smoke
+
     assert "Product::capture_gold(" in driver
     assert "Product::capture(" in driver
     assert "Product::measure_gold_worker(evidence)" in driver

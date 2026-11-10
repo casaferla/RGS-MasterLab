@@ -1,6 +1,7 @@
 #include "m21_product_status_view_model.hpp"
 #include <QThread>
 #include <array>
+#include <utility>
 
 namespace rgsml::app {
 M21ProductStatusViewModel::M21ProductStatusViewModel(
@@ -29,8 +30,11 @@ M21ProductStatusViewModel::column(const QString& role,bool& valid) noexcept {
 }
 void M21ProductStatusViewModel::refresh() {
     if(!owner_thread())return;
-    frame_=Bridge::capture(product_,*fanout_,*selector_,*gold_,
-                           *inbox_,routing_);
+    auto next=Bridge::capture(product_,*fanout_,*selector_,*gold_,
+                              *inbox_,routing_);
+    if(Bridge::same_visible_frame(frame_,next))
+        return; // high-frequency Product notices must not repaint unchanged QML
+    frame_=std::move(next);
     emit changed();
 }
 bool M21ProductStatusViewModel::selectPanelSource(
