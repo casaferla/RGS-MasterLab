@@ -153,6 +153,26 @@ def test_product_binds_status_without_demo() -> None:
     assert "completed.result->lifecycle==m21_private::Lifecycle::current" in single_flight
     assert "append_identity_field(" in driver
     assert "append_identity_field(" in single_flight
+    # Keep the COMPLETE Product-epoch guard and add identity of immutable
+    # retained render PCM: a new PREPARED/PROCESSED owner with the SAME
+    # epoch must not be skipped, and the old PCM must not be pinned.
+    for token in (
+        "std::weak_ptr<const void> previous_",
+        "prior.get()==owner.get()",
+        "key_==key",
+    ):
+        assert token in single_flight
+    assert "renderAttempts_[index].matches(key,render)" in driver
+    assert "renderAttempts_[index].remember(std::move(key),render)" in driver
+    native = read("tests/unit/app/test_m23_alpha_diagnostic_report.cpp")
+    for required in (
+        "m21RenderAttemptDeduplicatesSamePhysicalOwner",
+        "m21RenderAttemptAcceptsReplacementInsideSameEpoch",
+        "m21RenderAttemptDoesNotPinRetiredPcm",
+        "m21RenderAttemptChangesKeysAndSupportsReset",
+        "m21RenderAttemptNoOwnerIsNeverCurrent",
+    ):
+        assert required in native
     assert 'return false;' in read("app/src/m21_product_status_view_model.hpp")
     readout = read("ui/qml/StudioReadOnlyMeasurement.qml")
     assert "root.heroReadout ? 36 : 13" in readout
