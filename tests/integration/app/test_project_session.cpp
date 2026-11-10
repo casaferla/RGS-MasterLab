@@ -699,6 +699,15 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         1,QStringLiteral("REFERENCE")));
     QCOMPARE(goldNativeStatus.m20().value("sourceRole").toString(),
              QStringLiteral("REFERENCE"));
+    // Development display is explicitly permitted by PO; only the
+    // official Phase-6 release channel remains closed. This is genuine
+    // current REFERENCE PCM captured/decoded through the real inbox.
+    const auto goldObserved=goldNativeStatus.analysis_readouts();
+    QCOMPARE(goldObserved.value("m21Rows").toList().size(),qsizetype{9});
+    QCOMPARE(goldNativeStatus.property("analysisReadouts").toMap()
+                 .value("m21Rows").toList().size(),qsizetype{9});
+    QVERIFY(goldObserved.value("m21Rows").toList().at(2).toMap()
+                .value("reference").isValid());
     QCOMPARE(goldNativeStatus.m20().value(
         "privateEvidenceStatus").toString(),QStringLiteral("CURRENT"));
     QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
@@ -780,6 +789,8 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
     QCOMPARE(goldNativeStatus.m20().value(
         "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
+    QVERIFY(!goldNativeStatus.analysis_readouts().value("m21Rows")
+                .toList().at(2).toMap().value("reference").isValid());
     QVERIFY(goldNativeStatus.m20().value(
         "privateQualityOnly").toMap().isEmpty());
     QVERIFY(!Handoff::publish_on_owner(
@@ -904,8 +915,29 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!longStatus.production_authorized());
     QVERIFY(longStatus.phase6_release_readouts().isEmpty());
     QVERIFY(longStatus.property("phase6ReleaseReadouts").toMap().isEmpty());
+    // Long (>128 MiB decoded PCM) independent stereo REFERENCE is
+    // numerically visible to the PO during development. It remains
+    // strictly unavailable on the certified release property.
+    const auto longObserved=longStatus.analysis_readouts();
+    const auto longRows=longObserved.value("m21Rows").toList();
+    QCOMPARE(longRows.size(),qsizetype{9});
+    const auto observedWidth=longRows.at(5).toMap().value("reference");
+    QVERIFY(observedWidth.isValid());
+    QVERIFY(std::abs(observedWidth.toDouble()-3.0)<1e-12);
+    const auto observedRho=longRows.at(7).toMap().value("reference");
+    QVERIFY(observedRho.isValid());
+    QVERIFY(std::abs(observedRho.toDouble()+1.0)<1e-12);
+    QVERIFY(!longRows.at(3).toMap().value("reference").isValid());
+    QVERIFY(longStatus.selectPanelSource(1,QStringLiteral("REFERENCE")));
+    const auto actualM20=longStatus.analysis_readouts();
+    QVERIFY(std::abs(actualM20.value("m20").toMap()
+                     .value("width").toDouble()-3.0)<1e-12);
+    QCOMPARE(longStatus.property("analysisReadouts").toMap()
+                 .value("m21Rows").toList().size(),qsizetype{9});
     QVERIFY(longStatus.m21().value("metrics").toList().isEmpty());
     session.gold.clearGold();
+    QVERIFY(!longStatus.analysis_readouts().value("m21Rows")
+                .toList().at(5).toMap().value("reference").isValid());
     QVERIFY(!M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,*longGold.value()));
     const auto longRetired=longInbox.view_current(
