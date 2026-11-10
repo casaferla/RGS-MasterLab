@@ -1,4 +1,8 @@
 #include "internal/m23_alpha_diagnostic_report.hpp"
+#include "internal/m21_private_single_flight.hpp"
+#include <atomic>
+#include <memory>
+#include <thread>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <QtTest/QTest>
@@ -16,6 +20,9 @@ private slots:
     void rejectsSuccessfulAbsentAndEmptyStatuses();
     void reportedFailureNeverClaimsPhysicalOrReleaseGate();
     void diagnosticEvidenceRemainsUnknownUntilProven();
+    void m21AsyncSingleFlightIsBoundedAndOwnerOnly();
+    void m21AsyncDestructorCannotTouchDeadOwner();
+
 };
 
 void M23AlphaDiagnosticReportTest::
@@ -126,6 +133,76 @@ diagnosticEvidenceRemainsUnknownUntilProven()
     QVERIFY(unsafe);
     QVERIFY(!unsafe.value()->safe_failure_evidence_complete());
     QVERIFY(!unsafe.value()->m23_i_p_m_passed());
+}
+
+void M23AlphaDiagnosticReportTest::
+m21AsyncSingleFlightIsBoundedAndOwnerOnly()
+{
+    M21PrivateSingleFlight queue;
+    auto gate=std::make_shared<std::atomic<bool>>(false);
+    auto entered=std::make_shared<std::atomic<bool>>(false);
+    QVERIFY(queue.start(19,[gate,entered]() {
+        entered->store(true,std::memory_order_release);
+        while(!gate->load(std::memory_order_acquire))
+            std::this_thread::yield();
+        rgsml::app::m21_private::Snapshot s;
+        s.column=rgsml::app::m21_private::Column::prepared;
+        s.generation_token=19;
+        return std::optional<rgsml::app::m21_private::Snapshot>{std::move(s)};
+    }));
+    QTRY_VERIFY_WITH_TIMEOUT(entered->load(std::memory_order_acquire),2000);
+    QVERIFY(queue.busy());
+    QVERIFY(!queue.finished());
+    QVERIFY(!queue.take_finished());
+    QVERIFY(!queue.start(20,[] {
+        return std::optional<rgsml::app::m21_private::Snapshot>{};
+    }));
+    std::atomic<bool> foreignAdmitted{false};
+    std::thread foreign([&] {
+        foreignAdmitted.store(queue.start(21,[] {
+            return std::optional<rgsml::app::m21_private::Snapshot>{};
+        }),std::memory_order_release);
+    });
+    foreign.join();
+    QVERIFY(!foreignAdmitted.load(std::memory_order_acquire));
+    gate->store(true,std::memory_order_release);
+    QTRY_VERIFY_WITH_TIMEOUT(queue.finished(),2500);
+    const auto result=queue.take_finished();
+    QVERIFY(result);
+    QCOMPARE(result->request_id,std::uint64_t{19});
+    QVERIFY(result->result);
+    QCOMPARE(result->result->generation_token,std::uint64_t{19});
+    QVERIFY(!queue.busy());
+    QVERIFY(!queue.take_finished());
+    QVERIFY(queue.start(22,[] {
+        return std::optional<rgsml::app::m21_private::Snapshot>{};
+    }));
+    QTRY_VERIFY_WITH_TIMEOUT(queue.finished(),2500);
+    const auto empty=queue.take_finished();
+    QVERIFY(empty);
+    QCOMPARE(empty->request_id,std::uint64_t{22});
+    QVERIFY(!empty->result);
+}
+
+void M23AlphaDiagnosticReportTest::
+m21AsyncDestructorCannotTouchDeadOwner()
+{
+    auto entered=std::make_shared<std::atomic<bool>>(false);
+    auto release=std::make_shared<std::atomic<bool>>(false);
+    auto done=std::make_shared<std::atomic<bool>>(false);
+    {
+        M21PrivateSingleFlight queue;
+        QVERIFY(queue.start(44,[entered,release,done]() {
+            entered->store(true,std::memory_order_release);
+            while(!release->load(std::memory_order_acquire))
+                std::this_thread::yield();
+            done->store(true,std::memory_order_release);
+            return std::optional<rgsml::app::m21_private::Snapshot>{};
+        }));
+        QTRY_VERIFY_WITH_TIMEOUT(entered->load(std::memory_order_acquire),2000);
+    } // No worker thread may retain the destroyed queue/Qt owner.
+    release->store(true,std::memory_order_release);
+    QTRY_VERIFY_WITH_TIMEOUT(done->load(std::memory_order_acquire),2500);
 }
 
 } // namespace
