@@ -53,12 +53,6 @@ Flickable {
         default: return "Read-only source metric."
         }
     }
-    function metricUnit(key) {
-        return key === "lufs" ? "LUFS"
-            : key === "rms" || key === "samplePeak"
-                || key === "crest" ? "dB"
-            : key === "truePeak" ? "dBTP" : ""
-    }
     function availableInRole(role,from,to) {
         if(!m21Rows || m21Rows.length < to) return false
         for(let i=from;i<to;++i)
