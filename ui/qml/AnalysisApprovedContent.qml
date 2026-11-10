@@ -39,6 +39,15 @@ Flickable {
             key === "width" || key === "P10"
             || key === "P50" || key === "P90" ? 3 : 2)
     }
+    // Preserve the sign of a reference-minus-current difference.
+    // An exact zero is neutral; positive deltas are explicitly marked
+    // so that they cannot be mistaken for unsigned absolute values.
+    function deltaText(value, key) {
+        if(!hasNumber(value)) return "—"
+        const shown=metricText(value,key)
+        return value > 0 && !shown.startsWith("0.00")
+            ? "+" + shown : shown
+    }
     function metricExplanation(key) {
         switch(key) {
         case "lufs": return "Integrated K-weighted loudness, in LUFS; gated over each independently measured scope."
@@ -576,9 +585,9 @@ Flickable {
                                                 m21MetricRow.observed.key),
                                 root.metricText(m21MetricRow.observed.processed,
                                                 m21MetricRow.observed.key),
-                                root.metricText(m21MetricRow.observed.deltaPrepared,
+                                root.deltaText(m21MetricRow.observed.deltaPrepared,
                                                 m21MetricRow.observed.key),
-                                root.metricText(m21MetricRow.observed.deltaProcessed,
+                                root.deltaText(m21MetricRow.observed.deltaProcessed,
                                                 m21MetricRow.observed.key)]
                             delegate: Text {
                                 width: parent.width/6
