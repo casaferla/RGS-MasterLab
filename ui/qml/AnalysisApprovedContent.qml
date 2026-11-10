@@ -22,7 +22,14 @@ Flickable {
     readonly property var spectrumPoints: observedReadouts
         && observedReadouts.m20StaticPsd
         ? observedReadouts.m20StaticPsd : []
-    readonly property bool hasSpectrum: spectrumPoints.length > 1
+    function hasMeasuredSpectrumEnergy() {
+        if(!spectrumPoints || spectrumPoints.length < 2) return false
+        for(let i=0;i<spectrumPoints.length;++i)
+            if(spectrumPoints[i].hz >= 20
+                && spectrumPoints[i].linearPower > 0) return true
+        return false
+    }
+    readonly property bool hasSpectrum: hasMeasuredSpectrumEnergy()
     function hasNumber(value) {
         return typeof value === "number" && Number.isFinite(value)
     }
@@ -231,8 +238,9 @@ Flickable {
             }
         }
 
-        // M20 approved static spectral PSD, 1/12-octave profile, and
-        // read-only width/P10/P50/P90. The graph draws AXES only.
+        // M20 static PSD, P06 Width and local Grid100 correlations.
+        // The curve uses actual measured linear-power bins; only the
+        // vertical display scale is relative to the measured maximum.
         Column {
             id: m20
             objectName: "m20TonalStereoPage"
@@ -265,6 +273,12 @@ Flickable {
                     anchors.bottomMargin: 31
                     onWidthChanged: requestPaint()
                     onHeightChanged: requestPaint()
+                    Connections {
+                        target: root
+                        function onSpectrumPointsChanged() {
+                            spectrumCanvas.requestPaint()
+                        }
+                    }
                     onPaint: {
                         const ctx=getContext("2d")
                         ctx.reset()
@@ -282,12 +296,49 @@ Flickable {
                             ctx.lineTo(width*x,height)
                             ctx.stroke()
                         }
-                        // NO synthesized spectrum. Only a qualified C++
-                        // publication may eventually populate a curve.
+                        // Authentic mean-channel PSD. Convert power to dB
+                        // ONLY for axis rendering, not Phase-6 output data.
+                        const points=root.spectrumPoints
+                        if(!root.hasSpectrum || !points.length)return
+                        const hiHz=20000
+                        const loHz=20
+                        const logSpan=Math.log10(hiHz/loHz)
+                        let maxDb=-Infinity
+                        for(let i=0;i<points.length;++i) {
+                            const p=points[i]
+                            if(p.hz<loHz || p.hz>hiHz || p.linearPower<=0)
+                                continue
+                            const db=10*Math.log10(p.linearPower)
+                            if(Number.isFinite(db))maxDb=Math.max(maxDb,db)
+                        }
+                        if(!Number.isFinite(maxDb))return
+                        // 72 dB display-only vertical span, no fabricated
+                        // normalized values or substitute P02 energy.
+                        const floorDb=maxDb-72
+                        ctx.save()
+                        ctx.strokeStyle=root.cyan
+                        ctx.lineWidth=1.6
+                        ctx.beginPath()
+                        let started=false
+                        for(let i=0;i<points.length;++i) {
+                            const p=points[i]
+                            if(p.hz<loHz || p.hz>hiHz || p.linearPower<=0)
+                                continue
+                            const db=10*Math.log10(p.linearPower)
+                            if(!Number.isFinite(db))continue
+                            const x=Math.log10(p.hz/loHz)/logSpan*width
+                            const y=height*(1-Math.max(0,Math.min(1,
+                                (db-floorDb)/72)))
+                            if(!started) {ctx.moveTo(x,y);started=true}
+                            else ctx.lineTo(x,y)
+                        }
+                        if(started)ctx.stroke()
+                        ctx.restore()
                     }
                 }
                 Text {
                     objectName: "m20MissingSpectrumNotice"
+                    visible: !root.hasSpectrum
                     anchors.centerIn: spectrumCanvas
                     text: root.lifecycle === "STALE"
                         ? "SPECTRUM STALE\nREANALYSIS REQUIRED"
@@ -297,6 +348,13 @@ Flickable {
                     font.pixelSize: 13
                     font.weight: Font.DemiBold
                     horizontalAlignment: Text.AlignHCenter
+                }
+                ToolTip.text: "Static mean power spectral density from the selected real PCM. Logarithmic frequency axis, display-only 72 dB vertical scale relative to its measured maximum. Not a live spectrum or normalized octave-band profile."
+                ToolTip.visible: spectrumDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: spectrumDwell
+                    anchors.fill: parent
                 }
                 Row {
                     anchors.left: spectrumCanvas.left
@@ -337,10 +395,14 @@ Flickable {
                         width: parent.width
                         spacing: 6
                         Repeater {
-                            model: [{key:"width",title:"WIDTH"},
-                                    {key:"P10",title:"P10"},
-                                    {key:"P50",title:"P50"},
-                                    {key:"P90",title:"P90"}]
+                            model: [{key:"width",title:"WIDTH",
+                                     tip:"Stereo side-to-mid energy ratio over the real M19 retained loudness-gated union; can legitimately exceed 1."},
+                                    {key:"P10",title:"P10",
+                                     tip:"10th percentile of 400 ms centred local L/R correlations, evaluated every 100 ms."},
+                                    {key:"P50",title:"P50",
+                                     tip:"Median of authentic Grid100 local stereo correlations, not a full-programme global correlation."},
+                                    {key:"P90",title:"P90",
+                                     tip:"90th percentile of authentic Grid100 local correlations; undefined or mono data is unavailable."}]
                             delegate: StudioReadOnlyMeasurement {
                                 objectName: modelData.key === "width"
                                     ? "m20StereoWidthReadout"
@@ -348,8 +410,17 @@ Flickable {
                                 width: (parent.width-18)/4
                                 height: 50
                                 labelText: modelData.title
-                                rawText: ""
-                                dataAvailable: false
+                                rawText: root.metricText(
+                                    root.m20Values[modelData.key],modelData.key)
+                                dataAvailable: root.hasNumber(
+                                    root.m20Values[modelData.key])
+                                ToolTip.text: modelData.tip
+                                ToolTip.visible: stereoDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: stereoDwell
+                                    anchors.fill: parent
+                                }
                             }
                         }
                     }
