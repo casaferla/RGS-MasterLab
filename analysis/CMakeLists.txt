@@ -16,6 +16,8 @@ add_library(rgsml_analysis STATIC
     src/basic_level_analyzer.cpp
     # L1-M20: read-only FFT/Hann/PSD and stereo scope adapter; no DSP.
     src/tonal_stereo_analyzer.cpp
+    # Independent REFERENCE bounded-PCM read bridge, nonrelease.
+    src/streamed_reference_analyzer.cpp
 )
 # M16 Gate G: preserve source-ordered binary64 FIR products, additions, and
 # final dBTP conversion. Do NOT use fast math or implicit FMA contraction.
