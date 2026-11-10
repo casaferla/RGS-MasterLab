@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessTracksNineDistinctMetricQualities();
     void m21ReadinessDoesNotCloneSpectrumOrTonalProfile();
     void m21ReadinessRetainsExactRoleAndScope();
     void m21ReadinessReceiptIsSmallerThanNumericEvidence();
@@ -738,6 +739,31 @@ m21ReadinessDoesNotCloneSpectrumOrTonalProfile()
     QCOMPARE(full.columns[0]->average_spectrum.size(),std::size_t{8193});
     QCOMPARE(full.columns[0]->tonal_profile.size(),std::size_t{2});
     QCOMPARE(*full.columns[0]->tonal_profile[1].normalized_shape_db.unrounded,4.);
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessTracksNineDistinctMetricQualities()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture();
+    s.metrics[0]={-18.,m21::Quality::present,{}};
+    s.metrics[1]={-21.,m21::Quality::low_confidence,{}};
+    s.metrics[2]={{},m21::Quality::missing,"no source"};
+    s.metrics[3]={{},m21::Quality::missing,"M16 unqualified"};
+    s.metrics[4]={{},m21::Quality::stale,"not measured"};
+    s.metrics[5]={{},m21::Quality::not_applicable,"mono"};
+    s.metrics[6]={{},m21::Quality::incompatible,"scope"};
+    s.metrics[7]={{},m21::Quality::invalid,"bad support"};
+    s.metrics[8]={0.,m21::Quality::present,{}};
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(s));
+    const auto receipt=guard.readiness_columns();
+    QVERIFY(receipt[0]);
+    for(std::size_t i=0;i<9;++i)
+        QVERIFY(receipt[0]->metric_quality[i]==s.metrics[i].quality);
+    QVERIFY(receipt[0]->metric_quality[3]==m21::Quality::missing);
+    QVERIFY(receipt[0]->metric_quality[8]==m21::Quality::present);
 
 }
 
