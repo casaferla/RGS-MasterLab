@@ -284,6 +284,32 @@ public:
         return true;
     }
     Comparison view()const{return compose(slots_);}
+
+    // Project only the seven provenance fields + nine quality enums
+    // needed by the read-only Qt panels. Never copy PSD, tonal bands,
+    // Metric Cells or source PCM to the GUI status-refresh path.
+    // Returns the exact generation and lifecycle of each stored slot.
+    [[nodiscard]] std::array<std::optional<ReadinessSnapshot>,3>
+    readiness_columns() const {
+        std::array<std::optional<ReadinessSnapshot>,3> out{};
+        for(std::size_t column=0;column<out.size();++column) {
+            if(!slots_[column])continue;
+            const auto& s=*slots_[column];
+            ReadinessSnapshot next;
+            next.column=s.column;
+            next.generation_token=s.generation_token;
+            next.resource_identity=s.resource_identity;
+            next.analysis_scope_label=s.analysis_scope_label;
+            next.absolute_scope_begin=s.absolute_scope_begin;
+            next.scope_frames=s.scope_frames;
+            next.sample_rate_hz=s.sample_rate_hz;
+            next.lifecycle=s.lifecycle;
+            for(std::size_t metric=0;metric<next.metric_quality.size();++metric)
+                next.metric_quality[metric]=s.metrics[metric].quality;
+            out[column]=std::move(next);
+        }
+        return out;
+    }
 private:
     std::array<std::uint64_t,3> expected_{};
     std::array<std::optional<Snapshot>,3> slots_{};
