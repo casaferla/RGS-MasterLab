@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21TonalRejectsUnsupportedNumericBand();
     void m21TonalRejectsMissingProofAndBadResolution();
     void m21TonalRejectsDuplicateIds();
     void m21TonalAcceptsUnsortedCertifiedBands();
@@ -406,6 +407,22 @@ m21TonalRejectsMissingProofAndBadResolution()
     s.profile_denominator=7;
     QVERIFY(!m21::valid_private_tonal_profile(s));
     s.profile_denominator=3;
+    QVERIFY(m21::valid_private_tonal_profile(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21TonalRejectsUnsupportedNumericBand()
+{
+    auto s=private_m21_fixture();
+    s.profile_denominator=12;
+    s.common_comparison_support_id="external-pair-proof";
+    s.tonal_profile={{100,false,{0.,m21::Quality::present,{}}}};
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.tonal_profile[0].normalized_shape_db={{},m21::Quality::missing,
+                                            "outside shared bandwidth"};
+    QVERIFY(m21::valid_private_tonal_profile(s));
+    s.tonal_profile[0].in_common_support=true;
+    s.tonal_profile[0].normalized_shape_db={0.,m21::Quality::present,{}};
     QVERIFY(m21::valid_private_tonal_profile(s));
 }
 
