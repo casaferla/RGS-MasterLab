@@ -2042,6 +2042,20 @@ set_tests_properties(rgsml_basic_level_analyzer_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "analysis;m19;basic_level;real_m16;scope;unit")
 
+# M21 independent long REFERENCE WAV streaming. Native real decoder, all
+# six Fs, mono/stereo and whole-scope M19/M20 numerical equivalence.
+# This is not the official Phase-6 Gate G or M16 qualification.
+qt_add_executable(rgsml_streamed_reference_analyzer_tests
+    unit/analysis/test_streamed_reference_analyzer.cpp)
+target_link_libraries(rgsml_streamed_reference_analyzer_tests PRIVATE
+    rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_streamed_reference_analyzer_tests)
+add_test(NAME rgsml_streamed_reference_analyzer_tests
+    COMMAND rgsml_streamed_reference_analyzer_tests)
+set_tests_properties(rgsml_streamed_reference_analyzer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;m19;m20;m21;reference;streaming;real_wav;nonrelease")
+
 qt_add_executable(rgsml_true_peak_gate_g_edge_tests
     unit/analysis/test_true_peak_gate_g_edges.cpp
 )
