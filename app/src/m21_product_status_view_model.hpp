@@ -1,7 +1,8 @@
 #pragma once
 // M19/M20/M21 genuine Product owner -> Qt presentation status adapter.
 // The private inbox is authenticated against live M18 generations.
-// No numerical QML publication or Phase-6 authorization is fabricated.
+// PO-approved real numerical DEVELOPMENT observation; official Phase-6
+// FeatureStatus / Gate G qualification remains a distinct release gate.
 #include "internal/m21_product_qt_readiness_bridge.hpp"
 #include <QObject>
 #include <QVariantMap>
@@ -42,8 +43,9 @@ public:
     [[nodiscard]] QVariantMap phase6_release_readouts() const;
     [[nodiscard]] QVariantMap analysis_readouts() const;
 
-    // Product-linked status is refreshed on the real Qt owner. An
-    // invalid or stale source never leaks numerical M19/20/21 payloads.
+    // Product-linked status is refreshed on the real Qt owner. Development
+    // display admits only genuine CURRENT evidence; invalid or stale
+    // sources cannot retain old visible numerical payloads.
     Q_INVOKABLE void refresh();
     // Separate per-panel routing is an ordinary UI choice, not the
     // authority to analyze a SOURCE or replace its REFERENCE.
