@@ -938,6 +938,21 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     session.gold.clearGold();
     QVERIFY(!longStatus.analysis_readouts().value("m21Rows")
                 .toList().at(5).toMap().value("reference").isValid());
+    // After the independent REFERENCE disappears, no selected M20 stereo
+    // number or old M21 delta may survive the real owner invalidation.
+    const auto clearedObserved=longStatus.analysis_readouts();
+    QVERIFY(!clearedObserved.value("m20").toMap()
+                 .value("width").isValid());
+    QVERIFY(clearedObserved.value("m20StaticPsd").toList().isEmpty());
+    const auto clearedRows=clearedObserved.value("m21Rows").toList();
+    QCOMPARE(clearedRows.size(),qsizetype{9});
+    for(const auto& entry:clearedRows) {
+        const auto row=entry.toMap();
+        QVERIFY(!row.value("reference").isValid());
+        QVERIFY(!row.value("deltaPrepared").isValid());
+        QVERIFY(!row.value("deltaProcessed").isValid());
+    }
+    QVERIFY(longStatus.phase6_release_readouts().isEmpty());
     QVERIFY(!M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,*longGold.value()));
     const auto longRetired=longInbox.view_current(
