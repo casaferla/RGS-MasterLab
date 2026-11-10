@@ -9,6 +9,7 @@
 #include <array>
 #include <string>
 #include <limits>
+#include <type_traits>
 
 namespace rgsml::tests {
 namespace {
@@ -47,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessReceiptIsSmallerThanNumericEvidence();
     void m21RenderAttemptNoOwnerIsNeverCurrent();
     void m21RenderAttemptChangesKeysAndSupportsReset();
     void m21RenderAttemptDoesNotPinRetiredPcm();
@@ -653,6 +655,26 @@ m21RenderAttemptNoOwnerIsNeverCurrent()
     QVERIFY(!attempt.matches("same-key",valid));
     attempt.remember("same-key",valid);
     QVERIFY(attempt.matches("same-key",valid));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessReceiptIsSmallerThanNumericEvidence()
+{
+    static_assert(!std::is_same_v<m21::ReadinessSnapshot,m21::Snapshot>);
+    static_assert(sizeof(m21::ReadinessSnapshot)<sizeof(m21::Snapshot));
+    m21::PrivatePublicationGuard guard;
+    auto input=private_m21_fixture();
+    input.metrics[0]={-17.5,m21::Quality::present,{}};
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(input));
+    const auto status=guard.readiness_columns();
+    QVERIFY(status[0]);
+    QCOMPARE(status[0]->generation_token,std::uint64_t{1});
+    QVERIFY(status[0]->metric_quality[0]==m21::Quality::present);
+    QVERIFY(status[0]->metric_quality[3]==m21::Quality::missing);
+    const auto full=guard.view();
+    QCOMPARE(*full.columns[0]->metrics[0].unrounded,-17.5);
+
 }
 
 } // namespace
