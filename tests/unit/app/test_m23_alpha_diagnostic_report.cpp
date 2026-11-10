@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21RenderAttemptDoesNotPinRetiredPcm();
     void m21RenderAttemptAcceptsReplacementInsideSameEpoch();
     void m21RenderAttemptDeduplicatesSamePhysicalOwner();
     void m21PublicationRejectsRelabeledColumnAndUnknownRole();
@@ -605,6 +606,22 @@ m21RenderAttemptAcceptsReplacementInsideSameEpoch()
     attempt.remember("source:A|epoch:8|prepared",replacement);
     QVERIFY(attempt.matches("source:A|epoch:8|prepared",replacement));
     QVERIFY(!attempt.matches("source:A|epoch:8|prepared",original));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21RenderAttemptDoesNotPinRetiredPcm()
+{
+    M21PrivateRenderAttempt attempt;
+    std::weak_ptr<const int> observer;
+    {
+        const auto sample=std::make_shared<const int>(9);
+        observer=sample;
+        attempt.remember("rgsml:prepared|epoch:1",sample);
+        QVERIFY(attempt.matches("rgsml:prepared|epoch:1",sample));
+    }
+    QVERIFY(observer.expired());
+    const auto next=std::make_shared<const int>(9);
+    QVERIFY(!attempt.matches("rgsml:prepared|epoch:1",next));
 }
 
 } // namespace
