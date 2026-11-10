@@ -65,6 +65,23 @@ def test_product_binds_status_without_demo() -> None:
         assert f'case "{key}": return "{kind}"' in selector
         assert f'kind === "{kind}"' in vectors
     assert 'AnalysisModuleIcon {' in selector
+    # M16 and the three nonbypassable analyzer services must share the
+    # exact same row/halo behavior. Missing measurements affect only the
+    # editor's value cells, NEVER dim the permanent analysis row or icon.
+    assert '&& moduleAdapter.nonProcessingService' in selector
+    assert 'readonly property bool permanentlyLit:' in selector
+    assert 'readonly property bool isBypassed:' in selector
+    assert '(moduleAdapter.bypassSupported && moduleAdapter.bypass)' in selector
+    assert 'glowEnabled: (rowItem.permanentlyLit' in selector
+    assert '|| !rowItem.isDefaultState) && !rowItem.isBypassed' in selector
+    assert 'opacity: (rowItem.permanentlyLit ? 1.0' in selector
+    assert ': rowItem.isDefaultState ? 0.58 : 1.0)' in selector
+    assert '* (rowItem.isBypassed ? 0.7 : 1.0)' in selector
+    assert 'opacity: rowItem.isBypassed ? 0.28 : 1.0' in selector
+    assert 'Always on · Read-only analysis / service' in selector
+    assert 'rowItem.permanentlyLit\n' in selector
+    assert 'glowEnabled: moduleSymbol.glowEnabled' in selector
+    assert 'strokeColor: moduleSymbol.strokeColor' in selector
     # The 16px slot belongs to the EXISTING StudioIcon in the selector;
     # the 24px vector master is centered in its own Shape component.
     assert 'anchors.fill: parent' in selector
