@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessDoesNotCloneSpectrumOrTonalProfile();
     void m21ReadinessRetainsExactRoleAndScope();
     void m21ReadinessReceiptIsSmallerThanNumericEvidence();
     void m21RenderAttemptNoOwnerIsNeverCurrent();
@@ -710,6 +711,33 @@ m21ReadinessRetainsExactRoleAndScope()
     QCOMPARE(status[1]->absolute_scope_begin,std::uint64_t{789});
     QCOMPARE(status[1]->scope_frames,std::uint64_t{88200});
     QCOMPARE(status[1]->analysis_scope_label,std::string("Region"));
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessDoesNotCloneSpectrumOrTonalProfile()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture();
+    s.average_spectrum.reserve(8193);
+    for(int i=0;i<8193;++i)
+        s.average_spectrum.push_back({static_cast<double>(i)*2.0,
+            {0.5,m21::Quality::present,{}}});
+    s.profile_denominator=12;
+    s.common_comparison_support_id="external-common-support";
+    s.tonal_profile={{11,true,{3.,m21::Quality::present,{}}},
+                     {12,true,{4.,m21::Quality::present,{}}}};
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(s));
+    const auto status=guard.readiness_columns();
+    QVERIFY(status[0]);
+    QVERIFY(status[0]->lifecycle==m21::Lifecycle::current);
+    QCOMPARE(status[0]->resource_identity,s.resource_identity);
+    const auto full=guard.view();
+    QVERIFY(full.columns[0]);
+    QCOMPARE(full.columns[0]->average_spectrum.size(),std::size_t{8193});
+    QCOMPARE(full.columns[0]->tonal_profile.size(),std::size_t{2});
+    QCOMPARE(*full.columns[0]->tonal_profile[1].normalized_shape_db.unrounded,4.);
 
 }
 
