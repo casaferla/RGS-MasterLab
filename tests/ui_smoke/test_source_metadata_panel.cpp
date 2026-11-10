@@ -546,6 +546,7 @@ private slots:
     void m21IdenticalReadinessFrameDoesNotRequireRepaint();
     void m21ReadinessFrameDetectsProductMutation();
     void m21ReadinessFrameDetectsPanelRoutingAndQuality();
+    void m21ReadinessFrameDetectsProjectAndSourceGenerations();
     void m21ReadinessFrameDetectsMasterRateIdentity();
 
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
@@ -644,6 +645,25 @@ m21ReadinessFrameDetectsMasterRateIdentity()
     a.owner_identity.chain_revision=15;
     QVERIFY(!Bridge::same_visible_frame(a,b));
     b.owner_identity.chain_revision=15;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsProjectAndSourceGenerations()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.owner_identity.project_generation=2;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.project_generation=2;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.source_generation=3;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.source_generation=3;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.master_generation=4;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.master_generation=4;
     QVERIFY(Bridge::same_visible_frame(a,b));
 }
 
