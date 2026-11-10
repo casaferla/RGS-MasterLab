@@ -20,6 +20,10 @@ Item {
         : panelIndex === 1 ? statusViewModel.m20 : statusViewModel.m21
     readonly property bool authorized: !!statusViewModel
         && statusViewModel.productionAuthorized === true
+    // PO authorized genuine analysis values during development. This is
+    // deliberately separate from the still-closed official Gate G channel.
+    readonly property var observedReadouts: statusViewModel
+        ? statusViewModel.analysisReadouts : ({})
     readonly property string selectedRole: frame && frame.sourceRole
         ? String(frame.sourceRole) : "PREPARED"
     readonly property string lifecycle: frame && frame.privateEvidenceStatus
@@ -67,7 +71,7 @@ Item {
             Item {Layout.fillWidth: true}
             Text {
                 objectName: "analysisProductAuthorityLabel"
-                text: root.authorized ? "PRODUCT DATA" : "NO PRODUCT NUMBERS"
+                text: root.authorized ? "PRODUCT DATA" : "ANALYSIS · DEVELOPMENT"
                 font.family: "Segoe UI"
                 font.pixelSize: 10
                 color: root.authorized ? "#B6D6CA" : "#F0C87D"
@@ -109,6 +113,7 @@ Item {
             objectName: "analysisApprovedContent"
             panelIndex: root.panelIndex
             lifecycle: root.lifecycle
+            observedReadouts: root.observedReadouts
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 0
