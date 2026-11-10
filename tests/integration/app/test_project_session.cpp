@@ -744,10 +744,10 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(M21Owners::gold_still_current(
         controllers,fanout,session.selector,session.gold,
         *selectedGold.value()));
-    // A huge but syntactically valid producer claim is refused before
-    // open/allocate, rather than consuming arbitrarily large RAM or
-    // freezing the Qt owner. A later streaming M19 will replace this
-    // conservative explicit cap; it is NOT a hidden full-track PASS.
+    // A forged capture claiming more frames than the actual WAV is
+    // rejected on reopened WavReader metadata, without accepting a
+    // fabricated producer scope or allocating the claimed PCM. The
+    // separate long-REFERENCE test below proves the valid large path.
     auto oversize=*selectedGold.value();
     oversize.full_frames=16'777'217LL;
     QVERIFY(!M21Owners::measure_gold_worker(oversize));
