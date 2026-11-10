@@ -37,3 +37,14 @@ A practical initial budget is 4096-frame decode blocks, at most 400-ms stereo co
 ## 5. Release discipline
 
 This document authorizes no Gate G, canonical Phase-6 P01–P06 status, M16 TP qualification, FQ, or merge to `main`. Implement one substantive source+tests macro-lot on the no-CI writer branch; promote a **single** immutable candidate to the focused Win/Linux CI branch only when ready. Do not run concurrent CI or fabricate green. Update the existing reconciliation document and Drive work log with *actual* outcomes, not future assertions.
+
+## 6. First implemented candidate and focused validation checkpoint
+
+After the read-only contract, the actual code was added on 2026-11-10 as the same production M21 REFERENCE worker's conditional >128 MiB path:
+- `analysis::measure_streamed_reference_scope` accepts a metadata-checked absolute-frame callback reading from the existing independent `WavReader`; it pushes genuine decoded mono/stereo PCM to the existing M19 and M20 producer kernels, with 4096-frame decode blocks and 400-ms correlation windows.
+- The existing `m20_stereo_candidate.hpp` width calculation and the new stream both reuse `WidthTwoPassAccumulator` and `selected_union_frames`. The M20 Grid100 window correlation still calls the existing implementation for its per-window centered sums and uses the original Type-7 percentile reduction.
+- The existing `measure_gold_worker` retains the original <=128-MiB whole-buffer path and routes larger captures to bounded streaming, retaining owner revalidation and independent persisted GOLD identity; the stream does **not** impersonate M16 True Peak.
+- Real native QtTest checks cover all six Fs, both layouts, output states, PSD and Grid100 numerical equivalence, partial blocks, silence, callback short reads, and a sparse-backed but actual `WavReader` RIFF stream with >128 MiB decoded PCM. An additional stereo >128-MiB RIFF test now supplies an authentic nonzero region with authoritative M19 retained gate, P06 width ratio and anticorrelation.
+- Tests are scheduled in the already existing Windows/Linux M23 focused workflow as an extra CTest, without changing its frozen historical M23 JUnit inventory.
+
+**Scope boundary:** do not treat this checkpoint as a Gate G, Phase-6 release, physical Windows Product acceptance, a fixed *total* RAM guarantee, or numeric QML authorization. Positive CI on the exact final SHA is required before marking the additional stereo stress coverage validated.
