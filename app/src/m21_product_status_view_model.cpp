@@ -21,17 +21,23 @@ bool M21ProductStatusViewModel::owner_thread() const noexcept {
         &&thread()==gold_->thread()
         &&thread()==product_.session.thread();
 }
-// Staged implementation of the limited numerical Product presentation.
-// All values come from the already authenticated/invalidation-aware M21
-// inbox. Crucially, the current compiled Product has NO official Phase-6
-// feature receipt/Gate G: production_authorized() is permanently false.
-// Therefore this accessor returns an empty map, not private numbers, until
-// the canonical issuer and its Gate G are legitimately integrated.
-// No second analyzer, Qt worker, metric math or fabricated support is used.
+// Limited M19/M20/M21 Product numerical presentation: analysisReadouts
+// is visible in DEVELOPMENT even before mathematical Gate G, as explicitly
+// authorized by PO. phase6ReleaseReadouts remains hard-gated for certified
+// use. Both reuse one source of truth, never invent values or qualify data.
 QVariantMap M21ProductStatusViewModel::phase6_release_readouts() const
 {
+    // Certified release channel stays closed until a real Gate G issuer.
+    return production_authorized() ? analysis_readouts() : QVariantMap{};
+}
+
+// Authentic diagnostic readout for the PO-approved development panels.
+// The source is the EXISTING single inbox; no numerical policy is invented.
+// CURRENT is independently checked on every Qt owner-thread access.
+QVariantMap M21ProductStatusViewModel::analysis_readouts() const
+{
     QVariantMap released;
-    if(!production_authorized() || !owner_thread() || !inbox_)
+    if(!owner_thread() || !inbox_)
         return released;
     const auto evidence=inbox_->view_current(
         product_,*fanout_,*selector_,*gold_);
@@ -136,9 +142,8 @@ QVariantMap M21ProductStatusViewModel::phase6_release_readouts() const
     released.insert(QStringLiteral("m20"),stereo);
     released.insert(QStringLiteral("m20StaticPsd"),spectrum);
     released.insert(QStringLiteral("m21Rows"),rows);
-    // Versioned official FeatureStatus/feature policy signatures and a
-    // genuine Gate G must authorize data BEFORE production_authorized()
-    // can ever become true; this map does NOT issue that authorization.
+    // Development observation only. Values do not certify Phase-6 Gate G.
+    // Official qualified release remains separately gated above.
     return released;
 }
 
