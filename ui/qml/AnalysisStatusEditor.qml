@@ -2,9 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// M19/M20/M21 real Product navigation surface. Never use demo fixtures or
-// invent metrics from private preproduction snapshots. The current backend
-// publishes lifecycle/readiness only until Phase-6 feature authorization.
+// M19/M20/M21 real Product navigation surface. No demo/fixture metrics.
+// PO approved authentic development numbers; canonical Gate G and release
+// certification remain separately tracked, not falsely claimed here.
 Item {
     id: root
     objectName: "analysisStatusEditor"
@@ -101,6 +101,20 @@ Item {
                         if (root.statusViewModel)
                             root.statusViewModel.selectPanelSource(
                                 root.panelIndex, modelData)
+                    }
+                    ToolTip.text: modelData === "REFERENCE"
+                        ? "Analyze the independently selected REFERENCE WAV, "
+                          + "using its own sample rate and full-track scope."
+                        : modelData === "PREPARED"
+                        ? "Show the current source after PREPARATION; "
+                          + "no DSP or audio state changes by selecting it."
+                        : "Show the current processed source analysis; "
+                          + "selection does not render or alter processing."
+                    ToolTip.visible: sourceChoiceDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: sourceChoiceDwell
+                        anchors.fill: parent
                     }
                 }
             }
