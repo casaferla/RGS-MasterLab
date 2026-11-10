@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 
 namespace rgsml::tests {
 
@@ -169,7 +170,10 @@ retainedLoudnessUnionIsAbsoluteAndFullAtSixRates()
         for(std::size_t ch=0;ch<2;++ch) {
             auto plane=frame.channel(ch);
             QVERIFY(plane);
-            std::fill(plane.value()->begin(),plane.value()->end(),0.5);
+            for(std::size_t i=0;i<plane.value()->size();++i) {
+                (*plane.value())[i]=0.5*std::sin(
+                    2.0*std::numbers::pi*440.0*static_cast<double>(i)/hz);
+            }
         }
         auto out=measure_basic_level_scope(
             pcm.value()->view(),core::FrameIndex{317},*count.value(),

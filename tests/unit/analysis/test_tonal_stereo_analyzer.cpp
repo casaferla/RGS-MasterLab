@@ -201,7 +201,7 @@ realM19RetainedBlocksDriveP06WidthAtSixRates()
             const double x=0.4*std::sin(
                 2.0*std::numbers::pi*440.0*static_cast<double>(i)/hz);
             (*l.value())[i]=x;
-            (*r.value())[i]=-x;
+            (*r.value())[i]=0.5*x; // nonzero mid+side, defined width
         }
         auto m19=measure_basic_level_scope(
             pcm.value()->view(),core::FrameIndex{643},*count.value(),
