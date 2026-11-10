@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PsdRejectsOutOfBandAndNonFinite();
     void m21PsdRejectsDuplicateAndDescending();
     void m21PsdAcceptsZeroAndNyquist();
 
@@ -324,6 +325,20 @@ m21PsdRejectsDuplicateAndDescending()
     QVERIFY(!m21::valid_private_spectrum(s));
     s.average_spectrum[1].hz=101.;
     QVERIFY(m21::valid_private_spectrum(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PsdRejectsOutOfBandAndNonFinite()
+{
+    auto s=private_m21_fixture();
+    s.average_spectrum={{24000.01,{0.,m21::Quality::present,{}}}};
+    QVERIFY(!m21::valid_private_spectrum(s));
+    s.average_spectrum[0].hz=-1.;
+    QVERIFY(!m21::valid_private_spectrum(s));
+    s.average_spectrum[0].hz=std::numeric_limits<double>::infinity();
+    QVERIFY(!m21::valid_private_spectrum(s));
+    s.average_spectrum[0].hz=std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(!m21::valid_private_spectrum(s));
 }
 
 } // namespace
