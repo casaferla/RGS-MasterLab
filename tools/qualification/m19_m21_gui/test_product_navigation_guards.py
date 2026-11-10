@@ -91,6 +91,22 @@ def test_product_binds_status_without_demo() -> None:
     assert "a.panels==b.panels" in bridge
     assert "a.owner_identity==b.owner_identity" in bridge
     assert "MasterOutputRateState::changed" in main
+    assert "SourceSelectionViewModel::sourceChanged" in main
+    assert "Qt::QueuedConnection" in main
+    for token in (
+        "a.routing_revision==b.routing_revision",
+        "a.selected==b.selected",
+        "a.identities==b.identities",
+        "a.panels==b.panels",
+    ):
+        assert token in bridge
+    for slot in (
+        "m21ReadinessFrameDetectsMasterRateIdentity",
+        "m21ReadinessFrameDetectsProjectAndSourceGenerations",
+        "m21ReadinessFrameDetectsReferenceScope",
+        "m21ReadinessFrameDetectsQualityWithoutNumbers",
+    ):
+        assert slot in smoke
     assert "TerminalLimiterViewModel::acceptedStateChanged" in main
     smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     for test_name in ("m21IdenticalReadinessFrameDoesNotRequireRepaint",
