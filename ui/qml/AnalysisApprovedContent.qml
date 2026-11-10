@@ -173,6 +173,13 @@ Flickable {
                 color: root.panel
                 border.color: root.edge
                 radius: 7
+                ToolTip.text: "Integrated LUFS for each independent PREPARED, REFERENCE or PROCESSED scope. REFERENCE is its own WAV and sample rate; displayed values are not automatically time-aligned."
+                ToolTip.visible: relationDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: relationDwell
+                    anchors.fill: parent
+                }
                 Column {
                     anchors.fill: parent
                     anchors.margins: 11
@@ -432,6 +439,13 @@ Flickable {
                 radius: 7
                 color: root.panel
                 border.color: root.edge
+                ToolTip.text: "Normalized 1/12-octave bands are shown only when an authoritative eligible-band and common-bandwidth support exists. The real static PSD above remains available independently."
+                ToolTip.visible: profileDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: profileDwell
+                    anchors.fill: parent
+                }
                 Column {
                     anchors.fill: parent
                     anchors.margins: 10
