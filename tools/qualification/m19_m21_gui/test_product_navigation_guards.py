@@ -211,6 +211,11 @@ def test_product_binds_status_without_demo() -> None:
     assert "evidence.processed_to_gold[i]" in status_cpp
     assert "m20StaticPsd" in status_cpp
     assert "QVariant::fromValue(*cell.unrounded)" in status_cpp
+    # PSD must satisfy the same live resource/scope requirements as
+    # scalar values; the status-only bridge remains numerical-free.
+    assert "s.generation_token!=0 &&!s.resource_identity.empty()" in status_cpp
+    assert "s.scope_frames>0 &&s.sample_rate_hz>0" in status_cpp
+    assert "s.average_spectrum.size()<=65537U" in status_cpp
     # Status-polling bridge must still copy ONLY identity/quality, not PSD.
     assert "inbox.view_current_readiness(" in bridge
     assert "inbox.view_current(" not in bridge
