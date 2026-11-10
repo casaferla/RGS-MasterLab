@@ -262,11 +262,19 @@ def main() -> int:
         'objectName: "m20TonalStereoPage"',
         'objectName: "m21ComparisonPage"',
         'heroReadout: true',
-        'dataAvailable: false',
+        'dataAvailable: root.hasNumber(',
+        'rawText: root.metricText(',
+        'm20StaticPsd',
+        'root.metricText(m21MetricRow.observed.',
+        'StudioTooltipDwell {',
         'VERIFIED ANALYSIS UNAVAILABLE',
     ):
         if required not in approved_content:
             raise AssertionError("APPROVED_ANALYSIS_CONTENT_MISSING " + required)
+    # PO explicitly authorized genuine numerical development UI on
+    # 2026-11-10. This remains additive only: FQ99 shared geometry and
+    # vector slots are still byte-protected by normalize() above.
+    # No demo values or literal bypass of the actual Product source.
     for forbidden in ("fixtureMode", "presentation: ({", "dataAvailable: true"):
         if forbidden in approved_content:
             raise AssertionError("UNAUTHORIZED_PRODUCT_NUMERIC_DISPLAY " + forbidden)
