@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessRetiresStaleGenerationWithoutAffectingReference();
     void m21ReadinessTracksNineDistinctMetricQualities();
     void m21ReadinessDoesNotCloneSpectrumOrTonalProfile();
     void m21ReadinessRetainsExactRoleAndScope();
@@ -764,6 +765,30 @@ m21ReadinessTracksNineDistinctMetricQualities()
         QVERIFY(receipt[0]->metric_quality[i]==s.metrics[i].quality);
     QVERIFY(receipt[0]->metric_quality[3]==m21::Quality::missing);
     QVERIFY(receipt[0]->metric_quality[8]==m21::Quality::present);
+
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessRetiresStaleGenerationWithoutAffectingReference()
+{
+    m21::PrivatePublicationGuard guard;
+    auto p=private_m21_fixture(m21::Column::prepared,8);
+    auto g=private_m21_fixture(m21::Column::gold,3);
+    QVERIFY(guard.expect(m21::Column::prepared,8));
+    QVERIFY(guard.expect(m21::Column::gold,3));
+    QVERIFY(guard.publish(p));
+    QVERIFY(guard.publish(g));
+    auto current=guard.readiness_columns();
+    QVERIFY(current[0]&&current[1]);
+    QVERIFY(current[0]->lifecycle==m21::Lifecycle::current);
+    QVERIFY(current[1]->lifecycle==m21::Lifecycle::current);
+    QVERIFY(guard.expect(m21::Column::prepared,9));
+    auto after=guard.readiness_columns();
+    QVERIFY(after[0]&&after[1]);
+    QVERIFY(after[0]->lifecycle==m21::Lifecycle::stale);
+    QVERIFY(after[1]->lifecycle==m21::Lifecycle::current);
+    QCOMPARE(after[0]->generation_token,std::uint64_t{8});
+    QCOMPARE(after[1]->generation_token,std::uint64_t{3});
 
 }
 
