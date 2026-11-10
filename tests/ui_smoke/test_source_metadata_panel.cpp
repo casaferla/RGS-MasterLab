@@ -546,6 +546,7 @@ private slots:
     void m21IdenticalReadinessFrameDoesNotRequireRepaint();
     void m21ReadinessFrameDetectsProductMutation();
     void m21ReadinessFrameDetectsPanelRoutingAndQuality();
+    void m21ReadinessFrameDetectsQualityWithoutNumbers();
     void m21ReadinessFrameDetectsReferenceScope();
     void m21ReadinessFrameDetectsProjectAndSourceGenerations();
     void m21ReadinessFrameDetectsMasterRateIdentity();
@@ -689,6 +690,28 @@ m21ReadinessFrameDetectsReferenceScope()
     QVERIFY(!Bridge::same_visible_frame(a,b));
     b.identities[1].start=1234U;
     QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsQualityWithoutNumbers()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.panels[0].insert(QStringLiteral("privateEvidenceStatus"),
+                       QStringLiteral("MISSING"));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[0].insert(QStringLiteral("privateEvidenceStatus"),
+                       QStringLiteral("STALE"));
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[0].insert(QStringLiteral("privateQualityOnly"),
+                       QVariantMap{{QStringLiteral("lufs"),QStringLiteral("CURRENT")}});
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    QVERIFY(!a.panels[0].contains(QStringLiteral("lufsNumeric")));
 }
 
 void SourceMetadataPanelSmokeTest::
