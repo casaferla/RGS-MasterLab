@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21RenderAttemptChangesKeysAndSupportsReset();
     void m21RenderAttemptDoesNotPinRetiredPcm();
     void m21RenderAttemptAcceptsReplacementInsideSameEpoch();
     void m21RenderAttemptDeduplicatesSamePhysicalOwner();
@@ -622,6 +623,21 @@ m21RenderAttemptDoesNotPinRetiredPcm()
     QVERIFY(observer.expired());
     const auto next=std::make_shared<const int>(9);
     QVERIFY(!attempt.matches("rgsml:prepared|epoch:1",next));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21RenderAttemptChangesKeysAndSupportsReset()
+{
+    M21PrivateRenderAttempt attempt;
+    const auto sample=std::make_shared<const int>(3);
+    attempt.remember("epoch:12|prepared|full",sample);
+    QVERIFY(attempt.matches("epoch:12|prepared|full",sample));
+    QVERIFY(!attempt.matches("epoch:12|processed|full",sample));
+    QVERIFY(!attempt.matches("epoch:12|prepared|region",sample));
+    attempt.reset();
+    QVERIFY(!attempt.matches("epoch:12|prepared|full",sample));
+    attempt.remember("epoch:12|processed|full",sample);
+    QVERIFY(attempt.matches("epoch:12|processed|full",sample));
 }
 
 } // namespace
