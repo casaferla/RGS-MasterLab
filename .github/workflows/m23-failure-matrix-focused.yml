@@ -67,7 +67,7 @@ jobs:
           fi
           # rgsml_app + UI smoke link native Win32 rgsml_platform. On Linux
           # compile and execute only genuine portable suites, never fake them.
-          if ! cmake --build build/m23-native --parallel 4 --target rgsml_audio_wav_writer_tests rgsml_render_preview_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_m23_alpha_diagnostic_tests rgsml_dsp_module_adapter_tests rgsml_basic_level_analyzer_tests rgsml_tonal_stereo_analyzer_tests >"$RUNNER_TEMP/m23-build.log" 2>&1; then
+          if ! cmake --build build/m23-native --parallel 4 --target rgsml_audio_wav_writer_tests rgsml_render_preview_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_m23_alpha_diagnostic_tests rgsml_dsp_module_adapter_tests rgsml_basic_level_analyzer_tests rgsml_tonal_stereo_analyzer_tests rgsml_streamed_reference_analyzer_tests >"$RUNNER_TEMP/m23-build.log" 2>&1; then
             tail -n 65 "$RUNNER_TEMP/m23-build.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           fi
@@ -92,11 +92,11 @@ jobs:
       # Independent M19→M20 active-union proof: keep the historical M23
       # exact-inventory JUnit/receipt UNCHANGED, but actually run both new
       # analyzer test targets on Linux, including six-rate frame identities.
-      - name: Test real M19 retained-block disclosure and M20 gated width on Linux
+      - name: Test real M19/M20 retained gate and bounded REFERENCE WAV on Linux
         shell: bash
         run: |
           set -euo pipefail
-          if ! ctest --test-dir build/m23-native --output-on-failure -R '^(rgsml_basic_level_analyzer_tests|rgsml_tonal_stereo_analyzer_tests)$' >"$RUNNER_TEMP/m19-m20-real-ctest.log" 2>&1; then
+          if ! ctest --test-dir build/m23-native --output-on-failure -R '^(rgsml_basic_level_analyzer_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_streamed_reference_analyzer_tests)$' >"$RUNNER_TEMP/m19-m20-real-ctest.log" 2>&1; then
             tail -n 65 "$RUNNER_TEMP/m19-m20-real-ctest.log" >"$RUNNER_TEMP/m23-failure-bounded.txt"
             exit 1
           fi
@@ -175,7 +175,7 @@ jobs:
             Get-Content "$env:RUNNER_TEMP/m23-cmake.log" -Tail 55 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_CONFIGURE_FAILED'
           }
-          cmake --build build/m23-native --config Release --parallel 4 --target rgsml_audio_wav_writer_tests rgsml_transactional_audio_export_tests rgsml_m18_windows_candidate_delivery_tests rgsml_project_session_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_render_preview_tests rgsml_m23_alpha_diagnostic_tests rgsml_app rgsml_dsp_module_adapter_tests rgsml_source_metadata_panel_smoke rgsml_basic_level_analyzer_tests rgsml_tonal_stereo_analyzer_tests *> "$env:RUNNER_TEMP/m23-build.log"
+          cmake --build build/m23-native --config Release --parallel 4 --target rgsml_audio_wav_writer_tests rgsml_transactional_audio_export_tests rgsml_m18_windows_candidate_delivery_tests rgsml_project_session_tests rgsml_project_package_tests rgsml_project_json_tests rgsml_render_preview_tests rgsml_m23_alpha_diagnostic_tests rgsml_app rgsml_dsp_module_adapter_tests rgsml_source_metadata_panel_smoke rgsml_basic_level_analyzer_tests rgsml_tonal_stereo_analyzer_tests rgsml_streamed_reference_analyzer_tests *> "$env:RUNNER_TEMP/m23-build.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m23-build.log" -Tail 65 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M23_BUILD_FAILED'
@@ -223,12 +223,12 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/m23-ctest.log" -Tail 8
       # Keep all 11 FQ99/M23 native tests + evidence receipt unchanged;
       # execute the extra M19→M20 functional cases as a separate gate.
-      - name: Test real M19 retained-block disclosure and M20 gated width on Windows
+      - name: Test real M19/M20 retained gate and bounded REFERENCE WAV on Windows
         shell: pwsh
         run: |
           $qtRoot="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
           $env:PATH="$qtRoot/bin;$env:PATH"
-          ctest --test-dir build/m23-native -C Release --output-on-failure -R '^(rgsml_basic_level_analyzer_tests|rgsml_tonal_stereo_analyzer_tests)$' *> "$env:RUNNER_TEMP/m19-m20-real-ctest.log"
+          ctest --test-dir build/m23-native -C Release --output-on-failure -R '^(rgsml_basic_level_analyzer_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_streamed_reference_analyzer_tests)$' *> "$env:RUNNER_TEMP/m19-m20-real-ctest.log"
           if ($LASTEXITCODE -ne 0) {
             Get-Content "$env:RUNNER_TEMP/m19-m20-real-ctest.log" -Tail 65 | Set-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             throw 'M19_M20_REAL_RETAINED_GATE_FAILED'
