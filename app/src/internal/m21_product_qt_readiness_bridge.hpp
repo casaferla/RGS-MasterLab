@@ -119,12 +119,15 @@ public:
         result.current_product_owner=true;
         result.owner_epoch=owner->epoch;
         result.owner_identity=owner->identity;
-        const auto current=inbox.view_current(
+        // This is the status-only lightweight path: never copy full
+        // M20 PSD/tonal curves or M21 double-valued comparisons for
+        // a Qt label refresh. Full evidence remains private in the inbox.
+        const auto current=inbox.view_current_readiness(
             product,fanout,selector,gold);
         for(std::size_t i=0;i<3;++i) {
             const auto index=static_cast<std::size_t>(result.selected[i]);
-            if(index>=current.columns.size())continue;
-            const auto& selected=current.columns[index];
+            if(index>=current.size())continue;
+            const auto& selected=current[index];
             if(!selected)continue;
             const auto& s=*selected;
             result.identities[i]=Identity{
