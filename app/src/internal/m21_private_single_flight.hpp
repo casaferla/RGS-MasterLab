@@ -20,6 +20,37 @@
 #include <utility>
 
 namespace rgsml::app::internal {
+// A private non-owning identity for a successfully launched render analysis.
+// M18 epoch/resource revision alone cannot distinguish two actual immutable
+// PREPARED/PROCESSED PCM owners published during the SAME physical epoch.
+// Do not keep old PCM alive solely to suppress duplicate analysis.
+class M21PrivateRenderAttempt final {
+public:
+    template<class T>
+    [[nodiscard]] bool matches(
+        std::string_view key,
+        const std::shared_ptr<const T>& owner) const noexcept
+    {
+        const auto prior=previous_.lock();
+        return prior &&owner &&key_==key &&prior.get()==owner.get();
+    }
+
+    template<class T>
+    void remember(std::string key,
+                  const std::shared_ptr<const T>& owner) noexcept
+    {
+        key_=std::move(key);
+        previous_=owner;
+    }
+
+    void reset() noexcept {
+        previous_.reset();
+        key_.clear();
+    }
+private:
+    std::string key_;
+    std::weak_ptr<const void> previous_;
+};
 class M21PrivateSingleFlight final {
 public:
     using Snapshot=m21_private::Snapshot;
