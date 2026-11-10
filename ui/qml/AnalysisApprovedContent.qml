@@ -39,6 +39,26 @@ Flickable {
             key === "width" || key === "P10"
             || key === "P50" || key === "P90" ? 3 : 2)
     }
+    function metricExplanation(key) {
+        switch(key) {
+        case "lufs": return "Integrated K-weighted loudness, in LUFS; gated over each independently measured scope."
+        case "rms": return "Full-scope root-mean-square signal level, in dBFS."
+        case "samplePeak": return "Largest discrete PCM sample magnitude, in dBFS. Not interpolated True Peak."
+        case "truePeak": return "M16 True Peak, in dBTP. No numeric substitute is permitted without its own supported measurement."
+        case "crest": return "Discrete sample peak minus full-scope RMS, in dB."
+        case "width": return "Stereo side/mid energy ratio on the retained gated scope; may exceed unity."
+        case "P10": return "10th percentile of local 400 ms centred stereo correlations, at 100 ms intervals."
+        case "P50": return "Median of local Grid100 stereo correlations, not a global full-track correlation."
+        case "P90": return "90th percentile of local Grid100 stereo correlations."
+        default: return "Read-only source metric."
+        }
+    }
+    function metricUnit(key) {
+        return key === "lufs" ? "LUFS"
+            : key === "rms" || key === "samplePeak"
+                || key === "crest" ? "dB"
+            : key === "truePeak" ? "dBTP" : ""
+    }
     function availableInRole(role,from,to) {
         if(!m21Rows || m21Rows.length < to) return false
         for(let i=from;i<to;++i)
@@ -583,11 +603,13 @@ Flickable {
                             }
                         }
                     }
-                    ToolTip.text: m21MetricRow.metricName
-                        + " · PREPARED, independent REFERENCE and PROCESSED. "
-                        + "Deltas are REFERENCE minus the corresponding current "
-                        + "measurement, computed from unrounded values. "
-                        + "Missing, stale or incompatible values are —."
+                    ToolTip.text: m21MetricRow.metricName + " · "
+                        + root.metricExplanation(m21MetricRow.observed.key)
+                        + " PREPARED, independent REFERENCE and PROCESSED "
+                        + "are separate real measurements. Delta columns "
+                        + "are REFERENCE minus PREPARED or PROCESSED, "
+                        + "calculated from unrounded operands. "
+                        + "Missing, stale or incompatible results show —."
                     ToolTip.visible: m21RowDwell.ready
                     ToolTip.delay: 0
                     StudioTooltipDwell {
