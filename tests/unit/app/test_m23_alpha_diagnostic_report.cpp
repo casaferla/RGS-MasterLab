@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PsdRejectsBadPowerAndMissingValue();
     void m21PsdRejectsOutOfBandAndNonFinite();
     void m21PsdRejectsDuplicateAndDescending();
     void m21PsdAcceptsZeroAndNyquist();
@@ -339,6 +340,21 @@ m21PsdRejectsOutOfBandAndNonFinite()
     QVERIFY(!m21::valid_private_spectrum(s));
     s.average_spectrum[0].hz=std::numeric_limits<double>::quiet_NaN();
     QVERIFY(!m21::valid_private_spectrum(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PsdRejectsBadPowerAndMissingValue()
+{
+    auto s=private_m21_fixture();
+    s.average_spectrum={{100.,{-1.e-6,m21::Quality::present,{}}}};
+    QVERIFY(!m21::valid_private_spectrum(s));
+    s.average_spectrum[0].power_density.unrounded=
+        std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(!m21::valid_private_spectrum(s));
+    s.average_spectrum[0].power_density={0.,m21::Quality::missing,"bad zero"};
+    QVERIFY(!m21::valid_private_spectrum(s));
+    s.average_spectrum[0].power_density={{},m21::Quality::missing,"no value"};
+    QVERIFY(m21::valid_private_spectrum(s));
 }
 
 } // namespace
