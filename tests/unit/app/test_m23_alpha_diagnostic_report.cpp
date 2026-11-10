@@ -48,6 +48,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21ReadinessDefaultQualityAlwaysMissing();
     void m21ReadinessIsOnlyCopyOfIdentityAndQuality();
     void m21ReadinessNeverRelabelsAnUnknownColumn();
     void m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus();
@@ -869,6 +870,20 @@ m21ReadinessIsOnlyCopyOfIdentityAndQuality()
     const auto full=guard.view();
     QCOMPARE(*full.columns[0]->metrics[1].unrounded,-12.);
 
+}
+
+void M23AlphaDiagnosticReportTest::
+m21ReadinessDefaultQualityAlwaysMissing()
+{
+    const m21::ReadinessSnapshot unknown;
+    QVERIFY(unknown.lifecycle==m21::Lifecycle::missing);
+    QCOMPARE(unknown.generation_token,std::uint64_t{0});
+    for(const auto flag:unknown.metric_quality)
+        QVERIFY(flag==m21::Quality::missing);
+    // An empty private registry must also return no current columns.
+    const m21::PrivatePublicationGuard guard;
+    const auto empty=guard.readiness_columns();
+    for(const auto& col:empty)QVERIFY(!col);
 }
 
 } // namespace
