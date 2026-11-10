@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21TonalRejectsNonFiniteShape();
     void m21TonalRejectsUnsupportedNumericBand();
     void m21TonalRejectsMissingProofAndBadResolution();
     void m21TonalRejectsDuplicateIds();
@@ -423,6 +424,24 @@ m21TonalRejectsUnsupportedNumericBand()
     QVERIFY(m21::valid_private_tonal_profile(s));
     s.tonal_profile[0].in_common_support=true;
     s.tonal_profile[0].normalized_shape_db={0.,m21::Quality::present,{}};
+    QVERIFY(m21::valid_private_tonal_profile(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21TonalRejectsNonFiniteShape()
+{
+    auto s=private_m21_fixture();
+    s.profile_denominator=3;
+    s.common_comparison_support_id="external-pair-proof";
+    s.tonal_profile={{100,true,{
+       std::numeric_limits<double>::quiet_NaN(),m21::Quality::present,{}}}};
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.tonal_profile[0].normalized_shape_db.unrounded=
+        std::numeric_limits<double>::infinity();
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.tonal_profile[0].normalized_shape_db={0.,m21::Quality::missing,"false zero"};
+    QVERIFY(!m21::valid_private_tonal_profile(s));
+    s.tonal_profile[0].normalized_shape_db={{},m21::Quality::missing,"no result"};
     QVERIFY(m21::valid_private_tonal_profile(s));
 }
 
