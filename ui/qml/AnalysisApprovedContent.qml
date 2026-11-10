@@ -45,7 +45,7 @@ Flickable {
     function deltaText(value, key) {
         if(!hasNumber(value)) return "—"
         const shown=metricText(value,key)
-        return value > 0 && !shown.startsWith("0.00")
+        return value > 0 && Number(shown) > 0
             ? "+" + shown : shown
     }
     function metricExplanation(key) {
