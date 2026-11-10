@@ -152,6 +152,31 @@ def test_product_binds_status_without_demo() -> None:
     assert "completed.result->generation_token==generation" in single_flight
     assert "completed.result->lifecycle==m21_private::Lifecycle::current" in single_flight
     assert "append_identity_field(" in driver
+    # Status-only Qt consumer must never copy full PSD/tonal/Cell values.
+    inbox = read("app/src/internal/m21_product_publication_inbox.hpp")
+    integrity = read("app/src/internal/m21_metrics_comparison_candidate.hpp")
+    bridge = read("app/src/internal/m21_product_qt_readiness_bridge.hpp")
+    assert "struct ReadinessSnapshot final" in integrity
+    assert "std::array<Quality,9> metric_quality" in integrity
+    assert "readiness_columns() const" in integrity
+    assert "view_current_readiness(" in inbox
+    assert "retire_stale(latest,product,fanout,selector,gold)" in inbox
+    assert "retire_stale(latest.columns,product,fanout,selector,gold)" in inbox
+    assert "inbox.view_current_readiness(" in bridge
+    assert "s.metric_quality[metric]" in bridge
+    assert "s.metrics[metric].quality" not in bridge
+    native = read("tests/unit/app/test_m23_alpha_diagnostic_report.cpp")
+    for test_name in (
+        "m21ReadinessReceiptIsSmallerThanNumericEvidence",
+        "m21ReadinessRetainsExactRoleAndScope",
+        "m21ReadinessDoesNotCloneSpectrumOrTonalProfile",
+        "m21ReadinessTracksNineDistinctMetricQualities",
+        "m21ReadinessRetiresStaleGenerationWithoutAffectingReference",
+        "m21ReadinessRejectsInvalidReplacementWithoutCurrentStatus",
+        "m21ReadinessNeverRelabelsAnUnknownColumn",
+        "m21ReadinessIsOnlyCopyOfIdentityAndQuality",
+    ):
+        assert test_name in native
     assert "append_identity_field(" in single_flight
     # Keep the COMPLETE Product-epoch guard and add identity of immutable
     # retained render PCM: a new PREPARED/PROCESSED owner with the SAME
