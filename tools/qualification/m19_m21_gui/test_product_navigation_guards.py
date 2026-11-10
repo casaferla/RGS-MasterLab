@@ -164,6 +164,27 @@ def test_product_binds_status_without_demo() -> None:
         assert required in native
     assert "production_authorized() const noexcept {return false;}" in read(
         "app/src/m21_product_status_view_model.hpp")
+    # PO authorized implementation work, NOT Gate G. The existing status
+    # ViewModel can stage authentic scalar/delta/PSD projections, but its
+    # Qt release property is provably empty until canonical authorization.
+    status_header = read("app/src/m21_product_status_view_model.hpp")
+    status_cpp = read("app/src/m21_product_status_view_model.cpp")
+    assert "Q_PROPERTY(QVariantMap phase6ReleaseReadouts" in status_header
+    assert "phase6_release_readouts() const" in status_header
+    assert "M21ProductStatusViewModel::phase6_release_readouts() const" in status_cpp
+    assert "if(!production_authorized() || !owner_thread() || !inbox_)" in status_cpp
+    assert "inbox_->view_current(" in status_cpp
+    assert "metric==3U" in status_cpp
+    assert "cell.quality!=m21_private::Quality::present" in status_cpp
+    assert "evidence.prepared_to_gold[i]" in status_cpp
+    assert "evidence.processed_to_gold[i]" in status_cpp
+    assert "m20StaticPsd" in status_cpp
+    assert "QVariant::fromValue(*cell.unrounded)" in status_cpp
+    # Status-polling bridge must still copy ONLY identity/quality, not PSD.
+    assert "inbox.view_current_readiness(" in bridge
+    assert "inbox.view_current(" not in bridge
+    assert "phase6ReleaseReadouts" not in read("ui/qml/AnalysisStatusEditor.qml")
+
     assert "M21PrivateSingleFlight::matches_expected(" in driver
     assert "completed.result->column==column" in single_flight
     assert "completed.result->generation_token==generation" in single_flight
