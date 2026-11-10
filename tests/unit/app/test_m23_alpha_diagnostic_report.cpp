@@ -47,6 +47,7 @@ private slots:
     void m21CompletionRejectsCrossColumnAndStaleGeneration();
     void m21AnalysisIdentityKeyIsUnambiguous();
     void m21WorkerExceptionCannotPublish();
+    void m21PublicationStaysStaleAfterMalformedResult();
     void m21TonalRejectsNonFiniteShape();
     void m21TonalRejectsUnsupportedNumericBand();
     void m21TonalRejectsMissingProofAndBadResolution();
@@ -443,6 +444,32 @@ m21TonalRejectsNonFiniteShape()
     QVERIFY(!m21::valid_private_tonal_profile(s));
     s.tonal_profile[0].normalized_shape_db={{},m21::Quality::missing,"no result"};
     QVERIFY(m21::valid_private_tonal_profile(s));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21PublicationStaysStaleAfterMalformedResult()
+{
+    m21::PrivatePublicationGuard guard;
+    auto s=private_m21_fixture(m21::Column::prepared,1);
+    s.metrics[0]={-18.0,m21::Quality::present,{}};
+    QVERIFY(guard.expect(m21::Column::prepared,1));
+    QVERIFY(guard.publish(s));
+    QVERIFY(guard.expect(m21::Column::prepared,2));
+    s.generation_token=2;
+    s.metrics[0].unrounded=-11.;
+    s.average_spectrum={{100.,{1.,m21::Quality::present,{}}},
+                        {100.,{2.,m21::Quality::present,{}}}};
+    QVERIFY(!guard.publish(s));
+    const auto rejected=guard.view();
+    QVERIFY(rejected.columns[0]);
+    QCOMPARE(rejected.columns[0]->lifecycle,m21::Lifecycle::stale);
+    QVERIFY(!rejected.prepared_to_gold[0].unrounded);
+    s.average_spectrum[1].hz=101.;
+    QVERIFY(guard.publish(s));
+    const auto restored=guard.view();
+    QVERIFY(restored.columns[0]);
+    QCOMPARE(restored.columns[0]->lifecycle,m21::Lifecycle::current);
+    QCOMPARE(*restored.columns[0]->metrics[0].unrounded,-11.);
 }
 
 } // namespace
