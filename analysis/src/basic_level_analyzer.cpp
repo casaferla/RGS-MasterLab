@@ -51,6 +51,13 @@ core::Result<BasicLevelAnalysisResult> measure_basic_level_scope(
     out.frame_domain=expectedDomain;
     out.k_weighting_bank_member_id=s.k_weighting_bank_member_id;
     out.k_weighting_bank_sha256=s.k_weighting_bank_sha256;
+    // Convert only the original M19 gate's exact frame intervals.
+    // No new gating threshold or independent loudness calculation.
+    out.retained_block_disclosure_complete=
+        s.retained_block_disclosure_complete;
+    out.retained_block_union.reserve(s.retained_block_union.size());
+    for(const auto& interval:s.retained_block_union)
+        out.retained_block_union.push_back({interval.begin,interval.end});
     out.integrated_lufs=BasicLevelValue{
         s.integrated_lufs,loudness_reason(s.loudness_state)};
     out.full_scope_rms_dbfs=mapped(s.full_scope_rms_dbfs);
