@@ -693,6 +693,8 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     app::M21ProductStatusViewModel goldNativeStatus{
         controllers,fanout,session.selector,session.gold,goldInbox};
     QVERIFY(!goldNativeStatus.production_authorized());
+    QVERIFY(goldNativeStatus.phase6_release_readouts().isEmpty());
+    QVERIFY(goldNativeStatus.property("phase6ReleaseReadouts").toMap().isEmpty());
     QVERIFY(goldNativeStatus.selectPanelSource(
         1,QStringLiteral("REFERENCE")));
     QCOMPARE(goldNativeStatus.m20().value("sourceRole").toString(),
@@ -773,6 +775,8 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
         goldInbox,goldRouting));
     goldNativeStatus.refresh();
     QVERIFY(!goldNativeStatus.production_authorized());
+    QVERIFY(goldNativeStatus.phase6_release_readouts().isEmpty());
+    QVERIFY(goldNativeStatus.property("phase6ReleaseReadouts").toMap().isEmpty());
     QVERIFY(!goldNativeStatus.m20().value("ready").toBool());
     QCOMPARE(goldNativeStatus.m20().value(
         "privateEvidenceStatus").toString(),QStringLiteral("STALE"));
@@ -898,6 +902,8 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     app::M21ProductStatusViewModel longStatus{
         controllers,fanout,session.selector,session.gold,longInbox};
     QVERIFY(!longStatus.production_authorized());
+    QVERIFY(longStatus.phase6_release_readouts().isEmpty());
+    QVERIFY(longStatus.property("phase6ReleaseReadouts").toMap().isEmpty());
     QVERIFY(longStatus.m21().value("metrics").toList().isEmpty());
     session.gold.clearGold();
     QVERIFY(!M21Owners::gold_still_current(
