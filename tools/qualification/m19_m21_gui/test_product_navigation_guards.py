@@ -93,6 +93,12 @@ def test_product_binds_status_without_demo() -> None:
     assert "inbox_->accept_render(" in driver
     assert "std::thread([state,task=std::move(task)]" in single_flight
     assert "state_->finished.load(std::memory_order_acquire)" in single_flight
+    assert "M21PrivateSingleFlight::matches_expected(" in driver
+    assert "completed.result->column==column" in single_flight
+    assert "completed.result->generation_token==generation" in single_flight
+    assert "completed.result->lifecycle==m21_private::Lifecycle::current" in single_flight
+    assert "append_identity_field(" in driver
+    assert "append_identity_field(" in single_flight
     assert 'return false;' in read("app/src/m21_product_status_view_model.hpp")
     readout = read("ui/qml/StudioReadOnlyMeasurement.qml")
     assert "root.heroReadout ? 36 : 13" in readout

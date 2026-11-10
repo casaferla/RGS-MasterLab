@@ -15,6 +15,8 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace rgsml::app::internal {
@@ -26,6 +28,34 @@ public:
         std::uint64_t request_id{};
         std::optional<Snapshot> result{};
     };
+
+    // This check is independent of all Qt/Product pointers. It prevents
+    // a completion accidentally identified as another role or generation
+    // from ever reaching a more permissive inbox acceptance path.
+    // It does NOT replace the subsequent live M18 owner/realization gate.
+    [[nodiscard]] static bool matches_expected(
+        const Completion& completed,std::uint64_t request_id,
+        m21_private::Column column,std::uint64_t generation) noexcept
+    {
+        return request_id!=0 &&generation!=0
+            &&completed.request_id==request_id
+            &&completed.result
+            &&completed.result->column==column
+            &&completed.result->generation_token==generation
+            &&completed.result->lifecycle==m21_private::Lifecycle::current;
+    }
+
+    // SOURCE provider and locator may contain separator characters.
+    // Length framing makes attempted-job identity collision-free for
+    // arbitrary two-component strings; these keys are private and never
+    // serialized as Product identifiers or checksums.
+    static void append_identity_field(std::string& out,
+                                      std::string_view field) {
+        out+=std::to_string(field.size());
+        out+=':';
+        out.append(field);
+        out+='|';
+    }
 
     M21PrivateSingleFlight() : owner_(std::this_thread::get_id()) {}
     M21PrivateSingleFlight(const M21PrivateSingleFlight&)=delete;

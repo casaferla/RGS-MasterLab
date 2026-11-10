@@ -53,8 +53,13 @@ public:
             return;
 
         if(auto completed=worker_.take_finished()) {
-            if(active_ &&completed->request_id==active_->id
-               &&completed->result) {
+            const auto expectedGeneration=!active_ ? std::uint64_t{0}
+                : active_->gold ? active_->gold->owner.epoch
+                : active_->render ? active_->render->owner.epoch
+                : std::uint64_t{0};
+            if(active_ &&M21PrivateSingleFlight::matches_expected(
+                *completed,active_->id,active_->column,
+                expectedGeneration)) {
                 bool accepted=false;
                 const auto& evidence=*completed->result;
                 if(active_->column==Column::gold &&active_->gold)
@@ -139,9 +144,13 @@ private:
             std::to_string(captured.owner.identity.source_generation)+"|"+
             std::to_string(captured.owner.identity.chain_revision)+"|"+
             std::to_string(captured.owner.identity.master_rate_revision)+"|"+
-            std::to_string(captured.source_full_frames)+"|"+
-            captured.source.provider_id()+"|"+captured.source.locator()+"|"+
-            std::to_string(static_cast<unsigned>(column))+"|";
+            std::to_string(captured.owner.identity.master_rate_hz)+"|"+
+            std::to_string(captured.source_full_frames)+"|";
+        M21PrivateSingleFlight::append_identity_field(
+            key,captured.source.provider_id());
+        M21PrivateSingleFlight::append_identity_field(
+            key,captured.source.locator());
+        key+=std::to_string(static_cast<unsigned>(column))+"|";
         if(column==Column::processed &&captured.processed_realization_id)
             key+=std::to_string(captured.processed_realization_id->value);
         return key;
@@ -149,12 +158,19 @@ private:
     [[nodiscard]] static std::string gold_key(
         const Product::GoldCapture& captured)
     {
-        return std::to_string(captured.owner.epoch)+"|"+
+        std::string key=std::to_string(captured.owner.epoch)+"|"+
             std::to_string(captured.owner.identity.source_generation)+"|"+
-            captured.gold.provider_id()+"|"+captured.gold.locator()+"|"+
-            std::to_string(captured.sample_rate_hz)+"|"+
+            std::to_string(captured.owner.identity.chain_revision)+"|"+
+            std::to_string(captured.owner.identity.master_rate_revision)+"|"+
+            std::to_string(captured.owner.identity.master_rate_hz)+"|";
+        M21PrivateSingleFlight::append_identity_field(
+            key,captured.gold.provider_id());
+        M21PrivateSingleFlight::append_identity_field(
+            key,captured.gold.locator());
+        key+=std::to_string(captured.sample_rate_hz)+"|"+
             std::to_string(captured.full_frames)+"|"+
             std::to_string(captured.channels);
+        return key;
     }
 
     Controllers product_;

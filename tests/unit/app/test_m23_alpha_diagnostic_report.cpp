@@ -22,6 +22,10 @@ private slots:
     void diagnosticEvidenceRemainsUnknownUntilProven();
     void m21AsyncSingleFlightIsBoundedAndOwnerOnly();
     void m21AsyncDestructorCannotTouchDeadOwner();
+    void m21CompletionRejectsCrossColumnAndStaleGeneration();
+    void m21AnalysisIdentityKeyIsUnambiguous();
+    void m21WorkerExceptionCannotPublish();
+
 
 };
 
@@ -203,6 +207,69 @@ m21AsyncDestructorCannotTouchDeadOwner()
     } // No worker thread may retain the destroyed queue/Qt owner.
     release->store(true,std::memory_order_release);
     QTRY_VERIFY_WITH_TIMEOUT(done->load(std::memory_order_acquire),2500);
+}
+
+void M23AlphaDiagnosticReportTest::
+m21CompletionRejectsCrossColumnAndStaleGeneration()
+{
+    using F=M21PrivateSingleFlight;
+    using Column=rgsml::app::m21_private::Column;
+    using Lifecycle=rgsml::app::m21_private::Lifecycle;
+    F::Completion received;
+    received.request_id=42;
+    rgsml::app::m21_private::Snapshot genuine;
+    genuine.column=Column::prepared;
+    genuine.generation_token=88;
+    genuine.lifecycle=Lifecycle::current;
+    received.result=genuine;
+    QVERIFY(F::matches_expected(received,42,Column::prepared,88));
+    QVERIFY(!F::matches_expected(received,41,Column::prepared,88));
+    QVERIFY(!F::matches_expected(received,42,Column::gold,88));
+    QVERIFY(!F::matches_expected(received,42,Column::processed,88));
+    QVERIFY(!F::matches_expected(received,42,Column::prepared,87));
+    QVERIFY(!F::matches_expected(received,42,Column::prepared,0));
+    QVERIFY(!F::matches_expected(received,0,Column::prepared,88));
+    received.result->lifecycle=Lifecycle::stale;
+    QVERIFY(!F::matches_expected(received,42,Column::prepared,88));
+    received.result->lifecycle=Lifecycle::invalid;
+    QVERIFY(!F::matches_expected(received,42,Column::prepared,88));
+    received.result->lifecycle=Lifecycle::current;
+    received.result.reset();
+    QVERIFY(!F::matches_expected(received,42,Column::prepared,88));
+}
+
+void M23AlphaDiagnosticReportTest::
+m21AnalysisIdentityKeyIsUnambiguous()
+{
+    std::string left,right;
+    M21PrivateSingleFlight::append_identity_field(left,"source|file");
+    M21PrivateSingleFlight::append_identity_field(left,"candidate");
+    M21PrivateSingleFlight::append_identity_field(right,"source");
+    M21PrivateSingleFlight::append_identity_field(right,"file|candidate");
+    QVERIFY(left!=right);
+    std::string one,two;
+    M21PrivateSingleFlight::append_identity_field(one,"");
+    M21PrivateSingleFlight::append_identity_field(one,":|");
+    M21PrivateSingleFlight::append_identity_field(two,":|");
+    M21PrivateSingleFlight::append_identity_field(two,"");
+    QVERIFY(one!=two);
+}
+
+void M23AlphaDiagnosticReportTest::
+m21WorkerExceptionCannotPublish()
+{
+    M21PrivateSingleFlight worker;
+    QVERIFY(worker.start(113,[]() -> std::optional<
+        rgsml::app::m21_private::Snapshot> {
+        throw 1;
+    }));
+    QTRY_VERIFY_WITH_TIMEOUT(worker.finished(),2500);
+    const auto completed=worker.take_finished();
+    QVERIFY(completed);
+    QCOMPARE(completed->request_id,std::uint64_t{113});
+    QVERIFY(!completed->result);
+    QVERIFY(!M21PrivateSingleFlight::matches_expected(
+        *completed,113,rgsml::app::m21_private::Column::prepared,1));
 }
 
 } // namespace
