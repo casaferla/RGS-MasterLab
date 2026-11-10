@@ -467,13 +467,13 @@ m21PublicationStaysStaleAfterMalformedResult()
     QVERIFY(!guard.publish(s));
     const auto rejected=guard.view();
     QVERIFY(rejected.columns[0]);
-    QCOMPARE(rejected.columns[0]->lifecycle,m21::Lifecycle::stale);
+    QVERIFY(rejected.columns[0]->lifecycle==m21::Lifecycle::stale);
     QVERIFY(!rejected.prepared_to_gold[0].unrounded);
     s.average_spectrum[1].hz=101.;
     QVERIFY(guard.publish(s));
     const auto restored=guard.view();
     QVERIFY(restored.columns[0]);
-    QCOMPARE(restored.columns[0]->lifecycle,m21::Lifecycle::current);
+    QVERIFY(restored.columns[0]->lifecycle==m21::Lifecycle::current);
     QCOMPARE(*restored.columns[0]->metrics[0].unrounded,-11.);
 }
 
@@ -553,9 +553,9 @@ m21PublicationPreservesIndependentGoldScope()
     QCOMPARE(current.columns[1]->absolute_scope_begin,std::uint64_t{700001});
     QVERIFY(guard.expect(m21::Column::gold,6));
     const auto stale=guard.view();
-    QCOMPARE(stale.columns[0]->lifecycle,m21::Lifecycle::current);
-    QCOMPARE(stale.columns[1]->lifecycle,m21::Lifecycle::stale);
-    QCOMPARE(stale.prepared_to_gold[0].quality,m21::Quality::stale);
+    QVERIFY(stale.columns[0]->lifecycle==m21::Lifecycle::current);
+    QVERIFY(stale.columns[1]->lifecycle==m21::Lifecycle::stale);
+    QVERIFY(stale.prepared_to_gold[0].quality==m21::Quality::stale);
     QVERIFY(!stale.prepared_to_gold[0].unrounded);
 }
 
@@ -574,7 +574,7 @@ m21PublicationRejectsRelabeledColumnAndUnknownRole()
     QVERIFY(guard.publish(s));
     const auto readback=guard.view();
     QVERIFY(readback.columns[0]);
-    QCOMPARE(readback.columns[0]->column,m21::Column::prepared);
+    QVERIFY(readback.columns[0]->column==m21::Column::prepared);
     QVERIFY(!readback.columns[1]);
 }
 
