@@ -46,9 +46,18 @@ def test_product_binds_status_without_demo() -> None:
     # by the approved Product read-only content rather than the wrapper.
     assert "VERIFIED ANALYSIS UNAVAILABLE" in visuals
     assert "fixtureMode" not in visuals
-    assert "rawText: \"\"" in visuals
-    assert "dataAvailable: false" in visuals
-    assert "dataAvailable: true" not in visuals
+    # Genuine development measurements now come from the one Product
+    # inbox; the release Gate G property remains separately disabled.
+    assert 'rawText: root.metricText(' in visuals
+    assert 'dataAvailable: root.hasNumber(' in visuals
+    assert 'm20StaticPsd' in visuals
+    assert 'm21Rows' in visuals
+    assert 'Number.isFinite(value)' in visuals
+    assert 'StudioTooltipDwell {' in visuals
+    assert visuals.count('StudioTooltipDwell {') >= 4
+    assert 'ToolTip.visible:' in visuals
+    assert 'dataAvailable: true' not in visuals
+    assert 'fixtureMode' not in visuals
     assert "m19MetricValue_" in visuals and "heroReadout: true" in visuals
     assert "m20WorkbenchSpectrum" in visuals
     assert "m20MissingSpectrumNotice" in visuals
@@ -170,9 +179,13 @@ def test_product_binds_status_without_demo() -> None:
     status_header = read("app/src/m21_product_status_view_model.hpp")
     status_cpp = read("app/src/m21_product_status_view_model.cpp")
     assert "Q_PROPERTY(QVariantMap phase6ReleaseReadouts" in status_header
+    assert "Q_PROPERTY(QVariantMap analysisReadouts" in status_header
     assert "phase6_release_readouts() const" in status_header
+    assert "analysis_readouts() const" in status_header
     assert "M21ProductStatusViewModel::phase6_release_readouts() const" in status_cpp
-    assert "if(!production_authorized() || !owner_thread() || !inbox_)" in status_cpp
+    assert "return production_authorized() ? analysis_readouts() : QVariantMap{};" in status_cpp
+    assert "M21ProductStatusViewModel::analysis_readouts() const" in status_cpp
+    assert "if(!owner_thread() || !inbox_)" in status_cpp
     assert "inbox_->view_current(" in status_cpp
     assert "metric==3U" in status_cpp
     assert "cell.quality!=m21_private::Quality::present" in status_cpp
@@ -183,7 +196,11 @@ def test_product_binds_status_without_demo() -> None:
     # Status-polling bridge must still copy ONLY identity/quality, not PSD.
     assert "inbox.view_current_readiness(" in bridge
     assert "inbox.view_current(" not in bridge
-    assert "phase6ReleaseReadouts" not in read("ui/qml/AnalysisStatusEditor.qml")
+    status_qml = read("ui/qml/AnalysisStatusEditor.qml")
+    assert "phase6ReleaseReadouts" not in status_qml
+    assert "analysisReadouts" in status_qml
+    assert "observedReadouts: root.observedReadouts" in status_qml
+    assert 'ANALYSIS · DEVELOPMENT' in status_qml
 
     assert "M21PrivateSingleFlight::matches_expected(" in driver
     assert "completed.result->column==column" in single_flight
