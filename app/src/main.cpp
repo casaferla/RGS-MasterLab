@@ -958,6 +958,14 @@ int main(int argc, char* argv[])
     // selector; real numeric publication still requires Phase-6 Product gates.
     dspChainAdapterModel.bindAnalysisStatusViewModel(
         &m21ProductStatusViewModel);
+    // Direct SOURCE commit observer: some successful source batches
+    // retire old PCM before audition routing emits its own changed().
+    // Queue until the Product-wide mutation/epoch lease has unwound.
+    QObject::connect(&sourceSelection,
+        &rgsml::app::SourceSelectionViewModel::sourceChanged,
+        &m21ProductStatusViewModel,
+        &rgsml::app::M21ProductStatusViewModel::refresh,
+        Qt::QueuedConnection);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
         &m21ProductStatusViewModel,
