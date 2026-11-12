@@ -1261,7 +1261,40 @@ int main(int argc, char* argv[])
                 std::fprintf(stdout, "P2_I2_REAL_QT_GUI_BOOTSTRAP=%s\n",
                              valid ? "PASS" : "FAIL");
                 std::fflush(stdout);
-                application.exit(valid ? EXIT_SUCCESS : EXIT_FAILURE);
+                if (!valid) {
+                    application.exit(EXIT_FAILURE);
+                    return;
+                }
+                // Guard all three pre-existing read-only analysis editors
+                // against loss/reordering when opt-in P2 adds MANUAL index 4.
+                // This proves actual Main.qml visibility at the minimum size,
+                // not that analysis metrics have completed or are certified.
+                const auto verifyAnalysis = [&](int index,
+                                                const char* contentKey,
+                                                const char* objectName) {
+                    dspChainAdapterModel.setSelectedIndex(index);
+                    QCoreApplication::processEvents();
+                    const auto* active = dspChainAdapterModel.selected_module();
+                    const auto* editor = window->findChild<QObject*>(
+                        QString::fromLatin1(objectName));
+                    const bool shown = active && editor
+                        && active->editor_content_key()
+                            == QString::fromLatin1(contentKey)
+                        && editor->property("visible").toBool();
+                    std::fprintf(stdout, "P2_I2_ANALYSIS_M%d_VISIBLE=%s\n",
+                                 index == 7 ? 19 : index == 8 ? 20 : 21,
+                                 shown ? "PASS" : "FAIL");
+                    return shown;
+                };
+                const bool m19 = verifyAnalysis(
+                    7, "M19_ANALYSIS", "m19LevelProductAnalysisEditor");
+                const bool m20 = verifyAnalysis(
+                    8, "M20_ANALYSIS", "m20TonalStereoProductAnalysisEditor");
+                const bool m21 = verifyAnalysis(
+                    9, "M21_ANALYSIS", "m21MetricsDeltaProductAnalysisEditor");
+                const bool all = m19 && m20 && m21;
+                std::fflush(stdout);
+                application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
             });
     }
     if (m17MainEvidence && !engine.rootObjects().isEmpty()) {
