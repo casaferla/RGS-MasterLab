@@ -1,0 +1,68 @@
+name: R1d P2 I2 Product Qt GUI Smoke (nonrelease)
+
+on:
+  push:
+    branches:
+      - staging/r1d-p2-i2-preview-focused-ci-20261112
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qt-product-app:
+    name: Windows Qt Product App Compile + Startup
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6.8.3 including Multimedia and Ninja
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw "QT_TOOL_INSTALL_FAILED" }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw "QT_WINDOWS_INSTALL_FAILED" }
+          ninja --version
+      - name: Configure actual Product Qt application, CI provenance only
+        shell: pwsh
+        run: |
+          $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          cmake -S . -B build-p2-product -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DRGSML_BUILD_TESTS=OFF `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=CI `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }} `
+            -DRGSML_QT_ROOT="$qt"
+          if ($LASTEXITCODE -ne 0) { throw "P2_FULL_PRODUCT_QT_CONFIG_FAILED" }
+      - name: Build Product rgsml_app and real QML module
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "p2-product-app-build.txt"
+          & cmake --build build-p2-product --config Release --parallel 4 --target rgsml_app *> $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "P2_PRODUCT_QT_BUILD_FAIL=$code"
+            $hits = @(Select-String -Path $log -Pattern 'error C[0-9]+', 'error LNK[0-9]+', 'FAILED:', 'fatal error', 'Error:', 'QML Error' | Select-Object -First 14)
+            foreach ($hit in $hits) {
+              Write-Host $hit.Line.Substring(0,[Math]::Min(280,$hit.Line.Length))
+            }
+            if ($hits.Count -eq 0) { Get-Content $log -Tail 18 | Select-Object -First 18 }
+            throw "P2_PRODUCT_QT_BUILD_FAILED"
+          }
+          Write-Host "P2_REAL_PRODUCT_APP_COMPILE=PASS"
+      - name: Run genuine application Qt Main startup smoke
+        shell: pwsh
+        run: |
+          $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          $env:PATH="$qt/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qt/qml"
+          $env:QT_PLUGIN_PATH="$qt/plugins"
+          $exe=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/Release/RGSMasterLab.exe"
+          if (-not (Test-Path $exe)) { throw "PRODUCT_EXE_MISSING" }
+          $process=Start-Process -FilePath $exe -ArgumentList "--rgsml-deploy-smoke" -PassThru -Wait
+          Write-Host "P2_APP_STARTUP_EXIT=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { throw "P2_APP_QML_STARTUP_FAILED" }
+          Write-Host "P2_QT_PRODUCT_MAIN_STARTUP=PASS"
