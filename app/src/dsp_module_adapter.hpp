@@ -414,7 +414,7 @@ public:
     [[nodiscard]] QString type_id() const override
     { return QStringLiteral("rgsml.dsp.true-peak-limiter"); }
     [[nodiscard]] QString display_name() const override
-    { return QStringLiteral("TP Limiter"); }
+    { return QStringLiteral("Final TP Limiter"); }
     [[nodiscard]] QString workspace_context_label() const override { return context_; }
     [[nodiscard]] QString configuration_state() const override
     { return state_ && state_->parameters().ceiling_db_tp()!=-1.0
