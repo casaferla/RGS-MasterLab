@@ -34,6 +34,10 @@ Item {
     property string accessibleDescription: ""
     // Optional tooltip for new slider instances; legacy DSP stays unchanged.
     property string interactionHint: ""
+    // Opt-in wheel behavior matching InputGainEditor. Keep legacy DSP sliders
+    // unchanged: only explicitly enabled sliders accept wheel input.
+    property bool wheelEnabled: false
+    property real wheelRemainder: 0
     // Opt-in M15 only: expensive observed DSP graph is frozen while dragging.
     // Other module sliders keep their established interaction semantics.
     property bool deferResponseWhileDragging: false
@@ -90,6 +94,39 @@ Item {
         ToolTip.delay: 0
 
         value: control.valueToPosition(control.value)
+
+        // Same UX-002 detent policy as Input Gain: the entire slider surface
+        // accepts the wheel while hovered, without intercepting drag/click.
+        // A partial precision-wheel movement never causes a render.
+        MouseArea {
+            id: parameterWheelArea
+            objectName: "studioParameterWheelArea"
+            anchors.fill: parent
+            z: 5
+            acceptedButtons: Qt.NoButton
+            hoverEnabled: control.wheelEnabled
+            enabled: control.wheelEnabled && internalSlider.enabled
+                && !internalSlider.pressed
+            onWheel: function(wheel) {
+                control.wheelRemainder += wheel.angleDelta.y
+                var steps = Math.trunc(control.wheelRemainder / 120)
+                if (steps !== 0) {
+                    control.wheelRemainder -= steps * 120
+                    const current = control.value
+                    const resolution = control.stepSize > 0 ? control.stepSize : 0.1
+                    const proposed = current + steps * resolution
+                    const next = Math.max(control.from, Math.min(control.to,
+                        Math.round((proposed - control.from) / resolution)
+                        * resolution + control.from))
+                    if (Math.abs(next - current) > 0.0000001) {
+                        // One authoritative P2 parameter commit per whole
+                        // detent; the existing preview worker coalesces jobs.
+                        control.commitRequested(next)
+                    }
+                }
+                wheel.accepted = true
+            }
+        }
 
         Binding {
             target: internalSlider
