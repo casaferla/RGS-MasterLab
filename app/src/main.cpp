@@ -1276,6 +1276,16 @@ int main(int argc, char* argv[])
                     && driveSlider->property("positionFillOrigin").toDouble() == 0.0;
                 std::fprintf(stderr, "P2_I2_INPUT_GAIN_STYLE_WHEEL=%s\n",
                     p2WheelReady ? "PASS" : "FAIL");
+                // The View menu is built from the DSP chain's live adapters.
+                // Require P2 present in BOTH navigation surfaces.
+                const auto* p2ViewItem = window->findChild<QObject*>(
+                    QStringLiteral("menuViewStreamingTruePeakLimiter"));
+                const bool p2InViewMenu = p2ViewItem
+                    && p2ViewItem->property("enabled").toBool()
+                    && p2ViewItem->property("text").toString()
+                        == QStringLiteral("Streaming TP Limiter");
+                std::fprintf(stderr, "P2_I2_VISIBLE_IN_VIEW_MENU=%s\n",
+                    p2InViewMenu ? "PASS" : "FAIL");
                 // Real QML geometry, fonts, and placement are checked at the
                 // frozen minimum 1184x688, not inspected from a mock-up.
                 const auto* ceilingItem = qobject_cast<const QQuickItem*>(
@@ -1321,7 +1331,7 @@ int main(int argc, char* argv[])
                     ceilingItem ? ceilingItem->width() : -1.0,
                     driveItem ? driveItem->width() : -1.0);
                 const bool valid = p2WheelReady && p2InputGainLayout
-                    && window->width() == 1184
+                    && p2InViewMenu && window->width() == 1184
                     && window->height() == 688
                     && selected
                     && selected->type_id()
@@ -1339,6 +1349,8 @@ int main(int argc, char* argv[])
                 // against loss/reordering when opt-in P2 adds MANUAL index 4.
                 // This proves actual Main.qml visibility at the minimum size,
                 // not that analysis metrics have completed or are certified.
+                const QString screenshotPath = qEnvironmentVariable(
+                    "RGSML_P2_I2_SCREENSHOT_PATH");
                 const auto verifyAnalysis = [&](int milestone,
                                                 const char* objectName) {
                     // Select the existing authority-owned Product adapter,
@@ -1360,7 +1372,31 @@ int main(int argc, char* argv[])
                     const bool exists = editor != nullptr;
                     const bool visible = exists
                         && editor->property("visible").toBool();
-                    const bool shown = correctSelection && visible;
+                    const auto* sourceHeading = window->findChild<QObject*>(
+                        QStringLiteral("analysisSourceHeading"));
+                    const auto* redundantFootnote = window->findChild<QObject*>(
+                        QStringLiteral("analysisEvidenceState"));
+                    const bool compact = sourceHeading
+                        && sourceHeading->property("visible").toBool()
+                        && sourceHeading->property("text").toString()
+                            == QStringLiteral("INDEPENDENT ANALYSIS SOURCE")
+                        && redundantFootnote
+                        && !redundantFootnote->property("visible").toBool();
+                    bool captureReady = true;
+                    if (correctSelection && visible && compact
+                        && !screenshotPath.isEmpty()) {
+                        // Authentic Main Qt window captured after selecting
+                        // each analysis panel; never a synthetic rendering.
+                        const auto suffix = QStringLiteral("-M%1.png").arg(milestone);
+                        const auto destination = screenshotPath.endsWith(".png")
+                            ? screenshotPath.left(screenshotPath.size() - 4) + suffix
+                            : screenshotPath + suffix;
+                        const auto shot = window->grabWindow();
+                        captureReady = !shot.isNull()
+                            && shot.save(destination, "PNG");
+                    }
+                    const bool shown = correctSelection && visible
+                        && compact && captureReady;
                     std::fprintf(stderr,
                         "P2_I2_ANALYSIS_M%d index=%d selected=%s key=%s editor=%d visible=%d result=%s\n",
                         milestone, dspChainAdapterModel.selected_index(),
@@ -1378,8 +1414,6 @@ int main(int argc, char* argv[])
                     21, "m21MetricsDeltaProductAnalysisEditor");
                 const bool all = m19 && m20 && m21;
                 std::fflush(stdout);
-                const QString screenshotPath = qEnvironmentVariable(
-                    "RGSML_P2_I2_SCREENSHOT_PATH");
                 if (!all || screenshotPath.isEmpty()) {
                     application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
                     return;
