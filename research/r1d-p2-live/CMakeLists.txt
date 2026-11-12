@@ -165,3 +165,24 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 add_test(NAME r1d_p2_real_processing_chain_tests
   COMMAND r1d_p2_real_processing_chain_tests)
+
+# I1.8: deterministic fresh-epoch candidate full replay for AutoMatch feasibility.
+# This does NOT implement canonical L3/M10 or a runtime checkpoint.
+add_executable(r1d_p2_fresh_evaluation_tests tests/test_p2_fresh_evaluation.cpp)
+target_include_directories(r1d_p2_fresh_evaluation_tests PRIVATE . pinned)
+target_link_libraries(r1d_p2_fresh_evaluation_tests PRIVATE
+  rgs_p2_research_real_abi)
+target_compile_definitions(r1d_p2_fresh_evaluation_tests PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_fresh_evaluation_tests PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_fresh_evaluation_tests PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_fresh_evaluation_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror
+    -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
+endif()
+add_test(NAME r1d_p2_fresh_evaluation_tests COMMAND r1d_p2_fresh_evaluation_tests)

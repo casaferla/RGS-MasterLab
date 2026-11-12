@@ -133,3 +133,20 @@ AutoMatch checkpoint/restore, Windows qualification, encoded M16 or UI.
 
 See `I1_7_CHAIN_REGISTRY_REPORT_20261112.md` and
 `I1_7_REPRO_COMMANDS_20261112.md`.
+
+## I1.8 fresh-epoch candidate replay — bounded local proof (12 Nov 2026)
+
+The test `r1d_p2_fresh_evaluation_tests` uses real RGS `IModule` /
+`AudioBuffer` instances with 5 sequential independent *full* renders
+(Drive 0,1.5,3,5,0) per sample-rate/layout; final A PCM is bitwise
+identical to initial A after intervening candidates. GCC scalar/SSE2 and
+Clang FNV64 hashes match; GCC ASan+UBSan also passed. This shows the
+*research synthetic full replay* need not checkpoint internal state, NOT
+that canonical AutoMatch full-track cost/quality is qualified. No changes
+to L3 27 metrics, M10/M13, Q0 or M17.
+
+**User-facing priority:** don't block an audible manual DSP Chain preview
+on AutoMatch. See `I2_PREVIEW_INTEGRATION_MAP_20261112.md` for the required
+Product registry/state/audio/GUI gates under Single Writer and
+`I1_8_FRESH_EPOCH_AM_BENCH_20261112.md` for measured limited evidence.
+No Qt/Windows build has yet been run for this milestone.
