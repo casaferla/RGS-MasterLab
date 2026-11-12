@@ -12,6 +12,21 @@
 #include <rgsml/dsp/true_peak_limiter_module.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
+
+// Explicit preview-only P2 source: all productive paths remain opt-in.
+// Pin the approved P2 cache/recovery/tail profile in this factory translation
+// unit; a divergent research macro profile can violate the Payload ODR/ABI.
+#ifndef RESEARCH_EASED_TAIL
+#define RESEARCH_EASED_TAIL 1
+#endif
+#ifndef RESEARCH_P2_RECOVERY
+#define RESEARCH_P2_RECOVERY 1
+#endif
+#ifndef RESEARCH_P2_CACHE
+#define RESEARCH_P2_CACHE 1
+#endif
+#include "../../research/r1d-p2-live/research_p2_imodule.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -32,6 +47,7 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 constexpr auto kLimiterTypeId = "rgsml.dsp.true-peak-limiter";
+constexpr auto kStreamingPreviewTypeId = "rgsml.dsp.streaming-true-peak-limiter";
 
 class GainFactory final : public IModuleFactory {
 public:
@@ -173,6 +189,29 @@ public:
             return Result<std::unique_ptr<IModule>>::failure(*module.error());
         std::unique_ptr<IModule> result=std::move(*module.value());
         return Result<std::unique_ptr<IModule>>::success(std::move(result));
+    }
+private:
+    ModuleDescriptor descriptor_;
+};
+
+
+// The original package_v1 factory remains unchanged. This one is only
+// constructed after an explicit preview opt-in.
+class StreamingP2PreviewFactory final : public IModuleFactory {
+public:
+    explicit StreamingP2PreviewFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor)) {}
+    [[nodiscard]] std::string_view module_type_id() const noexcept override
+    {
+        return descriptor_.type_id();
+    }
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
+    {
+        using namespace rgsml::research::r1d_p2;
+        const Configuration defaults{48000, 2, 2, 0.8912509381337456, 0.0};
+        std::unique_ptr<IModule> module = std::make_unique<ResearchP2IModule>(
+            descriptor_, defaults, false);
+        return Result<std::unique_ptr<IModule>>::success(std::move(module));
     }
 private:
     ModuleDescriptor descriptor_;
@@ -524,6 +563,28 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
             std::move(canonical_descriptor),
             std::move(factory)});
     }
+    return create(std::move(registrations));
+}
+
+Result<ModuleRegistry> ModuleRegistry::with_streaming_true_peak_preview(
+    ModuleRegistry baseline)
+{
+    auto descriptor = ModuleDescriptor::create(make_spec(
+        kStreamingPreviewTypeId,
+        {ModuleCategory::DYNAMICS},
+        {ProcessingStage::MASTER},
+        {ChainSegment::MANUAL},
+        false, PlacementClass::INLINE_CHAIN, std::nullopt,
+        {}, true, true,
+        "0.1.0-preview",
+        "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0"));
+    if (!descriptor) {
+        return Result<ModuleRegistry>::failure(*descriptor.error());
+    }
+    auto value = std::move(*descriptor.value());
+    auto factory = std::make_shared<StreamingP2PreviewFactory>(value);
+    auto registrations = std::move(baseline.registrations_);
+    registrations.push_back(ModuleRegistration{std::move(value), std::move(factory)});
     return create(std::move(registrations));
 }
 
