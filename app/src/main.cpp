@@ -1308,7 +1308,33 @@ int main(int argc, char* argv[])
                     21, "m21MetricsDeltaProductAnalysisEditor");
                 const bool all = m19 && m20 && m21;
                 std::fflush(stdout);
-                application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
+                const QString screenshotPath = qEnvironmentVariable(
+                    "RGSML_P2_I2_SCREENSHOT_PATH");
+                if (!all || screenshotPath.isEmpty()) {
+                    application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
+                    return;
+                }
+                // Authenticated real Qt Main screenshot, NOT a QML mockup.
+                // Only the explicit nonrelease CI smoke requests this path.
+                // Use an enlarged window to reveal the complete vertical
+                // chain alongside the actual P2 editor and its controls.
+                dspChainAdapterModel.setSelectedIndex(4);
+                window->setWidth(1600);
+                window->setHeight(1400);
+                QTimer::singleShot(650, &application,
+                    [window, &application, screenshotPath] {
+                        const auto picture = window->grabWindow();
+                        const bool saved = window->width() == 1600
+                            && window->height() == 1400
+                            && !picture.isNull()
+                            && picture.save(screenshotPath, "PNG");
+                        std::fprintf(stderr,
+                            "P2_I2_REAL_QT_COMPLETE_CHAIN_SCREENSHOT=%s w=%d h=%d\n",
+                            saved ? "PASS" : "FAIL",
+                            window->width(), window->height());
+                        std::fflush(stderr);
+                        application.exit(saved ? EXIT_SUCCESS : EXIT_FAILURE);
+                    });
             });
     }
     if (m17MainEvidence && !engine.rootObjects().isEmpty()) {
