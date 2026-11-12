@@ -1372,10 +1372,13 @@ int main(int argc, char* argv[])
                     const bool exists = editor != nullptr;
                     const bool visible = exists
                         && editor->property("visible").toBool();
-                    const auto* sourceHeading = window->findChild<QObject*>(
-                        QStringLiteral("analysisSourceHeading"));
-                    const auto* redundantFootnote = window->findChild<QObject*>(
-                        QStringLiteral("analysisEvidenceState"));
+                    // All three editor instances remain live; resolving
+                    // from the window always finds hidden M19 first.
+                    // Scope to the selected analysis editor instead.
+                    const auto* sourceHeading = editor ? editor->findChild<QObject*>(
+                        QStringLiteral("analysisSourceHeading")) : nullptr;
+                    const auto* redundantFootnote = editor ? editor->findChild<QObject*>(
+                        QStringLiteral("analysisEvidenceState")) : nullptr;
                     const bool compact = sourceHeading
                         && sourceHeading->property("visible").toBool()
                         && sourceHeading->property("text").toString()
