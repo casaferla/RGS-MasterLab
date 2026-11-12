@@ -52,6 +52,212 @@ jobs:
             throw "P2_PRODUCT_QT_BUILD_FAILED"
           }
           Write-Host "P2_REAL_PRODUCT_APP_COMPILE=PASS"
+      - name: Verify P2 seamless 44.1-kHz source target switching
+        shell: pwsh
+        run: |
+          # Keep the release-like Product config unchanged: compile only
+          # the existing targeted audition selector suite separately.
+          $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          cmake -S . -B build-p2-audition-tests -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=CI `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }} `
+            -DRGSML_QT_ROOT="$qt"
+          if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_CONFIG_FAIL" }
+          cmake --build build-p2-audition-tests --config Release --parallel 4 --target rgsml_audition_source_selector_tests
+          if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_COMPILE_FAIL" }
+          $env:PATH="$qt/bin;$env:PATH"
+          ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^rgsml_audition_source_selector_tests
+        shell: pwsh
+        run: |
+          $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          $env:PATH="$qt/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qt/qml"
+          $env:QT_PLUGIN_PATH="$qt/plugins"
+          $exe=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/Release/RGSMasterLab.exe"
+          if (-not (Test-Path $exe)) { throw "PRODUCT_EXE_MISSING" }
+          $process=Start-Process -FilePath $exe -ArgumentList "--rgsml-deploy-smoke" -PassThru -Wait
+          Write-Host "P2_APP_STARTUP_EXIT=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { throw "P2_APP_QML_STARTUP_FAILED" }
+          Write-Host "P2_QT_PRODUCT_MAIN_STARTUP=PASS"
+      - name: Open real P2 QML editor at minimum 1184x688 (strict opt-in)
+        shell: pwsh
+        run: |
+          $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          $env:PATH="$qt/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qt/qml"
+          $env:QT_PLUGIN_PATH="$qt/plugins"
+          $exe=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/Release/RGSMasterLab.exe"
+          if (-not (Test-Path $exe)) { throw "P2_PRODUCT_EXE_MISSING" }
+          # GUI-subsystem executables can return control before termination
+          # when invoked directly in pwsh; $LASTEXITCODE is then unset.
+          # Wait for the actual Qt process and read its authoritative exit code.
+          $arguments="--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke"
+          $env:RGSML_P2_I2_SCREENSHOT_PATH=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/p2-i2-complete-dsp-chain.png'
+          $stdOut=Join-Path $env:RUNNER_TEMP "p2-i2-gui-stdout.txt"
+          $stdErr=Join-Path $env:RUNNER_TEMP "p2-i2-gui-stderr.txt"
+          $process=Start-Process -FilePath $exe -ArgumentList $arguments `
+            -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr -PassThru -Wait
+          $code=$process.ExitCode
+          if (Test-Path $stdOut) { Get-Content $stdOut -Tail 40 }
+          if (Test-Path $stdErr) { Get-Content $stdErr -Tail 75 }
+          Write-Host "P2_I2_REAL_GUI_SMOKE_EXIT=$code"
+          if ($code -ne 0) { throw "P2_I2_GUI_1184x688_FAILED" }
+          Write-Host "P2_I2_REAL_GUI_OPTIN_1184x688=PASS"
+          if (-not (Test-Path -LiteralPath $env:RGSML_P2_I2_SCREENSHOT_PATH)) {
+            throw "P2_I2_REAL_GUI_SCREENSHOT_MISSING"
+          }
+          if ((Get-Item -LiteralPath $env:RGSML_P2_I2_SCREENSHOT_PATH).Length -lt 10240) {
+            throw "P2_I2_REAL_GUI_SCREENSHOT_EMPTY"
+          }
+          Write-Host "P2_I2_REAL_GUI_SCREENSHOT_SAVED=PASS"
+          # Three real analysis editors are captured in addition to the
+          # P2 top/bottom/full-chain triplet: no duplicate inner titles.
+          foreach ($milestone in @(19,20,21)) {
+            $shot=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/p2-i2-complete-dsp-chain-M$milestone.png"
+            if (-not (Test-Path -LiteralPath $shot)) { throw "P2_I2_ANALYSIS_SCREENSHOT_MISSING_M$milestone" }
+            if ((Get-Item -LiteralPath $shot).Length -lt 10240) { throw "P2_I2_ANALYSIS_SCREENSHOT_EMPTY_M$milestone" }
+          }
+          Write-Host "P2_I2_REAL_QT_COMPACT_ANALYSIS_SCREENSHOTS=PASS"
+
+      - name: Publish real Qt full DSP chain screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-P2-I2-REAL-QT-FULL-CHAIN-${{ github.run_number }}
+          path: build-p2-product/p2-i2-complete-dsp-chain*.png
+          if-no-files-found: error
+          retention-days: 14
+
+      # Physical playback is a separate PO-run gate. CI publishes an
+      # isolated nonrelease bundle only after the actual Product smoke passes.
+      - name: Install standalone Windows research bundle with all frozen FIRs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          cmake --install build-p2-product --config Release --prefix "$stage"
+          if ($LASTEXITCODE -ne 0) { throw "P2_I2_STANDALONE_INSTALL_FAILED" }
+          $exe=Join-Path $stage 'bin/RGSMasterLab.exe'
+          $plugin=Join-Path $stage 'plugins/platforms/qwindows.dll'
+          $manifest=Join-Path $stage 'share/RGSMasterLab/ToolchainManifest.json'
+          foreach ($required in @($exe,$plugin,$manifest)) {
+            if (-not (Test-Path -LiteralPath $required)) {
+              throw "P2_I2_DEPLOY_REQUIRED_FILE_MISSING: $required"
+            }
+          }
+          $fir=Join-Path $stage 'bin/resources/fir'
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$fir"
+          if ($LASTEXITCODE -ne 0) { throw "P2_I2_DEPLOY_FIR_PIN_FAILURE" }
+          Write-Host "P2_I2_STANDALONE_16_FIR_INSTALL=PASS"
+          # Explicit research-bundle opt-in lives next to the deployed EXE.
+          # Direct double-click now enables P2; ordinary Product binaries do
+          # not contain this marker and remain P2-free.
+          $marker=Join-Path $stage 'bin/P2_I2_RESEARCH_ONLY.enabled'
+          Set-Content -LiteralPath $marker -Value 'RGSML_R1D_P2_I2_STANDALONE_RESEARCH_ONLY' -Encoding ascii -NoNewline
+          if ((Get-Content -LiteralPath $marker -Raw) -ne 'RGSML_R1D_P2_I2_STANDALONE_RESEARCH_ONLY') {
+            throw "P2_I2_RESEARCH_OPTIN_MARKER_INVALID"
+          }
+          Write-Host "P2_I2_DIRECT_EXE_RESEARCH_OPT_IN=INSTALLED"
+
+      - name: Cold-smoke deployed Product without developer Qt PATH
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $exe=Join-Path $stage 'bin/RGSMasterLab.exe'
+          $out=Join-Path $env:RUNNER_TEMP 'p2-i2-stage-out.log'
+          $err=Join-Path $env:RUNNER_TEMP 'p2-i2-stage-err.log'
+          # The standalone stage must resolve its own Qt, plugins and FIRs.
+          $env:QML2_IMPORT_PATH=''
+          $env:QT_PLUGIN_PATH=''
+          # Deliberately OMIT --rgsml-p2-i2-preview. This verifies that
+          # the shipped research ZIP enables the real fifth P2 module simply
+          # by starting its EXE, exactly as a Windows user would do.
+          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke --rgsml-p2-i2-gui-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          if (Test-Path $out) { Get-Content $out -Tail 40 }
+          if (Test-Path $err) { Get-Content $err -Tail 60 }
+          if ($p.ExitCode -ne 0) { throw "P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_MISSING: $($p.ExitCode)" }
+          Write-Host 'P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_WITHOUT_FLAG=PASS'
+          Write-Host 'P2_I2_COLD_DEPLOY_GUI_M19_M20_M21=PASS'
+
+      - name: Add research-only physical test instructions
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $instructions=@'
+          RGS MasterLab - P2 I2 - Windows x64 - RESEARCH ONLY
+          ==================================================
+          This is a CI build for manual physical qualification, NOT a release.
+          No product merge, FQ, persistence authorization or AutoMatch.
+          M17 remains the separate final True Peak protection limiter.
+
+          HOW TO RUN (bundle #15 onwards)
+          Extract the entire GitHub Actions artifact into a new folder.
+          Double-click bin/RGSMasterLab.exe: the isolated research bundle
+          enables P2 automatically, even without any command-line flag.
+          Start_P2_I2_Research.cmd remains a supported alternative.
+          P2 appears in the DSP CHAIN after Stereo/M-S (not in View).
+          Do not move the EXE away from its research-only marker,
+          Qt plugins and FIR resources. Never copy this marker to a release.
+
+          MANUAL TEST CHECKLIST (run only on real Windows 10/11 x64 hardware)
+          [ ] Load a suitable source WAV.
+          [ ] The manual Streaming TP Limiter P2 panel is selectable after
+              Stereo M/S and before the M16 analyzer.
+          [ ] M19, M20, M21 remain selectable and visible at 1184x688.
+          [ ] Alter Ceiling and Drive; run PREVIEW, and note any error.
+          [ ] Alter Bypass; compare resulting processed PCM measurements.
+          [ ] Select PROCESSED and LISTEN; test SOURCE/PROCESSED switching.
+          [ ] Seek, play/pause and loop; note clicks, glitches or dropouts.
+          [ ] Repeat same 44.1 kHz source with device 48 kHz / 16-bit.
+          [ ] Repeat with device 44.1 kHz / 16-bit (no SRC).
+          [ ] Optional: device 48 kHz / 24-bit (bit-depth isolation).
+          [ ] Verify PREPARED <-> PROCESSED A/B while playing.
+          [ ] Collect bin/P2_I2_RENDER_TIMINGS.tsv (full-chain time).
+          [ ] Repeat at available source rates and representative workloads.
+          [ ] Record Windows, device, driver, sample rate, audio buffer and
+              actual callback/dropout evidence if available.
+          [ ] DO NOT interpret READY/PREVIEW as certified ACTIVE playback.
+          [ ] Project saving with P2 is intentionally blocked.
+          These boxes are UNCHECKED; no physical testing has been done by CI.
+
+          BUILD IDENTITY
+          Commit: ${{ github.sha }}
+          CI: https://github.com/casaferla/RGS-MasterLab/actions/runs/${{ github.run_id }}
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'README_P2_I2_RESEARCH_ONLY.txt') -Value $instructions -Encoding utf8
+          $launcher=@'
+          @echo off
+          start "" "%~dp0bin\RGSMasterLab.exe" --rgsml-p2-i2-preview
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Start_P2_I2_Research.cmd') -Value $launcher -Encoding ascii
+
+      - name: Include validated real Qt GUI screenshot in physical-test package
+        shell: pwsh
+        run: |
+          $srcDir=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $captures=@(Get-ChildItem -LiteralPath $srcDir -Filter 'p2-i2-complete-dsp-chain*.png')
+          if ($captures.Count -ne 6) { throw "P2_I2_BUNDLE_SCREENSHOT_COUNT_NOT_6" }
+          foreach ($capture in $captures) {
+            Copy-Item -LiteralPath $capture.FullName -Destination $dest -Force
+          }
+          Write-Host "P2_I2_REAL_QT_CAPTURE_COUNT=$($captures.Count)"
+
+      - name: Publish nonrelease Windows physical test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-P2-I2-Win64-RESEARCH-ONLY-${{ github.run_number }}
+          path: build-p2-product/stage/Research-I2/
+          if-no-files-found: error
+          retention-days: 14
+
+          if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_FAIL" }
+          Write-Host "P2_44K1_AB_NO_STOP_NO_CLEAR_UNIT=PASS"
+
       - name: Run genuine application Qt Main startup smoke
         shell: pwsh
         run: |
