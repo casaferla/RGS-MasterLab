@@ -344,6 +344,7 @@ private slots:
     void c2D10LoopOffRecoversFreshSourceWithoutRestart();
     void c2D10Native44100IsNotInherentlyUnavailable();
     void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
+    void c2D21SrcHandoffReproducesPersistentUnprovenObservation();
     void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
     void c2D14ShortLoopRemainsUnproven();
     void c2D14LongLoopPrunesOnlyConsumedHistory();
@@ -4096,6 +4097,89 @@ void PlaybackSupportTest::c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestar
         sawNew = true;
     }
     QVERIFY2(sawNew, "Pure NEW post-crossfade source must recover without Stop.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D21SrcHandoffReproducesPersistentUnprovenObservation()
+{
+    // PO hardware reproducer (2026-11-12): 44.1-kHz stereo PROCESSED
+    // through 48-kHz device SRC, then a new PROCESSED owner while playing.
+    // This is a NEGATIVE oracle documenting M16's current fail-closed
+    // behavior. Do not falsely certify an owner after the mixed handoff.
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    constexpr std::int64_t sourceHz = 44'100;
+    constexpr std::int64_t deviceHz = 48'000;
+    constexpr std::int64_t sourceFrames = 3 * sourceHz;
+    auto oldPcm = make_buffer(
+        sourceHz, audio::ChannelLayout::STEREO_LR, sourceFrames);
+    auto newPcm = make_buffer(
+        sourceHz, audio::ChannelLayout::STEREO_LR, sourceFrames);
+    const auto input = core::SampleRate::create(sourceHz);
+    const auto outputRate = core::SampleRate::create(deviceHz);
+    QVERIFY(input && outputRate);
+    auto adapter = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{
+            *input.value(), *outputRate.value(),
+            audio::ChannelLayout::STEREO_LR,
+            frame_count(sourceFrames)});
+    QVERIFY(adapter);
+
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::move(*adapter.value()),
+        nullptr, core::RealizationId{21'001}));
+    QVERIFY(engine.play());
+    const auto initial = engine.c2_src_retirement_observation();
+    QCOMPARE(initial.reason, Reason::UNPROVEN_SRC);
+    sink->consume_all();
+    engine.tick();
+    const auto oldWitness = engine.c2_src_retirement_observation();
+    QVERIFY(oldWitness.noFutureSourcePrefixExclusive);
+    QCOMPARE(oldWitness.realizationId,
+        std::optional{core::RealizationId{21'001}});
+
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    QVERIFY(engine.handoff_pcm(
+        newPcm.view(), nullptr, core::RealizationId{21'002}));
+    bool sawAudibleNew = false;
+    int newOwnerConsumedTicks = 0;
+    bool sawHandoffGap = false;
+    for (int step = 0; step < 120; ++step) {
+        sink->consume_all();
+        engine.tick();
+        const auto state = engine.snapshot();
+        QVERIFY(state);
+        if (state.value()->audibleRealization.phase
+                != core::AudibleHandoffPhase::NEW
+            || state.value()->audibleRealization.realizationId
+                != std::optional{core::RealizationId{21'002}})
+            continue;
+        sawAudibleNew = true;
+        ++newOwnerConsumedTicks;
+        const auto probe = engine.c2_processed_coverage_probe();
+        QCOMPARE(probe.reason, Reason::UNPROVEN_HANDOFF);
+        const auto current = engine.c2_src_retirement_observation();
+        // This is the precise reason M16 cannot resume at 44.1 -> 48.
+        QVERIFY(!current.noFutureSourcePrefixExclusive);
+        const auto ledger = engine.c2_consumed_prefix();
+        QVERIFY(ledger.partitionRepresented);
+        QVERIFY(!ledger.certifiedForLiveTruePeak);
+        for (const auto& slice : ledger.view())
+            sawHandoffGap |= slice.kind == Kind::GAP_UNPROVEN
+                && slice.reason == Reason::UNPROVEN_HANDOFF;
+        if (newOwnerConsumedTicks >= 25) break;
+    }
+    QVERIFY2(sawAudibleNew, "P2 new PROCESSED must become audible.");
+    QVERIFY2(newOwnerConsumedTicks >= 25,
+        "Reproduce unavailable SRC witness for >=25 consumed new-owner blocks.");
+    QVERIFY(sawHandoffGap);
     QCOMPARE(sink->startCalls, starts);
     QCOMPARE(sink->stopCalls, stops);
 }
