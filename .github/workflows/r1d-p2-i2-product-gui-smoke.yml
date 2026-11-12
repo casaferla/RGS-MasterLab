@@ -78,8 +78,13 @@ jobs:
           # when invoked directly in pwsh; $LASTEXITCODE is then unset.
           # Wait for the actual Qt process and read its authoritative exit code.
           $arguments="--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke"
-          $process=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
+          $stdOut=Join-Path $env:RUNNER_TEMP "p2-i2-gui-stdout.txt"
+          $stdErr=Join-Path $env:RUNNER_TEMP "p2-i2-gui-stderr.txt"
+          $process=Start-Process -FilePath $exe -ArgumentList $arguments `
+            -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr -PassThru -Wait
           $code=$process.ExitCode
+          if (Test-Path $stdOut) { Get-Content $stdOut -Tail 40 }
+          if (Test-Path $stdErr) { Get-Content $stdErr -Tail 75 }
           Write-Host "P2_I2_REAL_GUI_SMOKE_EXIT=$code"
           if ($code -ne 0) { throw "P2_I2_GUI_1184x688_FAILED" }
           Write-Host "P2_I2_REAL_GUI_OPTIN_1184x688=PASS"
