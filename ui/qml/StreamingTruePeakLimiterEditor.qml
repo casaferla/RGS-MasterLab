@@ -85,6 +85,12 @@ Item {
                         from: -12; to: 0; stepSize: 0.1
                         wheelEnabled: true
                         enabled: !!root.limiterModule
+                        // M17 ceiling convention: colored extent begins at
+                        // 0 dBTP (right endpoint), moves LEFT to the selected
+                        // negative ceiling. Never fill from -12 to value.
+                        fillFromOrigin: true
+                        positionFillOrigin: 0
+                        positionFillColor: Qt.alpha(root.copper, 0.38)
                         accentColor: root.copper
                         value: root.ceiling
                         accessibleName: "TP Limiter Ceiling slider"
