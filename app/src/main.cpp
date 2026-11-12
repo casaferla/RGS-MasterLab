@@ -43,6 +43,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QGuiApplication>
+#include <QFile>
 #include <filesystem>
 #include <QIcon>
 #include <QLibraryInfo>
@@ -104,10 +105,20 @@ int main(int argc, char* argv[])
     application.setWindowIcon(QIcon(QStringLiteral(
         ":/rgsml/resources/RGS_MasterLab_optimized.ico")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
-    // Strict research-only startup switch. No default Product activation,
-    // project persistence, M17 changes, AutoMatch, or release entitlement.
-    const bool p2PreviewOptIn = application.arguments().contains(
-        QStringLiteral("--rgsml-p2-i2-preview"));
+    // Strict research-only opt-in, NEVER a Product default. The CI-installed
+    // research-only ZIP carries this explicit opt-in marker BESIDE its EXE,
+    // so Windows double-click of bin/RGSMasterLab.exe exposes P2 without
+    // asking a nontechnical tester to provide CLI arguments. Ordinary builds
+    // do not install this marker; they retain the four-module chain.
+    // The exact contents avoid accidental enablement from a stray filename.
+    QFile researchMarker(QCoreApplication::applicationDirPath()
+        + QStringLiteral("/P2_I2_RESEARCH_ONLY.enabled"));
+    const bool researchBundleOptIn = researchMarker.open(QIODevice::ReadOnly)
+        && researchMarker.readAll().trimmed()
+            == QByteArrayLiteral("RGSML_R1D_P2_I2_STANDALONE_RESEARCH_ONLY");
+    const bool p2PreviewOptIn = researchBundleOptIn
+        || application.arguments().contains(
+            QStringLiteral("--rgsml-p2-i2-preview"));
     const bool p2GuiSmoke = application.arguments().contains(
         QStringLiteral("--rgsml-p2-i2-gui-smoke"));
     if (p2GuiSmoke && !p2PreviewOptIn) {
