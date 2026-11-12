@@ -111,3 +111,25 @@ between backends: `7ca1160a8000fca5`. No Windows device or Product
 `ProcessingChain` test, registry entry, preset schema, CI/FQ or merge.
 See `I1_6_REAL_RGS_IMODULE_REPORT_20261112.md` and
 `I1_6_TEST_COMMANDS_20261112.md`.
+
+## I1.7 — genuine ProcessingChain/ModuleRegistry (isolated, 12 Nov 2026)
+
+New `r1d_p2_real_processing_chain_tests` compiles **unchanged** RGS
+`ProcessingChain` and `ModuleRegistry` sources, with a **test-only**
+registration/factory that creates the genuine I1.6 `ResearchP2IModule`.
+The real chain enforces P2 as last MANUAL DSP, rejects M17 terminal in
+MANUAL and refuses order/duplicate violations without revision change.
+A research host selects P2 from the chain and dispatches registered
+`IModule`; the PCM is bit-exact against original P2 on hot 48k/192k
+mono/stereo with chunked EOS. The original Production
+`ModuleRegistry::create_dsp_package_v1` and all Product files remain
+unchanged. Four Linux CTest modes (GCC, SSE2, Clang, ASan+UBSan with
+**registry translation unit uninstrumented**) passed 1/1; identical
+test stdout SHA256 across all: `ead1981042d441d69266b16bdb97dc392002b827366b49af8a45da287643a054`.
+
+**Important:** `ProcessingChain` is metadata-only; the test creates a
+separate research host dispatcher. This is NOT Product signal-route wiring,
+AutoMatch checkpoint/restore, Windows qualification, encoded M16 or UI.
+
+See `I1_7_CHAIN_REGISTRY_REPORT_20261112.md` and
+`I1_7_REPRO_COMMANDS_20261112.md`.

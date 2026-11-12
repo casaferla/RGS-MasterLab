@@ -106,3 +106,62 @@ else()
         -ffp-contract=off -fno-fast-math -frounding-math)
 endif()
 add_test(NAME r1d_p2_real_imodule_tests COMMAND r1d_p2_real_imodule_tests)
+
+# I1.7: isolated real ProcessingChain + real ModuleRegistry factory proof.
+# Original package_v1 registrations are NEVER changed.
+set(RGS_P2_CHAIN_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+add_library(rgs_p2_research_chain_abi STATIC
+  ${RGS_P2_CHAIN_ROOT}/core/src/checked_integer.cpp
+  ${RGS_P2_CHAIN_ROOT}/core/src/error.cpp
+  ${RGS_P2_CHAIN_ROOT}/core/src/frame_time.cpp
+  ${RGS_P2_CHAIN_ROOT}/core/src/rational.cpp
+  ${RGS_P2_CHAIN_ROOT}/core/src/uuid.cpp
+  ${RGS_P2_CHAIN_ROOT}/audio/src/audio_buffer.cpp
+  ${RGS_P2_CHAIN_ROOT}/audio/src/audio_format.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/imodule.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/module_descriptor.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/module_registry.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/processing_chain.cpp)
+target_include_directories(rgs_p2_research_chain_abi PUBLIC
+  ${RGS_P2_CHAIN_ROOT}/core/include
+  ${RGS_P2_CHAIN_ROOT}/audio/include
+  ${RGS_P2_CHAIN_ROOT}/dsp/include)
+add_executable(r1d_p2_real_processing_chain_tests
+  tests/test_p2_real_processing_chain.cpp)
+target_include_directories(r1d_p2_real_processing_chain_tests PRIVATE . pinned)
+target_link_libraries(r1d_p2_real_processing_chain_tests PRIVATE
+  rgs_p2_research_chain_abi)
+target_compile_definitions(r1d_p2_real_processing_chain_tests PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_real_processing_chain_tests
+    PRIVATE RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_real_processing_chain_tests PRIVATE /W4 /fp:strict /Gy)
+  target_compile_options(rgs_p2_research_chain_abi PRIVATE /W4 /fp:strict /Gy)
+  target_link_options(r1d_p2_real_processing_chain_tests PRIVATE /OPT:REF)
+else()
+  target_compile_options(r1d_p2_real_processing_chain_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off
+    -fno-fast-math -frounding-math -ffunction-sections
+    -fdata-sections -msse2 -mfpmath=sse)
+  target_compile_options(rgs_p2_research_chain_abi PRIVATE
+    -ffp-contract=off -fno-fast-math -frounding-math
+    -ffunction-sections -fdata-sections)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(r1d_p2_real_processing_chain_tests PRIVATE
+      -Wl,--gc-sections)
+  endif()
+endif()
+# Unused built-in Product factory code in module_registry.cpp would pull
+# unrelated frozen DSP symbols under UBSan. For this isolated proof only,
+# do not instrument that ONE TU. The real ProcessingChain, audio and P2
+# remain instrumented; no full Product-registry sanitizer claim is made.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set_source_files_properties(
+    ${RGS_P2_CHAIN_ROOT}/dsp/src/module_registry.cpp
+    PROPERTIES COMPILE_OPTIONS "-fno-sanitize=all")
+endif()
+add_test(NAME r1d_p2_real_processing_chain_tests
+  COMMAND r1d_p2_real_processing_chain_tests)
