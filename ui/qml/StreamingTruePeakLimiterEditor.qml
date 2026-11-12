@@ -17,7 +17,7 @@ Item {
             Layout.fillWidth: true
             spacing: 8
             Text {
-                text: "STREAMING TRUE PEAK LIMITER"
+                text: "STREAMING TP LIMITER"
                 color: "#DDE8F4"
                 font.family: "Segoe UI"
                 font.pixelSize: root.compact ? 11 : 13
@@ -67,7 +67,7 @@ Item {
                         from: -12; to: 0; stepSize: 0.1
                         accentColor: root.copper
                         value: root.limiterModule ? root.limiterModule.ceilingDbTp : -1
-                        interactionHint: "True peak ceiling in dBTP, applied to the real P2 preview."
+                        interactionHint: "TP ceiling in dBTP, applied to the real P2 preview."
                         onCommitRequested: function(v) {
                             if (root.limiterModule) root.limiterModule.setCeilingDbTp(v)
                         }
@@ -92,7 +92,7 @@ Item {
                         from: -24; to: 24; stepSize: 0.1
                         accentColor: root.copper
                         value: root.limiterModule ? root.limiterModule.driveDb : 0
-                        interactionHint: "Input drive in dB for Streaming True Peak Limiter."
+                        interactionHint: "Input drive in dB for Streaming TP Limiter."
                         onCommitRequested: function(v) {
                             if (root.limiterModule) root.limiterModule.setDriveDb(v)
                         }
