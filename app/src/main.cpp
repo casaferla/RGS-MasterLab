@@ -394,6 +394,13 @@ int main(int argc, char* argv[])
             return auditionSelector.set_processed_realization(std::move(result));
         }
     };
+    // The opt-in research bundle writes timing evidence next to its EXE.
+    // No file I/O occurs in the audio callback or on the Qt GUI thread.
+    if (p2PreviewOptIn) {
+        previewController.set_research_p2_timing_log_path(
+            QCoreApplication::applicationDirPath()
+                + QStringLiteral("/P2_I2_RENDER_TIMINGS.tsv"));
+    }
 
     // All invalidations atomically revoke terminal device ownership and
     // discard pending OUTPUT_RATE renders before any future publication.
