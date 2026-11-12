@@ -67,12 +67,13 @@ jobs:
             -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }} `
             -DRGSML_QT_ROOT="$qt"
           if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_CONFIG_FAIL" }
-          cmake --build build-p2-audition-tests --config Release --parallel 4 --target rgsml_audition_source_selector_tests
+          cmake --build build-p2-audition-tests --config Release --parallel 4 --target rgsml_audition_source_selector_tests rgsml_playback_support_tests
           if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_COMPILE_FAIL" }
           $env:PATH="$qt/bin;$env:PATH"
-          ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^rgsml_audition_source_selector_tests$'
+          ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^(rgsml_audition_source_selector_tests|rgsml_playback_support_tests)$'
           if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_FAIL" }
           Write-Host "P2_44K1_AB_NO_STOP_NO_CLEAR_UNIT=PASS"
+          Write-Host "P2_44K1_TO_48K_SRC_HANDOFF_NEGATIVE_ORACLE=PASS"
 
       - name: Run genuine application Qt Main startup smoke
         shell: pwsh
