@@ -113,6 +113,10 @@ public:
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
     {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
+    // Experimental P2-only SOURCE/SOURCE A-B handoff. Disabled by default,
+    // never enabled by saved Product projects or M17 terminal sessions.
+    void set_research_p2_seamless_target_switch(bool enabled) noexcept
+    { researchP2SeamlessTargetSwitch_ = enabled; }
     [[nodiscard]] core::Status source_committed(
         const core::ResourceReference& source);
     [[nodiscard]] core::Status set_prepared_realization(
@@ -162,6 +166,7 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_;
+    bool researchP2SeamlessTargetSwitch_{false};
     M18MutationAdmission m18MutationAdmission_;
     // Owner-thread scoped: every public selector mutation must complete
     // playback handoff and changed() callbacks before reentry is allowed.
