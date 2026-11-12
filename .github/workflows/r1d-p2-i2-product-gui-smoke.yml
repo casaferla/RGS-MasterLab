@@ -96,6 +96,14 @@ jobs:
             throw "P2_I2_REAL_GUI_SCREENSHOT_EMPTY"
           }
           Write-Host "P2_I2_REAL_GUI_SCREENSHOT_SAVED=PASS"
+          # Three real analysis editors are captured in addition to the
+          # P2 top/bottom/full-chain triplet: no duplicate inner titles.
+          foreach ($milestone in @(19,20,21)) {
+            $shot=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/p2-i2-complete-dsp-chain-M$milestone.png"
+            if (-not (Test-Path -LiteralPath $shot)) { throw "P2_I2_ANALYSIS_SCREENSHOT_MISSING_M$milestone" }
+            if ((Get-Item -LiteralPath $shot).Length -lt 10240) { throw "P2_I2_ANALYSIS_SCREENSHOT_EMPTY_M$milestone" }
+          }
+          Write-Host "P2_I2_REAL_QT_COMPACT_ANALYSIS_SCREENSHOTS=PASS"
 
       - name: Publish real Qt full DSP chain screenshot
         uses: actions/upload-artifact@v4
@@ -210,7 +218,7 @@ jobs:
           $srcDir=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product'
           $dest=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
           $captures=@(Get-ChildItem -LiteralPath $srcDir -Filter 'p2-i2-complete-dsp-chain*.png')
-          if ($captures.Count -ne 3) { throw "P2_I2_BUNDLE_SCREENSHOT_COUNT_NOT_3" }
+          if ($captures.Count -ne 6) { throw "P2_I2_BUNDLE_SCREENSHOT_COUNT_NOT_6" }
           foreach ($capture in $captures) {
             Copy-Item -LiteralPath $capture.FullName -Destination $dest -Force
           }
