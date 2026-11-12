@@ -367,7 +367,7 @@ Rectangle {
                     enabled: root.isLimiterEditor && !root.monitorExclusive
                         && root.activeModule && root.activeModule.resetSupported
                     onClicked: if (root.activeModule) root.activeModule.resetToDefault()
-                    Accessible.name: "Reset True Peak Limiter Ceiling to -1.0 dBTP"
+                    Accessible.name: "Reset TP Limiter Ceiling to -1.0 dBTP"
                     ToolTip.text: "Restore Ceiling to -1.0 dBTP without changing Active or Bypass"
                     ToolTip.visible: hovered && m17ResetTooltipDwell.ready
                     ToolTip.delay: 0
@@ -396,7 +396,7 @@ Rectangle {
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: root.isLimiterEditor && !enabled
-                        ? "True Peak Limiter processing is pending verified OUTPUT_RATE routing"
+                        ? "TP Limiter processing is pending verified OUTPUT_RATE routing"
                         : "Activate module processing"
                     ToolTip.visible: (hovered) && stationaryTooltipDwell3.ready
                     ToolTip.delay: 0
@@ -453,7 +453,7 @@ Rectangle {
                     && !!root.masterRateState
                     && root.masterRateState.currentMasterRateAdmissible
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
-                Accessible.name: "Prepare offline true peak limiter"
+                Accessible.name: "Prepare offline TP limiter"
                 ToolTip.text: root.masterRateState
                     && !root.masterRateState.currentMasterRateAdmissible
                     ? root.masterRateState.final_src_path_status(
