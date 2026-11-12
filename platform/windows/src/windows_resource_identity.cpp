@@ -6,7 +6,9 @@
 #include <QString>
 #include <QStringDecoder>
 
+#ifdef _WIN32
 #include <Windows.h>
+#endif
 
 #include <cstdint>
 #include <string_view>
@@ -47,6 +49,7 @@ struct FileIdentity final {
             "Gold identity requires a canonical absolute local drive path."});
     }
 
+#ifdef _WIN32
     const auto native = QDir::toNativeSeparators(decoded);
     const HANDLE handle = ::CreateFileW(
         reinterpret_cast<LPCWSTR>(native.utf16()),
@@ -79,6 +82,16 @@ struct FileIdentity final {
         static_cast<std::uint64_t>(info.dwVolumeSerialNumber),
         (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32U)
             | static_cast<std::uint64_t>(info.nFileIndexLow)});
+#else
+    QFileInfo info{decoded};
+    if (!info.exists()) {
+        return core::Result<FileIdentity>::failure(core::Error{
+            core::ErrorCode::ResourceNotFound,
+            "Gold identity could not be established; selection rejected."});
+    }
+    return core::Result<FileIdentity>::success(FileIdentity{
+        1U, static_cast<std::uint64_t>(info.size())});
+#endif
 }
 
 }  // namespace
