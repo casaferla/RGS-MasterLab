@@ -88,3 +88,94 @@ jobs:
           Write-Host "P2_I2_REAL_GUI_SMOKE_EXIT=$code"
           if ($code -ne 0) { throw "P2_I2_GUI_1184x688_FAILED" }
           Write-Host "P2_I2_REAL_GUI_OPTIN_1184x688=PASS"
+
+      # Physical playback is a separate PO-run gate. CI publishes an
+      # isolated nonrelease bundle only after the actual Product smoke passes.
+      - name: Install standalone Windows research bundle with all frozen FIRs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          cmake --install build-p2-product --config Release --prefix "$stage"
+          if ($LASTEXITCODE -ne 0) { throw "P2_I2_STANDALONE_INSTALL_FAILED" }
+          $exe=Join-Path $stage 'bin/RGSMasterLab.exe'
+          $plugin=Join-Path $stage 'plugins/platforms/qwindows.dll'
+          $manifest=Join-Path $stage 'share/RGSMasterLab/ToolchainManifest.json'
+          foreach ($required in @($exe,$plugin,$manifest)) {
+            if (-not (Test-Path -LiteralPath $required)) {
+              throw "P2_I2_DEPLOY_REQUIRED_FILE_MISSING: $required"
+            }
+          }
+          $fir=Join-Path $stage 'bin/resources/fir'
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$fir"
+          if ($LASTEXITCODE -ne 0) { throw "P2_I2_DEPLOY_FIR_PIN_FAILURE" }
+          Write-Host "P2_I2_STANDALONE_16_FIR_INSTALL=PASS"
+
+      - name: Cold-smoke deployed Product without developer Qt PATH
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $exe=Join-Path $stage 'bin/RGSMasterLab.exe'
+          $out=Join-Path $env:RUNNER_TEMP 'p2-i2-stage-out.log'
+          $err=Join-Path $env:RUNNER_TEMP 'p2-i2-stage-err.log'
+          # The standalone stage must resolve its own Qt, plugins and FIRs.
+          $env:QML2_IMPORT_PATH=''
+          $env:QT_PLUGIN_PATH=''
+          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          if (Test-Path $out) { Get-Content $out -Tail 40 }
+          if (Test-Path $err) { Get-Content $err -Tail 60 }
+          if ($p.ExitCode -ne 0) { throw "P2_I2_COLD_DEPLOY_SMOKE_FAILED: $($p.ExitCode)" }
+          Write-Host 'P2_I2_COLD_DEPLOY_GUI_M19_M20_M21=PASS'
+
+      - name: Add research-only physical test instructions
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $instructions=@'
+          RGS MasterLab - P2 I2 - Windows x64 - RESEARCH ONLY
+          ==================================================
+          This is a CI build for manual physical qualification, NOT a release.
+          No product merge, FQ, persistence authorization or AutoMatch.
+          M17 remains the separate final True Peak protection limiter.
+
+          HOW TO RUN
+          Extract the entire GitHub Actions artifact into a new folder.
+          Launch Start_P2_I2_Research.cmd from that folder.
+          The batch file adds --rgsml-p2-i2-preview (strict experimental opt-in).
+          Do not move bin/RGSMasterLab.exe out of the deployed folder tree.
+
+          MANUAL TEST CHECKLIST (run only on real Windows 10/11 x64 hardware)
+          [ ] Load a suitable source WAV.
+          [ ] The manual Streaming True Peak P2 panel is selectable after
+              Stereo M/S and before the M16 analyzer.
+          [ ] M19, M20, M21 remain selectable and visible at 1184x688.
+          [ ] Alter Ceiling and Drive; run PREVIEW, and note any error.
+          [ ] Alter Bypass; compare resulting processed PCM measurements.
+          [ ] Select PROCESSED and LISTEN; test SOURCE/PROCESSED switching.
+          [ ] Seek, play/pause and loop; note clicks, glitches or dropouts.
+          [ ] Repeat at available source rates and representative workloads.
+          [ ] Record Windows, device, driver, sample rate, audio buffer and
+              actual callback/dropout evidence if available.
+          [ ] DO NOT interpret READY/PREVIEW as certified ACTIVE playback.
+          [ ] Project saving with P2 is intentionally blocked.
+          These boxes are UNCHECKED; no physical testing has been done by CI.
+
+          BUILD IDENTITY
+          Commit: ${{ github.sha }}
+          CI: https://github.com/casaferla/RGS-MasterLab/actions/runs/${{ github.run_id }}
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'README_P2_I2_RESEARCH_ONLY.txt') -Value $instructions -Encoding utf8
+          $launcher=@'
+          @echo off
+          start "" "%~dp0bin\RGSMasterLab.exe" --rgsml-p2-i2-preview
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Start_P2_I2_Research.cmd') -Value $launcher -Encoding ascii
+
+      - name: Publish nonrelease Windows physical test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-P2-I2-Win64-RESEARCH-ONLY-${{ github.run_number }}
+          path: build-p2-product/stage/Research-I2/
+          if-no-files-found: error
+          retention-days: 14
