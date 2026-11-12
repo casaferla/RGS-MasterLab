@@ -12,6 +12,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_module.hpp>
+#include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
 
 #include <algorithm>
 #include <array>
@@ -34,6 +35,7 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 constexpr auto kTruePeakLimiterTypeId = "rgsml.dsp.true-peak-limiter";
+constexpr auto kStreamingTruePeakTypeId = "rgsml.dsp.streaming-true-peak-limiter";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
@@ -614,7 +616,33 @@ rgsml::core::Result<RenderResult> render_preview(
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
             const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
             const bool is_stereo_ms = (instance.module_type_id() == kStereoMsTypeId);
-            const bool is_parameterized = is_gain || is_eq || is_compressor || is_stereo_ms;
+            const bool is_streaming_p2 = (instance.module_type_id() == kStreamingTruePeakTypeId);
+            const bool is_parameterized = is_gain || is_eq || is_compressor
+                || is_stereo_ms || is_streaming_p2;
+
+            if (!instance.active() && is_streaming_p2) {
+            const auto* binding = find_binding(request, instance.instance_id());
+            const auto* parameters = binding
+                ? std::get_if<rgsml::dsp::StreamingTruePeakLimiterParameters>(&binding->parameters)
+                : nullptr;
+            if (!parameters) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MISSING_P2_PARAMETER_BINDING",
+                    "Streaming True Peak Limiter must have an authentic typed P2 binding."));
+            }
+            signatures.push_back(ModuleExecutionSignature{
+                instance.instance_id(),
+                std::string{kStreamingTruePeakTypeId},
+                std::string{descriptor.value()->get().algorithm_version().value_or("0.1.0-preview")},
+                std::string{descriptor.value()->get().parameter_schema_id().value_or(
+                    "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0")},
+                ModuleExecutionDisposition::BYPASS_IDENTITY,
+                StreamingTruePeakLimiterExecutionSignaturePayload{
+                    parameters->ceiling_db_tp(),parameters->drive_db(),
+                    parameters->margin_percent()}});
+            continue;
+            }
 
             if (!instance.active()) {
                 if (is_parameterized) {
@@ -751,6 +779,28 @@ rgsml::core::Result<RenderResult> render_preview(
                 required.algorithmic_latency_frames.value(),
                 required.look_ahead_frames.value(),
                 required.effective_tail_frames.value()});
+
+
+            if (is_streaming_p2) {
+                const auto* parameters = binding
+                    ? std::get_if<rgsml::dsp::StreamingTruePeakLimiterParameters>(&binding->parameters)
+                    : nullptr;
+                if (!parameters) {
+                    return rgsml::core::Result<RenderResult>::failure(render_error(
+                        rgsml::core::ErrorCode::InvalidArgument,
+                        "MISSING_P2_PARAMETER_BINDING",
+                        "Active P2 lacks a typed source-bound parameter payload."));
+                }
+                signatures.push_back(ModuleExecutionSignature{
+                    instance.instance_id(),std::string{kStreamingTruePeakTypeId},
+                    std::string{descriptor.value()->get().algorithm_version().value_or("0.1.0-preview")},
+                    std::string{descriptor.value()->get().parameter_schema_id().value_or(
+                        "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0")},
+                    ModuleExecutionDisposition::PROCESSED,
+                    StreamingTruePeakLimiterExecutionSignaturePayload{
+                        parameters->ceiling_db_tp(),parameters->drive_db(),
+                        parameters->margin_percent()}});
+            }
 
             if (is_stereo_ms) {
                 const auto* parameters = std::get_if<rgsml::dsp::StereoMsParameters>(
