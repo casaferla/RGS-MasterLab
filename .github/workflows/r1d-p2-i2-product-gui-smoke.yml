@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RGS-P2-I2-REAL-QT-FULL-CHAIN-${{ github.run_number }}
-          path: build-p2-product/p2-i2-complete-dsp-chain.png
+          path: build-p2-product/p2-i2-complete-dsp-chain*.png
           if-no-files-found: error
           retention-days: 14
 
@@ -191,10 +191,14 @@ jobs:
       - name: Include validated real Qt GUI screenshot in physical-test package
         shell: pwsh
         run: |
-          $src=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/p2-i2-complete-dsp-chain.png'
-          $dst=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2/P2_I2_Real_Qt_GUI_Dsp_Chain.png'
-          Copy-Item -LiteralPath $src -Destination $dst -Force
-          if (-not (Test-Path -LiteralPath $dst)) { throw "P2_I2_BUNDLE_SCREENSHOT_MISSING" }
+          $srcDir=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $captures=@(Get-ChildItem -LiteralPath $srcDir -Filter 'p2-i2-complete-dsp-chain*.png')
+          if ($captures.Count -ne 3) { throw "P2_I2_BUNDLE_SCREENSHOT_COUNT_NOT_3" }
+          foreach ($capture in $captures) {
+            Copy-Item -LiteralPath $capture.FullName -Destination $dest -Force
+          }
+          Write-Host "P2_I2_REAL_QT_CAPTURE_COUNT=$($captures.Count)"
 
       - name: Publish nonrelease Windows physical test bundle
         uses: actions/upload-artifact@v4
