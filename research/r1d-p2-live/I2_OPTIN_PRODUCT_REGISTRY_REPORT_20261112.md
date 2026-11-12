@@ -20,3 +20,18 @@ The Product application still calls the frozen v1 package path and its original 
 
 ## Reproduction
 `cmake -S research/r1d-p2-live -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release` then build and execute `r1d_p2_optin_registry_tests`; set `-DR1D_RESEARCH_PHASE_SSE=ON` for the alternate test backend. For sanitizer mode configure `-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'` and execute the same target. This assumes the I1.7 mirror-style source layout which the research CMake originally used; the test built against original RGS core/audio/dsp sources as restored from FQ candidate.
+
+## Focused CI #1 — red on both OS, corrected test link dependency
+
+[CI run #1](https://github.com/casaferla/RGS-MasterLab/actions/runs/43255826282)
+on candidate SHA `45baa02c9ea0e642e1edac2d05ee101d0826e983`
+completed FAILURE on both Ubuntu and Windows after successful source compilation
+but before any native test executed. Actual errors: GNU undefined references /
+MSVC LNK2019 to `ModuleRegistry::create`,
+`ModuleRegistry::with_streaming_true_peak_preview`, and
+`ProcessingChain::create`. Root cause: the new test target was linked to
+`rgs_p2_research_real_abi` (base IModule) rather than the already present
+`rgs_p2_research_chain_abi` (contains genuine registry/chain sources).
+Corrected exactly that target link; neither P2 implementation nor frozen
+M17 or real Product semantics changed. The new CI result must be verified
+before any green claim.

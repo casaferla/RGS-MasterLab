@@ -191,7 +191,7 @@ add_test(NAME r1d_p2_fresh_evaluation_tests COMMAND r1d_p2_fresh_evaluation_test
 # No activation in Product Main/Project or default package_v1.
 add_executable(r1d_p2_optin_registry_tests tests/test_p2_optin_registry.cpp)
 target_include_directories(r1d_p2_optin_registry_tests PRIVATE . pinned)
-target_link_libraries(r1d_p2_optin_registry_tests PRIVATE rgs_p2_research_real_abi)
+target_link_libraries(r1d_p2_optin_registry_tests PRIVATE rgs_p2_research_chain_abi)
 target_compile_definitions(r1d_p2_optin_registry_tests PRIVATE
   RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
 if(R1D_RESEARCH_PHASE_SSE)
