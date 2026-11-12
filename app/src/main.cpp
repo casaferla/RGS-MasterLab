@@ -1269,29 +1269,43 @@ int main(int argc, char* argv[])
                 // against loss/reordering when opt-in P2 adds MANUAL index 4.
                 // This proves actual Main.qml visibility at the minimum size,
                 // not that analysis metrics have completed or are certified.
-                const auto verifyAnalysis = [&](int index,
-                                                const char* contentKey,
+                const auto verifyAnalysis = [&](int milestone,
                                                 const char* objectName) {
-                    dspChainAdapterModel.setSelectedIndex(index);
+                    // Select the existing authority-owned Product adapter,
+                    // never a fragile hard-coded visual index: M16/M17 and
+                    // service rows are independent of the MANUAL DSP count.
+                    const auto wantedInstance =
+                        QStringLiteral("analysis:rgsml.m%1").arg(milestone);
+                    const auto wantedKey =
+                        QStringLiteral("M%1_ANALYSIS").arg(milestone);
+                    dspChainAdapterModel.selectModuleByInstanceId(
+                        wantedInstance);
                     QCoreApplication::processEvents();
                     const auto* active = dspChainAdapterModel.selected_module();
                     const auto* editor = window->findChild<QObject*>(
                         QString::fromLatin1(objectName));
-                    const bool shown = active && editor
-                        && active->editor_content_key()
-                            == QString::fromLatin1(contentKey)
+                    const bool correctSelection = active
+                        && active->instance_id() == wantedInstance
+                        && active->editor_content_key() == wantedKey;
+                    const bool exists = editor != nullptr;
+                    const bool visible = exists
                         && editor->property("visible").toBool();
-                    std::fprintf(stdout, "P2_I2_ANALYSIS_M%d_VISIBLE=%s\n",
-                                 index == 7 ? 19 : index == 8 ? 20 : 21,
-                                 shown ? "PASS" : "FAIL");
+                    const bool shown = correctSelection && visible;
+                    std::fprintf(stderr,
+                        "P2_I2_ANALYSIS_M%d index=%d selected=%s key=%s editor=%d visible=%d result=%s\n",
+                        milestone, dspChainAdapterModel.selected_index(),
+                        active ? active->instance_id().toUtf8().constData() : "(null)",
+                        active ? active->editor_content_key().toUtf8().constData() : "(null)",
+                        exists ? 1 : 0, visible ? 1 : 0,
+                        shown ? "PASS" : "FAIL");
                     return shown;
                 };
                 const bool m19 = verifyAnalysis(
-                    7, "M19_ANALYSIS", "m19LevelProductAnalysisEditor");
+                    19, "m19LevelProductAnalysisEditor");
                 const bool m20 = verifyAnalysis(
-                    8, "M20_ANALYSIS", "m20TonalStereoProductAnalysisEditor");
+                    20, "m20TonalStereoProductAnalysisEditor");
                 const bool m21 = verifyAnalysis(
-                    9, "M21_ANALYSIS", "m21MetricsDeltaProductAnalysisEditor");
+                    21, "m21MetricsDeltaProductAnalysisEditor");
                 const bool all = m19 && m20 && m21;
                 std::fflush(stdout);
                 application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
