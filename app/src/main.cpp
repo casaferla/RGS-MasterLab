@@ -50,7 +50,9 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QQuickItem>
 #include <QImage>
+#include <QPainter>
 #include <QMetaObject>
 #include <cmath>
 #include <QQuickStyle>
@@ -1314,24 +1316,63 @@ int main(int argc, char* argv[])
                     application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
                     return;
                 }
-                // Authenticated real Qt Main screenshot, NOT a QML mockup.
-                // Only the explicit nonrelease CI smoke requests this path.
-                // Use an enlarged window to reveal the complete vertical
-                // chain alongside the actual P2 editor and its controls.
+                // Actual Windows Qt Main screenshots, not QML mockups.
+                // GitHub's HyperVMonitor limits the real window to 1184x~749.
+                // Keep the qualified 1184x688 size and capture the selector
+                // twice at real scroll positions (top and bottom). Publish
+                // original screenshots AND a transparent side-by-side montage.
                 dspChainAdapterModel.setSelectedIndex(4);
-                window->setWidth(1600);
-                window->setHeight(1400);
                 QTimer::singleShot(650, &application,
                     [window, &application, screenshotPath] {
-                        const auto picture = window->grabWindow();
-                        const bool saved = window->width() == 1600
-                            && window->height() == 1400
-                            && !picture.isNull()
-                            && picture.save(screenshotPath, "PNG");
+                        auto* scroll = window->findChild<QObject*>(
+                            QStringLiteral("dspChainUnifiedScroll"));
+                        auto* flick = scroll
+                            ? scroll->property("contentItem").value<QQuickItem*>()
+                            : nullptr;
+                        const double total = flick
+                            ? flick->property("contentHeight").toDouble() : 0.0;
+                        const double viewport = flick ? flick->height() : 0.0;
+                        const double bottom = std::max(0.0, total - viewport);
+                        if (!flick || bottom < 2.0) {
+                            std::fprintf(stderr,
+                                "P2_I2_REAL_QT_CHAIN_SCROLL_NOT_AVAILABLE content=%.1f viewport=%.1f\n",
+                                total, viewport);
+                            application.exit(EXIT_FAILURE);
+                            return;
+                        }
+                        flick->setProperty("contentY", 0.0);
+                        QCoreApplication::processEvents();
+                        auto top = window->grabWindow();
+                        flick->setProperty("contentY", bottom);
+                        QCoreApplication::processEvents();
+                        auto lower = window->grabWindow();
+                        // Composite is mechanically stitched from two
+                        // genuine Qt framebuffer captures, never synthesized.
+                        top.setDevicePixelRatio(1.0);
+                        lower.setDevicePixelRatio(1.0);
+                        const QString prefix = screenshotPath.endsWith(".png")
+                            ? screenshotPath.left(screenshotPath.size() - 4)
+                            : screenshotPath;
+                        QImage sheet(top.width() + lower.width(),
+                            std::max(top.height(), lower.height()),
+                            QImage::Format_ARGB32_Premultiplied);
+                        sheet.fill(Qt::black);
+                        {
+                            QPainter painter(&sheet);
+                            painter.drawImage(0, 0, top);
+                            painter.drawImage(top.width(), 0, lower);
+                        }
+                        const bool saved = window->width() == 1184
+                            && window->height() == 688
+                            && !top.isNull() && !lower.isNull()
+                            && top != lower
+                            && top.save(prefix + "-top.png", "PNG")
+                            && lower.save(prefix + "-bottom.png", "PNG")
+                            && sheet.save(screenshotPath, "PNG");
                         std::fprintf(stderr,
-                            "P2_I2_REAL_QT_COMPLETE_CHAIN_SCREENSHOT=%s w=%d h=%d\n",
-                            saved ? "PASS" : "FAIL",
-                            window->width(), window->height());
+                            "P2_I2_REAL_QT_CHAIN_SCROLL_TOP_BOTTOM=%s total=%.1f viewport=%.1f bottom=%.1f w=%d h=%d\n",
+                            saved ? "PASS" : "FAIL", total, viewport,
+                            bottom, window->width(), window->height());
                         std::fflush(stderr);
                         application.exit(saved ? EXIT_SUCCESS : EXIT_FAILURE);
                     });
