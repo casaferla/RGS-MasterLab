@@ -65,3 +65,18 @@ jobs:
           Write-Host "P2_APP_STARTUP_EXIT=$($process.ExitCode)"
           if ($process.ExitCode -ne 0) { throw "P2_APP_QML_STARTUP_FAILED" }
           Write-Host "P2_QT_PRODUCT_MAIN_STARTUP=PASS"
+      - name: Open real P2 QML editor at minimum 1184x688 (strict opt-in)
+        shell: pwsh
+        run: |
+          $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          $env:PATH="$qt/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qt/qml"
+          $env:QT_PLUGIN_PATH="$qt/plugins"
+          $exe=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/Release/RGSMasterLab.exe"
+          if (-not (Test-Path $exe)) { throw "P2_PRODUCT_EXE_MISSING" }
+          $arguments="--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke"
+          & $exe $arguments.Split(' ')
+          $code=$LASTEXITCODE
+          Write-Host "P2_I2_REAL_GUI_SMOKE_EXIT=$code"
+          if ($code -ne 0) { throw "P2_I2_GUI_1184x688_FAILED" }
+          Write-Host "P2_I2_REAL_GUI_OPTIN_1184x688=PASS"
