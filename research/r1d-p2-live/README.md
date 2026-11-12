@@ -51,3 +51,24 @@ Added `p2_epoch_session.hpp`: transactional off-audio-thread new epoch with mono
 The original I0 test target remains in the CMake project. New `r1d_p2_lifecycle_tests` exercises 6 Fs and mono/stereo across short/long signals and block partitions, active PCM versus direct I0 engine, M16 in-memory TP ceiling, bypass equivalence, invalid PCM, stale token, parameter changes and heap witness. Native Linux strict-FP GCC14 scalar+SSE2 both **1/1 PASS**, Clang17 **1/1 PASS**, and GCC ASan/UBSan **1/1 PASS**. No Windows/device test has run in I1.
 
 See [I1 transport contract](TRANSPORT_CONTRACT_I1.md) and [I1 local test receipt](I1_LOCAL_TEST_RECEIPT_20261112.md). Product checkpoint, callback synchronization, click-free switching, encoded PCM, AutoMatch and portable no-PowerShell Windows GUI remain open. No product merge or M17 changes.
+
+## I1.5 planar RGS host boundary and approved GUI concept (12 Nov 2026)
+
+The new `PlanarHostBridge<Session,Config,EpochCode>` is a research-only,
+header-only adapter translating RGS-style **planar** binary64 PCM to the I1
+epoch session's two-channel frame representation. It validates absolute
+frame order, explicit begin/end of stream, exact output spans, disjointness,
+nonfinite PCM, mono/stereo and bounded callback sizes. No Product registry,
+IModule host, UI registration, M17 change, or Windows test is implied.
+
+New test `r1d_p2_planar_host_bridge_tests` uses an explicitly labeled
+**mock EpochSession**, so it tests host marshalling/transport controls but
+**does not** constitute real P2+IModule end-to-end testing. GCC14, Clang17,
+GCC ASan/UBSan local CTest: 1/1 PASS per build; see
+`LOCAL_TEST_RECEIPT_I1_5_20261112.md`.
+
+PO-approved visible string: **Streaming True Peak Limiter**. Research QML
+glyph `StreamingTruePeakLimiterIconResearch.qml` contains an under-ceiling
+wave in Dynamics Copper; NOT yet integrated into StudioIcon/Product GUI.
+Read `P2_RGS_IMODULE_HOST_BRIDGE_I1_5.md` for actual IModule mapping and STOP
+conditions around latency/drain/host synchronization.

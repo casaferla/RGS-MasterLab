@@ -35,3 +35,17 @@ else()
     -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
 endif()
 add_test(NAME r1d_p2_lifecycle_tests COMMAND r1d_p2_lifecycle_tests)
+
+# I1.5 standalone planar/epoch contract test; mock epoch is explicit.
+# No Product IModule, QML or ModuleRegistry wiring.
+add_executable(r1d_p2_planar_host_bridge_tests tests/test_p2_planar_bridge.cpp)
+target_include_directories(r1d_p2_planar_host_bridge_tests PRIVATE .)
+if(MSVC)
+  target_compile_options(r1d_p2_planar_host_bridge_tests PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_planar_host_bridge_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off
+    -fno-fast-math -frounding-math)
+endif()
+add_test(NAME r1d_p2_planar_host_bridge_tests
+         COMMAND r1d_p2_planar_host_bridge_tests)
