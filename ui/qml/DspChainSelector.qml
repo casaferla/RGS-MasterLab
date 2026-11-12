@@ -53,7 +53,7 @@ Rectangle {
                 + "The current Meter still observes MANUAL PROCESSED audio; "
                 + "Ceiling is not yet applied to what you hear."
         if (state.startsWith("ACTIVE"))
-            return state + " · Limiter output installed. Live True Peak "
+            return state + " · Limiter output installed. Live TP "
                 + "comes from verified post-limiter audio when available."
         if (state.startsWith("BYPASS"))
             return state + " · Meter observes MANUAL PROCESSED audio; "
@@ -398,12 +398,10 @@ Rectangle {
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
-                                elide: rowItem.moduleAdapter
-                                     && rowItem.moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER"
-                                     ? Text.ElideNone : Text.ElideRight
-                                 wrapMode: rowItem.moduleAdapter
-                                     && rowItem.moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER"
-                                     ? Text.WordWrap : Text.NoWrap
+                                // The concise "Streaming TP Limiter" label stays
+                                // on one line at minimum window width.
+                                elide: Text.ElideRight
+                                wrapMode: Text.NoWrap
                             }
 
                             Text {
