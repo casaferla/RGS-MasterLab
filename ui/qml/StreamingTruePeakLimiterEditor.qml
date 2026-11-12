@@ -15,31 +15,8 @@ Item {
         anchors.fill: parent
         anchors.margins: root.compact ? 8 : 14
         spacing: root.compact ? 5 : 12
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-            Text {
-                text: "STREAMING TP LIMITER"
-                color: "#DDE8F4"
-                font.family: "Segoe UI"
-                font.pixelSize: root.compact ? 11 : 13
-                font.weight: Font.Bold
-            }
-            Rectangle { width: 2; height: 16; color: root.copper }
-            Text {
-                text: "MANUAL · RESEARCH PREVIEW"
-                color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 11
-            }
-            Item { Layout.fillWidth: true }
-            StudioButton {
-                objectName: "streamingP2ResetButton"
-                text: "Reset to Default"
-                minimumControlWidth: 130
-                accentColor: root.copper
-                enabled: !!root.limiterModule
-                onClicked: if (root.limiterModule) root.limiterModule.resetToDefault()
-            }
-        }
+        // The DspEditorHost already provides the module title and context.
+        // Reserve vertical space for the two Input Gain-sized DSP controls.
 
         Rectangle {
             objectName: "streamingP2MainPanel"
@@ -211,6 +188,15 @@ Item {
                         color: root.copper
                         font.family: "Consolas"
                         font.pixelSize: 12
+                    }
+                    Item { Layout.fillWidth: true }
+                    StudioButton {
+                        objectName: "streamingP2ResetButton"
+                        text: "Reset to Default"
+                        minimumControlWidth: 130
+                        accentColor: root.copper
+                        enabled: !!root.limiterModule
+                        onClicked: if (root.limiterModule) root.limiterModule.resetToDefault()
                     }
                 }
                 Text {
