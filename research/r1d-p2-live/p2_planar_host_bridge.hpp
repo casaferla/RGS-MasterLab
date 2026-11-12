@@ -51,6 +51,18 @@ public:
         return HostBridgeStatus::ok;
     }
 
+    // IModule first process may start at a nonzero absolute frame.  The P2
+    // controller was already prepared off the callback thread; rebasing the
+    // untouched host cursor never reallocates or rewrites DSP history.
+    [[nodiscard]] bool bind_first_absolute_frame(
+        std::uint64_t token, std::int64_t absolute_start) noexcept {
+        if (!active_ || faulted_ || eos_ || started_ ||
+            token != token_ || absolute_start < 0)
+            return false;
+        next_absolute_frame_ = absolute_start;
+        return true;
+    }
+
     [[nodiscard]] std::size_t latency_frames() const noexcept {
         return active_ ? session_.latency_frames() : 0U;
     }

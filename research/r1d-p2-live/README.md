@@ -92,3 +92,22 @@ This **does not** yet instantiate the real RGS `IModule` /
 callback timing. I1.5's isolated host marshalling is verified; Product
 integration, cross-platform qualification, no-click seams, presets,
 AutoMatch and portable Windows GUI remain separate.
+
+## I1.6 — actual RGS IModule ABI (local Linux gate, 2026-11-12)
+
+`research_p2_imodule.hpp` is an isolated concrete `IModule` subclass, using
+the real repository's `DspProcessSpec`, `AudioBufferView` and
+`DspProcessContext` types. It stages an exact P2 D-frame EOS tail once into
+preallocated memory, then exposes correct caller-sized `finalize()` blocks.
+Nonzero frame origins, bypass, nonfinite-PCM fail-closed, and off-thread reset
+are tested. `runtime_checkpoint` is **explicitly unsupported** until a
+faithful snapshot exists. The only I1.5 bridge change permits allocation-free
+binding of the first absolute frame origin.
+
+The `r1d_p2_real_imodule_tests` CMake target compiles against **unmodified
+real RGS core/audio/dsp source** (not mock ABI). GCC14 scalar/SSE2, Clang17 and
+ASan+UBSan locally pass 1/1 each, 144 combinations. PCM fingerprint matches
+between backends: `7ca1160a8000fca5`. No Windows device or Product
+`ProcessingChain` test, registry entry, preset schema, CI/FQ or merge.
+See `I1_6_REAL_RGS_IMODULE_REPORT_20261112.md` and
+`I1_6_TEST_COMMANDS_20261112.md`.
