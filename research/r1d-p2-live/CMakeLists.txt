@@ -331,3 +331,25 @@ endif()
 add_test(NAME r1d_p2_app_preview_qt_tests COMMAND r1d_p2_app_preview_qt_tests)
 set_tests_properties(r1d_p2_app_preview_qt_tests PROPERTIES
   ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Compile-only guard: the preview-only project SaveAs fail-closed check must
+# stay valid against real ProjectSessionViewModel headers and Qt. This does NOT
+# serialize a P2 project or execute file I/O, and preserves FQ101 source.
+add_library(r1d_p2_project_save_guard_compile OBJECT
+  ${RGS_P2_CHAIN_ROOT}/app/src/project_session_view_model.cpp)
+target_include_directories(r1d_p2_project_save_guard_compile PRIVATE
+  ${RGS_P2_CHAIN_ROOT}/app/src
+  ${RGS_P2_CHAIN_ROOT}/project/include
+  ${RGS_P2_CHAIN_ROOT}/platform/windows/include
+  ${RGS_P2_CHAIN_ROOT}/platform/windows/src
+  ${RGS_P2_CHAIN_ROOT}/analysis/include
+  ${RGS_P2_CHAIN_ROOT}/analysis/src
+  ${RGS_P2_CHAIN_ROOT}/audio/src)
+target_link_libraries(r1d_p2_project_save_guard_compile PRIVATE
+  rgs_p2_research_chain_abi Qt6::Core Qt6::Gui)
+if(MSVC)
+  target_compile_options(r1d_p2_project_save_guard_compile PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_project_save_guard_compile PRIVATE
+    -Wall -Wextra -Wpedantic -ffp-contract=off -fno-fast-math -frounding-math)
+endif()

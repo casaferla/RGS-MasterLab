@@ -101,3 +101,14 @@ Existing non-P2 projects remain untouched and no app/Main startup route or
 Qt/QML panel is enabled by this change. Added an actual Qt unit regression
 including full PCM, source immutability, bypass, signature and historical
 restore rejection. CI #8 is required before declaring this app gate PASS.
+
+## CI #8 Qt runtime test failure (Windows) + SaveAs guard
+The Qt I2 #8 test built on Windows and Linux; Linux CTest 5/5 PASS.
+Windows built all five executables but Qt executable exit code 0xc0000135
+before test code started, because Qt DLLs were not present in Windows CTest
+PATH. Added an explicit Qt runtime DLL path and QT_PLUGIN_PATH to the test
+workflow, no Product/DSP source change. Guarded ProjectSessionViewModel
+canSaveProject and saveProjectAs against a fifth ephemeral P2 instance,
+preventing silent serialisation to the old 3/4-module project schema. Added
+compile-only CMake gate on the real app ProjectSession source. Neither a
+saved project nor a full Windows GUI has been qualified.

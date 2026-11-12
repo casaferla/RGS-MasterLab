@@ -47,6 +47,17 @@ jobs:
           -G "Visual Studio 17 2022" -A x64
           -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
       - name: Build actual registry and P2 ABI tests
-        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests r1d_p2_app_preview_qt_tests
+        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests r1d_p2_app_preview_qt_tests r1d_p2_project_save_guard_compile
+      - name: Expose installed Qt runtime DLLs and plugins (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $qtBin = Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64/bin'
+          $qtPlugins = Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64/plugins'
+          if (-not (Test-Path (Join-Path $qtBin 'Qt6Core.dll'))) {
+            throw 'P2_QT_RUNTIME_NOT_FOUND'
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $qtBin
+          "QT_PLUGIN_PATH=$qtPlugins" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Execute original RGS ProcessingChain and opt-in P2 PCM gates
         run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request|real_render_preview|app_preview_qt)_tests$"
