@@ -72,3 +72,23 @@ glyph `StreamingTruePeakLimiterIconResearch.qml` contains an under-ceiling
 wave in Dynamics Copper; NOT yet integrated into StudioIcon/Product GUI.
 Read `P2_RGS_IMODULE_HOST_BRIDGE_I1_5.md` for actual IModule mapping and STOP
 conditions around latency/drain/host synchronization.
+
+## I1.5B: real P2 epoch against planar bridge — verified on Linux
+
+Research test `tests/test_p2_planar_real.cpp` instantiates the I1.5 planar bridge
+with the **actual** `EpochSession`, `Configuration`, and `EpochStatus`,
+backed by the byte-pinned original P2 code. It compares its full PCM,
+including delayed frames and EOS, bit-for-bit to direct I1 EpochSession for
+six sample rates, mono/stereo, active/bypass, interior/hot synthetic signal
+and blocks 1/7/64/511/512/1024. Hard M16 peak in **in-memory double PCM**
+is checked for active mode. Zero-copy/audio Product is NOT claimed.
+
+Local GCC14 scalar+SSE2, Clang17 and GCC ASan/UBSan: **two focused CTests
+passed in each build**. The scalar and SSE2 research P2 PCM fingerprints
+match: FNV64 `3f935d3414b7e93b`.
+
+This **does not** yet instantiate the real RGS `IModule` /
+`AudioBufferView` / `ModuleRegistry` host and does not qualify Windows
+callback timing. I1.5's isolated host marshalling is verified; Product
+integration, cross-platform qualification, no-click seams, presets,
+AutoMatch and portable Windows GUI remain separate.

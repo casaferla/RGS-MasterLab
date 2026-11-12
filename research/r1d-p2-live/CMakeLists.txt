@@ -49,3 +49,22 @@ else()
 endif()
 add_test(NAME r1d_p2_planar_host_bridge_tests
          COMMAND r1d_p2_planar_host_bridge_tests)
+
+# I1.5 real P2+EpochSession-to-planar bridge test. Nonproduction only.
+add_executable(r1d_p2_planar_real_epoch_tests tests/test_p2_planar_real.cpp)
+target_include_directories(r1d_p2_planar_real_epoch_tests PRIVATE . pinned)
+target_compile_definitions(r1d_p2_planar_real_epoch_tests PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_planar_real_epoch_tests PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_planar_real_epoch_tests PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_planar_real_epoch_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off
+    -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
+endif()
+add_test(NAME r1d_p2_planar_real_epoch_tests
+         COMMAND r1d_p2_planar_real_epoch_tests)
