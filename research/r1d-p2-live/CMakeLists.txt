@@ -19,3 +19,19 @@ else()
 endif()
 enable_testing()
 add_test(NAME r1d_p2_callback_tests COMMAND r1d_p2_callback_tests)
+
+# I1 epoch/transport research target. The original I0 test is unchanged.
+add_executable(r1d_p2_lifecycle_tests tests/test_p2_lifecycle.cpp)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_lifecycle_tests PRIVATE RESEARCH_P2_PHASE_SSE)
+endif()
+target_include_directories(r1d_p2_lifecycle_tests PRIVATE . pinned)
+target_compile_definitions(r1d_p2_lifecycle_tests PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(MSVC)
+  target_compile_options(r1d_p2_lifecycle_tests PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_lifecycle_tests PRIVATE -O2 -Wall -Wextra -Wpedantic
+    -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
+endif()
+add_test(NAME r1d_p2_lifecycle_tests COMMAND r1d_p2_lifecycle_tests)

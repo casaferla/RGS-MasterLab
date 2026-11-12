@@ -43,3 +43,11 @@ This builds only a **research test executable**, not a standalone application fo
 The tested PCM is in-memory `double`, not the *encoded* final exported PCM. I0 is not I1 whole suite, no device deadline/ETW certification, not an IModule/Product module, no AutoMatch end-to-end 27-feature L3 or Q0/Fresh Verify, and no new Windows GUI runner. Do not change product, CI/FQ or frozen contracts on the strength of this receipt.
 
 Authority: [Google Drive I0 mandate](https://docs.google.com/document/d/1XBlRR0XwKM7suZjc7rnXwZFJMclpvhg4tfc3yYJo3Vg/edit).
+
+## I1: transport epoch/session research (12 November 2026)
+
+Added `p2_epoch_session.hpp`: transactional off-audio-thread new epoch with monotonically increasing token; stale callback silencing; cancel/seek/loop/reconfigure reset; bypass bit-exact identity at the **same delay** as P2 (no limiter ceiling guarantee while bypassed); explicit EOS tail. No allocations, Qt, filesystem, or mutex in per-block processing. The host must first quiesce callbacks before new epoch/cancel and must handle mute/crossfade on discontinuities. This is not a gapless handoff or production IModule.
+
+The original I0 test target remains in the CMake project. New `r1d_p2_lifecycle_tests` exercises 6 Fs and mono/stereo across short/long signals and block partitions, active PCM versus direct I0 engine, M16 in-memory TP ceiling, bypass equivalence, invalid PCM, stale token, parameter changes and heap witness. Native Linux strict-FP GCC14 scalar+SSE2 both **1/1 PASS**, Clang17 **1/1 PASS**, and GCC ASan/UBSan **1/1 PASS**. No Windows/device test has run in I1.
+
+See [I1 transport contract](TRANSPORT_CONTRACT_I1.md) and [I1 local test receipt](I1_LOCAL_TEST_RECEIPT_20261112.md). Product checkpoint, callback synchronization, click-free switching, encoded PCM, AutoMatch and portable no-PowerShell Windows GUI remain open. No product merge or M17 changes.
