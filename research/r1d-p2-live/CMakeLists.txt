@@ -296,3 +296,38 @@ else()
     -ffp-contract=off -fno-fast-math -frounding-math)
 endif()
 add_test(NAME r1d_p2_real_render_preview_tests COMMAND r1d_p2_real_render_preview_tests)
+
+# I2.8: real app Qt MasteringChainState + MasteringPreviewController
+# with an ephemeral fifth P2 instance, without changing project persistence.
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Test)
+add_executable(r1d_p2_app_preview_qt_tests
+  ${RGS_P2_CHAIN_ROOT}/tests/unit/app/test_mastering_preview_controller.cpp
+  ${RGS_P2_CHAIN_ROOT}/app/src/mastering_chain_state.cpp
+  ${RGS_P2_CHAIN_ROOT}/app/src/mastering_preview_controller.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_request.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_preview.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_result.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/compressor_telemetry_collector.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/stereo_ms_execution_signature.cpp)
+set_target_properties(r1d_p2_app_preview_qt_tests PROPERTIES AUTOMOC ON)
+target_include_directories(r1d_p2_app_preview_qt_tests PRIVATE
+  ${RGS_P2_CHAIN_ROOT}/app/src ${RGS_P2_CHAIN_ROOT}/render/include ${RGS_P2_CHAIN_ROOT}/analysis/include
+  . pinned)
+target_link_libraries(r1d_p2_app_preview_qt_tests PRIVATE
+  rgs_p2_research_chain_abi Qt6::Core Qt6::Gui Qt6::Test)
+target_compile_definitions(r1d_p2_app_preview_qt_tests PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_app_preview_qt_tests PRIVATE RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_app_preview_qt_tests PRIVATE /W4 /fp:strict)
+else()
+  # The original compressor std::optional path emits a GCC 13 maybe-
+  # uninitialized warning with LTO-like inlining; Product code is unchanged.
+  target_compile_options(r1d_p2_app_preview_qt_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -ffp-contract=off -fno-fast-math -frounding-math)
+endif()
+add_test(NAME r1d_p2_app_preview_qt_tests COMMAND r1d_p2_app_preview_qt_tests)
+set_tests_properties(r1d_p2_app_preview_qt_tests PROPERTIES
+  ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

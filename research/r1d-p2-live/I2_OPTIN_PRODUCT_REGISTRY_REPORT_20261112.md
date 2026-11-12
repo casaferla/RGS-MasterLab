@@ -90,3 +90,14 @@ logic inside original render_preview.cpp. The original renderer is unchanged.
 The isolated test target now downgrades ONLY GCC -Wmaybe-uninitialized,
 retaining its warning, strict FP, and all other -Werror checks. Windows
 outcome and actual test verdict still require independent verification.
+## I2.8 app state/worker preview admission, nonrelease
+An opt-in-only fifth MASTER/MANUAL P2 state is constructed explicitly after
+the existing product-default chain, with a distinct typed parameter binding.
+Historical project restore still rejects five nodes: no silent serialization.
+The MasteringPreviewController job now captures the same immutable registry
+snapshot as its ProcessingChain, and the background renderer uses that
+captured registry instead of blindly using the default v1 registry.
+Existing non-P2 projects remain untouched and no app/Main startup route or
+Qt/QML panel is enabled by this change. Added an actual Qt unit regression
+including full PCM, source immutability, bypass, signature and historical
+restore rejection. CI #8 is required before declaring this app gate PASS.

@@ -18,6 +18,20 @@ jobs:
         os: [ubuntu-24.04, windows-2022]
     steps:
       - uses: actions/checkout@v4
+      - name: Install Qt6 base and test modules (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools
+      - name: Install Qt 6.8.3 Core and Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          if ($LASTEXITCODE -ne 0) { throw 'P2_QT_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64
+          if ($LASTEXITCODE -ne 0) { throw 'P2_QT_WINDOWS_INSTALL_FAILED' }
       - name: Configure (Linux strict FP)
         if: runner.os == 'Linux'
         shell: bash
@@ -31,7 +45,8 @@ jobs:
         run: >
           cmake -S research/r1d-p2-live -B build-p2-i2
           -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
       - name: Build actual registry and P2 ABI tests
-        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests
+        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests r1d_p2_app_preview_qt_tests
       - name: Execute original RGS ProcessingChain and opt-in P2 PCM gates
-        run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request|real_render_preview)_tests$"
+        run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request|real_render_preview|app_preview_qt)_tests$"
