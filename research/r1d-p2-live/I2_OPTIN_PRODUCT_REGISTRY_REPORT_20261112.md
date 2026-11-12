@@ -112,3 +112,10 @@ canSaveProject and saveProjectAs against a fifth ephemeral P2 instance,
 preventing silent serialisation to the old 3/4-module project schema. Added
 compile-only CMake gate on the real app ProjectSession source. Neither a
 saved project nor a full Windows GUI has been qualified.
+
+## CI I2 #9 — Product SaveAs compile-only fixture include
+Linux compile-only project_session_view_model.cpp failed on missing
+rgsml/render/render_result.hpp because the minimal standalone test target
+lacked the original render/include directory. This is a fixture include
+path omission; no Product source changes. Added that include to the test
+only. Windows/Qt runtime test verdict must be checked separately.

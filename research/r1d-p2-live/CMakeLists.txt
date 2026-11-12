@@ -339,6 +339,7 @@ add_library(r1d_p2_project_save_guard_compile OBJECT
   ${RGS_P2_CHAIN_ROOT}/app/src/project_session_view_model.cpp)
 target_include_directories(r1d_p2_project_save_guard_compile PRIVATE
   ${RGS_P2_CHAIN_ROOT}/app/src
+  ${RGS_P2_CHAIN_ROOT}/render/include
   ${RGS_P2_CHAIN_ROOT}/project/include
   ${RGS_P2_CHAIN_ROOT}/platform/windows/include
   ${RGS_P2_CHAIN_ROOT}/platform/windows/src
