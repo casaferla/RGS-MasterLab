@@ -171,6 +171,7 @@ Rectangle {
         && (root.activeModule.editorContentKey === "STEREO_MS"
             || root.activeModule.editorContentKey === "TRUE_PEAK_METER"
             || root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER"
+            || root.activeModule.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER"
             || root.activeModule.editorContentKey === "MASTER_MONITOR"
             || root.activeModule.editorContentKey === "M19_ANALYSIS"
             || root.activeModule.editorContentKey === "M20_ANALYSIS"
@@ -767,6 +768,18 @@ Rectangle {
             // The product MASTER rate has ONE authority across both editors.
             // Master Audition does not invent a second independent 48-kHz default.
             masterRateState: root.masterRateState
+        }
+
+        StreamingTruePeakLimiterEditor {
+            id: streamingTruePeakLimiterEditor
+            objectName: "streamingTruePeakLimiterEditor"
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            limiterModule: visible ? root.activeModule : null
         }
 
         StereoMsEditor {

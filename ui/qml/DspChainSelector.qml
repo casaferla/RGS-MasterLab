@@ -73,6 +73,7 @@ Rectangle {
         case "STEREO_MS": return "module-stereo"
         case "TRUE_PEAK_METER": return "module-peak-meter"
         case "TRUE_PEAK_LIMITER": return "module-limiter"
+        case "STREAMING_TRUE_PEAK_LIMITER": return "module-streaming-true-peak-limiter"
         case "M19_ANALYSIS": return "analysis-levels"
         case "M20_ANALYSIS": return "analysis-spectrum"
         case "M21_ANALYSIS": return "analysis-delta"
@@ -88,7 +89,8 @@ Rectangle {
         // title colors stay unchanged; only their pictograms use family hues.
         if(moduleAdapter.editorContentKey === "TRUE_PEAK_METER")
             return "#6683A1"  // ANALYSIS / METERING
-        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER")
+        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER"
+            || moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER")
             return "#C4774A"  // DYNAMICS
         if(moduleAdapter.editorContentKey === "MASTER_MONITOR")
             return "#718092"  // WORKFLOW / UTILITY
@@ -396,7 +398,12 @@ Rectangle {
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
-                                elide: Text.ElideRight
+                                elide: rowItem.moduleAdapter
+                                     && rowItem.moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER"
+                                     ? Text.ElideNone : Text.ElideRight
+                                 wrapMode: rowItem.moduleAdapter
+                                     && rowItem.moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER"
+                                     ? Text.WordWrap : Text.NoWrap
                             }
 
                             Text {
