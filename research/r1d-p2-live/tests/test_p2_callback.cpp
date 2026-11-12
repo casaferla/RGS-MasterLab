@@ -14,13 +14,22 @@
 // Test-only allocation witness; the production callback bridge itself has
 // no allocation hooks or instrumentation.
 static std::atomic<std::uint64_t> g_allocations{0};
-void* operator new(std::size_t n) {
+#if defined(_MSC_VER)
+#define R1D_NOINLINE __declspec(noinline)
+#else
+#define R1D_NOINLINE __attribute__((noinline))
+#endif
+static R1D_NOINLINE void* counted_alloc(std::size_t n) {
     g_allocations.fetch_add(1,std::memory_order_relaxed);
-    if (void* p=std::malloc(n ? n:1))return p;
+    return std::malloc(n ? n:1);
+}
+static R1D_NOINLINE void counted_free(void* p) { std::free(p); }
+void* operator new(std::size_t n) {
+    if (void* p=counted_alloc(n))return p;
     throw std::bad_alloc();
 }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete(void* p,std::size_t) noexcept { std::free(p); }
+void operator delete(void* p) noexcept { counted_free(p); }
+void operator delete(void* p,std::size_t) noexcept { counted_free(p); }
 
 using namespace rgsml::research::r1d_p2;
 using Frame = rgsml::research::r1d_p2::Frame;
