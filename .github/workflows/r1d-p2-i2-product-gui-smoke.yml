@@ -78,6 +78,7 @@ jobs:
           # when invoked directly in pwsh; $LASTEXITCODE is then unset.
           # Wait for the actual Qt process and read its authoritative exit code.
           $arguments="--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke"
+          $env:RGSML_P2_I2_SCREENSHOT_PATH=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/p2-i2-complete-dsp-chain.png'
           $stdOut=Join-Path $env:RUNNER_TEMP "p2-i2-gui-stdout.txt"
           $stdErr=Join-Path $env:RUNNER_TEMP "p2-i2-gui-stderr.txt"
           $process=Start-Process -FilePath $exe -ArgumentList $arguments `
@@ -88,6 +89,21 @@ jobs:
           Write-Host "P2_I2_REAL_GUI_SMOKE_EXIT=$code"
           if ($code -ne 0) { throw "P2_I2_GUI_1184x688_FAILED" }
           Write-Host "P2_I2_REAL_GUI_OPTIN_1184x688=PASS"
+          if (-not (Test-Path -LiteralPath $env:RGSML_P2_I2_SCREENSHOT_PATH)) {
+            throw "P2_I2_REAL_GUI_SCREENSHOT_MISSING"
+          }
+          if ((Get-Item -LiteralPath $env:RGSML_P2_I2_SCREENSHOT_PATH).Length -lt 10240) {
+            throw "P2_I2_REAL_GUI_SCREENSHOT_EMPTY"
+          }
+          Write-Host "P2_I2_REAL_GUI_SCREENSHOT_SAVED=PASS"
+
+      - name: Publish real Qt full DSP chain screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-P2-I2-REAL-QT-FULL-CHAIN-${{ github.run_number }}
+          path: build-p2-product/p2-i2-complete-dsp-chain.png
+          if-no-files-found: error
+          retention-days: 14
 
       # Physical playback is a separate PO-run gate. CI publishes an
       # isolated nonrelease bundle only after the actual Product smoke passes.
@@ -171,6 +187,14 @@ jobs:
           start "" "%~dp0bin\RGSMasterLab.exe" --rgsml-p2-i2-preview
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Start_P2_I2_Research.cmd') -Value $launcher -Encoding ascii
+
+      - name: Include validated real Qt GUI screenshot in physical-test package
+        shell: pwsh
+        run: |
+          $src=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/p2-i2-complete-dsp-chain.png'
+          $dst=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2/P2_I2_Real_Qt_GUI_Dsp_Chain.png'
+          Copy-Item -LiteralPath $src -Destination $dst -Force
+          if (-not (Test-Path -LiteralPath $dst)) { throw "P2_I2_BUNDLE_SCREENSHOT_MISSING" }
 
       - name: Publish nonrelease Windows physical test bundle
         uses: actions/upload-artifact@v4
