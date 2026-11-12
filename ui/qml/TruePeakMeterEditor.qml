@@ -89,11 +89,11 @@ Item {
     // output M16 observer admits VERIFIED-only private ownership. Refuse
     // fake pre-limiter LIVE readings and label the unavailable scope.
     readonly property string liveScopeHeading: !root.showLimiterControls
-        ? "LIVE PROCESSED TRUE PEAK"
+        ? "LIVE PROCESSED TP"
         : root.nonconformingAudition
             ? "POST-LIMITER LIVE TP · NOT CERTIFIED"
-        : root.postLimiterInstalled ? "LIVE POST-LIMITER TRUE PEAK"
-        : "LIVE PRE-LIMITER TRUE PEAK"
+        : root.postLimiterInstalled ? "LIVE POST-LIMITER TP"
+        : "LIVE PRE-LIMITER TP"
 
     // Canonical minimum window is a fully visible editor, never a scroller.
     // The Qt layout itself distributes the available pixel height.
