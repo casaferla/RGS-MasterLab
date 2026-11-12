@@ -100,7 +100,8 @@ void MasteringPreviewController::request_preview()
         previewGeneration_,
         std::move(preparedSnapshot),
         chainState_->chain(),
-        chainState_->execution_bindings()
+        chainState_->execution_bindings(),
+        chainState_->registry_snapshot()
     };
 
     {
@@ -145,7 +146,9 @@ void MasteringPreviewController::worker_loop()
                 *core::FrameCount::create(4096).value());
 
             if (req_res) {
-                renderResult = render::render_preview(*req_res.value(), registry_);
+                // Never render an opt-in P2 chain against the default registry.
+                const auto& jobRegistry = job.registry ? *job.registry : registry_;
+                renderResult = render::render_preview(*req_res.value(), jobRegistry);
             } else {
                 renderResult = core::Result<render::RenderResult>::failure(*req_res.error());
             }

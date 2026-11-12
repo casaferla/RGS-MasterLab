@@ -37,6 +37,9 @@ public:
         std::shared_ptr<const render::RenderResult> preparedSnapshot;
         dsp::ProcessingChain chain;
         std::vector<dsp::ModuleExecutionBinding> bindings;
+        // Immutable registry snapshot corresponding to this exact chain.
+        // Keeps the P2 opt-in factory alive through the worker lifetime.
+        std::shared_ptr<const dsp::ModuleRegistry> registry;
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob& job)>;
