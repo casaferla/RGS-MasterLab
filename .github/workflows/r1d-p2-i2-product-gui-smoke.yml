@@ -126,6 +126,15 @@ jobs:
           python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$fir"
           if ($LASTEXITCODE -ne 0) { throw "P2_I2_DEPLOY_FIR_PIN_FAILURE" }
           Write-Host "P2_I2_STANDALONE_16_FIR_INSTALL=PASS"
+          # Explicit research-bundle opt-in lives next to the deployed EXE.
+          # Direct double-click now enables P2; ordinary Product binaries do
+          # not contain this marker and remain P2-free.
+          $marker=Join-Path $stage 'bin/P2_I2_RESEARCH_ONLY.enabled'
+          Set-Content -LiteralPath $marker -Value 'RGSML_R1D_P2_I2_STANDALONE_RESEARCH_ONLY' -Encoding ascii -NoNewline
+          if ((Get-Content -LiteralPath $marker -Raw) -ne 'RGSML_R1D_P2_I2_STANDALONE_RESEARCH_ONLY') {
+            throw "P2_I2_RESEARCH_OPTIN_MARKER_INVALID"
+          }
+          Write-Host "P2_I2_DIRECT_EXE_RESEARCH_OPT_IN=INSTALLED"
 
       - name: Cold-smoke deployed Product without developer Qt PATH
         shell: pwsh
@@ -138,10 +147,14 @@ jobs:
           # The standalone stage must resolve its own Qt, plugins and FIRs.
           $env:QML2_IMPORT_PATH=''
           $env:QT_PLUGIN_PATH=''
-          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          # Deliberately OMIT --rgsml-p2-i2-preview. This verifies that
+          # the shipped research ZIP enables the real fifth P2 module simply
+          # by starting its EXE, exactly as a Windows user would do.
+          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke --rgsml-p2-i2-gui-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
           if (Test-Path $out) { Get-Content $out -Tail 40 }
           if (Test-Path $err) { Get-Content $err -Tail 60 }
-          if ($p.ExitCode -ne 0) { throw "P2_I2_COLD_DEPLOY_SMOKE_FAILED: $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0) { throw "P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_MISSING: $($p.ExitCode)" }
+          Write-Host 'P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_WITHOUT_FLAG=PASS'
           Write-Host 'P2_I2_COLD_DEPLOY_GUI_M19_M20_M21=PASS'
 
       - name: Add research-only physical test instructions
@@ -155,15 +168,18 @@ jobs:
           No product merge, FQ, persistence authorization or AutoMatch.
           M17 remains the separate final True Peak protection limiter.
 
-          HOW TO RUN
+          HOW TO RUN (bundle #15 onwards)
           Extract the entire GitHub Actions artifact into a new folder.
-          Launch Start_P2_I2_Research.cmd from that folder.
-          The batch file adds --rgsml-p2-i2-preview (strict experimental opt-in).
-          Do not move bin/RGSMasterLab.exe out of the deployed folder tree.
+          Double-click bin/RGSMasterLab.exe: the isolated research bundle
+          enables P2 automatically, even without any command-line flag.
+          Start_P2_I2_Research.cmd remains a supported alternative.
+          P2 appears in the DSP CHAIN after Stereo/M-S (not in View).
+          Do not move the EXE away from its research-only marker,
+          Qt plugins and FIR resources. Never copy this marker to a release.
 
           MANUAL TEST CHECKLIST (run only on real Windows 10/11 x64 hardware)
           [ ] Load a suitable source WAV.
-          [ ] The manual Streaming True Peak P2 panel is selectable after
+          [ ] The manual Streaming TP Limiter P2 panel is selectable after
               Stereo M/S and before the M16 analyzer.
           [ ] M19, M20, M21 remain selectable and visible at 1184x688.
           [ ] Alter Ceiling and Drive; run PREVIEW, and note any error.
