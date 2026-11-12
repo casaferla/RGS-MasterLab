@@ -101,6 +101,16 @@ int main(int argc, char* argv[])
     application.setWindowIcon(QIcon(QStringLiteral(
         ":/rgsml/resources/RGS_MasterLab_optimized.ico")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
+    // Strict research-only startup switch. No default Product activation,
+    // project persistence, M17 changes, AutoMatch, or release entitlement.
+    const bool p2PreviewOptIn = application.arguments().contains(
+        QStringLiteral("--rgsml-p2-i2-preview"));
+    const bool p2GuiSmoke = application.arguments().contains(
+        QStringLiteral("--rgsml-p2-i2-gui-smoke"));
+    if (p2GuiSmoke && !p2PreviewOptIn) {
+        std::fprintf(stderr, "P2_I2_GUI_SMOKE_REQUIRES_OPT_IN\n");
+        return EXIT_FAILURE;
+    }
     // Opt-in CI-only REAL product Main Qt screenshot; never a user render path.
     const bool m17MainEvidence = application.arguments().contains(
         QStringLiteral("--rgsml-m17-ui-evidence"));
@@ -193,6 +203,20 @@ int main(int argc, char* argv[])
             : std::nullopt;
     });
     auto moduleRegistry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    if (!moduleRegistry) {
+        std::fprintf(stderr, "DSP registry bootstrap refused: %s\n",
+                     moduleRegistry.error()->message().c_str());
+        return EXIT_FAILURE;
+    }
+    if (p2PreviewOptIn) {
+        moduleRegistry = rgsml::dsp::ModuleRegistry::with_streaming_true_peak_preview(
+            std::move(*moduleRegistry.value()));
+        if (!moduleRegistry) {
+            std::fprintf(stderr, "Research P2 registry opt-in refused: %s\n",
+                         moduleRegistry.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+    }
     const auto chainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
@@ -200,17 +224,47 @@ int main(int argc, char* argv[])
     const auto stereoMsUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto terminalLimiterUuid = *rgsml::core::Uuid::parse(
         QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto p2Uuid = *rgsml::core::Uuid::parse(
+        QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
     const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(compUuid).value();
     const auto stereoMsInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(stereoMsUuid).value();
     const auto terminalLimiterInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
         terminalLimiterUuid).value();
+    const auto p2InstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
+        p2Uuid).value();
     // Product startup: four real DSP nodes, milestone order, M15 safely
     // bypassed. Historic saved three-node projects restore unchanged.
     auto masteringChainStateRes = rgsml::app::MasteringChainState::create_product_default(
         *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId,
         compInstanceId, stereoMsInstanceId);
+    if (!masteringChainStateRes) {
+        std::fprintf(stderr, "Manual chain bootstrap refused: %s\n",
+                     masteringChainStateRes.error()->message().c_str());
+        return EXIT_FAILURE;
+    }
+    // Install the fifth real MANUAL module before the M18 single-writer
+    // admission is installed, never as an artificial presentation row.
+    // The immutable registry snapshot and typed bindings travel into each
+    // MasteringPreviewController job and the actual PCM renderer.
+    if (p2PreviewOptIn) {
+        auto parameters = rgsml::dsp::StreamingTruePeakLimiterParameters::create_default();
+        if (!parameters) {
+            std::fprintf(stderr, "Research P2 defaults refused: %s\n",
+                         parameters.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+        masteringChainStateRes =
+            rgsml::app::MasteringChainState::with_streaming_true_peak_preview(
+                std::move(*masteringChainStateRes.value()), p2InstanceId,
+                *parameters.value(), false);
+        if (!masteringChainStateRes) {
+            std::fprintf(stderr, "Research P2 MANUAL chain refused: %s\n",
+                         masteringChainStateRes.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+    }
     auto masteringChainState = std::move(*masteringChainStateRes.value());
     // M17 has its own real MASTER/TERMINAL DSP segment, distinct from
     // manual Gain/EQ/Compressor/Stereo-M/S and the M16 analysis-only meter.
@@ -1173,8 +1227,42 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 
-    if (deploySmoke && !engine.rootObjects().isEmpty()) {
+    if (deploySmoke && !p2GuiSmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
+    }
+    // Product Qt smoke of the actual research-only fifth DSP and its QML
+    // editor at 1184x688. This is NOT a physical Windows playback test.
+    if (p2GuiSmoke) {
+        if (engine.rootObjects().isEmpty()
+            || masteringChainState.module_count() != 5U
+            || !masteringChainState.streaming_p2_preview_instance_id()
+            || dspChainAdapterModel.modules().size() < 6) {
+            std::fprintf(stderr, "P2_I2_GUI_SMOKE_BOOTSTRAP_MISSING\n");
+            return EXIT_FAILURE;
+        }
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if (!window) return EXIT_FAILURE;
+        window->setWidth(1184);
+        window->setHeight(688);
+        dspChainAdapterModel.setSelectedIndex(4); // genuine MANUAL P2 instance
+        window->show();
+        QTimer::singleShot(200, &application,
+            [window, &application, &dspChainAdapterModel] {
+                const auto* panel = window->findChild<QObject*>(
+                    QStringLiteral("streamingTruePeakLimiterEditor"));
+                const auto* selected = dspChainAdapterModel.selected_module();
+                const bool valid = window->width() == 1184
+                    && window->height() == 688
+                    && selected
+                    && selected->type_id()
+                        == QStringLiteral("rgsml.dsp.streaming-true-peak-limiter")
+                    && panel && panel->property("visible").toBool()
+                    && !selected->state_text().startsWith(QStringLiteral("ACTIVE"));
+                std::fprintf(stdout, "P2_I2_REAL_QT_GUI_BOOTSTRAP=%s\n",
+                             valid ? "PASS" : "FAIL");
+                std::fflush(stdout);
+                application.exit(valid ? EXIT_SUCCESS : EXIT_FAILURE);
+            });
     }
     if (m17MainEvidence && !engine.rootObjects().isEmpty()) {
         auto* mainWindow=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
