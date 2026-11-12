@@ -15,12 +15,14 @@ DspChainAdapterModel::DspChainAdapterModel(
     bool includeTruePeakAnalysis,
     TerminalLimiterState* terminalLimiterState,
     TerminalLimiterViewModel* terminalLimiterViewModel,
-    QObject* terminalMonitorViewModel)
+    QObject* terminalMonitorViewModel,
+    MasteringPreviewController* p2PreviewController)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
     , compressorViewModel_(compressorViewModel)
     , stereoMsViewModel_(stereoMsViewModel)
+    , p2PreviewController_(p2PreviewController)
     , includeTruePeakAnalysis_(includeTruePeakAnalysis)
     , terminalLimiterState_(terminalLimiterState)
     , terminalLimiterViewModel_(terminalLimiterViewModel)
@@ -56,6 +58,13 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                     stereoMsViewModel_, chainState_, workflowContext_);
                 connect(adapter.get(), &DspModuleAdapter::changed,
                         this, &DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(adapter));
+            } else if (typeId=="rgsml.dsp.streaming-true-peak-limiter") {
+                // Real fifth MANUAL instance only; no presentation-only fake.
+                auto adapter=std::make_unique<StreamingTruePeakPreviewModuleAdapter>(
+                    chainState_,p2PreviewController_,workflowContext_);
+                connect(adapter.get(),&DspModuleAdapter::changed,
+                        this,&DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(adapter));
             }
         }

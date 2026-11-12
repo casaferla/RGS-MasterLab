@@ -762,7 +762,7 @@ int main(int argc, char* argv[])
         &masteringChainState, QStringLiteral("Mastering"),
         nullptr, &stereoMsViewModel, true,
         &terminalLimiterState, &terminalLimiterViewModel,
-        &terminalMonitorViewModel};
+        &terminalMonitorViewModel, &previewController};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};

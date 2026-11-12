@@ -4,6 +4,7 @@
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -258,6 +259,140 @@ private:
     QString context_;
 };
 
+
+
+class StreamingTruePeakPreviewModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+    Q_PROPERTY(double ceilingDbTp READ ceiling_db_tp WRITE setCeilingDbTp NOTIFY changed)
+    Q_PROPERTY(double driveDb READ drive_db WRITE setDriveDb NOTIFY changed)
+    Q_PROPERTY(int marginPercent READ margin_percent WRITE setMarginPercent NOTIFY changed)
+public:
+    StreamingTruePeakPreviewModuleAdapter(
+        MasteringChainState* state, MasteringPreviewController* preview,
+        QString context, QObject* parent=nullptr)
+        : DspModuleAdapter(parent), state_(state), preview_(preview),
+          context_(std::move(context)) {
+        if(preview_)connect(preview_, &MasteringPreviewController::changed,
+                            this, &DspModuleAdapter::changed);
+    }
+    [[nodiscard]] QString instance_id() const override {
+        return state_ && state_->streaming_p2_preview_instance_id()
+            ? QString::fromStdString(
+                state_->streaming_p2_preview_instance_id()->to_string()) : QString{};
+    }
+    [[nodiscard]] QString type_id() const override {
+        return QStringLiteral("rgsml.dsp.streaming-true-peak-limiter");
+    }
+    [[nodiscard]] QString display_name() const override {
+        return QStringLiteral("Streaming True Peak Limiter");
+    }
+    [[nodiscard]] QString workspace_context_label() const override {return context_;}
+    [[nodiscard]] QString configuration_state() const override {
+        if(!params())return QStringLiteral("Default");
+        const auto defaultParams=dsp::StreamingTruePeakLimiterParameters::create_default();
+        return defaultParams && *defaultParams.value()==*params()
+            ?QStringLiteral("Default"):QStringLiteral("Manual");
+    }
+    [[nodiscard]] bool bypass_supported() const noexcept override {return true;}
+    [[nodiscard]] bool bypass() const noexcept override {
+        if(!state_ || !state_->streaming_p2_preview_instance_id()) return true;
+        const auto state=state_->is_bypassed(*state_->streaming_p2_preview_instance_id());
+        return !state || *state.value();
+    }
+    [[nodiscard]] bool preview_supported() const noexcept override {return preview_!=nullptr;}
+    [[nodiscard]] QString preview_status() const override {
+        return preview_ ? preview_->preview_status():QStringLiteral("IDLE");
+    }
+    [[nodiscard]] QString preview_error() const override {
+        return !localError_.isEmpty() ? localError_
+            :(preview_?preview_->preview_error():QString{});
+    }
+    [[nodiscard]] bool history_supported() const noexcept override {return false;}
+    [[nodiscard]] bool can_undo() const noexcept override {return false;}
+    [[nodiscard]] bool can_redo() const noexcept override {return false;}
+    [[nodiscard]] bool reset_supported() const noexcept override {return true;}
+    [[nodiscard]] QString editor_content_key() const override {
+        return QStringLiteral("STREAMING_TRUE_PEAK_LIMITER");
+    }
+    [[nodiscard]] QString live_change_policy() const override {
+        return QStringLiteral("RESEARCH_PREPARED_PCM_REBUILD_NO_WASAPI_CERTIFICATION");
+    }
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] QString family_accent() const override {return QStringLiteral("#C4774A");}
+    [[nodiscard]] QString state_text() const override {
+        if(!state_ || !state_->streaming_p2_preview_instance_id())
+            return QStringLiteral("Not installed");
+        if(bypass()) return QStringLiteral("Bypass · Preview");
+        if(!localError_.isEmpty() || preview_status()==QStringLiteral("ERROR"))
+            return QStringLiteral("Error · No new audio");
+        if(preview_status()==QStringLiteral("READY"))
+            return QStringLiteral("ACTIVE · PREVIEW ONLY");
+        if(preview_status()==QStringLiteral("RENDERING"))
+            return QStringLiteral("Preparing audio");
+        return QStringLiteral("ON · Awaiting audio");
+    }
+    [[nodiscard]] bool has_error() const noexcept override {
+        return !localError_.isEmpty()
+            || (preview_ && preview_->preview_status()==QStringLiteral("ERROR"));
+    }
+    [[nodiscard]] double ceiling_db_tp() const noexcept {
+        return params()?params()->ceiling_db_tp():-1.0;
+    }
+    [[nodiscard]] double drive_db() const noexcept {
+        return params()?params()->drive_db():0.0;
+    }
+    [[nodiscard]] int margin_percent() const noexcept {
+        return params()?params()->margin_percent():2;
+    }
+    Q_INVOKABLE void setCeilingDbTp(double value) {
+        commit(value,drive_db(),margin_percent());
+    }
+    Q_INVOKABLE void setDriveDb(double value) {
+        commit(ceiling_db_tp(),value,margin_percent());
+    }
+    Q_INVOKABLE void setMarginPercent(int value) {
+        commit(ceiling_db_tp(),drive_db(),value);
+    }
+    void setBypass(bool value) override {
+        if(!state_||!state_->streaming_p2_preview_instance_id())return;
+        auto status=state_->set_user_bypass(
+            *state_->streaming_p2_preview_instance_id(),value);
+        if(!status) localError_=QString::fromStdString(status.error()->message());
+        else {
+            localError_.clear();
+            if(preview_)preview_->request_preview();
+        }
+        emit changed();
+    }
+    void undo() override {}
+    void redo() override {}
+    void resetToDefault() override {commit(-1.0,0.0,2);}
+private:
+    [[nodiscard]] const dsp::StreamingTruePeakLimiterParameters* params() const noexcept {
+        return state_&&state_->streaming_p2_preview_parameters()
+            ?&*state_->streaming_p2_preview_parameters():nullptr;
+    }
+    void commit(double ceiling,double drive,int margin) {
+        if(!state_)return;
+        auto p=dsp::StreamingTruePeakLimiterParameters::create(ceiling,drive,margin);
+        if(!p) localError_=QString::fromStdString(p.error()->message());
+        else {
+            auto status=state_->set_streaming_p2_preview_parameters(*p.value());
+            if(!status) localError_=QString::fromStdString(status.error()->message());
+            else {
+                localError_.clear();
+                if(preview_)preview_->request_preview();
+            }
+        }
+        emit changed();
+    }
+    MasteringChainState* state_{nullptr};
+    MasteringPreviewController* preview_{nullptr};
+    QString context_;
+    QString localError_;
+};
 
 // Genuine product M17 terminal INSTANCE. Presentation is BYP/read-only
 // until a verified output-rate realization becomes the processed source.
