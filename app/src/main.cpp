@@ -168,6 +168,8 @@ int main(int argc, char* argv[])
     rgsml::app::PrepareMemoryAdviceViewModel prepareRateAdvisor{
         &sourceSelection, windowsPlayback};
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    if (p2PreviewOptIn)
+        auditionSelector.set_research_p2_seamless_target_switch(true);
     rgsml::app::TruePeakStaticCoordinator staticTruePeak;
     // C2D7: audio device callback untouched; only independently bound
     // PROCESSED sink-consumed samples reach the off-thread M16 FIR worker.
