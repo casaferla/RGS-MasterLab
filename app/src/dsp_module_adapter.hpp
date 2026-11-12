@@ -327,8 +327,11 @@ public:
         if(bypass()) return QStringLiteral("Bypass · Preview");
         if(!localError_.isEmpty() || preview_status()==QStringLiteral("ERROR"))
             return QStringLiteral("Error · No new audio");
+        // READY proves an immutable P2 render was published, not that
+        // the transport is currently playing its realization. Never claim
+        // ACTIVE based on a renderer status alone.
         if(preview_status()==QStringLiteral("READY"))
-            return QStringLiteral("ACTIVE · PREVIEW ONLY");
+            return QStringLiteral("READY · PROCESSED PCM (select to listen)");
         if(preview_status()==QStringLiteral("RENDERING"))
             return QStringLiteral("Preparing audio");
         return QStringLiteral("ON · Awaiting audio");
