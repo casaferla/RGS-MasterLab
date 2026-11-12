@@ -26,6 +26,8 @@ Item {
         && (internalSlider.activeFocus || internalSlider.pressed)
     property bool fillFromOrigin: false
     property real positionFillOrigin: 0.0
+    // Opt-in visual origin tick matching InputGainEditor, never default.
+    property bool showOriginTick: false
     property color positionFillColor: Qt.alpha("#C4774A", 0.38)
     property string fieldName: ""
     property var viewModel: null
@@ -218,6 +220,18 @@ Item {
                 height: parent.height
                 radius: parent.radius
                 color: control.positionFillColor
+            }
+
+            Rectangle {
+                objectName: "studioSliderOriginTick"
+                visible: control.showOriginTick
+                x: trackBackground.thumbCenterAt(
+                    control.valueToPosition(control.positionFillOrigin)) - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 2
+                height: 14
+                color: Math.abs(control.value - control.positionFillOrigin) < 0.00001
+                    ? control.accentColor : "#3A5268"
             }
         }
 
