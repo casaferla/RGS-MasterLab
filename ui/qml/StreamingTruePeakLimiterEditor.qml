@@ -65,6 +65,8 @@ Item {
                         objectName: "streamingP2CeilingSlider"
                         Layout.fillWidth: true; compact: root.compact
                         from: -12; to: 0; stepSize: 0.1
+                        wheelEnabled: true
+                        enabled: !!root.limiterModule
                         accentColor: root.copper
                         value: root.limiterModule ? root.limiterModule.ceilingDbTp : -1
                         interactionHint: "TP ceiling in dBTP, applied to the real P2 preview."
@@ -90,6 +92,12 @@ Item {
                         objectName: "streamingP2DriveSlider"
                         Layout.fillWidth: true; compact: root.compact
                         from: -24; to: 24; stepSize: 0.1
+                        wheelEnabled: true
+                        enabled: !!root.limiterModule
+                        // Same zero-centered bipolar gain convention as
+                        // Input Gain, Compressor makeup, and Stereo M/S.
+                        fillFromOrigin: true
+                        positionFillOrigin: 0
                         accentColor: root.copper
                         value: root.limiterModule ? root.limiterModule.driveDb : 0
                         interactionHint: "Input drive in dB for Streaming TP Limiter."
