@@ -52,6 +52,7 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QImage>
+#include <QFont>
 #include <QPainter>
 #include <QMetaObject>
 #include <cmath>
@@ -1264,7 +1265,51 @@ int main(int argc, char* argv[])
                     && driveSlider->property("positionFillOrigin").toDouble() == 0.0;
                 std::fprintf(stderr, "P2_I2_INPUT_GAIN_STYLE_WHEEL=%s\n",
                     p2WheelReady ? "PASS" : "FAIL");
-                const bool valid = p2WheelReady
+                // Real QML geometry, fonts, and placement are checked at the
+                // frozen minimum 1184x688, not inspected from a mock-up.
+                const auto* ceilingItem = qobject_cast<const QQuickItem*>(
+                    ceilingSlider);
+                const auto* driveItem = qobject_cast<const QQuickItem*>(
+                    driveSlider);
+                const auto* ceilingDisplay = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2CeilingDisplay"));
+                const auto* driveDisplay = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2DriveDisplay"));
+                const auto trackReady = [](const QObject* item) {
+                    const auto* track = item
+                        ? item->findChild<QQuickItem*>(
+                            QStringLiteral("studioSliderTrack")) : nullptr;
+                    const auto* thumb = item
+                        ? item->findChild<QQuickItem*>(
+                            QStringLiteral("studioSliderThumb")) : nullptr;
+                    return track && thumb && std::abs(track->height()-8.0)<0.1
+                        && std::abs(thumb->height()-18.0)<0.1
+                        && std::abs(thumb->width()-18.0)<0.1;
+                };
+                const auto displayReady = [](const QObject* item) {
+                    const QFont font = item
+                        ? item->property("font").value<QFont>() : QFont{};
+                    return item && font.family() == QStringLiteral("Consolas")
+                        && font.pixelSize() == 36 && font.bold();
+                };
+                const bool p2InputGainLayout = ceilingItem && driveItem
+                    && ceilingItem->width() >= 400
+                    && ceilingItem->width() <= 641
+                    && std::abs(ceilingItem->width() - driveItem->width()) < 1.0
+                    && std::abs(ceilingItem->x() - driveItem->x()) < 1.0
+                    && std::abs(ceilingItem->height()-24.0) < 1.0
+                    && std::abs(driveItem->height()-24.0) < 1.0
+                    && trackReady(ceilingSlider) && trackReady(driveSlider)
+                    && displayReady(ceilingDisplay) && displayReady(driveDisplay)
+                    && driveSlider->property("showOriginTick").toBool()
+                    && !ceilingSlider->property("compact").toBool()
+                    && !driveSlider->property("compact").toBool();
+                std::fprintf(stderr,
+                    "P2_I2_INPUT_GAIN_LAYOUT=%s ceiling_width=%.1f drive_width=%.1f\n",
+                    p2InputGainLayout ? "PASS" : "FAIL",
+                    ceilingItem ? ceilingItem->width() : -1.0,
+                    driveItem ? driveItem->width() : -1.0);
+                const bool valid = p2WheelReady && p2InputGainLayout
                     && window->width() == 1184
                     && window->height() == 688
                     && selected
