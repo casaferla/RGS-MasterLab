@@ -3,6 +3,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
+#include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <array>
 #include <cstdint>
@@ -129,6 +130,23 @@ int main(){
         auto hot=preview.value()->create_module(
             kLive,dsp::ModuleParameterPayload{*hotParams.value()});
         need(bool(hot),"P2 typed factory");
+        auto json=dsp::encode_streaming_true_peak_limiter_parameters_json(*hotParams.value());
+        need(bool(json),"P2 typed JSON encoder");
+        auto decoded=dsp::decode_streaming_true_peak_limiter_parameters_json(*json.value());
+        need(bool(decoded) && *decoded.value()==*hotParams.value(),"P2 JSON roundtrip");
+        auto generic=dsp::decode_module_parameters_json(
+            "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0",*json.value());
+        need(bool(generic) && std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(
+             *generic.value()),"P2 generic typed decode");
+        need(!dsp::decode_streaming_true_peak_limiter_parameters_json(
+            R"({"ceilingDbTp":-1,"driveDb":0,"marginPercent":2,"marginPercent":5})"),
+            "P2 duplicate JSON key accepted");
+        need(!dsp::decode_streaming_true_peak_limiter_parameters_json(
+            R"({"ceilingDbTp":-1,"driveDb":0,"marginPercent":3})"),
+            "P2 bad JSON margin accepted");
+        need(!dsp::decode_module_parameters_json(
+            "rgsml.dsp.true-peak-limiter.parameters/1.0.0",*json.value()),
+            "P2 payload accepted as M17 schema");
         auto terminal=dsp::TruePeakLimiterParameters::create_default();
         need(bool(terminal),"M17 control create");
         auto wrong=preview.value()->create_module(

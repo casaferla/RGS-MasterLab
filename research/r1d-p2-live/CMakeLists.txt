@@ -146,11 +146,14 @@ add_library(rgs_p2_research_chain_abi STATIC
   ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_crossover.cpp
   ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_crossover_runtime.cpp
   ${RGS_P2_CHAIN_ROOT}/dsp/src/true_peak_limiter_parameters.cpp
-  ${RGS_P2_CHAIN_ROOT}/dsp/src/true_peak_limiter_module.cpp)
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/true_peak_limiter_module.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/module_parameter_codec.cpp)
 target_include_directories(rgs_p2_research_chain_abi PUBLIC
   ${RGS_P2_CHAIN_ROOT}/core/include
   ${RGS_P2_CHAIN_ROOT}/audio/include
   ${RGS_P2_CHAIN_ROOT}/dsp/include)
+target_include_directories(rgs_p2_research_chain_abi SYSTEM PRIVATE
+  ${RGS_P2_CHAIN_ROOT}/third_party/nlohmann_json/single_include)
 add_executable(r1d_p2_real_processing_chain_tests
   tests/test_p2_real_processing_chain.cpp)
 target_include_directories(r1d_p2_real_processing_chain_tests PRIVATE . pinned)
