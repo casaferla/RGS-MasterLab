@@ -81,3 +81,12 @@ Product telemetry sources are directly compiled in a nonrelease executable.
 Checks active P2 audible PCM against pinned P2 independently delay-compensated
 oracle, final EOS drain, blocks 17/79/512, mid-window preroll, source immutable,
 exact bypass and typed execution signature. This is NOT Qt/GUI or WASAPI qualification.
+
+## CI I2 #6 Linux compile diagnostic
+CI https://github.com/casaferla/RGS-MasterLab/actions/runs/43266684669
+Linux failed before executing the new PCM test, at its strict GCC -Werror
+warning in pre-existing CompressorExecutionSignaturePayload/std::optional
+logic inside original render_preview.cpp. The original renderer is unchanged.
+The isolated test target now downgrades ONLY GCC -Wmaybe-uninitialized,
+retaining its warning, strict FP, and all other -Werror checks. Windows
+outcome and actual test verdict still require independent verification.

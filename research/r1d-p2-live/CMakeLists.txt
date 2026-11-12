@@ -292,7 +292,7 @@ if(MSVC)
   target_compile_options(r1d_p2_real_render_preview_tests PRIVATE /W4 /fp:strict)
 else()
   target_compile_options(r1d_p2_real_render_preview_tests PRIVATE
-    -O2 -Wall -Wextra -Wpedantic -Werror
+    -O2 -Wall -Wextra -Wpedantic -Werror -Wno-error=maybe-uninitialized
     -ffp-contract=off -fno-fast-math -frounding-math)
 endif()
 add_test(NAME r1d_p2_real_render_preview_tests COMMAND r1d_p2_real_render_preview_tests)
