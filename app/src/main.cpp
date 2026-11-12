@@ -1253,7 +1253,19 @@ int main(int argc, char* argv[])
                 const auto* panel = window->findChild<QObject*>(
                     QStringLiteral("streamingTruePeakLimiterEditor"));
                 const auto* selected = dspChainAdapterModel.selected_module();
-                const bool valid = window->width() == 1184
+                const auto* ceilingSlider = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2CeilingSlider"));
+                const auto* driveSlider = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2DriveSlider"));
+                const bool p2WheelReady = ceilingSlider && driveSlider
+                    && ceilingSlider->property("wheelEnabled").toBool()
+                    && driveSlider->property("wheelEnabled").toBool()
+                    && driveSlider->property("fillFromOrigin").toBool()
+                    && driveSlider->property("positionFillOrigin").toDouble() == 0.0;
+                std::fprintf(stderr, "P2_I2_INPUT_GAIN_STYLE_WHEEL=%s\n",
+                    p2WheelReady ? "PASS" : "FAIL");
+                const bool valid = p2WheelReady
+                    && window->width() == 1184
                     && window->height() == 688
                     && selected
                     && selected->type_id()
