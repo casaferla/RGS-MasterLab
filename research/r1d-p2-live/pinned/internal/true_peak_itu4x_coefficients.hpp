@@ -67,3 +67,4 @@ inline constexpr std::array<double, 48> kTruePeakItu4xPhaseMajor{{
 inline constexpr char kTruePeakItu4xAssetSha256[] =
     "D1DF3373D3C5A82A3E4CFE3576BDDF97E153F3281FF9287554E024FA6CB0D316";
 }  // namespace rgsml::analysis::internal
+
