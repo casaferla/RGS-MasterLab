@@ -110,6 +110,14 @@ add_test(NAME r1d_p2_real_imodule_tests COMMAND r1d_p2_real_imodule_tests)
 # I1.7: isolated real ProcessingChain + real ModuleRegistry factory proof.
 # Original package_v1 registrations are NEVER changed.
 set(RGS_P2_CHAIN_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+
+# Full genuine DSP factory dependencies: MSVC keeps the whole registry
+# translation unit (unlike GNU gc-sections), including unused Product
+# factory vtables. Link ORIGINAL source implementations in this isolated
+# research target rather than mock or suppress any unresolved symbol.
+# M17's original source is compiled unmodified, and is never executed in
+# the MANUAL streaming P2 test.
+
 add_library(rgs_p2_research_chain_abi STATIC
   ${RGS_P2_CHAIN_ROOT}/core/src/checked_integer.cpp
   ${RGS_P2_CHAIN_ROOT}/core/src/error.cpp
@@ -121,7 +129,24 @@ add_library(rgs_p2_research_chain_abi STATIC
   ${RGS_P2_CHAIN_ROOT}/dsp/src/imodule.cpp
   ${RGS_P2_CHAIN_ROOT}/dsp/src/module_descriptor.cpp
   ${RGS_P2_CHAIN_ROOT}/dsp/src/module_registry.cpp
-  ${RGS_P2_CHAIN_ROOT}/dsp/src/processing_chain.cpp)
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/processing_chain.cpp
+  ${RGS_P2_CHAIN_ROOT}/core/src/sha256.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/gain_parameters.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/gain_module.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/parametric_eq_parameters.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/parametric_eq_module.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/parametric_eq_response.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/internal/parametric_eq_coefficients.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/compressor_parameters.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/compressor_module.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_parameters.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_module.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_width.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_width_response.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_crossover.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/stereo_ms_crossover_runtime.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/true_peak_limiter_parameters.cpp
+  ${RGS_P2_CHAIN_ROOT}/dsp/src/true_peak_limiter_module.cpp)
 target_include_directories(rgs_p2_research_chain_abi PUBLIC
   ${RGS_P2_CHAIN_ROOT}/core/include
   ${RGS_P2_CHAIN_ROOT}/audio/include

@@ -35,3 +35,21 @@ MSVC LNK2019 to `ModuleRegistry::create`,
 Corrected exactly that target link; neither P2 implementation nor frozen
 M17 or real Product semantics changed. The new CI result must be verified
 before any green claim.
+
+## Focused CI #2 — Linux pass / Windows link failure (recorded 12 Nov 2026)
+[Focused CI #2](https://github.com/casaferla/RGS-MasterLab/actions/runs/43256249744)
+at `6eed3fe4f98fe418e9d2c4d552e7918bedf157c8`
+ended overall FAILURE. The Ubuntu build AND native tests completed SUCCESS;
+Windows MSVC built the P2/registry source but failed to link
+`r1d_p2_optin_registry_tests.exe`: `LNK2019` references to authentic
+built-in M11/M12/M14/M15/M17 Product factories/parameters, whose original
+implementations were not in the intentionally reduced research ABI archive.
+GNU gc-sections eliminates those uncalled methods; MSVC /Gy /OPT:REF
+still requires their vtables' dependencies. This is an incomplete *test
+fixture*, not a validated Windows P2 PCM test and not an observed P2
+processing defect.
+
+For CI #3, the isolated research chain ABI library adds original
+`dsp/src` implementations and `core/src/sha256.cpp` as immutable
+source references. No stub, workaround link flags, M17 edit or new frozen
+contract. The full MSVC CTest result remains to be checked.
