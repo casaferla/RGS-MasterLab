@@ -2,6 +2,7 @@
 #include "research_p2_imodule.hpp"
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <array>
 #include <cstdint>
@@ -119,6 +120,24 @@ int main(){
         need(!chain.value()->add(id(3),other,2),"other DSP allowed after P2");
         need(!chain.value()->add(id(4),kFinal,2),"M17 appended manual");
         need(chain.value()->revision()==rev,"failed transaction changed revision");
+        auto defaultParams=dsp::StreamingTruePeakLimiterParameters::create_default();
+        need(bool(defaultParams),"P2 typed default");
+        need(defaultParams.value()->margin_percent()==2 &&
+             defaultParams.value()->ceiling_db_tp()==-1.0,"P2 wrong default");
+        auto hotParams=dsp::StreamingTruePeakLimiterParameters::create(-3.0,5.0,2);
+        need(bool(hotParams),"P2 typed hot parameters");
+        auto hot=preview.value()->create_module(
+            kLive,dsp::ModuleParameterPayload{*hotParams.value()});
+        need(bool(hot),"P2 typed factory");
+        auto terminal=dsp::TruePeakLimiterParameters::create_default();
+        need(bool(terminal),"M17 control create");
+        auto wrong=preview.value()->create_module(
+            kLive,dsp::ModuleParameterPayload{*terminal.value()});
+        need(!wrong,"P2 wrongly accepted M17 payload");
+        need(!dsp::StreamingTruePeakLimiterParameters::create(-13.0,0.0,2),"invalid ceiling");
+        need(!dsp::StreamingTruePeakLimiterParameters::create(-1.0,25.0,2),"invalid drive");
+        need(!dsp::StreamingTruePeakLimiterParameters::create(-1.0,0.0,3),"invalid margin");
+        std::cout<<"I2 typed P2 distinct parameters PASS"<<std::endl;
         auto actual=preview.value()->create_module(kLive);
         need(bool(actual),"P2 factory execution");
         need((*actual.value())->descriptor().type_id()==kLive,"factory wrong ID");

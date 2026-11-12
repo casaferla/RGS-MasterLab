@@ -27,6 +27,13 @@ namespace rgsml::dsp {
 
 [[nodiscard]] rgsml::core::Result<std::string> encode_stereo_ms_parameters_json(
     const StereoMsParameters& params);
+[[nodiscard]] rgsml::core::Result<std::string>
+encode_streaming_true_peak_limiter_parameters_json(
+    const StreamingTruePeakLimiterParameters& params);
+[[nodiscard]] rgsml::core::Result<StreamingTruePeakLimiterParameters>
+decode_streaming_true_peak_limiter_parameters_json(std::string_view json_text);
+
+// Existing M17 codec declaration follows unchanged.
 [[nodiscard]] rgsml::core::Result<std::string> encode_true_peak_limiter_parameters_json(
     const TruePeakLimiterParameters& params);
 

@@ -53,3 +53,11 @@ For CI #3, the isolated research chain ABI library adds original
 `dsp/src` implementations and `core/src/sha256.cpp` as immutable
 source references. No stub, workaround link flags, M17 edit or new frozen
 contract. The full MSVC CTest result remains to be checked.
+## Distinct preview-only typed P2 controls (candidate, CI not yet executed)
+Added `StreamingTruePeakLimiterParameters` with Ceiling [-12,0] dBTP,
+Drive [-24,24] dB, margin 2 or 5%, research default -1/0/2.
+Appended this type to the existing variant (no change to old alternatives)
+and introduced a separate strict `parameters/0.1.0` codec counting duplicate
+JSON keys. Product opt-in factory accepts only P2's typed payload and
+rejects M17's Ceiling payload. No change to M17's own codec or controls;
+no automatic persistence, no UI or sound-preview publication from this lot.

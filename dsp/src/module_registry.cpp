@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <functional>
 #include <string>
 #include <type_traits>
@@ -777,6 +778,22 @@ ModuleRegistry::create_module(
                 return Result<std::unique_ptr<IModule>>::failure(*module.error());
             }
             std::unique_ptr<IModule> result = std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(result));
+        }
+
+        if (type_id == kStreamingPreviewTypeId) {
+            const auto* p = std::get_if<StreamingTruePeakLimiterParameters>(&payload);
+            if (!p) return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                ErrorCode::InvalidArgument, "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                "Streaming P2 requires distinct typed P2 parameters."));
+            const double ceiling = p->ceiling_db_tp() == -1.0
+                ? 0.8912509381337456
+                : std::pow(10.0, p->ceiling_db_tp()/20.0);
+            const rgsml::research::r1d_p2::Configuration cfg{
+                48000,2,p->margin_percent(),ceiling,p->drive_db()};
+            std::unique_ptr<IModule> result =
+                std::make_unique<rgsml::research::r1d_p2::ResearchP2IModule>(
+                    iterator->descriptor,cfg,false);
             return Result<std::unique_ptr<IModule>>::success(std::move(result));
         }
 
