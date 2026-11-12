@@ -284,7 +284,7 @@ public:
         return QStringLiteral("rgsml.dsp.streaming-true-peak-limiter");
     }
     [[nodiscard]] QString display_name() const override {
-        return QStringLiteral("Streaming True Peak Limiter");
+        return QStringLiteral("Streaming TP Limiter");
     }
     [[nodiscard]] QString workspace_context_label() const override {return context_;}
     [[nodiscard]] QString configuration_state() const override {
@@ -414,7 +414,7 @@ public:
     [[nodiscard]] QString type_id() const override
     { return QStringLiteral("rgsml.dsp.true-peak-limiter"); }
     [[nodiscard]] QString display_name() const override
-    { return QStringLiteral("True Peak Limiter"); }
+    { return QStringLiteral("TP Limiter"); }
     [[nodiscard]] QString workspace_context_label() const override { return context_; }
     [[nodiscard]] QString configuration_state() const override
     { return state_ && state_->parameters().ceiling_db_tp()!=-1.0
@@ -465,7 +465,7 @@ public:
     [[nodiscard]] QString type_id() const override
         { return QStringLiteral("rgsml.analysis.true-peak-meter"); }
     [[nodiscard]] QString display_name() const override
-        { return QStringLiteral("True Peak Meter"); }
+        { return QStringLiteral("TP Meter"); }
     [[nodiscard]] QString workspace_context_label() const override
         { return workflowContext_; }
     [[nodiscard]] QString configuration_state() const override
@@ -491,7 +491,7 @@ public:
     [[nodiscard]] QString family_accent() const override
         { return QStringLiteral("#6CBCCF"); }
     [[nodiscard]] QString state_text() const override
-        { return QStringLiteral("Read-only · True Peak"); }
+        { return QStringLiteral("Read-only · TP"); }
     [[nodiscard]] bool has_error() const noexcept override { return false; }
     void setBypass(bool) override {} // The observer cannot affect audio.
     void undo() override {}
