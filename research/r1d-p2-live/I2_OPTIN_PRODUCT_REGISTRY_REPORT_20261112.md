@@ -61,3 +61,16 @@ and introduced a separate strict `parameters/0.1.0` codec counting duplicate
 JSON keys. Product opt-in factory accepts only P2's typed payload and
 rejects M17's Ceiling payload. No change to M17's own codec or controls;
 no automatic persistence, no UI or sound-preview publication from this lot.
+## I2.5 Renderer typed-provenance gate (staging; no false activation)
+The original `RenderRequest` now recognizes P2 as a parameterized manual
+DSP and rejects missing, duplicated, or M17-mismatched bindings, including
+when bypassed. `RenderResult` appends a distinct P2 execution-signature
+payload holding exact Ceiling/Drive/margin, without disturbing the existing
+four payload variants. The real `render_preview.cpp` emits matching
+PROCESSED/BYPASS identity only when typed parameters are actually bound;
+its normal latency compensation, EOS and processing path are reused, with
+M17 terminal guard untouched.
+New test compiles original RenderRequest and exercises real RGS chain/typed
+authority. An additional OBJECT CMake target compiles the complete original
+RenderPreview on Windows/Linux but does NOT execute a full render. A full
+audio/owner/Qt verified preview is still OPEN until its own gate.

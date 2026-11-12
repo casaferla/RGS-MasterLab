@@ -236,3 +236,36 @@ else()
   endif()
 endif()
 add_test(NAME r1d_p2_optin_registry_tests COMMAND r1d_p2_optin_registry_tests)
+
+# I2.5 genuine RenderRequest validation and RenderPreview compile-only ABI gate.
+# Execution of full Qt Product RenderPreview remains separately gated.
+add_executable(r1d_p2_render_request_tests
+    tests/test_p2_render_request.cpp
+    ${RGS_P2_CHAIN_ROOT}/render/src/render_request.cpp)
+target_include_directories(r1d_p2_render_request_tests PRIVATE
+    ${RGS_P2_CHAIN_ROOT}/render/include)
+target_link_libraries(r1d_p2_render_request_tests PRIVATE
+    rgs_p2_research_chain_abi)
+if(MSVC)
+  target_compile_options(r1d_p2_render_request_tests PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_render_request_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off -fno-fast-math
+    -frounding-math)
+endif()
+add_test(NAME r1d_p2_render_request_tests COMMAND r1d_p2_render_request_tests)
+# Compile actual render_preview.cpp on Windows/Linux for all new signature
+# variant usages. An OBJECT target does not assert link or PCM runtime proof.
+add_library(r1d_p2_render_preview_compile_gate OBJECT
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_preview.cpp)
+target_include_directories(r1d_p2_render_preview_compile_gate PRIVATE
+  ${RGS_P2_CHAIN_ROOT}/render/include
+  ${RGS_P2_CHAIN_ROOT}/analysis/include)
+target_link_libraries(r1d_p2_render_preview_compile_gate PRIVATE
+  rgs_p2_research_chain_abi)
+if(MSVC)
+  target_compile_options(r1d_p2_render_preview_compile_gate PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_render_preview_compile_gate PRIVATE
+    -Wall -Wextra -Wpedantic -ffp-contract=off -fno-fast-math -frounding-math)
+endif()
