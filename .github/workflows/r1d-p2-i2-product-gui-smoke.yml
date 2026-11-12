@@ -74,9 +74,12 @@ jobs:
           $env:QT_PLUGIN_PATH="$qt/plugins"
           $exe=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/Release/RGSMasterLab.exe"
           if (-not (Test-Path $exe)) { throw "P2_PRODUCT_EXE_MISSING" }
+          # GUI-subsystem executables can return control before termination
+          # when invoked directly in pwsh; $LASTEXITCODE is then unset.
+          # Wait for the actual Qt process and read its authoritative exit code.
           $arguments="--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-p2-i2-gui-smoke"
-          & $exe $arguments.Split(' ')
-          $code=$LASTEXITCODE
+          $process=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -Wait
+          $code=$process.ExitCode
           Write-Host "P2_I2_REAL_GUI_SMOKE_EXIT=$code"
           if ($code -ne 0) { throw "P2_I2_GUI_1184x688_FAILED" }
           Write-Host "P2_I2_REAL_GUI_OPTIN_1184x688=PASS"
