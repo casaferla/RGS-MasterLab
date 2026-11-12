@@ -32,6 +32,6 @@ jobs:
           cmake -S research/r1d-p2-live -B build-p2-i2
           -G "Visual Studio 17 2022" -A x64
       - name: Build actual registry and P2 ABI tests
-        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate
+        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests
       - name: Execute original RGS ProcessingChain and opt-in P2 PCM gates
-        run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request)_tests$"
+        run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request|real_render_preview)_tests$"

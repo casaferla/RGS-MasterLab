@@ -269,3 +269,30 @@ else()
   target_compile_options(r1d_p2_render_preview_compile_gate PRIVATE
     -Wall -Wextra -Wpedantic -ffp-contract=off -fno-fast-math -frounding-math)
 endif()
+
+# I2.6 genuine Product RenderPreview PCM end-to-end gate (nonrelease).
+add_executable(r1d_p2_real_render_preview_tests
+  tests/test_p2_real_render_preview.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_request.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_preview.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_result.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/compressor_telemetry_collector.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/stereo_ms_execution_signature.cpp)
+target_include_directories(r1d_p2_real_render_preview_tests PRIVATE
+  . pinned ${RGS_P2_CHAIN_ROOT}/render/include ${RGS_P2_CHAIN_ROOT}/analysis/include)
+target_link_libraries(r1d_p2_real_render_preview_tests PRIVATE
+  rgs_p2_research_chain_abi)
+target_compile_definitions(r1d_p2_real_render_preview_tests PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_real_render_preview_tests PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_real_render_preview_tests PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_real_render_preview_tests PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror
+    -ffp-contract=off -fno-fast-math -frounding-math)
+endif()
+add_test(NAME r1d_p2_real_render_preview_tests COMMAND r1d_p2_real_render_preview_tests)

@@ -74,3 +74,10 @@ New test compiles original RenderRequest and exercises real RGS chain/typed
 authority. An additional OBJECT CMake target compiles the complete original
 RenderPreview on Windows/Linux but does NOT execute a full render. A full
 audio/owner/Qt verified preview is still OPEN until its own gate.
+
+## I2.6 native real RenderPreview PCM candidate — CI NOT YET VERIFIED
+The original Product RenderPreview, RenderRequest, RenderResult and supporting
+Product telemetry sources are directly compiled in a nonrelease executable.
+Checks active P2 audible PCM against pinned P2 independently delay-compensated
+oracle, final EOS drain, blocks 17/79/512, mid-window preroll, source immutable,
+exact bypass and typed execution signature. This is NOT Qt/GUI or WASAPI qualification.
