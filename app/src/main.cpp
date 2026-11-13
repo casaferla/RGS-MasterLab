@@ -140,6 +140,17 @@ int main(int argc, char* argv[])
     auto playbackService = std::make_unique<
         rgsml::platform::windows::WindowsAudioPlaybackService>();
     auto* windowsPlayback = playbackService.get();
+    if (p2PreviewOptIn) {
+        const auto proofMode =
+            windowsPlayback->set_research_p2_src_handoff_recovery(true);
+        if (!proofMode) {
+            std::fprintf(stderr,
+                "P2_I2_RESEARCH_SRC_HANDOFF_RECOVERY_ENABLE=FAIL\n");
+            return EXIT_FAILURE;
+        }
+        std::fprintf(stderr,
+            "P2_I2_RESEARCH_SRC_HANDOFF_RECOVERY_ENABLE=PASS\n");
+    }
     windowsPlayback->attach_analyzer(&spectrumAnalyzer);
 
     rgsml::app::LiveSpectrumViewModel liveSpectrumViewModel{&spectrumAnalyzer};
