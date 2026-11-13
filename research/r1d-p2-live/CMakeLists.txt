@@ -320,6 +320,37 @@ else()
 endif()
 add_test(NAME r1d_p2_real_render_preview_tests COMMAND r1d_p2_real_render_preview_tests)
 
+# I2 experimental cost model: actual Product render_preview with 1-5
+# real RGS DSPs + P2. The five-minute benchmark is NOT an L3 feature
+# solver, a callback WCET, or a standalone Product renderer.
+add_executable(r1d_p2_chain_perf_probe
+  tests/bench_chain_automatch.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_request.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_preview.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/render_result.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/compressor_telemetry_collector.cpp
+  ${RGS_P2_CHAIN_ROOT}/render/src/stereo_ms_execution_signature.cpp)
+target_include_directories(r1d_p2_chain_perf_probe PRIVATE
+  . pinned ${RGS_P2_CHAIN_ROOT}/render/include
+  ${RGS_P2_CHAIN_ROOT}/analysis/include)
+target_link_libraries(r1d_p2_chain_perf_probe PRIVATE
+  rgs_p2_research_chain_abi)
+target_compile_definitions(r1d_p2_chain_perf_probe PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_chain_perf_probe PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_chain_perf_probe PRIVATE
+    /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_chain_perf_probe PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror -Wno-error=maybe-uninitialized
+    -ffp-contract=off -fno-fast-math -frounding-math)
+endif()
+
+
 # I2.8: real app Qt MasteringChainState + MasteringPreviewController
 # with an ephemeral fifth P2 instance, without changing project persistence.
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Test)
