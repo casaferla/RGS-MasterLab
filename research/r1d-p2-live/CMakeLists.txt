@@ -238,6 +238,27 @@ else()
     -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
 endif()
 
+# R1d-P2 optional observer compiled ONLY into this independent research
+# callback probe. No perf counters or extra callback writes in Product P2.
+add_executable(r1d_p2_callback_path_perf_probe
+  tests/bench_p2_callback_paths.cpp)
+target_include_directories(r1d_p2_callback_path_perf_probe PRIVATE . pinned)
+target_compile_definitions(r1d_p2_callback_path_perf_probe PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE
+  RESEARCH_P2_PERF_COUNTERS)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_callback_path_perf_probe PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_callback_path_perf_probe PRIVATE
+    /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_callback_path_perf_probe PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror
+    -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
+endif()
+
 # I2 preview opt-in factory + genuine Product ModuleRegistry test.
 # No activation in Product Main/Project or default package_v1.
 add_executable(r1d_p2_optin_registry_tests tests/test_p2_optin_registry.cpp)
