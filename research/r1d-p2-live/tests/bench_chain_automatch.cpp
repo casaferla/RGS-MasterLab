@@ -206,22 +206,33 @@ int main(int argc, char** argv)
 {
     try {
         bool quick = false;
+        int evalCount = 0;
+        int evaluationRate = 48000;
         std::string path = "P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv";
         for (int i = 1; i < argc; ++i) {
             const std::string_view argument{argv[i]};
             if (argument == "--quick") quick = true;
             else if (argument == "--output" && i + 1 < argc)
                 path = argv[++i];
+            else if (argument == "--eval-count" && i + 1 < argc)
+                evalCount = std::stoi(argv[++i]);
+            else if (argument == "--rate" && i + 1 < argc)
+                evaluationRate = std::stoi(argv[++i]);
             else throw std::runtime_error(
-                "Usage: [--quick] [--output OUTPUT_PATH]");
+                "Usage: [--quick] [--output PATH] "
+                "[--eval-count 1..150] [--rate 44100|48000]");
         }
         auto normal = dsp::ModuleRegistry::create_dsp_package_v1();
         require(bool(normal), "Product registry failed");
         auto optin = dsp::ModuleRegistry::with_streaming_true_peak_preview(
             std::move(*normal.value()));
         require(bool(optin), "P2 optin registry failed");
+        require(evalCount >= 0 && evalCount <= 150
+            && (evaluationRate == 44100 || evaluationRate == 48000),
+            "Invalid evaluation count or source rate");
         const int seconds = quick ? 2 : 300;
         const int trialLimit = quick ? 7 : static_cast<int>(kTrials.size());
+        const std::array<double,4> evaluationDrives{0.0,3.0,6.0,0.0};
         std::ofstream file{path, std::ios::out | std::ios::trunc};
         require(bool(file), "Benchmark TSV could not be opened");
         file << "schema\trate_hz\tduration_s\ttrial\tstages"
@@ -229,16 +240,31 @@ int main(int argc, char** argv)
                 "\tsignatures\tpcm_fingerprint\n";
         file << std::fixed << std::setprecision(3);
         for (const int hz : {44100, 48000}) {
+            if (evalCount > 0 && hz != evaluationRate) continue;
             const auto input = synthetic(hz, seconds);
             const auto unchanged = fingerprint(input.view());
             std::optional<std::uint64_t> initialP2;
-            for (int index = 0; index < trialLimit; ++index) {
-                const auto& trial = kTrials[static_cast<std::size_t>(index)];
+            for (int index = 0;
+                 index < (evalCount > 0 ? evalCount : trialLimit); ++index) {
+                // Deliberately repeat the same immutable 5-node chain with
+                // only P2 Drive changed. This is throughput-only, NOT
+                // an L3-M10 coordinate descent or actual cache benchmark.
+                const Trial simulation{"SIM_FULL_P2", 5, false,
+                    evaluationDrives[static_cast<std::size_t>(index % 4)]};
+                const auto& trial = evalCount > 0
+                    ? simulation : kTrials[static_cast<std::size_t>(index)];
                 const auto measured = evaluate(input, *optin.value(), trial);
-                if (index == 5) initialP2 = measured.hash;
-                if (index == 7)
+                if (evalCount == 0 && index == 5)
+                    initialP2 = measured.hash;
+                if (evalCount == 0 && index == 7)
                     require(initialP2 && *initialP2 == measured.hash,
                             "P2 repeat candidate differs from A");
+                if (evalCount > 0 && index == 0)
+                    initialP2 = measured.hash;
+                if (evalCount > 0 && index > 0
+                    && index % 4 == 0)
+                    require(initialP2 && *initialP2 == measured.hash,
+                            "Repeated simulation drive0 changed PCM");
                 file << "I2-CHAIN-PERF-1\t" << hz << '\t'
                      << seconds << '\t' << trial.name << '\t'
                      << (trial.stages == -1 ? 1 : trial.stages) << '\t'
