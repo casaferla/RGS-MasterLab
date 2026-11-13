@@ -187,6 +187,19 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_MISSING: $($p.ExitCode)" }
           Write-Host 'P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_WITHOUT_FLAG=PASS'
           Write-Host 'P2_I2_COLD_DEPLOY_GUI_M19_M20_M21=PASS'
+          # The read-only M16 research tracer must initialize on an ordinary
+          # research-only EXE launch, not require a developer CLI switch.
+          $diagnostic=Join-Path $stage 'bin/P2_I2_M16_DIAGNOSTIC.tsv'
+          if (-not (Test-Path -LiteralPath $diagnostic)) {
+            throw 'P2_I2_M16_DIAGNOSTIC_NOT_CREATED'
+          }
+          $rows=@(Get-Content -LiteralPath $diagnostic)
+          if ($rows.Count -lt 2 -or $rows[0] -notmatch 'binding_result') {
+            throw 'P2_I2_M16_DIAGNOSTIC_INVALID_SCHEMA'
+          }
+          Write-Host 'P2_I2_M16_READ_ONLY_DIAGNOSTIC=PASS'
+          # Let each physical trial start with a fresh log.
+          Remove-Item -LiteralPath $diagnostic -Force
 
       - name: Add research-only physical test instructions
         shell: pwsh
@@ -222,6 +235,9 @@ jobs:
           [ ] Optional: device 48 kHz / 24-bit (bit-depth isolation).
           [ ] Verify PREPARED <-> PROCESSED A/B while playing.
           [ ] Collect bin/P2_I2_RENDER_TIMINGS.tsv (full-chain time).
+          [ ] Collect bin/P2_I2_M16_DIAGNOSTIC.tsv with TP Meter
+              selected and PROCESSED playing, before and after Stop/Play.
+              This is read-only witness logging, NOT M16 certification.
           [ ] Repeat at available source rates and representative workloads.
           [ ] Record Windows, device, driver, sample rate, audio buffer and
               actual callback/dropout evidence if available.
