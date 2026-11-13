@@ -204,6 +204,38 @@ jobs:
           # Let each physical trial start with a fresh log.
           Remove-Item -LiteralPath $diagnostic -Force
 
+      - name: Build isolated P2 five-minute AutoMatch performance probe
+        shell: pwsh
+        run: |
+          # Genuine RGS IModule; does not affect the installed Product EXE.
+          $qt=Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64'
+          cmake -S research/r1d-p2-live -B build-p2-perf -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="$qt"
+          if ($LASTEXITCODE -ne 0) { throw "P2_PERF_CONFIG_FAILED" }
+          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe
+          if ($LASTEXITCODE -ne 0) { throw "P2_PERF_COMPILE_FAILED" }
+          $binary=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_automatch_perf_probe.exe'
+          if (-not (Test-Path -LiteralPath $binary)) { throw "P2_PERF_BINARY_MISSING" }
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/stage/Research-I2'
+          $dest=Join-Path $stage 'bin/r1d_p2_automatch_perf_probe.exe'
+          Copy-Item -LiteralPath $binary -Destination $dest -Force
+          # Fast, real 2-second C++ process/finalize/PCM smoke, not a timing SLA.
+          $tsv=Join-Path $env:RUNNER_TEMP 'p2-perf-quick.tsv'
+          & $dest --quick --output $tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_PERF_QUICK_SMOKE_FAILED" }
+          $rows=@(Import-Csv -Path $tsv -Delimiter "`t")
+          if ($rows.Count -ne 4) { throw "P2_PERF_QUICK_ROWS_INVALID" }
+          foreach ($row in $rows) {
+            if ($row.schema -ne 'I2-PERF-1' -or
+                [double]$row.process_ms -le 0 -or
+                [double]$row.total_ms -le 0 -or
+                [double]$row.total_ms -lt [double]$row.process_ms) {
+              throw "P2_PERF_QUICK_SCHEMA_OR_TIMING_INVALID"
+            }
+          }
+          Write-Host "P2_ISOLATED_PERF_QUICK_SMOKE=PASS"
+          Write-Host "P2_ISOLATED_PERF_WINDOWS_EXE_PACKAGED=PASS"
+
       - name: Add research-only physical test instructions
         shell: pwsh
         run: |
@@ -238,6 +270,15 @@ jobs:
           [ ] Optional: device 48 kHz / 24-bit (bit-depth isolation).
           [ ] Verify PREPARED <-> PROCESSED A/B while playing.
           [ ] Collect bin/P2_I2_RENDER_TIMINGS.tsv (full-chain time).
+          [ ] To benchmark P2 IN ISOLATION over full five-minute inputs,
+              close heavy applications then run Run_P2_AutoMatch_Perf.cmd.
+              This runs the real P2 IModule with 300-second synthetic
+              stereo test audio at 44.1 and 48 kHz, independent fresh
+              candidate epochs (Drive 0, +3, +6, 0 and Bypass).
+              It creates bin/P2_AUTOMATCH_5MIN_BENCH.tsv.
+              No user WAV is read; this is NOT an AutoMatch implementation,
+              P2 real-time WCET, canonical feature analyzer or listening test.
+              Upload this TSV together with P2_I2_RENDER_TIMINGS.tsv.
           [ ] Collect bin/P2_I2_M16_DIAGNOSTIC.tsv with TP Meter
               selected and PROCESSED playing, before and after Stop/Play.
               This is read-only witness logging, NOT M16 certification.
@@ -258,6 +299,20 @@ jobs:
           start "" "%~dp0bin\RGSMasterLab.exe" --rgsml-p2-i2-preview
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Start_P2_I2_Research.cmd') -Value $launcher -Encoding ascii
+          $perfLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - five-minute offline benchmark at 44.1 and 48 kHz
+          echo This may occupy the CPU; no user audio is accessed.
+          r1d_p2_automatch_perf_probe.exe --output P2_AUTOMATCH_5MIN_BENCH.tsv
+          if errorlevel 1 (
+              echo BENCHMARK FAILED -- see output above
+          ) else (
+              echo BENCHMARK COMPLETE -- bin\P2_AUTOMATCH_5MIN_BENCH.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_AutoMatch_Perf.cmd') -Value $perfLauncher -Encoding ascii
 
       - name: Include validated real Qt GUI screenshot in physical-test package
         shell: pwsh
