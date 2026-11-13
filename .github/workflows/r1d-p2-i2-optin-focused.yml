@@ -79,6 +79,30 @@ jobs:
               $rows[0].result -notin @('EXACT_ACCEPT','NON_EQUIVALENT_REJECT')) {
             throw "P2_CACHE_BOUNDARY_QUICK_SCHEMA_INVALID"
           }
+      - name: Verify exact cache matrix and changed-source rejection (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --cache-matrix --output build-p2-i2/p2-cache-matrix-quick.tsv
+          test "$(($(wc -l < build-p2-i2/p2-cache-matrix-quick.tsv)-1))" -eq 14
+          awk -F '\t' 'NR>1 && $8 != $9 {bad=1} END {exit bad}' build-p2-i2/p2-cache-matrix-quick.tsv
+          grep -q STALE_GAIN build-p2-i2/p2-cache-matrix-quick.tsv
+          grep -q STALE_SOURCE build-p2-i2/p2-cache-matrix-quick.tsv
+      - name: Verify exact cache matrix and changed-source rejection (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --cache-matrix --output build-p2-i2/p2-cache-matrix-quick.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CACHE_MATRIX_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-cache-matrix-quick.tsv -Delimiter ([char]9))
+          if ($rows.Count -ne 14 -or
+              @($rows | Where-Object { $_.schema -ne 'I2-CACHE-MATRIX-1' -or $_.expected -ne $_.observed }).Count -gt 0) {
+            throw "P2_CACHE_MATRIX_QUICK_ROWS_MISMATCH"
+          }
+          if (@($rows | Where-Object { $_.case -eq 'STALE_SOURCE' -and $_.observed -eq 'NON_EQUIVALENT_REJECT' }).Count -ne 2 -or
+              @($rows | Where-Object { $_.case -eq 'STALE_GAIN' -and $_.observed -eq 'NON_EQUIVALENT_REJECT' }).Count -ne 2) {
+            throw "P2_CACHE_MATRIX_STALE_REJECT_NOT_PROVEN"
+          }
       - name: Probe fail-closed adversarial paths (Linux)
         if: runner.os == 'Linux'
         shell: bash
