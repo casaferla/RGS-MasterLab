@@ -103,6 +103,30 @@ jobs:
               @($rows | Where-Object { $_.case -eq 'STALE_GAIN' -and $_.observed -eq 'NON_EQUIVALENT_REJECT' }).Count -ne 2) {
             throw "P2_CACHE_MATRIX_STALE_REJECT_NOT_PROVEN"
           }
+      - name: Test real bounded LRU cache on Product renderer (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --cache-engine --output build-p2-i2/p2-cache-engine-quick.tsv
+          test "$(($(wc -l < build-p2-i2/p2-cache-engine-quick.tsv)-1))" -eq 22
+          awk -F '\t' 'NR>1 && ($5 != $6 || $7 != 0) {bad=1} END {exit bad}' build-p2-i2/p2-cache-engine-quick.tsv
+          grep -q CHANGED_CONTENT_SAME_REV build-p2-i2/p2-cache-engine-quick.tsv
+          grep -q REVERTED_PREFIX_AFTER_LRU build-p2-i2/p2-cache-engine-quick.tsv
+      - name: Test real bounded LRU cache on Product renderer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --cache-engine --output build-p2-i2/p2-cache-engine-quick.tsv
+          if ($LASTEXITCODE -ne 0) { throw "BOUNDED_CACHE_ENGINE_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-cache-engine-quick.tsv -Delimiter ([char]9))
+          if ($rows.Count -ne 22 -or @($rows | Where-Object {
+            $_.schema -ne 'I2-REAL-CACHE-1' -or
+            $_.expected_hit -ne $_.observed_hit -or
+            [int]$_.mismatches -ne 0 -or
+            [double]$_.suffix_ms -le 0
+          }).Count -gt 0) {
+            throw "BOUNDED_CACHE_ENGINE_INVARIANT_FAIL"
+          }
       - name: Probe fail-closed adversarial paths (Linux)
         if: runner.os == 'Linux'
         shell: bash
