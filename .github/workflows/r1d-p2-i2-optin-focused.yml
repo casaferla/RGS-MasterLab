@@ -47,7 +47,7 @@ jobs:
           -G "Visual Studio 17 2022" -A x64
           -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
       - name: Build actual registry and P2 ABI tests
-        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests r1d_p2_app_preview_qt_tests r1d_p2_project_save_guard_compile
+        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests r1d_p2_app_preview_qt_tests r1d_p2_project_save_guard_compile r1d_p2_automatch_perf_probe
       - name: Expose installed Qt runtime DLLs and plugins (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -61,3 +61,18 @@ jobs:
           "QT_PLUGIN_PATH=$qtPlugins" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Execute original RGS ProcessingChain and opt-in P2 PCM gates
         run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request|real_render_preview|app_preview_qt)_tests$"
+      - name: Validate real P2 IModule candidate benchmark quickly (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_automatch_perf_probe --quick --output build-p2-i2/p2-perf-smoke.tsv
+          test "$(($(wc -l < build-p2-i2/p2-perf-smoke.tsv)-1))" -eq 4
+          grep -q I2-PERF-1 build-p2-i2/p2-perf-smoke.tsv
+      - name: Validate real P2 IModule candidate benchmark quickly (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_automatch_perf_probe.exe --quick --output build-p2-i2/p2-perf-smoke.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_PERF_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-perf-smoke.tsv -Delimiter "`t")
+          if ($rows.Count -ne 4) { throw "P2_PERF_ROWS_NOT_4" }
