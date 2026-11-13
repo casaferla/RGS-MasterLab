@@ -212,7 +212,7 @@ jobs:
           cmake -S research/r1d-p2-live -B build-p2-perf -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_PREFIX_PATH="$qt"
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_CONFIG_FAILED" }
-          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe
+          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe r1d_p2_adversarial_perf_probe
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_COMPILE_FAILED" }
           $binary=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_automatch_perf_probe.exe'
           if (-not (Test-Path -LiteralPath $binary)) { throw "P2_PERF_BINARY_MISSING" }
@@ -277,6 +277,34 @@ jobs:
           }
           Write-Host "P2_PATH_PERF_QUICK_SMOKE=PASS"
           Write-Host "P2_PATH_PERF_WINDOWS_EXE_PACKAGED=PASS"
+          # Fail-closed feasibility test: does a naively trimmed 4-DSP
+          # PCM intermediate exactly reproduce five-DSP fresh rendering?
+          $cacheTsv=Join-Path $env:RUNNER_TEMP 'p2-cache-proof-quick.tsv'
+          & $chainDest --quick --cache-proof --rate 48000 --output $cacheTsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CACHE_PROOF_QUICK_FAILED" }
+          $cacheRows=@(Import-Csv -Path $cacheTsv -Delimiter "`t")
+          if ($cacheRows.Count -ne 1 -or
+              $cacheRows[0].schema -ne 'I2-CACHE-BOUNDARY-1' -or
+              $cacheRows[0].result -notin @('EXACT_ACCEPT','NON_EQUIVALENT_REJECT')) {
+            throw "P2_CACHE_PROOF_QUICK_SCHEMA_INVALID"
+          }
+          Write-Host "P2_CACHE_PROOF_QUICK_SMOKE=PASS"
+          # Instrumentation exists only in a separate research test binary.
+          $adversarialExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_adversarial_perf_probe.exe'
+          if (-not (Test-Path -LiteralPath $adversarialExe)) {
+            throw "P2_ADVERSARIAL_BINARY_MISSING"
+          }
+          $adversarialDest=Join-Path $stage 'bin/r1d_p2_adversarial_perf_probe.exe'
+          Copy-Item -LiteralPath $adversarialExe -Destination $adversarialDest -Force
+          $adversarialTsv=Join-Path $env:RUNNER_TEMP 'p2-adversarial-quick.tsv'
+          & $adversarialDest --quick --output $adversarialTsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_ADVERSARIAL_QUICK_FAILED" }
+          $adversarialRows=@(Import-Csv -Path $adversarialTsv -Delimiter "`t")
+          if ($adversarialRows.Count -ne 90 -or
+              @($adversarialRows | Where-Object { $_.schema -ne 'I2-ADVERSARIAL-1' -or !$_.status }).Count -ne 0) {
+            throw "P2_ADVERSARIAL_QUICK_SCHEMA_INVALID"
+          }
+          Write-Host "P2_ADVERSARIAL_WINDOWS_EXE_PACKAGED=PASS"
 
       - name: Add research-only physical test instructions
         shell: pwsh
@@ -346,6 +374,17 @@ jobs:
               This is CPU-throughput-only repeated candidate evaluation,
               NOT the actual L3 solver, reference feature analysis, caching
               or a guaranteed user-facing AutoMatch time.
+          [ ] Check exact reuse of POST-TRIM upstream DSP PCM, not yet
+              a Product cache: Run_P2_Cache_Proof.cmd generates
+              bin/P2_CACHE_BOUNDARY_PROOF.tsv. NON_EQUIVALENT_REJECT
+              is a valid FAIL-CLOSED result, not a broken tool.
+              EXACT_ACCEPT on this fixture is NOT enough for certification:
+              timebase/latency/sidecars/dependency identity must also match.
+          [ ] Stress P2 under adversarial but finite input, 30 sec each
+              at 44.1 and 48 kHz: Run_P2_Adversarial.cmd creates
+              bin/P2_ADVERSARIAL_PATH_BENCH.tsv. The CSV status column
+              can report SAFETY_FAILURE or other failures; never hide it.
+              No realtime WASAPI callback is exercised by this script.
           [ ] Collect bin/P2_I2_M16_DIAGNOSTIC.tsv with TP Meter
               selected and PROCESSED playing, before and after Stop/Play.
               This is read-only witness logging, NOT M16 certification.
@@ -426,6 +465,37 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Path_Perf.cmd') -Value $pathLauncher -Encoding ascii
+          $cacheLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - exact binary cache-boundary proof, full 300s PCM
+          echo Testing whether POST-TRIM Gain/EQ/Comp/MS can be replayed
+          echo as P2-only input without changing ANY PCM sample.
+          echo A NON_EQUIVALENT_REJECT result is safe and significant.
+          r1d_p2_chain_perf_probe.exe --cache-proof --rate 48000 --output P2_CACHE_BOUNDARY_PROOF.tsv
+          if errorlevel 1 (
+              echo CACHE PROOF FAILED TO EXECUTE -- see console
+          ) else (
+              echo CACHE PROOF COMPLETE -- bin\P2_CACHE_BOUNDARY_PROOF.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Cache_Proof.cmd') -Value $cacheLauncher -Encoding ascii
+          $adversarialLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - adversarial offline proof, two rates, 30s each
+          echo The program logs any safety failures in the status column.
+          echo This is NOT real device deadline or dropout qualification.
+          r1d_p2_adversarial_perf_probe.exe --output P2_ADVERSARIAL_PATH_BENCH.tsv
+          if errorlevel 1 (
+              echo ADVERSARIAL PROBE FAILED TO EXECUTE -- see console
+          ) else (
+              echo ADVERSARIAL PROBE COMPLETE -- bin\P2_ADVERSARIAL_PATH_BENCH.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Adversarial.cmd') -Value $adversarialLauncher -Encoding ascii
 
       - name: Include validated real Qt GUI screenshot in physical-test package
         shell: pwsh
