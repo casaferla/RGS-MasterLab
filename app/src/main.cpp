@@ -44,6 +44,8 @@
 
 #include <QGuiApplication>
 #include <QFile>
+#include <QDateTime>
+#include <QStringList>
 #include <filesystem>
 #include <QIcon>
 #include <QLibraryInfo>
@@ -218,6 +220,105 @@ int main(int argc, char* argv[])
             ? auditionRegion.region()
             : std::nullopt;
     });
+    if (p2PreviewOptIn) {
+        // Research-only M16 observation. Source/PCM/callback processing and
+        // frozen provenance contract remain untouched. One 1-Hz GUI-owner
+        // sample explains the exact rejected proof; never invent a peak.
+        const QString tracePath =
+            QCoreApplication::applicationDirPath()
+                + QStringLiteral("/P2_I2_M16_DIAGNOSTIC.tsv");
+        auto collectM16 = [&auditionSelector, &playbackTransport,
+                           &sourceSelection, &liveTruePeak,
+                           windowsPlayback, tracePath]() {
+            const auto playback = playbackTransport.playback_snapshot();
+            const auto consumed = windowsPlayback->consumed_output_prefix();
+            const auto selected = auditionSelector.active_target();
+            const bool processed = selected
+                && *selected == rgsml::app::AuditionTarget::PROCESSED;
+            const auto owner = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            const auto sourceCount = rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            const auto sourceRate = rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            const int channels = sourceSelection.channel_count();
+            QString binding = QStringLiteral("NO_PROCESSED_TARGET");
+            if (processed && !owner) binding = QStringLiteral("NO_PROCESSED_OWNER");
+            else if (processed && !id) binding = QStringLiteral("NO_PROCESSED_ID");
+            else if (processed && !playback) binding = QStringLiteral("NO_PLAYBACK_SNAPSHOT");
+            else if (processed && !consumed) binding = QStringLiteral("NO_CONSUMED_PREFIX");
+            else if (processed && (!sourceCount || !sourceRate
+                                  || (channels != 1 && channels != 2)))
+                binding = QStringLiteral("SOURCE_METADATA_INVALID");
+            else if (processed && owner && id && playback && consumed
+                     && sourceCount && sourceRate) {
+                const auto source = rgsml::app::TruePeakExpectedSource{
+                    *sourceCount.value(), *sourceRate.value(),
+                    channels == 1 ? rgsml::audio::ChannelLayout::MONO_C
+                                  : rgsml::audio::ChannelLayout::STEREO_LR};
+                const auto proof = rgsml::app::bind_processed_live_input(
+                    owner, *id, source, *playback.value(), *consumed.value());
+                binding = proof ? QStringLiteral("PROVEN")
+                    : QString::fromStdString(
+                        std::string(proof.error()->message()));
+            }
+            const auto audible = playback
+                ? playback.value()->audibleRealization.realizationId
+                : std::optional<rgsml::core::RealizationId>{};
+            const QStringList cols{
+                QDateTime::currentDateTimeUtc().toString(
+                    Qt::ISODateWithMs),
+                selected ? QString::number(static_cast<int>(*selected))
+                         : QStringLiteral("-1"),
+                QString::number(sourceSelection.sample_rate_hz()),
+                QString::number(channels),
+                id ? QString::number(id->value) : QStringLiteral("0"),
+                audible ? QString::number(audible->value) : QStringLiteral("0"),
+                playback ? QString::number(
+                    static_cast<int>(playback.value()->state))
+                    : QStringLiteral("-1"),
+                playback ? QString::number(
+                    static_cast<int>(
+                        playback.value()->audibleRealization.phase))
+                    : QStringLiteral("-1"),
+                consumed ? QString::number(
+                    static_cast<int>(consumed.value()->reason))
+                    : QStringLiteral("-1"),
+                consumed ? QString::number(
+                    consumed.value()->processedWatermarkExclusive)
+                    : QStringLiteral("-1"),
+                consumed ? QString::number(consumed.value()->srcInputRateHz)
+                    : QStringLiteral("0"),
+                consumed ? QString::number(consumed.value()->srcOutputRateHz)
+                    : QStringLiteral("0"),
+                consumed && consumed.value()->srcRetiredSourceEnd
+                    ? QString::number(*consumed.value()->srcRetiredSourceEnd)
+                    : QStringLiteral("-1"),
+                binding.replace('\t', ' ').replace('\n', ' '),
+                liveTruePeak.status_text()
+            };
+            QFile file(tracePath);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Append
+                           | QIODevice::Text)) return;
+            if (file.size() == 0) {
+                file.write(
+                    "utc\ttarget\tsource_hz\tchannels\tprocessed_id"
+                    "\taudible_id\tplay_state\taudible_phase"
+                    "\tcoverage_reason\tconsumed_output_exclusive"
+                    "\tsrc_input_hz\tsrc_output_hz\tsrc_retired_end"
+                    "\tbinding_result\tmeter_status\n");
+            }
+            file.write(cols.join(QChar('\t')).toUtf8());
+            file.write("\n");
+        };
+        // Bootstrap evidence even in a short Windows Qt cold smoke.
+        collectM16();
+        auto* m16DiagnosticTimer = new QTimer(&application);
+        m16DiagnosticTimer->setInterval(1000);
+        QObject::connect(m16DiagnosticTimer, &QTimer::timeout,
+            &application, collectM16);
+        m16DiagnosticTimer->start();
+    }
     auto moduleRegistry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
     if (!moduleRegistry) {
         std::fprintf(stderr, "DSP registry bootstrap refused: %s\n",
