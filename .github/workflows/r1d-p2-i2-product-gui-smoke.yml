@@ -298,6 +298,16 @@ jobs:
             throw "P2_CACHE_MATRIX_QUICK_INVARIANT_FAILED"
           }
           Write-Host "P2_CACHE_MATRIX_QUICK_SMOKE=PASS"
+          $engineQuick=Join-Path $env:RUNNER_TEMP 'p2-bounded-cache-engine-quick.tsv'
+          & $chainDest --quick --cache-engine --output $engineQuick
+          if ($LASTEXITCODE -ne 0) { throw "BOUNDED_CACHE_ENGINE_QUICK_FAILED" }
+          $engineRows=@(Import-Csv -Path $engineQuick -Delimiter ([char]9))
+          if ($engineRows.Count -ne 22 -or @($engineRows | Where-Object {
+            $_.schema -ne 'I2-REAL-CACHE-1' -or
+            $_.expected_hit -ne $_.observed_hit -or
+            [int]$_.mismatches -ne 0
+          }).Count -gt 0) { throw "BOUNDED_CACHE_ENGINE_QUICK_SCHEMA_INVALID" }
+          Write-Host "P2_BOUNDED_CACHE_ENGINE_QUICK_SMOKE=PASS"
           # Instrumentation exists only in a separate research test binary.
           $adversarialExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_adversarial_perf_probe.exe'
           if (-not (Test-Path -LiteralPath $adversarialExe)) {
@@ -396,6 +406,18 @@ jobs:
               Matrix output: bin/P2_CACHE_MATRIX_5MIN.tsv.
               This is a research-only PCM proof, not a Product cache;
               sidecar/latency/epoch/dependency qualification is separate.
+          [ ] Run_P2_Bounded_Cache.cmd exercises a REAL bounded immutable
+              PCM stage cache (research-only) at 44.1/48 kHz, including
+              SHA-256 source PCM identity, typed upstream DSP params,
+              Product algorithm/schema versions, revisions, 256MB-ish
+              1-entry LRU, correct misses for changed Gain, source PCM
+              even without revision change, source/prefix revision and
+              eviction. Every candidate is independently re-rendered
+              by Product RenderPreview for sample-by-sample bit oracle.
+              Report: bin/P2_BOUNDED_CACHE_5MIN.tsv.
+              The oracle is intentionally excluded from cached-path
+              timings. Full sidecar/epoch/tail provenance is NOT
+              qualified; no production cache has been installed.
           [ ] Stress P2 under adversarial but finite input, 30 sec each
               at 44.1 and 48 kHz: Run_P2_Adversarial.cmd creates
               bin/P2_ADVERSARIAL_PATH_BENCH.tsv. The CSV status column
@@ -513,6 +535,23 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Cache_Matrix.cmd') -Value $cacheMatrixLauncher -Encoding ascii
+          $boundedCacheLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - isolated bounded stage cache/real Product PCM oracle
+          echo Real 5-minute synthetic audio at 44.1 and 48 kHz.
+          echo 22 candidates with validated cache HIT/MISS, SHA256 source,
+          echo algorithm version, parameters, revision and LRU eviction.
+          echo This is a RESEARCH prototype, not the installed Product cache.
+          r1d_p2_chain_perf_probe.exe --cache-engine --output P2_BOUNDED_CACHE_5MIN.tsv
+          if errorlevel 1 (
+              echo BOUNDED CACHE PROOF FAILED -- see console / TSV
+          ) else (
+              echo BOUNDED CACHE PROOF COMPLETE -- bin\P2_BOUNDED_CACHE_5MIN.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Bounded_Cache.cmd') -Value $boundedCacheLauncher -Encoding ascii
           $adversarialLauncher=@'
           @echo off
           cd /d "%~dp0bin"
