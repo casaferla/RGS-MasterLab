@@ -255,6 +255,12 @@ jobs:
           }
           Write-Host "P2_CHAIN_PERF_QUICK_SMOKE=PASS"
           Write-Host "P2_CHAIN_PERF_WINDOWS_EXE_PACKAGED=PASS"
+          $evalTsv=Join-Path $env:RUNNER_TEMP 'p2-chain-perf-eval-quick.tsv'
+          & $chainDest --quick --eval-count 3 --rate 48000 --output $evalTsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CHAIN_EVAL_MODE_QUICK_FAILED" }
+          $evalRows=@(Import-Csv -Path $evalTsv -Delimiter "`t")
+          if ($evalRows.Count -ne 3) { throw "P2_CHAIN_EVAL_MODE_ROWS_INVALID" }
+          Write-Host "P2_CHAIN_REPEATED_CANDIDATE_QUICK_SMOKE=PASS"
           # Research-only path distribution observer: counters compiled out
           # of the ordinary P2 module/GUI. This EXE measures its own overhead.
           $pathExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_callback_path_perf_probe.exe'
@@ -333,6 +339,13 @@ jobs:
               Output: bin/P2_CALLBACK_PATH_5MIN_BENCH.tsv.
               Results are offline Windows benchmarks, NOT callback deadlines,
               device dropouts or complete M16/streaming certification.
+          [ ] OPTIONAL stress test for 100 *fresh* five-minute
+              full-chain Product renders at 48 kHz: use
+              Run_P2_100_Evals.cmd, preferably when the PC is idle.
+              Output: bin/P2_AUTOMATCH_100_EVAL_BENCH.tsv.
+              This is CPU-throughput-only repeated candidate evaluation,
+              NOT the actual L3 solver, reference feature analysis, caching
+              or a guaranteed user-facing AutoMatch time.
           [ ] Collect bin/P2_I2_M16_DIAGNOSTIC.tsv with TP Meter
               selected and PROCESSED playing, before and after Stop/Play.
               This is read-only witness logging, NOT M16 certification.
@@ -382,6 +395,22 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Chain_Perf.cmd') -Value $chainLauncher -Encoding ascii
+          $evaluationLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2: 100 fresh full-chain evaluations on 5-minute synthetic PCM
+          echo 48 kHz stereo, Gain/EQ/Compressor/Stereo MS/P2, Drive varies.
+          echo This may occupy CPU and RAM. Close heavy applications.
+          echo This is not an L3 AutoMatch solver. No WAV is read.
+          r1d_p2_chain_perf_probe.exe --eval-count 100 --rate 48000 --output P2_AUTOMATCH_100_EVAL_BENCH.tsv
+          if errorlevel 1 (
+              echo EVALUATION STRESS FAILED -- see output above
+          ) else (
+              echo EVALUATION STRESS COMPLETE -- bin\P2_AUTOMATCH_100_EVAL_BENCH.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_100_Evals.cmd') -Value $evaluationLauncher -Encoding ascii
           $pathLauncher=@'
           @echo off
           cd /d "%~dp0bin"
