@@ -185,6 +185,9 @@ jobs:
           if (Test-Path $out) { Get-Content $out -Tail 40 }
           if (Test-Path $err) { Get-Content $err -Tail 60 }
           if ($p.ExitCode -ne 0) { throw "P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_MISSING: $($p.ExitCode)" }
+          if (-not (Select-String -LiteralPath $err -Pattern 'P2_I2_RESEARCH_SRC_HANDOFF_RECOVERY_ENABLE=PASS' -Quiet)) {
+            throw "P2_I2_SRC_HANDOFF_RESEARCH_NOT_ENABLED"
+          }
           Write-Host 'P2_I2_COLD_DEPLOY_DIRECT_EXE_P2_WITHOUT_FLAG=PASS'
           Write-Host 'P2_I2_COLD_DEPLOY_GUI_M19_M20_M21=PASS'
           # The read-only M16 research tracer must initialize on an ordinary
