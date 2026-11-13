@@ -345,6 +345,7 @@ private slots:
     void c2D10Native44100IsNotInherentlyUnavailable();
     void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
     void c2D21SrcHandoffReproducesPersistentUnprovenObservation();
+    void c2D22Native44100ProcessedPreparedProcessedRoundTripProven();
     void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
     void c2D14ShortLoopRemainsUnproven();
     void c2D14LongLoopPrunesOnlyConsumedHistory();
@@ -4180,6 +4181,104 @@ void PlaybackSupportTest::c2D21SrcHandoffReproducesPersistentUnprovenObservation
     QVERIFY2(newOwnerConsumedTicks >= 25,
         "Reproduce unavailable SRC witness for >=25 consumed new-owner blocks.");
     QVERIFY(sawHandoffGap);
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D22Native44100ProcessedPreparedProcessedRoundTripProven()
+{
+    // Physical #21 failure reproducer: initial PROCESSED (M16 is LIVE),
+    // continuous handoff to anonymous PREPARED, then back to PROCESSED.
+    // The sink never stops; M16 may resume ONLY from the consumed, pure-NEW
+    // source-mapped suffix of the final PROCESSED owner.
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    constexpr auto hz = 44'100;
+    constexpr auto frames = 4 * hz;
+    auto processedPcm = make_buffer(hz, audio::ChannelLayout::STEREO_LR, frames);
+    auto preparedPcm = make_buffer(hz, audio::ChannelLayout::STEREO_LR, frames);
+    auto restoredPcm = make_buffer(hz, audio::ChannelLayout::STEREO_LR, frames);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        processedPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{22'001}));
+    QVERIFY(engine.play());
+    const auto initial = engine.c2_consumed_prefix();
+    QVERIFY(!initial.certifiedForLiveTruePeak);
+    sink->consume_all();
+    engine.tick();
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    const auto initialTarget = engine.snapshot();
+    QVERIFY(initialTarget);
+    QCOMPARE(initialTarget.value()->audibleRealization.realizationId,
+        std::optional{core::RealizationId{22'001}});
+
+    // Undo monitoring: anonymous PREPARED should not inherit PROCESSED ID.
+    QVERIFY(engine.handoff_pcm(preparedPcm.view(), nullptr, std::nullopt));
+    bool heardPrepared = false;
+    for (int i = 0; i < 40; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto state = engine.snapshot();
+        QVERIFY(state);
+        if (state.value()->audibleRealization.phase
+            == core::AudibleHandoffPhase::UNAVAILABLE) {
+            heardPrepared = true;
+            break;
+        }
+    }
+    QVERIFY2(heardPrepared, "Anonymous PREPARED must become audible.");
+    QVERIFY(!engine.c2_src_retirement_observation()
+        .noFutureSourcePrefixExclusive);
+
+    // The returned PROCESSED is a new immutable render identity even if
+    // the user selected the same visual target.
+    QVERIFY(engine.handoff_pcm(restoredPcm.view(), nullptr,
+        core::RealizationId{22'002}));
+    bool sawRestoredAudible = false;
+    bool sawRestoredProvenSuffix = false;
+    bool sawGap = false;
+    for (int i = 0; i < 80; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        if (snap.value()->audibleRealization.phase
+                != core::AudibleHandoffPhase::NEW
+            || snap.value()->audibleRealization.realizationId
+                != std::optional{core::RealizationId{22'002}})
+            continue;
+        sawRestoredAudible = true;
+        const auto coverage = engine.c2_consumed_prefix();
+        QVERIFY(!coverage.certifiedForLiveTruePeak);
+        if (!coverage.partitionRepresented) continue;
+        for (const auto& slice : coverage.view()) {
+            sawGap |= slice.kind == Kind::GAP_UNPROVEN;
+        }
+        if (!coverage.size) continue;
+        const auto& last = coverage.slices[coverage.size - 1U];
+        if (coverage.reason != Reason::UNPROVEN_HANDOFF
+            || last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.realizationId
+                != std::optional{core::RealizationId{22'002}}
+            || last.outputEnd != coverage.processedWatermarkExclusive
+            || !last.sourceBegin || !last.sourceEnd
+            || !last.handoffPureNewProven)
+            continue;
+        sawRestoredProvenSuffix = true;
+        break;
+    }
+    QVERIFY2(sawRestoredAudible,
+        "Round-trip PROCESSED after PREPARED must become audible.");
+    QVERIFY2(sawGap,
+        "Round-trip must retain its old/new mixed interval as GAP.");
+    QVERIFY2(sawRestoredProvenSuffix,
+        "M16 must recover a sink-consumed pure NEW PROCESSED suffix.");
     QCOMPARE(sink->startCalls, starts);
     QCOMPARE(sink->stopCalls, stops);
 }
