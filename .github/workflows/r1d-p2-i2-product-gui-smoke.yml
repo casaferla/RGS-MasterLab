@@ -212,7 +212,7 @@ jobs:
           cmake -S research/r1d-p2-live -B build-p2-perf -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_PREFIX_PATH="$qt"
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_CONFIG_FAILED" }
-          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe
+          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_COMPILE_FAILED" }
           $binary=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_automatch_perf_probe.exe'
           if (-not (Test-Path -LiteralPath $binary)) { throw "P2_PERF_BINARY_MISSING" }
@@ -235,6 +235,26 @@ jobs:
           }
           Write-Host "P2_ISOLATED_PERF_QUICK_SMOKE=PASS"
           Write-Host "P2_ISOLATED_PERF_WINDOWS_EXE_PACKAGED=PASS"
+          # Separate full Product RenderPreview benchmark, no L3 feature solver.
+          $chainExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_chain_perf_probe.exe'
+          if (-not (Test-Path -LiteralPath $chainExe)) {
+            throw "P2_CHAIN_PERF_BINARY_MISSING"
+          }
+          $chainDest=Join-Path $stage 'bin/r1d_p2_chain_perf_probe.exe'
+          Copy-Item -LiteralPath $chainExe -Destination $chainDest -Force
+          $chainTsv=Join-Path $env:RUNNER_TEMP 'p2-chain-perf-quick.tsv'
+          & $chainDest --quick --output $chainTsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CHAIN_PERF_QUICK_FAILED" }
+          $chainRows=@(Import-Csv -Path $chainTsv -Delimiter "`t")
+          if ($chainRows.Count -ne 14) { throw "P2_CHAIN_PERF_QUICK_ROWS_INVALID" }
+          foreach ($row in $chainRows) {
+            if ($row.schema -ne 'I2-CHAIN-PERF-1' -or
+                [double]$row.full_render_ms -le 0) {
+              throw "P2_CHAIN_PERF_QUICK_SCHEMA_OR_TIMING_INVALID"
+            }
+          }
+          Write-Host "P2_CHAIN_PERF_QUICK_SMOKE=PASS"
+          Write-Host "P2_CHAIN_PERF_WINDOWS_EXE_PACKAGED=PASS"
 
       - name: Add research-only physical test instructions
         shell: pwsh
@@ -279,6 +299,16 @@ jobs:
               No user WAV is read; this is NOT an AutoMatch implementation,
               P2 real-time WCET, canonical feature analyzer or listening test.
               Upload this TSV together with P2_I2_RENDER_TIMINGS.tsv.
+          [ ] To measure the REAL Product RenderPreview full chain,
+              run Run_P2_Chain_Perf.cmd in an extracted research ZIP.
+              Benchmark stages: Gain; Gain+EQ; +Compressor; +Stereo/M-S;
+              +P2 bypass; +P2 active at Drive 0 / +3 / 0 repeat; P2 only
+              active/bypass. 300s synthetic stereo at 44.1 and 48 kHz.
+              Output: bin/P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv.
+              This is not a canonical L3 feature analyzer, AutoMatch
+              solver, or incremental render implementation. Compare real
+              complete rendering costs, not purported individual module
+              execution times: estimates by subtraction are only marginal.
           [ ] Collect bin/P2_I2_M16_DIAGNOSTIC.tsv with TP Meter
               selected and PROCESSED playing, before and after Stop/Play.
               This is read-only witness logging, NOT M16 certification.
@@ -313,6 +343,21 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_AutoMatch_Perf.cmd') -Value $perfLauncher -Encoding ascii
+          $chainLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - real full-chain RenderPreview benchmark, 300s audio
+          echo Synthetic test: Gain, EQ, Compressor, Stereo M/S, P2
+          echo No personal audio is read. The benchmark uses CPU and RAM.
+          r1d_p2_chain_perf_probe.exe --output P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv
+          if errorlevel 1 (
+              echo CHAIN BENCHMARK FAILED -- see output above
+          ) else (
+              echo CHAIN BENCHMARK COMPLETE -- bin\P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Chain_Perf.cmd') -Value $chainLauncher -Encoding ascii
 
       - name: Include validated real Qt GUI screenshot in physical-test package
         shell: pwsh
