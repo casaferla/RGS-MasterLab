@@ -81,6 +81,19 @@ public:
     [[nodiscard]] std::uint64_t output_frames() const noexcept { return output_count_; }
     [[nodiscard]] bool is_finished() const noexcept { return state_ == Lifecycle::finished; }
 
+#ifdef RESEARCH_P2_PERF_COUNTERS
+    // Read-only probe. Enabled ONLY in the standalone research benchmark;
+    // zero code/data exists in ordinary P2 builds. No I/O or allocation.
+    struct PerfCounters {
+        std::array<std::uint64_t, 9> pathCalls{};
+        std::uint64_t totalChecks{0};
+        std::uint64_t totalProjectionSweeps{0};
+        std::uint64_t totalCommittedFrames{0};
+    };
+    [[nodiscard]] const PerfCounters& perf_counters() const noexcept
+    { return perfCounters_; }
+#endif
+
     // Real-time callback: no allocation, no locks, no syscalls, no exceptions.
     [[nodiscard]] Status process(std::span<const Frame> input,
                                  std::span<Frame> output) noexcept {
@@ -117,6 +130,9 @@ public:
         }
         for (;;) {
             const auto step = payload_->safety.finish(payload_->scratch, payload_->gains);
+#ifdef RESEARCH_P2_PERF_COUNTERS
+            observe_perf_step(step);
+#endif
             if (step.status != ::research::Status::ok)
                 return fail(Status::safety_failure, latency_tail);
             if (!step.frames) break;
@@ -159,11 +175,27 @@ private:
     std::uint64_t input_count_ = 0, output_count_ = 0;
     Lifecycle state_ = Lifecycle::fresh;
 
+#ifdef RESEARCH_P2_PERF_COUNTERS
+    PerfCounters perfCounters_{};
+    void observe_perf_step(const ::research::Step& step) noexcept {
+        if (step.frames == 0) return;
+        const auto path = static_cast<std::size_t>(step.path);
+        if (path < perfCounters_.pathCalls.size())
+            ++perfCounters_.pathCalls[path];
+        perfCounters_.totalChecks += step.full_checks;
+        perfCounters_.totalProjectionSweeps += step.sweeps;
+        perfCounters_.totalCommittedFrames += step.frames;
+    }
+#endif
+
     [[nodiscard]] Status feed_music(Frame raw) noexcept {
         Frame sample{};
         if (!payload_->music.push(raw, sample)) return Status::ok;
         const auto step = payload_->safety.submit(
             std::span<const Frame>(&sample, 1), payload_->scratch, payload_->gains);
+#ifdef RESEARCH_P2_PERF_COUNTERS
+        observe_perf_step(step);
+#endif
         if (step.status != ::research::Status::ok) return Status::safety_failure;
         if (!enqueue(step.frames)) return Status::fifo_overflow;
         return Status::ok;
