@@ -120,6 +120,8 @@ struct Trial {
     int stages;
     bool p2Bypass;
     double drive;
+    double ceilingDbTp{-1.0};
+    double gainDb{1.0};
 };
 constexpr std::array<Trial, 10> kTrials{{
     {"GAIN", 1, true, 0.0},
@@ -146,7 +148,7 @@ Outcome evaluate(const audio::AudioBuffer& source,
         registry, {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
     require(bool(chain), "ProcessingChain failed");
 
-    const auto gain = dsp::GainParameters::create(1.0);
+    const auto gain = dsp::GainParameters::create(trial.gainDb);
     require(bool(gain), "Gain params failed");
     core::Uuid::Bytes uuid{};
     uuid[15] = 77;
@@ -164,7 +166,7 @@ Outcome evaluate(const audio::AudioBuffer& source,
         0.0, 1.8, false, dsp::MonoBassMode::OFF, 120.0, 100.0);
     require(bool(ms), "Stereo MS params failed");
     auto p2 = dsp::StreamingTruePeakLimiterParameters::create(
-        -1.0, trial.drive, 2);
+        trial.ceilingDbTp, trial.drive, 2);
     require(bool(p2), "P2 params failed");
     std::vector<dsp::ModuleExecutionBinding> bindings;
     const int first = trial.stages == -1 ? 4 : 0;
@@ -217,78 +219,103 @@ Outcome evaluate(const audio::AudioBuffer& source,
         fingerprint(result.value()->view()),
         result.value()->signatures().size()};
 }
-// One deliberately naive stage cache experiment: the POST-TRIM
-// output of Gain/EQ/Compressor/M-S is replayed as P2-only input. If latency,
-// tails, preroll or stage frame-domain semantics differ, refuse the cache.
-// The actual Product renderer is never modified. No approximate tolerance.
+// Research-only stage-boundary feasibility: PCM bit equality alone.
+// Output after four Product DSPs is replayed as P2-only source without
+// altering the frozen renderer. Additional metadata/sidecars still require
+// validation before any cache can be built in L2/L3.
 void cache_boundary_proof(const dsp::ModuleRegistry& registry,
-                          int fs, int seconds, std::ofstream& report)
+                          int fs, int seconds, std::ofstream& report,
+                          Trial suffix=Trial{"CACHED_SUFFIX_P2",-1,false,3.0},
+                          bool staleGain=false, bool staleSource=false,
+                          bool matrix=false)
 {
-    const auto prepared = synthetic(fs, seconds);
-    std::vector<double> upstream, fresh, cached;
+    auto prepared=synthetic(fs,seconds);
+    std::vector<double> upstream,fresh,cached;
     const Trial firstFour{"UNCACHED_UPSTREAM_4",4,true,0.0};
-    const Trial allFive{"FRESH_FULL_5",5,false,3.0};
-    const Trial lastOnly{"CACHED_SUFFIX_P2", -1,false,3.0};
-    const auto base = evaluate(prepared, registry, firstFour, &upstream);
-    const auto full = evaluate(prepared, registry, allFive, &fresh);
-    const auto rate = core::SampleRate::create(fs);
-    require(bool(rate), "cache proof invalid sample rate");
-    const auto fmt = audio::AudioFormat::create(
-        *rate.value(), audio::ChannelLayout::STEREO_LR);
-    require(bool(fmt), "cache proof invalid format");
-    const std::size_t n = static_cast<std::size_t>(fs) *
-        static_cast<std::size_t>(seconds);
-    require(upstream.size() == 2*n && fresh.size() == 2*n,
-        "cache proof raw PCM capture invalid");
-    auto exactStageSnapshot = audio::AudioBuffer::create(
-        *fmt.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        core::FrameIndex{kOrigin}, fc(static_cast<std::int64_t>(n)));
-    require(bool(exactStageSnapshot), "cache proof cannot allocate stage PCM");
-    for (unsigned c=0;c<2;++c) {
-        const auto lane = exactStageSnapshot.value()->mutable_view().channel(c);
-        require(bool(lane) && lane.value()->size()==n,
-            "cache proof cannot write exact stage PCM");
-        std::copy(upstream.begin()+c*n,upstream.begin()+(c+1)*n,
-            lane.value()->begin());
+    const Trial fullTrial{"FRESH_FULL_5",5,suffix.p2Bypass,
+        suffix.drive,suffix.ceilingDbTp,staleGain?2.0:1.0};
+    const auto base=evaluate(prepared,registry,firstFour,&upstream);
+    if(staleSource) {
+        // Compare full rendering of NEW source with stale OLD stage PCM.
+        const auto lane=prepared.mutable_view().channel(0);
+        require(bool(lane),"stale source lane missing");
+        const auto start=static_cast<std::size_t>(fs/2);
+        for(std::size_t i=start;
+            i<std::min(lane.value()->size(),start+1024U);++i)
+            (*lane.value())[i]+=0.5;
     }
-    const auto reusable = evaluate(*exactStageSnapshot.value(),
-        registry,lastOnly,&cached);
-    require(cached.size() == fresh.size(), "cache proof output size diverged");
-    std::size_t mismatch=0;
-    std::size_t first=0;
+    const auto full=evaluate(prepared,registry,fullTrial,&fresh);
+    const auto rate=core::SampleRate::create(fs);
+    require(bool(rate),"invalid sample rate");
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    require(bool(fmt),"invalid format");
+    const auto n=static_cast<std::size_t>(fs)*
+        static_cast<std::size_t>(seconds);
+    require(upstream.size()==2*n && fresh.size()==2*n,
+        "cache proof source or fresh PCM shape invalid");
+    auto cachedStage=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{kOrigin},fc(static_cast<std::int64_t>(n)));
+    require(bool(cachedStage),"cache stage buffer allocation failed");
+    for(std::size_t channel=0;channel<2;++channel) {
+        const auto lane=cachedStage.value()->mutable_view().channel(
+            static_cast<int>(channel));
+        require(bool(lane)&&lane.value()->size()==n,
+            "cache stage PCM lane missing");
+        std::copy(upstream.begin()+channel*n,
+                  upstream.begin()+(channel+1)*n,lane.value()->begin());
+    }
+    const auto reused=evaluate(*cachedStage.value(),registry,suffix,&cached);
+    require(cached.size()==fresh.size(),"cache/full length mismatch");
+    std::size_t mismatchCount=0,firstMismatch=0;
     for(std::size_t i=0;i<fresh.size();++i) {
-        if(std::bit_cast<std::uint64_t>(fresh[i])
-            != std::bit_cast<std::uint64_t>(cached[i])) {
-            if(mismatch==0) first=i;
-            ++mismatch;
+        if(std::bit_cast<std::uint64_t>(fresh[i])!=
+            std::bit_cast<std::uint64_t>(cached[i])) {
+            if(mismatchCount==0) firstMismatch=i;
+            ++mismatchCount;
         }
     }
-    const bool exact=mismatch==0;
-    report<<"I2-CACHE-BOUNDARY-1\t"<<fs<<'\t'<<seconds<<'\t'
-          <<"POST_TRIM_TO_P2\t"<<(exact?"EXACT_ACCEPT":"NON_EQUIVALENT_REJECT")
-          <<'\t'<<mismatch<<'\t'
-          <<(exact?-1:static_cast<std::int64_t>(first % n))<<'\t'
-          <<(exact?-1:static_cast<std::int64_t>(first / n))<<'\t'
-          <<base.ms<<'\t'<<full.ms<<'\t'<<reusable.ms<<'\t'
+    const bool exact=mismatchCount==0;
+    const bool stale=staleSource||staleGain;
+    const char* observed=exact?"EXACT_ACCEPT":"NON_EQUIVALENT_REJECT";
+    const char* expected=stale?"NON_EQUIVALENT_REJECT":"EXACT_ACCEPT";
+    if(matrix) {
+        report<<"I2-CACHE-MATRIX-1\t"<<fs<<'\t'<<seconds<<'\t'
+              <<(staleGain?"STALE_GAIN":staleSource?"STALE_SOURCE":
+                suffix.p2Bypass?"P2_BYPASS":
+                suffix.ceilingDbTp< -1.1?"P2_CEILING_MINUS3":
+                suffix.drive==0?"P2_DRIVE0":
+                suffix.drive==3?"P2_DRIVE3":"P2_DRIVE6")
+              <<'\t'<<suffix.drive<<'\t'<<suffix.ceilingDbTp<<'\t'
+              <<(suffix.p2Bypass?1:0)<<'\t'
+              <<expected<<'\t'<<observed;
+    } else {
+        report<<"I2-CACHE-BOUNDARY-1\t"<<fs<<'\t'<<seconds
+              <<"\tPOST_TRIM_TO_P2\t"<<observed;
+    }
+    report<<'\t'<<mismatchCount<<'\t'
+          <<(exact?-1:static_cast<std::int64_t>(firstMismatch%n))<<'\t'
+          <<(exact?-1:static_cast<std::int64_t>(firstMismatch/n))<<'\t'
+          <<base.ms<<'\t'<<full.ms<<'\t'<<reused.ms<<'\t'
           <<std::hex<<base.hash<<'\t'<<full.hash<<'\t'
-          <<reusable.hash<<std::dec<<'\n';
+          <<reused.hash<<std::dec<<'\n';
     report.flush();
-    require(bool(report),"cache boundary report write failed");
-    std::cout<<"CACHE_BOUNDARY_RATE "<<fs<<" STATUS "
-             <<(exact?"EXACT_ACCEPT":"NON_EQUIVALENT_REJECT")
-             <<" mismatched_samples="<<mismatch
-             <<" first_mismatched_frame="<<(first%n)
-             <<" original_full_ms="<<full.ms
-             <<" cached_suffix_ms="<<reusable.ms<<'\n';
-    // A rejected cache candidate is an expected, SAFE experimental result.
-    // A valid future cache requires exact identity INCLUDING dependent
-    // metadata and stage latency; THIS test checks only PCM bit identity.
+    require(bool(report),"cache matrix write failed");
+    std::cout<<"CACHE_PROOF "<<fs<<" result "<<observed
+             <<" mismatches "<<mismatchCount<<" full_ms "<<full.ms
+             <<" suffix_ms "<<reused.ms<<'\n';
+    if(matrix)
+        require(exact!=stale,
+            "cache matrix failed expected exact/stale classification");
 }
+
 int main(int argc, char** argv)
 {
     try {
         bool quick = false;
         bool cacheProof = false;
+        bool cacheMatrix = false;
         int evalCount = 0;
         int evaluationRate = 48000;
         std::string path = "P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv";
@@ -296,6 +323,7 @@ int main(int argc, char** argv)
             const std::string_view argument{argv[i]};
             if (argument == "--quick") quick = true;
             else if (argument == "--cache-proof") cacheProof = true;
+            else if (argument == "--cache-matrix") cacheMatrix = true;
             else if (argument == "--output" && i + 1 < argc)
                 path = argv[++i];
             else if (argument == "--eval-count" && i + 1 < argc)
@@ -305,7 +333,7 @@ int main(int argc, char** argv)
             else throw std::runtime_error(
                 "Usage: [--quick] [--output PATH] "
                 "[--eval-count 1..150] [--rate 44100|48000] "
-                "[--cache-proof]");
+                "[--cache-proof|--cache-matrix]");
         }
         auto normal = dsp::ModuleRegistry::create_dsp_package_v1();
         require(bool(normal), "Product registry failed");
@@ -314,7 +342,8 @@ int main(int argc, char** argv)
         require(bool(optin), "P2 optin registry failed");
         require(evalCount >= 0 && evalCount <= 150
             && (evaluationRate == 44100 || evaluationRate == 48000)
-            && !(cacheProof && evalCount != 0),
+            && !((cacheProof || cacheMatrix) && evalCount != 0)
+            && !(cacheProof && cacheMatrix),
             "Invalid evaluation count, rate or cache proof combination");
         const int seconds = quick ? 2 : 300;
         const int trialLimit = quick ? 7 : static_cast<int>(kTrials.size());
@@ -325,20 +354,40 @@ int main(int argc, char** argv)
                 "\tp2_bypass\tp2_drive_db\tfull_render_ms"
                 "\tsignatures\tpcm_fingerprint\n";
         file << std::fixed << std::setprecision(3);
-        if(cacheProof) {
-            // A separate TSV schema prevents accidental joining with the
-            // normal full-chain timing records.
+        if(cacheProof || cacheMatrix) {
+            // Separate TSV schemas for the legacy one-case proof and matrix.
             file.close();
             file.open(path,std::ios::out|std::ios::trunc);
-            require(bool(file),"cache proof report open failed");
-            file<<"schema\trate_hz\tduration_s\tboundary\tresult"
-                   "\tmismatch_samples\tfirst_mismatch_frame"
+            require(bool(file),"cache report open failed");
+            if(cacheMatrix)
+                file<<"schema\trate_hz\tduration_s\tcase\tp2_drive_db"
+                       "\tceiling_db_tp\tp2_bypass\texpected\tobserved";
+            else
+                file<<"schema\trate_hz\tduration_s\tboundary\tresult";
+            file<<"\tmismatch_samples\tfirst_mismatch_frame"
                    "\tfirst_mismatch_channel\tupstream_ms\tfull_ms"
                    "\tsuffix_ms\tupstream_hash\tfull_hash\tsuffix_hash\n";
             file<<std::fixed<<std::setprecision(3);
             for(int fs:{44100,48000}) {
-                if (fs != evaluationRate) continue;
-                cache_boundary_proof(*optin.value(),fs,seconds,file);
+                if (!cacheMatrix && fs != evaluationRate) continue;
+                if(cacheProof) {
+                    cache_boundary_proof(*optin.value(),fs,seconds,file);
+                } else {
+                    constexpr std::array<Trial,5> p2Options{{
+                        {"P2_ONLY",-1,false,0.0},
+                        {"P2_ONLY",-1,false,3.0},
+                        {"P2_ONLY",-1,false,6.0},
+                        {"P2_ONLY",-1,false,3.0,-3.0},
+                        {"P2_BYPASS",-1,true,0.0}
+                    }};
+                    for(const auto& t:p2Options)
+                        cache_boundary_proof(*optin.value(),fs,seconds,
+                                             file,t,false,false,true);
+                    cache_boundary_proof(*optin.value(),fs,seconds,file,
+                        Trial{"P2_ONLY",-1,false,3.0},true,false,true);
+                    cache_boundary_proof(*optin.value(),fs,seconds,file,
+                        Trial{"P2_ONLY",-1,false,3.0},false,true,true);
+                }
             }
             std::cout<<"CACHE_STAGE_BOUNDARY_PROOF_COMPLETE; "
                      <<"DO NOT PROMOTE ON PCM-ONLY IDENTITY\n";
