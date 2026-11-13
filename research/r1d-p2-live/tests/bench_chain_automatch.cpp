@@ -1,7 +1,9 @@
 // RGS MasterLab R1d-P2 research-only: Product RenderPreview offline chain
 // benchmark. No canonical L3 solver, no product implementation, no WAV export.
 // Original audio, DSP, ModuleRegistry and renderer are executed UNMODIFIED.
+#include "p2_prefix_lru.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/core/sha256.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
@@ -22,6 +24,7 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -310,12 +313,15 @@ void cache_boundary_proof(const dsp::ModuleRegistry& registry,
             "cache matrix failed expected exact/stale classification");
 }
 
+#include "p2_cache_engine_fixture.hpp"
+
 int main(int argc, char** argv)
 {
     try {
         bool quick = false;
         bool cacheProof = false;
         bool cacheMatrix = false;
+        bool cacheEngine = false;
         int evalCount = 0;
         int evaluationRate = 48000;
         std::string path = "P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv";
@@ -324,6 +330,7 @@ int main(int argc, char** argv)
             if (argument == "--quick") quick = true;
             else if (argument == "--cache-proof") cacheProof = true;
             else if (argument == "--cache-matrix") cacheMatrix = true;
+            else if (argument == "--cache-engine") cacheEngine = true;
             else if (argument == "--output" && i + 1 < argc)
                 path = argv[++i];
             else if (argument == "--eval-count" && i + 1 < argc)
@@ -333,7 +340,7 @@ int main(int argc, char** argv)
             else throw std::runtime_error(
                 "Usage: [--quick] [--output PATH] "
                 "[--eval-count 1..150] [--rate 44100|48000] "
-                "[--cache-proof|--cache-matrix]");
+                "[--cache-proof|--cache-matrix|--cache-engine]");
         }
         auto normal = dsp::ModuleRegistry::create_dsp_package_v1();
         require(bool(normal), "Product registry failed");
@@ -342,8 +349,9 @@ int main(int argc, char** argv)
         require(bool(optin), "P2 optin registry failed");
         require(evalCount >= 0 && evalCount <= 150
             && (evaluationRate == 44100 || evaluationRate == 48000)
-            && !((cacheProof || cacheMatrix) && evalCount != 0)
-            && !(cacheProof && cacheMatrix),
+            && !((cacheProof || cacheMatrix || cacheEngine) && evalCount != 0)
+            && (static_cast<int>(cacheProof)+static_cast<int>(cacheMatrix)
+                  +static_cast<int>(cacheEngine) <= 1),
             "Invalid evaluation count, rate or cache proof combination");
         const int seconds = quick ? 2 : 300;
         const int trialLimit = quick ? 7 : static_cast<int>(kTrials.size());
@@ -354,6 +362,23 @@ int main(int argc, char** argv)
                 "\tp2_bypass\tp2_drive_db\tfull_render_ms"
                 "\tsignatures\tpcm_fingerprint\n";
         file << std::fixed << std::setprecision(3);
+        if(cacheEngine) {
+            file.close();
+            file.open(path,std::ios::out|std::ios::trunc);
+            require(bool(file),"cannot open cache engine report");
+            file<<"schema\trate_hz\tduration_s\tcase\texpected_hit"
+                   "\tobserved_hit\tmismatches\tstamp_hash_ms"
+                   "\tprefix_ms\tsnapshot_copy_ms\tsuffix_ms"
+                   "\toracle_full_ms\tcache_bytes\tevictions"
+                   "\thits\tmisses\trefusals\toracle_hash"
+                   "\tcached_hash\n";
+            file<<std::fixed<<std::setprecision(3);
+            for(int fs:{44100,48000})
+                demonstrate_bounded_cache(*optin.value(),fs,seconds,file);
+            std::cout<<"EXACT_BOUNDED_STAGE_CACHE_RESEARCH_PROOF_PASS; "
+                     <<"NOT a Product cache, M13 verification or realtime guarantee\n";
+            return 0;
+        }
         if(cacheProof || cacheMatrix) {
             // Separate TSV schemas for the legacy one-case proof and matrix.
             file.close();
