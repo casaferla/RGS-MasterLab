@@ -139,7 +139,8 @@ struct Outcome {
     std::size_t signatures{};
 };
 Outcome evaluate(const audio::AudioBuffer& source,
-                 const dsp::ModuleRegistry& registry, const Trial& trial)
+                 const dsp::ModuleRegistry& registry, const Trial& trial,
+                 std::vector<double>* rawCaptured = nullptr)
 {
     auto chain = dsp::ProcessingChain::create(
         registry, {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
@@ -198,20 +199,103 @@ Outcome evaluate(const audio::AudioBuffer& source,
     require(result.value()->signatures().size()
         == static_cast<std::size_t>(last - first),
         "RenderPreview signatures missing");
+    // Outside the timing interval, preserve every raw PCM bit for an exact
+    // comparison. Never use only fingerprints as a cache acceptance gate.
+    if (rawCaptured) {
+        const auto v = result.value()->view();
+        const auto frames = static_cast<std::size_t>(v.frame_count().value());
+        rawCaptured->resize(2 * frames);
+        for (int channel = 0; channel < 2; ++channel) {
+            const auto lane = v.channel(channel);
+            require(bool(lane), "cache proof capture has no channel");
+            require(lane.value()->size() == frames, "bad capture length");
+            std::copy(lane.value()->begin(), lane.value()->end(),
+                rawCaptured->begin() + static_cast<std::size_t>(channel) * frames);
+        }
+    }
     return Outcome{millis(t0, t1),
         fingerprint(result.value()->view()),
         result.value()->signatures().size()};
+}
+// One deliberately naive stage cache experiment: the POST-TRIM
+// output of Gain/EQ/Compressor/M-S is replayed as P2-only input. If latency,
+// tails, preroll or stage frame-domain semantics differ, refuse the cache.
+// The actual Product renderer is never modified. No approximate tolerance.
+void cache_boundary_proof(const dsp::ModuleRegistry& registry,
+                          int fs, int seconds, std::ofstream& report)
+{
+    const auto prepared = synthetic(fs, seconds);
+    std::vector<double> upstream, fresh, cached;
+    const Trial firstFour{"UNCACHED_UPSTREAM_4",4,true,0.0};
+    const Trial allFive{"FRESH_FULL_5",5,false,3.0};
+    const Trial lastOnly{"CACHED_SUFFIX_P2", -1,false,3.0};
+    const auto base = evaluate(prepared, registry, firstFour, &upstream);
+    const auto full = evaluate(prepared, registry, allFive, &fresh);
+    const auto rate = core::SampleRate::create(fs);
+    require(bool(rate), "cache proof invalid sample rate");
+    const auto fmt = audio::AudioFormat::create(
+        *rate.value(), audio::ChannelLayout::STEREO_LR);
+    require(bool(fmt), "cache proof invalid format");
+    const std::size_t n = static_cast<std::size_t>(fs) *
+        static_cast<std::size_t>(seconds);
+    require(upstream.size() == 2*n && fresh.size() == 2*n,
+        "cache proof raw PCM capture invalid");
+    auto exactStageSnapshot = audio::AudioBuffer::create(
+        *fmt.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{kOrigin}, fc(static_cast<std::int64_t>(n)));
+    require(bool(exactStageSnapshot), "cache proof cannot allocate stage PCM");
+    for (unsigned c=0;c<2;++c) {
+        const auto lane = exactStageSnapshot.value()->mutable_view().channel(c);
+        require(bool(lane) && lane.value()->size()==n,
+            "cache proof cannot write exact stage PCM");
+        std::copy(upstream.begin()+c*n,upstream.begin()+(c+1)*n,
+            lane.value()->begin());
+    }
+    const auto reusable = evaluate(*exactStageSnapshot.value(),
+        registry,lastOnly,&cached);
+    require(cached.size() == fresh.size(), "cache proof output size diverged");
+    std::size_t mismatch=0;
+    std::size_t first=0;
+    for(std::size_t i=0;i<fresh.size();++i) {
+        if(std::bit_cast<std::uint64_t>(fresh[i])
+            != std::bit_cast<std::uint64_t>(cached[i])) {
+            if(mismatch==0) first=i;
+            ++mismatch;
+        }
+    }
+    const bool exact=mismatch==0;
+    report<<"I2-CACHE-BOUNDARY-1\t"<<fs<<'\t'<<seconds<<'\t'
+          <<"POST_TRIM_TO_P2\t"<<(exact?"EXACT_ACCEPT":"NON_EQUIVALENT_REJECT")
+          <<'\t'<<mismatch<<'\t'
+          <<(exact?-1:static_cast<std::int64_t>(first % n))<<'\t'
+          <<(exact?-1:static_cast<std::int64_t>(first / n))<<'\t'
+          <<base.ms<<'\t'<<full.ms<<'\t'<<reusable.ms<<'\t'
+          <<std::hex<<base.hash<<'\t'<<full.hash<<'\t'
+          <<reusable.hash<<std::dec<<'\n';
+    report.flush();
+    require(bool(report),"cache boundary report write failed");
+    std::cout<<"CACHE_BOUNDARY_RATE "<<fs<<" STATUS "
+             <<(exact?"EXACT_ACCEPT":"NON_EQUIVALENT_REJECT")
+             <<" mismatched_samples="<<mismatch
+             <<" first_mismatched_frame="<<(first%n)
+             <<" original_full_ms="<<full.ms
+             <<" cached_suffix_ms="<<reusable.ms<<'\n';
+    // A rejected cache candidate is an expected, SAFE experimental result.
+    // A valid future cache requires exact identity INCLUDING dependent
+    // metadata and stage latency; THIS test checks only PCM bit identity.
 }
 int main(int argc, char** argv)
 {
     try {
         bool quick = false;
+        bool cacheProof = false;
         int evalCount = 0;
         int evaluationRate = 48000;
         std::string path = "P2_AUTOMATCH_CHAIN_5MIN_BENCH.tsv";
         for (int i = 1; i < argc; ++i) {
             const std::string_view argument{argv[i]};
             if (argument == "--quick") quick = true;
+            else if (argument == "--cache-proof") cacheProof = true;
             else if (argument == "--output" && i + 1 < argc)
                 path = argv[++i];
             else if (argument == "--eval-count" && i + 1 < argc)
@@ -220,7 +304,8 @@ int main(int argc, char** argv)
                 evaluationRate = std::stoi(argv[++i]);
             else throw std::runtime_error(
                 "Usage: [--quick] [--output PATH] "
-                "[--eval-count 1..150] [--rate 44100|48000]");
+                "[--eval-count 1..150] [--rate 44100|48000] "
+                "[--cache-proof]");
         }
         auto normal = dsp::ModuleRegistry::create_dsp_package_v1();
         require(bool(normal), "Product registry failed");
@@ -228,8 +313,9 @@ int main(int argc, char** argv)
             std::move(*normal.value()));
         require(bool(optin), "P2 optin registry failed");
         require(evalCount >= 0 && evalCount <= 150
-            && (evaluationRate == 44100 || evaluationRate == 48000),
-            "Invalid evaluation count or source rate");
+            && (evaluationRate == 44100 || evaluationRate == 48000)
+            && !(cacheProof && evalCount != 0),
+            "Invalid evaluation count, rate or cache proof combination");
         const int seconds = quick ? 2 : 300;
         const int trialLimit = quick ? 7 : static_cast<int>(kTrials.size());
         const std::array<double,4> evaluationDrives{0.0,3.0,6.0,0.0};
@@ -239,6 +325,25 @@ int main(int argc, char** argv)
                 "\tp2_bypass\tp2_drive_db\tfull_render_ms"
                 "\tsignatures\tpcm_fingerprint\n";
         file << std::fixed << std::setprecision(3);
+        if(cacheProof) {
+            // A separate TSV schema prevents accidental joining with the
+            // normal full-chain timing records.
+            file.close();
+            file.open(path,std::ios::out|std::ios::trunc);
+            require(bool(file),"cache proof report open failed");
+            file<<"schema\trate_hz\tduration_s\tboundary\tresult"
+                   "\tmismatch_samples\tfirst_mismatch_frame"
+                   "\tfirst_mismatch_channel\tupstream_ms\tfull_ms"
+                   "\tsuffix_ms\tupstream_hash\tfull_hash\tsuffix_hash\n";
+            file<<std::fixed<<std::setprecision(3);
+            for(int fs:{44100,48000}) {
+                if (fs != evaluationRate) continue;
+                cache_boundary_proof(*optin.value(),fs,seconds,file);
+            }
+            std::cout<<"CACHE_STAGE_BOUNDARY_PROOF_COMPLETE; "
+                     <<"DO NOT PROMOTE ON PCM-ONLY IDENTITY\n";
+            return 0;
+        }
         for (const int hz : {44100, 48000}) {
             if (evalCount > 0 && hz != evaluationRate) continue;
             const auto input = synthetic(hz, seconds);
