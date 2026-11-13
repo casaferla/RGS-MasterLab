@@ -966,6 +966,11 @@ public:
         return monitoring_master_snapshot();
     }
 
+    void set_research_p2_src_handoff_recovery(bool enabled) noexcept
+    {
+        engine_.set_research_p2_src_handoff_recovery(enabled);
+    }
+
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,
@@ -1146,6 +1151,16 @@ public:
     {
         // Two owner-thread observations must match the *same* consumed
         // generation and watermark; the projector rejects torn clocks.
+        // Isolated research P2: a pure NEW, actually consumed SRC suffix
+        // may recover after the mixed handoff without losing the sink clock.
+        // The immutable accepted GAP ledger is never rewritten; the witness
+        // is attached only after the engine proves owner + FIR retirement.
+        const auto researchSuffix =
+            engine_.c2_research_p2_src_handoff_suffix(expectedGeneration);
+        if (researchSuffix) {
+            return internal::project_c2_prefix(
+                researchSuffix->first, &researchSuffix->second);
+        }
         const auto consumed = engine_.c2_consumed_prefix(expectedGeneration);
         const auto retired = engine_.c2_src_retirement_observation(
             expectedGeneration);
@@ -1343,6 +1358,15 @@ public:
             return failure<Snapshot>(core::ErrorCode::IoFailure,
                 "MONITOR_SNAPSHOT_WINDOWS_OWNER_QUERY_FAILED");
         return std::move(*result);
+    }
+
+    [[nodiscard]] core::Status set_research_p2_src_handoff_recovery(
+        bool enabled)
+    {
+        return invoke_status([enabled](PlaybackWorker& worker) {
+            worker.set_research_p2_src_handoff_recovery(enabled);
+            return core::Status::success();
+        });
     }
 
     [[nodiscard]] core::Status handoff_pcm(
@@ -1844,6 +1868,12 @@ core::Result<audio::MonitoringMasterDisplaySnapshot>
 WindowsAudioPlaybackService::monitoring_master_snapshot() const
 {
     return impl_->monitoring_master_snapshot();
+}
+
+core::Status WindowsAudioPlaybackService::set_research_p2_src_handoff_recovery(
+    bool enabled)
+{
+    return impl_->set_research_p2_src_handoff_recovery(enabled);
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(
