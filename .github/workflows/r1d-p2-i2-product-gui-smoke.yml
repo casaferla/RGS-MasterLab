@@ -289,6 +289,15 @@ jobs:
             throw "P2_CACHE_PROOF_QUICK_SCHEMA_INVALID"
           }
           Write-Host "P2_CACHE_PROOF_QUICK_SMOKE=PASS"
+          $cacheMatrix=Join-Path $env:RUNNER_TEMP 'p2-cache-matrix-quick.tsv'
+          & $chainDest --quick --cache-matrix --output $cacheMatrix
+          if ($LASTEXITCODE -ne 0) { throw "P2_CACHE_MATRIX_QUICK_FAILED" }
+          $matrixRows=@(Import-Csv -Path $cacheMatrix -Delimiter ([char]9))
+          if ($matrixRows.Count -ne 14 -or
+              @($matrixRows | Where-Object { $_.schema -ne 'I2-CACHE-MATRIX-1' -or $_.expected -ne $_.observed }).Count -gt 0) {
+            throw "P2_CACHE_MATRIX_QUICK_INVARIANT_FAILED"
+          }
+          Write-Host "P2_CACHE_MATRIX_QUICK_SMOKE=PASS"
           # Instrumentation exists only in a separate research test binary.
           $adversarialExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_adversarial_perf_probe.exe'
           if (-not (Test-Path -LiteralPath $adversarialExe)) {
@@ -380,6 +389,13 @@ jobs:
               is a valid FAIL-CLOSED result, not a broken tool.
               EXACT_ACCEPT on this fixture is NOT enough for certification:
               timebase/latency/sidecars/dependency identity must also match.
+          [ ] Run_P2_Cache_Matrix.cmd extends exact comparison to
+              both 44.1 and 48 kHz, P2 Drive 0/+3/+6, ceiling -3dBTP
+              and bypass. Two intentional stale tests change upstream
+              Gain and source audio, requiring NON_EQUIVALENT_REJECT.
+              Matrix output: bin/P2_CACHE_MATRIX_5MIN.tsv.
+              This is a research-only PCM proof, not a Product cache;
+              sidecar/latency/epoch/dependency qualification is separate.
           [ ] Stress P2 under adversarial but finite input, 30 sec each
               at 44.1 and 48 kHz: Run_P2_Adversarial.cmd creates
               bin/P2_ADVERSARIAL_PATH_BENCH.tsv. The CSV status column
@@ -481,6 +497,22 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Cache_Proof.cmd') -Value $cacheLauncher -Encoding ascii
+          $cacheMatrixLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - 5 min PCM cache matrix proof with negative stale tests
+          echo Checking Drive 0/3/6, ceiling, bypass at 44.1 and 48k.
+          echo MUST reject stale source / Gain reuse; all values must match
+          echo expected. No WAV is read and no Product cache is changed.
+          r1d_p2_chain_perf_probe.exe --cache-matrix --output P2_CACHE_MATRIX_5MIN.tsv
+          if errorlevel 1 (
+              echo CACHE MATRIX FAILED -- see status and TSV
+          ) else (
+              echo CACHE MATRIX COMPLETE -- bin\P2_CACHE_MATRIX_5MIN.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Cache_Matrix.cmd') -Value $cacheMatrixLauncher -Encoding ascii
           $adversarialLauncher=@'
           @echo off
           cd /d "%~dp0bin"
