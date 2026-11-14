@@ -213,7 +213,7 @@ jobs:
           cmake -S research/r1d-p2-live -B build-p2-perf -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_PREFIX_PATH="$qt"
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_CONFIG_FAILED" }
-          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe r1d_p2_execution_layers_perf_probe r1d_p2_component_perf_probe r1d_p2_adversarial_perf_probe
+          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe r1d_p2_execution_layers_perf_probe r1d_p2_component_perf_probe r1d_p2_batched_safety_perf_probe r1d_p2_adversarial_perf_probe
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_COMPILE_FAILED" }
           $binary=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_automatch_perf_probe.exe'
           if (-not (Test-Path -LiteralPath $binary)) { throw "P2_PERF_BINARY_MISSING" }
@@ -323,6 +323,30 @@ jobs:
             }
           }
           Write-Host 'P2_COMPONENT_PCM_BIT_EXACT=PASS'
+          # Research-only safety batch candidate. 6 rates, mono/stereo,
+          # seven block sizes, four excitation classes, full bitwise
+          # baseline oracle and EOS. No candidate is wired into Product.
+          $batchExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_batched_safety_perf_probe.exe'
+          if (-not (Test-Path -LiteralPath $batchExe)) {
+            throw 'P2_BATCHED_PROBE_BINARY_MISSING'
+          }
+          $batchDest=Join-Path $stage 'bin/r1d_p2_batched_safety_perf_probe.exe'
+          Copy-Item -LiteralPath $batchExe -Destination $batchDest -Force
+          $batchTsv=Join-Path $env:RUNNER_TEMP 'p2-batched-safety-quick.tsv'
+          & $batchDest --quick --output $batchTsv
+          if ($LASTEXITCODE -ne 0) { throw 'P2_BATCHED_PROOF_BIT_ORACLE_FAILED' }
+          $batchRows=@(Import-Csv -Path $batchTsv -Delimiter "`t")
+          if ($batchRows.Count -ne 336) { throw 'P2_BATCHED_MATRIX_ROW_COUNT_INVALID' }
+          foreach ($row in $batchRows) {
+            if ($row.schema -ne 'I2-P2-BATCHED-1' -or
+                $row.result -ne 'BIT_EXACT' -or
+                [double]$row.baseline_ms -le 0 -or
+                [double]$row.batched_ms -le 0 -or
+                [int64]$row.compared_frames -le 0) {
+              throw 'P2_BATCHED_PROOF_ROW_INVALID'
+            }
+          }
+          Write-Host 'P2_BATCHED_336_CASES_PCM_BIT_EXACT=PASS'
           # Fail-closed feasibility test: does a naively trimmed 4-DSP
           # PCM intermediate exactly reproduce five-DSP fresh rendering?
           $cacheTsv=Join-Path $env:RUNNER_TEMP 'p2-cache-proof-quick.tsv'
@@ -449,6 +473,14 @@ jobs:
               quiet/normal/hot Drive6; no personal audio read.
               Output: bin/P2_COMPONENT_COST_5MIN.tsv. Cost estimates
               are NOT a certification, WCET, or new P2 implementation.
+          [ ] Candidate optimisation (NOT Product): invoke
+              Run_P2_Batched_Safety.cmd. Compares original per-sample
+              True Peak safety submission against 64-frame submissions,
+              identical pinned kernel, all PCM and EOS compared bitwise.
+              CI uses 6 Fs, mono/stereo and 7 blocks; this offline
+              benchmark runs full 5min at 44.1/48 kHz stereo.
+              Output: bin/P2_BATCHED_SAFETY_5MIN.tsv.
+              No speedup, quality or live WCET claim before measurements.
           [ ] OPTIONAL stress test for 100 *fresh* five-minute
               full-chain Product renders at 48 kHz: use
               Run_P2_100_Evals.cmd, preferably when the PC is idle.
@@ -602,6 +634,22 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Component_Cost.cmd') -Value $componentsLauncher -Encoding ascii
+          $batchLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RESEARCH ONLY - True Peak safety batch candidate vs ORIGINAL
+          echo Full five-minute 44.1/48kHz PCM, 512/4096 block scenarios.
+          echo Every output sample and EOS are checked bitwise.
+          echo This is not a Product build or certified realtime shortcut.
+          r1d_p2_batched_safety_perf_probe.exe --output P2_BATCHED_SAFETY_5MIN.tsv
+          if errorlevel 1 (
+              echo BATCHED SAFETY PROOF FAILED -- do not promote candidate
+          ) else (
+              echo P2 BATCH PROOF COMPLETE -- bin\P2_BATCHED_SAFETY_5MIN.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Batched_Safety.cmd') -Value $batchLauncher -Encoding ascii
           $cacheLauncher=@'
           @echo off
           cd /d "%~dp0bin"
