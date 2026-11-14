@@ -27,11 +27,13 @@ public:
     // Fixed, locally classified diagnostics. NEVER forward arbitrary
     // filesystem paths or untrusted Error.message into the GUI.
     enum class FailureReason : std::uint8_t {
-        UNKNOWN, DELIVERED_TP_ABOVE_CEILING,
+        UNKNOWN, DELIVERED_TP_ABOVE_CEILING, MICRO_TRIM_ELIGIBLE,
         DESTINATION_EXISTS, SOURCE_COLLISION, PRODUCT_EPOCH_REVOKED
     };
     [[nodiscard]] static constexpr FailureReason classify_failure(
         std::string_view message) noexcept {
+        if(message.starts_with("m18_candidate_micro_trim_eligible"))
+            return FailureReason::MICRO_TRIM_ELIGIBLE;
         if(message.starts_with(
             "m18_candidate_nonconforming_delivered_true_peak"))
             return FailureReason::DELIVERED_TP_ABOVE_CEILING;
@@ -75,7 +77,7 @@ public:
         core::ResourceReference destination,
         audio::WavSampleFormat format,
         std::optional<std::uint64_t> seed,
-        double ceilingDbTp)
+        double ceilingDbTp,bool userApprovedMicroTrim=false)
     {
         if(std::this_thread::get_id()!=owner_thread_)
             return core::Status::failure(core::Error{
@@ -91,7 +93,7 @@ public:
         auto launched=launch_m18_async_export_from_live_product(
             session,source,rate,gate,ticket,
             std::move(selectedSource),std::move(destination),
-            format,seed,ceilingDbTp);
+            format,seed,ceilingDbTp,userApprovedMicroTrim);
         if(!launched)return core::Status::failure(*launched.error());
         job_=std::move(*launched.value());
         return core::Status::success();
