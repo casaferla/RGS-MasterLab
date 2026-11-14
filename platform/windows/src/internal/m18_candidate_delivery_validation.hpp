@@ -22,6 +22,9 @@ struct M18CandidateReadbackEvidence final {
     analysis::M18DeliveredTruePeakEvidence decoded_true_peak;
     double requested_ceiling_db_tp{0.0};
     bool meets_ceiling{false};
+    // Measured sample-wise post-codec error against the immutable M17 PCM.
+    // This is evidence for a bounded, explicit user retry only.
+    double max_abs_sample_error{0.0};
 };
 
 // Only inspect a PRIVATE, not-yet-published WAV candidate. The calling
@@ -35,6 +38,6 @@ validate_m18_candidate_decoded_delivery(
     audio::AudioBufferView verified_m17_master,
     audio::WavSampleFormat expected_encoding,
     std::optional<std::uint64_t> pcm24_dither_seed,
-    double ceiling_db_tp);
+    double ceiling_db_tp,double delivery_gain=1.0);
 
 } // namespace rgsml::platform::windows::internal
