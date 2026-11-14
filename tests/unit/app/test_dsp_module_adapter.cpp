@@ -5,6 +5,7 @@
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 
 #include <rgsml/dsp/module_registry.hpp>
 
@@ -25,6 +26,7 @@ private slots:
     void testRealTerminalLimiterInInventoryButNotAudible();
     void testMonitorUtilityHasNoDSPBypassOrAudioStage();
     void testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMonitor();
+    void testP2DuplicateCommandsDoNotScheduleRendering();
     void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
@@ -42,6 +44,89 @@ private slots:
     void testIndependentModuleHistories();
     void testWorkflowContextLabel();
 };
+
+void DspModuleAdapterTest::testP2DuplicateCommandsDoNotScheduleRendering()
+{
+    // Real fifth DSP and real preview controller. Duplicate accepted Qt
+    // controls must not consume a Product epoch or request a full-chain
+    // render. A genuine parameter or bypass edit still requests one.
+    auto base = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry = dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*base.value()));
+    QVERIFY(registry);
+    const auto uuid=[](const char* value) {
+        return *core::Uuid::parse(value).value();
+    };
+    const auto module=[](const char* value) {
+        return *dsp::ModuleInstanceId::from_uuid(
+            *core::Uuid::parse(value).value()).value();
+    };
+    auto four=MasteringChainState::create_product_default(
+        *registry.value(),uuid("72900000-0000-4000-8000-000000000001"),
+        module("72900000-0000-4000-8000-000000000011"),
+        module("72900000-0000-4000-8000-000000000012"),
+        module("72900000-0000-4000-8000-000000000013"),
+        module("72900000-0000-4000-8000-000000000014"));
+    QVERIFY(four);
+    const auto p2Id=module("72900000-0000-4000-8000-000000000019");
+    auto defaults=dsp::StreamingTruePeakLimiterParameters::create_default();
+    QVERIFY(defaults);
+    auto five=MasteringChainState::with_streaming_true_peak_preview(
+        std::move(*four.value()),p2Id,*defaults.value(),false);
+    QVERIFY(five);
+    auto state=std::move(*five.value());
+    MasteringPreviewController preview{&state};
+    StreamingTruePeakPreviewModuleAdapter adapter{
+        &state,&preview,QStringLiteral("Mastering")};
+    QSignalSpy previewNotifications{&preview,&MasteringPreviewController::changed};
+    QVERIFY(previewNotifications.isValid());
+    const auto revision=state.chain().revision();
+    QCOMPARE(state.module_count(),std::size_t{5});
+    QVERIFY(!adapter.bypass());
+
+    // Exactly equal typed values, including a RESET to defaults, must not
+    // enqueue rendering or change authoritative parameters/chain revision.
+    adapter.setCeilingDbTp(-1.0);
+    adapter.setDriveDb(0.0);
+    adapter.setMarginPercent(2);
+    adapter.resetToDefault();
+    adapter.setBypass(false);
+    QCOMPARE(previewNotifications.count(),0);
+    QCOMPARE(state.chain().revision(),revision);
+    QCOMPARE(state.streaming_p2_preview_parameters(),
+             std::optional{*defaults.value()});
+
+    adapter.setDriveDb(3.0);
+    QCOMPARE(previewNotifications.count(),1);
+    const auto changed=dsp::StreamingTruePeakLimiterParameters::create(-1.0,3.0,2);
+    QVERIFY(changed);
+    QCOMPARE(state.streaming_p2_preview_parameters(),
+             std::optional{*changed.value()});
+    adapter.setDriveDb(3.0);
+    adapter.setCeilingDbTp(-1.0);
+    adapter.setMarginPercent(2);
+    QCOMPARE(previewNotifications.count(),1);
+
+    adapter.setBypass(true);
+    QCOMPARE(previewNotifications.count(),2);
+    QVERIFY(adapter.bypass());
+    adapter.setBypass(true);
+    QCOMPARE(previewNotifications.count(),2);
+    adapter.resetToDefault();
+    QCOMPARE(previewNotifications.count(),3);
+    QCOMPARE(state.streaming_p2_preview_parameters(),
+             std::optional{*defaults.value()});
+    adapter.resetToDefault();
+    QCOMPARE(previewNotifications.count(),3);
+    // Restore audible P2 ON, then ensure duplicate ON is non-mutating.
+    adapter.setBypass(false);
+    QCOMPARE(previewNotifications.count(),4);
+    adapter.setBypass(false);
+    QCOMPARE(previewNotifications.count(),4);
+    QVERIFY(!adapter.bypass());
+    QVERIFY(state.chain().revision()>revision);
+}
 
 void DspModuleAdapterTest::testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMonitor()
 {
