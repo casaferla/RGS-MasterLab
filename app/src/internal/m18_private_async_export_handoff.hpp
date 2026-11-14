@@ -30,14 +30,14 @@ launch_m18_async_export_from_live_product(
     core::ResourceReference destination,
     audio::WavSampleFormat format,
     std::optional<std::uint64_t> seed,
-    double ceilingDbTp)
+    double ceilingDbTp,bool userApprovedMicroTrim=false)
 {
     using Worker=platform::windows::internal::M18AsyncExportWorker;
     using R=core::Result<std::shared_ptr<Worker>>;
     auto request=make_m18_checked_stage_worker_request_from_live_product(
         session,source,rate,gate,ticket,
         std::move(requestedSource),std::move(destination),
-        format,seed,ceilingDbTp);
+        format,seed,ceilingDbTp,userApprovedMicroTrim);
     if(!request)return R::failure(*request.error());
     // The request retains immutable M17 stage ownership, actual SOURCE
     // identity and a Qt-free, revocable Product epoch lease factory.
