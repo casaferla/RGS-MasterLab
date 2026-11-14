@@ -2764,7 +2764,7 @@ Window {
              && previewBadge && active && bypass && undo && redo,
              "M16 needs a real row/editor/cards in the standard DSP host");
     QCOMPARE(host->property("moduleTitle").toString(),
-             QStringLiteral("True Peak Meter"));
+             QStringLiteral("TP Meter"));
     QCOMPARE(host->property("moduleContext").toString(),
              QStringLiteral("Mastering"));
     QVERIFY2(meter->property("visible").toBool(),
