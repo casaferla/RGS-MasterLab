@@ -38,7 +38,7 @@ make_m18_checked_stage_worker_request(
     core::ResourceReference destination,
     audio::WavSampleFormat targetFormat,
     std::optional<std::uint64_t> pcm24Seed,
-    double ceilingDbTp)
+    double ceilingDbTp,bool userApprovedMicroTrim=false)
 {
     using Request=platform::windows::M18TransactionalAudioExportRequest;
     using R=core::Result<Request>;
@@ -86,7 +86,7 @@ make_m18_checked_stage_worker_request(
         std::move(source),std::move(retained),std::move(destination),
         targetFormat,pcm24Seed,ceilingDbTp,
         platform::windows::ExportCollisionPolicy::FAIL_IF_EXISTS,
-        productTicket.commit_lease_factory());
+        productTicket.commit_lease_factory(),userApprovedMicroTrim);
 }
 
 // Product-facing preproduction overload: obtain SOURCE from the ACTUAL
@@ -106,7 +106,7 @@ make_m18_checked_stage_worker_request_from_product_source(
     core::ResourceReference destination,
     audio::WavSampleFormat targetFormat,
     std::optional<std::uint64_t> pcm24Seed,
-    double ceilingDbTp)
+    double ceilingDbTp,bool userApprovedMicroTrim=false)
 {
     using R=core::Result<
         platform::windows::M18TransactionalAudioExportRequest>;
@@ -116,7 +116,7 @@ make_m18_checked_stage_worker_request_from_product_source(
     return make_m18_checked_stage_worker_request(
         currentProductGate,std::move(stage),productTicket,
         *provenance.value(),std::move(source),std::move(destination),
-        targetFormat,pcm24Seed,ceilingDbTp);
+        targetFormat,pcm24Seed,ceilingDbTp,userApprovedMicroTrim);
 }
 
 // Cohesive Product-owner PREPRODUCTION entry point. Reads the actual
@@ -139,7 +139,7 @@ make_m18_checked_stage_worker_request_from_live_product(
     core::ResourceReference destination,
     audio::WavSampleFormat targetFormat,
     std::optional<std::uint64_t> pcm24Seed,
-    double ceilingDbTp)
+    double ceilingDbTp,bool userApprovedMicroTrim=false)
 {
     using R=core::Result<
         platform::windows::M18TransactionalAudioExportRequest>;
@@ -179,6 +179,6 @@ make_m18_checked_stage_worker_request_from_live_product(
     return make_m18_checked_stage_worker_request_from_product_source(
         currentProductSource,currentProductGate,std::move(stage),
         productTicket,std::move(requestedSource),std::move(destination),
-        targetFormat,pcm24Seed,ceilingDbTp);
+        targetFormat,pcm24Seed,ceilingDbTp,userApprovedMicroTrim);
 }
 } // namespace rgsml::app::internal
