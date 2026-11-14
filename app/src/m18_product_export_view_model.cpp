@@ -100,9 +100,31 @@ QString M18ProductExportViewModel::error_text() const
     const auto s=action_->snapshot();
     if(s.phase!=internal::M18PrivateAsyncExportSession::Phase::FAILED)
         return {};
-    // The worker exposes only the stable error category to the GUI,
-    // never an unchecked filesystem message or an unverified WAV path.
-    // These cases must remain useful even on a machine without internet.
+    // Distinguish actionable conditions without leaking filesystem
+    // paths, worker internals or falsely blaming an accepted M17 Master.
+    using Failure=internal::M18PrivateAsyncExportSession::FailureReason;
+    switch(s.failure_reason) {
+    case Failure::DESTINATION_EXISTS:
+        return QStringLiteral(
+            "A WAV with this filename already exists. "
+            "Choose a new filename; M18 never overwrites an existing file.");
+    case Failure::SOURCE_COLLISION:
+        return QStringLiteral(
+            "The output destination conflicts with the Source or its "
+            "identity changed during export. The Source was protected.");
+    case Failure::PRODUCT_EPOCH_REVOKED:
+        return QStringLiteral(
+            "The verified Master or Product authorization is no longer "
+            "current. Prepare the Master again after checking the Project.");
+    case Failure::DELIVERED_AUDIO_MISMATCH:
+        return QStringLiteral(
+            "The WAV differs from the expected PCM24/Float32 encoded "
+            "samples. No file was delivered.");
+    case Failure::UNKNOWN:
+        break;
+    }
+    // The worker exposes only a stable error category, not arbitrary
+    // filesystem paths. No post-dither True Peak gate exists in M18.
     if(s.failure_code) {
         switch(*s.failure_code) {
         case core::ErrorCode::AccessDenied:
