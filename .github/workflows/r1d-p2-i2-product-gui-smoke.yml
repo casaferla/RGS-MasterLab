@@ -339,14 +339,15 @@ jobs:
           if ($batchRows.Count -ne 336) { throw 'P2_BATCHED_MATRIX_ROW_COUNT_INVALID' }
           foreach ($row in $batchRows) {
             if ($row.schema -ne 'I2-P2-BATCHED-1' -or
-                $row.result -ne 'BIT_EXACT' -or
+                $row.result -ne 'BIT_EXACT_AND_TP_SAFE' -or
                 [double]$row.baseline_ms -le 0 -or
                 [double]$row.batched_ms -le 0 -or
+                [double]$row.measured_true_peak_linear -gt 0.8912509381337456 -or
                 [int64]$row.compared_frames -le 0) {
               throw 'P2_BATCHED_PROOF_ROW_INVALID'
             }
           }
-          Write-Host 'P2_BATCHED_336_CASES_PCM_BIT_EXACT=PASS'
+          Write-Host 'P2_BATCHED_336_CASES_PCM_BIT_EXACT_AND_M16_TP_SAFE=PASS'
           # Fail-closed feasibility test: does a naively trimmed 4-DSP
           # PCM intermediate exactly reproduce five-DSP fresh rendering?
           $cacheTsv=Join-Path $env:RUNNER_TEMP 'p2-cache-proof-quick.tsv'
