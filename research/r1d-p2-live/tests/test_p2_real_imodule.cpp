@@ -61,9 +61,10 @@ static std::vector<Frame> input_pcm(std::size_t n,int fs,int ch,bool hot){
   a[i][1]=ch==2?-.72*a[i][0]:0.;
  }return a;
 }
-static void test_rgs_imodule(int fs,int ch,std::size_t n,std::size_t block,bool bypass,bool hot,bool processEos){
+static void test_rgs_imodule(int fs,int ch,std::size_t n,std::size_t block,bool bypass,bool hot,bool processEos,bool batched=false){
  const auto fmt=format(fs,ch);
  Configuration cfg{fs,ch,2,.8912509381337456,0.};
+ cfg.batch_safety=batched; // only selected in the explicitly preview-enabled path
  ResearchP2IModule module(descriptor(),cfg,bypass);
  dsp::IModule& base=module;
  const dsp::DspProcessSpec spec{fmt,audio::FrameDomainId::SOURCE_PROCESSING_RATE,frames(block)};
@@ -107,7 +108,9 @@ static void test_rgs_imodule(int fs,int ch,std::size_t n,std::size_t block,bool 
   pos+=part;
  }
  EpochSession direct;
- require(direct.begin_epoch(1,cfg,bypass)==EpochStatus::ok,"direct begin");
+ auto originalCfg=cfg;
+ originalCfg.batch_safety=false; // independent legacy oracle, not two batched copies
+ require(direct.begin_epoch(1,originalCfg,bypass)==EpochStatus::ok,"direct begin");
  std::vector<Frame> raw(n+static_cast<std::size_t>(d));
  for(std::size_t off=0;off<n;){
   const auto part=std::min(block,n-off);
@@ -177,6 +180,11 @@ int main(){try{
     test_rgs_imodule(fs,ch,121,block,false,false,false);
     test_rgs_imodule(fs,ch,807,block,false,true,true);
     test_rgs_imodule(fs,ch,121,block,true,true,false);
+    // Across all rates and mono/stereo, verify the genuine IModule's
+    // opt-in preview against the separately configured ORIGINAL engine.
+    // Includes 7-frame no-batch fallback, 64-frame threshold and 512.
+    if(block==7U || block==64U || block==512U)
+     test_rgs_imodule(fs,ch,807,block,false,true,true,true);
    }
   }
   std::cout<<"ok fs="<<fs<<" true_RGS_IModule mono_stereo split_EOS_BYPASS\n";
