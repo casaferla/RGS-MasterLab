@@ -5,6 +5,8 @@
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
+#include <QFile>
+#include <QTemporaryDir>
 #include <QUuid>
 #include <QtTest/QTest>
 
@@ -61,6 +63,7 @@ private slots:
     void testFullChainBindingsAndOrder();
     void testStereoMsOptInProductPreview();
     void testStreamingP2PreviewSnapshotAndFailClosedRestore();
+    void testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation();
     void testNumericEvidenceFullChainGainAndEq();
     void testFourDispositionPermutations();
     void testStaleJobRejection();
@@ -276,6 +279,116 @@ void MasteringPreviewControllerTest::testStreamingP2PreviewSnapshotAndFailClosed
     const auto bypassLeft=*rendered->view().channel(0).value();
     for(std::size_t n=0;n<bypassLeft.size();++n)
         QCOMPARE(bypassLeft[n],preparedLeft[n]);
+}
+
+void MasteringPreviewControllerTest::
+testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
+{
+    // Real Product worker, not the research LRU mock: exact source owner,
+    // typed first-four modules and fifth P2 parameter edits. The first
+    // request calibrates via independent full-chain bit oracle; subsequent
+    // P2 edits must skip actual upstream DSP and still match fresh PCM.
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto optIn=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*base.value()));
+    QVERIFY(optIn);
+    const auto uuid=[](const char* x) {
+        return *core::Uuid::parse(x).value();
+    };
+    const auto id=[&](const char* x) {
+        return *dsp::ModuleInstanceId::from_uuid(uuid(x)).value();
+    };
+    auto state=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(state); // The legacy default alone cannot create opt-in P2.
+    auto four=MasteringChainState::create_product_default(
+        *optIn.value(),uuid("83200000-0000-4000-8000-000000000001"),
+        id("83200000-0000-4000-8000-000000000011"),
+        id("83200000-0000-4000-8000-000000000012"),
+        id("83200000-0000-4000-8000-000000000013"),
+        id("83200000-0000-4000-8000-000000000014"));
+    QVERIFY(four);
+    auto p2=dsp::StreamingTruePeakLimiterParameters::create(-2.0,3.0,2);
+    QVERIFY(p2);
+    const auto p2Id=id("83200000-0000-4000-8000-000000000019");
+    auto five=MasteringChainState::with_streaming_true_peak_preview(
+        std::move(*four.value()),p2Id,*p2.value(),false);
+    QVERIFY(five);
+    auto& live=*five.value();
+    QVERIFY(!live.instances()[2].active());
+    QVERIFY(!live.instances()[3].active());
+    std::shared_ptr<render::RenderResult> prepared=make_unit_prepared_result(
+        *core::SampleRate::create(48000).value(),0.26,4096);
+    std::shared_ptr<render::RenderResult> published;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto logPath=dir.filePath(QStringLiteral("p2-product-cache-proof.tsv"));
+    MasteringPreviewController controller{
+        &live,[&prepared]{return prepared;},
+        [&published](render::RenderResult result) {
+            published=std::make_shared<render::RenderResult>(std::move(result));
+            return core::Status::success();
+        }};
+    controller.set_research_p2_timing_log_path(logPath);
+
+    const auto execute=[&](bool expectedHit) {
+        controller.request_preview();
+        QTRY_COMPARE_WITH_TIMEOUT(controller.preview_status(),
+                                  QStringLiteral("READY"),10000);
+        QVERIFY(published);
+        // Every candidate is also rendered FRESH with its complete current
+        // five-module state. Comparison includes binary64 bits and all
+        // signatures; no approximate amplitude/hash-only validation.
+        auto fullReq=render::RenderRequest::create(
+            prepared->view(),prepared->view().absolute_range(),
+            live.chain(),live.execution_bindings(),
+            *core::FrameCount::create(4096).value());
+        QVERIFY(fullReq);
+        auto oracle=render::render_preview(
+            *fullReq.value(),*live.registry_snapshot());
+        QVERIFY(oracle);
+        QCOMPARE(published->signatures(),oracle.value()->signatures());
+        QCOMPARE(published->chain_revision(),oracle.value()->chain_revision());
+        QCOMPARE(published->compressor_telemetry_sidecar(),
+                 oracle.value()->compressor_telemetry_sidecar());
+        QCOMPARE(published->stereo_ms_stage_output_sidecars(),
+                 oracle.value()->stereo_ms_stage_output_sidecars());
+        for(std::size_t ch=0;ch<prepared->view().format().channel_count();++ch) {
+            const auto got=published->view().channel(ch);
+            const auto exp=oracle.value()->view().channel(ch);
+            QVERIFY(got&&exp);
+            QCOMPARE(got.value()->size(),exp.value()->size());
+            for(std::size_t frame=0;frame<got.value()->size();++frame)
+                QCOMPARE(std::bit_cast<std::uint64_t>((*got.value())[frame]),
+                         std::bit_cast<std::uint64_t>((*exp.value())[frame]));
+        }
+        QFile evidence{logPath};
+        QVERIFY(evidence.open(QIODevice::ReadOnly));
+        const auto rows=QString::fromUtf8(evidence.readAll()).split(
+            QChar('\n'),Qt::SkipEmptyParts);
+        QVERIFY(!rows.isEmpty());
+        const auto last=rows.back();
+        QVERIFY2(last.contains(
+            expectedHit?QStringLiteral("cache_hit=1")
+                       :QStringLiteral("cache_hit=0")),qPrintable(last));
+    };
+
+    execute(false); // cold exact oracle, adds one immutable prefix
+    auto changed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,6.0,2);
+    QVERIFY(changed);
+    QVERIFY(live.set_streaming_p2_preview_parameters(*changed.value()));
+    execute(true);  // genuinely different P2 without Gain/EQ rebuild
+    QVERIFY(live.set_user_bypass(p2Id,true));
+    execute(true);  // bypass still preserves full 5-signature identity
+    const auto gain=dsp::GainParameters::create(2.5);
+    QVERIFY(gain);
+    QVERIFY(live.set_gain_parameters(*gain.value()));
+    execute(false); // changed upstream DSP invalidates old prefix
+    QVERIFY(live.set_user_bypass(p2Id,false));
+    execute(true);
+    prepared=make_unit_prepared_result(
+        *core::SampleRate::create(48000).value(),0.33,4096);
+    execute(false); // new immutable SOURCE owner invalidates prefix
 }
 
 void MasteringPreviewControllerTest::testNumericEvidenceFullChainGainAndEq()
