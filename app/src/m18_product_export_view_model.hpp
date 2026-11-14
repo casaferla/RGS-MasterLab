@@ -17,6 +17,7 @@ class M18ProductExportViewModel final : public QObject {
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
     Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
     Q_PROPERTY(bool canApplyMicroTrim READ can_apply_micro_trim NOTIFY changed)
+    Q_PROPERTY(bool verifiedMicroTrimApplied READ verified_micro_trim_applied NOTIFY changed)
     Q_PROPERTY(bool exportInProgress READ export_in_progress NOTIFY changed)
     Q_PROPERTY(double encodedProgress READ encoded_progress NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
@@ -36,6 +37,7 @@ public:
     [[nodiscard]] bool can_cancel() const;
     [[nodiscard]] bool can_acknowledge() const;
     [[nodiscard]] bool can_apply_micro_trim() const;
+    [[nodiscard]] bool verified_micro_trim_applied() const;
     [[nodiscard]] bool export_in_progress() const;
     [[nodiscard]] double encoded_progress() const;
     [[nodiscard]] QString status_text() const;
@@ -65,5 +67,6 @@ private:
     int initialFormatIndex_{-1};
     std::optional<std::uint64_t> initialSeed_;
     double initialCeilingDbTp_{0.0};
+    bool lastAttemptHadMicroTrim_{false};
 };
 } // namespace rgsml::app
