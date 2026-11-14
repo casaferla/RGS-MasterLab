@@ -350,8 +350,39 @@ testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
         QCOMPARE(published->chain_revision(),oracle.value()->chain_revision());
         QCOMPARE(published->compressor_telemetry_sidecar(),
                  oracle.value()->compressor_telemetry_sidecar());
-        QCOMPARE(published->stereo_ms_stage_output_sidecars(),
-                 oracle.value()->stereo_ms_stage_output_sidecars());
+        // M15 stage sidecars are not equality-comparable C++ values.
+        // On the allowed cache topology both must be absent; with M15
+        // active the ordinary full renderer must preserve the genuine
+        // stage-sidecar identity, domain and capture status.
+        const auto& observedCaptures =
+            published->stereo_ms_stage_output_sidecars();
+        const auto& referenceCaptures =
+            oracle.value()->stereo_ms_stage_output_sidecars();
+        QCOMPARE(observedCaptures.size(),referenceCaptures.size());
+        for (std::size_t i=0;i<observedCaptures.size();++i) {
+            const auto& got=observedCaptures[i];
+            const auto& expected=referenceCaptures[i];
+            QCOMPARE(got.module_instance_id,expected.module_instance_id);
+            QCOMPARE(got.chain_revision,expected.chain_revision);
+            QCOMPARE(got.realization_id,expected.realization_id);
+            QCOMPARE(got.channel_layout,expected.channel_layout);
+            QCOMPARE(got.sample_rate_hz,expected.sample_rate_hz);
+            QCOMPARE(got.frame_domain_id,expected.frame_domain_id);
+            QCOMPARE(got.status,expected.status);
+            QCOMPARE(got.requested_begin_frame,expected.requested_begin_frame);
+            QCOMPARE(got.requested_end_frame,expected.requested_end_frame);
+            QCOMPARE(got.captured_begin_frame,expected.captured_begin_frame);
+            QCOMPARE(got.output_lr_frames,expected.output_lr_frames);
+            QCOMPARE(got.correlation_status,expected.correlation_status);
+            QCOMPARE(got.correlation_windows.size(),
+                     expected.correlation_windows.size());
+            QCOMPARE(got.side_low_status,expected.side_low_status);
+            QCOMPARE(got.side_low_windows.size(),
+                     expected.side_low_windows.size());
+            QCOMPARE(got.density_status,expected.density_status);
+            QCOMPARE(got.density_buckets.size(),
+                     expected.density_buckets.size());
+        }
         for(std::size_t ch=0;ch<prepared->view().format().channel_count();++ch) {
             const auto got=published->view().channel(ch);
             const auto exp=oracle.value()->view().channel(ch);
