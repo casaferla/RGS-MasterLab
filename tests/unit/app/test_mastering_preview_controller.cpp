@@ -330,7 +330,7 @@ testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
         }};
     controller.set_research_p2_timing_log_path(logPath);
 
-    const auto execute=[&](bool expectedHit) {
+    const auto execute=[&](bool expectedHit,std::size_t expectedEntries) {
         controller.request_preview();
         QTRY_COMPARE_WITH_TIMEOUT(controller.preview_status(),
                                   QStringLiteral("READY"),10000);
@@ -401,33 +401,54 @@ testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
         QVERIFY2(last.contains(
             expectedHit?QStringLiteral("cache_hit=1")
                        :QStringLiteral("cache_hit=0")),qPrintable(last));
+        const auto count=QStringLiteral("cache_entries=%1")
+            .arg(static_cast<qulonglong>(expectedEntries));
+        QVERIFY2(last.contains(count),qPrintable(last));
     };
 
-    execute(false); // cold exact oracle, adds one immutable prefix
+    execute(false,1); // cold exact oracle, adds one immutable prefix
     auto changed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,6.0,2);
     QVERIFY(changed);
     QVERIFY(live.set_streaming_p2_preview_parameters(*changed.value()));
-    execute(true);  // genuinely different P2 without Gain/EQ rebuild
+    execute(true,1); // changed P2 without recomputing upstream
     QVERIFY(live.set_user_bypass(p2Id,true));
-    execute(true);  // bypass still preserves full 5-signature identity
+    execute(true,1); // bypass retains exact five signatures
     const auto gain=dsp::GainParameters::create(2.5);
     QVERIFY(gain);
     QVERIFY(live.set_gain_parameters(*gain.value()));
-    execute(false); // changed upstream DSP invalidates old prefix
+    execute(false,2); // second Gain prefix, both within 256 MiB
     QVERIFY(live.set_user_bypass(p2Id,false));
-    execute(true);
+    execute(true,2);
+    const auto initialGain=dsp::GainParameters::create(0.0);
+    QVERIFY(initialGain);
+    QVERIFY(live.set_gain_parameters(*initialGain.value()));
+    execute(true,2); // LRU hit after reverting to older Gain state
+    QVERIFY(live.set_gain_parameters(*gain.value()));
+    execute(true,2); // second prefix still resident
     prepared=make_unit_prepared_result(
         *core::SampleRate::create(48000).value(),0.33,4096);
-    execute(false); // new immutable SOURCE owner invalidates prefix
-    // Active Stereo/M-S has an authentic stage sidecar: it must never be
-    // silently dropped or replaced with the cached no-telemetry prefix.
-    const auto msId=id("83200000-0000-4000-8000-000000000014");
-    QVERIFY(live.set_user_bypass(msId,false));
-    execute(false);
+    execute(false,1); // SOURCE-owner change clears previous entries
+    prepared=make_unit_prepared_result(
+        *core::SampleRate::create(44100).value(),0.23,4096);
+    execute(false,1); // 44.1 kHz independent SOURCE/rate
     changed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,4.0,2);
     QVERIFY(changed);
     QVERIFY(live.set_streaming_p2_preview_parameters(*changed.value()));
-    execute(false); // still no cache with genuine M/S sidecars
+    execute(true,1); // 44.1 kHz P2 active: fresh bit oracle
+    prepared=make_unit_prepared_result(
+        *core::SampleRate::create(96000).value(),0.31,4096);
+    execute(false,1); // 96 kHz independent SOURCE/rate
+    QVERIFY(live.set_user_bypass(p2Id,true));
+    execute(true,1); // 96 kHz bypass retains verified prefix
+    // Active Stereo/M-S captures are genuine telemetry and may not be
+    // replaced by a cached no-telemetry prefix.
+    const auto msId=id("83200000-0000-4000-8000-000000000014");
+    QVERIFY(live.set_user_bypass(msId,false));
+    execute(false,1);
+    changed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,5.0,2);
+    QVERIFY(changed);
+    QVERIFY(live.set_streaming_p2_preview_parameters(*changed.value()));
+    execute(false,1); // no cache with M15 sidecars
 }
 
 void MasteringPreviewControllerTest::testNumericEvidenceFullChainGainAndEq()
