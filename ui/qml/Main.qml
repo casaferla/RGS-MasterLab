@@ -631,6 +631,15 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 color: root.textSecondary
                 visible: root.appM18ExportModel
+                    && root.appM18ExportModel.verifiedMicroTrimApplied
+                text: "User-approved WAV-only micro trim: -0.01 dB. "
+                    + "Original verified M17 Master was not changed."
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                color: root.textSecondary
+                visible: root.appM18ExportModel
                     && root.appM18ExportModel.verifiedSha256.length === 64
                 text: root.appM18ExportModel
                     ? "Verified delivered file: "
