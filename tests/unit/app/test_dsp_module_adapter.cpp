@@ -348,7 +348,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QCOMPARE(limiter->instance_id(),QString::fromStdString(limiterId.to_string()));
     QCOMPARE(limiter->type_id(),QStringLiteral("rgsml.dsp.true-peak-limiter"));
     QCOMPARE(limiter->editor_content_key(),QStringLiteral("TRUE_PEAK_LIMITER"));
-    QCOMPARE(limiter->display_name(),QStringLiteral("True Peak Limiter"));
+    QCOMPARE(limiter->display_name(),QStringLiteral("Final TP Limiter"));
     QCOMPARE(limiter->live_change_policy(),
         QStringLiteral("OFFLINE_TERMINAL_RENDER_ON_ACCEPTED_CHANGE"));
     QCOMPARE(limiter->family_accent(),QStringLiteral("#6CBCCF"));
