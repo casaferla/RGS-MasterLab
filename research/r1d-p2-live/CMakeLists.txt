@@ -238,6 +238,27 @@ else()
     -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
 endif()
 
+# Experimental batch feeding of the ORIGINAL pinned M16 safety.
+# This macro exists ONLY in this standalone research target. Ordinary
+# Product callbacks, all existing tests and baseline remain unchanged.
+add_executable(r1d_p2_batched_safety_perf_probe
+  tests/bench_p2_batched_callback.cpp)
+target_include_directories(r1d_p2_batched_safety_perf_probe PRIVATE . pinned)
+target_compile_definitions(r1d_p2_batched_safety_perf_probe PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE
+  RESEARCH_P2_BATCHED_CALLBACK)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_batched_safety_perf_probe PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_batched_safety_perf_probe PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_batched_safety_perf_probe PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror
+    -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
+endif()
+
 # Independent original controller vs True Peak verifier stage timing.
 # An untouched CallbackEngine acts as bitwise per-sample + EOS oracle;
 # separately timed stages do not modify pinned musical/safety code.
