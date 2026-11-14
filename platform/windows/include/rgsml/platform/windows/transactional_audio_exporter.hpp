@@ -79,7 +79,8 @@ public:
         std::optional<std::uint64_t> pcm24DitherSeed,
         double ceilingDbTp,
         ExportCollisionPolicy collisionPolicy,
-        M18AcquireCommitLease acquireCommitLease);
+        M18AcquireCommitLease acquireCommitLease,
+        bool userApprovedMicroTrim=false);
 
     [[nodiscard]] const core::ResourceReference& source() const noexcept
     {return source_;}
@@ -95,6 +96,8 @@ public:
     {return ceiling_db_tp_;}
     [[nodiscard]] ExportCollisionPolicy collision_policy() const noexcept
     {return collision_policy_;}
+    [[nodiscard]] bool user_approved_micro_trim() const noexcept
+    {return user_approved_micro_trim_;}
     [[nodiscard]] const M18AcquireCommitLease& commit_lease_factory() const noexcept
     {return commit_lease_factory_;}
 
@@ -106,11 +109,12 @@ private:
         audio::WavSampleFormat format,
         std::optional<std::uint64_t> seed,
         double ceilingDbTp,ExportCollisionPolicy policy,
-        M18AcquireCommitLease factory) noexcept
+        M18AcquireCommitLease factory,bool userApprovedMicroTrim) noexcept
         :source_(std::move(source)),verified_master_(std::move(master)),
          destination_(std::move(destination)),sample_format_(format),
          dither_seed_(seed),ceiling_db_tp_(ceilingDbTp),
-         collision_policy_(policy),commit_lease_factory_(std::move(factory)) {}
+         collision_policy_(policy),commit_lease_factory_(std::move(factory)),
+         user_approved_micro_trim_(userApprovedMicroTrim) {}
 
     core::ResourceReference source_;
     std::shared_ptr<const audio::AudioBuffer> verified_master_;
@@ -120,6 +124,7 @@ private:
     double ceiling_db_tp_;
     ExportCollisionPolicy collision_policy_;
     M18AcquireCommitLease commit_lease_factory_;
+    bool user_approved_micro_trim_{false};
 };
 
 class TransactionalAudioExportResult final {
@@ -189,7 +194,8 @@ private:
         const M18AcquireCommitLease* commitLeaseFactory,
         const std::function<bool()>* cancellationRequested,
         const std::function<void(std::uint64_t,std::uint64_t)>*
-            onEncodedFrames);
+            onEncodedFrames,
+        bool userApprovedMicroTrim);
 };
 
 }  // namespace rgsml::platform::windows
