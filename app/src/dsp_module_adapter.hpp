@@ -360,6 +360,17 @@ public:
     }
     void setBypass(bool value) override {
         if(!state_||!state_->streaming_p2_preview_instance_id())return;
+        // A duplicate QML command is NOT a new DSP epoch: otherwise one
+        // unchanged bypass click can start a full multi-second P2 render.
+        auto current = state_->is_bypassed(
+            *state_->streaming_p2_preview_instance_id());
+        if(current && *current.value()==value) {
+            if(!localError_.isEmpty()) {
+                localError_.clear();
+                emit changed();
+            }
+            return;
+        }
         auto status=state_->set_user_bypass(
             *state_->streaming_p2_preview_instance_id(),value);
         if(!status) localError_=QString::fromStdString(status.error()->message());
@@ -382,6 +393,17 @@ private:
         auto p=dsp::StreamingTruePeakLimiterParameters::create(ceiling,drive,margin);
         if(!p) localError_=QString::fromStdString(p.error()->message());
         else {
+            // Normalize through the typed parameter factory FIRST (including
+            // signed zero), then compare the complete accepted triple.
+            // Identical Ceiling/Drive/Margin must not invalidate M18,
+            // enqueue a full-chain preview, or replace audible PCM.
+            if(params() && *params()==*p.value()) {
+                if(!localError_.isEmpty()) {
+                    localError_.clear();
+                    emit changed();
+                }
+                return;
+            }
             auto status=state_->set_streaming_p2_preview_parameters(*p.value());
             if(!status) localError_=QString::fromStdString(status.error()->message());
             else {
