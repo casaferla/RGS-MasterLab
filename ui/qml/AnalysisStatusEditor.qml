@@ -43,32 +43,23 @@ Item {
         anchors.margins: 18
         spacing: 12
 
+        // DspEditorHost already renders the canonical module title and
+        // workflow context. Do not duplicate either inside M19/M20/M21.
+        // The source chooser retains its useful caption and the research
+        // authority warning, now in one compact row.
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
-            Rectangle {
-                Layout.preferredWidth: 4
-                Layout.preferredHeight: 42
-                radius: 2
-                color: "#6CBCCF"
+            Layout.preferredHeight: 18
+            spacing: 8
+            Text {
+                objectName: "analysisSourceHeading"
+                text: "INDEPENDENT ANALYSIS SOURCE"
+                font.family: "Segoe UI"
+                font.pixelSize: 11
+                font.bold: true
+                color: "#A4BBCB"
             }
-            ColumnLayout {
-                spacing: 2
-                Text {
-                    text: root.panelId + " · " + root.panelTitle
-                    font.family: "Segoe UI"
-                    font.pixelSize: 18
-                    font.bold: true
-                    color: "#E4EDF5"
-                }
-                Text {
-                    text: "READ-ONLY ANALYSIS · NO AUDIO MUTATION"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 10
-                    color: "#9DB8C8"
-                }
-            }
-            Item {Layout.fillWidth: true}
+            Item { Layout.fillWidth: true }
             Text {
                 objectName: "analysisProductAuthorityLabel"
                 text: root.authorized ? "PRODUCT DATA" : "ANALYSIS · DEVELOPMENT"
@@ -76,14 +67,6 @@ Item {
                 font.pixelSize: 10
                 color: root.authorized ? "#B6D6CA" : "#F0C87D"
             }
-        }
-
-        Text {
-            text: "INDEPENDENT ANALYSIS SOURCE"
-            font.family: "Segoe UI"
-            font.pixelSize: 11
-            font.bold: true
-            color: "#A4BBCB"
         }
         RowLayout {
             Layout.fillWidth: true
@@ -134,15 +117,13 @@ Item {
             Layout.minimumHeight: 0
             Layout.preferredHeight: 0
         }
-        Text {
+        // Preserve the compatibility object, but not the redundant
+        // paragraph already explained by the read-only host/authority badges.
+        Item {
             objectName: "analysisEvidenceState"
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            text: "This panel is read-only. Source selection cannot prepare, "
-                + "process or modify audio. No demo, fixture or stale values are displayed."
-            color: "#839BAD"
-            font.family: "Segoe UI"
-            font.pixelSize: 11
+            visible: false
+            Layout.preferredHeight: 0
+            Layout.minimumHeight: 0
         }
     }
 }

@@ -344,6 +344,9 @@ private slots:
     void c2D10LoopOffRecoversFreshSourceWithoutRestart();
     void c2D10Native44100IsNotInherentlyUnavailable();
     void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
+    void c2D21SrcHandoffReproducesPersistentUnprovenObservation();
+    void c2D22Native44100ProcessedPreparedProcessedRoundTripProven();
+    void c2D23ResearchOnlySrcRoundTripRecoversConsumedNewOwner();
     void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
     void c2D14ShortLoopRemainsUnproven();
     void c2D14LongLoopPrunesOnlyConsumedHistory();
@@ -4098,6 +4101,310 @@ void PlaybackSupportTest::c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestar
     QVERIFY2(sawNew, "Pure NEW post-crossfade source must recover without Stop.");
     QCOMPARE(sink->startCalls, starts);
     QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D21SrcHandoffReproducesPersistentUnprovenObservation()
+{
+    // PO hardware reproducer (2026-11-12): 44.1-kHz stereo PROCESSED
+    // through 48-kHz device SRC, then a new PROCESSED owner while playing.
+    // This is a NEGATIVE oracle documenting M16's current fail-closed
+    // behavior. Do not falsely certify an owner after the mixed handoff.
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    constexpr std::int64_t sourceHz = 44'100;
+    constexpr std::int64_t deviceHz = 48'000;
+    constexpr std::int64_t sourceFrames = 3 * sourceHz;
+    auto oldPcm = make_buffer(
+        sourceHz, audio::ChannelLayout::STEREO_LR, sourceFrames);
+    auto newPcm = make_buffer(
+        sourceHz, audio::ChannelLayout::STEREO_LR, sourceFrames);
+    const auto input = core::SampleRate::create(sourceHz);
+    const auto outputRate = core::SampleRate::create(deviceHz);
+    QVERIFY(input && outputRate);
+    auto adapter = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{
+            *input.value(), *outputRate.value(),
+            audio::ChannelLayout::STEREO_LR,
+            frame_count(sourceFrames)});
+    QVERIFY(adapter);
+
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::move(*adapter.value()),
+        nullptr, core::RealizationId{21'001}));
+    QVERIFY(engine.play());
+    const auto initial = engine.c2_src_retirement_observation();
+    QCOMPARE(initial.reason, Reason::UNPROVEN_SRC);
+    sink->consume_all();
+    engine.tick();
+    const auto oldWitness = engine.c2_src_retirement_observation();
+    QVERIFY(oldWitness.noFutureSourcePrefixExclusive);
+    QCOMPARE(oldWitness.realizationId,
+        std::optional{core::RealizationId{21'001}});
+
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    QVERIFY(engine.handoff_pcm(
+        newPcm.view(), nullptr, core::RealizationId{21'002}));
+    bool sawAudibleNew = false;
+    int newOwnerConsumedTicks = 0;
+    bool sawHandoffGap = false;
+    for (int step = 0; step < 120; ++step) {
+        sink->consume_all();
+        engine.tick();
+        const auto state = engine.snapshot();
+        QVERIFY(state);
+        if (state.value()->audibleRealization.phase
+                != core::AudibleHandoffPhase::NEW
+            || state.value()->audibleRealization.realizationId
+                != std::optional{core::RealizationId{21'002}})
+            continue;
+        sawAudibleNew = true;
+        ++newOwnerConsumedTicks;
+        const auto probe = engine.c2_processed_coverage_probe();
+        QCOMPARE(probe.reason, Reason::UNPROVEN_HANDOFF);
+        const auto current = engine.c2_src_retirement_observation();
+        // This is the precise reason M16 cannot resume at 44.1 -> 48.
+        QVERIFY(!current.noFutureSourcePrefixExclusive);
+        const auto ledger = engine.c2_consumed_prefix();
+        QVERIFY(ledger.partitionRepresented);
+        QVERIFY(!ledger.certifiedForLiveTruePeak);
+        for (const auto& slice : ledger.view())
+            sawHandoffGap |= slice.kind == Kind::GAP_UNPROVEN
+                && slice.reason == Reason::UNPROVEN_HANDOFF;
+        if (newOwnerConsumedTicks >= 25) break;
+    }
+    QVERIFY2(sawAudibleNew, "P2 new PROCESSED must become audible.");
+    QVERIFY2(newOwnerConsumedTicks >= 25,
+        "Reproduce unavailable SRC witness for >=25 consumed new-owner blocks.");
+    QVERIFY(sawHandoffGap);
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D22Native44100ProcessedPreparedProcessedRoundTripProven()
+{
+    // Physical #21 failure reproducer: initial PROCESSED (M16 is LIVE),
+    // continuous handoff to anonymous PREPARED, then back to PROCESSED.
+    // The sink never stops; M16 may resume ONLY from the consumed, pure-NEW
+    // source-mapped suffix of the final PROCESSED owner.
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    constexpr auto hz = 44'100;
+    constexpr auto frames = 4 * hz;
+    auto processedPcm = make_buffer(hz, audio::ChannelLayout::STEREO_LR, frames);
+    auto preparedPcm = make_buffer(hz, audio::ChannelLayout::STEREO_LR, frames);
+    auto restoredPcm = make_buffer(hz, audio::ChannelLayout::STEREO_LR, frames);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        processedPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{22'001}));
+    QVERIFY(engine.play());
+    const auto initial = engine.c2_consumed_prefix();
+    QVERIFY(!initial.certifiedForLiveTruePeak);
+    sink->consume_all();
+    engine.tick();
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    const auto initialTarget = engine.snapshot();
+    QVERIFY(initialTarget);
+    QCOMPARE(initialTarget.value()->audibleRealization.realizationId,
+        std::optional{core::RealizationId{22'001}});
+
+    // Undo monitoring: anonymous PREPARED should not inherit PROCESSED ID.
+    QVERIFY(engine.handoff_pcm(preparedPcm.view(), nullptr, std::nullopt));
+    bool heardPrepared = false;
+    for (int i = 0; i < 40; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto state = engine.snapshot();
+        QVERIFY(state);
+        if (state.value()->audibleRealization.phase
+            == core::AudibleHandoffPhase::UNAVAILABLE) {
+            heardPrepared = true;
+            break;
+        }
+    }
+    QVERIFY2(heardPrepared, "Anonymous PREPARED must become audible.");
+    QVERIFY(!engine.c2_src_retirement_observation()
+        .noFutureSourcePrefixExclusive);
+
+    // The returned PROCESSED is a new immutable render identity even if
+    // the user selected the same visual target.
+    QVERIFY(engine.handoff_pcm(restoredPcm.view(), nullptr,
+        core::RealizationId{22'002}));
+    bool sawRestoredAudible = false;
+    bool sawRestoredProvenSuffix = false;
+    bool sawGap = false;
+    for (int i = 0; i < 80; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        if (snap.value()->audibleRealization.phase
+                != core::AudibleHandoffPhase::NEW
+            || snap.value()->audibleRealization.realizationId
+                != std::optional{core::RealizationId{22'002}})
+            continue;
+        sawRestoredAudible = true;
+        const auto coverage = engine.c2_consumed_prefix();
+        QVERIFY(!coverage.certifiedForLiveTruePeak);
+        if (!coverage.partitionRepresented) continue;
+        for (const auto& slice : coverage.view()) {
+            sawGap |= slice.kind == Kind::GAP_UNPROVEN;
+        }
+        if (!coverage.size) continue;
+        const auto& last = coverage.slices[coverage.size - 1U];
+        if (coverage.reason != Reason::UNPROVEN_HANDOFF
+            || last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.realizationId
+                != std::optional{core::RealizationId{22'002}}
+            || last.outputEnd != coverage.processedWatermarkExclusive
+            || !last.sourceBegin || !last.sourceEnd
+            || !last.handoffPureNewProven)
+            continue;
+        sawRestoredProvenSuffix = true;
+        break;
+    }
+    QVERIFY2(sawRestoredAudible,
+        "Round-trip PROCESSED after PREPARED must become audible.");
+    QVERIFY2(sawGap,
+        "Round-trip must retain its old/new mixed interval as GAP.");
+    QVERIFY2(sawRestoredProvenSuffix,
+        "M16 must recover a sink-consumed pure NEW PROCESSED suffix.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D23ResearchOnlySrcRoundTripRecoversConsumedNewOwner()
+{
+    // PO physical R1d-P2 #22: device SRC 44.1 -> 48, PLAYING,
+    // PROCESSED -> anonymous PREPARED -> PROCESSED, no sink reset.
+    // The default C2 path MUST keep UNPROVEN_HANDOFF; only the optional
+    // research observation may isolate a pure NEW, sink-consumed suffix.
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    constexpr std::int64_t inHz = 44'100;
+    constexpr std::int64_t outHz = 48'000;
+    constexpr std::int64_t length = 5 * inHz;
+    auto processed = make_buffer(
+        inHz, audio::ChannelLayout::STEREO_LR, length);
+    auto prepared = make_buffer(
+        inHz, audio::ChannelLayout::STEREO_LR, length);
+    auto restored = make_buffer(
+        inHz, audio::ChannelLayout::STEREO_LR, length);
+    auto inputRate = core::SampleRate::create(inHz);
+    auto outputRate = core::SampleRate::create(outHz);
+    QVERIFY(inputRate && outputRate);
+    auto adapter = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{
+            *inputRate.value(), *outputRate.value(),
+            audio::ChannelLayout::STEREO_LR,
+            frame_count(length)});
+    QVERIFY(adapter);
+    PlaybackEngine engine;
+    engine.set_research_p2_src_handoff_recovery(true);
+    auto sinkOwner = std::make_unique<FakeOutput>(4'096U, 4U);
+    auto* sink = sinkOwner.get();
+    QVERIFY(engine.install_pcm_candidate(
+        processed.view(), std::move(sinkOwner),
+        DeviceSampleFormat::PCM_S16, std::move(*adapter.value()),
+        nullptr, core::RealizationId{23'001}));
+    QVERIFY(engine.play());
+    sink->consume_all();
+    engine.tick();
+    const auto old = engine.c2_src_retirement_observation();
+    QVERIFY(old.noFutureSourcePrefixExclusive);
+    const auto generation = engine.c2_processed_coverage_probe().generation;
+    const int startCalls = sink->startCalls;
+    const int stopCalls = sink->stopCalls;
+
+    QVERIFY(engine.handoff_pcm(prepared.view(), nullptr, std::nullopt));
+    bool preparedAudible = false;
+    for (int i=0; i<50; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        if (snap.value()->audibleRealization.phase
+                == core::AudibleHandoffPhase::UNAVAILABLE) {
+            preparedAudible = true;
+            break;
+        }
+    }
+    QVERIFY(preparedAudible);
+    QVERIFY(!engine.c2_research_p2_src_handoff_suffix());
+
+    QVERIFY(engine.handoff_pcm(restored.view(), nullptr,
+        core::RealizationId{23'002}));
+    bool recovered = false;
+    bool sawUnprovenBeforeNewConsumed = false;
+    std::int64_t firstOutput = -1;
+    std::int64_t latestSourceEnd = -1;
+    for (int i=0; i<130; ++i) {
+        const auto before = engine.c2_research_p2_src_handoff_suffix();
+        if (!before) sawUnprovenBeforeNewConsumed = true;
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        if (snap.value()->audibleRealization.phase
+                != core::AudibleHandoffPhase::NEW
+            || snap.value()->audibleRealization.realizationId
+                != std::optional{core::RealizationId{23'002}})
+            continue;
+        const auto standard = engine.c2_consumed_prefix();
+        QCOMPARE(standard.reason, Reason::UNPROVEN_HANDOFF);
+        QVERIFY(!standard.certifiedForLiveTruePeak);
+        const auto witness = engine.c2_research_p2_src_handoff_suffix();
+        if (!witness) continue;
+        QCOMPARE(witness->first.reason, Reason::UNPROVEN_SRC);
+        QCOMPARE(witness->second.reason, Reason::UNPROVEN_SRC);
+        QVERIFY(witness->first.partitionRepresented);
+        QVERIFY(!witness->first.certifiedForLiveTruePeak);
+        QCOMPARE(witness->first.size, std::size_t{1});
+        QVERIFY(witness->first.slices[0].kind ==
+            platform::windows::internal::C2ConsumedSliceKind::GAP_UNPROVEN);
+        const auto projected =
+            platform::windows::internal::project_c2_prefix(
+                witness->first, &witness->second);
+        QVERIFY(!projected.certifiedForLiveTruePeak);
+        QCOMPARE(projected.srcRealizationId,
+            std::optional{core::RealizationId{23'002}});
+        QCOMPARE(projected.srcInputRateHz, inHz);
+        QCOMPARE(projected.srcOutputRateHz, outHz);
+        QVERIFY(projected.srcRetiredSourceBegin
+            && projected.srcRetiredSourceEnd);
+        QVERIFY(*projected.srcRetiredSourceEnd
+            > *projected.srcRetiredSourceBegin);
+        if (firstOutput < 0)
+            firstOutput = projected.srcConsumedOutputBegin;
+        QCOMPARE(projected.srcConsumedOutputBegin, firstOutput);
+        QVERIFY(*projected.srcRetiredSourceEnd >= latestSourceEnd);
+        latestSourceEnd = *projected.srcRetiredSourceEnd;
+        recovered = true;
+        break;
+    }
+    QVERIFY2(sawUnprovenBeforeNewConsumed,
+        "Mixed handoff must remain unproven before consumed pure-NEW.");
+    QVERIFY2(recovered,
+        "Research observer must recover verified SRC suffix after round-trip.");
+    QCOMPARE(engine.c2_processed_coverage_probe().generation, generation);
+    QCOMPARE(sink->startCalls, startCalls);
+    QCOMPARE(sink->stopCalls, stopCalls);
+    // Product path remains OFF and the frozen observer remains fail-closed.
+    engine.set_research_p2_src_handoff_recovery(false);
+    QVERIFY(!engine.c2_research_p2_src_handoff_suffix());
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,
+        Reason::UNPROVEN_HANDOFF);
 }
 
 

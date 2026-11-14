@@ -25,10 +25,11 @@ using namespace rgsml::app;
 
 [[nodiscard]] std::shared_ptr<render::RenderResult> make_unit_prepared_result(
     core::SampleRate rate = *core::SampleRate::create(48000).value(),
-    double initialVal = 0.5)
+    double initialVal = 0.5,
+    std::int64_t frames = 100)
 {
     auto format = audio::AudioFormat::create(rate, audio::ChannelLayout::STEREO_LR);
-    auto count = core::FrameCount::create(100);
+    auto count = core::FrameCount::create(frames);
     auto buffer = std::move(*audio::AudioBuffer::create(
         *format.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
         core::FrameIndex{0}, *count.value()).value());
@@ -59,6 +60,7 @@ class MasteringPreviewControllerTest final : public QObject {
 private slots:
     void testFullChainBindingsAndOrder();
     void testStereoMsOptInProductPreview();
+    void testStreamingP2PreviewSnapshotAndFailClosedRestore();
     void testNumericEvidenceFullChainGainAndEq();
     void testFourDispositionPermutations();
     void testStaleJobRejection();
@@ -190,6 +192,90 @@ void MasteringPreviewControllerTest::testStereoMsOptInProductPreview()
     for (const auto sample : bypass_left) {
         QVERIFY(std::abs(sample - 0.25) < 1e-12);
     }
+}
+
+void MasteringPreviewControllerTest::testStreamingP2PreviewSnapshotAndFailClosedRestore()
+{
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto optIn=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*base.value()));
+    QVERIFY(optIn);
+    auto uuid=[](const char* text) {
+        return *core::Uuid::parse(text).value();
+    };
+    auto id=[&](const char* text) {
+        return *dsp::ModuleInstanceId::from_uuid(uuid(text)).value();
+    };
+    const auto chain_id=uuid("33000000-0000-4000-8000-000000000001");
+    const auto gain_id=id("33000000-0000-4000-8000-000000000010");
+    const auto eq_id=id("33000000-0000-4000-8000-000000000020");
+    const auto comp_id=id("33000000-0000-4000-8000-000000000030");
+    const auto ms_id=id("33000000-0000-4000-8000-000000000040");
+    const auto p2_id=id("33000000-0000-4000-8000-000000000050");
+    auto state=MasteringChainState::create_product_default(
+        *optIn.value(),chain_id,gain_id,eq_id,comp_id,ms_id);
+    QVERIFY(state);
+    auto controls=dsp::StreamingTruePeakLimiterParameters::create(-1.0,5.0,2);
+    QVERIFY(controls);
+    auto preview=MasteringChainState::with_streaming_true_peak_preview(
+        std::move(*state.value()),p2_id,*controls.value(),false);
+    QVERIFY(preview);
+    QCOMPARE(preview.value()->module_count(),std::size_t{5});
+    QCOMPARE(preview.value()->instances().back().module_type_id(),
+             std::string_view("rgsml.dsp.streaming-true-peak-limiter"));
+    QCOMPARE(preview.value()->execution_bindings().size(),std::size_t{5});
+    QVERIFY(preview.value()->registry_snapshot()->has_factory(
+        "rgsml.dsp.streaming-true-peak-limiter"));
+    // The historical restore contract must reject five nodes, not silently
+    // save or restore a project with an unversioned P2 preview instance.
+    auto notRestorable=MasteringChainState::restore(
+        preview.value()->registry_snapshot(),preview.value()->chain_id(),
+        preview.value()->chain(),gain_id,preview.value()->gain_parameters(),
+        eq_id,preview.value()->parametric_eq_parameters(),
+        comp_id,preview.value()->compressor_parameters(),
+        ms_id,preview.value()->stereo_ms_parameters());
+    QVERIFY(!notRestorable);
+    auto prepared=make_unit_prepared_result(
+        *core::SampleRate::create(48000).value(),0.83,2048);
+    std::shared_ptr<render::RenderResult> rendered;
+    MasteringPreviewController controller{
+        preview.value(),[prepared]{return prepared;},
+        [&rendered](render::RenderResult result) {
+            rendered=std::make_shared<render::RenderResult>(std::move(result));
+            return core::Status::success();
+        }};
+    controller.request_preview();
+    for(int n=0;n<250 && controller.preview_status()==QStringLiteral("RENDERING");++n)
+        QTest::qWait(10);
+    QCOMPARE(controller.preview_status(),QStringLiteral("READY"));
+    QVERIFY(rendered);
+    QCOMPARE(rendered->signatures().size(),std::size_t{5});
+    const auto& signature=rendered->signatures().back();
+    QCOMPARE(signature.instance_id,p2_id);
+    QCOMPARE(signature.disposition,
+             render::ModuleExecutionDisposition::PROCESSED);
+    const auto* p2signature=
+        std::get_if<render::StreamingTruePeakLimiterExecutionSignaturePayload>(
+            &signature.payload);
+    QVERIFY(p2signature!=nullptr);
+    QCOMPARE(p2signature->drive_db,5.0);
+    const auto processedLeft=*rendered->view().channel(0).value();
+    const auto preparedLeft=*prepared->view().channel(0).value();
+    bool different=false;
+    for(std::size_t n=0;n<processedLeft.size();++n)
+        if(processedLeft[n]!=preparedLeft[n]) {different=true;break;}
+    QVERIFY(different);
+    QVERIFY(preview.value()->set_user_bypass(p2_id,true));
+    controller.request_preview();
+    for(int n=0;n<250 && controller.preview_status()==QStringLiteral("RENDERING");++n)
+        QTest::qWait(10);
+    QCOMPARE(controller.preview_status(),QStringLiteral("READY"));
+    QCOMPARE(rendered->signatures().back().disposition,
+             render::ModuleExecutionDisposition::BYPASS_IDENTITY);
+    const auto bypassLeft=*rendered->view().channel(0).value();
+    for(std::size_t n=0;n<bypassLeft.size();++n)
+        QCOMPARE(bypassLeft[n],preparedLeft[n]);
 }
 
 void MasteringPreviewControllerTest::testNumericEvidenceFullChainGainAndEq()

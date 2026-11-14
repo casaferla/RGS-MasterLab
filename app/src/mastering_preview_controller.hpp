@@ -37,6 +37,9 @@ public:
         std::shared_ptr<const render::RenderResult> preparedSnapshot;
         dsp::ProcessingChain chain;
         std::vector<dsp::ModuleExecutionBinding> bindings;
+        // Immutable registry snapshot corresponding to this exact chain.
+        // Keeps the P2 opt-in factory alive through the worker lifetime.
+        std::shared_ptr<const dsp::ModuleRegistry> registry;
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob& job)>;
@@ -55,6 +58,9 @@ public:
     void set_snapshot_provider(PreparedSnapshotProvider snapshotProvider);
     void set_publisher(ProcessedRealizationPublisher publisher);
     void set_preview_executor(PreviewExecutor executor);
+    // Research-only timing evidence, never used in ordinary Product builds.
+    // Call once on the owner thread before scheduling any preview jobs.
+    void set_research_p2_timing_log_path(QString path);
 
     [[nodiscard]] const PreparedSnapshotProvider& snapshot_provider() const noexcept { return snapshotProvider_; }
     [[nodiscard]] std::uint64_t preview_generation() const noexcept;
@@ -89,6 +95,7 @@ private:
     std::optional<PreviewJob> pendingJob_;
     bool workerStopping_{false};
     std::jthread workerThread_;
+    QString researchP2TimingLogPath_;
 };
 
 }  // namespace rgsml::app

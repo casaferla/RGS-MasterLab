@@ -106,7 +106,7 @@ Item {
             Layout.preferredHeight: root.m17ReadoutHeight
             Layout.maximumHeight: root.m17ReadoutHeight
             Layout.minimumHeight: root.m17ReadoutHeight
-            heading: "RECENT / LIVE TRUE PEAK"
+            heading: "RECENT / LIVE TP"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
             detail: root.nonconformingAudition
@@ -252,7 +252,7 @@ Item {
                     anchors.fill: parent
                     canShow: root.limiterBypassed
                 }
-                ToolTip.text: "True Peak Ceiling is retained, but cannot be edited while bypassed."
+                ToolTip.text: "TP Ceiling is retained, but cannot be edited while bypassed."
                 ToolTip.visible: ceilingCardTooltipDwell.ready
                 ToolTip.delay: 0
                 Layout.minimumHeight: root.m17CeilingHeight
@@ -293,7 +293,7 @@ Item {
                 positionFillColor: Qt.alpha("#C4774A", 0.38)
                 accentColor: root.familyAccent
                 focusAccentOnly: true
-                sliderAccessibleName: "True Peak Ceiling"
+                sliderAccessibleName: "TP Ceiling"
                 }
             }
             Rectangle {

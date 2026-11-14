@@ -114,6 +114,16 @@ Canvas {
             line(9.0, 4.3, 9.0, 15.1)
             line(14.4, 8.0, 14.4, 15.1)
             ctx.restore()
+        } else if (kind === "module-streaming-true-peak-limiter") {
+            // Copper live waveform controlled below ceiling, not M17 shield.
+            line(2.0,4.8,16.0,4.8)
+            ctx.beginPath()
+            ctx.moveTo(2.0,13.0); ctx.lineTo(4.1,10.5)
+            ctx.lineTo(6.2,13.0); ctx.lineTo(8.7,7.4)
+            ctx.quadraticCurveTo(9.4,5.9,10.2,7.4)
+            ctx.lineTo(12.4,12.7); ctx.lineTo(14.0,8.1)
+            ctx.quadraticCurveTo(14.8,6.9,16.0,8.2)
+            ctx.stroke()
         } else if (kind === "module-limiter") {
             // Verified-terminal shield/check mark, not a ceiling curve.
             ctx.beginPath()

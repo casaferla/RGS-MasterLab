@@ -53,7 +53,7 @@ Rectangle {
                 + "The current Meter still observes MANUAL PROCESSED audio; "
                 + "Ceiling is not yet applied to what you hear."
         if (state.startsWith("ACTIVE"))
-            return state + " · Limiter output installed. Live True Peak "
+            return state + " · Limiter output installed. Live TP "
                 + "comes from verified post-limiter audio when available."
         if (state.startsWith("BYPASS"))
             return state + " · Meter observes MANUAL PROCESSED audio; "
@@ -73,6 +73,7 @@ Rectangle {
         case "STEREO_MS": return "module-stereo"
         case "TRUE_PEAK_METER": return "module-peak-meter"
         case "TRUE_PEAK_LIMITER": return "module-limiter"
+        case "STREAMING_TRUE_PEAK_LIMITER": return "module-streaming-true-peak-limiter"
         case "M19_ANALYSIS": return "analysis-levels"
         case "M20_ANALYSIS": return "analysis-spectrum"
         case "M21_ANALYSIS": return "analysis-delta"
@@ -88,7 +89,8 @@ Rectangle {
         // title colors stay unchanged; only their pictograms use family hues.
         if(moduleAdapter.editorContentKey === "TRUE_PEAK_METER")
             return "#6683A1"  // ANALYSIS / METERING
-        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER")
+        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER"
+            || moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER")
             return "#C4774A"  // DYNAMICS
         if(moduleAdapter.editorContentKey === "MASTER_MONITOR")
             return "#718092"  // WORKFLOW / UTILITY
@@ -396,7 +398,10 @@ Rectangle {
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
+                                // The concise "Streaming TP Limiter" label stays
+                                // on one line at minimum window width.
                                 elide: Text.ElideRight
+                                wrapMode: Text.NoWrap
                             }
 
                             Text {

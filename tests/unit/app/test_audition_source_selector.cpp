@@ -36,9 +36,10 @@ namespace rgsml::tests {
 namespace {
 
 [[nodiscard]] render::RenderResult realization(
-    std::int64_t begin, std::int64_t frames)
+    std::int64_t begin, std::int64_t frames,
+    std::uint32_t sampleRateHz = 48'000)
 {
-    auto rate = core::SampleRate::create(48'000);
+    auto rate = core::SampleRate::create(sampleRateHz);
     auto format = audio::AudioFormat::create(
         *rate.value(), audio::ChannelLayout::STEREO_LR);
     auto count = core::FrameCount::create(frames);
@@ -197,6 +198,7 @@ private slots:
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
     void playIntentIsRestoredAcrossTargetSwitches();
+    void researchP2LivePreparedProcessedSwitchDoesNotStopPlayback();
     void activeProcessedRealizationReplacementPreservesCueAndState();
     void eofCueIsCanonicalizedToRangeBegin();
     void loopRegionIntentPreservedAcrossAuditionRebinds();
@@ -929,6 +931,73 @@ void AuditionSourceSelectorTest::playIntentIsRestoredAcrossTargetSwitches()
     QCOMPARE(observed->state, core::PlaybackState::STOPPED);
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+}
+
+void AuditionSourceSelectorTest::researchP2LivePreparedProcessedSwitchDoesNotStopPlayback()
+{
+    // The same experiment must remain opt-in and must not affect ordinary
+    // source selection. Include the user's exact 44.1-kHz stereo case.
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* device = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, device);
+    int handoffs = 0;
+    bool refuse = false;
+    transport.set_pcm_handoff_handler(
+        [device, &handoffs, &refuse](
+            audio::AudioBufferView view, std::shared_ptr<const void>,
+            std::optional<core::RealizationId> id) -> core::Status {
+            if (refuse) return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState, "P2_TEST_HANDOFF_REJECTED"});
+            ++handoffs;
+            device->duration = *core::FrameCount::create(
+                view.absolute_end_frame().value()).value();
+            device->audibleRealization = id
+                ? core::AudibleRealizationState{
+                    core::AudibleHandoffPhase::NEW, id}
+                : core::AudibleRealizationState{};
+            return core::Status::success();
+        });
+    app::AuditionSourceSelector selector{&transport};
+    selector.set_research_p2_seamless_target_switch(true);
+    QVERIFY(selector.set_prepared_realization(realization(0, 960, 44'100)));
+    QVERIFY(selector.set_processed_realization(realization(0, 960, 44'100)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    transport.playOrResume();
+    device->position = core::FrameIndex{444};
+    QVERIFY(device->state == core::PlaybackState::PLAYING);
+    const auto clearCount = device->clearCalls;
+    const auto stopCount = device->stopCalls;
+    const auto playCount = device->playCalls;
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(device->audibleRealization.realizationId.has_value());
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{444});
+    QCOMPARE(device->position.value(), std::int64_t{444});
+    QCOMPARE(device->state, core::PlaybackState::PLAYING);
+    QCOMPARE(device->clearCalls, clearCount);
+    QCOMPARE(device->stopCalls, stopCount);
+    QCOMPARE(device->playCalls, playCount);
+    QCOMPARE(handoffs, 1);
+
+    // A second alternating A/B follows the identical continuous route.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(device->state, core::PlaybackState::PLAYING);
+    QVERIFY(!device->audibleRealization.realizationId);
+    QCOMPARE(device->clearCalls, clearCount);
+    QCOMPARE(device->stopCalls, stopCount);
+    QCOMPARE(device->playCalls, playCount);
+    QCOMPARE(handoffs, 2);
+
+    // Rejection never invokes stop/clear and never changes selection.
+    refuse = true;
+    QVERIFY(!selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+    QCOMPARE(device->state, core::PlaybackState::PLAYING);
+    QCOMPARE(device->clearCalls, clearCount);
+    QCOMPARE(device->stopCalls, stopCount);
+    QCOMPARE(handoffs, 2);
 }
 
 void AuditionSourceSelectorTest::activeProcessedRealizationReplacementPreservesCueAndState()

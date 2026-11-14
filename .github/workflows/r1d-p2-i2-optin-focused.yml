@@ -1,0 +1,204 @@
+name: R1d P2 I2 Opt-In Registry Focused (nonrelease)
+on:
+  push:
+    branches:
+      - staging/r1d-p2-i2-preview-focused-ci-20261112
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p2-registry:
+    name: P2 Registry ABI ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt6 base and test modules (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools
+      - name: Install Qt 6.8.3 Core and Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          if ($LASTEXITCODE -ne 0) { throw 'P2_QT_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64
+          if ($LASTEXITCODE -ne 0) { throw 'P2_QT_WINDOWS_INSTALL_FAILED' }
+      - name: Configure (Linux strict FP)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: >
+          cmake -S research/r1d-p2-live -B build-p2-i2
+          -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_FLAGS="-ffp-contract=off -fno-fast-math -frounding-math"
+      - name: Configure (Windows MSVC x64)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >
+          cmake -S research/r1d-p2-live -B build-p2-i2
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+      - name: Build actual registry and P2 ABI tests
+        run: cmake --build build-p2-i2 --config Release --target r1d_p2_optin_registry_tests r1d_p2_real_processing_chain_tests r1d_p2_render_request_tests r1d_p2_render_preview_compile_gate r1d_p2_real_render_preview_tests r1d_p2_app_preview_qt_tests r1d_p2_project_save_guard_compile r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe r1d_p2_adversarial_perf_probe
+      - name: Expose installed Qt runtime DLLs and plugins (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $qtBin = Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64/bin'
+          $qtPlugins = Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64/plugins'
+          if (-not (Test-Path (Join-Path $qtBin 'Qt6Core.dll'))) {
+            throw 'P2_QT_RUNTIME_NOT_FOUND'
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $qtBin
+          "QT_PLUGIN_PATH=$qtPlugins" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Execute original RGS ProcessingChain and opt-in P2 PCM gates
+        run: ctest --test-dir build-p2-i2 -C Release --output-on-failure -R "^r1d_p2_(optin_registry|real_processing_chain|render_request|real_render_preview|app_preview_qt)_tests$"
+      - name: Probe naive stage-boundary cache exactness (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --cache-proof --rate 48000 --output build-p2-i2/p2-cache-proof-quick.tsv
+          test "$(($(wc -l < build-p2-i2/p2-cache-proof-quick.tsv)-1))" -eq 1
+          grep -Eq 'EXACT_ACCEPT|NON_EQUIVALENT_REJECT' build-p2-i2/p2-cache-proof-quick.tsv
+      - name: Probe naive stage-boundary cache exactness (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --cache-proof --rate 48000 --output build-p2-i2/p2-cache-proof-quick.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CACHE_BOUNDARY_QUICK_FAILED" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-cache-proof-quick.tsv -Delimiter "`t")
+          if ($rows.Count -ne 1 -or $rows[0].schema -ne 'I2-CACHE-BOUNDARY-1' -or
+              $rows[0].result -notin @('EXACT_ACCEPT','NON_EQUIVALENT_REJECT')) {
+            throw "P2_CACHE_BOUNDARY_QUICK_SCHEMA_INVALID"
+          }
+      - name: Verify exact cache matrix and changed-source rejection (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --cache-matrix --output build-p2-i2/p2-cache-matrix-quick.tsv
+          test "$(($(wc -l < build-p2-i2/p2-cache-matrix-quick.tsv)-1))" -eq 14
+          awk -F '\t' 'NR>1 && $8 != $9 {bad=1} END {exit bad}' build-p2-i2/p2-cache-matrix-quick.tsv
+          grep -q STALE_GAIN build-p2-i2/p2-cache-matrix-quick.tsv
+          grep -q STALE_SOURCE build-p2-i2/p2-cache-matrix-quick.tsv
+      - name: Verify exact cache matrix and changed-source rejection (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --cache-matrix --output build-p2-i2/p2-cache-matrix-quick.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CACHE_MATRIX_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-cache-matrix-quick.tsv -Delimiter ([char]9))
+          if ($rows.Count -ne 14 -or
+              @($rows | Where-Object { $_.schema -ne 'I2-CACHE-MATRIX-1' -or $_.expected -ne $_.observed }).Count -gt 0) {
+            throw "P2_CACHE_MATRIX_QUICK_ROWS_MISMATCH"
+          }
+          if (@($rows | Where-Object { $_.case -eq 'STALE_SOURCE' -and $_.observed -eq 'NON_EQUIVALENT_REJECT' }).Count -ne 2 -or
+              @($rows | Where-Object { $_.case -eq 'STALE_GAIN' -and $_.observed -eq 'NON_EQUIVALENT_REJECT' }).Count -ne 2) {
+            throw "P2_CACHE_MATRIX_STALE_REJECT_NOT_PROVEN"
+          }
+      - name: Test real bounded LRU cache on Product renderer (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --cache-engine --output build-p2-i2/p2-cache-engine-quick.tsv
+          test "$(($(wc -l < build-p2-i2/p2-cache-engine-quick.tsv)-1))" -eq 22
+          awk -F '\t' 'NR>1 && ($5 != $6 || $7 != 0) {bad=1} END {exit bad}' build-p2-i2/p2-cache-engine-quick.tsv
+          grep -q CHANGED_CONTENT_SAME_REV build-p2-i2/p2-cache-engine-quick.tsv
+          grep -q REVERTED_PREFIX_AFTER_LRU build-p2-i2/p2-cache-engine-quick.tsv
+      - name: Test real bounded LRU cache on Product renderer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --cache-engine --output build-p2-i2/p2-cache-engine-quick.tsv
+          if ($LASTEXITCODE -ne 0) { throw "BOUNDED_CACHE_ENGINE_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-cache-engine-quick.tsv -Delimiter ([char]9))
+          if ($rows.Count -ne 22 -or @($rows | Where-Object {
+            $_.schema -ne 'I2-REAL-CACHE-1' -or
+            $_.expected_hit -ne $_.observed_hit -or
+            [int]$_.mismatches -ne 0 -or
+            [double]$_.suffix_ms -le 0
+          }).Count -gt 0) {
+            throw "BOUNDED_CACHE_ENGINE_INVARIANT_FAIL"
+          }
+      - name: Probe fail-closed adversarial paths (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_adversarial_perf_probe --quick --output build-p2-i2/p2-adversarial-quick.tsv
+          test "$(($(wc -l < build-p2-i2/p2-adversarial-quick.tsv)-1))" -eq 90
+          grep -q I2-ADVERSARIAL-1 build-p2-i2/p2-adversarial-quick.tsv
+      - name: Probe fail-closed adversarial paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_adversarial_perf_probe.exe --quick --output build-p2-i2/p2-adversarial-quick.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_ADVERSARIAL_QUICK_FAILED" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-adversarial-quick.tsv -Delimiter "`t")
+          if ($rows.Count -ne 90 -or
+              @($rows | Where-Object { $_.schema -ne 'I2-ADVERSARIAL-1' -or !$_.status }).Count -ne 0) {
+            throw "P2_ADVERSARIAL_QUICK_SCHEMA_INVALID"
+          }
+      - name: Validate instrumented P2 path histogram without Product changes (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_callback_path_perf_probe --quick --output build-p2-i2/p2-path-smoke.tsv
+          test "$(($(wc -l < build-p2-i2/p2-path-smoke.tsv)-1))" -eq 36
+          grep -q I2-PATH-PERF-1 build-p2-i2/p2-path-smoke.tsv
+      - name: Validate instrumented P2 path histogram without Product changes (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_callback_path_perf_probe.exe --quick --output build-p2-i2/p2-path-smoke.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_PATH_PERF_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-path-smoke.tsv -Delimiter "`t")
+          if ($rows.Count -ne 36) { throw "P2_PATH_PERF_ROWS_NOT_36" }
+          if (@($rows | Where-Object { $_.schema -ne 'I2-PATH-PERF-1' }).Count -gt 0) {
+            throw "P2_PATH_PERF_SCHEMA_FAIL"
+          }
+      - name: Validate real P2 IModule candidate benchmark quickly (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_automatch_perf_probe --quick --output build-p2-i2/p2-perf-smoke.tsv
+          test "$(($(wc -l < build-p2-i2/p2-perf-smoke.tsv)-1))" -eq 4
+          grep -q I2-PERF-1 build-p2-i2/p2-perf-smoke.tsv
+      - name: Validate full Product chain benchmark quickly (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --output build-p2-i2/p2-chain-smoke.tsv
+          test "$(($(wc -l < build-p2-i2/p2-chain-smoke.tsv)-1))" -eq 14
+          grep -q FULL_P2_DRIVE3 build-p2-i2/p2-chain-smoke.tsv
+          build-p2-i2/r1d_p2_chain_perf_probe --quick --eval-count 3 --rate 48000 --output build-p2-i2/p2-chain-eval-smoke.tsv
+          test "$(($(wc -l < build-p2-i2/p2-chain-eval-smoke.tsv)-1))" -eq 3
+      - name: Validate full Product chain benchmark quickly (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --output build-p2-i2/p2-chain-smoke.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CHAIN_PERF_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-chain-smoke.tsv -Delimiter "`t")
+          if ($rows.Count -ne 14) { throw "P2_CHAIN_PERF_ROWS_NOT_14" }
+          if (@($rows | Where-Object { $_.schema -ne 'I2-CHAIN-PERF-1' -or [double]$_.full_render_ms -le 0 }).Count -gt 0) {
+            throw "P2_CHAIN_PERF_SCHEMA_OR_TIMING_FAIL"
+          }
+          & build-p2-i2/Release/r1d_p2_chain_perf_probe.exe --quick --eval-count 3 --rate 48000 --output build-p2-i2/p2-chain-eval-smoke.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_CHAIN_EVAL_COUNT_MODE_FAILED" }
+          $evalRows=@(Import-Csv -Path build-p2-i2/p2-chain-eval-smoke.tsv -Delimiter "`t")
+          if ($evalRows.Count -ne 3) { throw "P2_CHAIN_EVAL_COUNT_ROWS_NOT_3" }
+      - name: Validate real P2 IModule candidate benchmark quickly (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build-p2-i2/Release/r1d_p2_automatch_perf_probe.exe --quick --output build-p2-i2/p2-perf-smoke.tsv
+          if ($LASTEXITCODE -ne 0) { throw "P2_PERF_QUICK_FAIL" }
+          $rows=@(Import-Csv -Path build-p2-i2/p2-perf-smoke.tsv -Delimiter "`t")
+          if ($rows.Count -ne 4) { throw "P2_PERF_ROWS_NOT_4" }

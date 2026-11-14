@@ -671,6 +671,47 @@ core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(
         }
     }
 
+    // R1d-P2 isolated research-only: the PLAYING, same-format
+    // PREPARED/PROCESSED switch is an immutable PCM handoff on the existing
+    // output queue. Never stop the Windows sink, clear its FIFO, manufacture
+    // an M16 proof, or touch the terminal/REFERENCE route. If the new source
+    // is structurally incompatible, preserve the legacy stop/reprepare path.
+    if (researchP2SeamlessTargetSwitch_ && wasPlaying && activeTarget_
+        && *activeTarget_ != AuditionTarget::GOLD
+        && target != AuditionTarget::GOLD && prepared_ && processed_) {
+        const auto current = *activeTarget_ == AuditionTarget::PREPARED
+            ? prepared_ : processed_;
+        const auto incoming = target == AuditionTarget::PREPARED
+            ? prepared_ : processed_;
+        const auto currentView = current->view();
+        const auto incomingView = incoming->view();
+        const auto coherent = currentView.format() == incomingView.format()
+            && currentView.absolute_range() == incomingView.absolute_range()
+            && currentView.timebase().frame_domain_id()
+                == audio::FrameDomainId::SOURCE_PROCESSING_RATE
+            && incomingView.timebase().frame_domain_id()
+                == audio::FrameDomainId::SOURCE_PROCESSING_RATE;
+        if (coherent) {
+            // The underlying handoff verifies the device-side cue and loop
+            // before replacing any owner. Do not fall back to destructive
+            // stop/reprepare if it rejects the candidate.
+            auto stored = store_active_cue();
+            if (!stored) return stored;
+            const auto incomingId = target == AuditionTarget::PROCESSED
+                ? processedRealizationId_ : std::nullopt;
+            auto handedOff = playback_->handoff_pcm(
+                incomingView, incoming, incomingId);
+            if (!handedOff) {
+                publish_error(QString::fromStdString(handedOff.error()->message()));
+                return handedOff;
+            }
+            activeTarget_ = target;
+            statusText_.clear();
+            emit changed();
+            return core::Status::success();
+        }
+    }
+
     auto stored = store_active_cue();
     if (!stored) {
         fail_closed(*stored.error());

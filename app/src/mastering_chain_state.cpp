@@ -20,6 +20,7 @@ constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
+constexpr auto kStreamingP2TypeId = "rgsml.dsp.streaming-true-peak-limiter";
 
 [[nodiscard]] Error chain_state_error(ErrorCode code, std::string category, std::string message)
 {
@@ -88,6 +89,64 @@ Result<MasteringChainState> MasteringChainState::create_product_default(
     return create_with_stereo_ms(
         registry, chain_id, gain_id, eq_id, compressor_id,
         stereo_ms_id, *default_ms.value(), true);
+}
+
+Result<MasteringChainState> MasteringChainState::with_streaming_true_peak_preview(
+    MasteringChainState baseline,
+    ModuleInstanceId p2_id,
+    StreamingTruePeakLimiterParameters parameters,
+    bool bypassed)
+{
+    // This constructs an ephemeral research state, never a persisted project.
+    // Reject admission after a Product M18 epoch is installed; caller must
+    // create the preview state before the Product writer starts.
+    if (baseline.m18_chain_admission_installed()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidState, "P2_PREVIEW_M18_EPOCH_ACTIVE",
+            "Cannot install research P2 after the Product writer epoch begins."));
+    }
+    if (baseline.streaming_p2_preview_id_) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidState, "P2_PREVIEW_ALREADY_PRESENT",
+            "Only one research Streaming True Peak Limiter is allowed."));
+    }
+    if (!baseline.registry_) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidState, "P2_PREVIEW_NO_REGISTRY",
+            "Streaming P2 requires an immutable opt-in registry."));
+    }
+    if (p2_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "P2_PREVIEW_INVALID_INSTANCE_ID",
+            "P2 instance ID must be non-nil."));
+    }
+    for (const auto& instance : baseline.chain_.instances()) {
+        if (instance.instance_id() == p2_id) {
+            return Result<MasteringChainState>::failure(chain_state_error(
+                ErrorCode::InvalidArgument, "P2_PREVIEW_DUPLICATE_INSTANCE_ID",
+                "P2 must have a unique module instance ID."));
+        }
+    }
+    auto descriptor = baseline.registry_->find_descriptor(kStreamingP2TypeId);
+    if (!descriptor || !baseline.registry_->has_factory(kStreamingP2TypeId)) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::UnsupportedOperation, "P2_PREVIEW_NOT_REGISTERED",
+            "P2 preview requires an explicit opt-in Product registry."));
+    }
+    const auto added = baseline.chain_.add(
+        p2_id,kStreamingP2TypeId,baseline.chain_.instances().size());
+    if (!added) {
+        return Result<MasteringChainState>::failure(*added.error());
+    }
+    if (bypassed) {
+        const auto bypass = baseline.chain_.set_user_bypass(p2_id,true);
+        if (!bypass) {
+            return Result<MasteringChainState>::failure(*bypass.error());
+        }
+    }
+    baseline.streaming_p2_preview_id_ = p2_id;
+    baseline.streaming_p2_preview_params_ = parameters;
+    return Result<MasteringChainState>::success(std::move(baseline));
 }
 
 Result<MasteringChainState> MasteringChainState::create_with_stereo_ms(
@@ -418,6 +477,7 @@ MasteringChainState::MasteringChainState(
 
 const Uuid& MasteringChainState::chain_id() const noexcept { return chain_id_; }
 const ProcessingChain& MasteringChainState::chain() const noexcept { return chain_; }
+std::shared_ptr<const ModuleRegistry> MasteringChainState::registry_snapshot() const noexcept { return registry_; }
 std::span<const ModuleInstance> MasteringChainState::instances() const noexcept { return chain_.instances(); }
 std::size_t MasteringChainState::module_count() const noexcept { return chain_.instances().size(); }
 
@@ -425,6 +485,8 @@ const ModuleInstanceId& MasteringChainState::gain_instance_id() const noexcept {
 const ModuleInstanceId& MasteringChainState::eq_instance_id() const noexcept { return eq_id_; }
 const ModuleInstanceId& MasteringChainState::compressor_instance_id() const noexcept { return compressor_id_; }
 const std::optional<ModuleInstanceId>& MasteringChainState::stereo_ms_instance_id() const noexcept { return stereo_ms_id_; }
+const std::optional<ModuleInstanceId>& MasteringChainState::streaming_p2_preview_instance_id() const noexcept { return streaming_p2_preview_id_; }
+const std::optional<StreamingTruePeakLimiterParameters>& MasteringChainState::streaming_p2_preview_parameters() const noexcept { return streaming_p2_preview_params_; }
 
 Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::gain_instance() const
 {
@@ -564,6 +626,19 @@ Status MasteringChainState::set_stereo_ms_parameters(const StereoMsParameters& p
     return Status::success();
 }
 
+Status MasteringChainState::set_streaming_p2_preview_parameters(
+    const StreamingTruePeakLimiterParameters& parameters)
+{
+    if (!streaming_p2_preview_id_ || !streaming_p2_preview_params_) {
+        return Status::failure(chain_state_error(ErrorCode::InvalidState,
+            "P2_PREVIEW_NOT_PRESENT", "No research P2 instance is installed."));
+    }
+    if (const auto allowed=admit_m18_chain_mutation("streaming_p2_preview_parameters");
+        !allowed) return allowed;
+    streaming_p2_preview_params_ = parameters;
+    return Status::success();
+}
+
 Result<bool> MasteringChainState::is_bypassed(const ModuleInstanceId& instance_id) const
 {
     auto inst_res = chain_.find_instance(instance_id);
@@ -588,6 +663,9 @@ std::vector<ModuleExecutionBinding> MasteringChainState::execution_bindings() co
         ModuleExecutionBinding{compressor_id_, compressor_params_}};
     if (stereo_ms_id_ && stereo_ms_params_) {
         bindings.emplace_back(*stereo_ms_id_, *stereo_ms_params_);
+    }
+    if (streaming_p2_preview_id_ && streaming_p2_preview_params_) {
+        bindings.emplace_back(*streaming_p2_preview_id_, *streaming_p2_preview_params_);
     }
     return bindings;
 }

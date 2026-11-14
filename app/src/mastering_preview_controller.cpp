@@ -6,7 +6,9 @@
 #include <rgsml/render/render_request.hpp>
 
 #include <QMetaObject>
+#include <QFile>
 
+#include <chrono>
 #include <utility>
 
 namespace rgsml::app {
@@ -51,6 +53,13 @@ void MasteringPreviewController::set_publisher(ProcessedRealizationPublisher pub
 void MasteringPreviewController::set_preview_executor(PreviewExecutor executor)
 {
     previewExecutor_ = std::move(executor);
+}
+
+void MasteringPreviewController::set_research_p2_timing_log_path(QString path)
+{
+    // Only research startup calls this, before the first worker job.
+    const std::lock_guard<std::mutex> lock(workerMutex_);
+    researchP2TimingLogPath_ = std::move(path);
 }
 
 std::uint64_t MasteringPreviewController::preview_generation() const noexcept
@@ -100,7 +109,8 @@ void MasteringPreviewController::request_preview()
         previewGeneration_,
         std::move(preparedSnapshot),
         chainState_->chain(),
-        chainState_->execution_bindings()
+        chainState_->execution_bindings(),
+        chainState_->registry_snapshot()
     };
 
     {
@@ -130,6 +140,7 @@ void MasteringPreviewController::worker_loop()
         }
 
         PreviewJob job = std::move(*jobOpt);
+        const auto perfStart = std::chrono::steady_clock::now();
 
         core::Result<render::RenderResult> renderResult = core::Result<render::RenderResult>::failure(
             core::Error{core::ErrorCode::InvalidState, "No renderer."});
@@ -145,12 +156,47 @@ void MasteringPreviewController::worker_loop()
                 *core::FrameCount::create(4096).value());
 
             if (req_res) {
-                renderResult = render::render_preview(*req_res.value(), registry_);
+                // Never render an opt-in P2 chain against the default registry.
+                const auto& jobRegistry = job.registry ? *job.registry : registry_;
+                renderResult = render::render_preview(*req_res.value(), jobRegistry);
             } else {
                 renderResult = core::Result<render::RenderResult>::failure(*req_res.error());
             }
         }
 
+        const auto renderMs = std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - perfStart).count();
+        // Research only; no log I/O on GUI thread, DSP process, or WASAPI
+        // callback. Record wall time even for errors/cancelled generations.
+        if (!researchP2TimingLogPath_.isEmpty()) {
+            const auto view = job.preparedSnapshot->view();
+            unsigned activeCount = 0;
+            bool p2Active = false;
+            bool p2Present = false;
+            for (const auto& node : job.chain.instances()) {
+                if (node.active()) ++activeCount;
+                if (node.module_type_id()
+                    == "rgsml.dsp.streaming-true-peak-limiter") {
+                    p2Present = true;
+                    p2Active = node.active();
+                }
+            }
+            QFile log{researchP2TimingLogPath_};
+            if (log.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+                const auto row = QStringLiteral(
+                    "generation=%1\tframes=%2\trate_hz=%3\tdsp_active=%4\tp2_present=%5\tp2_active=%6\trender_ms=%7\tresult=%8\n")
+                    .arg(job.generation)
+                    .arg(view.frame_count().value())
+                    .arg(view.format().sample_rate().value())
+                    .arg(activeCount)
+                    .arg(p2Present ? 1 : 0)
+                    .arg(p2Active ? 1 : 0)
+                    .arg(renderMs)
+                    .arg(renderResult ? QStringLiteral("OK") : QStringLiteral("ERROR"));
+                log.write(row.toUtf8());
+            }
+        }
         auto outcome = std::make_shared<core::Result<render::RenderResult>>(std::move(renderResult));
         const auto gen = job.generation;
         const auto preparedForJob = job.preparedSnapshot;

@@ -57,7 +57,11 @@ Item {
             Text {
                 id: suffix
                 text: root.unitText; visible: text.length > 0
-                width: visible ? implicitWidth : 0; height: parent.height
+                // Row excludes invisible children; let Text retain its
+                // natural implicit width. Binding width to implicitWidth here
+                // makes Qt Quick Text re-enter its own width calculation when
+                // M19–M21 are selected (strict GUI smoke warning).
+                height: parent.height
                 color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 11
                 verticalAlignment: Text.AlignVCenter
             }

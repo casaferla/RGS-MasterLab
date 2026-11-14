@@ -37,7 +37,8 @@ public:
         bool includeTruePeakAnalysis = false,
         TerminalLimiterState* terminalLimiterState = nullptr,
         TerminalLimiterViewModel* terminalLimiterViewModel = nullptr,
-        QObject* terminalMonitorViewModel = nullptr);
+        QObject* terminalMonitorViewModel = nullptr,
+        MasteringPreviewController* p2PreviewController = nullptr);
 
     explicit DspChainAdapterModel(
         GainViewModel* gainViewModel,
@@ -75,6 +76,7 @@ private:
     EqViewModel* eqViewModel_{nullptr};
     CompressorViewModel* compressorViewModel_{nullptr};
     StereoMsViewModel* stereoMsViewModel_{nullptr};
+    MasteringPreviewController* p2PreviewController_{nullptr};
     bool includeTruePeakAnalysis_{false};
     TerminalLimiterState* terminalLimiterState_{nullptr};
     TerminalLimiterViewModel* terminalLimiterViewModel_{nullptr};

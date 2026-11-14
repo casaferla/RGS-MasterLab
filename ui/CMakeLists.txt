@@ -20,6 +20,7 @@ qt_add_qml_module(rgsml_ui
         qml/ParametricEqGraph.qml
         qml/SegmentedTimeEditor.qml
         qml/StereoMsEditor.qml
+        qml/StreamingTruePeakLimiterEditor.qml
         qml/StereoMsResponseGraph.qml
         qml/StudioButton.qml
         qml/StudioIcon.qml

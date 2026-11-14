@@ -254,11 +254,21 @@ struct StereoMsExecutionSignaturePayload final {
                            const StereoMsExecutionSignaturePayload&) = default;
 };
 
+
+struct StreamingTruePeakLimiterExecutionSignaturePayload final {
+    double ceiling_db_tp;
+    double drive_db;
+    int margin_percent;
+    friend bool operator==(const StreamingTruePeakLimiterExecutionSignaturePayload&,
+                           const StreamingTruePeakLimiterExecutionSignaturePayload&) = default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
     ParametricEqExecutionSignaturePayload,
     CompressorExecutionSignaturePayload,
-    StereoMsExecutionSignaturePayload>;
+    StereoMsExecutionSignaturePayload,
+    StreamingTruePeakLimiterExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;

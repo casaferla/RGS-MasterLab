@@ -10,6 +10,7 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -65,6 +66,16 @@ public:
         dsp::ModuleInstanceId eq_id,
         dsp::ModuleInstanceId compressor_id,
         dsp::ModuleInstanceId stereo_ms_id);
+
+    // I2 preview-only optional fifth MANUAL DSP, never part of historical
+    // project restore or automatic Product default. Fail closed if the
+    // caller lacks the P2 opt-in registry or an M18 epoch is already active.
+    [[nodiscard]] static core::Result<MasteringChainState>
+    with_streaming_true_peak_preview(
+        MasteringChainState baseline,
+        dsp::ModuleInstanceId p2_id,
+        dsp::StreamingTruePeakLimiterParameters parameters,
+        bool bypassed);
 
     // Explicit typed construction, also used by the new product-default path.
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_with_stereo_ms(
@@ -126,6 +137,9 @@ public:
 
     [[nodiscard]] const rgsml::core::Uuid& chain_id() const noexcept;
     [[nodiscard]] const dsp::ProcessingChain& chain() const noexcept;
+    // Capture immutable registry provenance WITH the chain before scheduling
+    // a render worker; do not use a separately rebuilt default registry.
+    [[nodiscard]] std::shared_ptr<const dsp::ModuleRegistry> registry_snapshot() const noexcept;
     [[nodiscard]] std::span<const dsp::ModuleInstance> instances() const noexcept;
     [[nodiscard]] std::size_t module_count() const noexcept;
 
@@ -133,6 +147,10 @@ public:
     [[nodiscard]] const dsp::ModuleInstanceId& eq_instance_id() const noexcept;
     [[nodiscard]] const dsp::ModuleInstanceId& compressor_instance_id() const noexcept;
     [[nodiscard]] const std::optional<dsp::ModuleInstanceId>& stereo_ms_instance_id() const noexcept;
+    [[nodiscard]] const std::optional<dsp::ModuleInstanceId>& streaming_p2_preview_instance_id() const noexcept;
+    [[nodiscard]] const std::optional<dsp::StreamingTruePeakLimiterParameters>& streaming_p2_preview_parameters() const noexcept;
+    [[nodiscard]] core::Status set_streaming_p2_preview_parameters(
+        const dsp::StreamingTruePeakLimiterParameters& parameters);
 
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> gain_instance() const;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> eq_instance() const;
@@ -183,6 +201,9 @@ private:
     dsp::CompressorParameters compressor_params_;
     std::optional<dsp::ModuleInstanceId> stereo_ms_id_;
     std::optional<dsp::StereoMsParameters> stereo_ms_params_;
+    // Ephemeral only; no project persistence/schema admission in I2 preview.
+    std::optional<dsp::ModuleInstanceId> streaming_p2_preview_id_;
+    std::optional<dsp::StreamingTruePeakLimiterParameters> streaming_p2_preview_params_;
     struct M18RuntimeGuard final {
         std::shared_ptr<M18MutationAdmission> callback;
         std::thread::id ownerThread{};

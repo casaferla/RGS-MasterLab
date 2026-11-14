@@ -465,6 +465,10 @@ ProjectSessionViewModel::ProjectSessionViewModel(
 
 bool ProjectSessionViewModel::can_save_project() const noexcept
 {
+    // I2 research preview P2 is intentionally not in the frozen project
+    // serializer. Never advertise Save for an unrepresentable fifth DSP.
+    if (masteringChainState_ &&
+        masteringChainState_->streaming_p2_preview_instance_id()) return false;
     return source_ && source_->source_resource();
 }
 
@@ -1104,6 +1108,17 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     M18ScopedProjectOperation singleWriter{
         m18Guarded?&m18ProjectOperationActive_:nullptr};
     Q_UNUSED(singleWriter);
+    // Fail closed even for programmatic SaveAs invocations which bypass the
+    // QML canSaveProject state. Do not persist a four-module snapshot while
+    // the audible chain has an additional P2 algorithm/signature.
+    if (masteringChainState_ &&
+        masteringChainState_->streaming_p2_preview_instance_id()) {
+        publish_error(core::Error{
+            core::ErrorCode::UnsupportedOperation,
+            "Streaming True Peak Limiter preview is experimental and cannot "
+            "be saved until its project schema and restore are qualified."});
+        return;
+    }
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
