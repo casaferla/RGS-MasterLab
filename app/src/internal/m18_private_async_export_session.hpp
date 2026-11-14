@@ -24,11 +24,34 @@ public:
         IDLE, ENCODING_OR_VERIFYING, CANCELLING,
         VERIFIED_DELIVERED, FAILED, CANCELLED
     };
+    // Fixed error categories only; never pass raw error text or source
+    // paths from a Windows worker into the Qt UI.
+    enum class FailureReason : std::uint8_t {
+        UNKNOWN, DESTINATION_EXISTS, SOURCE_COLLISION,
+        PRODUCT_EPOCH_REVOKED, DELIVERED_AUDIO_MISMATCH
+    };
+    [[nodiscard]] static constexpr FailureReason classify_failure(
+        std::string_view message) noexcept
+    {
+        if(message.starts_with("destination_exists:"))
+            return FailureReason::DESTINATION_EXISTS;
+        if(message.starts_with("source_collision:")
+           ||message.starts_with("m18_source_identity_changed"))
+            return FailureReason::SOURCE_COLLISION;
+        if(message.starts_with("M18_CANDIDATE_POSTQUANT_SAMPLE_MISMATCH"))
+            return FailureReason::DELIVERED_AUDIO_MISMATCH;
+        if(message.starts_with("M18_PRODUCT_")
+           ||message.starts_with("M18_EPOCH_")
+           ||message.starts_with("M18_WORKER_REQUEST_"))
+            return FailureReason::PRODUCT_EPOCH_REVOKED;
+        return FailureReason::UNKNOWN;
+    }
     struct Snapshot final {
         Phase phase{Phase::IDLE};
         std::uint64_t encoded_frames{0};
         std::uint64_t total_frames{0};
         std::optional<core::ErrorCode> failure_code;
+        FailureReason failure_reason{FailureReason::UNKNOWN};
         // Present only after the transactional Windows exporter finished
         // WAV readback and returned a verified, published destination.
         std::optional<std::uint64_t> verified_file_size_bytes;
@@ -124,6 +147,7 @@ public:
                 "m18_export_cancelled_"};
             const auto message=error
                 ?std::string_view{error->message()}:std::string_view{};
+            current.failure_reason=classify_failure(message);
             const bool confirmedCancelled=
                 job_->cancellation_requested()
                 &&message.starts_with(cancelledPrefix);
@@ -150,5 +174,15 @@ private:
     const std::thread::id owner_thread_;
     std::shared_ptr<platform::windows::internal::M18AsyncExportWorker> job_;
 };
+
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "destination_exists: no overwrite")
+    ==M18PrivateAsyncExportSession::FailureReason::DESTINATION_EXISTS);
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "M18_CANDIDATE_POSTQUANT_SAMPLE_MISMATCH")
+    ==M18PrivateAsyncExportSession::FailureReason::DELIVERED_AUDIO_MISMATCH);
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "private/path/to/source")
+    ==M18PrivateAsyncExportSession::FailureReason::UNKNOWN);
 
 } // namespace rgsml::app::internal
