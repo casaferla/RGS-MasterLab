@@ -61,15 +61,42 @@ format/name was frozen. This M18 test deliberately protects legacy
 SOURCE-reset consistency, not a future decision on retaining DSP
 parameters automatically across SOURCE replacement.
 
+## PO decision update — 2026-11-14 (supersedes the prior M18 TP veto)
+
+The additional M18 post-quantization True Peak qualification and the
+conditional "Apply Micro Trim & Export" research route were explicitly
+reconsidered and rejected for L1. The earlier 31-commit staging experiment
+is retained only as historical evidence; no micro-trim, second export
+authorization, hidden gain processing, second M16 4x FIR pass, or
+post-quant True Peak ceiling veto enters the deliverable Product.
+
+**Division of authority:** M17 verifies the full Master and True Peak
+Ceiling after Final SRC. M18 only performs deterministic format conversion,
+exact decoded-file codec verification, integrity and safe delivery.
+Format quantization may create microscopically different instantaneous
+peaks; such codec-correct deviations do not invalidate the M17 Master's
+previous certificate. No extra statement of WAV post-quant TP compliance
+may be inferred from "VERIFIED DELIVERED".
+
+This change does NOT relax the SOURCE/Project/M17 ownership, immutable
+Master proof, final SHA/file readback, no-overwrite, cancellation or
+single-writer epoch guarantees. Physical acceptance remains mandatory.
+
 ## Non-negotiable engineering gate
 
 1. Focused CI on the **exact candidate SHA**: Windows and Linux SUCCESS.
    The Windows job must complete **native app build**, ProjectSession M18
    positive path, M18 Windows transactional test, UI smoke and deployed
    standalone-package verification (not just DSP unit tests).
-2. The encoded bytes, decoded samples, post-dither/postquant M16 full-file
-   true peak and M17 accepted Ceiling must pass the canonical M18 validator;
-   no `VERIFIED DELIVERED` if any evidence is absent or nonconforming.
+2. The M17 owner must supply a currently verified full Master and its
+   accepted Ceiling. M18 must prove the exported WAV is the **exact**
+   deterministic PCM24/TPDF or Float32 encoding of that unchanged Master,
+   including decoded sample/format/rate/frame checks, encoded and decoded
+   SHA-256, atomic no-overwrite publication and final filesystem readback.
+   M18 must **not** remeasure the delivered True Peak or reject tiny TP
+   shifts inherent to correctly quantizing the already verified M17 PCM.
+   `VERIFIED DELIVERED` certifies the WAV conversion and delivery, NOT a
+   second independent WAV True Peak qualification.
 3. Physical SOURCE/Project/MASTER/chain mutations and file publication
    must share the Product Single-Writer epoch; no stale ticket, partial
    filename overwrite, second concurrent export or Qt worker-object access.
