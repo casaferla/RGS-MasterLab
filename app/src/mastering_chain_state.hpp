@@ -124,7 +124,11 @@ public:
         // Both absent for legacy chains; both present only for an explicit
         // fourth Stereo/M-S instance, never inferred from defaults.
         std::optional<dsp::ModuleInstanceId> stereo_ms_id = std::nullopt,
-        std::optional<dsp::StereoMsParameters> stereo_ms_params = std::nullopt);
+        std::optional<dsp::StereoMsParameters> stereo_ms_params = std::nullopt,
+        // Additive optional I2 research schema. Legacy callers and saved
+        // 3/4-node project graphs are unchanged.
+        std::optional<dsp::ModuleInstanceId> streaming_p2_id = std::nullopt,
+        std::optional<dsp::StreamingTruePeakLimiterParameters> streaming_p2_params = std::nullopt);
 
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> restore(
         std::shared_ptr<const dsp::ModuleRegistry> registry,
