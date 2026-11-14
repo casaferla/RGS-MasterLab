@@ -213,7 +213,7 @@ jobs:
           cmake -S research/r1d-p2-live -B build-p2-perf -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_PREFIX_PATH="$qt"
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_CONFIG_FAILED" }
-          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe r1d_p2_adversarial_perf_probe
+          cmake --build build-p2-perf --config Release --parallel 4 --target r1d_p2_automatch_perf_probe r1d_p2_chain_perf_probe r1d_p2_callback_path_perf_probe r1d_p2_execution_layers_perf_probe r1d_p2_adversarial_perf_probe
           if ($LASTEXITCODE -ne 0) { throw "P2_PERF_COMPILE_FAILED" }
           $binary=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_automatch_perf_probe.exe'
           if (-not (Test-Path -LiteralPath $binary)) { throw "P2_PERF_BINARY_MISSING" }
@@ -278,6 +278,28 @@ jobs:
           }
           Write-Host "P2_PATH_PERF_QUICK_SMOKE=PASS"
           Write-Host "P2_PATH_PERF_WINDOWS_EXE_PACKAGED=PASS"
+          # Four authentic P2 layers; every PCM bit and EOS tail compared.
+          # Only bench execution times; CI has NO hard timing thresholds.
+          $layersExe=Join-Path $env:GITHUB_WORKSPACE 'build-p2-perf/Release/r1d_p2_execution_layers_perf_probe.exe'
+          if (-not (Test-Path -LiteralPath $layersExe)) {
+            throw 'P2_EXECUTION_LAYERS_BINARY_MISSING'
+          }
+          $layersDest=Join-Path $stage 'bin/r1d_p2_execution_layers_perf_probe.exe'
+          Copy-Item -LiteralPath $layersExe -Destination $layersDest -Force
+          $layersTsv=Join-Path $env:RUNNER_TEMP 'p2-execution-layers-quick.tsv'
+          & $layersDest --quick --output $layersTsv
+          if ($LASTEXITCODE -ne 0) { throw 'P2_EXECUTION_LAYERS_BIT_ORACLE_FAILED' }
+          $layersRows=@(Import-Csv -Path $layersTsv -Delimiter "`t")
+          if ($layersRows.Count -ne 8) { throw 'P2_EXECUTION_LAYERS_ROW_COUNT_INVALID' }
+          foreach ($row in $layersRows) {
+            if ($row.schema -ne 'I2-P2-LAYERS-1' -or
+                $row.result -ne 'BIT_EXACT' -or
+                [double]$row.process_ms -le 0 -or
+                [int64]$row.compared_sample_bits -le 0) {
+              throw 'P2_EXECUTION_LAYERS_PROOF_INVALID'
+            }
+          }
+          Write-Host 'P2_EXECUTION_LAYERS_PCM_BIT_EXACT=PASS'
           # Fail-closed feasibility test: does a naively trimmed 4-DSP
           # PCM intermediate exactly reproduce five-DSP fresh rendering?
           $cacheTsv=Join-Path $env:RUNNER_TEMP 'p2-cache-proof-quick.tsv'
@@ -390,6 +412,13 @@ jobs:
               Output: bin/P2_CALLBACK_PATH_5MIN_BENCH.tsv.
               Results are offline Windows benchmarks, NOT callback deadlines,
               device dropouts or complete M16/streaming certification.
+          [ ] P2 execution layer profiler: Run_P2_Execution_Layers.cmd.
+              Four real layers process precisely the same complete PCM:
+              CallbackEngine, EpochSession, PlanarHostBridge, IModule.
+              Every binary64 stereo sample and EOS tail is checked.
+              This is OFFLINE adapter overhead attribution, not speedup,
+              device deadline, safety qualification or AutoMatch solver.
+              Output: bin/P2_EXECUTION_LAYERS_5MIN.tsv.
           [ ] OPTIONAL stress test for 100 *fresh* five-minute
               full-chain Product renders at 48 kHz: use
               Run_P2_100_Evals.cmd, preferably when the PC is idle.
@@ -513,6 +542,21 @@ jobs:
           pause
           '@
           Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Path_Perf.cmd') -Value $pathLauncher -Encoding ascii
+          $layersLauncher=@'
+          @echo off
+          cd /d "%~dp0bin"
+          echo RGS P2 - kernel vs epoch vs planar vs IModule
+          echo Full 300s synthetic 44.1/48kHz and bit-exact PCM validation.
+          echo No personal WAV. No timing SLA or device safety guarantee.
+          r1d_p2_execution_layers_perf_probe.exe --output P2_EXECUTION_LAYERS_5MIN.tsv
+          if errorlevel 1 (
+              echo P2 EXECUTION LAYERS FAILED -- see output above
+          ) else (
+              echo P2 LAYERS COMPLETE -- bin\P2_EXECUTION_LAYERS_5MIN.tsv
+          )
+          pause
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'Run_P2_Execution_Layers.cmd') -Value $layersLauncher -Encoding ascii
           $cacheLauncher=@'
           @echo off
           cd /d "%~dp0bin"
