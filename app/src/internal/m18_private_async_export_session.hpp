@@ -174,4 +174,23 @@ private:
     std::shared_ptr<platform::windows::internal::M18AsyncExportWorker> job_;
 };
 
+// These constexpr regressions exercise only vetted error categories:
+// no filesystem paths, failure details or hidden worker data may leak.
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "m18_candidate_nonconforming_delivered_true_peak: rejected")
+    ==M18PrivateAsyncExportSession::FailureReason::
+        DELIVERED_TP_ABOVE_CEILING);
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "destination_exists: replacement refused")
+    ==M18PrivateAsyncExportSession::FailureReason::DESTINATION_EXISTS);
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "source_collision: original is protected")
+    ==M18PrivateAsyncExportSession::FailureReason::SOURCE_COLLISION);
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "M18_PRODUCT_TICKET_REVOKED_OR_IDENTITY_CHANGED")
+    ==M18PrivateAsyncExportSession::FailureReason::PRODUCT_EPOCH_REVOKED);
+static_assert(M18PrivateAsyncExportSession::classify_failure(
+    "C:/Users/Example/private/path")
+    ==M18PrivateAsyncExportSession::FailureReason::UNKNOWN);
+
 } // namespace rgsml::app::internal
