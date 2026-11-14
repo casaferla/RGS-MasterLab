@@ -360,6 +360,9 @@ jobs:
           [ ] Optional: device 48 kHz / 24-bit (bit-depth isolation).
           [ ] Verify PREPARED <-> PROCESSED A/B while playing.
           [ ] Collect bin/P2_I2_RENDER_TIMINGS.tsv (full-chain time).
+              In current staging, inspect cache_hit=0/1 on genuine P2
+              parameter changes and report cold vs hot times separately.
+              A cache hit is not a physical audio or M16 qualification.
           [ ] To benchmark P2 IN ISOLATION over full five-minute inputs,
               close heavy applications then run Run_P2_AutoMatch_Perf.cmd.
               This runs the real P2 IModule with 300-second synthetic
@@ -418,7 +421,7 @@ jobs:
               Report: bin/P2_BOUNDED_CACHE_5MIN.tsv.
               The oracle is intentionally excluded from cached-path
               timings. Full sidecar/epoch/tail provenance is NOT
-              qualified; no production cache has been installed.
+              qualified. The opt-in L1 candidate has only a narrow\n              sidecar-safe Product prefix cache (M14/M15 bypass), not\n              a certified general-purpose cache.
           [ ] Stress P2 under adversarial but finite input, 30 sec each
               at 44.1 and 48 kHz: Run_P2_Adversarial.cmd creates
               bin/P2_ADVERSARIAL_PATH_BENCH.tsv. The CSV status column
