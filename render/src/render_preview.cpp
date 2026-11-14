@@ -1318,7 +1318,7 @@ core::Result<RenderResult> render_preview_p2_cached_prefix(
         auto suffixChain=dsp::ProcessingChain::restore(
             registry,full.chain_context(),full.chain_revision(),std::move(fifth));
         if(!suffixChain) return R::failure(*suffixChain.error());
-        const auto* fifthBinding=std::find_if(
+        const auto fifthBinding=std::find_if(
             full.bindings().begin(),full.bindings().end(),
             [&](const dsp::ModuleExecutionBinding& b) {
                 return b.instance_id==instances[4].instance_id();
