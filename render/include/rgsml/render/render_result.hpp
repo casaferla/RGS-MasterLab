@@ -311,6 +311,10 @@ private:
     friend rgsml::core::Result<RenderResult> render_preview(
         const RenderRequest& request,
         const rgsml::dsp::ModuleRegistry& registry);
+    friend rgsml::core::Result<RenderResult> render_preview_p2_cached_prefix(
+        const RenderRequest& full_request,
+        const RenderResult& exact_four_stage_prefix,
+        const rgsml::dsp::ModuleRegistry& registry);
 
     RenderResult(
         rgsml::audio::AudioBuffer buffer,
