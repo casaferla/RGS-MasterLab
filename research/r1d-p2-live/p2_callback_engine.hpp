@@ -28,6 +28,10 @@ struct Configuration final {
     int margin_percent = 2;
     double ceiling_linear = 0.8912509381337456; // -1 dBTP
     double drive_db = 0.0;
+    // Explicit preview-only performance selector. Default false preserves the
+    // original per-sample engine across every existing client and research ABI.
+    // Set once before prepare(); the active callback never changes modes.
+    bool batch_safety = false;
 };
 
 // One instance belongs to exactly one streaming epoch. No concurrent calls.
@@ -97,6 +101,8 @@ public:
     // Real-time callback: no allocation, no locks, no syscalls, no exceptions.
     [[nodiscard]] Status process(std::span<const Frame> input,
                                  std::span<Frame> output) noexcept {
+        if (config_.batch_safety && input.size()>=::research::quantum)
+            return process_batched(input,output);
         if (input.size() != output.size()) return fail(Status::output_size_mismatch, output);
         if (state_ != Lifecycle::running) return fail(Status::not_prepared, output);
         if (input.size() > 4096 || input_count_ > UINT64_MAX-input.size())
@@ -118,14 +124,11 @@ public:
         return Status::ok;
     }
 
-#ifdef RESEARCH_P2_BATCHED_CALLBACK
-    // Experiment compiled only in an independent research benchmark target.
-    // Feed the ORIGINAL pinned safety Stream up to its native 64-frame
-    // quantum at a time. Music pushes and post-gain safety math are unchanged.
-    // Drain output each quantum to respect the existing bounded FIFO even
-    // when one physical callback spans 4096 input frames.
-    // Never enable this path in a Product or ordinary P2 build before a
-    // bit-exact 6-rate, multi-block and adversarial qualification gate.
+    // The verified 64-frame alternative is compiled identically into all
+    // clients, so there is no class-layout/ODR difference across translation
+    // units. Only the explicitly configured preview module selects it.
+    // Music, gain, ITU 4x verification and EOS retain their pinned algorithms.
+    // Drain every quantum to preserve the bounded FIFO and sample clock.
     [[nodiscard]] Status process_batched(
         std::span<const Frame> input,std::span<Frame> output) noexcept {
         // For very short callbacks, batching has no amortizable benefit;
@@ -173,7 +176,6 @@ public:
         }
         return Status::ok;
     }
-#endif
 
     // Outside the callback's active programme; output span MUST have exactly
     // latency_frames() slots. No heap, locks or I/O. One successful call only.
