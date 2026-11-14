@@ -39,6 +39,16 @@ public:
             &&Binder::can_offer_verified_master(controllers_,*fanout_);
     }
 
+    [[nodiscard]] bool can_apply_micro_trim() const {
+        if(QThread::currentThread()!=controllers_.session.thread()
+           ||!ticket_)return false;
+        const auto snapshot=session_.snapshot();
+        return snapshot.phase==M18PrivateAsyncExportSession::Phase::FAILED
+            &&snapshot.failure_reason
+                ==M18PrivateAsyncExportSession::FailureReason::
+                    MICRO_TRIM_ELIGIBLE;
+    }
+
     [[nodiscard]] QString export_readiness_reason() const {
         if(QThread::currentThread()!=controllers_.session.thread())
             return QStringLiteral("OWNER THREAD");
@@ -54,11 +64,14 @@ public:
         core::ResourceReference destination,
         audio::WavSampleFormat format,
         std::optional<std::uint64_t> pcm24DitherSeed,
-        double ceilingDbTp,bool confirmedByUser)
+        double ceilingDbTp,bool confirmedByUser,
+        bool userApprovedMicroTrim=false)
     {
         if(QThread::currentThread()!=controllers_.session.thread())
             return deny("M18_PRODUCT_EXPORT_START_REQUIRES_QT_OWNER");
         if(ticket_)return deny("M18_PRODUCT_EXPORT_ACK_BEFORE_RESTART");
+        if(userApprovedMicroTrim&&!confirmedByUser)
+            return deny("M18_MICRO_TRIM_REQUIRES_EXPLICIT_CLICK");
         const auto formatCheck=validate_m18_export_format(
             format,pcm24DitherSeed,ceilingDbTp);
         if(!formatCheck)return formatCheck;
@@ -84,7 +97,7 @@ public:
             controllers_.session,controllers_.upstream.source,
             controllers_.upstream.rate,controllers_.candidates,*ticket_,
             source->reference(),std::move(destination),format,
-            pcm24DitherSeed,ceilingDbTp);
+            pcm24DitherSeed,ceilingDbTp,userApprovedMicroTrim);
         if(!started) {
             // A failed launch has no worker commit lease: withdraw only
             // the consent minted for THIS Product and allow retry.
