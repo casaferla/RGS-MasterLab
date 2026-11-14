@@ -174,11 +174,11 @@
     {
       "id": "19",
       "category": "postdecode_true_peak_pcm24",
-      "static_coverage": "existing",
+      "static_coverage": "partial",
       "ctest": "rgsml_m18_windows_candidate_delivery_tests",
       "source": "tests/integration/platform/test_m18_candidate_delivery_validation.cpp",
-      "slot": "exactPcm24ReadbackAndCeilingEvidence",
-      "rationale": "real decoded output evaluated against M16"
+      "slot": "exactPcm24ReadbackAndCodecEvidence",
+      "rationale": "Historical category retained but its post-quantization M16 True Peak recheck/veto was explicitly superseded by PO on 2026-11-14: M17 certifies the verified full Master ceiling; M18 proves deterministic PCM24 decoded sample/format/SHA integrity and safe file delivery only. This concrete Windows CTest slot proves codec/readback fidelity, NOT independent WAV True Peak compliance. Remains PARTIAL and unqualified until formal M23 scope reconciliation; never reintroduce a second M18 True Peak veto."
     },
     {
       "id": "20",
