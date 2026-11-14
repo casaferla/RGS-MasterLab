@@ -11,6 +11,7 @@
 #include <QtTest/QTest>
 
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -299,8 +300,6 @@ testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
     const auto id=[&](const char* x) {
         return *dsp::ModuleInstanceId::from_uuid(uuid(x)).value();
     };
-    auto state=dsp::ModuleRegistry::create_dsp_package_v1();
-    QVERIFY(state); // The legacy default alone cannot create opt-in P2.
     auto four=MasteringChainState::create_product_default(
         *optIn.value(),uuid("83200000-0000-4000-8000-000000000001"),
         id("83200000-0000-4000-8000-000000000011"),
@@ -389,6 +388,15 @@ testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
     prepared=make_unit_prepared_result(
         *core::SampleRate::create(48000).value(),0.33,4096);
     execute(false); // new immutable SOURCE owner invalidates prefix
+    // Active Stereo/M-S has an authentic stage sidecar: it must never be
+    // silently dropped or replaced with the cached no-telemetry prefix.
+    const auto msId=id("83200000-0000-4000-8000-000000000014");
+    QVERIFY(live.set_user_bypass(msId,false));
+    execute(false);
+    changed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,4.0,2);
+    QVERIFY(changed);
+    QVERIFY(live.set_streaming_p2_preview_parameters(*changed.value()));
+    execute(false); // still no cache with genuine M/S sidecars
 }
 
 void MasteringPreviewControllerTest::testNumericEvidenceFullChainGainAndEq()
