@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - staging/m17-ceiling-roundoff-focused-ci-20261114
+  workflow_call:
   workflow_dispatch:
 
 permissions:
