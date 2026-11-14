@@ -660,6 +660,18 @@ ApplicationWindow {
                 }
                 Item { Layout.fillWidth: true }
                 Button {
+                    objectName: "m18ApplyMicroTrimExport"
+                    readonly property var model: root.appM18ExportModel
+                    text: "Apply Micro Trim & Export"
+                    visible: !!model && model.canApplyMicroTrim
+                    enabled: visible
+                    onClicked: {
+                        // A separately clicked user choice, never an automatic
+                        // effect of completion, cancellation or failure.
+                        if (model) model.applyMicroTrimAndExport()
+                    }
+                }
+                Button {
                     objectName: "m18AcknowledgeExport"
                     readonly property var model: root.appM18ExportModel
                     text: model && model.canAcknowledge
