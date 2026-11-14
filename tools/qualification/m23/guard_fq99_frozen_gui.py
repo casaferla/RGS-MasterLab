@@ -30,6 +30,21 @@ NEW = {
     "ui/qml/AnalysisModuleIcon.qml",
 }
 ALLOWED = SHARED | NEW
+# L1-M24 PO 2026-11-14 integration authorizes the already verified, exact
+# P2 I2 opt-in GUI tree as an additive future qualification candidate.
+# Unlike the older strict FQ99 delta, this path pins ALL touched QML blobs
+# byte-for-byte to the independently CI-green P2 research Product HEAD.
+# It does not call this GUI FQ99-byte-identical and grants no FQ or release.
+P2_INTEGRATION_SOURCE = "bd148a88a882dba10ff09f0190d57faa61a7e980"
+P2_ADDITIONAL = {
+    "ui/qml/StreamingTruePeakLimiterEditor.qml",
+    "ui/qml/StudioIcon.qml",
+    "ui/qml/StudioParameterSlider.qml",
+    "ui/qml/TruePeakMeterEditor.qml",
+    "ui/qml/TruePeakSharedRail.qml",
+}
+P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
+
 
 
 def git(*args: str) -> bytes:
@@ -195,10 +210,55 @@ def normalize(path: str, text: str) -> str:
     raise AssertionError("UNAPPROVED_SHARED_GUI_PATH " + path)
 
 
+def exact_p2_integrated_gui_pin() -> bool:
+    # Probe ancestry without hiding other Git errors; a positive match
+    # selects the exact 2026-11-13 P2 Product GUI source pin.
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor",
+         P2_INTEGRATION_SOURCE, "HEAD"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if ancestry.returncode != 0:
+        return False
+    git("cat-file", "-e", P2_INTEGRATION_SOURCE + "^{commit}")
+    changed = set(
+        git("diff", "--name-only", FQ99, "HEAD", "--", "ui/qml")
+        .decode("utf-8").splitlines()
+    )
+    if changed != P2_EXPECTED_GUI_DELTA:
+        raise AssertionError(
+            "INTEGRATED_P2_GUI_DELTA_SCOPE_MISMATCH expected="
+            + repr(sorted(P2_EXPECTED_GUI_DELTA))
+            + " actual=" + repr(sorted(changed)))
+    # The prior P2 research I2 native Qt GUI build/screenshots were green
+    # on exactly these bytes. No unrelated or speculative edits to any
+    # previously qualified common QML file can pass this integration pin.
+    for path in sorted(P2_EXPECTED_GUI_DELTA):
+        if blob("HEAD", path) != blob(P2_INTEGRATION_SOURCE, path):
+            raise AssertionError("INTEGRATED_P2_GUI_BLOB_UNPINNED " + path)
+    if blob("HEAD", "ui/CMakeLists.txt") != blob(
+        P2_INTEGRATION_SOURCE, "ui/CMakeLists.txt"
+    ):
+        raise AssertionError("INTEGRATED_P2_QML_REGISTRY_UNPINNED")
+    # Existing FQ99 Main/Workspace remain unchanged except the previously
+    # reviewed three analyzer-property links, which the original guard
+    # must still be able to subtract byte-for-byte.
+    for path in ("ui/qml/DspWorkspace.qml", "ui/qml/Main.qml"):
+        if normalize(path, blob("HEAD", path)) != blob(FQ99, path):
+            raise AssertionError("QUALIFIED_GUI_EXISTING_CONTENT_CHANGED " + path)
+    print("FQ99_PLUS_P2_INTEGRATED_GUI_PIN=PASS "
+          "exact_prior_green_P2_QML_blobs=YES "
+          "legacy_Main_Workspace_FQ99_normalized=YES "
+          "release_qualification=NO")
+    return True
+
+
 def main() -> int:
     # checkout@v4 in the focused workflow uses fetch-depth: 0. Never
     # substitute a network request, a moving main branch, or a guessed SHA.
     git("cat-file", "-e", FQ99 + "^{commit}")
+    if exact_p2_integrated_gui_pin():
+        return 0
     paths = set(
         git("diff", "--name-only", FQ99, "HEAD", "--", "ui/qml")
         .decode("utf-8").splitlines()
