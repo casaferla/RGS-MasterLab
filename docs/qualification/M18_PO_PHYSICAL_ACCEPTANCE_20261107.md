@@ -119,5 +119,44 @@ outcome, verified bytes and SHA-256, audible result, screenshots for any
 failure, and the exact first failing checklist ID. Never upload full CI
 job logs; use bounded CI diagnostics.
 
-**Status: ACCEPTANCE PENDING.** Checking these boxes is future physical
-evidence, not an assertion that any of them passed today.
+## Physical replay record — 2026-11-14, PO screenshots
+
+**Narrow regression: PASS** for the previously failing M17 Ceiling
+at **-2.70 dBTP**, and for subsequent M18 WAV publication, on the
+standalone Windows x64 NON-FQ candidate at commit
+`64cb0f5529fef76df3444182b0a7f325885db948`.
+Qualification CI: https://github.com/casaferla/RGS-MasterLab/actions/runs/43597820523
+(Windows and Linux successful; separate from physical replay).
+
+Evidence provided directly by the PO: screenshots timestamped
+`20261114-133242`, `20261114-133252`, `20261114-133320`,
+`20261114-133338`. SOURCE is `Reati universali (Remastered) (Edit) 44.wav`,
+44,100 Hz, PCM32, stereo, duration 03:19.184. The screenshot exposes
+44,100 Hz status but does not independently prove a cross-rate 48-kHz
+MASTER: do not claim the A02 cross-rate gate from this evidence.
+
+- M17 enabled at requested -2.70 dBTP; status: `MASTER VERIFIED ·
+  LISTEN TO MASTER`; `VERIFICATION TRIM <0.01 dB · M16 CHECK`.
+  Previously the identical target presented measured `NON-CONFORMING`
+  / over <0.01 dB and withheld export.
+- 24-bit PCM/TPDF WAV: `VERIFIED DELIVERED`, 52,704,038 bytes,
+  displayed post-delivery SHA-256:
+  `9309155d39365fbe9cd8ddfe26dd7331e963d29ce1e822edce659ab9667fe2ae`.
+- 32-bit Float WAV: `VERIFIED DELIVERED`, 70,272,050 bytes,
+  displayed post-delivery SHA-256:
+  `87f400eb6b45be19ac75cd51b16c38ecdf25c57479a9519501071fc8b3aa0669`.
+- Both delivery receipts explicitly state filesystem readback. No
+  M18 micro-trim path was used. M17's existing single verified trim
+  remains distinct from M18 conversion.
+- This record is **screenshot-based**; the new exported WAV bytes were
+  not attached in this turn. No independent playback/editing, external
+  WAV inspection, A02 cross-rate gate, SOURCE/Project mutation, cancel
+  or no-overwrite physical tests are claimed.
+
+**Disposition:** M17 -2.70 dBTP field regression CLOSED ON THIS
+SOURCE/CONFIGURATION; M18 PCM24 + Float32 delivery field replay PASS.
+The larger A01–A15 physical acceptance matrix remains PARTIAL;
+overall L1 Full Qualification and `main` merge remain NOT AUTHORIZED.
+
+**Status: PARTIAL PHYSICAL ACCEPTANCE.** Remaining checklist items
+are not evidenced by the screenshots and must not be marked PASS.
