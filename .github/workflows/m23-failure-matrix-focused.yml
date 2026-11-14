@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - staging/m23-failure-matrix-focused-ci-20261108
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
