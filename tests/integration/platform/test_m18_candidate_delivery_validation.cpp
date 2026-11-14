@@ -3,6 +3,7 @@
 #include "internal/m18_candidate_delivery_validation.hpp"
 #include "wav_test_support.hpp"
 #include "m18_streaming_wav.hpp"
+#include "m18_terminal_sample_codec.hpp"
 #include "internal/transactional_audio_exporter_test_seam.hpp"
 #include "internal/m18_epoch_commit_barrier.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
@@ -190,6 +191,7 @@ class M18CandidateDeliveryValidationTest final : public QObject{
     Q_OBJECT
 private slots:
     void exactPcm24ReadbackAndCodecEvidence();
+    void exactPcm24QuantizationMicroOvershootDoesNotBlockDelivery();
     void float32AndWrongSeedFailClosed();
     void tamperedPayloadAndWrongMasterRejected();
     void realWindowsM18TransactionalReadback();
@@ -1189,6 +1191,67 @@ exactPcm24ReadbackAndCodecEvidence()
     QVERIFY(againChecked);
     QCOMPARE(againChecked.value()->canonical_decoded_sha256,
              evidence.value()->canonical_decoded_sha256);
+}
+
+void M18CandidateDeliveryValidationTest::
+exactPcm24QuantizationMicroOvershootDoesNotBlockDelivery()
+{
+    using namespace platform::windows;
+    // M17's qualified ITU 4x coefficient 7964/8192 is the dominant
+    // phase of an isolated mono pulse; the original is just BELOW the
+    // -1.0 dBTP ceiling. Some seeded PCM24 TPDF outcomes are just above.
+    // This tests real Windows WAV delivery, NOT a second M18 TP meter.
+    constexpr double firPeak=7964.0/8192.0;
+    constexpr double lsb=1.0/8388608.0;
+    constexpr double ceilingDb= -1.0;
+    constexpr std::uint64_t pulseFrame=2048;
+    const double linearCeiling=std::pow(10.0,ceilingDb/20.0);
+    const double pulse=linearCeiling/firPeak-0.25*lsb;
+    std::optional<std::uint64_t> seed;
+    for(std::uint64_t n=1;n<=8192U;++n) {
+        const auto q=audio::internal::m18_quantize_pcm24(
+            pulse,n,pulseFrame,0U);
+        if(q.status==audio::internal::M18CodecStatus::OK
+           &&static_cast<double>(q.code)*lsb*firPeak
+                >linearCeiling+1e-12) {
+            seed=n;
+            break;
+        }
+    }
+    QVERIFY(seed.has_value());
+
+    auto pcm=master(audio::ChannelLayout::MONO_C,4105);
+    QVERIFY(pcm);
+    auto channel=pcm->mutable_view().channel(0);
+    QVERIFY(channel);
+    std::fill(channel.value()->begin(),channel.value()->end(),0.0);
+    (*channel.value())[pulseFrame]=pulse;
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("source.bin"));
+    QFile source{src};
+    QVERIFY(source.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(source.write("source",6),qint64{6});
+    source.close();
+
+    const auto target=dir.filePath(QStringLiteral("micro-overshoot.wav"));
+    auto lease=std::make_shared<TestSessionState>();
+    auto request=make_real_transaction_request(
+        src,target,pcm,audio::WavSampleFormat::PCM_S24,
+        seed,ceilingDb,lease);
+    QVERIFY(request);
+    const auto delivered=TransactionalAudioExporter::export_new_file(
+        *request.value());
+    QVERIFY2(delivered,delivered?"":delivered.error()->message().c_str());
+    QVERIFY(QFileInfo::exists(target));
+    QCOMPARE(delivered.value()->encoded_file_sha256().size(),std::size_t{64});
+    QCOMPARE(delivered.value()->decoded_audio_sha256().size(),std::size_t{64});
+    QCOMPARE(lease->acquired,std::size_t{1});
+    QCOMPARE(lease->revalidated,std::size_t{2});
+    QCOMPARE(lease->retired,std::size_t{1});
+    QCOMPARE((*pcm->view().channel(0).value())[pulseFrame],pulse);
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
 }
 
 void M18CandidateDeliveryValidationTest::float32AndWrongSeedFailClosed()
