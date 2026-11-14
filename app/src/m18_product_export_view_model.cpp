@@ -52,6 +52,14 @@ bool M18ProductExportViewModel::can_apply_micro_trim() const
         &&action_->can_apply_micro_trim();
 }
 
+bool M18ProductExportViewModel::verified_micro_trim_applied() const
+{
+    return owner_thread() &&lastAttemptHadMicroTrim_
+        &&action_->snapshot().phase
+            ==internal::M18PrivateAsyncExportSession::Phase::
+                VERIFIED_DELIVERED;
+}
+
 bool M18ProductExportViewModel::can_cancel() const
 {
     return owner_thread()&&action_->can_cancel();
@@ -264,6 +272,7 @@ bool M18ProductExportViewModel::beginExport(
     initialFormatIndex_=formatIndex;
     initialSeed_=seed;
     initialCeilingDbTp_=ceiling;
+    lastAttemptHadMicroTrim_=false;
     pollTimer_.start();
     poll();
     return true;
@@ -299,6 +308,7 @@ bool M18ProductExportViewModel::applyMicroTrimAndExport()
     }
     // The retry cannot recursively offer another trim. Its own readback
     // must satisfy the exact M17 Ceiling before any publication.
+    lastAttemptHadMicroTrim_=true;
     pollTimer_.start();
     poll();
     return true;
