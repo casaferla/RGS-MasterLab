@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <cstdint>
+#include <optional>
 
 namespace rgsml::app {
 class M18ProductExportViewModel final : public QObject {
@@ -15,6 +16,7 @@ class M18ProductExportViewModel final : public QObject {
     Q_PROPERTY(QString exportReadinessReason READ export_readiness_reason NOTIFY changed)
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
     Q_PROPERTY(bool canAcknowledge READ can_acknowledge NOTIFY changed)
+    Q_PROPERTY(bool canApplyMicroTrim READ can_apply_micro_trim NOTIFY changed)
     Q_PROPERTY(bool exportInProgress READ export_in_progress NOTIFY changed)
     Q_PROPERTY(double encodedProgress READ encoded_progress NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
@@ -33,6 +35,7 @@ public:
     [[nodiscard]] QString export_readiness_reason() const;
     [[nodiscard]] bool can_cancel() const;
     [[nodiscard]] bool can_acknowledge() const;
+    [[nodiscard]] bool can_apply_micro_trim() const;
     [[nodiscard]] bool export_in_progress() const;
     [[nodiscard]] double encoded_progress() const;
     [[nodiscard]] QString status_text() const;
@@ -44,6 +47,8 @@ public:
     // User must explicitly choose a destination and PCM24/Float32.
     // Format is NOT a second sonic stage: accepted M17 Ceiling is immutable.
     Q_INVOKABLE bool beginExport(const QUrl& destination,int formatIndex);
+    // Only a post-verification eligible FAILED result unlocks this click.
+    Q_INVOKABLE bool applyMicroTrimAndExport();
     Q_INVOKABLE void cancelExport();
     Q_INVOKABLE bool acknowledgeExport();
     Q_INVOKABLE void refresh();
@@ -56,5 +61,9 @@ private:
     Controllers controllers_;
     QTimer pollTimer_;
     QString lastError_;
+    QUrl initialDestination_;
+    int initialFormatIndex_{-1};
+    std::optional<std::uint64_t> initialSeed_;
+    double initialCeilingDbTp_{0.0};
 };
 } // namespace rgsml::app
