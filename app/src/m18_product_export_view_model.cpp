@@ -100,9 +100,34 @@ QString M18ProductExportViewModel::error_text() const
     const auto s=action_->snapshot();
     if(s.phase!=internal::M18PrivateAsyncExportSession::Phase::FAILED)
         return {};
-    // The worker exposes only the stable error category to the GUI,
-    // never an unchecked filesystem message or an unverified WAV path.
-    // These cases must remain useful even on a machine without internet.
+    // Classify only fixed, internally known exporter reasons. Raw error
+    // strings, selected user paths and unverified candidate filenames
+    // must never become a QML-visible diagnostic or an export success.
+    using Reason=internal::M18PrivateAsyncExportSession::FailureReason;
+    switch(s.failure_reason) {
+    case Reason::DELIVERED_TP_ABOVE_CEILING:
+        return QStringLiteral(
+            "The encoded WAV exceeded the verified M17 True Peak Ceiling "
+            "after bit-depth conversion/dither. No WAV was delivered. "
+            "Changing the destination folder cannot fix this audio "
+            "conformance failure.");
+    case Reason::DESTINATION_EXISTS:
+        return QStringLiteral(
+            "A file with that name already exists. Choose a new WAV name; "
+            "existing files are never overwritten.");
+    case Reason::SOURCE_COLLISION:
+        return QStringLiteral(
+            "The destination is the selected SOURCE or its file alias. "
+            "Choose a different, new WAV file.");
+    case Reason::PRODUCT_EPOCH_REVOKED:
+        return QStringLiteral(
+            "The SOURCE, Project or verified Master changed while exporting. "
+            "Re-Prepare the current Master before exporting again.");
+    case Reason::UNKNOWN:
+        break;
+    }
+    // Fallback is a stable error category, never an unchecked
+    // filesystem message or unverified output pathname.
     if(s.failure_code) {
         switch(*s.failure_code) {
         case core::ErrorCode::AccessDenied:
