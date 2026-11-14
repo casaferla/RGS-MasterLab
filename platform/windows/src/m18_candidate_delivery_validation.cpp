@@ -30,6 +30,8 @@ validate_m18_candidate_decoded_delivery(
     std::optional<std::uint64_t> pcm24_dither_seed,
     double ceiling_db_tp)
 {
+    // Ceiling remains a validated binding to M17's accepted parameters.
+    // It is NOT remeasured against the mathematically quantized M18 WAV.
     using R=core::Result<M18CandidateReadbackEvidence>;
     const bool pcm24=expected_encoding==audio::WavSampleFormat::PCM_S24;
     if ((!pcm24 &&expected_encoding!=audio::WavSampleFormat::IEEE_F32)
@@ -56,10 +58,6 @@ validate_m18_candidate_decoded_delivery(
     auto hasher=CanonicalDecodedAudioHasher::create(
         info.audio_format(),info.frame_count());
     if(!hasher)return R::failure(*hasher.error());
-    auto tp=analysis::M18DeliveredTruePeakCandidate::create(
-        info.audio_format(),info.frame_count());
-    if(!tp)return R::failure(*tp.error());
-
     constexpr std::int64_t kFrames=4096;
     std::int64_t offset=0;
     while(offset<full){
@@ -99,27 +97,14 @@ validate_m18_candidate_decoded_delivery(
         }
         const auto hash=hasher.value()->update(decoded.value()->view());
         if(!hash)return R::failure(*hash.error());
-        const auto updateTp=tp.value()->get()->push_decoded(
-            decoded.value()->view());
-        if(!updateTp)return R::failure(*updateTp.error());
         offset+=n;
     }
 
     const auto decodedSha=hasher.value()->finalize();
     if(!decodedSha)return R::failure(*decodedSha.error());
-    const auto measuredTp=tp.value()->get()->finalize();
-    if(!measuredTp)return R::failure(*measuredTp.error());
-    const auto& tpEvidence=*measuredTp.value();
-    // Evidence only; no automatic trim, 'Export Anyway', or publication.
-    // A strict nonconforming value must be handled by an explicit caller
-    // policy and current-session consent, NOT silently clipped/rounded.
-    const bool conforming=tpEvidence.is_exact_silence
-        ||(tpEvidence.global_db_tp.has_value()
-           &&*tpEvidence.global_db_tp<=ceiling_db_tp);
     return R::success(M18CandidateReadbackEvidence{
         info.container_kind(),expected_encoding,
         static_cast<std::uint64_t>(full),
-        info.data_size_bytes(),*decodedSha.value(),tpEvidence,
-        ceiling_db_tp,conforming});
+        info.data_size_bytes(),*decodedSha.value()});
 }
 } // namespace rgsml::platform::windows::internal
