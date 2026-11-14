@@ -39,14 +39,23 @@ void require(bool ok,const char* reason) {
     const auto t=static_cast<double>(index)/hz;
     const auto noise = static_cast<double>((static_cast<std::uint64_t>(index)
         *1664525U+1013904223U)&0xFFFFU)/65536.-.5;
-    const double level=scenario==0?.065:scenario==2?1.8:1.0;
+    if(scenario==5) {
+        // The pinned isolated adversarial suite's sparse impulse family.
+        const auto period=static_cast<std::int64_t>(hz/7);
+        const double v=index%period==0?20.0:0.0;
+        return {v,channels==2?((index/period)%2?-v:v):0.0};
+    }
+    if(scenario==3||scenario==4) {
+        // Nyquist alternation reproduces a genuinely difficult safety case.
+        const double v=index%2?1.0:-1.0;
+        return {v,channels==2?-0.75*v:0.0};
+    }
+    const double level=scenario==0?.065:scenario==2?1.8:
+        scenario==6?16.0:1.0;
     const double transient=index%(hz/3)<60?.47:0.;
-    const double l= scenario==3 ?
-        ((index%2==0)?0.95:-0.95) :
-        level*(.68*std::sin(2*pi*79*t)
+    const double l=level*(.68*std::sin(2*pi*79*t)
                +.33*std::sin(2*pi*7189*t)+.17*noise+transient);
-    const double r=scenario==3?((index%3==0)?-0.92:0.92):
-        -0.61*l+level*.28*std::sin(2*pi*1103*t);
+    const double r=-0.61*l+level*.28*std::sin(2*pi*1103*t);
     return {l,channels==2?r:0.0};
 }
 [[nodiscard]] bool equal_bits(Frame a,Frame b) {
@@ -63,7 +72,9 @@ struct Result {
     double measuredTruePeak{};
 };
 Result run(int hz,int channels,int seconds,int scenario,std::size_t size) {
-    const double drive=scenario==0?0.0:scenario==2?6.:scenario==3?12.:3.;
+    const double drive=scenario==0?0.0:scenario==2?6.:
+        scenario==3?12.:scenario==4||scenario==5?24.:
+        scenario==6?18.:3.;
     const p2::Configuration cfg{hz,channels,2,0.8912509381337456,drive};
     p2::CallbackEngine original,experiment;
     require(original.prepare(cfg)==p2::Status::ok
@@ -146,7 +157,7 @@ int main(int argc,char** argv) {
             "\tcompared_frames\tlatency_frames\tmeasured_true_peak_linear\tresult\n";
         file<<std::fixed<<std::setprecision(6);
         const int seconds=quick?1:300;
-        const auto scenarios=quick?4:3;
+        const auto scenarios=quick?7:3;
         const std::array<std::size_t,7> blocks{
             1U,7U,64U,511U,512U,1024U,4096U};
         const std::array<std::size_t,2> longBlocks{512U,4096U};
@@ -158,8 +169,13 @@ int main(int argc,char** argv) {
                     for(std::size_t i=0;i<(quick?blocks.size():longBlocks.size());++i) {
                         const auto blockFrames=quick?blocks[i]:longBlocks[i];
                         const auto r=run(hz,channels,seconds,scenario,blockFrames);
-                        const char* label=scenario==0?"QUIET":scenario==1?"NORMAL":
-                            scenario==2?"HOT_DRIVE6":"NYQUIST_DRIVE12";
+                        const char* label=scenario==0?"QUIET":
+                            scenario==1?"NORMAL":
+                            scenario==2?"HOT_DRIVE6":
+                            scenario==3?"NYQUIST_DRIVE12":
+                            scenario==4?"NYQUIST_DRIVE24":
+                            scenario==5?"SPARSE_IMPULSES_DRIVE24":
+                            "MIX_AMPLIFIED16_DRIVE18";
                         file<<"I2-P2-BATCHED-1\t"<<hz<<'\t'<<seconds<<'\t'
                             <<channels<<'\t'<<label<<'\t'<<blockFrames<<'\t'
                             <<r.baseline_ms<<'\t'<<r.batched_ms<<'\t'
