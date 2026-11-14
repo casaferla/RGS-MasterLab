@@ -37,7 +37,7 @@ dsp::ModuleInstanceId id(int v){core::Uuid::Bytes b{};b[15]=static_cast<std::uin
 
 core::FrameCount count(std::int64_t n) {auto r=core::FrameCount::create(n);need(bool(r),"FrameCount");return *r.value();}
 core::FrameRange frameRange(std::int64_t origin,std::int64_t n){auto r=core::FrameRange::create(core::FrameIndex{origin},core::FrameIndex{origin+n});need(bool(r),"FrameRange");return *r.value();}
-void test_factory_pcm(const dsp::ModuleRegistry &registry,int fs,int ch){
+void test_factory_pcm(const dsp::ModuleRegistry &registry,int fs,int ch,bool typed=false){
     using rgsml::research::r1d_p2::Frame;
     using rgsml::research::r1d_p2::Configuration;
     using rgsml::research::r1d_p2::EpochSession;
@@ -48,7 +48,14 @@ void test_factory_pcm(const dsp::ModuleRegistry &registry,int fs,int ch){
     auto f=audio::AudioFormat::create(*rate.value(),ch==1?audio::ChannelLayout::MONO_C:audio::ChannelLayout::STEREO_LR);
     need(bool(f),"format");
     const dsp::DspProcessSpec spec{*f.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,count(block)};
-    auto module=registry.create_module(kLive);need(bool(module),"factory IModule");
+    // Both paths must be exact against a *separately prepared* legacy epoch:
+    // registry default and typed preview-parameter construction.
+    auto defaultParams=dsp::StreamingTruePeakLimiterParameters::create_default();
+    need(bool(defaultParams),"factory P2 typed defaults");
+    auto module=typed
+        ? registry.create_module(kLive,dsp::ModuleParameterPayload{*defaultParams.value()})
+        : registry.create_module(kLive);
+    need(bool(module),"factory IModule");
     auto &m=**module.value();
     auto req=m.runtime_requirements(spec);need(bool(req),"requirements");
     const auto d=req.value()->effective_tail_frames.value();need(d>0,"tail");
@@ -88,7 +95,8 @@ void test_factory_pcm(const dsp::ModuleRegistry &registry,int fs,int ch){
     for(int c=0;c<ch;++c){ auto lane=out.value()->view().channel(c);need(bool(lane),"out lane");
         for(std::size_t i=0;i<expect.size();++i)
             need(std::memcmp(&(*lane.value())[i],&expect[i][c],sizeof(double))==0,"P2 factory PCM differs from pinned");}
-    std::cout<<"I2 factory direct real-PCM PASS fs="<<fs<<" channels="<<ch<<" delay="<<d<<"\n";
+    std::cout<<"I2 factory vs original bit-exact PASS fs="<<fs
+             <<" channels="<<ch<<" typed="<<typed<<" delay="<<d<<"\n";
 }
 
 int main(){
@@ -171,7 +179,10 @@ int main(){
         need(bool(requirements),"P2 requirements");
         need(requirements.value()->algorithmic_latency_frames.value()==382,"unexpected P2 latency");
         need(bool((*actual.value())->prepare(proc)),"P2 prepare");
-        for(int fs : {48000,192000}) for(int ch : {1,2}) test_factory_pcm(*preview.value(),fs,ch);
+        for(int fs : {48000,192000}) for(int ch : {1,2}) {
+            test_factory_pcm(*preview.value(),fs,ch,false);
+            test_factory_pcm(*preview.value(),fs,ch,true);
+        }
         std::cout << "I2 opt-in registry/chain/create/prepare PASS latency="
                   << requirements.value()->algorithmic_latency_frames.value() << "\n";
         // A non-registered category must not silently enter this package.
