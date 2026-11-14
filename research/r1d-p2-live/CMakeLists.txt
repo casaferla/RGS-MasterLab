@@ -238,6 +238,26 @@ else()
     -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
 endif()
 
+# Independent original controller vs True Peak verifier stage timing.
+# An untouched CallbackEngine acts as bitwise per-sample + EOS oracle;
+# separately timed stages do not modify pinned musical/safety code.
+add_executable(r1d_p2_component_perf_probe
+  tests/bench_p2_components.cpp)
+target_include_directories(r1d_p2_component_perf_probe PRIVATE . pinned)
+target_compile_definitions(r1d_p2_component_perf_probe PRIVATE
+  RESEARCH_EASED_TAIL RESEARCH_P2_RECOVERY RESEARCH_P2_CACHE)
+if(R1D_RESEARCH_PHASE_SSE)
+  target_compile_definitions(r1d_p2_component_perf_probe PRIVATE
+    RESEARCH_P2_PHASE_SSE)
+endif()
+if(MSVC)
+  target_compile_options(r1d_p2_component_perf_probe PRIVATE /W4 /fp:strict)
+else()
+  target_compile_options(r1d_p2_component_perf_probe PRIVATE
+    -O2 -Wall -Wextra -Wpedantic -Werror
+    -ffp-contract=off -fno-fast-math -frounding-math -msse2 -mfpmath=sse)
+endif()
+
 # Four authentic execution layers are run on the same generated PCM and
 # compared bit-by-bit, including delayed EOS. Stage-only benchmarking;
 # no changes whatsoever to pinned limiter, Product callback or L3 contracts.
