@@ -1361,7 +1361,7 @@ realPcm24CeilingMicroOvershootNeedsUserRetry()
     QVERIFY(seed.has_value());
 
     const auto rejected=dir.filePath(QStringLiteral("normal.wav"));
-    const auto corrected=dir.filePath(QStringLiteral("corrected.wav"));
+    const auto corrected=rejected; // exactly the same uncommitted destination
     auto state=std::make_shared<TestSessionState>();
     auto firstRequest=make_real_transaction_request(
         src,rejected,pcm,audio::WavSampleFormat::PCM_S24,
