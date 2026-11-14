@@ -195,10 +195,10 @@ struct MasteringChainCandidate final {
     }
 
     if (chain.modules.size() != 2U && chain.modules.size() != 3U
-        && chain.modules.size() != 4U) {
+        && chain.modules.size() != 4U && chain.modules.size() != 5U) {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Supported mastering chain must contain 2, 3, or 4 modules",
+            "Supported mastering chain must contain 2/3/4 legacy modules or 5 with typed P2",
             {{"moduleCount", std::to_string(chain.modules.size())}}});
     }
 
@@ -356,8 +356,8 @@ struct MasteringChainCandidate final {
         *gainInst.value(), *eqInst.value(), *compInst.value()};
     std::optional<dsp::ModuleInstanceId> stereoMsId;
     std::optional<dsp::StereoMsParameters> decodedStereoMs;
-    if (chain.modules.size() == 4U) {
-        // A four-node document is supported ONLY with an exact typed
+    if (chain.modules.size() >= 4U) {
+        // A four/five-node document requires an exact typed
         // fourth Stereo/M-S node. Never silently drop or default its fields.
         const auto& ms = chain.modules[3];
         if (ms.typeId != "rgsml.dsp.stereo-ms") {
@@ -394,6 +394,52 @@ struct MasteringChainCandidate final {
         restoredModules.push_back(std::move(*msInstance.value()));
     }
 
+    // Additive opt-in P2 fifth module; no schema change to historical 2/3/4.
+    // All fields must pass preflight before changing SOURCE, audio or chain.
+    std::optional<dsp::ModuleInstanceId> p2Id;
+    std::optional<dsp::StreamingTruePeakLimiterParameters> decodedP2;
+    if (chain.modules.size() == 5U) {
+        const auto& p2 = chain.modules[4];
+        constexpr std::string_view kP2Type{"rgsml.dsp.streaming-true-peak-limiter"};
+        if (p2.typeId != kP2Type) {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module 4 must be the exact opt-in Streaming P2 type",
+                {{"typeId", p2.typeId}}});
+        }
+        const auto metadata = validate_module_metadata(p2,kP2Type);
+        if (!metadata) return core::Result<MasteringChainCandidate>::failure(
+            *metadata.error());
+        if (!registry.has_factory(kP2Type)) {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "P2 project requires explicitly installed I2 registry"});
+        }
+        auto decoded = dsp::decode_streaming_true_peak_limiter_parameters_json(
+            p2.parameters.canonical_utf8());
+        if (!decoded) return core::Result<MasteringChainCandidate>::failure(
+            *decoded.error());
+        p2Id = *dsp::ModuleInstanceId::from_uuid(p2.instanceId).value();
+        decodedP2 = *decoded.value();
+        dsp::ModuleInstanceSpec p2Spec{
+            .instance_id = *p2Id,
+            .module_type_id = p2.typeId,
+            .enabled = p2.enabled,
+            .user_bypass = p2.userBypass,
+            .controller_suspended = p2.controllerSuspended,
+            .domain_suspended = p2.domainSuspended,
+            .provenance = dsp::ModuleProvenance::MANUAL,
+            .owner = dsp::ModuleOwner::USER,
+            .link_state = dsp::ModuleLinkState::UNLINKED,
+            .semantic_node_id = std::nullopt,
+            .parameter_state = dsp::ModuleParameterState{}
+        };
+        auto p2Instance = dsp::ModuleInstance::create(std::move(p2Spec));
+        if (!p2Instance) return core::Result<MasteringChainCandidate>::failure(
+            *p2Instance.error());
+        restoredModules.push_back(std::move(*p2Instance.value()));
+    }
+
     auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
     auto chainRes = dsp::ProcessingChain::restore(*regPtr,
         {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL},
@@ -410,7 +456,9 @@ struct MasteringChainCandidate final {
         compInstanceId,
         decodedComp,
         std::move(stereoMsId),
-        std::move(decodedStereoMs));
+        std::move(decodedStereoMs),
+        std::move(p2Id),
+        std::move(decodedP2));
     if (!stateRes) return core::Result<MasteringChainCandidate>::failure(*stateRes.error());
 
     return core::Result<MasteringChainCandidate>::success(
@@ -465,10 +513,9 @@ ProjectSessionViewModel::ProjectSessionViewModel(
 
 bool ProjectSessionViewModel::can_save_project() const noexcept
 {
-    // I2 research preview P2 is intentionally not in the frozen project
-    // serializer. Never advertise Save for an unrepresentable fifth DSP.
-    if (masteringChainState_ &&
-        masteringChainState_->streaming_p2_preview_instance_id()) return false;
+    // The I2 fifth MANUAL module now has a distinct typed JSON codec and
+    // opt-in restore path. SaveAs preflights the exact complete chain before
+    // any on-disk project publication; legacy sessions remain unchanged.
     return source_ && source_->source_resource();
 }
 
@@ -650,7 +697,9 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                     {{"typeId", std::string(typeId)}}});
             }
 
-            constexpr std::string_view expectedAlgorithmVersion{"1.0.0"};
+            const std::string_view expectedAlgorithmVersion =
+                typeId == "rgsml.dsp.streaming-true-peak-limiter"
+                    ? std::string_view{"0.1.0-preview"} : std::string_view{"1.0.0"};
             if (!desc.algorithm_version() || *desc.algorithm_version() != expectedAlgorithmVersion) {
                 return core::Result<project::Module>::failure(core::Error{
                     core::ErrorCode::InvalidArgument,
@@ -735,6 +784,28 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
             return core::Result<project::ProjectSnapshot>::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "Stereo/M-S parameters exist without a module instance"});
+        }
+
+        // Persist P2 only when the actual Product chain has the fifth
+        // typed, executable MANUAL instance. Never serialize a decorative
+        // editor or silently drop opt-in DSP audio from a saved Project.
+        const auto& p2Id = masteringChainState_->streaming_p2_preview_instance_id();
+        const auto& p2Params = masteringChainState_->streaming_p2_preview_parameters();
+        if (p2Id || p2Params) {
+            if (!p2Id || !p2Params ||
+                !masteringChainState_->stereo_ms_instance_id() ||
+                masteringChainState_->module_count()!=5U) {
+                return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "Streaming P2 project state requires complete fifth-module identity"});
+            }
+            auto p2 = serialize_module("rgsml.dsp.streaming-true-peak-limiter",
+                "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0",
+                masteringChainState_->chain().find_instance(*p2Id),
+                dsp::encode_streaming_true_peak_limiter_parameters_json(*p2Params));
+            if (!p2) return core::Result<project::ProjectSnapshot>::failure(
+                *p2.error());
+            masteringChain.modules.push_back(std::move(*p2.value()));
         }
 
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
@@ -928,7 +999,22 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 
     auto registryRes = dsp::ModuleRegistry::create_dsp_package_v1();
     if (!registryRes) { publish_error(*registryRes.error()); return; }
-    auto chainCandidate = validate_mastering_chain(doc, *registryRes.value(), uuidFactory_);
+    // A saved P2 project can be opened only in an explicitly opted-in I2
+    // session. The original v1 registry never silently admits P2.
+    const dsp::ModuleRegistry* restoreRegistry = &*registryRes.value();
+    if (masteringChainState_ &&
+        masteringChainState_->streaming_p2_preview_instance_id()) {
+        const auto optInRegistry = masteringChainState_->registry_snapshot();
+        if (!optInRegistry ||
+            !optInRegistry->has_factory("rgsml.dsp.streaming-true-peak-limiter")) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "P2 restore requires the active opt-in Product registry"});
+            return;
+        }
+        restoreRegistry = optInRegistry.get();
+    }
+    auto chainCandidate = validate_mastering_chain(doc, *restoreRegistry, uuidFactory_);
     if (!chainCandidate) { publish_error(*chainCandidate.error()); return; }
 
     // Source/Gold/MASTER/chain/project identity all change below this
@@ -1108,17 +1194,9 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     M18ScopedProjectOperation singleWriter{
         m18Guarded?&m18ProjectOperationActive_:nullptr};
     Q_UNUSED(singleWriter);
-    // Fail closed even for programmatic SaveAs invocations which bypass the
-    // QML canSaveProject state. Do not persist a four-module snapshot while
-    // the audible chain has an additional P2 algorithm/signature.
-    if (masteringChainState_ &&
-        masteringChainState_->streaming_p2_preview_instance_id()) {
-        publish_error(core::Error{
-            core::ErrorCode::UnsupportedOperation,
-            "Streaming True Peak Limiter preview is experimental and cannot "
-            "be saved until its project schema and restore are qualified."});
-        return;
-    }
+    // The fifth P2 DSP is now serialized by current_snapshot with strict
+    // typed algorithm/schema identity, under the existing M18 SaveAs batch.
+    // A malformed, absent or incoherent P2 module fails before file creation.
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
