@@ -57,6 +57,43 @@ using namespace rgsml::app;
     return std::make_shared<render::RenderResult>(std::move(*result.value()));
 }
 
+// Deterministic high-dynamic-range stereo programme, not a static DC-only
+// fixture: transients, contrasting channels and a periodic near-peak sample.
+[[nodiscard]] std::shared_ptr<render::RenderResult> make_transient_prepared_result(
+    core::SampleRate rate,std::int64_t frames)
+{
+    auto fmt=audio::AudioFormat::create(rate,audio::ChannelLayout::STEREO_LR);
+    auto count=core::FrameCount::create(frames);
+    Q_ASSERT(fmt&&count);
+    auto buffer=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    Q_ASSERT(buffer);
+    const auto left=buffer.value()->mutable_view().channel(0);
+    const auto right=buffer.value()->mutable_view().channel(1);
+    Q_ASSERT(left&&right);
+    for(std::size_t i=0;i<left.value()->size();++i) {
+        const auto x=static_cast<double>(i);
+        (*left.value())[i]=(i%127U==0U)?0.96:
+            0.55*std::sin(0.21*x)+0.17*std::cos(0.013*x);
+        (*right.value())[i]=(i%193U==0U)?-0.88:
+            0.40*std::sin(0.23*x+1.2)-0.24*std::cos(0.021*x);
+    }
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    Q_ASSERT(registry);
+    auto chain=dsp::ProcessingChain::create(
+        *registry.value(),{dsp::ProcessingStage::MASTER,
+                           dsp::ChainSegment::MANUAL});
+    Q_ASSERT(chain);
+    auto req=render::RenderRequest::create(
+        buffer.value()->view(),buffer.value()->view().absolute_range(),
+        *chain.value(),{},*core::FrameCount::create(4096).value());
+    Q_ASSERT(req);
+    auto out=render::render_preview(*req.value(),*registry.value());
+    Q_ASSERT(out);
+    return std::make_shared<render::RenderResult>(std::move(*out.value()));
+}
+
 class MasteringPreviewControllerTest final : public QObject {
     Q_OBJECT
 
@@ -428,15 +465,15 @@ testStreamingP2IncrementalPrefixCacheExactnessAndInvalidation()
     prepared=make_unit_prepared_result(
         *core::SampleRate::create(48000).value(),0.33,4096);
     execute(false,1); // SOURCE-owner change clears previous entries
-    prepared=make_unit_prepared_result(
-        *core::SampleRate::create(44100).value(),0.23,4096);
+    prepared=make_transient_prepared_result(
+        *core::SampleRate::create(44100).value(),4096);
     execute(false,1); // 44.1 kHz independent SOURCE/rate
     changed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,4.0,2);
     QVERIFY(changed);
     QVERIFY(live.set_streaming_p2_preview_parameters(*changed.value()));
     execute(true,1); // 44.1 kHz P2 active: fresh bit oracle
-    prepared=make_unit_prepared_result(
-        *core::SampleRate::create(96000).value(),0.31,4096);
+    prepared=make_transient_prepared_result(
+        *core::SampleRate::create(96000).value(),4096);
     execute(false,1); // 96 kHz independent SOURCE/rate
     QVERIFY(live.set_user_bypass(p2Id,true));
     execute(true,1); // 96 kHz bypass retains verified prefix
