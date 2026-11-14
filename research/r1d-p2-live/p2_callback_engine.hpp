@@ -118,6 +118,58 @@ public:
         return Status::ok;
     }
 
+#ifdef RESEARCH_P2_BATCHED_CALLBACK
+    // Experiment compiled only in an independent research benchmark target.
+    // Feed the ORIGINAL pinned safety Stream up to its native 64-frame
+    // quantum at a time. Music pushes and post-gain safety math are unchanged.
+    // Drain output each quantum to respect the existing bounded FIFO even
+    // when one physical callback spans 4096 input frames.
+    // Never enable this path in a Product or ordinary P2 build before a
+    // bit-exact 6-rate, multi-block and adversarial qualification gate.
+    [[nodiscard]] Status process_batched(
+        std::span<const Frame> input,std::span<Frame> output) noexcept {
+        if(input.size()!=output.size())
+            return fail(Status::output_size_mismatch,output);
+        if(state_!=Lifecycle::running)
+            return fail(Status::not_prepared,output);
+        if(input.size()>4096 || input_count_>UINT64_MAX-input.size())
+            return fail(Status::frame_limit,output);
+        for(const auto& sample:input)
+            for(int c=0;c<config_.channels;++c)
+                if(!std::isfinite(sample[c]) || std::abs(sample[c])>1048576.)
+                    return fail(Status::invalid_pcm,output);
+
+        std::array<Frame,::research::quantum> musicBatch{};
+        for(std::size_t offset=0;offset<input.size();) {
+            const auto count=std::min(::research::quantum,input.size()-offset);
+            std::size_t ready=0;
+            for(std::size_t i=0;i<count;++i) {
+                Frame musicSample{};
+                if(payload_->music.push(input[offset+i],musicSample))
+                    musicBatch[ready++]=musicSample;
+            }
+            if(ready) {
+                const auto step=payload_->safety.submit(
+                    std::span<const Frame>(musicBatch.data(),ready),
+                    payload_->scratch,payload_->gains);
+                if(step.status!=::research::Status::ok)
+                    return fail(Status::safety_failure,output);
+                if(!enqueue(step.frames))
+                    return fail(Status::fifo_overflow,output);
+            }
+            for(std::size_t i=0;i<count;++i) {
+                if(output_count_<latency_)output[offset+i]=Frame{};
+                else if(!dequeue(output[offset+i]))
+                    return fail(Status::fifo_underflow,output);
+                ++input_count_;
+                ++output_count_;
+            }
+            offset+=count;
+        }
+        return Status::ok;
+    }
+#endif
+
     // Outside the callback's active programme; output span MUST have exactly
     // latency_frames() slots. No heap, locks or I/O. One successful call only.
     [[nodiscard]] Status finish(std::span<Frame> latency_tail) noexcept {
