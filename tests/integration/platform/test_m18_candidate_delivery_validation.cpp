@@ -189,7 +189,7 @@ make_real_transaction_request(
 class M18CandidateDeliveryValidationTest final : public QObject{
     Q_OBJECT
 private slots:
-    void exactPcm24ReadbackAndCeilingEvidence();
+    void exactPcm24ReadbackAndCodecEvidence();
     void float32AndWrongSeedFailClosed();
     void tamperedPayloadAndWrongMasterRejected();
     void realWindowsM18TransactionalReadback();
@@ -1159,7 +1159,7 @@ realWindowsM18CooperativeCancellationAndAsyncWorker()
 }
 
 void M18CandidateDeliveryValidationTest::
-exactPcm24ReadbackAndCeilingEvidence()
+exactPcm24ReadbackAndCodecEvidence()
 {
     using platform::windows::internal::validate_m18_candidate_decoded_delivery;
     const auto original=master(audio::ChannelLayout::STEREO_LR,4105);
@@ -1177,21 +1177,18 @@ exactPcm24ReadbackAndCeilingEvidence()
     QCOMPARE(evidence.value()->exact_frames,std::uint64_t{4105});
     QCOMPARE(evidence.value()->encoded_format,audio::WavSampleFormat::PCM_S24);
     QCOMPARE(evidence.value()->canonical_decoded_sha256.size(),std::size_t{64});
-    QCOMPARE(evidence.value()->decoded_true_peak.programme_frames,
-        std::uint64_t{4105});
-    QCOMPARE(evidence.value()->decoded_true_peak.qualification_status,
-        analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
-    QVERIFY(evidence.value()->meets_ceiling);
     QVERIFY(control->readCalls>1U);
     auto again=open(bytes,std::make_shared<wav_support::ReaderControl>());
     QVERIFY(again);
-    const auto nonconforming=validate_m18_candidate_decoded_delivery(
+    // M17 owns Ceiling compliance. M18 validates the same exact codec
+    // result regardless of which valid M17 Ceiling was bound to the ticket.
+    const auto againChecked=validate_m18_candidate_decoded_delivery(
         *again.value()->get(),original->view(),
         audio::WavSampleFormat::PCM_S24,
         UINT64_C(0xFEDCBA9876543210),-12.0);
-    QVERIFY(nonconforming);
-    QVERIFY(!nonconforming.value()->meets_ceiling);
-    QVERIFY(nonconforming.value()->decoded_true_peak.global_db_tp.has_value());
+    QVERIFY(againChecked);
+    QCOMPARE(againChecked.value()->canonical_decoded_sha256,
+             evidence.value()->canonical_decoded_sha256);
 }
 
 void M18CandidateDeliveryValidationTest::float32AndWrongSeedFailClosed()
@@ -1207,7 +1204,7 @@ void M18CandidateDeliveryValidationTest::float32AndWrongSeedFailClosed()
         *wav.value()->get(),original->view(),
         audio::WavSampleFormat::IEEE_F32,std::nullopt,0.0);
     QVERIFY(valid);
-    QVERIFY(valid.value()->meets_ceiling);
+    QCOMPARE(valid.value()->encoded_format,audio::WavSampleFormat::IEEE_F32);
     auto other=open(bytes,std::make_shared<wav_support::ReaderControl>());
     QVERIFY(other);
     QVERIFY(!validate_m18_candidate_decoded_delivery(
@@ -1325,22 +1322,22 @@ realWindowsM18RollbackAndEpochGate()
     const auto pcm=master(audio::ChannelLayout::MONO_C,4105);
     QVERIFY(pcm);
     auto state=std::make_shared<TestSessionState>();
-    const auto rejectedPath=dir.filePath(QStringLiteral("nonconforming.wav"));
-    const auto over=make_real_transaction_request(
-        src,rejectedPath,pcm,audio::WavSampleFormat::PCM_S24,
+    // The test lease simulates a current M17-verified Master. A second
+    // unqualified M18 TP meter must NOT veto the exact encoded copy.
+    // No real Product can construct this authority from QML or a path.
+    const auto validPath=dir.filePath(QStringLiteral("m17-authorized.wav"));
+    const auto approved=make_real_transaction_request(
+        src,validPath,pcm,audio::WavSampleFormat::PCM_S24,
         42U,-12.0,state);
-    QVERIFY(over);
-    const auto failed=TransactionalAudioExporter::export_new_file(
-        *over.value());
-    QVERIFY(!failed);
-    // If a lower-level container/codec error wins before the ceiling
-    // check, report the EXACT underlying reason instead of a blind FAIL.
-    const auto reason=failed.error()->message();
-    QCOMPARE(failed.error()->code(),core::ErrorCode::InvalidState);
-    QVERIFY2(reason.find("nonconforming")!=std::string::npos,
-             reason.c_str());
-    QVERIFY(!QFileInfo::exists(rejectedPath));
-    QCOMPARE(state->acquired,std::size_t{0});
+    QVERIFY(approved);
+    const auto published=TransactionalAudioExporter::export_new_file(
+        *approved.value());
+    QVERIFY2(published,published?"":published.error()->message().c_str());
+    QVERIFY(QFileInfo::exists(validPath));
+    QCOMPARE(published.value()->encoded_file_sha256().size(),std::size_t{64});
+    QCOMPARE(state->acquired,std::size_t{1});
+    QCOMPARE(state->revalidated,std::size_t{2});
+    QCOMPARE(state->retired,std::size_t{1});
     QVERIFY(m18_no_temporary_candidates(dir.path()));
 
     const auto expiredPath=dir.filePath(QStringLiteral("expired.wav"));
@@ -1353,9 +1350,9 @@ realWindowsM18RollbackAndEpochGate()
         *expired.value());
     QVERIFY(!denied);
     QVERIFY(!QFileInfo::exists(expiredPath));
-    QCOMPARE(state->acquired,std::size_t{1});
-    QCOMPARE(state->revalidated,std::size_t{1});
-    QCOMPARE(state->retired,std::size_t{1});
+    QCOMPARE(state->acquired,std::size_t{2});
+    QCOMPARE(state->revalidated,std::size_t{3});
+    QCOMPARE(state->retired,std::size_t{2});
     QVERIFY(m18_no_temporary_candidates(dir.path()));
 
     state->current=true;
