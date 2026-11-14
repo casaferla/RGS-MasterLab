@@ -45,6 +45,13 @@ QString M18ProductExportViewModel::export_readiness_reason() const
     return action_->export_readiness_reason();
 }
 
+bool M18ProductExportViewModel::can_apply_micro_trim() const
+{
+    return owner_thread() &&initialDestination_.isLocalFile()
+        &&(initialFormatIndex_==0 ||initialFormatIndex_==1)
+        &&action_->can_apply_micro_trim();
+}
+
 bool M18ProductExportViewModel::can_cancel() const
 {
     return owner_thread()&&action_->can_cancel();
@@ -105,6 +112,13 @@ QString M18ProductExportViewModel::error_text() const
     // must never become a QML-visible diagnostic or an export success.
     using Reason=internal::M18PrivateAsyncExportSession::FailureReason;
     switch(s.failure_reason) {
+    case Reason::MICRO_TRIM_ELIGIBLE:
+        return QStringLiteral(
+            "The original 24-bit/Float WAV exceeded the M17 Ceiling only "
+            "within the exact post-encoding sample-error bound. No file "
+            "was delivered. Choose Apply Micro Trim & Export to apply "
+            "a user-approved -0.01 dB delivery-only correction and "
+            "verify a newly encoded WAV.");
     case Reason::DELIVERED_TP_ABOVE_CEILING:
         return QStringLiteral(
             "The encoded WAV exceeded the verified M17 True Peak Ceiling "
@@ -246,6 +260,45 @@ bool M18ProductExportViewModel::beginExport(
         emit changed();
         return false;
     }
+    initialDestination_=destination;
+    initialFormatIndex_=formatIndex;
+    initialSeed_=seed;
+    initialCeilingDbTp_=ceiling;
+    pollTimer_.start();
+    poll();
+    return true;
+}
+
+bool M18ProductExportViewModel::applyMicroTrimAndExport()
+{
+    if(!can_apply_micro_trim())return false;
+    // A completed failed worker has no published WAV. The original
+    // destination, format, uint64 dither seed and M17 ceiling are retained
+    // from the FIRST explicit export; never source them from QML on retry.
+    const auto path=initialDestination_.toLocalFile();
+    const auto filename=QFileInfo{path}.fileName();
+    auto destination=platform::windows::WindowsResourceWriter::
+        make_write_reference(path.toUtf8().toStdString(),
+                             filename.toUtf8().toStdString());
+    if(!destination)return false;
+    if(!action_->acknowledge())return false;
+    lastError_.clear();
+    const auto format=initialFormatIndex_==0
+        ?audio::WavSampleFormat::PCM_S24
+        :audio::WavSampleFormat::IEEE_F32;
+    const auto begun=action_->begin(
+        std::move(*destination.value()),format,initialSeed_,
+        initialCeilingDbTp_,true,true);
+    if(!begun) {
+        lastError_=QStringLiteral(
+            "Micro-trim retry was refused because the verified Master, "
+            "Project, Source or destination is no longer current. "
+            "Prepare the Master again and choose a new WAV file.");
+        emit changed();
+        return false;
+    }
+    // The retry cannot recursively offer another trim. Its own readback
+    // must satisfy the exact M17 Ceiling before any publication.
     pollTimer_.start();
     poll();
     return true;
