@@ -44,8 +44,12 @@ struct P2PrefixCache final {
         || fresh.signatures()!=incremental.signatures()
         || fresh.compressor_telemetry_sidecar()
             !=incremental.compressor_telemetry_sidecar()
-        || fresh.stereo_ms_stage_output_sidecars()
-            !=incremental.stereo_ms_stage_output_sidecars())
+        // Stereo/M-S captures do not expose a structural equality
+        // operator. An incremental candidate is admissible only when
+        // BOTH complete render paths have NO M15 stage sidecars.
+        // Never substitute or discard any genuine M15 evidence.
+        || !fresh.stereo_ms_stage_output_sidecars().empty()
+        || !incremental.stereo_ms_stage_output_sidecars().empty())
         return false;
     const auto a=fresh.view();
     const auto b=incremental.view();
