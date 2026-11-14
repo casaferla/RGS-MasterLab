@@ -155,7 +155,13 @@ int main(int argc,char** argv) {
         file<<"schema\trate_hz\tduration_s\tchannels\tscenario\tblock_frames"
             "\tbaseline_ms\tbatched_ms\tbaseline_eos_ms\tbatched_eos_ms"
             "\tcompared_frames\tlatency_frames\tmeasured_true_peak_linear\tresult\n";
-        file<<std::fixed<<std::setprecision(6);
+        // This TSV is a numerically authoritative post-gain ceiling gate.
+        // Six decimals can round a conformant 0.891250938... to 0.891251,
+        // causing a false >ceiling failure in the PowerShell reader.
+        // Use round-trip binary64 precision for the actual TP meter and
+        // all recorded timings; the independent in-process M16 strict
+        // check above remains unchanged and allows NO epsilon.
+        file<<std::fixed<<std::setprecision(17);
         const int seconds=quick?1:300;
         const auto scenarios=quick?7:3;
         const std::array<std::size_t,7> blocks{
