@@ -209,7 +209,11 @@ public:
     [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
     {
         using namespace rgsml::research::r1d_p2;
-        const Configuration defaults{48000, 2, 2, 0.8912509381337456, 0.0};
+        // The factory exists only in the explicit preview-opt-in registry.
+        // Enable the bit-exact batched callback solely in that sandbox;
+        // package_v1, Final TP/M17 and all unrelated DSPs are unchanged.
+        const Configuration defaults{48000, 2, 2, 0.8912509381337456,
+                                     0.0, true};
         std::unique_ptr<IModule> module = std::make_unique<ResearchP2IModule>(
             descriptor_, defaults, false);
         return Result<std::unique_ptr<IModule>>::success(std::move(module));
@@ -789,8 +793,10 @@ ModuleRegistry::create_module(
             const double ceiling = p->ceiling_db_tp() == -1.0
                 ? 0.8912509381337456
                 : std::pow(10.0, p->ceiling_db_tp()/20.0);
+            // Typed preview parameters select the same verified batching.
+            // No new user parameter or .rgsmaster persistence token.
             const rgsml::research::r1d_p2::Configuration cfg{
-                48000,2,p->margin_percent(),ceiling,p->drive_db()};
+                48000,2,p->margin_percent(),ceiling,p->drive_db(),true};
             std::unique_ptr<IModule> result =
                 std::make_unique<rgsml::research::r1d_p2::ResearchP2IModule>(
                     iterator->descriptor,cfg,false);
