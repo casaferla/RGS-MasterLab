@@ -1,0 +1,178 @@
+name: M18 Streamlined Exact WAV Export + Windows PO Bundle (non-FQ)
+
+on:
+  push:
+    branches:
+      - staging/m18-streamlined-export-focused-ci-20261114
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: m18-streamlined-nonfq
+  cancel-in-progress: false
+
+jobs:
+  windows-m18-physical:
+    name: Windows real M18 WAV + standalone PO test
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install Qt 6.8.3 and Multimedia
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          if ($LASTEXITCODE -ne 0) { throw 'M18_DEPENDENCY_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'M18_QT_INSTALL_FAILED' }
+      - name: Configure actual Product and strict CTest
+        shell: pwsh
+        run: |
+          $qt=Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64'
+          $log=Join-Path $env:RUNNER_TEMP 'm18-configure.log'
+          cmake -S . -B build-m18-streamlined -G "Visual Studio 17 2022" -A x64 `
+            -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=CI `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }} `
+            "-DRGSML_QT_ROOT=$qt" *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 60; throw 'M18_CONFIGURE_FAILED' }
+      - name: Compile Product executable and real M18 tests
+        shell: pwsh
+        run: |
+          $log=Join-Path $env:RUNNER_TEMP 'm18-build.log'
+          cmake --build build-m18-streamlined --config Release --parallel 4 --target `
+            rgsml_app rgsml_transactional_audio_export_tests `
+            rgsml_m18_windows_candidate_delivery_tests `
+            rgsml_project_session_tests rgsml_m23_alpha_diagnostic_tests `
+            rgsml_source_metadata_panel_smoke *> $log
+          if ($LASTEXITCODE -ne 0) {
+            $hits=@(Select-String -Path $log -Pattern 'error C[0-9]+','error LNK[0-9]+','FAILED:','fatal error','QML Error' | Select-Object -First 22)
+            foreach ($hit in $hits) { Write-Host $hit.Line.Substring(0,[Math]::Min(280,$hit.Line.Length)) }
+            if ($hits.Count -eq 0) { Get-Content $log -Tail 45 }
+            throw 'M18_REAL_PRODUCT_BUILD_FAILED'
+          }
+          Write-Host 'M18_REAL_PRODUCT_BUILD=PASS'
+      - name: Execute native Windows M18 export / Project / Qt checks
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          $qt=Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64'
+          $env:PATH="$qt/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qt/qml"
+          $log=Join-Path $env:RUNNER_TEMP 'm18-ctest.log'
+          # Strict M18 WAV/Project tests. The unrelated generic floating-proxy
+          # Qt smoke (line 1776, preexisting) remains open for later L1,
+          # while the real installed application is cold-smoked below.
+          ctest --test-dir build-m18-streamlined -C Release --output-on-failure `
+            -R '^(rgsml_transactional_audio_export_tests|rgsml_m18_windows_candidate_delivery_tests|rgsml_project_session_tests|rgsml_m23_alpha_diagnostic_tests)$' *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 65; throw 'M18_NATIVE_TEST_FAILED' }
+          Get-Content $log -Tail 9
+      - name: Install complete standalone Windows app (no FQ)
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-m18-streamlined/stage/M18-STREAMLINED-PO-NONFQ'
+          $log=Join-Path $env:RUNNER_TEMP 'm18-install.log'
+          cmake --install build-m18-streamlined --config Release --prefix "$stage" *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 50; throw 'M18_INSTALL_FAILED' }
+          foreach ($relative in @('bin/RGSMasterLab.exe','plugins/platforms/qwindows.dll','share/RGSMasterLab/ToolchainManifest.json')) {
+            if (-not (Test-Path (Join-Path $stage $relative))) { throw "M18_MISSING_DEPLOY_FILE=$relative" }
+          }
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root (Join-Path $stage 'bin/resources/fir')
+          if ($LASTEXITCODE -ne 0) { throw 'M18_FROZEN_FIR_INSTALL_GUARD_FAILED' }
+          Write-Host 'M18_STANDALONE_16_FIR_PACKAGE=PASS'
+      - name: Cold smoke installed Product without developer Qt paths
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-m18-streamlined/stage/M18-STREAMLINED-PO-NONFQ'
+          $exe=Join-Path $stage 'bin/RGSMasterLab.exe'
+          $out=Join-Path $env:RUNNER_TEMP 'm18-cold-out.log'
+          $err=Join-Path $env:RUNNER_TEMP 'm18-cold-err.log'
+          $env:QML2_IMPORT_PATH=''
+          $env:QT_PLUGIN_PATH=''
+          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $out) { Get-Content $out -Tail 25 }
+            if (Test-Path $err) { Get-Content $err -Tail 35 }
+            throw "M18_COLD_PRODUCT_SMOKE_FAILED=$($p.ExitCode)"
+          }
+          Write-Host 'M18_STANDALONE_COLD_SMOKE=PASS'
+      - name: Include physical replay notes
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-m18-streamlined/stage/M18-STREAMLINED-PO-NONFQ'
+          $instructions=@'
+          RGS MasterLab -- streamlined M18 export -- NOT A FULL QUALIFICATION.
+          Unzip the entire artifact; start bin/RGSMasterLab.exe.
+          Keep the original FQ #101 installation and Source WAV untouched.
+          With the same Source and 48-kHz Master, Prepare M17 and export to
+          two new output filenames in a writable local folder:
+            1. PCM24/TPDF
+            2. Float32/no-dither
+          If FAILED, photograph the NEW specific diagnostic wording.
+          If VERIFIED DELIVERED, record SHA-256, bytes, format and listening.
+          The validator is unchanged and refuses true peak above Ceiling.
+          No M18 result is accepted until the physical PO gate passes.
+          This is a Product L1 diagnostic executable, WITHOUT P2.
+          '@
+          Set-Content -LiteralPath (Join-Path $stage 'M18_PO_REPLAY.txt') -Value $instructions -Encoding utf8
+      - name: Publish Windows executable and verified FIR resources
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-Win64-STREAMLINED-NONFQ-${{ github.run_number }}-${{ github.sha }}
+          path: build-m18-streamlined/stage/M18-STREAMLINED-PO-NONFQ/
+          if-no-files-found: error
+          retention-days: 14
+
+  linux-m18-guard:
+    name: Linux M18 codec, stage and epoch guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt 6.8.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
+      - name: Compile portable native M18 header diagnostics and Project tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-m18-linux -G Ninja \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" \
+            -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON >"$RUNNER_TEMP/m18-linux-config.log" 2>&1 || {
+            tail -n 50 "$RUNNER_TEMP/m18-linux-config.log"
+            exit 1
+          }
+          cmake --build build-m18-linux --parallel 4 --target \
+            rgsml_audio_wav_writer_tests rgsml_project_package_tests \
+            rgsml_project_json_tests rgsml_m23_alpha_diagnostic_tests >"$RUNNER_TEMP/m18-linux-build.log" 2>&1 || {
+            tail -n 65 "$RUNNER_TEMP/m18-linux-build.log"
+            exit 1
+          }
+          tail -n 6 "$RUNNER_TEMP/m18-linux-build.log"
+      - name: Genuine Linux CTest (no Windows IO claims)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+          ctest --test-dir build-m18-linux --output-on-failure \
+            -R '^(rgsml_audio_wav_writer_tests|rgsml_project_package_tests|rgsml_project_json_tests|rgsml_m23_alpha_diagnostic_tests)$' >"$RUNNER_TEMP/m18-linux-test.log" 2>&1 || {
+            tail -n 55 "$RUNNER_TEMP/m18-linux-test.log"
+            exit 1
+          }
+          tail -n 8 "$RUNNER_TEMP/m18-linux-test.log"
