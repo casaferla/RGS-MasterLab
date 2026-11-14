@@ -28,14 +28,16 @@ validate_m18_candidate_decoded_delivery(
     audio::AudioBufferView verified_m17_master,
     audio::WavSampleFormat expected_encoding,
     std::optional<std::uint64_t> pcm24_dither_seed,
-    double ceiling_db_tp)
+    double ceiling_db_tp,double delivery_gain)
 {
     using R=core::Result<M18CandidateReadbackEvidence>;
     const bool pcm24=expected_encoding==audio::WavSampleFormat::PCM_S24;
     if ((!pcm24 &&expected_encoding!=audio::WavSampleFormat::IEEE_F32)
         ||pcm24!=pcm24_dither_seed.has_value()
         ||!std::isfinite(ceiling_db_tp)
-        ||ceiling_db_tp< -12.0 ||ceiling_db_tp>0.0)
+        ||ceiling_db_tp< -12.0 ||ceiling_db_tp>0.0
+        ||!std::isfinite(delivery_gain)
+        ||delivery_gain<=0.0 ||delivery_gain>1.0)
         return reject<M18CandidateReadbackEvidence>(
             core::ErrorCode::InvalidArgument,
             "M18_CANDIDATE_INVALID_ENCODING_SEED_OR_CEILING");
@@ -62,6 +64,7 @@ validate_m18_candidate_decoded_delivery(
 
     constexpr std::int64_t kFrames=4096;
     std::int64_t offset=0;
+    double maxAbsSampleError=0.0;
     while(offset<full){
         const auto n=std::min(kFrames,full-offset);
         const auto count=core::FrameCount::create(n);
@@ -83,8 +86,29 @@ validate_m18_candidate_decoded_delivery(
         const auto original=verified_m17_master.subview(
             core::FrameIndex{offset},*count.value());
         if(!original)return R::failure(*original.error());
+        // On a user-approved trim retry, verify the exact *trimmed*
+        // postcodec signal; the retained original M17 PCM remains const.
+        std::optional<audio::AudioBuffer> trimmed;
+        audio::AudioBufferView expected=*original.value();
+        if(delivery_gain!=1.0) {
+            auto owned=audio::AudioBuffer::create(
+                info.audio_format(),audio::FrameDomainId::OUTPUT_RATE,
+                core::FrameIndex{offset},*count.value());
+            if(!owned)return R::failure(*owned.error());
+            auto target=owned.value()->mutable_view();
+            for(std::size_t ch=0;ch<info.audio_format().channel_count();++ch) {
+                const auto from=original.value()->channel(ch);
+                const auto to=target.channel(ch);
+                if(!from)return R::failure(*from.error());
+                if(!to)return R::failure(*to.error());
+                for(std::size_t i=0;i<static_cast<std::size_t>(n);++i)
+                    (*to.value())[i]=(*from.value())[i]*delivery_gain;
+            }
+            trimmed.emplace(std::move(*owned.value()));
+            expected=trimmed->view();
+        }
         const auto exact=audio::internal::m18_verify_decoded_delivery(
-            *original.value(),decoded.value()->view(),
+            expected,decoded.value()->view(),
             expected_encoding,pcm24_dither_seed);
         if(!exact.matched()){
             return R::failure(core::Error{
@@ -96,6 +120,15 @@ validate_m18_candidate_decoded_delivery(
                  {"channel",std::to_string(exact.channel)},
                  {"status",std::to_string(
                     static_cast<unsigned>(exact.status))}}});
+        }
+        for(std::size_t ch=0;ch<info.audio_format().channel_count();++ch) {
+            const auto from=expected.channel(ch);
+            const auto actual=decoded.value()->view().channel(ch);
+            if(!from)return R::failure(*from.error());
+            if(!actual)return R::failure(*actual.error());
+            for(std::size_t i=0;i<static_cast<std::size_t>(n);++i)
+                maxAbsSampleError=std::max(maxAbsSampleError,
+                    std::abs((*from.value())[i]-(*actual.value())[i]));
         }
         const auto hash=hasher.value()->update(decoded.value()->view());
         if(!hash)return R::failure(*hash.error());
@@ -120,6 +153,6 @@ validate_m18_candidate_decoded_delivery(
         info.container_kind(),expected_encoding,
         static_cast<std::uint64_t>(full),
         info.data_size_bytes(),*decodedSha.value(),tpEvidence,
-        ceiling_db_tp,conforming});
+        ceiling_db_tp,conforming,maxAbsSampleError});
 }
 } // namespace rgsml::platform::windows::internal
