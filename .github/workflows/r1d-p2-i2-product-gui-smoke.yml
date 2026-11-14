@@ -337,13 +337,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'P2_BATCHED_PROOF_BIT_ORACLE_FAILED' }
           $batchRows=@(Import-Csv -Path $batchTsv -Delimiter "`t")
           if ($batchRows.Count -ne 588) { throw 'P2_BATCHED_MATRIX_ROW_COUNT_INVALID' }
+          # A strict independent in-process M16 meter rejects true overs.
+          # TSV readback MUST not round a valid near-ceiling double up.
+          # Report the exact first bad record rather than hiding the reason.
+          $rowNumber=0
           foreach ($row in $batchRows) {
+            $rowNumber++
             if ($row.schema -ne 'I2-P2-BATCHED-1' -or
                 $row.result -ne 'BIT_EXACT_AND_TP_SAFE' -or
                 [double]$row.baseline_ms -le 0 -or
                 [double]$row.batched_ms -le 0 -or
                 [double]$row.measured_true_peak_linear -gt 0.8912509381337456 -or
                 [int64]$row.compared_frames -le 0) {
+              Write-Host "P2_BATCHED_INVALID_ROW_NUMBER=$rowNumber"
+              Write-Host "P2_BATCHED_INVALID_ROW=$($row | ConvertTo-Json -Compress)"
               throw 'P2_BATCHED_PROOF_ROW_INVALID'
             }
           }
