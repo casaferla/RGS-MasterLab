@@ -187,7 +187,9 @@ struct CandidateEvidence final {
     std::uint64_t expectedSize,
     std::optional<audio::WavSampleFormat> m18Encoding,
     std::optional<std::uint64_t> m18Seed,
-    std::optional<double> m18Ceiling)
+    std::optional<double> m18Ceiling,
+    double deliveryGain,
+    bool offerMicroTrim)
 {
     const auto candidateUtf8 = candidate.toUtf8().toStdString();
     auto readReference = WindowsResourceReader::make_read_reference(
@@ -217,14 +219,27 @@ struct CandidateEvidence final {
         // A single 4096-frame decode pass computes exact postquant samples,
         // canonical decoded SHA, and delivered full-resource M16 True Peak.
         const auto verified=internal::validate_m18_candidate_decoded_delivery(
-            *wav.value()->get(),expected,*m18Encoding,m18Seed,*m18Ceiling);
+            *wav.value()->get(),expected,*m18Encoding,m18Seed,*m18Ceiling,
+            deliveryGain);
         if(!verified)
             return core::Result<CandidateEvidence>::failure(*verified.error());
-        if(!verified.value()->meets_ceiling)
+        if(!verified.value()->meets_ceiling) {
+            // The candidate has already passed exact postquant decoded
+            // sample validation. Offer user retry ONLY if the entire
+            // observed TP excess is bounded by the actual sample codec
+            // error through the frozen M16 FIR's conservative L1 bound.
+            const bool microEligible=offerMicroTrim
+                &&internal::m18_micro_trim_eligible(
+                    verified.value()->decoded_true_peak.global_linear_peak,
+                    *m18Ceiling,verified.value()->max_abs_sample_error,
+                    *m18Encoding);
             return failure<CandidateEvidence>(
                 core::ErrorCode::InvalidState,
-                "m18_candidate_nonconforming_delivered_true_peak: "
-                "no implicit Export Anyway or rounding relaxation");
+                microEligible
+                    ?"m18_candidate_micro_trim_eligible"
+                    :"m18_candidate_nonconforming_delivered_true_peak: "
+                     "no implicit Export Anyway or rounding relaxation");
+        }
         auto encoded=encoded_file_sha256(candidate);
         if(!encoded)
             return core::Result<CandidateEvidence>::failure(*encoded.error());
