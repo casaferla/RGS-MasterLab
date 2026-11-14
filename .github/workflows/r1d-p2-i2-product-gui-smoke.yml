@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - staging/r1d-p2-i2-preview-focused-ci-20261112
+  workflow_call:
   workflow_dispatch:
 
 permissions:
