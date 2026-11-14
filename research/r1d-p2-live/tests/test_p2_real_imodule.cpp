@@ -141,9 +141,12 @@ static void test_rgs_imodule(int fs,int ch,std::size_t n,std::size_t block,bool 
  require(!bad,"repeat finalize accepted");
 }
 static void test_bad_input_and_alias(){
+ for(bool batched:{false,true}) {
  const auto fmt=format(48000,2);
  const dsp::DspProcessSpec spec{fmt,audio::FrameDomainId::SOURCE_PROCESSING_RATE,frames(64)};
- ResearchP2IModule m(descriptor(),Configuration{},false);
+ Configuration config{};
+ config.batch_safety=batched;
+ ResearchP2IModule m(descriptor(),config,false);
  require(bool(m.prepare(spec)),"fault test prepare");
  auto in=audio::AudioBuffer::create(fmt,audio::FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},frames(64));
  auto out=audio::AudioBuffer::create(fmt,audio::FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},frames(64));
@@ -157,7 +160,8 @@ static void test_bad_input_and_alias(){
  require(!m.process(in.value()->view(),out.value()->mutable_view(),{range(0,64),true,false}),"fault resumed");
  m.reset();
  require(!m.process(in.value()->view(),in.value()->mutable_view(),{range(0,64),true,false}),"aliased buffers accepted");
- std::cout<<"ok nonfinite/alias fail-closed and reset epoch\n";
+ std::cout<<"ok nonfinite/alias fail-closed and reset epoch batch="<<batched<<"\n";
+ }
 }
 static void test_wrong_domain_and_reset(){
  const auto fmt=format(48000,2);
