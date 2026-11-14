@@ -128,6 +128,11 @@ public:
     // bit-exact 6-rate, multi-block and adversarial qualification gate.
     [[nodiscard]] Status process_batched(
         std::span<const Frame> input,std::span<Frame> output) noexcept {
+        // For very short callbacks, batching has no amortizable benefit;
+        // use the original exact per-sample path (including its preflight).
+        // This preserves legacy processing for 1..63 input frames.
+        if(input.size()<::research::quantum)
+            return process(input,output);
         if(input.size()!=output.size())
             return fail(Status::output_size_mismatch,output);
         if(state_!=Lifecycle::running)
