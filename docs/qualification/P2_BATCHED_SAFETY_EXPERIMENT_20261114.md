@@ -46,17 +46,31 @@ physically identical C++ source.
 
 ## Gate and measurement
 
-The quick CI benchmark covers six 44.1–192k rates, mono/stereo, four
-quiet/normal/hot/Nyquist synthetic excitations, seven callback block
-sizes (1, 7, 64, 511, 512, 1024, 4096): **336 full-program and EOS
-bitwise comparisons**. Every experiment must pass; no numerical
-tolerance, fingerprint-only comparison or ignored negative tests.
+The next quick CI gate covers six 44.1–192k rates, mono/stereo, seven
+quiet/normal/hot/Nyquist12/Nyquist24/sparse-impulse24/amplified16-drive18
+synthetic excitations, seven callback block
+sizes (1, 7, 64, 511, 512, 1024, 4096): **588 full-program and EOS
+bitwise comparisons**, plus independent post-gain ITU 4x True Peak
+measurement across all emitted PCM and the final 11 FIR samples.
+Callbacks shorter than 64 frames revert to the unchanged per-sample
+path to avoid measured short-block batching overhead. Every experiment
+must pass; no numerical tolerance, fingerprint-only comparison or
+ignored negative tests.
 Physical standalone `Run_P2_Batched_Safety.cmd` measures 300s stereo
 at 44.1/48kHz, three excitation levels, blocks 512 and 4096; writes
 `bin/P2_BATCHED_SAFETY_5MIN.tsv`.
 
-No claim of faster audio is made until the CI shows bitwise safety and
-the original/experimental paths have been timed on the same device.
+The previous **336-case** quick CI #43632611322 completed 7/7 SUCCESS,
+and all 336 cases preserved the exact PCM. The 1-second per-case
+timings are preliminary, CI-runner-specific, and the new 588-case TP
+gate is not yet qualified. Across those 336 cases, median runtime
+reductions for block sizes 64–4096 on the independent original/experiment
+kernel pair were approximately 6.2% Ubuntu, 9.4% Windows focused,
+and 7.0% Windows GUI smoke. One-frame blocks were sometimes slower,
+which motivates the adaptive fallback. No claim of physical speedup
+is made until the original/experimental paths are timed on the PO
+computer, ideally repeated with counterbalanced run order.
+
 Even a positive result must be validated on actual music and additional
 adversarial fixtures (including REPAIRED/projection paths), worker
 epoch/seek/loop, 1–4096 block segmentation, all six rates and the
