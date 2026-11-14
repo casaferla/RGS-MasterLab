@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <list>
 #include <utility>
 
 namespace rgsml::app {
@@ -32,6 +33,73 @@ struct P2PrefixCache final {
     std::shared_ptr<const render::RenderResult> fourDspResult;
     std::int64_t blockFrames{0};
     std::size_t bytes{0};
+};
+
+// Small worker-local LRU: multiple exact upstream configurations can be
+// revisited by P2 tuning / future AutoMatch sweeps without recomputation.
+// The 256 MiB cap applies to cached prefix PCM, not the independently owned
+// SOURCE or published/audible render lifetimes. All operations are off-thread.
+class BoundedP2PrefixLru final {
+public:
+    static constexpr std::size_t kMaxPcmBytes=256U*1024U*1024U;
+
+    void invalidate_other_owner(
+        const std::shared_ptr<const render::RenderResult>& prepared,
+        const std::shared_ptr<const dsp::ModuleRegistry>& registry)
+    {
+        if(!entries_.empty()
+            &&(entries_.front().preparedOwner!=prepared
+               ||entries_.front().registry!=registry))
+            clear();
+    }
+
+    [[nodiscard]] const P2PrefixCache* lookup(
+        const std::shared_ptr<const render::RenderResult>& prepared,
+        const std::shared_ptr<const dsp::ModuleRegistry>& registry,
+        const std::vector<dsp::ModuleInstance>& instances,
+        const std::vector<dsp::ModuleExecutionBinding>& bindings,
+        std::int64_t blockFrames)
+    {
+        auto it=std::find_if(entries_.begin(),entries_.end(),
+            [&](const P2PrefixCache& candidate) {
+                return candidate.fourDspResult
+                    &&candidate.preparedOwner==prepared
+                    &&candidate.registry==registry
+                    &&candidate.upstreamInstances==instances
+                    &&candidate.upstreamBindings==bindings
+                    &&candidate.blockFrames==blockFrames;
+            });
+        if(it==entries_.end())return nullptr;
+        entries_.splice(entries_.begin(),entries_,it);
+        return std::addressof(entries_.front());
+    }
+
+    void erase_mru() noexcept {
+        if(entries_.empty())return;
+        bytes_-=entries_.front().bytes;
+        entries_.pop_front();
+    }
+
+    void store(P2PrefixCache entry) {
+        if(entry.bytes>kMaxPcmBytes)return;
+        invalidate_other_owner(entry.preparedOwner,entry.registry);
+        while(bytes_>kMaxPcmBytes-entry.bytes && !entries_.empty()) {
+            bytes_-=entries_.back().bytes;
+            entries_.pop_back();
+            ++evictions_;
+        }
+        entries_.push_front(std::move(entry));
+        bytes_+=entries_.front().bytes;
+    }
+
+    void clear() noexcept {entries_.clear();bytes_=0;}
+    [[nodiscard]] std::size_t size() const noexcept {return entries_.size();}
+    [[nodiscard]] std::size_t bytes() const noexcept {return bytes_;}
+    [[nodiscard]] std::uint64_t evictions() const noexcept {return evictions_;}
+private:
+    std::list<P2PrefixCache> entries_;
+    std::size_t bytes_{0};
+    std::uint64_t evictions_{0};
 };
 
 [[nodiscard]] bool same_pcm_and_provenance(
@@ -72,10 +140,13 @@ struct P2PrefixCache final {
 render_with_bounded_p2_prefix(
     const MasteringPreviewController::PreviewJob& job,
     const dsp::ModuleRegistry& registry,
-    P2PrefixCache& cache,
+    BoundedP2PrefixLru& cache,
     bool& cacheHit)
 {
     cacheHit=false;
+    // No previous source/registry owner may remain pinned by the LRU after
+    // a user SOURCE or Project transition, even on an ineligible chain.
+    cache.invalidate_other_owner(job.preparedSnapshot,job.registry);
     const auto view=job.preparedSnapshot->view();
     const auto block=*core::FrameCount::create(4096).value();
     auto request=render::RenderRequest::create(
@@ -86,7 +157,6 @@ render_with_bounded_p2_prefix(
         return render::render_preview(*request.value(),registry);
     };
     const auto items=job.chain.instances();
-    constexpr auto maxPcmBytes=std::size_t{256}*1024U*1024U;
     if(items.size()!=5U || job.bindings.size()!=5U
         || !job.registry
         || items[0].module_type_id()!="rgsml.dsp.gain"
@@ -106,26 +176,24 @@ render_with_bounded_p2_prefix(
     const auto channels=view.format().channel_count();
     if(frames<=0 || channels==0 ||
         static_cast<std::uint64_t>(frames)
-            >maxPcmBytes/(sizeof(double)*channels))
+            >BoundedP2PrefixLru::kMaxPcmBytes/(sizeof(double)*channels))
         return fresh();
 
     std::vector<dsp::ModuleInstance> upstream{
         items.begin(),items.begin()+4};
     std::vector<dsp::ModuleExecutionBinding> upstreamBindings{
         job.bindings.begin(),job.bindings.begin()+4};
-    if(cache.fourDspResult && cache.preparedOwner==job.preparedSnapshot
-        &&cache.registry==job.registry
-        &&cache.upstreamInstances==upstream
-        &&cache.upstreamBindings==upstreamBindings
-        &&cache.blockFrames==block.value()) {
+    if(const auto* hit=cache.lookup(
+            job.preparedSnapshot,job.registry,upstream,upstreamBindings,
+            block.value())) {
         auto reused=render::render_preview_p2_cached_prefix(
-            *request.value(),*cache.fourDspResult,registry);
+            *request.value(),*hit->fourDspResult,registry);
         if(reused) {
             cacheHit=true;
             return reused;
         }
         // Unknown or now-incompatible metadata: fail closed to fresh render.
-        cache={};
+        cache.erase_mru();
         return fresh();
     }
 
@@ -154,16 +222,17 @@ render_with_bounded_p2_prefix(
         return oracle;
     // Cache admission is after a complete exact sample + sidecar oracle.
     // Strong SOURCE ownership, exact upstream typed key and one PCM budget.
-    cache.preparedOwner=job.preparedSnapshot;
-    cache.registry=job.registry;
-    cache.upstreamInstances.assign(
-        items.begin(),items.begin()+4);
-    cache.upstreamBindings.assign(
+    P2PrefixCache admitted;
+    admitted.preparedOwner=job.preparedSnapshot;
+    admitted.registry=job.registry;
+    admitted.upstreamInstances.assign(items.begin(),items.begin()+4);
+    admitted.upstreamBindings.assign(
         job.bindings.begin(),job.bindings.begin()+4);
-    cache.fourDspResult=std::make_shared<const render::RenderResult>(
+    admitted.fourDspResult=std::make_shared<const render::RenderResult>(
         std::move(*produced.value()));
-    cache.blockFrames=block.value();
-    cache.bytes=static_cast<std::size_t>(frames)*channels*sizeof(double);
+    admitted.blockFrames=block.value();
+    admitted.bytes=static_cast<std::size_t>(frames)*channels*sizeof(double);
+    cache.store(std::move(admitted));
     return oracle;
 }
 
@@ -280,7 +349,7 @@ void MasteringPreviewController::request_preview()
 void MasteringPreviewController::worker_loop()
 {
     // No lock or cache operations on the callback / GUI thread.
-    P2PrefixCache p2Cache;
+    BoundedP2PrefixLru p2Cache;
     while (true) {
         std::optional<PreviewJob> jobOpt;
         {
@@ -335,7 +404,7 @@ void MasteringPreviewController::worker_loop()
             QFile log{researchP2TimingLogPath_};
             if (log.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
                 const auto row = QStringLiteral(
-                    "generation=%1\tframes=%2\trate_hz=%3\tdsp_active=%4\tp2_present=%5\tp2_active=%6\trender_ms=%7\tresult=%8\tcache_hit=%9\n")
+                    "generation=%1\tframes=%2\trate_hz=%3\tdsp_active=%4\tp2_present=%5\tp2_active=%6\trender_ms=%7\tresult=%8\tcache_hit=%9\tcache_entries=%10\tcache_pcm_bytes=%11\tcache_evictions=%12\n")
                     .arg(job.generation)
                     .arg(view.frame_count().value())
                     .arg(view.format().sample_rate().value())
@@ -344,7 +413,10 @@ void MasteringPreviewController::worker_loop()
                     .arg(p2Active ? 1 : 0)
                     .arg(renderMs)
                     .arg(renderResult ? QStringLiteral("OK") : QStringLiteral("ERROR"))
-                    .arg(cacheHit?1:0);
+                    .arg(cacheHit?1:0)
+                    .arg(p2Cache.size())
+                    .arg(p2Cache.bytes())
+                    .arg(p2Cache.evictions());
                 log.write(row.toUtf8());
             }
         }
