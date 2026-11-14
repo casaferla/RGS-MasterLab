@@ -414,9 +414,9 @@ void MasteringPreviewController::worker_loop()
                     .arg(renderMs)
                     .arg(renderResult ? QStringLiteral("OK") : QStringLiteral("ERROR"))
                     .arg(cacheHit?1:0)
-                    .arg(p2Cache.size())
-                    .arg(p2Cache.bytes())
-                    .arg(p2Cache.evictions());
+                    .arg(static_cast<qulonglong>(p2Cache.size()))
+                    .arg(static_cast<qulonglong>(p2Cache.bytes()))
+                    .arg(static_cast<qulonglong>(p2Cache.evictions()));
                 log.write(row.toUtf8());
             }
         }
