@@ -24,11 +24,33 @@ public:
         IDLE, ENCODING_OR_VERIFYING, CANCELLING,
         VERIFIED_DELIVERED, FAILED, CANCELLED
     };
+    // Fixed, locally classified diagnostics. NEVER forward arbitrary
+    // filesystem paths or untrusted Error.message into the GUI.
+    enum class FailureReason : std::uint8_t {
+        UNKNOWN, DELIVERED_TP_ABOVE_CEILING,
+        DESTINATION_EXISTS, SOURCE_COLLISION, PRODUCT_EPOCH_REVOKED
+    };
+    [[nodiscard]] static constexpr FailureReason classify_failure(
+        std::string_view message) noexcept {
+        if(message.starts_with(
+            "m18_candidate_nonconforming_delivered_true_peak"))
+            return FailureReason::DELIVERED_TP_ABOVE_CEILING;
+        if(message.starts_with("destination_exists:"))
+            return FailureReason::DESTINATION_EXISTS;
+        if(message.starts_with("source_collision:"))
+            return FailureReason::SOURCE_COLLISION;
+        if(message.starts_with("M18_PRODUCT_")
+           ||message.starts_with("M18_EPOCH_")
+           ||message.starts_with("M18_WORKER_REQUEST_"))
+            return FailureReason::PRODUCT_EPOCH_REVOKED;
+        return FailureReason::UNKNOWN;
+    }
     struct Snapshot final {
         Phase phase{Phase::IDLE};
         std::uint64_t encoded_frames{0};
         std::uint64_t total_frames{0};
         std::optional<core::ErrorCode> failure_code;
+        FailureReason failure_reason{FailureReason::UNKNOWN};
         // Present only after the transactional Windows exporter finished
         // WAV readback and returned a verified, published destination.
         std::optional<std::uint64_t> verified_file_size_bytes;
@@ -124,6 +146,7 @@ public:
                 "m18_export_cancelled_"};
             const auto message=error
                 ?std::string_view{error->message()}:std::string_view{};
+            current.failure_reason=classify_failure(message);
             const bool confirmedCancelled=
                 job_->cancellation_requested()
                 &&message.starts_with(cancelledPrefix);
