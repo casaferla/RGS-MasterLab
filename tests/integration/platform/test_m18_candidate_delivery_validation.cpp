@@ -3,6 +3,7 @@
 #include "internal/m18_candidate_delivery_validation.hpp"
 #include "wav_test_support.hpp"
 #include "m18_streaming_wav.hpp"
+#include "m18_terminal_sample_codec.hpp"
 #include "internal/transactional_audio_exporter_test_seam.hpp"
 #include "internal/m18_epoch_commit_barrier.hpp"
 #include "internal/m18_product_epoch_ticket.hpp"
@@ -198,6 +199,7 @@ private slots:
     void tamperedPayloadAndWrongMasterRejected();
     void realWindowsM18TransactionalReadback();
     void userMicroTrimRealWavBothEncodingsStrictReadback();
+    void realPcm24CeilingMicroOvershootNeedsUserRetry();
     void realWindowsM18RollbackAndEpochGate();
     void realWindowsM18CooperativeCancellationAndAsyncWorker();
     void realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit();
@@ -1314,6 +1316,86 @@ realWindowsM18TransactionalReadback()
         QCOMPARE(state->acquired,std::size_t{1});
         QVERIFY(m18_no_temporary_candidates(dir.path()));
     }
+}
+
+void M18CandidateDeliveryValidationTest::
+realPcm24CeilingMicroOvershootNeedsUserRetry()
+{
+    using namespace platform::windows;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("source.bin"));
+    QFile input{src};
+    QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(input.write("owner",5),qint64{5});
+    input.close();
+
+    auto pcm=master(audio::ChannelLayout::MONO_C,4105);
+    QVERIFY(pcm);
+    constexpr std::uint64_t center=2048U;
+    constexpr double phasePeak=7964.0/8192.0;
+    constexpr double lsb=1.0/8388608.0;
+    constexpr double ceilingDb= -1.0;
+    const double ceilingLinear=std::pow(10.0,ceilingDb/20.0);
+    // Exact isolated impulse: the largest frozen M16 FIR coefficient is
+    // 7964/8192, so this original lies strictly below -1.0 dBTP.
+    const double spike=ceilingLinear/phasePeak-0.25*lsb;
+    auto mono=pcm->mutable_view().channel(0);
+    QVERIFY(mono);
+    std::fill(mono.value()->begin(),mono.value()->end(),0.0);
+    (*mono.value())[center]=spike;
+
+    // Select a deterministic counter-based TPDF seed which rounds the
+    // delivered PCM24 impulse slightly ABOVE its original M16 ceiling.
+    std::optional<std::uint64_t> seed;
+    for(std::uint64_t trial=1;trial<=8192U;++trial) {
+        const auto converted=audio::internal::m18_quantize_pcm24(
+            spike,trial,center,0U);
+        if(converted.status==audio::internal::M18CodecStatus::OK
+           &&static_cast<double>(converted.code)*lsb*phasePeak
+                >ceilingLinear+1.0e-12) {
+            seed=trial;
+            break;
+        }
+    }
+    QVERIFY(seed.has_value());
+
+    const auto rejected=dir.filePath(QStringLiteral("normal.wav"));
+    const auto corrected=dir.filePath(QStringLiteral("corrected.wav"));
+    auto state=std::make_shared<TestSessionState>();
+    auto firstRequest=make_real_transaction_request(
+        src,rejected,pcm,audio::WavSampleFormat::PCM_S24,
+        seed,ceilingDb,state);
+    QVERIFY(firstRequest);
+    const auto first=TransactionalAudioExporter::export_new_file(
+        *firstRequest.value());
+    QVERIFY(!first);
+    QCOMPARE(first.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(first.error()->message(),
+             std::string("m18_candidate_micro_trim_eligible"));
+    QVERIFY(!QFileInfo::exists(rejected));
+    QCOMPARE(state->acquired,std::size_t{0});
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+
+    // Only the separately approved retry carries the micro-trim bit.
+    // It cannot reuse a candidate or override the failure readback gate.
+    auto authorized=make_real_transaction_request(
+        src,corrected,pcm,audio::WavSampleFormat::PCM_S24,
+        seed,ceilingDb,state,true);
+    QVERIFY(authorized);
+    const auto successful=TransactionalAudioExporter::export_new_file(
+        *authorized.value());
+    QVERIFY2(successful,
+             successful?"":successful.error()->message().c_str());
+    QVERIFY(QFileInfo::exists(corrected));
+    QCOMPARE(successful.value()->encoded_file_sha256().size(),std::size_t{64});
+    QCOMPARE(state->acquired,std::size_t{1});
+    QCOMPARE(state->revalidated,std::size_t{2});
+    QCOMPARE(state->retired,std::size_t{1});
+    const auto after=pcm->view().channel(0);
+    QVERIFY(after);
+    QCOMPARE((*after.value())[center],spike);
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
 }
 
 void M18CandidateDeliveryValidationTest::
