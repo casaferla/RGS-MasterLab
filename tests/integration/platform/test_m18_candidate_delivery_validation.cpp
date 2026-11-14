@@ -8,6 +8,7 @@
 #include "internal/m18_product_epoch_ticket.hpp"
 #include "internal/m18_owner_mutation_fanout.hpp"
 #include "internal/m18_async_export_worker.hpp"
+#include "internal/m18_micro_trim_policy.hpp"
 #include <rgsml/platform/windows/transactional_audio_exporter.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -22,6 +23,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <limits>
 #include <thread>
@@ -162,7 +164,8 @@ make_real_transaction_request(
     std::shared_ptr<const audio::AudioBuffer> owner,
     audio::WavSampleFormat format,
     std::optional<std::uint64_t> seed,double ceiling,
-    std::shared_ptr<TestSessionState> session)
+    std::shared_ptr<TestSessionState> session,
+    bool userApprovedMicroTrim=false)
 {
     using namespace platform::windows;
     auto sourceRef=WindowsResourceReader::make_read_reference(
@@ -176,7 +179,8 @@ make_real_transaction_request(
     return M18TransactionalAudioExportRequest::create(
         *sourceRef.value(),std::move(owner),*destRef.value(),
         format,seed,ceiling,ExportCollisionPolicy::FAIL_IF_EXISTS,
-        make_test_commit_authority(std::move(session)));
+        make_test_commit_authority(std::move(session)),
+        userApprovedMicroTrim);
 }
 [[nodiscard]] bool m18_no_temporary_candidates(const QString& dir)
 {
@@ -193,6 +197,7 @@ private slots:
     void float32AndWrongSeedFailClosed();
     void tamperedPayloadAndWrongMasterRejected();
     void realWindowsM18TransactionalReadback();
+    void userMicroTrimRealWavBothEncodingsStrictReadback();
     void realWindowsM18RollbackAndEpochGate();
     void realWindowsM18CooperativeCancellationAndAsyncWorker();
     void realWindowsAsyncWorkerRejectsEpochRevocationBeforeCommit();
@@ -1307,6 +1312,73 @@ realWindowsM18TransactionalReadback()
         QVERIFY(!blocked);
         QCOMPARE(blocked.error()->code(),core::ErrorCode::InvalidState);
         QCOMPARE(state->acquired,std::size_t{1});
+        QVERIFY(m18_no_temporary_candidates(dir.path()));
+    }
+}
+
+void M18CandidateDeliveryValidationTest::
+userMicroTrimRealWavBothEncodingsStrictReadback()
+{
+    using namespace platform::windows;
+    // A mathematically codec-bounded overshoot may offer a user retry.
+    // A large true-peak excursion must never unlock the micro-trim button.
+    using internal::m18_micro_trim_eligible;
+    constexpr auto encoding=audio::WavSampleFormat::PCM_S24;
+    const double ceiling= -2.7;
+    const double linear=std::pow(10.0,ceiling/20.0);
+    QVERIFY(m18_micro_trim_eligible(
+        linear+1.0e-7,ceiling,5.0e-8,encoding));
+    QVERIFY(!m18_micro_trim_eligible(
+        linear+1.0e-2,ceiling,5.0e-8,encoding));
+    QVERIFY(!m18_micro_trim_eligible(
+        linear+1.0e-7,ceiling,0.0,encoding));
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto src=dir.filePath(QStringLiteral("original-source.bin"));
+    QFile input{src};
+    QVERIFY(input.open(QIODevice::WriteOnly|QIODevice::NewOnly));
+    QCOMPARE(input.write("immutable-source",16),qint64{16});
+    input.close();
+    for(const auto fmt:{audio::WavSampleFormat::PCM_S24,
+                        audio::WavSampleFormat::IEEE_F32}) {
+        auto original=master(audio::ChannelLayout::STEREO_LR,4105);
+        QVERIFY(original);
+        const auto unchanged=original->view().channel(0);
+        QVERIFY(unchanged);
+        const auto originalSample=(*unchanged.value())[0];
+        const auto seed=fmt==audio::WavSampleFormat::PCM_S24
+            ?std::optional<std::uint64_t>{UINT64_C(0xFEDCBA9876543210)}
+            :std::nullopt;
+        const auto normal=dir.filePath(
+            QStringLiteral("normal-%1.wav").arg(static_cast<int>(fmt)));
+        const auto trimmed=dir.filePath(
+            QStringLiteral("trimmed-%1.wav").arg(static_cast<int>(fmt)));
+        auto state=std::make_shared<TestSessionState>();
+        auto normalRequest=make_real_transaction_request(
+            src,normal,original,fmt,seed,-1.0,state);
+        QVERIFY(normalRequest);
+        const auto first=TransactionalAudioExporter::export_new_file(
+            *normalRequest.value());
+        QVERIFY2(first,first?"" :first.error()->message().c_str());
+        auto trimRequest=make_real_transaction_request(
+            src,trimmed,original,fmt,seed,-1.0,state,true);
+        QVERIFY(trimRequest);
+        QVERIFY(trimRequest.value()->user_approved_micro_trim());
+        const auto second=TransactionalAudioExporter::export_new_file(
+            *trimRequest.value());
+        QVERIFY2(second,second?"" :second.error()->message().c_str());
+        QVERIFY(QFileInfo::exists(normal));
+        QVERIFY(QFileInfo::exists(trimmed));
+        QCOMPARE(second.value()->encoded_file_sha256().size(),std::size_t{64});
+        QVERIFY(first.value()->encoded_file_sha256()
+                !=second.value()->encoded_file_sha256());
+        const auto after=original->view().channel(0);
+        QVERIFY(after);
+        QCOMPARE((*after.value())[0],originalSample);
+        QCOMPARE(state->acquired,std::size_t{2});
+        QCOMPARE(state->revalidated,std::size_t{4});
+        QCOMPARE(state->retired,std::size_t{2});
         QVERIFY(m18_no_temporary_candidates(dir.path()));
     }
 }
