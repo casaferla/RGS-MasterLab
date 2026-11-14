@@ -1497,6 +1497,22 @@ realWindowsM18RollbackAndEpochGate()
     QCOMPARE(state->acquired,std::size_t{0});
     QVERIFY(m18_no_temporary_candidates(dir.path()));
 
+    // An arbitrary attempt to force the trim bit on a gross violation
+    // NEVER bypasses the second decoded full-file M16 ceiling check.
+    const auto forced=make_real_transaction_request(
+        src,rejectedPath,pcm,audio::WavSampleFormat::PCM_S24,
+        42U,-12.0,state,true);
+    QVERIFY(forced);
+    const auto stillRefused=TransactionalAudioExporter::export_new_file(
+        *forced.value());
+    QVERIFY(!stillRefused);
+    QCOMPARE(stillRefused.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(stillRefused.error()->message().find("nonconforming")
+            !=std::string::npos);
+    QVERIFY(!QFileInfo::exists(rejectedPath));
+    QCOMPARE(state->acquired,std::size_t{0});
+    QVERIFY(m18_no_temporary_candidates(dir.path()));
+
     const auto expiredPath=dir.filePath(QStringLiteral("expired.wav"));
     const auto expired=make_real_transaction_request(
         src,expiredPath,pcm,audio::WavSampleFormat::IEEE_F32,
