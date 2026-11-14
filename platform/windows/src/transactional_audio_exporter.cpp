@@ -3,6 +3,7 @@
 #include "internal/sha256.hpp"
 #include "internal/transactional_audio_exporter_test_seam.hpp"
 #include "internal/m18_candidate_delivery_validation.hpp"
+#include "internal/m18_micro_trim_policy.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -351,7 +352,8 @@ M18TransactionalAudioExportRequest::create(
     std::optional<std::uint64_t> pcm24DitherSeed,
     double ceilingDbTp,
     ExportCollisionPolicy collisionPolicy,
-    M18AcquireCommitLease acquireCommitLease)
+    M18AcquireCommitLease acquireCommitLease,
+    bool userApprovedMicroTrim)
 {
     using R=core::Result<M18TransactionalAudioExportRequest>;
     if (!immutableVerifiedMaster || !acquireCommitLease)
@@ -387,7 +389,8 @@ M18TransactionalAudioExportRequest::create(
     return R::success(M18TransactionalAudioExportRequest{
         std::move(source),std::move(immutableVerifiedMaster),
         std::move(destination),sampleFormat,pcm24DitherSeed,
-        ceilingDbTp,collisionPolicy,std::move(acquireCommitLease)});
+        ceilingDbTp,collisionPolicy,std::move(acquireCommitLease),
+        userApprovedMicroTrim});
 }
 
 core::Result<TransactionalAudioExportRequest> TransactionalAudioExportRequest::create(
@@ -534,7 +537,7 @@ TransactionalAudioExporter::export_new_file(
     return export_impl(
         request.source(),request.payload(),request.destination(),
         request.sample_format(),request.collision_policy(),
-        std::nullopt,std::nullopt,nullptr,nullptr,nullptr);
+        std::nullopt,std::nullopt,nullptr,nullptr,nullptr,false);
 }
 
 core::Result<TransactionalAudioExportResult>
@@ -550,7 +553,7 @@ TransactionalAudioExporter::export_new_file(
         request.sample_format(),request.collision_policy(),
         request.dither_seed(),request.ceiling_db_tp(),
         &request.commit_lease_factory(),&cancellationRequested,
-        &onEncodedFrames);
+        &onEncodedFrames,request.user_approved_micro_trim());
 }
 
 core::Result<TransactionalAudioExportResult>
@@ -564,9 +567,16 @@ TransactionalAudioExporter::export_impl(
     std::optional<double> ceilingDbTp,
     const M18AcquireCommitLease* commitLeaseFactory,
     const std::function<bool()>* cancellationRequested,
-    const std::function<void(std::uint64_t,std::uint64_t)>* onEncodedFrames)
+    const std::function<void(std::uint64_t,std::uint64_t)>* onEncodedFrames,
+    bool userApprovedMicroTrim)
 {
     const bool m18=ceilingDbTp.has_value();
+    if(userApprovedMicroTrim && !m18)
+        return failure<TransactionalAudioExportResult>(
+            core::ErrorCode::InvalidState,
+            "m18_micro_trim_never_allowed_on_legacy_export");
+    const double deliveryGain=userApprovedMicroTrim
+        ?internal::kM18MicroTrimLinearGain:1.0;
     // Cancellation is strictly an M18 worker-level advisory: a failed
     // callback also denies publication. Legacy F64 has no such callback.
     const auto cancelled=[&]() noexcept {
@@ -692,7 +702,36 @@ TransactionalAudioExporter::export_impl(
         if (!view) {
             return cleanup_failure(*view.error(), *candidatePath.value(), false);
         }
-        auto write = writer.value()->get()->write_frames(*view.value());
+        // Delivery-only correction on a fresh 4096-frame buffer; the
+        // exact original M17 PCM and its M16 verification remain intact.
+        std::optional<audio::AudioBuffer> deliveryChunk;
+        audio::AudioBufferView deliveryView=*view.value();
+        if(userApprovedMicroTrim) {
+            auto owned=audio::AudioBuffer::create(
+                payload.format(),audio::FrameDomainId::OUTPUT_RATE,
+                core::FrameIndex{offset},*count.value());
+            if(!owned) {
+                static_cast<void>(writer.value()->get()->close());
+                return cleanup_failure(*owned.error(),*candidatePath.value(),false);
+            }
+            auto out=owned.value()->mutable_view();
+            for(std::size_t ch=0;ch<payload.format().channel_count();++ch) {
+                const auto from=view.value()->channel(ch);
+                const auto target=out.channel(ch);
+                if(!from||!target) {
+                    static_cast<void>(writer.value()->get()->close());
+                    return cleanup_failure(core::Error{
+                        core::ErrorCode::InvalidAudioSample,
+                        "m18_micro_trim_invalid_channel"},
+                        *candidatePath.value(),false);
+                }
+                for(std::size_t i=0;i<static_cast<std::size_t>(countValue);++i)
+                    (*target.value())[i]=(*from.value())[i]*deliveryGain;
+            }
+            deliveryChunk.emplace(std::move(*owned.value()));
+            deliveryView=deliveryChunk->view();
+        }
+        auto write = writer.value()->get()->write_frames(deliveryView);
         if (!write) {
             static_cast<void>(writer.value()->get()->close());
             return cleanup_failure(*write.error(), *candidatePath.value(), false);
@@ -760,7 +799,7 @@ TransactionalAudioExporter::export_impl(
     auto evidence = validate_candidate(
         *candidatePath.value(), payload, expectedSize,
         m18?std::optional<audio::WavSampleFormat>{format}:std::nullopt,
-        seed,ceilingDbTp);
+        seed,ceilingDbTp,deliveryGain,!userApprovedMicroTrim);
     if (!evidence) {
         return cleanup_failure(*evidence.error(), *candidatePath.value(), false);
     }
