@@ -349,7 +349,9 @@ Result<MasteringChainState> MasteringChainState::restore(
     ModuleInstanceId compressor_id,
     CompressorParameters compressor_params,
     std::optional<ModuleInstanceId> stereo_ms_id,
-    std::optional<StereoMsParameters> stereo_ms_params)
+    std::optional<StereoMsParameters> stereo_ms_params,
+    std::optional<ModuleInstanceId> streaming_p2_id,
+    std::optional<StreamingTruePeakLimiterParameters> streaming_p2_params)
 {
     if (!registry) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -401,17 +403,34 @@ Result<MasteringChainState> MasteringChainState::restore(
             ErrorCode::InvalidArgument, "STEREO_MS_DUPLICATE_RESTORE",
             "Stereo/M-S restore requires a unique non-nil instance ID."));
     }
+    if (streaming_p2_id.has_value() != streaming_p2_params.has_value()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "P2_INCOMPLETE_RESTORE",
+            "Streaming P2 requires both typed parameters and instance identity."));
+    }
+    // The preview P2 is the fifth MANUAL processor, AFTER Stereo/M-S.
+    // Never reinterpret a historical 3/4-node saved project as a P2 graph.
+    if (streaming_p2_id &&
+        (!stereo_ms_id || streaming_p2_id->uuid().is_nil()
+         || *streaming_p2_id == gain_id || *streaming_p2_id == eq_id
+         || *streaming_p2_id == compressor_id
+         || *streaming_p2_id == *stereo_ms_id
+         || !registry->has_factory(kStreamingP2TypeId))) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "P2_INVALID_RESTORE",
+            "Streaming P2 requires an opt-in factory and unique fifth identity."));
+    }
     if (chain.context().stage != ProcessingStage::MASTER || chain.context().segment != ChainSegment::MANUAL) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_CHAIN_CONTEXT",
             "MasteringChainState requires a MASTER/MANUAL processing chain context."));
     }
-    if (chain.instances().size() != (stereo_ms_id ? 4U : 3U)) {
+    if (chain.instances().size() != (streaming_p2_id ? 5U : stereo_ms_id ? 4U : 3U)) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_MODULE_COUNT",
-            "MasteringChainState requires 3 modules, or 4 with an explicit Stereo/M-S payload."));
+            "MasteringChainState requires 3/4 legacy modules or exactly 5 with typed P2."));
     }
     if (chain.instances()[0].instance_id() != gain_id || chain.instances()[0].module_type_id() != kGainTypeId) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -438,6 +457,13 @@ Result<MasteringChainState> MasteringChainState::restore(
             "Module 3 must be Stereo/M-S with matching instance_id."));
     }
 
+    if (streaming_p2_id &&
+        (chain.instances()[4].instance_id() != *streaming_p2_id
+         || chain.instances()[4].module_type_id() != kStreamingP2TypeId)) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "P2_INVALID_FIFTH_MODULE",
+            "Streaming P2 must be the fifth MANUAL node with exact typed identity."));
+    }
     MasteringChainState restored{
         std::move(registry),
         chain_id,
@@ -450,6 +476,8 @@ Result<MasteringChainState> MasteringChainState::restore(
         std::move(compressor_params)};
     restored.stereo_ms_id_ = std::move(stereo_ms_id);
     restored.stereo_ms_params_ = std::move(stereo_ms_params);
+    restored.streaming_p2_preview_id_ = std::move(streaming_p2_id);
+    restored.streaming_p2_preview_params_ = std::move(streaming_p2_params);
     return Result<MasteringChainState>::success(std::move(restored));
 }
 
