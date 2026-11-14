@@ -315,6 +315,7 @@ private slots:
     void source_reset_vs_project_open();
     void stereo_ms_four_module_project_roundtrip_and_atomic_rejection();
     void product_default_stereo_ms_project_save_open_save_identity();
+    void p2_fifth_module_project_roundtrip_and_atomic_rejection();
 };
 
 
@@ -5511,6 +5512,148 @@ void ProjectSessionTest::stereo_ms_four_module_project_roundtrip_and_atomic_reje
         auto bad = original;
         bad.chains[0].modules[3].provenance = "AUTOMATED";
         reject(std::move(bad), QStringLiteral("bad_ms_provenance.rgsml"));
+    }
+}
+
+
+void ProjectSessionTest::p2_fifth_module_project_roundtrip_and_atomic_rejection()
+{
+    // The I2 opt-in fifth MANUAL DSP must survive SaveAs, physical file
+    // readback, Open and SaveAs again with exact typed parameters / bypass.
+    // A legacy-only Product must reject the file BEFORE source/DSP mutation.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto sourcePath = wav(dir, QStringLiteral("p2-persistent-source.wav"), 31);
+    QVERIFY(!sourcePath.isEmpty());
+    const auto firstPath = dir.filePath(QStringLiteral("p2-first.rgsml"));
+    const auto secondPath = dir.filePath(QStringLiteral("p2-reopened.rgsml"));
+    const auto stereoId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("73100000-0000-4000-8000-000000000015").value()).value();
+    const auto p2Id = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("73100000-0000-4000-8000-000000000019").value()).value();
+    const auto settings = dsp::StreamingTruePeakLimiterParameters::create(-4.5,7.0,5);
+    QVERIFY(settings);
+
+    auto enableP2 = [&](Session& session) -> bool {
+        auto baseline = dsp::ModuleRegistry::create_dsp_package_v1();
+        if (!baseline) return false;
+        auto optIn = dsp::ModuleRegistry::with_streaming_true_peak_preview(
+            std::move(*baseline.value()));
+        if (!optIn) return false;
+        auto original = app::MasteringChainState::create_product_default(
+            *optIn.value(),session.chainId,session.gainId,session.eqId,
+            session.compId,stereoId);
+        if (!original) return false;
+        auto fifth = app::MasteringChainState::with_streaming_true_peak_preview(
+            std::move(*original.value()),p2Id,*settings.value(),false);
+        if (!fifth) return false;
+        session.masteringChainState->adopt_chain_after_authorized_project_open(
+            std::move(*fifth.value()));
+        return session.masteringChainState->module_count()==5U;
+    };
+
+    Session author;
+    QVERIFY(enableP2(author));
+    author.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(author.source.has_source());
+    QVERIFY(author.project.can_save_project());
+    const auto writtenRevision = author.masteringChainState->chain().revision();
+    author.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QVERIFY2(QFileInfo::exists(firstPath),
+             author.project.error_message().toUtf8().constData());
+    auto saved = load_project(firstPath);
+    QVERIFY(saved);
+    QCOMPARE(saved.value()->document().chains.size(),std::size_t{1});
+    const auto& persisted = saved.value()->document().chains[0];
+    QCOMPARE(persisted.modules.size(),std::size_t{5});
+    QCOMPARE(persisted.revision,writtenRevision);
+    const auto& p2 = persisted.modules[4];
+    QCOMPARE(p2.instanceId,p2Id.uuid());
+    QCOMPARE(p2.typeId,std::string{"rgsml.dsp.streaming-true-peak-limiter"});
+    QCOMPARE(p2.algorithmVersion,
+             std::optional<std::string>{"0.1.0-preview"});
+    QCOMPARE(p2.parameterSchemaId,
+             std::optional<std::string>{
+                 "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0"});
+    QVERIFY(!p2.userBypass);
+    auto decoded = dsp::decode_streaming_true_peak_limiter_parameters_json(
+        p2.parameters.canonical_utf8());
+    QVERIFY(decoded);
+    QCOMPARE(*decoded.value(),*settings.value());
+
+    Session legacy;
+    legacy.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(legacy.source.has_source());
+    const auto oldSource = legacy.source.source_resource()->reference().locator();
+    const auto oldRevision = legacy.masteringChainState->chain().revision();
+    legacy.project.openProject(QUrl::fromLocalFile(firstPath));
+    QVERIFY(!legacy.project.error_message().isEmpty());
+    QCOMPARE(legacy.masteringChainState->chain().revision(),oldRevision);
+    QCOMPARE(legacy.masteringChainState->module_count(),std::size_t{3});
+    QCOMPARE(legacy.source.source_resource()->reference().locator(),oldSource);
+
+    Session reopened;
+    QVERIFY(enableP2(reopened));
+    reopened.project.openProject(QUrl::fromLocalFile(firstPath));
+    QVERIFY2(reopened.project.error_message().isEmpty(),
+             reopened.project.error_message().toUtf8().constData());
+    QVERIFY(reopened.source.has_source());
+    QVERIFY(!reopened.project.degraded());
+    QCOMPARE(reopened.masteringChainState->module_count(),std::size_t{5});
+    QCOMPARE(reopened.masteringChainState->chain().revision(),writtenRevision);
+    QCOMPARE(reopened.masteringChainState->streaming_p2_preview_instance_id(),
+             std::optional{p2Id});
+    QCOMPARE(reopened.masteringChainState->streaming_p2_preview_parameters(),
+             std::optional{*settings.value()});
+    auto bypass = reopened.masteringChainState->is_bypassed(p2Id);
+    QVERIFY(bypass);
+    QVERIFY(!*bypass.value());
+    QCOMPARE(reopened.masteringChainState->execution_bindings().size(),
+             std::size_t{5});
+    QVERIFY(std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(
+        reopened.masteringChainState->execution_bindings()[4].parameters));
+    QVERIFY(reopened.project.can_save_project());
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QVERIFY2(QFileInfo::exists(secondPath),
+             reopened.project.error_message().toUtf8().constData());
+    auto again = load_project(secondPath);
+    QVERIFY(again);
+    QCOMPARE(again.value()->document().chains[0].modules[4].instanceId,p2Id.uuid());
+    QCOMPARE(again.value()->document().chains[0].modules[4].parameters.canonical_utf8(),
+             p2.parameters.canonical_utf8());
+
+    const auto expectedRevision = reopened.masteringChainState->chain().revision();
+    const auto retainedSource = reopened.source.source_resource()->reference().locator();
+    const auto reject = [&](project::ProjectDocument doc,const QString& name) {
+        auto invalidSnapshot = project::ProjectSnapshot::create(std::move(doc));
+        QVERIFY(invalidSnapshot);
+        const auto path = dir.filePath(name);
+        QVERIFY(write_project(path,*invalidSnapshot.value()));
+        reopened.project.openProject(QUrl::fromLocalFile(path));
+        QVERIFY2(!reopened.project.error_message().isEmpty(),
+                 "P2 invalid fifth module must fail atomically");
+        QCOMPARE(reopened.masteringChainState->chain().revision(),expectedRevision);
+        QCOMPARE(reopened.masteringChainState->streaming_p2_preview_instance_id(),
+                 std::optional{p2Id});
+        QCOMPARE(reopened.source.source_resource()->reference().locator(),retainedSource);
+    };
+    {
+        auto doc = saved.value()->document();
+        doc.chains[0].modules[4].parameterSchemaId =
+            "rgsml.dsp.streaming-true-peak-limiter.parameters/999";
+        reject(std::move(doc),QStringLiteral("p2-invalid-schema.rgsml"));
+    }
+    {
+        auto doc = saved.value()->document();
+        doc.chains[0].modules[4].parameters =
+            *project::OpaqueJsonValue::parse(
+                R"({"ceilingDbTp":-4.5,"driveDb":7.0,"marginPercent":9})").value();
+        reject(std::move(doc),QStringLiteral("p2-invalid-parameters.rgsml"));
+    }
+    {
+        auto doc = saved.value()->document();
+        std::swap(doc.chains[0].modules[3],doc.chains[0].modules[4]);
+        reject(std::move(doc),QStringLiteral("p2-invalid-order.rgsml"));
     }
 }
 
