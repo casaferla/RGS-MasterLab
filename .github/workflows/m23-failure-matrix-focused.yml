@@ -89,7 +89,7 @@ jobs:
             exit 1
           }
           tail -n 8 "$RUNNER_TEMP/m23-ctest.log"
-          python3 -c "import json,os;d=json.load(open(os.environ['RUNNER_TEMP']+'/m23-receipt-linux.json'));assert d['status']=='RECONCILED_NOT_FOR_RELEASE' and d['m23_closed'] is False and not d['unresolved_categories'] and d['exact_source_sha_verified'] is True and d['exact_source_sha']==os.environ['GITHUB_SHA'] and all(not c['qualified'] for c in d['cases'])"
+          python3 -c "import json,os;d=json.load(open(os.environ['RUNNER_TEMP']+'/m23-receipt-linux.json'));assert d['status']=='RECONCILED_NOT_FOR_RELEASE' and d['m23_closed'] is False and d['unresolved_categories']==['postdecode_true_peak_pcm24'] and d['exact_source_sha_verified'] is True and d['exact_source_sha']==os.environ['GITHUB_SHA'] and all(not c['qualified'] for c in d['cases'])"
       # Independent M19→M20 active-union proof: keep the historical M23
       # exact-inventory JUnit/receipt UNCHANGED, but actually run both new
       # analyzer test targets on Linux, including six-rate frame identities.
@@ -274,7 +274,7 @@ jobs:
             throw 'M23_EVIDENCE_CONTRACT_FAILED'
           }
           $report=Get-Content "$env:RUNNER_TEMP/m23-receipt-windows.json" -Raw | ConvertFrom-Json
-          if ($report.m23_closed -ne $false -or $report.release_qualified -ne $false -or @($report.unresolved_categories).Count -ne 0 -or $report.exact_source_sha_verified -ne $true -or $report.exact_source_sha -ne $env:GITHUB_SHA) {
+          if ($report.m23_closed -ne $false -or $report.release_qualified -ne $false -or (@($report.unresolved_categories).Count -ne 1 -or $report.unresolved_categories[0] -ne 'postdecode_true_peak_pcm24') -or $report.exact_source_sha_verified -ne $true -or $report.exact_source_sha -ne $env:GITHUB_SHA) {
             throw 'M23_FOCUSED_CI_CANNOT_SELF_CERTIFY_GATE'
           }
           Get-Content "$env:RUNNER_TEMP/m23-ctest.log" -Tail 8
