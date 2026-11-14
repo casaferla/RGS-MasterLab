@@ -431,7 +431,13 @@ jobs:
           [ ] Record Windows, device, driver, sample rate, audio buffer and
               actual callback/dropout evidence if available.
           [ ] DO NOT interpret READY/PREVIEW as certified ACTIVE playback.
-          [ ] Project saving with P2 is intentionally blocked.
+          [ ] Save the opt-in five-DSP P2 project as a new .rgsml file;
+              reopen in this same RESEARCH-ONLY bundle and verify exact
+              Ceiling, Drive, Margin, bypass, stable module identity.
+          [ ] Check that ordinary non-P2 builds reject that file without
+              changing their currently open session.
+          [ ] Note: project persistence passed nonrelease Win/Linux CI;
+              it is NOT physical PO qualification or permission to ship.
           These boxes are UNCHECKED; no physical testing has been done by CI.
 
           BUILD IDENTITY
