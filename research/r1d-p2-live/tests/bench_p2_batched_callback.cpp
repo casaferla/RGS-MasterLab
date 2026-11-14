@@ -60,6 +60,7 @@ struct Result {
     double baseline_eos_ms{},batched_eos_ms{};
     std::uint64_t compared_frames{};
     std::int64_t latency{};
+    double measuredTruePeak{};
 };
 Result run(int hz,int channels,int seconds,int scenario,std::size_t size) {
     const double drive=scenario==0?0.0:scenario==2?6.:scenario==3?12.:3.;
@@ -73,6 +74,9 @@ Result run(int hz,int channels,int seconds,int scenario,std::size_t size) {
     const auto frames=static_cast<std::int64_t>(hz)*seconds;
     Result result{};
     result.latency=static_cast<std::int64_t>(latency);
+    // Independent ITU 4x meter on ACTUAL emitted experimental PCM.
+    // Verification and PCM comparison are outside timed process regions.
+    ::research::Meter outputMeter{};
     for(std::int64_t offset=0;offset<frames;) {
         const auto n=static_cast<std::size_t>(
             std::min<std::int64_t>(frames-offset,static_cast<std::int64_t>(size)));
@@ -89,9 +93,11 @@ Result run(int hz,int channels,int seconds,int scenario,std::size_t size) {
                 "P2 original or batched path rejected a test fixture");
         result.baseline_ms+=elapsed_ms(t0,t1);
         result.batched_ms+=elapsed_ms(t1,t2);
-        for(std::size_t i=0;i<n;++i)
+        for(std::size_t i=0;i<n;++i) {
             require(equal_bits(observed[i],candidate[i]),
                     "P2 batch/original PCM differs at real output sample");
+            outputMeter.push(candidate[i],channels);
+        }
         result.compared_frames+=n;
         offset+=static_cast<std::int64_t>(n);
     }
@@ -104,10 +110,18 @@ Result run(int hz,int channels,int seconds,int scenario,std::size_t size) {
     require(a==p2::Status::ok&&b==p2::Status::ok,"P2 batch EOS rejected");
     result.baseline_eos_ms=elapsed_ms(t0,t1);
     result.batched_eos_ms=elapsed_ms(t1,t2);
-    for(std::size_t i=0;i<latency;++i)
+    for(std::size_t i=0;i<latency;++i) {
         require(equal_bits(baselineTail[i],batchedTail[i]),
                 "P2 batch/original EOS PCM differs");
+        outputMeter.push(batchedTail[i],channels);
+    }
+    for(std::size_t i=0;i<::research::fir_tail;++i)
+        outputMeter.push(Frame{},channels);
+    require(std::isfinite(outputMeter.peak)
+        &&outputMeter.peak<=cfg.ceiling_linear,
+        "P2 batch violates independent post-gain ITU True Peak ceiling");
     result.compared_frames+=latency;
+    result.measuredTruePeak=outputMeter.peak;
     require(original.input_frames()==static_cast<std::uint64_t>(frames)
          &&experiment.input_frames()==original.input_frames()
          &&original.output_frames()==experiment.output_frames()
@@ -129,7 +143,7 @@ int main(int argc,char** argv) {
         require(bool(file),"cannot create P2 batched safety TSV");
         file<<"schema\trate_hz\tduration_s\tchannels\tscenario\tblock_frames"
             "\tbaseline_ms\tbatched_ms\tbaseline_eos_ms\tbatched_eos_ms"
-            "\tcompared_frames\tlatency_frames\tresult\n";
+            "\tcompared_frames\tlatency_frames\tmeasured_true_peak_linear\tresult\n";
         file<<std::fixed<<std::setprecision(6);
         const int seconds=quick?1:300;
         const auto scenarios=quick?4:3;
@@ -151,7 +165,7 @@ int main(int argc,char** argv) {
                             <<r.baseline_ms<<'\t'<<r.batched_ms<<'\t'
                             <<r.baseline_eos_ms<<'\t'<<r.batched_eos_ms<<'\t'
                             <<r.compared_frames<<'\t'<<r.latency
-                            <<"\tBIT_EXACT\n";
+                            <<'\t'<<r.measuredTruePeak<<"\tBIT_EXACT_AND_TP_SAFE\n";
                         require(bool(file),"P2 batched TSV write rejected");
                         if(quick ||blockFrames==longBlocks.front())
                             std::cout<<"P2 batch "<<hz<<"Hz c="<<channels
