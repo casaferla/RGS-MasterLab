@@ -451,3 +451,36 @@ goniometer, Stereo/M-S bottom control and P2 inner control groups
 during the PO replay as a separate follow-up—avoid inventing an
 overlapping fixed top-left arrangement for stacked/side-by-side
 children whose upstream sibling expands.
+
+
+## Focused CI #43746193669: last 1lp Stereo/M-S anchor defect
+
+Full run on exact SHA `9b52ca7df8f767711b79145c3884c44c6af06be7`:
+**6/7 SUCCESS**, **Windows Qt Product UI FAIL** on the NEW strict
+top-left anchoring gate. M23 Windows compact fixture, P2 DSP, M17/M18
+and Linux all green. Actual Qt coordinates, relative to own editor:
+
+| Effective window | Stereo width-response (x,y) | P2 main well (x,y) |
+|---|---|---|
+| 1184×688 | 0,34 | 8,8 |
+| 1184×735 | 0,35 **FAIL** | 8,8 PASS |
+| requested 1350×688 | 0,34 | 8,8 |
+| requested 1350×735 | 0,35 **FAIL** | 8,8 PASS |
+
+Windows runner **clamped requested 1350lp width back to 1184lp**,
+so the 1350 results do not physically qualify horizontal expansion;
+the actual PO Windows machine is still needed for that. Do not call
+the width gate independently qualified based on this runner.
+
+Root cause: The `SPATIAL CONTROL` QML `RowLayout` had only
+`Layout.preferredHeight: 23` yet contained a `StudioButton` with
+32lp implicit height. Qt resolved the row as 30lp at minimum, 31lp
+at 735 high. The 4lp gap was already constant; the source of the
+remaining 1lp drift was the **unconstrained row height**, not the
+primary rounded graph nor the Streaming TP panel.
+
+The next surgical candidate pins the upper Stereo/M-S RowLayout
+and `stereoMsResetButton` at exactly 30lp, the physically verified
+minimum-row value, preserving the existing 4lp separation from both
+upper rounded wells. It does not touch M16/M17, EQ header,
+algorithms or audio. Physical and focused-Qt requalification pending.
