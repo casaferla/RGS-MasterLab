@@ -368,3 +368,33 @@ reintroduce a special M17 header.
 This new exact-SHA patch is not yet physically accepted. All earlier
 PO PCM24/Float32 bytes and M18 SHA checks remain valid; no audio/DSP
 code was touched.
+
+
+## 2026-11-15 — M23 Windows real compact geometry gate blocked after EQ header fix
+
+Focused CI [#43741114445](https://github.com/casaferla/RGS-MasterLab/actions/runs/43741114445),
+exact SHA `ea07cd100a99316c461e0d5f30a43cdfe48b6cdf`,
+completed **6/7 PASS, 1 FAIL**. The standalone Windows Product Qt
+GUI job PASSED, including the EQ-relative undock/title/context
+alignment checks at 1184×688 and 1184×735. The single failing job was
+the *separate* M19–M23 Windows test matrix, which correctly rejected
+the real no-scroll compact fixture:
+
+```
+rgsml_source_metadata_panel_smoke /
+sevenRealAdaptersDockedChainVisualEvidence()
+PO no-scroll: stereoMsEditor control bottom=269 editor height=266
+tests/ui_smoke/test_source_metadata_panel.cpp:1307
+```
+
+The native 680×338 host's common 40lp header + 12lp inset left
+Stereo/M-S 3lp too little room compared to its existing minimum graph
+and controls. This is **not** permission to relax the no-scroll test,
+reduce the header or change the source/DSP engine. The next candidate
+recovers 6lp from the fixed **below-header** gap for compact editors
+only (`ColumnLayout.spacing = compactTallerEditor ? 2 : 8`).
+Header position, 40lp size, 12lp top/side inset and Parametric EQ
+geometry remain identical. The gap depends on the module type rather
+than the window height, so cannot recreate an animated/stepped header
+drift. Both original Windows M23 CTest and Windows Qt Product
+geometry gates remain mandatory. Requalification pending exact SHA CI.
