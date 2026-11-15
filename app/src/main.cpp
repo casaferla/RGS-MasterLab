@@ -64,6 +64,7 @@
 #include <QSettings>
 #include <QUrl>
 
+#include <array>
 #include <optional>
 #include <variant>
 #include <QTimer>
@@ -1672,9 +1673,73 @@ int main(int argc, char* argv[])
                 }
                 allHeaderAlign=allHeaderAlign && sizeAll;
             }
+            // The PO additionally requires every RESIZABLE PRIMARY well
+            // to retain its minimum-window (top,left) pixel origin while
+            // it expands to the right/bottom. Title geometry checks alone
+            // did not catch Stereo/M-S header-gap and P2 margin drift.
+            // Measure actual Qt child geometry RELATIVE TO ITS OWN EDITOR:
+            // unrelated Main resizing/centering must not hide a drift.
+            struct TopLeftSpec {
+                int moduleIndex;
+                const char* editorName;
+                const char* wellName;
+            };
+            const std::array<TopLeftSpec,2> wellSpecs{{
+                {3,"stereoMsEditor","stereoMsActiveSurface"},
+                {4,"streamingTruePeakLimiterEditor","streamingP2MainPanel"}
+            }};
+            const auto wellPoint=[mainWindow,&dspChainAdapterModel](
+                const TopLeftSpec& spec) ->std::optional<QPointF> {
+                dspChainAdapterModel.setSelectedIndex(spec.moduleIndex);
+                QCoreApplication::processEvents();
+                auto* editor=mainWindow->findChild<QQuickItem*>(
+                    QString::fromLatin1(spec.editorName));
+                auto* well=mainWindow->findChild<QQuickItem*>(
+                    QString::fromLatin1(spec.wellName));
+                if(!editor || !well || !editor->isVisible()
+                    || !well->isVisible() || well->width()<=0
+                    || well->height()<=0) return std::nullopt;
+                return well->mapToItem(editor,QPointF(0,0));
+            };
+            mainWindow->setWidth(1184);
+            mainWindow->setHeight(688);
+            QCoreApplication::processEvents();
+            const std::array<std::optional<QPointF>,2> baselineWell{{
+                wellPoint(wellSpecs[0]),wellPoint(wellSpecs[1])
+            }};
+            bool allTopLeftAnchors=true;
+            const std::array<QSize,4> testedSizes{{
+                QSize{1184,688},QSize{1184,735},
+                QSize{1350,688},QSize{1350,735}
+            }};
+            for(const auto& size:testedSizes) {
+                mainWindow->setWidth(size.width());
+                mainWindow->setHeight(size.height());
+                QCoreApplication::processEvents();
+                for(std::size_t i=0;i<wellSpecs.size();++i) {
+                    const auto pos=wellPoint(wellSpecs[i]);
+                    const bool stable=pos && baselineWell[i]
+                        && nearPoint(*pos,*baselineWell[i]);
+                    allTopLeftAnchors=allTopLeftAnchors && stable;
+                    std::fprintf(stdout,
+                        "RGS_GUI_MIN_TOP_LEFT_ANCHOR w=%d h=%d module=%s well=%s x=%.2f y=%.2f stable=%d\n",
+                        size.width(),size.height(),
+                        wellSpecs[i].editorName,wellSpecs[i].wellName,
+                        pos ? pos->x() : -9999.0,
+                        pos ? pos->y() : -9999.0,stable?1:0);
+                }
+            }
+            mainWindow->setWidth(1184);
             mainWindow->setHeight(688);
             dspChainAdapterModel.setSelectedIndex(5); // M17
             QCoreApplication::processEvents();
+            std::fprintf(stdout,
+                "RGS_GUI_ALL_PRIMARY_WELLS_KEEP_MIN_TOP_LEFT=%s\n",
+                allTopLeftAnchors?"PASS":"FAIL");
+            if(!allTopLeftAnchors) {
+                application.exit(EXIT_FAILURE);
+                return;
+            }
             std::fprintf(stdout,
                 "RGS_GUI_ALL_DSP_HEADERS_MATCH_PARAMETRIC_EQ=%s\n",
                 allHeaderAlign?"PASS":"FAIL");
