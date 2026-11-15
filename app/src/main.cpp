@@ -1665,7 +1665,7 @@ int main(int argc, char* argv[])
                     const bool ok=inside(name);
                     allRates=allRates && ok;
                     std::fprintf(stdout,
-                        "M18_MINIMUM_RATE_%d=%s found=%d visible=%d x=%.1f y=%.1f w=%.1f h=%.1f\\n",
+                        "M18_MINIMUM_RATE_%d=%s found=%d visible=%d x=%.1f y=%.1f w=%.1f h=%.1f\n",
                         i,ok?"PASS":"FAIL",child?1:0,
                         child&&child->isVisible()?1:0,p.x(),p.y(),
                         child?child->width():-1.0,child?child->height():-1.0);
@@ -1681,7 +1681,7 @@ int main(int argc, char* argv[])
                     panel ? panel->height() : -1.0,
                     noScroll?1:0,allRates?1:0);
                 std::fprintf(stdout,
-                    "M18_MINIMUM_FOOTER pcm=%d float=%d calibrate=%d\\n",
+                    "M18_MINIMUM_FOOTER pcm=%d float=%d calibrate=%d\n",
                     inside(QStringLiteral("m17ExportPcm24"))?1:0,
                     inside(QStringLiteral("m17ExportFloat32"))?1:0,
                     inside(QStringLiteral("m17RateCalibrationButton"))?1:0);
