@@ -69,6 +69,16 @@ ApplicationWindow {
         ? projectSession : null
     readonly property int m18ExportFormatIndex: root.appM18ProjectSession
         ? root.appM18ProjectSession.m18WavEncodingIndex : 0
+    // The requested one-shot button format is NOT a second Project
+    // preference. A cancelled SaveFile leaves the stored format untouched.
+    property int m18PendingExportFormatIndex: -1
+    function requestVerifiedWavExport(formatIndex) {
+        if ((formatIndex !== 0 && formatIndex !== 1)
+            || !root.appM18ExportModel
+            || !root.appM18ExportModel.canExport) return
+        root.m18PendingExportFormatIndex = formatIndex
+        m18ExportFileDialog.open()
+    }
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
     readonly property var appPrivateFirLibrary:
@@ -540,11 +550,15 @@ ApplicationWindow {
         fileMode: FileDialog.SaveFile
         nameFilters: ["WAV audio (*.wav *.wave)"]
         onAccepted: {
+            const formatIndex = root.m18PendingExportFormatIndex >= 0
+                ? root.m18PendingExportFormatIndex : root.m18ExportFormatIndex
+            root.m18PendingExportFormatIndex = -1
             const model = root.appM18ExportModel
             if (!model) return
-            model.beginExport(selectedFile, root.m18ExportFormatIndex)
+            model.beginExport(selectedFile, formatIndex)
             m18ExportProgressDialog.open()
         }
+        onRejected: root.m18PendingExportFormatIndex = -1
     }
     Dialog {
         id: m18ExportFormatDialog
@@ -576,10 +590,7 @@ ApplicationWindow {
                 }
             }
         }
-        onAccepted: {
-            if (root.appM18ExportModel && root.appM18ExportModel.canExport)
-                m18ExportFileDialog.open()
-        }
+        onAccepted: root.requestVerifiedWavExport(root.m18ExportFormatIndex)
     }
 
     // Modeless by design: encoding and readback run on the detached M18
@@ -1108,6 +1119,10 @@ ApplicationWindow {
             terminalMonitorViewModel: root.appTerminalMonitorViewModel
             terminalProductActivation: root.appTerminalProductActivation
             masterListeningHandler: function() { return root.listenToPreparedMaster() }
+            masterExportModel: root.appM18ExportModel
+            masterExportHandler: function(formatIndex) {
+                root.requestVerifiedWavExport(formatIndex)
+            }
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
             limiterOfflineGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
