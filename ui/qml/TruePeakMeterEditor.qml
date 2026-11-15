@@ -22,6 +22,11 @@ Item {
     property string grTimelineScope: ""
     property var limiterViewModel: null
     property var monitorViewModel: null
+    // The Product M18 ViewModel is a read-only UI source. Export does not
+    // gain DSP authority by appearing in M17's existing GR well.
+    property var exportModel: null
+    readonly property bool exportActive: root.showLimiterGrHistory
+        && !!root.exportModel && root.exportModel.exportInProgress
     readonly property bool devicePreparing: root.showLimiterGrHistory
         && root.monitorViewModel && root.monitorViewModel.monitorPreparing
     // The lower bay is stable: show PREPARATION only for an actual job.
@@ -31,8 +36,10 @@ Item {
     // consumed-output LIVE measurement. No current MASTER means EMPTY.
     readonly property string terminalAudioStatus: root.limiterViewModel
         ? root.limiterViewModel.audioStatus : ""
+    // PREPARE and WAV export share the SAME copper progress rail and
+    // physical lower-band geometry. Once export terminates, restore GR.
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
-        && (root.devicePreparing
+        && (root.exportActive || root.devicePreparing
             || (root.limiterViewModel
                 && root.terminalAudioStatus.startsWith("Preparing")))
     // The entire lower band is fixed. In this combined layout,
@@ -232,7 +239,8 @@ Item {
                         Layout.preferredHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
                         Layout.maximumHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
                         spacing: 2
-                        opacity: root.limiterBypassed ? 0.5 : 1.0
+                        opacity: root.exportActive ? 1.0
+                            : root.limiterBypassed ? 0.5 : 1.0
                         Item {
                             Layout.fillHeight: root.showLimiterControls
                             Layout.minimumHeight: 0
@@ -242,7 +250,8 @@ Item {
                             Layout.fillWidth: true
                             Text {
                                 objectName: "m17GrHistoryHeading"
-                                text: root.devicePreparing ? "PREPARING PLAYBACK"
+                                text: root.exportActive ? "EXPORTING MASTER WAV"
+                                    : root.devicePreparing ? "PREPARING PLAYBACK"
                                     : root.limiterPreparationVisible ? "PREPARATION" : "GR HISTORY"
                                 color: "#B3C9D9"
                                 font.family: "Segoe UI"
@@ -252,7 +261,8 @@ Item {
                             Item { Layout.fillWidth: true }
                             Text {
                                 objectName: "m17GrProvenanceStatus"
-                                text: root.devicePreparing ? "MASTER → DEVICE"
+                                text: root.exportActive ? "M18 · PCM DELIVERY"
+                                    : root.devicePreparing ? "MASTER → DEVICE"
                                     : root.limiterPreparationVisible
                                     ? root.limiterBypassed ? "BYPASS · NOT RUNNING"
                                       : root.limiterViewModel
@@ -291,19 +301,25 @@ Item {
                                 Layout.preferredHeight: 14
                                 from: 0
                                 to: 1
-                                value: root.devicePreparing
+                                value: root.exportActive
+                                    ? root.exportModel.encodedProgress
+                                    : root.devicePreparing
                                     ? root.monitorViewModel.devicePreparationFraction
                                     : root.limiterViewModel
                                         ? root.limiterViewModel.preparationFraction : 0
-                                indeterminate: root.devicePreparing
+                                indeterminate: root.exportActive ? false
+                                    : root.devicePreparing
                                     ? !root.monitorViewModel.devicePreparationDeterminate
                                     : root.limiterViewModel
                                         && root.limiterViewModel.audioStatus.startsWith("Preparing")
                                         && !root.limiterViewModel.preparationDeterminate
-                                opacity: root.devicePreparing || (root.limiterViewModel
-                                    && root.limiterViewModel.audioStatus.startsWith("Preparing"))
+                                opacity: root.exportActive || root.devicePreparing
+                                    || (root.limiterViewModel
+                                        && root.limiterViewModel.audioStatus.startsWith("Preparing"))
                                         ? 1.0 : 0.28
-                                Accessible.name: root.devicePreparing
+                                Accessible.name: root.exportActive
+                                    ? "M18 WAV encoding progress, not delivery confirmation"
+                                    : root.devicePreparing
                                     ? "Master to playback device conversion progress"
                                     : "Offline limiter preparation progress"
                                 // Dynamics copper, the same rounded geometry as Studio controls.
@@ -357,6 +373,19 @@ Item {
                                 // central estimate / interval on separate
                                 // visible lines, including the FIRST Prepare.
                                 text: {
+                                    if (root.exportActive) {
+                                        const v = root.exportModel
+                                        const pct = Math.floor(100 * Math.max(0,
+                                            Math.min(1, v.encodedProgress)))
+                                        const label = v.statusText === "CANCELLING"
+                                            ? "CANCELLING WAV EXPORT"
+                                            : "WAV ENCODING / VERIFYING"
+                                        // Encoded frames are NOT a verified delivery
+                                        // certificate. Even at 100%, filesystem
+                                        // readback and ACK remain pending.
+                                        return label + " · encoded " + pct + "%"
+                                            + "\nAwaiting verified filesystem delivery"
+                                    }
                                     if (root.devicePreparing) {
                                         const v = root.monitorViewModel
                                         const rate = hz => (hz / 1000).toFixed(1)
