@@ -72,9 +72,8 @@ ApplicationWindow {
     // The requested one-shot button format is NOT a second Project
     // preference. A cancelled SaveFile leaves the stored format untouched.
     property int m18PendingExportFormatIndex: -1
-    // After the SaveFile action, M17 displays the encoding progress inside
-    // its copper GR well. Only a terminal outcome opens the receipt dialog.
-    property bool m18AwaitingExportReceipt: false
+    // The actual M18 export result is shown inline in M17 Rate & Time.
+    // The OS destination picker is the only additional dialog.
     function requestVerifiedWavExport(formatIndex) {
         if ((formatIndex !== 0 && formatIndex !== 1)
             || !root.appM18ExportModel
@@ -558,19 +557,10 @@ ApplicationWindow {
             root.m18PendingExportFormatIndex = -1
             const model = root.appM18ExportModel
             if (!model) return
-            root.m18AwaitingExportReceipt = true
-            if (!model.beginExport(selectedFile, formatIndex)) {
-                root.m18AwaitingExportReceipt = false
-                // Validation/refusal has no running worker; show native error.
-                m18ExportProgressDialog.open()
-                return
-            }
-            // A very small WAV may already be terminal at the first poll.
-            if (root.m18AwaitingExportReceipt
-                && !model.exportInProgress && model.canAcknowledge) {
-                root.m18AwaitingExportReceipt = false
-                m18ExportProgressDialog.open()
-            }
+            // Real native Product beginExport owns the exact WAV format,
+            // post-readback verification, ACK and privacy-safe diagnostics.
+            // Both SUCCESS and FAIL appear in the permanent M17 footer.
+            model.beginExport(selectedFile, formatIndex)
         }
         onRejected: root.m18PendingExportFormatIndex = -1
     }
@@ -607,108 +597,8 @@ ApplicationWindow {
         onAccepted: root.requestVerifiedWavExport(root.m18ExportFormatIndex)
     }
 
-    // Await the terminal M18 outcome without a popup during encoding.
-    // The genuine M18 ViewModel owns all lifecycle and readback state.
-    Connections {
-        target: root.appM18ExportModel
-        function onChanged() {
-            const model = root.appM18ExportModel
-            if (root.m18AwaitingExportReceipt && model
-                && !model.exportInProgress && model.canAcknowledge) {
-                root.m18AwaitingExportReceipt = false
-                m18ExportProgressDialog.open()
-            }
-        }
-    }
-
-    // Result-only dialog: the SAME native worker, error/sha receipt and ACK
-    // as before. During active export, the M17 GR bay hosts the progress
-    // bar; restoring GR is automatic when exportInProgress becomes false.
-    Dialog {
-        id: m18ExportProgressDialog
-        objectName: "m18ExportProgressDialog"
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        title: "Master WAV delivery result"
-        modal: false
-        closePolicy: Popup.NoAutoClose
-        width: Math.min(480, root.width - 48)
-        standardButtons: Dialog.NoButton
-        contentItem: ColumnLayout {
-            spacing: 10
-            Label {
-                Layout.fillWidth: true
-                color: root.textPrimary
-                font.bold: true
-                text: root.appM18ExportModel
-                    ? root.appM18ExportModel.statusText : "UNAVAILABLE"
-            }
-            Label {
-                Layout.fillWidth: true
-                color: root.textSecondary
-                wrapMode: Text.Wrap
-                text: "A WAV is verified delivered only after independent "
-                    + "filesystem readback, never at 100% encoded frames."
-            }
-            Label {
-                Layout.fillWidth: true
-                color: root.error
-                visible: root.appM18ExportModel
-                    && root.appM18ExportModel.errorText.length > 0
-                text: root.appM18ExportModel
-                    ? root.appM18ExportModel.errorText : ""
-                wrapMode: Text.Wrap
-            }
-            Label {
-                Layout.fillWidth: true
-                color: root.textSecondary
-                visible: root.appM18ExportModel
-                    && root.appM18ExportModel.verifiedSha256.length === 64
-                text: root.appM18ExportModel
-                    ? "Verified delivered file: "
-                        + root.appM18ExportModel.verifiedBytes
-                        + " bytes (post-delivery readback)" : ""
-                wrapMode: Text.Wrap
-            }
-            Label {
-                Layout.fillWidth: true
-                color: root.textSecondary
-                visible: root.appM18ExportModel
-                    && root.appM18ExportModel.verifiedSha256.length === 64
-                text: root.appM18ExportModel
-                    ? "Verified WAV SHA-256: "
-                        + root.appM18ExportModel.verifiedSha256 : ""
-                wrapMode: Text.WrapAnywhere
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 12
-                Button {
-                    objectName: "m18CancelExport"
-                    text: "Cancel Export"
-                    enabled: !!root.appM18ExportModel
-                        && root.appM18ExportModel.canCancel
-                    onClicked: root.appM18ExportModel.cancelExport()
-                }
-                Item { Layout.fillWidth: true }
-                Button {
-                    objectName: "m18AcknowledgeExport"
-                    readonly property var model: root.appM18ExportModel
-                    text: model && model.canAcknowledge
-                        ? "Acknowledge result" : "Close"
-                    enabled: !!model
-                        && (model.canAcknowledge
-                            || (model.statusText !== "EXPORTING / VERIFYING"
-                                && model.statusText !== "CANCELLING"))
-                    onClicked: {
-                        if (model && model.canAcknowledge
-                            && !model.acknowledgeExport()) return
-                        m18ExportProgressDialog.close()
-                    }
-                }
-            }
-        }
-    }
+    // No M18 result dialog or independent progress window. The existing
+    // Product M18 ViewModel drives M17's copper progress / inline receipt.
 
     // X/Alt+F4 is NOT permission to retry an absent Windows DEVICE.
     // Keep the in-RAM M17 MASTER or explicitly discard on shutdown.
@@ -767,8 +657,8 @@ ApplicationWindow {
         if (root.appM18ExportModel && root.appM18ExportModel.exportInProgress) {
             close.accepted = false
             root.appM18ExportModel.cancelExport()
-            if (!m18ExportProgressDialog.opened)
-                m18ExportProgressDialog.open()
+            // M17's copper progress rail continues to show CANCELLING.
+            // No modal dialog may be raised by the close guard.
             return
         }
         if (root.m17ConfirmedDiscardExit) {
