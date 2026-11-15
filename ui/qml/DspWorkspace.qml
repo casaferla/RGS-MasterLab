@@ -28,6 +28,7 @@ Rectangle {
     property var masterListeningHandler: null
     property var masterExportModel: null
     property var masterExportHandler: null
+    property int masterExportFormatIndex: 0
     property var masterRateState: null
     property var memoryAdvisor: null
     property var limiterOfflineGrProvider: null
@@ -68,6 +69,7 @@ Rectangle {
             masterListeningHandler: root.masterListeningHandler
             masterExportModel: root.masterExportModel
             masterExportHandler: root.masterExportHandler
+            masterExportFormatIndex: root.masterExportFormatIndex
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
@@ -127,6 +129,7 @@ Rectangle {
         masterListeningHandler: root.masterListeningHandler
         masterExportModel: root.masterExportModel
         masterExportHandler: root.masterExportHandler
+        masterExportFormatIndex: root.masterExportFormatIndex
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
