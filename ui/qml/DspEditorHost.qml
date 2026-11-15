@@ -545,8 +545,8 @@ Rectangle {
                     else rateTimePopup.open()
                 }
                 Accessible.name: rateTimePopup.opened
-                    ? "Close master rate and time panel" : "Open master rate and time panel"
-                ToolTip.text: "Select a project MASTER rate and review memory; time estimates require local calibration."
+                    ? "Close master rate, time and WAV output panel" : "Open master rate, time and WAV output panel"
+                ToolTip.text: "Choose MASTER rate and time/memory, then export a verified PCM24 or Float32 WAV."
                 ToolTip.visible: hovered && rateDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
@@ -880,7 +880,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 22
                     Text {
-                        text: "MASTER RATE & TIME"
+                        text: "MASTER RATE · TIME · WAV OUTPUT"
                         color: "#F0F6FB"
                         font.family: "Segoe UI"
                         font.pixelSize: 12
@@ -894,7 +894,7 @@ Rectangle {
                         implicitHeight: 22
                         padding: 0
                         onClicked: rateTimePopup.close()
-                        Accessible.name: "Close master rate and time panel"
+                        Accessible.name: "Close master rate, time and WAV output panel"
                         ToolTip.text: "Close the master rate and time panel."
                         ToolTip.visible: hovered && panelCloseDwell.ready
                         ToolTip.delay: 0
