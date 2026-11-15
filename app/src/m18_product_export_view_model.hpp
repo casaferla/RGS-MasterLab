@@ -46,6 +46,8 @@ public:
     Q_INVOKABLE bool beginExport(const QUrl& destination,int formatIndex);
     Q_INVOKABLE void cancelExport();
     Q_INVOKABLE bool acknowledgeExport();
+    // Copy only a VERIFIED_DELIVERED readback receipt; no paths/secrets.
+    Q_INVOKABLE bool copyVerifiedSha256();
     Q_INVOKABLE void refresh();
 signals:
     void changed();
