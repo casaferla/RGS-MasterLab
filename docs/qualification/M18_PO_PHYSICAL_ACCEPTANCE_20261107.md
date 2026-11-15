@@ -208,12 +208,25 @@ Physical checks in addition to the above A01–A15, on the **new exact SHA**:
   no new progress timer. The existing M17 control row exposes Cancel
   Export. On terminal VERIFIED/FAILED/CANCELLED, the lower bay restores
   authentic GR HISTORY (or a genuinely concurrently owned preparation
-  if one exists), and only then opens the original M18 result/sha/ACK
-  dialog. The M16 independent meter is unchanged.
+  if one exists); the SAME fixed WAV OUTPUT row shows inline status,
+  full-sha tooltip/copy affordance (only for readback-verified results)
+  and a real native M18 ACK button. No independent result dialog may open.
+  The M16 independent meter is unchanged.
 - B08: The Rate & Time window is strictly NONSCROLLING, including at
   physical minimum size and while M17 is floating. No modification of
   FQ99 geometry, app min 1184x688, M19–M21 layout or frozen M16/M17 DSP
   output. The existing M19–M21 scrolling is a separately tracked future
   GUI closeout item, not a reason to rewrite analyzer code now.
+- B09: Reopen Rate & Time after File dialog Cancel and after normal
+  completion; do not show a synthetic result or commit an output format
+  without accepted WAV. After an actual encoding run, reopen Rate & Time
+  automatically only once on terminal receipt; keep it accessible there
+  until explicit OK, and keep the original error details accessible from
+  the compact failure status. A second export is blocked while ACK is owed.
+- B10: The previous separate M18 result dialog is absent. At 1184x688,
+  inline result controls do not move the two format buttons, increase
+  the popup height, scroll or obscure six rate rows, CALIBRATE or memory
+  summary. Native clipboard copy must expose only the independently
+  SHA-verified 64-character result, never a guessed output path.
 
 These additions require Qt native UI inspection, not a CI-only PASS.
