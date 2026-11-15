@@ -215,18 +215,22 @@ Rectangle {
         Math.max(0, Math.min(1, (root.height - 350) / 120))
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8 + 4 * root.hostSpaceFactor
-        spacing: 5 + 3 * root.hostSpaceFactor
+        // Earlier Input Gain / EQ / Compressor retain their FQ99 geometry;
+        // only the historically compactTallerEditor group loses its jumps.
+        anchors.margins: root.compactTallerEditor
+            ? 8 + 4 * root.hostSpaceFactor : 12
+        spacing: root.compactTallerEditor
+            ? 5 + 3 * root.hostSpaceFactor : 8
 
-        // Keep the already physically fitting compact 34 lp header at
-        // ALL heights: no 470px snap, no loss of M17 Rate & Time popup room
-        // at the Windows minimum. Title/context and 32lp buttons fit.
+        // Fix compact DSPs at 34 lp (the physically proven minimum
+        // geometry) at ALL heights. The three earlier DSPs keep their
+        // qualified 40 lp header unchanged.
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
-            Layout.minimumHeight: 34
-            Layout.preferredHeight: 34
-            Layout.maximumHeight: 34
+            Layout.minimumHeight: root.compactTallerEditor ? 34 : 40
+            Layout.preferredHeight: root.compactTallerEditor ? 34 : 40
+            Layout.maximumHeight: root.compactTallerEditor ? 34 : 40
             spacing: 12
 
             // Preserve the EXACT old 22px slot: the module title's X
