@@ -1353,27 +1353,50 @@ Rectangle {
                             }
                             Accessible.name: text + " · " + ToolTip.text
                         }
-                        Button {
+                        // Both receipt actions MUST share the StudioButton
+                        // visual grammar and the same 1-second stationary hover
+                        // policy as the other RGS controls. No native Basic
+                        // Button / immediate tooltip exceptions in M18.
+                        StudioButton {
                             objectName: "m18CopyVerifiedSha"
                             visible: !!root.masterExportModel
                                 && root.masterExportModel.verifiedSha256.length === 64
                                 && root.m18ReceiptReady
-                            Layout.preferredWidth: visible ? 30 : 0
+                            Layout.minimumWidth: visible ? 36 : 0
+                            Layout.preferredWidth: visible ? 36 : 0
+                            Layout.maximumWidth: visible ? 36 : 0
+                            Layout.minimumHeight: 24
                             Layout.preferredHeight: 24
+                            Layout.maximumHeight: 24
+                            minimumControlWidth: 36
+                            contentPadding: 3
+                            accentColor: root.activeFamilyAccent
                             text: "SHA"
-                            padding: 0
                             onClicked: root.masterExportModel.copyVerifiedSha256()
                             Accessible.name: "Copy verified WAV SHA-256 to clipboard"
                             ToolTip.text: "Copy full SHA-256 of the verified delivered WAV"
-                            ToolTip.visible: hovered
+                            ToolTip.visible: hovered && m18ShaTooltipDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m18ShaTooltipDwell
+                                anchors.fill: parent
+                            }
                         }
-                        Button {
+                        StudioButton {
                             objectName: "m18AcknowledgeExport"
                             visible: root.m18ReceiptReady
-                            Layout.preferredWidth: visible ? 28 : 0
+                            Layout.minimumWidth: visible ? 32 : 0
+                            Layout.preferredWidth: visible ? 32 : 0
+                            Layout.maximumWidth: visible ? 32 : 0
+                            Layout.minimumHeight: 24
                             Layout.preferredHeight: 24
+                            Layout.maximumHeight: 24
+                            minimumControlWidth: 32
+                            contentPadding: 3
+                            accentColor: root.activeFamilyAccent
+                            selectedFamilyAccent: true
+                            selected: true
                             text: "OK"
-                            padding: 0
                             onClicked: {
                                 if (root.masterExportModel
                                     && root.masterExportModel.acknowledgeExport())
@@ -1381,7 +1404,12 @@ Rectangle {
                             }
                             Accessible.name: "Acknowledge M18 WAV delivery result"
                             ToolTip.text: "Acknowledge the current WAV result to enable another export."
-                            ToolTip.visible: hovered
+                            ToolTip.visible: hovered && m18AckTooltipDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m18AckTooltipDwell
+                                anchors.fill: parent
+                            }
                         }
                     }
                     StudioButton {
