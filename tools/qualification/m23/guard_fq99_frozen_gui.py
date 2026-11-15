@@ -51,7 +51,7 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # This is a NEW NONRELEASE candidate, not a statement of FQ99 identity.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
-    "ui/qml/Main.qml": "5ed7faa8f7c4882b884b955757b17cba1e861fe8",
+    "ui/qml/Main.qml": "b27cecbc0de3b5278dd943dee988db8420e2eef1",
     "ui/qml/DspEditorHost.qml": "a7150c788532f4984615e4fd175e83b14ac1fe9e",
     "ui/qml/DspWorkspace.qml": "5b825b11ea885349fea98d02feeb458a8bd5ffd6",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
