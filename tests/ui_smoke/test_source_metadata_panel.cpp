@@ -1385,7 +1385,7 @@ Window {
             // Real QtQuick fixture only; not the physical Main/150%-DPI Gate.
             auto* popup=find_child_by_name(host,QStringLiteral("m17RateTimePopup"));
             QVERIFY(popup);
-            // Rate & Time open/close is observational; no MASTER selection.
+            // WAV Export settings toggle is observational; no MASTER selection.
             const auto revisionBeforePopup=selectedMasterRate.rate_revision();
             const auto rateBeforePopup=selectedMasterRate.master_rate_hz();
             QSignalSpy popupRateChanges{&selectedMasterRate,
@@ -1398,11 +1398,18 @@ Window {
             QVERIFY(panel);
             QVERIFY2(check_item_contained_in_ancestor(panel,host,1.5),
                 "Rate/ETA overlay must fit compact 680x338 host");
-            // Clicking the SAME Rate & Time button while opened closes it;
+            // Clicking the SAME WAV Export button while opened closes it;
             // then a second click opens it again. X / Escape remain valid.
             auto* toggle=find_child_by_name(host,
                 QStringLiteral("m17RateAndTimesButton"));
             QVERIFY(toggle);
+            QCOMPARE(toggle->property("text").toString(),
+                QStringLiteral("WAV Export"));
+            auto* wavPanelTitle=find_child_by_name(
+                host,QStringLiteral("m17WavExportPanelTitle"));
+            QVERIFY(wavPanelTitle);
+            QCOMPARE(wavPanelTitle->property("text").toString(),
+                QStringLiteral("WAV EXPORT · RATE & TIME"));
             QVERIFY(!popup->property("modal").toBool());
             QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
             QTRY_VERIFY_WITH_TIMEOUT(!popup->property("opened").toBool(),2000);
@@ -2046,7 +2053,7 @@ Window {
     QVERIFY(window->setProperty("privateMonitorPreparing",false));
     QCoreApplication::processEvents();
     // PO FQ90: Prepare -> Cancel must occupy exactly the SAME physical
-    // RowLayout width, never moving Rate & Time during a long render.
+    // RowLayout width, never moving WAV Export during a long render.
     auto* prepareButton=find_child_by_name(
         host, QStringLiteral("m17PrepareButton"));
     auto* cancelButton=find_child_by_name(

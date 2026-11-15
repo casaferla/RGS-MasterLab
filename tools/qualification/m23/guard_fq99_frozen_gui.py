@@ -54,10 +54,14 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # FQ99 and P2 GUI provenance is not reclassified as qualified.
 # Every blob is separately pinned by Git object ID and must rerun native Qt CI.
 # This is a NEW NONRELEASE candidate, not a statement of FQ99 identity.
+# PO-approved post-FQ101 presentation-only update: M17 is displayed as
+# Export TP Limiter; WAV Export now precedes Prepare. Its DspEditorHost
+# blob below is exact-pinned again; pre-existing FQ99/P2 geometry and
+# rendering gates stay mandatory. No new FQ status is asserted.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
-    "ui/qml/DspEditorHost.qml": "560761d8311324e7cf08fd21a86a121ab241bdbe",
+    "ui/qml/DspEditorHost.qml": "9cf931afa4f2e4eecfbe7d2966aae201f9b42916",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",

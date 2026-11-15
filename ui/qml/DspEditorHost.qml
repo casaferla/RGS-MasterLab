@@ -481,6 +481,25 @@ Rectangle {
             Layout.maximumHeight: 34
             spacing: 8
             StudioButton {
+                objectName: "m17RateAndTimesButton"
+                visible: root.isLimiterEditor
+                text: "WAV Export"
+                minimumControlWidth: 106
+                accentColor: root.activeFamilyAccent
+                selected: rateTimePopup.opened
+                selectedFamilyAccent: true
+                onClicked: {
+                    if (rateTimePopup.opened) rateTimePopup.close()
+                    else rateTimePopup.open()
+                }
+                Accessible.name: rateTimePopup.opened
+                    ? "Close WAV export settings" : "Open WAV export settings"
+                ToolTip.text: "Select output sample rate before Prepare; view time/memory estimates. Export verified PCM24 or Float32 afterward."
+                ToolTip.visible: hovered && rateDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
+            }
+            StudioButton {
                 visible: root.isLimiterEditor && !root.m17Preparing
                     && !root.m18ExportActive
                 objectName: "m17PrepareButton"
@@ -517,7 +536,7 @@ Rectangle {
                 visible: root.isLimiterEditor && root.m17Preparing
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
-                // Same fixed slot as Prepare: Rate & Time must never jump
+                // Same fixed slot as Prepare: WAV Export must never jump
                 // horizontally during an in-flight full-resource job.
                 minimumControlWidth: 86
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
@@ -565,25 +584,6 @@ Rectangle {
                     && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
                 Accessible.name: "Preview verified limiter audio"
-            }
-            StudioButton {
-                objectName: "m17RateAndTimesButton"
-                visible: root.isLimiterEditor
-                text: "Rate & Time"
-                minimumControlWidth: 106
-                accentColor: root.activeFamilyAccent
-                selected: rateTimePopup.opened
-                selectedFamilyAccent: true
-                onClicked: {
-                    if (rateTimePopup.opened) rateTimePopup.close()
-                    else rateTimePopup.open()
-                }
-                Accessible.name: rateTimePopup.opened
-                    ? "Close master rate, time and WAV output panel" : "Open master rate, time and WAV output panel"
-                ToolTip.text: "Choose MASTER rate and time/memory, then export a verified PCM24 or Float32 WAV."
-                ToolTip.visible: hovered && rateDwell.ready
-                ToolTip.delay: 0
-                StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
             }
             StudioButton {
                 objectName: "m17CancelExportButton"
@@ -868,7 +868,7 @@ Rectangle {
         width: Math.min(458, root.width - 16)
         x: Math.max(8, root.width - width - 8)
         // The popup MUST sit below the action row, not over the Rate &
-        // Time button. The popup overlay must never consume its second click.
+        // WAV Export button. The popup overlay must never consume its second click.
         y: m17ControlsRow.mapToItem(root, 0, m17ControlsRow.height).y + 6
         // Fixed fit at the 1184x688 Product minimum. No Flickable, scroll
         // view, deferred button or increased editor minimum dimensions.
@@ -926,7 +926,8 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 22
                     Text {
-                        text: "MASTER RATE · TIME · WAV OUTPUT"
+                        objectName: "m17WavExportPanelTitle"
+                        text: "WAV EXPORT · RATE & TIME"
                         color: "#F0F6FB"
                         font.family: "Segoe UI"
                         font.pixelSize: 12
@@ -940,8 +941,8 @@ Rectangle {
                         implicitHeight: 22
                         padding: 0
                         onClicked: rateTimePopup.close()
-                        Accessible.name: "Close master rate, time and WAV output panel"
-                        ToolTip.text: "Close the master rate and time panel."
+                        Accessible.name: "Close WAV export settings"
+                        ToolTip.text: "Close WAV export settings."
                         ToolTip.visible: hovered && panelCloseDwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {

@@ -359,11 +359,33 @@ def test_original_source_open_guard_preserved() -> None:
     assert 'objectName: "openSourceStandardShortcut"' not in qml
 
 
+def test_m17_export_ui_presentation_order() -> None:
+    # Explicit PO request after FQ #101: only labels and button ordering;
+    # no DSP, rate authority, export encoder or Qt object identity changes.
+    host = read("ui/qml/DspEditorHost.qml")
+    adapter = read("app/src/dsp_module_adapter.hpp")
+    assert 'return QStringLiteral("Export TP Limiter");' in adapter
+    section = host[host.index('objectName: "m17ExplicitPreparationControls"'):
+                   host.index('// The M17 preparation progress belongs')]
+    export = section.index('objectName: "m17RateAndTimesButton"')
+    prepare = section.index('objectName: "m17PrepareButton"')
+    cancel = section.index('objectName: "m17CancelPreparationButton"')
+    assert export < prepare < cancel
+    assert 'text: "WAV Export"' in section
+    assert 'objectName: "m17WavExportPanelTitle"' in host
+    assert 'text: "WAV EXPORT · RATE & TIME"' in host
+    assert 'objectName: "m17ExportPcm24"' in host
+    assert 'objectName: "m17ExportFloat32"' in host
+    assert 'root.masterRateState.currentMasterRateAdmissible' in section
+    assert 'root.terminalLimiterViewModel.requestPrepare()' in section
+
+
 if __name__ == "__main__":
     for test in (
         test_visual_order_and_no_chain_mutation,
         test_product_binds_status_without_demo,
         test_export_permission_unchanged,
+        test_m17_export_ui_presentation_order,
         test_original_source_open_guard_preserved,
     ):
         test()
