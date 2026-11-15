@@ -45,14 +45,16 @@ P2_ADDITIONAL = {
 }
 P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 
-# Explicit PO 2026-11-15: only these five QML files may change for the
-# M18 WAV-output UX in M17 Rate & Time and its preexisting copper progress
-# band. All new, independently inspected blobs are pinned by Git object ID.
+# Explicit PO 2026-11-15: these exact QML blobs are the approved M18
+# WAV-output UX and the additional PO-observed compact vertical-resize fix.
+# The new Stereo/M-S blob removes the second hard breakpoint. Every blob
+# is separately pinned by Git object ID and must rerun full native Qt CI.
 # This is a NEW NONRELEASE candidate, not a statement of FQ99 identity.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
-    "ui/qml/DspEditorHost.qml": "20403170db4030db383cd0d4a963d78efb0ce996",
+    "ui/qml/DspEditorHost.qml": "4089f4dbee921fe4e8d7c42ad2523f7b3a5e074f",
+    "ui/qml/StereoMsEditor.qml": "67a408890e5c0db9efb47c3278e9d119c577628e",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
     "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
@@ -244,10 +246,20 @@ def exact_p2_integrated_gui_pin() -> bool:
             "INTEGRATED_M18_GUI_DELTA_SCOPE_MISMATCH expected="
             + repr(sorted(M18_APPROVED_GUI_DELTA))
             + " actual=" + repr(sorted(changed)))
-    # The five specifically PO-authorized M18 UI blobs must match their
+    # The PO-authorized M18 and vertical-resize UI blobs must match their
     # independently inspected exact Git object IDs. This cannot silently
     # approve arbitrary future changes to previously qualified shared GUI.
     # Everything else remains byte-identical to the CI-green P2 I2 source.
+    # Source-level regression lock against reintroducing the two hard
+    # thresholds behind the PO's physically observed vertical snapping.
+    host_qml=blob("HEAD", "ui/qml/DspEditorHost.qml")
+    stereo_qml=blob("HEAD", "ui/qml/StereoMsEditor.qml")
+    if "root.height < 470" in host_qml or "root.height < 380" in stereo_qml:
+        raise AssertionError("M18_PO_VERTICAL_HEADER_JUMP_REINTRODUCED")
+    if ('Layout.preferredHeight: root.compactTallerEditor ? 34 : 40'
+        not in host_qml or 'verticalSpaceFactor' not in stereo_qml
+        or 'm18WavOutputRightAlignSpacer' not in host_qml):
+        raise AssertionError("M18_PO_STABLE_HEADER_OR_WAV_ALIGNMENT_MISSING")
     for path in sorted(M18_APPROVED_GUI_DELTA):
         if path in M18_WAV_OUTPUT_UI_BLOBS:
             actual = git("rev-parse", "HEAD:" + path).decode().strip()
