@@ -723,6 +723,7 @@ Rectangle {
             monitorLocked: root.monitorExclusive
             limiterViewModel: root.isLimiterEditor ? root.terminalLimiterViewModel : null
             monitorViewModel: root.terminalMonitorViewModel
+            exportModel: root.masterExportModel
             limiterOfflineGrProvider: root.isLimiterEditor
                 ? root.limiterOfflineGrProvider : null
             grTimelineFraction: root.m17GrTimelineFraction
