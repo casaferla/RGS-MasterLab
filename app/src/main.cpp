@@ -1662,7 +1662,7 @@ int main(int argc, char* argv[])
                     && inside(QStringLiteral("m17ExportFloat32"))
                     && inside(QStringLiteral("m17RateCalibrationButton"));
                 std::fprintf(stdout,
-                    "M18_WAV_RATE_TIME_MINIMUM_1184x688=%s popup_panel_w=%.1f h=%.1f no_scroll=%d rates=%d\\n",
+                    "M18_WAV_RATE_TIME_MINIMUM_1184x688=%s popup_panel_w=%.1f h=%.1f no_scroll=%d rates=%d\n",
                     wavUiFits ? "PASS" : "FAIL",
                     panel ? panel->width() : -1.0,
                     panel ? panel->height() : -1.0,
