@@ -54,8 +54,8 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
     "ui/qml/DspEditorHost.qml": "560761d8311324e7cf08fd21a86a121ab241bdbe",
-    "ui/qml/StreamingTruePeakLimiterEditor.qml": "b2501c58456c04fc27fbebf96a3d1fdb5e5a626f",
-    "ui/qml/StereoMsEditor.qml": "67a408890e5c0db9efb47c3278e9d119c577628e",
+    "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
+    "ui/qml/StereoMsEditor.qml": "26fb86ff81aa29ce0c9b4a441b92acad7897e5cb",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
     "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
@@ -271,6 +271,17 @@ def exact_p2_integrated_gui_pin() -> bool:
         or 'verticalSpaceFactor' not in p2_qml
         or 'm18WavOutputRightAlignSpacer' not in host_qml):
         raise AssertionError("M18_PO_EQ_HEADER_PARITY_OR_WAV_ALIGNMENT_MISSING")
+    # Exact PO 2026-11-15 resize rule: containers grow to the right /
+    # bottom from the compact-minimum TOP-LEFT, never translate because
+    # a higher window adds top or left padding. Guard both source
+    # properties and real scene coordinates (main.cpp Qt Product gate).
+    if ('        spacing: 4\n\n        RowLayout' not in stereo_qml
+        or 'Layout.preferredHeight: 23' not in stereo_qml
+        or '        anchors.margins: 8\n        spacing: 5' not in p2_qml
+        or '                anchors.margins: 9\n' not in p2_qml
+        or 'anchors.margins: 8 + ' in p2_qml
+        or 'anchors.margins: 9 + ' in p2_qml):
+        raise AssertionError("PO_RESIZABLE_WELL_MIN_TOP_LEFT_DRIFT_REINTRODUCED")
     for path in sorted(M18_APPROVED_GUI_DELTA):
         if path in M18_WAV_OUTPUT_UI_BLOBS:
             actual = git("rev-parse", "HEAD:" + path).decode().strip()
