@@ -1687,10 +1687,26 @@ int main(int argc, char* argv[])
                         child&&child->isVisible()?1:0,p.x(),p.y(),
                         child?child->width():-1.0,child?child->height():-1.0);
                 }
+                const auto rightEdge=[panel,&findVisual](const QString& name) {
+                    const auto* child=findVisual(panel,name);
+                    return child && panel
+                        ? child->mapToItem(panel,QPointF(0,0)).x()
+                            + child->width()
+                        : -9999.0;
+                };
+                const double wavRightDelta=std::abs(
+                    rightEdge(QStringLiteral("m17ExportFloat32"))
+                    -rightEdge(QStringLiteral("m17RateCalibrationButton")));
+                const auto* headerRegion=qobject_cast<QQuickItem*>(
+                    mainWindow->findChild<QObject*>(
+                        QStringLiteral("dspHostHeaderRegion")));
+                const bool headerHeightStable=headerRegion
+                    && std::abs(headerRegion->height()-34.0) <= 1.0;
                 const bool wavUiFits=noScroll && allRates
                     && inside(QStringLiteral("m17ExportPcm24"))
                     && inside(QStringLiteral("m17ExportFloat32"))
-                    && inside(QStringLiteral("m17RateCalibrationButton"));
+                    && inside(QStringLiteral("m17RateCalibrationButton"))
+                    && wavRightDelta <= 2.0 && headerHeightStable;
                 std::fprintf(stdout,
                     "M18_WAV_RATE_TIME_MINIMUM_1184x688=%s popup_panel_w=%.1f h=%.1f no_scroll=%d rates=%d\n",
                     wavUiFits ? "PASS" : "FAIL",
@@ -1698,10 +1714,12 @@ int main(int argc, char* argv[])
                     panel ? panel->height() : -1.0,
                     noScroll?1:0,allRates?1:0);
                 std::fprintf(stdout,
-                    "M18_MINIMUM_FOOTER pcm=%d float=%d calibrate=%d\n",
+                    "M18_MINIMUM_FOOTER pcm=%d float=%d calibrate=%d right_delta=%.2f header_h=%.2f\n",
                     inside(QStringLiteral("m17ExportPcm24"))?1:0,
                     inside(QStringLiteral("m17ExportFloat32"))?1:0,
-                    inside(QStringLiteral("m17RateCalibrationButton"))?1:0);
+                    inside(QStringLiteral("m17RateCalibrationButton"))?1:0,
+                    wavRightDelta,
+                    headerRegion?headerRegion->height():-1.0);
                 const bool captured=geometry && dpi && !file.isEmpty()
                     && !image.isNull() && image.save(file,"PNG");
                 const bool saved=captured && wavUiFits;
