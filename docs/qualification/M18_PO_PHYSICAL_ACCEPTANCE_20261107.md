@@ -484,3 +484,41 @@ and `stereoMsResetButton` at exactly 30lp, the physically verified
 minimum-row value, preserving the existing 4lp separation from both
 upper rounded wells. It does not touch M16/M17, EQ header,
 algorithms or audio. Physical and focused-Qt requalification pending.
+
+
+## 2026-11-15 — Focused CI #43748214192, two reds: exact diagnoses
+
+At SHA `8f523734cb140ee59526fe2e024c973e6cd68c32`, focused CI
+#43748214192 completed **5/7 success, 2/7 failure**.
+
+- **Real Windows Qt Product smoke**: both the minimum-window
+  Stereo/M-S upper graph origin and Streaming P2 rounded-panel origin
+  were fixed across all vertical requests:
+  `Stereo (0,34)`, `P2 (8,8)`, even at 735lp height.
+  `RGS_GUI_ALL_PRIMARY_WELLS_KEEP_MIN_TOP_LEFT=PASS`,
+  `RGS_GUI_ALL_DSP_HEADERS_MATCH_PARAMETRIC_EQ=PASS`, and
+  `M18_WAV_RATE_TIME_MINIMUM_1184x688=PASS`. However the process
+  exited nonzero because the test requested 1350lp-wide Windows
+  geometry on HyperVMonitor with only 1200lp desktop width; the
+  resulting `QWindowsWindow::setGeometry` warnings triggered the
+  existing strict native smoke warning guard. The runner in fact
+  clamped its width back to 1184lp. **Horizontal resizing was NOT
+  physically tested there.** Next candidate explicitly checks screen
+  capacity and reports `NOT_TESTABLE_ON_RUNNER` rather than requesting
+  an impossible window or claiming a horizontal PASS.
+- **M23 native Windows full compact CTest**: after the corrected 30lp
+  fixed Stereo top row, the bottom of `stereoMsControlsRegion` landed
+  at y=276 on a y=272 editor in the real 680×338 constrained host
+  (4lp overflow; 91% / 10 of 11 native CTests passed). The fixed
+  upper row MUST remain 30lp: the exact Qt Product gate demonstrated
+  its origin parity. Compact height arithmetic is now
+  `30 upper row + 4 gap + 105 visual row + 4 gap + 129 controls = 272lp`.
+  Reduce ONLY control-well `Layout.minimumHeight` from 133 to
+  129lp, preserving 133lp preferred height and the outer border.
+  The M23 CTest now verifies the positions of all **five actual
+  numeric slider/field pairs** inside that region, so a green outer
+  rectangle cannot camouflage clipped inner controls.
+
+The updated source-level blob integrity guard remains exact and
+prior FQ99/P2 GUI pins remain protected. Both previously failing jobs
+MUST become green at the next exact SHA. No release/FQ claim.
