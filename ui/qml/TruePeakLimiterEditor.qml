@@ -15,6 +15,7 @@ Item {
     property string grTimelineScope: ""
     property var limiterViewModel: null
     property var monitorViewModel: null
+    property var exportModel: null
     property bool monitorLocked: false
     property var measurementProvider: null
     property var liveProvider: null
@@ -47,6 +48,7 @@ Item {
         grTimelineScope: root.grTimelineScope
         limiterViewModel: root.limiterViewModel
         monitorViewModel: root.monitorViewModel
+        exportModel: root.exportModel
         limiterSonicControlsEnabled: root.sonicControlsEnabled
         useFamilyAccent: true
         familyAccent: root.familyAccent
