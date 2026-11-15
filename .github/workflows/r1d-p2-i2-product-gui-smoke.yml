@@ -129,11 +129,39 @@ jobs:
           }
           Write-Host "P2_I2_REAL_QT_COMPACT_ANALYSIS_SCREENSHOTS=PASS"
 
+      - name: Verify non-scrolling M17 Rate & Time WAV actions in actual Qt minimum window
+        shell: pwsh
+        run: |
+          $qt=Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
+          $env:PATH="$qt/bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$qt/qml"
+          $env:QT_PLUGIN_PATH="$qt/plugins"
+          $env:QT_SCALE_FACTOR='1'
+          $env:RGSML_M18_MINIMUM_GUI_ONLY='1'
+          $env:RGSML_M17_MAIN_EVIDENCE_PATH=Join-Path $env:GITHUB_WORKSPACE 'build-p2-product/m18-m17-rate-time-minimum.png'
+          $exe=Join-Path $env:GITHUB_WORKSPACE "build-p2-product/Release/RGSMasterLab.exe"
+          $stdout=Join-Path $env:RUNNER_TEMP 'm18-minimum-ui-stdout.txt'
+          $stderr=Join-Path $env:RUNNER_TEMP 'm18-minimum-ui-stderr.txt'
+          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke --rgsml-p2-i2-preview --rgsml-m17-ui-evidence' -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -Wait
+          if (Test-Path $stdout) { Get-Content $stdout -Tail 25 }
+          if (Test-Path $stderr) { Get-Content $stderr -Tail 35 }
+          if ($p.ExitCode -ne 0) { throw "M18_WAV_MINIMUM_QT_SMOKE_FAILED" }
+          $proof=Get-Content -LiteralPath $stdout -Raw
+          if (-not $proof.Contains('M18_WAV_RATE_TIME_MINIMUM_1184x688=PASS')) {
+            throw "M18_WAV_UI_MINIMUM_NO_SCROLL_AND_CONTAINMENT_FAILED"
+          }
+          $shot=$env:RGSML_M17_MAIN_EVIDENCE_PATH
+          if (-not (Test-Path -LiteralPath $shot)) { throw "M18_WAV_MINIMUM_QT_EVIDENCE_MISSING" }
+          if ((Get-Item -LiteralPath $shot).Length -lt 10000) { throw "M18_WAV_MINIMUM_QT_EVIDENCE_EMPTY" }
+          Write-Host 'M18_WAV_MINIMUM_REAL_QT_NO_SCROLL_AND_CONTAINMENT=PASS'
+
       - name: Publish real Qt full DSP chain screenshot
         uses: actions/upload-artifact@v4
         with:
           name: RGS-P2-I2-REAL-QT-FULL-CHAIN-${{ github.run_number }}
-          path: build-p2-product/p2-i2-complete-dsp-chain*.png
+          path: |
+            build-p2-product/p2-i2-complete-dsp-chain*.png
+            build-p2-product/m18-m17-rate-time-minimum.png
           if-no-files-found: error
           retention-days: 14
 
