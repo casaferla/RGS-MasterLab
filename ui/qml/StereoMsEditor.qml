@@ -21,16 +21,22 @@ Item {
     // editable Stereo/M-S scalar controls, regardless of row or unit.
     readonly property int numericFieldWidth: 86
     readonly property color sliderFill: Qt.rgba(74 / 255, 154 / 255, 136 / 255, 0.38)
+    // The prior hard 'height < 380' switch collapsed the entire stereo
+    // layout in one frame while resizing. Interpolate its original compact
+    // and regular dimensions continuously; preserve both endpoint sizes
+    // without discontinuous geometry or a scroll container.
+    readonly property real verticalSpaceFactor:
+        Math.max(0, Math.min(1, (root.height - 300) / 110))
 
     // EQ-like top expansive region, but a separate near-square, strictly
     // observational M/S output well: its coordinates must never be stretched.
     ColumnLayout {
         anchors.fill: parent
-        spacing: root.height < 380 ? 4 : 7
+        spacing: 4 + 3 * root.verticalSpaceFactor
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.height < 380 ? 23 : 27
+            Layout.preferredHeight: 23 + 4 * root.verticalSpaceFactor
             spacing: 8
             Text {
                 text: "SPATIAL CONTROL"
@@ -93,7 +99,7 @@ Item {
             objectName: "stereoMsVisualWells"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: root.height < 380 ? 105 : 150
+            Layout.minimumHeight: 105 + 45 * root.verticalSpaceFactor
             spacing: 9
 
             StereoMsResponseGraph {
@@ -403,8 +409,8 @@ Item {
         Rectangle {
             objectName: "stereoMsControlsRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.height < 380 ? 133 : 166
-            Layout.minimumHeight: root.height < 380 ? 133 : 166
+            Layout.preferredHeight: 133 + 33 * root.verticalSpaceFactor
+            Layout.minimumHeight: 133 + 33 * root.verticalSpaceFactor
             radius: 6
             color: "#12243F"
             border.color: "#2C5A78"
@@ -412,8 +418,8 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: root.height < 380 ? 5 : 9
-                spacing: root.height < 380 ? 3 : 6
+                anchors.margins: 5 + 4 * root.verticalSpaceFactor
+                spacing: 3 + 3 * root.verticalSpaceFactor
 
                 RowLayout {
                     Layout.fillWidth: true
