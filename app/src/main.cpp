@@ -1657,8 +1657,18 @@ int main(int argc, char* argv[])
                     && !panel->property("contentHeight").isValid();
                 bool allRates=true;
                 for(int i=0;i<6;++i) {
-                    allRates=allRates && inside(
-                        QStringLiteral("m17MasterRateOption_%1").arg(i));
+                    const auto name=QStringLiteral("m17MasterRateOption_%1").arg(i);
+                    const auto* child=panel ? panel->findChild<QQuickItem*>(name)
+                                             : nullptr;
+                    const auto p=child&&panel
+                        ? child->mapToItem(panel,QPointF(0,0)):QPointF{-1,-1};
+                    const bool ok=inside(name);
+                    allRates=allRates && ok;
+                    std::fprintf(stdout,
+                        "M18_MINIMUM_RATE_%d=%s found=%d visible=%d x=%.1f y=%.1f w=%.1f h=%.1f\\n",
+                        i,ok?"PASS":"FAIL",child?1:0,
+                        child&&child->isVisible()?1:0,p.x(),p.y(),
+                        child?child->width():-1.0,child?child->height():-1.0);
                 }
                 const bool wavUiFits=noScroll && allRates
                     && inside(QStringLiteral("m17ExportPcm24"))
@@ -1670,9 +1680,14 @@ int main(int argc, char* argv[])
                     panel ? panel->width() : -1.0,
                     panel ? panel->height() : -1.0,
                     noScroll?1:0,allRates?1:0);
-                const bool saved=geometry && dpi && wavUiFits
-                    && !file.isEmpty()
+                std::fprintf(stdout,
+                    "M18_MINIMUM_FOOTER pcm=%d float=%d calibrate=%d\\n",
+                    inside(QStringLiteral("m17ExportPcm24"))?1:0,
+                    inside(QStringLiteral("m17ExportFloat32"))?1:0,
+                    inside(QStringLiteral("m17RateCalibrationButton"))?1:0);
+                const bool captured=geometry && dpi && !file.isEmpty()
                     && !image.isNull() && image.save(file,"PNG");
+                const bool saved=captured && wavUiFits;
                 std::fprintf(stdout,
                     "M17_REAL_MAIN_QT_LOGICAL=%dx%d DPR=%.3f PHYSICAL=%dx%d SAVED=%d\n",
                     mainWindow->width(),mainWindow->height(),ratio,
