@@ -1309,6 +1309,31 @@ Window {
             qPrintable(QStringLiteral("PO no-scroll: %1 editor bottom=%2 host height=%3")
                 .arg(QString::fromLatin1(fit.editor))
                 .arg(editorBottom.y()).arg(host->height())));
+        if (fit.index==3) {
+            // Compact Stereo well is now 4lp shorter, so check that all
+            // FIVE actual slider/field pairs still lie inside its border.
+            // Checking only the outer Rectangle would miss clipped
+            // controls after a cosmetic min-height reduction.
+            const std::array<const char*,5> names{{
+                "stereoMsWidthControl", "stereoMsCutoffControl",
+                "stereoMsLowWidthControl", "stereoMsMidGainControl",
+                "stereoMsSideGainControl"
+            }};
+            for(const auto* name:names) {
+                auto* control=qobject_cast<QQuickItem*>(find_child_by_name(
+                    editor,QString::fromLatin1(name)));
+                QVERIFY2(control,name);
+                const QPointF top=control->mapToItem(last,QPointF{0,0});
+                const QPointF bottom=control->mapToItem(
+                    last,QPointF{control->width(),control->height()});
+                QVERIFY2(control->width()>0 && control->height()>0
+                    && top.y()>=-1.5 && bottom.y()<=last->height()+1.5,
+                    qPrintable(QStringLiteral(
+                        "PO Stereo controls no-clip: %1 top=%2 bottom=%3 well=%4")
+                        .arg(QString::fromLatin1(name))
+                        .arg(top.y()).arg(bottom.y()).arg(last->height())));
+            }
+        }
         // Genuine Qt-rendered evidence of each REAL seven-adapter editor
         // at the 680x338 constrained host, in one native 1184x688 window.
         // Supporting fixture only: physical Main 150% gate stays PO-owned.
