@@ -26,6 +26,8 @@ Rectangle {
     property var terminalMonitorViewModel: null
     property var terminalProductActivation: null
     property var masterListeningHandler: null
+    property var masterExportModel: null
+    property var masterExportHandler: null
     property var masterRateState: null
     property var memoryAdvisor: null
     property var limiterOfflineGrProvider: null
@@ -64,6 +66,8 @@ Rectangle {
             terminalMonitorViewModel: root.terminalMonitorViewModel
             terminalProductActivation: root.terminalProductActivation
             masterListeningHandler: root.masterListeningHandler
+            masterExportModel: root.masterExportModel
+            masterExportHandler: root.masterExportHandler
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
@@ -121,6 +125,8 @@ Rectangle {
         terminalMonitorViewModel: root.terminalMonitorViewModel
         terminalProductActivation: root.terminalProductActivation
         masterListeningHandler: root.masterListeningHandler
+        masterExportModel: root.masterExportModel
+        masterExportHandler: root.masterExportHandler
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
