@@ -207,30 +207,22 @@ Rectangle {
             || root.activeModule.editorContentKey === "M20_ANALYSIS"
             || root.activeModule.editorContentKey === "M21_ANALYSIS")
 
-    // Avoid a binary 470px host-header break: it used to jump the title,
-    // top controls and M17 popover in one frame when resizing vertically.
-    // Reserve the SAME title/control geometry at every supported height.
-    // Only free outer padding flows continuously through a bounded range.
-    readonly property real hostSpaceFactor:
-        Math.max(0, Math.min(1, (root.height - 350) / 120))
+    // 2026-11-15 PO physical replay: Input Gain / Parametric EQ is
+    // the absolute header geometry reference. ALL editors share the same
+    // top/side inset, vertical gaps and undock/title/context row height,
+    // irrespective of active module and vertical window size. Responsive
+    // behavior is allowed ONLY BELOW the common 40lp header.
     ColumnLayout {
         anchors.fill: parent
-        // Earlier Input Gain / EQ / Compressor retain their FQ99 geometry;
-        // only the historically compactTallerEditor group loses its jumps.
-        anchors.margins: root.compactTallerEditor
-            ? 8 + 4 * root.hostSpaceFactor : 12
-        spacing: root.compactTallerEditor
-            ? 5 + 3 * root.hostSpaceFactor : 8
+        anchors.margins: 12
+        spacing: 8
 
-        // Fix compact DSPs at 34 lp (the physically proven minimum
-        // geometry) at ALL heights. The three earlier DSPs keep their
-        // qualified 40 lp header unchanged.
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
-            Layout.minimumHeight: root.compactTallerEditor ? 34 : 40
-            Layout.preferredHeight: root.compactTallerEditor ? 34 : 40
-            Layout.maximumHeight: root.compactTallerEditor ? 34 : 40
+            Layout.minimumHeight: 40
+            Layout.preferredHeight: 40
+            Layout.maximumHeight: 40
             spacing: 12
 
             // Preserve the EXACT old 22px slot: the module title's X
