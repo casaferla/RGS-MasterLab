@@ -320,3 +320,51 @@ Audacity's 32-bit floating-point internal sample representation on import
 does NOT imply that the on-disk PCM24 file is Float32; see
 https://manual.audacityteam.org/man/importing_audio.html.
 Neither the M18 codec nor the already delivered WAV bytes requires a fix.
+
+
+## 15 November 2026 — PO physical replay #20 disproves smooth common-header fix
+
+The PO physically tested
+`RGS-P2-I2-Win64-RESEARCH-ONLY-20`
+(commit `be0b2ace3f1fbe8eb7685f39db1876fd087c22df`;
+CI #43738282605 green 7/7), using ten actual Windows screenshots
+through vertical window resize with **no SOURCE**. Independent
+comparison against the Parametric EQ panel shows:
+
+- The undock glyph, title and `Mastering` context in ALL editors from
+  Stereo/M-S to M21 STILL move with window height, even though the
+  previous binary 470px switch was replaced by smooth interpolation.
+  This is a FAILED PO physical geometry gate, not a pass or cosmetic
+  rounding issue. Stereo/M-S is not aligned with Input Gain/Parametric
+  EQ even at the minimum.
+- Streaming TP Limiter has an additional discontinuity in its own
+  `StreamingTruePeakLimiterEditor.qml` at `height < 390`; its
+  already-integrated streaming-audio engine is NOT under test here.
+- Only the M18 WAV footer's right alignment is geometrically CI-proved
+  so far; it is not evidence that shared host title geometry matches.
+
+**Corrected root-cause strategy:** Restore the exact ORIGINAL common
+Parametric EQ `DspEditorHost` header geometry for EVERY editor:
+`ColumnLayout.anchors.margins=12`, `spacing=8` and a fixed 40lp
+`dspHostHeaderRegion` height, no module-specific or height-dependent
+inset/spacing/header. The surviving 40lp Input Gain/EQ/Compressor
+qualified layout must remain byte-semantically identical. Only child
+editor bodies may adapt to their available space. Remove P2's private
+binary 390px compact toggle and interpolate ONLY its interior layout,
+without changing the 36px Consolas readouts, slider/wheel/track/thumb
+contracts, user parameter/engine state or save/export semantics.
+
+**NEW true geometry gate (not mere static-source PASS):** CI runs the
+actual Windows Qt Product at 1184x688 and 1184x735. For every genuine
+DSP-chain adapter, it switches the selected editor and compares actual
+`mapToScene` positions of the Undock grip, title and context text
+against Parametric EQ at the SAME window geometry (maximum tolerance
+0.55lp). It additionally enforces the 40lp header, all six M17 rate
+controls, no scrolling, exact WAV/Calibrate right edge (<=2lp) and
+real screenshot capture. If restoring the common geometry reduces
+Rate & Time interior clearance, only compact its contents; never
+reintroduce a special M17 header.
+
+This new exact-SHA patch is not yet physically accepted. All earlier
+PO PCM24/Float32 bytes and M18 SHA checks remain valid; no audio/DSP
+code was touched.
