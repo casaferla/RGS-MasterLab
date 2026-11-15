@@ -47,6 +47,7 @@
 #include <QDateTime>
 #include <QStringList>
 #include <filesystem>
+#include <functional>
 #include <QIcon>
 #include <QLibraryInfo>
 #include <QUuid>
@@ -1643,12 +1644,29 @@ int main(int argc, char* argv[])
                 auto* panel=qobject_cast<QQuickItem*>(
                     mainWindow->findChild<QObject*>(
                         QStringLiteral("m17RateTimePanel")));
-                const auto inside=[panel](const QString& name) {
-                    auto* child=panel ? panel->findChild<QQuickItem*>(name)
-                                      : nullptr;
+                // A Qt Quick Repeater owns the *QObject* tree of its
+                // delegates separately from their visual parent. QObject
+                // findChild(panel, name) therefore misses six real radio
+                // controls even when they are fully rendered and visible.
+                // Walk the actual QQuickItem scene/parentItem tree, not a
+                // guessed QObject ownership model. No assertion is relaxed.
+                std::function<QQuickItem*(QQuickItem*,const QString&)>
+                    findVisual=[&findVisual](QQuickItem* item,
+                                             const QString& wanted)
+                        ->QQuickItem* {
+                    if (!item) return nullptr;
+                    if (item->objectName()==wanted) return item;
+                    for(auto* child:item->childItems()) {
+                        if(auto* found=findVisual(child,wanted))return found;
+                    }
+                    return nullptr;
+                };
+                const auto inside=[panel,&findVisual](const QString& name) {
+                    auto* child=findVisual(panel,name);
                     if (!child || !child->isVisible() || !panel) return false;
                     const auto pos=child->mapToItem(panel,QPointF(0,0));
-                    return pos.x() >= -1.0 && pos.y() >= -1.0
+                    return child->width()>0.0 && child->height()>0.0
+                        && pos.x() >= -1.0 && pos.y() >= -1.0
                         && pos.x()+child->width() <= panel->width()+1.0
                         && pos.y()+child->height() <= panel->height()+1.0;
                 };
@@ -1658,8 +1676,7 @@ int main(int argc, char* argv[])
                 bool allRates=true;
                 for(int i=0;i<6;++i) {
                     const auto name=QStringLiteral("m17MasterRateOption_%1").arg(i);
-                    const auto* child=panel ? panel->findChild<QQuickItem*>(name)
-                                             : nullptr;
+                    const auto* child=findVisual(panel,name);
                     const auto p=child&&panel
                         ? child->mapToItem(panel,QPointF(0,0)):QPointF{-1,-1};
                     const bool ok=inside(name);
