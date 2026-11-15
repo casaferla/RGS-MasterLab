@@ -230,3 +230,49 @@ Physical checks in addition to the above A01–A15, on the **new exact SHA**:
   SHA-verified 64-character result, never a guessed output path.
 
 These additions require Qt native UI inspection, not a CI-only PASS.
+
+
+## Physical PO replay — 2026-11-15, CI #18 / SHA 8b2197e9
+
+The PO physically launched `RGS-P2-I2-Win64-RESEARCH-ONLY-18`,
+commit `8b2197e961ac98f427b126da022c8d554dbbcfdc`,
+[7/7 focused CI #43705272715](https://github.com/casaferla/RGS-MasterLab/actions/runs/43705272715),
+and supplied Windows screenshots of the ACTUAL Product WAV progress at
+60%/100%, return to authentic GR HISTORY, inline PCM24 and Float32
+receipts, SHA and ACK hover/tooltips and the unchanged non-scrolling
+Rate & Time panel. SOURCE displayed: `Reati universali (Remastered)
+(Edit) 44.wav` (44.1 kHz, stereo); MASTER selected 48 kHz; M17
+Ceiling -2.70 dBTP and Verification Trim 0.00 dB / NO TRIM. P2 row
+visible/bypassed in this case. These screenshots are a genuine physical
+replay, NOT merely Qt CI mockups.
+
+The two **actual WAV bytes were provided by the PO** and independently
+inspected (not merely trusting UI receipts):
+
+| Output | Exact verified SHA-256 | WAV encoding | Rate/channels | Frames | Duration | Size |
+|---|---|---|---|---:|---:|---:|
+| `24(1).wav` | `eee19b50715160eec33ef5eabb461d16ce8a0688dd0b1bd642f819afceb25da7` | PCM24 | 48000 Hz stereo | 9,560,816 | 03:19.184 | 57,364,940 bytes |
+| `32(1).wav` | `f5b5dbacacab8c2d1278a9ad61f94d7c737a7dcd5401363834927842c2a7de75` | IEEE Float32 | 48000 Hz stereo | 9,560,816 | 03:19.184 | 76,486,586 bytes |
+
+Both SHA-256 values matched those independently copied from the app
+through its inline SHA control. The WAV headers were valid, samples
+checked from multiple positions were finite, levels matched, and
+sampled PCM24-vs-Float32 maximum absolute delta was approximately
+1.79e-7 (quantization/dither-scale). No claim is made of independent
+full-song audition, bit-exact reconstruction from private M17 PCM,
+standalone True Peak after quantization, or completion of the full
+A01–A15/B01–B10 test matrix.
+
+**Field findings:** The SHA and OK receipt controls were using native
+Qt Basic `Button` chrome instead of RGS `StudioButton`, and their
+tooltips were immediate rather than the established stationary
+`StudioTooltipDwell` 1000-ms policy. This is a local GUI consistency
+defect, NOT an M18 codec/sha/ceiling failure. Corrected on the active
+writer with exactly the existing RGS control component and hover policy;
+re-qualification of that updated UI still requires new exact-SHA CI
+and subsequent physical visual confirmation.
+
+**Disposition:** M18 PCM24 and Float32 physical cross-rate encoding,
+SHA match and core in-place progress/receipt interaction are supported.
+Remaining destructive, cancellation, stale-epoch, Project SaveAs and
+whole-M24 physical gates remain open. No FQ or release claim.
