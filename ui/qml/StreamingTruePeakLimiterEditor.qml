@@ -7,14 +7,18 @@ Item {
     objectName: "streamingTruePeakLimiterEditor"
     property var limiterModule: null
     readonly property color copper: "#C4774A"
-    readonly property bool compact: height < 390
+    // A hard 390px compact switch used to resize multiple P2 controls
+    // in one frame. Keep the EXACT two historical endpoint geometries,
+    // but interpolate between them while the editor is resized.
+    readonly property real verticalSpaceFactor:
+        Math.max(0, Math.min(1, (root.height - 300) / 155))
     readonly property double ceiling: limiterModule ? limiterModule.ceilingDbTp : -1.0
     readonly property double drive: limiterModule ? limiterModule.driveDb : 0.0
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: root.compact ? 8 : 14
-        spacing: root.compact ? 5 : 12
+        anchors.margins: 8 + 6 * root.verticalSpaceFactor
+        spacing: 5 + 7 * root.verticalSpaceFactor
         // The DspEditorHost already provides the module title and context.
         // Reserve vertical space for the two Input Gain-sized DSP controls.
 
@@ -30,8 +34,8 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: root.compact ? 9 : 20
-                spacing: root.compact ? 3 : 12
+                anchors.margins: 9 + 11 * root.verticalSpaceFactor
+                spacing: 3 + 9 * root.verticalSpaceFactor
 
                 // Input Gain's large centered numeric readout ABOVE its
                 // full-width horizontal slider, repeated twice, not two
@@ -42,11 +46,11 @@ Item {
                     Layout.fillWidth: true
                     Layout.maximumWidth: 640
                     Layout.alignment: Qt.AlignHCenter
-                    spacing: root.compact ? 1 : 6
+                    spacing: 1 + 5 * root.verticalSpaceFactor
 
                     Item {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.compact ? 41 : 50
+                        Layout.preferredHeight: 41 + 9 * root.verticalSpaceFactor
                         Text {
                             text: "CEILING"
                             anchors.left: parent.left
@@ -106,11 +110,11 @@ Item {
                     Layout.fillWidth: true
                     Layout.maximumWidth: 640
                     Layout.alignment: Qt.AlignHCenter
-                    spacing: root.compact ? 1 : 6
+                    spacing: 1 + 5 * root.verticalSpaceFactor
 
                     Item {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.compact ? 41 : 50
+                        Layout.preferredHeight: 41 + 9 * root.verticalSpaceFactor
                         Text {
                             text: "DRIVE"
                             anchors.left: parent.left
@@ -167,7 +171,7 @@ Item {
                 RowLayout {
                     objectName: "streamingP2ResearchMarginRow"
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredHeight: root.compact ? 24 : 32
+                    Layout.preferredHeight: 24 + 8 * root.verticalSpaceFactor
                     spacing: 8
                     Text {
                         text: "Research margin"
@@ -207,7 +211,7 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.compact ? 15 : 28
+                    Layout.preferredHeight: 15 + 13 * root.verticalSpaceFactor
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                     text: root.limiterModule
