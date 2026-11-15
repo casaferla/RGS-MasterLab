@@ -36,9 +36,15 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            // Preferred baseline is invariant; keep the natural
-            // StudioButton minimum so Reset never overlaps the graph.
-            Layout.preferredHeight: 23
+            // The Reset StudioButton has 32lp implicit height, so a
+            // preferred-only 23lp RowLayout grew from 30 to 31lp as
+            // available window height increased. Lock the SAME actual
+            // 30lp compact-minimum geometry, and explicitly size Reset
+            // to that row. The 4lp gap keeps its bottom separate from
+            // the response graph; no clipping, scroll, or vertical drift.
+            Layout.minimumHeight: 30
+            Layout.preferredHeight: 30
+            Layout.maximumHeight: 30
             spacing: 8
             Text {
                 text: "SPATIAL CONTROL"
@@ -82,6 +88,9 @@ Item {
                 objectName: "stereoMsResetButton"
                 text: "Reset to Default"
                 minimumControlWidth: 140
+                Layout.minimumHeight: 30
+                Layout.preferredHeight: 30
+                Layout.maximumHeight: 30
                 enabled: root.viewModel && root.viewModel.available
                 accentColor: root.seaGreen
                 ToolTip.text: "Restore all Stereo/M-S parameters to defaults. This does not change the module bypass state."
