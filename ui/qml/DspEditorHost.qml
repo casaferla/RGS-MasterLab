@@ -1202,7 +1202,12 @@ Rectangle {
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    // Reserve a fixed slot rather than letting the dynamic
+                    // memory sentence steal the bottom WAV controls at the
+                    // real 1184x688 Product minimum.
+                    Layout.minimumHeight: 32
+                    Layout.preferredHeight: 32
+                    Layout.maximumHeight: 32
                     spacing: 6
                     Text {
                         objectName: "m17RateMemorySummary"
@@ -1216,7 +1221,10 @@ Rectangle {
                             anchors.fill: parent
                         }
                         Layout.fillWidth: true
+                        Layout.maximumHeight: 32
                         wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
                         color: "#A4B9C8"
                         font.family: "Segoe UI"
                         font.pixelSize: 9
