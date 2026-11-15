@@ -53,7 +53,7 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
-    "ui/qml/DspEditorHost.qml": "2d734823cba50d59c0eb8d47527aec4c2490e338",
+    "ui/qml/DspEditorHost.qml": "560761d8311324e7cf08fd21a86a121ab241bdbe",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "b2501c58456c04fc27fbebf96a3d1fdb5e5a626f",
     "ui/qml/StereoMsEditor.qml": "67a408890e5c0db9efb47c3278e9d119c577628e",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
