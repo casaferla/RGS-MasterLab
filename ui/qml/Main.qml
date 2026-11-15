@@ -1034,6 +1034,7 @@ ApplicationWindow {
             masterExportHandler: function(formatIndex) {
                 root.requestVerifiedWavExport(formatIndex)
             }
+            masterExportFormatIndex: root.m18ExportFormatIndex
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
             limiterOfflineGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
