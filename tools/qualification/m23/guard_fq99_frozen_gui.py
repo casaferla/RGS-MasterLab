@@ -53,7 +53,8 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
-    "ui/qml/DspEditorHost.qml": "4089f4dbee921fe4e8d7c42ad2523f7b3a5e074f",
+    "ui/qml/DspEditorHost.qml": "04f684012e66ddd4160ac792f9ad642ea9ba2586",
+    "ui/qml/StreamingTruePeakLimiterEditor.qml": "b2501c58456c04fc27fbebf96a3d1fdb5e5a626f",
     "ui/qml/StereoMsEditor.qml": "67a408890e5c0db9efb47c3278e9d119c577628e",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
@@ -250,16 +251,26 @@ def exact_p2_integrated_gui_pin() -> bool:
     # independently inspected exact Git object IDs. This cannot silently
     # approve arbitrary future changes to previously qualified shared GUI.
     # Everything else remains byte-identical to the CI-green P2 I2 source.
-    # Source-level regression lock against reintroducing the two hard
-    # thresholds behind the PO's physically observed vertical snapping.
+    # PO physical replay proved that even SMOOTH scaling of shared
+    # margins/header creates incorrect alignment. The common header is
+    # EXACTLY the unchanged Parametric-EQ 12lp inset, 8lp vertical gaps
+    # and 40lp row for all DSPs at every host height. The only allowed
+    # adaptation lives below it. P2's private 390px hard jump is gone.
     host_qml=blob("HEAD", "ui/qml/DspEditorHost.qml")
     stereo_qml=blob("HEAD", "ui/qml/StereoMsEditor.qml")
-    if "root.height < 470" in host_qml or "root.height < 380" in stereo_qml:
-        raise AssertionError("M18_PO_VERTICAL_HEADER_JUMP_REINTRODUCED")
-    if ('Layout.preferredHeight: root.compactTallerEditor ? 34 : 40'
-        not in host_qml or 'verticalSpaceFactor' not in stereo_qml
+    p2_qml=blob("HEAD", "ui/qml/StreamingTruePeakLimiterEditor.qml")
+    if ("root.height < 470" in host_qml
+        or "hostSpaceFactor" in host_qml
+        or "root.height < 380" in stereo_qml
+        or "height < 390" in p2_qml or "root.compact ?" in p2_qml):
+        raise AssertionError("M18_PO_VERTICAL_HEADER_OR_P2_JUMP_REINTRODUCED")
+    if ('anchors.margins: 12' not in host_qml
+        or 'Layout.minimumHeight: 40' not in host_qml
+        or 'Layout.maximumHeight: 40' not in host_qml
+        or 'verticalSpaceFactor' not in stereo_qml
+        or 'verticalSpaceFactor' not in p2_qml
         or 'm18WavOutputRightAlignSpacer' not in host_qml):
-        raise AssertionError("M18_PO_STABLE_HEADER_OR_WAV_ALIGNMENT_MISSING")
+        raise AssertionError("M18_PO_EQ_HEADER_PARITY_OR_WAV_ALIGNMENT_MISSING")
     for path in sorted(M18_APPROVED_GUI_DELTA):
         if path in M18_WAV_OUTPUT_UI_BLOBS:
             actual = git("rev-parse", "HEAD:" + path).decode().strip()
