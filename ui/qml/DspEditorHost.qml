@@ -1062,9 +1062,13 @@ Rectangle {
                             && admissions.length === 6
                             && admissions[rateRow.index] === true
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 25
-                        Layout.minimumHeight: 25
-                        Layout.maximumHeight: 25
+                        // Six compact 23lp rows reclaim 12lp BELOW
+                        // the now-common 40lp EQ header. The radio itself
+                        // is 23lp; the popup stays wholly onscreen at min
+                        // 1184x688 without changing the header or scrolling.
+                        Layout.preferredHeight: 23
+                        Layout.minimumHeight: 23
+                        Layout.maximumHeight: 23
                         radius: 3
                         color: chosen ? Qt.alpha(root.activeFamilyAccent, 0.15) : "#142B3C"
                         border.width: chosen ? 1 : 0
