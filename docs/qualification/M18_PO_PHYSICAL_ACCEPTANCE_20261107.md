@@ -160,3 +160,45 @@ overall L1 Full Qualification and `main` merge remain NOT AUTHORIZED.
 
 **Status: PARTIAL PHYSICAL ACCEPTANCE.** Remaining checklist items
 are not evidenced by the screenshots and must not be marked PASS.
+
+
+## 15 November 2026 — M17 Rate & Time direct WAV export controls (non-FQ candidate)
+
+Before the next physical M24 replay, the PO's chosen UX is a compact
+`WAV OUTPUT` footer in the existing M17 `Rate & Time` popup rather than
+a new DSP/editor window or an additional format wizard. The view offers
+two explicit actions: `EXPORT PCM24` (TPDF dither) and `EXPORT FLOAT32`
+(IEEE floating point, no dither). They share the existing single Product
+`M18ProductExportViewModel::beginExport(destination, formatIndex)`,
+one SaveFile dialog, worker progress/Cancel/ACK, readback SHA receipt,
+no-overwrite, SOURCE/Project/MASTER epoch guards and the existing M17
+certificate. No M18 post-quantization TP veto is reintroduced.
+
+The buttons are disabled until `canExport` is genuinely true for an
+exact M17 verified full Master. Only the format selected by the button
+is handed to M18; cancelling the destination dialog does **not** change
+the persisted Project output preference. On successful choice, M18
+writes the canonical preference itself through `chooseM18WavEncoding`;
+no QML code handles or rounds the uint64 dither seed. The File menu's
+pre-existing export modal remains available as a backward-compatible
+secondary route.
+
+Physical checks in addition to the above A01–A15, on the **new exact SHA**:
+
+- B01: At no SOURCE and after M17 becomes stale, both popup buttons are
+  disabled, without changing `canExport` or the old M18 model.
+- B02: With M17 verified, `EXPORT PCM24` directly opens SaveFile; 
+  verified receipt is 24-bit PCM with TPDF, no prior encoding modal.
+- B03: `EXPORT FLOAT32` does the same for Float32 with no dither.
+  Each format requires a NEW destination, preserving the other WAV.
+- B04: Cancel SaveFile: no worker begins, no WAV delivered, the
+  Project's previously persisted WAV choice is unchanged.
+- B05: Docked and floating M17 windows both invoke the same Main-owned
+  M18 transaction. Small editor geometry must scroll instead of
+  clipping either action; existing six MASTER rate options, TIME, memory
+  and CALIBRATE remain available.
+- B06: While a delivery is running, second export is disabled, existing
+  files are not overwritten, and Cancel/ACK/Source invalidation behave
+  exactly as in A05–A12.
+
+These additions require Qt native UI inspection, not a CI-only PASS.
