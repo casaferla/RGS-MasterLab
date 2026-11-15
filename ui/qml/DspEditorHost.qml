@@ -207,15 +207,18 @@ Rectangle {
             || root.activeModule.editorContentKey === "M20_ANALYSIS"
             || root.activeModule.editorContentKey === "M21_ANALYSIS")
 
-    // 2026-11-15 PO physical replay: Input Gain / Parametric EQ is
-    // the absolute header geometry reference. ALL editors share the same
-    // top/side inset, vertical gaps and undock/title/context row height,
-    // irrespective of active module and vertical window size. Responsive
-    // behavior is allowed ONLY BELOW the common 40lp header.
+    // PO physical replay: ALL editors share the exact Parametric-EQ
+    // 12lp inset and 40lp undock/title/context header at EVERY window
+    // height. At a genuinely compact 680x338 host that fixed header
+    // leaves 266lp for Stereo/M-S, whose graph+controls need 269lp
+    // with 8lp between header and body. Reclaim 6lp ONLY from the
+    // below-header gap, without resizing or moving the header itself.
+    // This selection depends on editor TYPE, never on window height:
+    // no vertical snap or moving title can recur on resize.
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 12
-        spacing: 8
+        spacing: root.compactTallerEditor ? 2 : 8
 
         RowLayout {
             objectName: "dspHostHeaderRegion"
