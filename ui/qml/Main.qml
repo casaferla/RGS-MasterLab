@@ -72,6 +72,9 @@ ApplicationWindow {
     // The requested one-shot button format is NOT a second Project
     // preference. A cancelled SaveFile leaves the stored format untouched.
     property int m18PendingExportFormatIndex: -1
+    // After the SaveFile action, M17 displays the encoding progress inside
+    // its copper GR well. Only a terminal outcome opens the receipt dialog.
+    property bool m18AwaitingExportReceipt: false
     function requestVerifiedWavExport(formatIndex) {
         if ((formatIndex !== 0 && formatIndex !== 1)
             || !root.appM18ExportModel
@@ -555,8 +558,18 @@ ApplicationWindow {
             root.m18PendingExportFormatIndex = -1
             const model = root.appM18ExportModel
             if (!model) return
-            model.beginExport(selectedFile, formatIndex)
-            m18ExportProgressDialog.open()
+            root.m18AwaitingExportReceipt = true
+            if (!model.beginExport(selectedFile, formatIndex)) {
+                root.m18AwaitingExportReceipt = false
+                // Validation/refusal has no running worker; show native error.
+                m18ExportProgressDialog.open()
+                return
+            }
+            // A very small WAV may already be terminal at the first poll.
+            if (!model.exportInProgress && model.canAcknowledge) {
+                root.m18AwaitingExportReceipt = false
+                m18ExportProgressDialog.open()
+            }
         }
         onRejected: root.m18PendingExportFormatIndex = -1
     }
@@ -593,15 +606,29 @@ ApplicationWindow {
         onAccepted: root.requestVerifiedWavExport(root.m18ExportFormatIndex)
     }
 
-    // Modeless by design: encoding and readback run on the detached M18
-    // worker; Qt retains normal responsiveness and the Product Single
-    // Writer gate prevents stale Source/Project edits during final commit.
+    // Await the terminal M18 outcome without a popup during encoding.
+    // The genuine M18 ViewModel owns all lifecycle and readback state.
+    Connections {
+        target: root.appM18ExportModel
+        function onChanged() {
+            const model = root.appM18ExportModel
+            if (root.m18AwaitingExportReceipt && model
+                && !model.exportInProgress && model.canAcknowledge) {
+                root.m18AwaitingExportReceipt = false
+                m18ExportProgressDialog.open()
+            }
+        }
+    }
+
+    // Result-only dialog: the SAME native worker, error/sha receipt and ACK
+    // as before. During active export, the M17 GR bay hosts the progress
+    // bar; restoring GR is automatic when exportInProgress becomes false.
     Dialog {
         id: m18ExportProgressDialog
         objectName: "m18ExportProgressDialog"
         parent: Overlay.overlay
         anchors.centerIn: parent
-        title: "Master WAV delivery"
+        title: "Master WAV delivery result"
         modal: false
         closePolicy: Popup.NoAutoClose
         width: Math.min(480, root.width - 48)
@@ -615,19 +642,12 @@ ApplicationWindow {
                 text: root.appM18ExportModel
                     ? root.appM18ExportModel.statusText : "UNAVAILABLE"
             }
-            ProgressBar {
-                Layout.fillWidth: true
-                from: 0
-                to: 1
-                value: root.appM18ExportModel
-                    ? root.appM18ExportModel.encodedProgress : 0
-            }
             Label {
                 Layout.fillWidth: true
                 color: root.textSecondary
                 wrapMode: Text.Wrap
-                text: "Encoded progress is not delivery confirmation. "
-                    + "The WAV is delivered only after filesystem readback."
+                text: "A WAV is verified delivered only after independent "
+                    + "filesystem readback, never at 100% encoded frames."
             }
             Label {
                 Layout.fillWidth: true
