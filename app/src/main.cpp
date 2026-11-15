@@ -1627,7 +1627,41 @@ int main(int argc, char* argv[])
                 const bool geometry=mainWindow->width()==1184
                     && mainWindow->height()==688;
                 const bool dpi=std::abs(ratio-1.5)<0.051;
-                const bool saved=geometry && dpi && !file.isEmpty()
+                // M18 PO 2026-11-15: prove the TWO real WAV actions, all
+                // six rate choices, CALIBRATE and the popup frame fit at the
+                // Product MINIMUM. Do not use visual mockups or scrollbars.
+                auto* panel=qobject_cast<QQuickItem*>(
+                    mainWindow->findChild<QObject*>(
+                        QStringLiteral("m17RateTimePanel")));
+                const auto inside=[panel](const QString& name) {
+                    auto* child=panel ? panel->findChild<QQuickItem*>(name)
+                                      : nullptr;
+                    if (!child || !child->isVisible() || !panel) return false;
+                    const auto pos=child->mapToItem(panel,QPointF(0,0));
+                    return pos.x() >= -1.0 && pos.y() >= -1.0
+                        && pos.x()+child->width() <= panel->width()+1.0
+                        && pos.y()+child->height() <= panel->height()+1.0;
+                };
+                const bool noScroll=panel
+                    && !panel->property("contentY").isValid()
+                    && !panel->property("contentHeight").isValid();
+                bool allRates=true;
+                for(int i=0;i<6;++i) {
+                    allRates=allRates && inside(
+                        QStringLiteral("m17MasterRateOption_%1").arg(i));
+                }
+                const bool wavUiFits=noScroll && allRates
+                    && inside(QStringLiteral("m17ExportPcm24"))
+                    && inside(QStringLiteral("m17ExportFloat32"))
+                    && inside(QStringLiteral("m17RateCalibrationButton"));
+                std::fprintf(stdout,
+                    "M18_WAV_RATE_TIME_MINIMUM_1184x688=%s popup_panel_w=%.1f h=%.1f no_scroll=%d rates=%d\\n",
+                    wavUiFits ? "PASS" : "FAIL",
+                    panel ? panel->width() : -1.0,
+                    panel ? panel->height() : -1.0,
+                    noScroll?1:0,allRates?1:0);
+                const bool saved=geometry && dpi && wavUiFits
+                    && !file.isEmpty()
                     && !image.isNull() && image.save(file,"PNG");
                 std::fprintf(stdout,
                     "M17_REAL_MAIN_QT_LOGICAL=%dx%d DPR=%.3f PHYSICAL=%dx%d SAVED=%d\n",
