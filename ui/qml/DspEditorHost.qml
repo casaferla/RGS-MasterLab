@@ -207,16 +207,24 @@ Rectangle {
             || root.activeModule.editorContentKey === "M20_ANALYSIS"
             || root.activeModule.editorContentKey === "M21_ANALYSIS")
 
+    // Avoid a binary 470px host-header break: it used to jump the title,
+    // top controls and M17 popover in one frame when resizing vertically.
+    // Reserve the SAME title/control geometry at every supported height.
+    // Only free outer padding flows continuously through a bounded range.
+    readonly property real hostSpaceFactor:
+        Math.max(0, Math.min(1, (root.height - 350) / 120))
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: root.compactTallerEditor && root.height < 470 ? 8 : 12
-        spacing: root.compactTallerEditor && root.height < 470 ? 5 : 8
+        anchors.margins: 8 + 4 * root.hostSpaceFactor
+        spacing: 5 + 3 * root.hostSpaceFactor
 
-        // Host Header Strip (40 lp)
+        // Host Header Strip (40 lp): NEVER shrink when resizing.
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactTallerEditor && root.height < 470 ? 34 : 40
+            Layout.minimumHeight: 40
+            Layout.preferredHeight: 40
+            Layout.maximumHeight: 40
             spacing: 12
 
             // Preserve the EXACT old 22px slot: the module title's X
@@ -1411,6 +1419,14 @@ Rectangle {
                                 anchors.fill: parent
                             }
                         }
+                    }
+                    // Consume all spare width BEFORE both export actions:
+                    // FLOAT32's right edge now aligns exactly with CALIBRATE.
+                    // This flexible spacer adds no height and no scrolling.
+                    Item {
+                        objectName: "m18WavOutputRightAlignSpacer"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                     }
                     StudioButton {
                         objectName: "m17ExportPcm24"
