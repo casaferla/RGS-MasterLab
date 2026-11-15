@@ -423,9 +423,17 @@ Item {
             // At the real 680x338 compact host the stable 30lp top row
             // leaves 129lp here (30+4+105+4+129=272). The previous
             // 133lp hard MINIMUM forced this well 4lp below the editor.
-            // Keep 133lp as PREFERRED; permit only the missing 4lp to
-            // compress at the floor. Never clip or scroll the editor.
-            Layout.preferredHeight: 133 + 33 * root.verticalSpaceFactor
+            // The graph owns its 105lp minimum and fills the surplus.
+            // Merely lowering this well's minimum did NOT shrink it:
+            // its preferred 133lp still yielded y=276 in a 272lp editor.
+            // Cap the PREFERRED value to the real residual height.
+            // Preserve 133lp when there is room and keep all numeric
+            // controls visible; never clip or scroll the editor.
+            Layout.preferredHeight: Math.min(
+                133 + 33 * root.verticalSpaceFactor,
+                Math.max(129 + 33 * root.verticalSpaceFactor,
+                    root.height - 30 - 4
+                        - (105 + 45 * root.verticalSpaceFactor) - 4))
             Layout.minimumHeight: 129 + 33 * root.verticalSpaceFactor
             radius: 6
             color: "#12243F"

@@ -69,6 +69,7 @@
 #include <optional>
 #include <variant>
 #include <QTimer>
+#include <QEventLoop>
 
 #include <cstdio>
 #include <cstdlib>
@@ -1692,15 +1693,29 @@ int main(int argc, char* argv[])
             const auto wellPoint=[mainWindow,&dspChainAdapterModel](
                 const TopLeftSpec& spec) ->std::optional<QPointF> {
                 dspChainAdapterModel.setSelectedIndex(spec.moduleIndex);
-                QCoreApplication::processEvents();
-                auto* editor=mainWindow->findChild<QQuickItem*>(
-                    QString::fromLatin1(spec.editorName));
-                auto* well=mainWindow->findChild<QQuickItem*>(
-                    QString::fromLatin1(spec.wellName));
-                if(!editor || !well || !editor->isVisible()
-                    || !well->isVisible() || well->width()<=0
-                    || well->height()<=0) return std::nullopt;
-                return well->mapToItem(editor,QPointF(0,0));
+                // An editor selected for the first time can be created by
+                // a QML Loader only after an event-loop turn. Do not
+                // classify its not-yet-instantiated well as anchor drift:
+                // wait for genuine visible nonzero Qt geometry, then test
+                // the exact same top-left coordinates at every size.
+                const auto sample=[&]() -> std::optional<QPointF> {
+                    auto* editor=mainWindow->findChild<QQuickItem*>(
+                        QString::fromLatin1(spec.editorName));
+                    auto* well=mainWindow->findChild<QQuickItem*>(
+                        QString::fromLatin1(spec.wellName));
+                    if(!editor || !well || !editor->isVisible()
+                        || !well->isVisible() || well->width()<=0
+                        || well->height()<=0) return std::nullopt;
+                    return well->mapToItem(editor,QPointF(0,0));
+                };
+                for(int attempt=0;attempt<12;++attempt) {
+                    QCoreApplication::processEvents();
+                    if(const auto point=sample()) return point;
+                    QEventLoop settle;
+                    QTimer::singleShot(25,&settle,&QEventLoop::quit);
+                    settle.exec();
+                }
+                return std::nullopt;
             };
             mainWindow->setWidth(1184);
             mainWindow->setHeight(688);
