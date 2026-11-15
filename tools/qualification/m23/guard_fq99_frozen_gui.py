@@ -55,7 +55,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
     "ui/qml/DspEditorHost.qml": "560761d8311324e7cf08fd21a86a121ab241bdbe",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
-    "ui/qml/StereoMsEditor.qml": "26fb86ff81aa29ce0c9b4a441b92acad7897e5cb",
+    "ui/qml/StereoMsEditor.qml": "793696e5119234f1a319b46c3dae85e4c8de8ae2",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
     "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
@@ -276,7 +276,9 @@ def exact_p2_integrated_gui_pin() -> bool:
     # a higher window adds top or left padding. Guard both source
     # properties and real scene coordinates (main.cpp Qt Product gate).
     if ('        spacing: 4\n\n        RowLayout' not in stereo_qml
-        or 'Layout.preferredHeight: 23' not in stereo_qml
+        or 'Layout.minimumHeight: 30' not in stereo_qml
+        or 'Layout.preferredHeight: 30' not in stereo_qml
+        or 'Layout.maximumHeight: 30' not in stereo_qml
         or '        anchors.margins: 8\n        spacing: 5' not in p2_qml
         or '                anchors.margins: 9\n' not in p2_qml
         or 'anchors.margins: 8 + ' in p2_qml
