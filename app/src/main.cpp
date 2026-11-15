@@ -1362,7 +1362,10 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 
-    if (deploySmoke && !p2GuiSmoke && !engine.rootObjects().isEmpty()) {
+    // An explicit real-Main M17/M18 geometry probe must run its delayed
+    // physical-layout checks, not exit through the zero-delay deploy smoke.
+    if (deploySmoke && !p2GuiSmoke && !m17MainEvidence
+        && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
     }
     // Product Qt smoke of the actual research-only fifth DSP and its QML
