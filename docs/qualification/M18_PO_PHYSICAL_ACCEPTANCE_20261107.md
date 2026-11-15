@@ -398,3 +398,56 @@ geometry remain identical. The gap depends on the module type rather
 than the window height, so cannot recreate an animated/stepped header
 drift. Both original Windows M23 CTest and Windows Qt Product
 geometry gates remain mandatory. Requalification pending exact SHA CI.
+
+
+## 2026-11-15 — PO physical #22: main well top-left drift at larger windows
+
+PO physically tested `RGS-P2-I2-Win64-RESEARCH-ONLY-22`
+(commit `2934cfcf0649ea62f5dc09cfcea2f08347df2dde`;
+focused CI #43742913524 7/7 green) and supplied **seven Windows
+screenshots** at several real window dimensions. Shared Undock/title/
+context now remain correctly aligned (the original header regression
+is resolved). However, the PO identified TWO further local layout
+regressions **below** the unchanged module headers:
+
+- `StereoMsEditor.qml` enlarged the first `ColumnLayout.spacing`
+  from 4 toward 7lp, and its `SPATIAL CONTROL` row's preferred
+  height from 23 toward 27lp as the editor grows. This moved the
+  **top-left of the rounded STEREO WIDTH RESPONSE well downward**
+  with vertical window expansion. The rounded output goniometer
+  shares that upper visual row.
+- `StreamingTruePeakLimiterEditor.qml` increased the OUTER
+  `ColumnLayout.anchors.margins` from 8 toward 14lp with height,
+  translating the **rounded CEILING/DRIVE main panel both right and
+  down**. Its nested `ColumnLayout.anchors.margins` increased from
+  9 toward 20lp as well, causing unnecessary inner control drift.
+
+**PO rule:** The top-left coordinates of each resizable primary
+container relative to its owning editor are exactly its
+minimum-window coordinates and MUST NOT change with increased
+window width or height. Its size may grow rightward and downward.
+No scrolling or increase of the 1184×688 Product minimum, no
+changes to the Parametric EQ 40lp shared title/Undock header, P2
+streaming math, DSP parameters, WAV export, or existing validated
+M18 verification contracts.
+
+The nonrelease focused patch pins Stereo/M-S's upper header preferred
+height at 23lp and root spacing at 4lp, preserving the natural
+StudioButton minimum so Reset cannot be clipped. P2 pins the outer
+8lp margin and outer 5lp spacing, and its inner 9lp margin, keeping
+the proven native 36px Consolas readouts / sliders. Continuous
+interior height allocation remains allowed, never at the cost of
+an externally translated primary panel. The Windows Product Qt CI
+now compares real `mapToItem(editor)` (x,y) for
+`stereoMsActiveSurface` and `streamingP2MainPanel` against
+1184×688 at four window sizes (1184×688, 1184×735,
+1350×688, 1350×735), tolerance 0.55lp. Existing compact
+680×338 M23 no-scroll Qt fixtures remain mandatory.
+
+**Status:** patch not yet physically accepted. If the CI fails,
+inspect the exact well coordinates and real Qt geometry; do not
+weaken the bounds or exempt these modules. Review adjacent
+goniometer, Stereo/M-S bottom control and P2 inner control groups
+during the PO replay as a separate follow-up—avoid inventing an
+overlapping fixed top-left arrangement for stacked/side-by-side
+children whose upstream sibling expands.
