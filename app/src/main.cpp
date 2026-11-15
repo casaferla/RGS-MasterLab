@@ -54,6 +54,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QQuickItem>
 #include <QImage>
 #include <QFont>
@@ -1708,9 +1709,23 @@ int main(int argc, char* argv[])
                 wellPoint(wellSpecs[0]),wellPoint(wellSpecs[1])
             }};
             bool allTopLeftAnchors=true;
+            // Windows CI's HyperVMonitor exposes just 1200 physical
+            // screen pixels: a 1350-wide QWindow request is CLAMPED and
+            // Qt emits a warning, which the strict startup contract
+            // correctly treats as failure. Never manufacture a horizontal
+            // PASS from an unsupported requested size. Exercise 1350
+            // ONLY on a real display with sufficient available width.
+            const auto* screen=mainWindow->screen();
+            const bool canTestWide=screen
+                && screen->availableGeometry().width()>=1400;
+            std::fprintf(stdout,
+                "RGS_GUI_REAL_HORIZONTAL_RESIZE=%s available_screen_width=%d\n",
+                canTestWide?"RUN":"NOT_TESTABLE_ON_RUNNER",
+                screen?screen->availableGeometry().width():-1);
             const std::array<QSize,4> testedSizes{{
                 QSize{1184,688},QSize{1184,735},
-                QSize{1350,688},QSize{1350,735}
+                QSize{canTestWide?1350:1184,688},
+                QSize{canTestWide?1350:1184,735}
             }};
             for(const auto& size:testedSizes) {
                 mainWindow->setWidth(size.width());
