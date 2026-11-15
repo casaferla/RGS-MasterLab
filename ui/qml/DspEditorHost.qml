@@ -63,10 +63,32 @@ Rectangle {
     // encoding, but cannot grant consent, choose a path or publish the WAV.
     property var masterExportModel: null
     property var masterExportHandler: null
+    property int masterExportFormatIndex: 0
+    // A result is retained by the native M18 transaction until explicit ACK.
+    // Track one actual active worker to reveal the inline receipt after it
+    // finishes, without opening any separate modal window.
+    property bool m18SawActiveExport: false
+    readonly property bool m18ReceiptReady: root.masterExportModel
+        && root.masterExportModel.canAcknowledge
+    readonly property bool m18ExportFailed: root.masterExportModel
+        && root.masterExportModel.errorText.length > 0
     readonly property bool canExportVerifiedWav: root.isLimiterEditor
         && !!root.masterExportModel && root.masterExportModel.canExport
     readonly property bool m18ExportActive: root.isLimiterEditor
         && !!root.masterExportModel && root.masterExportModel.exportInProgress
+    Connections {
+        target: root.masterExportModel
+        function onChanged() {
+            const model = root.masterExportModel
+            if (!model || !root.isLimiterEditor) return
+            if (model.exportInProgress) {
+                root.m18SawActiveExport = true
+            } else if (root.m18SawActiveExport && model.canAcknowledge) {
+                root.m18SawActiveExport = false
+                rateTimePopup.open()
+            }
+        }
+    }
     readonly property bool canListenPreparedMaster: root.isLimiterEditor
         && !root.monitorExclusive && !!root.terminalMonitorViewModel
         && root.terminalMonitorViewModel.canInstall
@@ -1272,13 +1294,87 @@ Rectangle {
                     Layout.minimumHeight: 32
                     Layout.maximumHeight: 32
                     spacing: 6
-                    Text {
-                        text: "WAV OUTPUT"
-                        Layout.preferredWidth: 90
-                        color: "#D1E0EB"
-                        font.family: "Segoe UI"
-                        font.pixelSize: 10
-                        font.weight: Font.DemiBold
+                    // The SAME fixed 120px slot conveys status, SHA and
+                    // ACK. It never adds a row, scroll or moves WAV buttons.
+                    RowLayout {
+                        objectName: "m18WavInlineReceipt"
+                        Layout.minimumWidth: 120
+                        Layout.preferredWidth: 120
+                        Layout.maximumWidth: 120
+                        spacing: 2
+                        Text {
+                            objectName: "m18WavInlineResult"
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                            color: root.m18ExportFailed ? "#F0A5A5"
+                                : root.m18ReceiptReady
+                                  && root.masterExportModel.statusText === "VERIFIED DELIVERED"
+                                  ? "#B6D6CA" : "#D1E0EB"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                            text: {
+                                const m = root.masterExportModel
+                                if (!m) return "WAV OUTPUT"
+                                if (root.m18ExportActive) return "EXPORTING"
+                                if (m.canAcknowledge) {
+                                    if (m.statusText === "VERIFIED DELIVERED")
+                                        return root.masterExportFormatIndex === 0
+                                            ? "PCM24 ✓" : "FLOAT32 ✓"
+                                    return m.statusText === "CANCELLED"
+                                        ? "CANCEL" : "FAILED"
+                                }
+                                if (root.m18ExportFailed) return "ERROR"
+                                return "WAV OUTPUT"
+                            }
+                            HoverHandler { id: m18ResultHover }
+                            ToolTip.text: {
+                                const m = root.masterExportModel
+                                if (!m) return "No verified WAV delivered."
+                                if (m.errorText.length > 0) return m.errorText
+                                if (m.verifiedSha256.length === 64)
+                                    return "Verified WAV SHA-256: " + m.verifiedSha256
+                                return "Delivery requires independent WAV readback."
+                            }
+                            ToolTip.visible: m18ResultHover.hovered
+                                && m18ResultDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m18ResultDwell
+                                anchors.fill: parent
+                            }
+                            Accessible.name: text + " · " + ToolTip.text
+                        }
+                        Button {
+                            objectName: "m18CopyVerifiedSha"
+                            visible: !!root.masterExportModel
+                                && root.masterExportModel.verifiedSha256.length === 64
+                                && root.m18ReceiptReady
+                            Layout.preferredWidth: visible ? 30 : 0
+                            Layout.preferredHeight: 24
+                            text: "SHA"
+                            padding: 0
+                            onClicked: root.masterExportModel.copyVerifiedSha256()
+                            Accessible.name: "Copy verified WAV SHA-256 to clipboard"
+                            ToolTip.text: "Copy full SHA-256 of the verified delivered WAV"
+                            ToolTip.visible: hovered
+                        }
+                        Button {
+                            objectName: "m18AcknowledgeExport"
+                            visible: root.m18ReceiptReady
+                            Layout.preferredWidth: visible ? 28 : 0
+                            Layout.preferredHeight: 24
+                            text: "OK"
+                            padding: 0
+                            onClicked: {
+                                if (root.masterExportModel
+                                    && root.masterExportModel.acknowledgeExport())
+                                    root.m18SawActiveExport = false
+                            }
+                            Accessible.name: "Acknowledge M18 WAV delivery result"
+                            ToolTip.text: "Acknowledge the current WAV result to enable another export."
+                            ToolTip.visible: hovered
+                        }
                     }
                     StudioButton {
                         objectName: "m17ExportPcm24"
