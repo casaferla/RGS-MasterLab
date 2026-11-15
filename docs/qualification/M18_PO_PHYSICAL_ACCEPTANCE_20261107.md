@@ -276,3 +276,47 @@ and subsequent physical visual confirmation.
 SHA match and core in-place progress/receipt interaction are supported.
 Remaining destructive, cancellation, stale-epoch, Project SaveAs and
 whole-M24 physical gates remain open. No FQ or release claim.
+
+
+## Physical PO UI replay — 2026-11-15, vertical resize / Audacity
+
+Seven more actual Windows screenshots supplied by the PO show that the
+`EXPORT PCM24` and `EXPORT FLOAT32` actions must be **right-aligned** in
+the already fixed-height WAV OUTPUT footer; the right edge of Float32 must
+coincide with the right edge of CALIBRATE. No wider popup, new row,
+scrolling or shifted SHA/OK result slot is authorized.
+
+The PO also demonstrated two discrete vertical-layout jumps as the
+Product window is resized:
+
+1. In the shared `DspEditorHost.qml`, the `compactTallerEditor &&
+   root.height < 470` ternaries changed top/bottom padding, spacing and
+   **header height** in one frame. This affects Stereo/M-S and later
+   editor keys; it is NOT a reason to change earlier FQ99 Gain/EQ/
+   Compressor layout.
+2. In `StereoMsEditor.qml`, a separate hard `root.height < 380`
+   threshold abruptly changed its header row, graph minimum and lower
+   control well height/margins. This explains Stereo/M-S's two jumps.
+
+The nonrelease candidate removes these discrete breakpoint rules,
+retains the already physically proven compact 34lp header for *only*
+the affected editor-key group across supported heights, continuously
+interpolates compact-group outer padding, and continuously interpolates
+Stereo/M-S inner geometry through a bounded height range. Earlier
+Input Gain / Parametric EQ / Compressor header and padding remain
+untouched. The existing minimum-size Qt gate now also verifies real
+Float32/CALIBRATE right-edge coincidence (<=2px) and compact M17
+34lp header at 1184x688. No FQ/physical PASS is inferred until
+the new exact-SHA green and PO resize replay.
+
+**Independent format investigation:** The supplied
+`24(1).wav` actually has RIFF WAVE format tag `1`, 24 bits,
+48000 Hz, stereo, matching SHA
+`eee19b50715160eec33ef5eabb461d16ce8a0688dd0b1bd642f819afceb25da7`.
+The companion `32(1).wav` has format tag `3`, IEEE Float32,
+48000 Hz stereo, SHA
+`f5b5dbacacab8c2d1278a9ad61f94d7c737a7dcd5401363834927842c2a7de75`.
+Audacity's 32-bit floating-point internal sample representation on import
+does NOT imply that the on-disk PCM24 file is Float32; see
+https://manual.audacityteam.org/man/importing_audio.html.
+Neither the M18 codec nor the already delivered WAV bytes requires a fix.
