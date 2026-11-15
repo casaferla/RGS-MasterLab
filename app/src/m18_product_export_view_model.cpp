@@ -1,4 +1,6 @@
 #include "m18_product_export_view_model.hpp"
+#include <QGuiApplication>
+#include <QClipboard>
 #include "internal/m23_alpha_diagnostic_report.hpp"
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include <QFileInfo>
@@ -267,6 +269,15 @@ bool M18ProductExportViewModel::acknowledgeExport()
     lastError_.clear();
     pollTimer_.stop();
     emit changed();
+    return true;
+}
+
+bool M18ProductExportViewModel::copyVerifiedSha256()
+{
+    if(!owner_thread()||!action_->can_acknowledge())return false;
+    const auto sha=verified_sha256();
+    if(sha.length()!=64||!QGuiApplication::clipboard())return false;
+    QGuiApplication::clipboard()->setText(sha);
     return true;
 }
 
