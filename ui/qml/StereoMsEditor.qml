@@ -21,10 +21,10 @@ Item {
     // editable Stereo/M-S scalar controls, regardless of row or unit.
     readonly property int numericFieldWidth: 86
     readonly property color sliderFill: Qt.rgba(74 / 255, 154 / 255, 136 / 255, 0.38)
-    // The prior hard 'height < 380' switch collapsed the entire stereo
-    // layout in one frame while resizing. Interpolate its original compact
-    // and regular dimensions continuously; preserve both endpoint sizes
-    // without discontinuous geometry or a scroll container.
+    // The user-approved minimum-size top-left is immutable. The visual
+    // wells begin below a FIXED 23lp Spatial Control row and a FIXED 4lp
+    // gap, even if the graph and control areas grow towards the bottom.
+    // Only dimensions BELOW this invariant may interpolate. No scroll.
     readonly property real verticalSpaceFactor:
         Math.max(0, Math.min(1, (root.height - 300) / 110))
 
@@ -32,11 +32,13 @@ Item {
     // observational M/S output well: its coordinates must never be stretched.
     ColumnLayout {
         anchors.fill: parent
-        spacing: 4 + 3 * root.verticalSpaceFactor
+        spacing: 4
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 23 + 4 * root.verticalSpaceFactor
+            Layout.minimumHeight: 23
+            Layout.preferredHeight: 23
+            Layout.maximumHeight: 23
             spacing: 8
             Text {
                 text: "SPATIAL CONTROL"
