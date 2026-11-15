@@ -194,11 +194,26 @@ Physical checks in addition to the above A01–A15, on the **new exact SHA**:
 - B04: Cancel SaveFile: no worker begins, no WAV delivered, the
   Project's previously persisted WAV choice is unchanged.
 - B05: Docked and floating M17 windows both invoke the same Main-owned
-  M18 transaction. Small editor geometry must scroll instead of
-  clipping either action; existing six MASTER rate options, TIME, memory
-  and CALIBRATE remain available.
+  M18 transaction. At the 1184x688 Windows minimum, no scrollbar, clipped
+  action, overlapping footer or offscreen popup is allowed. All six
+  MASTER rate choices, TIME, memory, CALIBRATE and both WAV actions must
+  remain visible simultaneously.
 - B06: While a delivery is running, second export is disabled, existing
   files are not overwritten, and Cancel/ACK/Source invalidation behave
   exactly as in A05–A12.
+- B07: During M18 encoding/verification the EXISTING copper ProgressBar
+  in the M17 GR HISTORY lower bay shows the actual encoded fraction
+  with an explicit readback-pending label, not an invented delivered WAV
+  percentage. No second progress window, no additional permanent row,
+  no new progress timer. The existing M17 control row exposes Cancel
+  Export. On terminal VERIFIED/FAILED/CANCELLED, the lower bay restores
+  authentic GR HISTORY (or a genuinely concurrently owned preparation
+  if one exists), and only then opens the original M18 result/sha/ACK
+  dialog. The M16 independent meter is unchanged.
+- B08: The Rate & Time window is strictly NONSCROLLING, including at
+  physical minimum size and while M17 is floating. No modification of
+  FQ99 geometry, app min 1184x688, M19–M21 layout or frozen M16/M17 DSP
+  output. The existing M19–M21 scrolling is a separately tracked future
+  GUI closeout item, not a reason to rewrite analyzer code now.
 
 These additions require Qt native UI inspection, not a CI-only PASS.
