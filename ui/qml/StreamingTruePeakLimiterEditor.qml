@@ -7,9 +7,11 @@ Item {
     objectName: "streamingTruePeakLimiterEditor"
     property var limiterModule: null
     readonly property color copper: "#C4774A"
-    // A hard 390px compact switch used to resize multiple P2 controls
-    // in one frame. Keep the EXACT two historical endpoint geometries,
-    // but interpolate between them while the editor is resized.
+    // Top-left anchoring policy: changing window size may enlarge the
+    // rounded Ceiling/Drive well towards the right and bottom, but may
+    // never translate its compact-minimum top/left edges. Keep all outer
+    // and inner top/left insets at their proven compact minimum. Interior
+    // vertical dimensions can adapt continuously without scrolling.
     readonly property real verticalSpaceFactor:
         Math.max(0, Math.min(1, (root.height - 300) / 155))
     readonly property double ceiling: limiterModule ? limiterModule.ceilingDbTp : -1.0
@@ -17,8 +19,8 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8 + 6 * root.verticalSpaceFactor
-        spacing: 5 + 7 * root.verticalSpaceFactor
+        anchors.margins: 8
+        spacing: 5
         // The DspEditorHost already provides the module title and context.
         // Reserve vertical space for the two Input Gain-sized DSP controls.
 
@@ -34,7 +36,7 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 9 + 11 * root.verticalSpaceFactor
+                anchors.margins: 9
                 spacing: 3 + 9 * root.verticalSpaceFactor
 
                 // Input Gain's large centered numeric readout ABOVE its
