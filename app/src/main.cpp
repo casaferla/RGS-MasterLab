@@ -1616,7 +1616,73 @@ int main(int argc, char* argv[])
         mainWindow->setHeight(688);
         dspChainAdapterModel.setSelectedIndex(5); // real M17 chain adapter
         mainWindow->show();
-        QTimer::singleShot(900, &application, [mainWindow,&application] {
+        QTimer::singleShot(900, &application, [mainWindow,&application,
+                                                  &dspChainAdapterModel] {
+            // PO 2026-11-15: compare REAL undock/title/context scene
+            // coordinates against Parametric EQ, for EVERY active DSP
+            // editor including M16/M17/M19-M21, at two real window sizes.
+            // Unlike checking just the host's size, this detects smooth
+            // vertical misalignment and hard jumps in shared QML geometry.
+            const auto visualPoint=[mainWindow](const char* name) {
+                const auto* item=mainWindow->findChild<QQuickItem*>(
+                    QString::fromLatin1(name));
+                return item && item->isVisible()
+                    ? item->mapToScene(QPointF(0.0,0.0))
+                    : QPointF(-9999.0,-9999.0);
+            };
+            const auto nearPoint=[](const QPointF& a, const QPointF& b) {
+                return std::abs(a.x()-b.x())<=0.55
+                    && std::abs(a.y()-b.y())<=0.55;
+            };
+            bool allHeaderAlign=true;
+            for(const int windowHeight:{688,735}) {
+                mainWindow->setHeight(windowHeight);
+                QCoreApplication::processEvents();
+                dspChainAdapterModel.setSelectedIndex(1); // Parametric EQ
+                QCoreApplication::processEvents();
+                const QPointF baselineGrip=visualPoint("dspHostTearOffGrip");
+                const QPointF baselineTitle=visualPoint("dspHostModuleTitle");
+                const QPointF baselineContext=visualPoint("dspHostWorkflowContext");
+                const auto* heading=mainWindow->findChild<QQuickItem*>(
+                    QStringLiteral("dspHostHeaderRegion"));
+                const bool baselineValid=baselineGrip.x()>0.0
+                    && baselineTitle.x()>0.0 && baselineContext.x()>0.0
+                    && heading && std::abs(heading->height()-40.0)<=0.55;
+                bool sizeAll=baselineValid;
+                for(int i=0;i<dspChainAdapterModel.modules().size();++i) {
+                    dspChainAdapterModel.setSelectedIndex(i);
+                    QCoreApplication::processEvents();
+                    const auto* module=dspChainAdapterModel.selected_module();
+                    const bool equal=module && baselineValid
+                        && nearPoint(visualPoint("dspHostTearOffGrip"),
+                                     baselineGrip)
+                        && nearPoint(visualPoint("dspHostModuleTitle"),
+                                     baselineTitle)
+                        && nearPoint(visualPoint("dspHostWorkflowContext"),
+                                     baselineContext)
+                        && heading && std::abs(heading->height()-40.0)<=0.55;
+                    std::fprintf(stdout,
+                        "RGS_GUI_HEADER_EQ_PARITY window=%d module=%d key=%s aligned=%d title_y=%.2f grip_y=%.2f\n",
+                        windowHeight,i,module
+                            ? module->editor_content_key().toUtf8().constData()
+                            : "(null)",
+                        equal?1:0,visualPoint("dspHostModuleTitle").y(),
+                        visualPoint("dspHostTearOffGrip").y());
+                    sizeAll=sizeAll && equal;
+                }
+                allHeaderAlign=allHeaderAlign && sizeAll;
+            }
+            mainWindow->setHeight(688);
+            dspChainAdapterModel.setSelectedIndex(5); // M17
+            QCoreApplication::processEvents();
+            std::fprintf(stdout,
+                "RGS_GUI_ALL_DSP_HEADERS_MATCH_PARAMETRIC_EQ=%s\n",
+                allHeaderAlign?"PASS":"FAIL");
+            std::fflush(stdout);
+            if(!allHeaderAlign) {
+                application.exit(EXIT_FAILURE);
+                return;
+            }
             auto* popup=mainWindow->findChild<QObject*>(
                 QStringLiteral("m17RateTimePopup"));
             if (!popup || !QMetaObject::invokeMethod(popup,"open")) {
@@ -1701,7 +1767,7 @@ int main(int argc, char* argv[])
                     mainWindow->findChild<QObject*>(
                         QStringLiteral("dspHostHeaderRegion")));
                 const bool headerHeightStable=headerRegion
-                    && std::abs(headerRegion->height()-34.0) <= 1.0;
+                    && std::abs(headerRegion->height()-40.0) <= 1.0;
                 const bool wavUiFits=noScroll && allRates
                     && inside(QStringLiteral("m17ExportPcm24"))
                     && inside(QStringLiteral("m17ExportFloat32"))
