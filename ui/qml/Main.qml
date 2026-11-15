@@ -566,7 +566,8 @@ ApplicationWindow {
                 return
             }
             // A very small WAV may already be terminal at the first poll.
-            if (!model.exportInProgress && model.canAcknowledge) {
+            if (root.m18AwaitingExportReceipt
+                && !model.exportInProgress && model.canAcknowledge) {
                 root.m18AwaitingExportReceipt = false
                 m18ExportProgressDialog.open()
             }
