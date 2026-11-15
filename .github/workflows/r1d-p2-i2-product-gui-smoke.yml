@@ -155,6 +155,15 @@ jobs:
           if ((Get-Item -LiteralPath $shot).Length -lt 10000) { throw "M18_WAV_MINIMUM_QT_EVIDENCE_EMPTY" }
           Write-Host 'M18_WAV_MINIMUM_REAL_QT_NO_SCROLL_AND_CONTAINMENT=PASS'
 
+      - name: Preserve real Qt minimum-size WAV popup evidence even on gate failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-WAV-Qt-Minimum-Evidence-${{ github.run_number }}
+          path: build-p2-product/m18-m17-rate-time-minimum.png
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Publish real Qt full DSP chain screenshot
         uses: actions/upload-artifact@v4
         with:
