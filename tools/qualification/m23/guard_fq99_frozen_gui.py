@@ -47,15 +47,19 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 
 # Explicit PO 2026-11-15: these exact QML blobs are the approved M18
 # WAV-output UX and the additional PO-observed compact vertical-resize fix.
-# The new Stereo/M-S blob removes the second hard breakpoint. Every blob
-# is separately pinned by Git object ID and must rerun full native Qt CI.
+# The new Stereo/M-S blob removes the second hard breakpoint and its
+# 2026-11-15 L1-M24 compact-height correction bounds the preferred controls
+# well to the actual 272lp residual instead of preserving a 4lp overflow.
+# This explicit SHA pin is restricted to THAT reviewed QML change; prior
+# FQ99 and P2 GUI provenance is not reclassified as qualified.
+# Every blob is separately pinned by Git object ID and must rerun native Qt CI.
 # This is a NEW NONRELEASE candidate, not a statement of FQ99 identity.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
     "ui/qml/DspEditorHost.qml": "560761d8311324e7cf08fd21a86a121ab241bdbe",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
-    "ui/qml/StereoMsEditor.qml": "645d3527105d52a1fbe24d7aef0efdf7c8cf647d",
+    "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
     "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
