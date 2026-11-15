@@ -59,6 +59,12 @@ Rectangle {
     // Main owns any RAM-caution consent dialog. The editor is a consumer,
     // not a second private-MASTER authority.
     property var masterListeningHandler: null
+    // M18 export is a Main-owned Product action. The editor may request an
+    // encoding, but cannot grant consent, choose a path or publish the WAV.
+    property var masterExportModel: null
+    property var masterExportHandler: null
+    readonly property bool canExportVerifiedWav: root.isLimiterEditor
+        && !!root.masterExportModel && root.masterExportModel.canExport
     readonly property bool canListenPreparedMaster: root.isLimiterEditor
         && !root.monitorExclusive && !!root.terminalMonitorViewModel
         && root.terminalMonitorViewModel.canInstall
@@ -812,7 +818,9 @@ Rectangle {
         // The popup MUST sit below the action row, not over the Rate &
         // Time button. The popup overlay must never consume its second click.
         y: m17ControlsRow.mapToItem(root, 0, m17ControlsRow.height).y + 6
-        height: Math.max(120, Math.min(290, root.height - y - 8))
+        // Fit at the existing minimum host size; shorter windows scroll the
+        // content instead of clipping the two M18 export actions.
+        height: Math.max(120, Math.min(365, root.height - y - 8))
         // Button toggles open/closed; X and Escape are the other exits.
         // CloseOnPressOutside can consume the button click then re-open.
         closePolicy: Popup.CloseOnEscape
@@ -854,12 +862,19 @@ Rectangle {
                 }
             }
         }
-        contentItem: Item {
+        contentItem: Flickable {
             objectName: "m17RateTimePanel"
             clip: true
+            contentWidth: width
+            contentHeight: rateTimeContent.implicitHeight + 16
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 8
+                id: rateTimeContent
+                x: 8
+                y: 8
+                width: parent.width - 16
                 spacing: 2
                 RowLayout {
                     Layout.fillWidth: true
@@ -1222,6 +1237,80 @@ Rectangle {
                                         root.terminalLimiterViewModel.ceilingDbTp)
                             }
                             Accessible.name: text + " local M17/M16 only; total Prepare ETA unavailable"
+                        }
+                    }
+                }
+                // The two independently labeled format actions are a view
+                // over the EXISTING M18 verified-Master export transaction.
+                // They neither recalculate M17 nor create a new WAV writer.
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: "#27465F"
+                }
+                RowLayout {
+                    objectName: "m17WavExportActions"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 36
+                    spacing: 6
+                    Text {
+                        text: "WAV OUTPUT"
+                        Layout.preferredWidth: 90
+                        color: "#D1E0EB"
+                        font.family: "Segoe UI"
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                    }
+                    StudioButton {
+                        objectName: "m17ExportPcm24"
+                        text: "EXPORT PCM24"
+                        minimumControlWidth: 130
+                        contentPadding: 9
+                        accentColor: root.activeFamilyAccent
+                        showDisabledAccent: true
+                        enabled: root.canExportVerifiedWav
+                            && !!root.masterExportHandler
+                        onClicked: {
+                            if (!root.canExportVerifiedWav
+                                || !root.masterExportHandler) return
+                            rateTimePopup.close()
+                            root.masterExportHandler(0)
+                        }
+                        Accessible.name: "Export verified Master as 24-bit PCM WAV with TPDF dither"
+                        ToolTip.text: "24-bit PCM with TPDF dither. "
+                            + (enabled ? "Choose a NEW WAV filename."
+                                       : "Prepare and verify the full M17 Master first.")
+                        ToolTip.visible: hovered && exportPcm24Dwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: exportPcm24Dwell
+                            anchors.fill: parent
+                        }
+                    }
+                    StudioButton {
+                        objectName: "m17ExportFloat32"
+                        text: "EXPORT FLOAT32"
+                        minimumControlWidth: 135
+                        contentPadding: 9
+                        accentColor: root.activeFamilyAccent
+                        showDisabledAccent: true
+                        enabled: root.canExportVerifiedWav
+                            && !!root.masterExportHandler
+                        onClicked: {
+                            if (!root.canExportVerifiedWav
+                                || !root.masterExportHandler) return
+                            rateTimePopup.close()
+                            root.masterExportHandler(1)
+                        }
+                        Accessible.name: "Export verified Master as IEEE 32-bit floating-point WAV without dither"
+                        ToolTip.text: "IEEE Float32, no dither. "
+                            + (enabled ? "Choose a NEW WAV filename."
+                                       : "Prepare and verify the full M17 Master first.")
+                        ToolTip.visible: hovered && exportFloat32Dwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: exportFloat32Dwell
+                            anchors.fill: parent
                         }
                     }
                 }
