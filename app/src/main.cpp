@@ -1626,7 +1626,14 @@ int main(int argc, char* argv[])
                 const auto image=mainWindow->grabWindow();
                 const bool geometry=mainWindow->width()==1184
                     && mainWindow->height()==688;
-                const bool dpi=std::abs(ratio-1.5)<0.051;
+                // Existing M17 evidence still requires 150% DPI. This
+                // separately marked M18 minimum-window fit gate checks
+                // logical 1184x688 at unscaled 100%, avoiding CI display
+                // cropping while preserving the older 150% proof.
+                const bool m18MinimumOnly=qEnvironmentVariable(
+                    "RGSML_M18_MINIMUM_GUI_ONLY")=="1";
+                const bool dpi=std::abs(
+                    ratio-(m18MinimumOnly ? 1.0 : 1.5))<0.051;
                 // M18 PO 2026-11-15: prove the TWO real WAV actions, all
                 // six rate choices, CALIBRATE and the popup frame fit at the
                 // Product MINIMUM. Do not use visual mockups or scrollbars.
