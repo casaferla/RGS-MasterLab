@@ -218,13 +218,15 @@ Rectangle {
         anchors.margins: 8 + 4 * root.hostSpaceFactor
         spacing: 5 + 3 * root.hostSpaceFactor
 
-        // Host Header Strip (40 lp): NEVER shrink when resizing.
+        // Keep the already physically fitting compact 34 lp header at
+        // ALL heights: no 470px snap, no loss of M17 Rate & Time popup room
+        // at the Windows minimum. Title/context and 32lp buttons fit.
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
-            Layout.minimumHeight: 40
-            Layout.preferredHeight: 40
-            Layout.maximumHeight: 40
+            Layout.minimumHeight: 34
+            Layout.preferredHeight: 34
+            Layout.maximumHeight: 34
             spacing: 12
 
             // Preserve the EXACT old 22px slot: the module title's X
