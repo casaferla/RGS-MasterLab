@@ -65,6 +65,8 @@ Rectangle {
     property var masterExportHandler: null
     readonly property bool canExportVerifiedWav: root.isLimiterEditor
         && !!root.masterExportModel && root.masterExportModel.canExport
+    readonly property bool m18ExportActive: root.isLimiterEditor
+        && !!root.masterExportModel && root.masterExportModel.exportInProgress
     readonly property bool canListenPreparedMaster: root.isLimiterEditor
         && !root.monitorExclusive && !!root.terminalMonitorViewModel
         && root.terminalMonitorViewModel.canInstall
@@ -449,6 +451,7 @@ Rectangle {
             spacing: 8
             StudioButton {
                 visible: root.isLimiterEditor && !root.m17Preparing
+                    && !root.m18ExportActive
                 objectName: "m17PrepareButton"
                 text: "Prepare"
                 minimumControlWidth: 86
@@ -550,6 +553,23 @@ Rectangle {
                 ToolTip.visible: hovered && rateDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
+            }
+            StudioButton {
+                objectName: "m17CancelExportButton"
+                visible: root.m18ExportActive
+                text: root.masterExportModel
+                    && root.masterExportModel.statusText === "CANCELLING"
+                    ? "Cancelling Export…" : "Cancel Export"
+                minimumControlWidth: 128
+                accentColor: root.activeFamilyAccent
+                enabled: root.m18ExportActive && root.masterExportModel.canCancel
+                onClicked: if (root.masterExportModel)
+                    root.masterExportModel.cancelExport()
+                Accessible.name: text
+                ToolTip.text: "Cancel WAV encoding or verification; no file is accepted before readback."
+                ToolTip.visible: hovered && m18CancelDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell { id: m18CancelDwell; anchors.fill: parent }
             }
             StudioButton {
                 objectName: "m17ListenMasterButton"
@@ -818,9 +838,9 @@ Rectangle {
         // The popup MUST sit below the action row, not over the Rate &
         // Time button. The popup overlay must never consume its second click.
         y: m17ControlsRow.mapToItem(root, 0, m17ControlsRow.height).y + 6
-        // Fit at the existing minimum host size; shorter windows scroll the
-        // content instead of clipping the two M18 export actions.
-        height: Math.max(120, Math.min(365, root.height - y - 8))
+        // Fixed fit at the 1184x688 Product minimum. No Flickable, scroll
+        // view, deferred button or increased editor minimum dimensions.
+        height: Math.max(120, Math.min(345, root.height - y - 8))
         // Button toggles open/closed; X and Escape are the other exits.
         // CloseOnPressOutside can consume the button click then re-open.
         closePolicy: Popup.CloseOnEscape
@@ -862,19 +882,13 @@ Rectangle {
                 }
             }
         }
-        contentItem: Flickable {
+        contentItem: Item {
             objectName: "m17RateTimePanel"
             clip: true
-            contentWidth: width
-            contentHeight: rateTimeContent.implicitHeight + 16
-            boundsBehavior: Flickable.StopAtBounds
-            flickableDirection: Flickable.VerticalFlick
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             ColumnLayout {
                 id: rateTimeContent
-                x: 8
-                y: 8
-                width: parent.width - 16
+                anchors.fill: parent
+                anchors.margins: 8
                 spacing: 2
                 RowLayout {
                     Layout.fillWidth: true
@@ -1019,7 +1033,9 @@ Rectangle {
                             && admissions.length === 6
                             && admissions[rateRow.index] === true
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 27
+                        Layout.preferredHeight: 25
+                        Layout.minimumHeight: 25
+                        Layout.maximumHeight: 25
                         radius: 3
                         color: chosen ? Qt.alpha(root.activeFamilyAccent, 0.15) : "#142B3C"
                         border.width: chosen ? 1 : 0
@@ -1251,7 +1267,9 @@ Rectangle {
                 RowLayout {
                     objectName: "m17WavExportActions"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 36
+                    Layout.preferredHeight: 32
+                    Layout.minimumHeight: 32
+                    Layout.maximumHeight: 32
                     spacing: 6
                     Text {
                         text: "WAV OUTPUT"
