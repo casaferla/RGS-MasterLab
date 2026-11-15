@@ -36,9 +36,9 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.minimumHeight: 23
+            // Preferred baseline is invariant; keep the natural
+            // StudioButton minimum so Reset never overlaps the graph.
             Layout.preferredHeight: 23
-            Layout.maximumHeight: 23
             spacing: 8
             Text {
                 text: "SPATIAL CONTROL"
