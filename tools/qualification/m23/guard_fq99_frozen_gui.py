@@ -58,10 +58,13 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # Export TP Limiter; WAV Export now precedes Prepare. Its DspEditorHost
 # blob below is exact-pinned again; pre-existing FQ99/P2 geometry and
 # rendering gates stay mandatory. No new FQ status is asserted.
+# M18 physical B01 2026-11-15: exact-pinned diagnostic-only UI delta.
+# Show the existing Product exportReadinessReason in the fixed receipt slot,
+# without changing verified identity, consent, DSP, layout or button authority.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
-    "ui/qml/DspEditorHost.qml": "9cf931afa4f2e4eecfbe7d2966aae201f9b42916",
+    "ui/qml/DspEditorHost.qml": "ecba730427113f0efe5298a79b133542ad62475a",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",

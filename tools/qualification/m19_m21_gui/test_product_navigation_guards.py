@@ -347,6 +347,14 @@ def test_export_permission_unchanged() -> None:
     assert "fanout.m17_verified_epoch_current()" in binder
     assert "verified==c.candidates.staged()" in binder
     assert "export_readiness_reason(" in binder
+    host = read("ui/qml/DspEditorHost.qml")
+    assert 'return "BLOCKED · "' in host
+    assert 'm.exportReadinessReason' in host
+    assert 'root.masterExportModel.exportReadinessReason' in host
+    assert 'enabled: root.canExportVerifiedWav' in host
+    assert '&& !!root.masterExportHandler' in host
+    assert 'root.masterExportHandler(0)' in host
+    assert 'root.masterExportHandler(1)' in host
 
 
 def test_original_source_open_guard_preserved() -> None:

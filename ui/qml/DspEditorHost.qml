@@ -1329,6 +1329,9 @@ Rectangle {
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             color: root.m18ExportFailed ? "#F0A5A5"
+                                : !root.m18ExportActive && !root.m18ReceiptReady
+                                  && (!root.canExportVerifiedWav || !root.masterExportHandler)
+                                  ? "#F0C87D"
                                 : root.m18ReceiptReady
                                   && root.masterExportModel.statusText === "VERIFIED DELIVERED"
                                   ? "#B6D6CA" : "#D1E0EB"
@@ -1347,6 +1350,13 @@ Rectangle {
                                         ? "CANCEL" : "FAILED"
                                 }
                                 if (root.m18ExportFailed) return "ERROR"
+                                if (!root.canExportVerifiedWav || !root.masterExportHandler) {
+                                    const reason = m.exportReadinessReason
+                                    return "BLOCKED · " + (!root.masterExportHandler
+                                        ? "EXPORT HANDLER UNAVAILABLE"
+                                        : reason && reason.length > 0
+                                          ? reason : "NO VERIFIED EXPORT AUTHORITY")
+                                }
                                 return "WAV OUTPUT"
                             }
                             HoverHandler { id: m18ResultHover }
@@ -1356,6 +1366,10 @@ Rectangle {
                                 if (m.errorText.length > 0) return m.errorText
                                 if (m.verifiedSha256.length === 64)
                                     return "Verified WAV SHA-256: " + m.verifiedSha256
+                                if (!root.canExportVerifiedWav || !root.masterExportHandler)
+                                    return "Export unavailable · " + (!root.masterExportHandler
+                                        ? "EXPORT HANDLER UNAVAILABLE"
+                                        : m.exportReadinessReason)
                                 return "Delivery requires independent WAV readback."
                             }
                             ToolTip.visible: m18ResultHover.hovered
@@ -1452,7 +1466,9 @@ Rectangle {
                         Accessible.name: "Export verified Master as 24-bit PCM WAV with TPDF dither"
                         ToolTip.text: "24-bit PCM with TPDF dither. "
                             + (enabled ? "Choose a NEW WAV filename."
-                                       : "Prepare and verify the full M17 Master first.")
+                                       : "Export unavailable: " + (root.masterExportModel
+                                           ? root.masterExportModel.exportReadinessReason
+                                           : "M18 model missing"))
                         ToolTip.visible: hovered && exportPcm24Dwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {
@@ -1478,7 +1494,9 @@ Rectangle {
                         Accessible.name: "Export verified Master as IEEE 32-bit floating-point WAV without dither"
                         ToolTip.text: "IEEE Float32, no dither. "
                             + (enabled ? "Choose a NEW WAV filename."
-                                       : "Prepare and verify the full M17 Master first.")
+                                       : "Export unavailable: " + (root.masterExportModel
+                                           ? root.masterExportModel.exportReadinessReason
+                                           : "M18 model missing"))
                         ToolTip.visible: hovered && exportFloat32Dwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {
