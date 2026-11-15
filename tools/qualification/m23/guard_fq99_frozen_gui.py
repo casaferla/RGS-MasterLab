@@ -45,6 +45,20 @@ P2_ADDITIONAL = {
 }
 P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 
+# Explicit PO 2026-11-15: only these five QML files may change for the
+# M18 WAV-output UX in M17 Rate & Time and its preexisting copper progress
+# band. All new, independently inspected blobs are pinned by Git object ID.
+# This is a NEW NONRELEASE candidate, not a statement of FQ99 identity.
+# Other original FQ99/P2 controls remain pinned to their prior green base.
+M18_WAV_OUTPUT_UI_BLOBS = {
+    "ui/qml/Main.qml": "5ed7faa8f7c4882b884b955757b17cba1e861fe8",
+    "ui/qml/DspEditorHost.qml": "a7150c788532f4984615e4fd175e83b14ac1fe9e",
+    "ui/qml/DspWorkspace.qml": "5b825b11ea885349fea98d02feeb458a8bd5ffd6",
+    "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
+    "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
+}
+M18_APPROVED_GUI_DELTA = P2_EXPECTED_GUI_DELTA | set(M18_WAV_OUTPUT_UI_BLOBS)
+
 
 
 def git(*args: str) -> bytes:
@@ -225,30 +239,38 @@ def exact_p2_integrated_gui_pin() -> bool:
         git("diff", "--name-only", FQ99, "HEAD", "--", "ui/qml")
         .decode("utf-8").splitlines()
     )
-    if changed != P2_EXPECTED_GUI_DELTA:
+    if changed != M18_APPROVED_GUI_DELTA:
         raise AssertionError(
-            "INTEGRATED_P2_GUI_DELTA_SCOPE_MISMATCH expected="
-            + repr(sorted(P2_EXPECTED_GUI_DELTA))
+            "INTEGRATED_M18_GUI_DELTA_SCOPE_MISMATCH expected="
+            + repr(sorted(M18_APPROVED_GUI_DELTA))
             + " actual=" + repr(sorted(changed)))
-    # The prior P2 research I2 native Qt GUI build/screenshots were green
-    # on exactly these bytes. No unrelated or speculative edits to any
-    # previously qualified common QML file can pass this integration pin.
-    for path in sorted(P2_EXPECTED_GUI_DELTA):
-        if blob("HEAD", path) != blob(P2_INTEGRATION_SOURCE, path):
+    # The five specifically PO-authorized M18 UI blobs must match their
+    # independently inspected exact Git object IDs. This cannot silently
+    # approve arbitrary future changes to previously qualified shared GUI.
+    # Everything else remains byte-identical to the CI-green P2 I2 source.
+    for path in sorted(M18_APPROVED_GUI_DELTA):
+        if path in M18_WAV_OUTPUT_UI_BLOBS:
+            actual = git("rev-parse", "HEAD:" + path).decode().strip()
+            if actual != M18_WAV_OUTPUT_UI_BLOBS[path]:
+                raise AssertionError("M18_WAV_UI_EXACT_BLOB_NOT_APPROVED " + path)
+            if blob("HEAD", path) == blob(P2_INTEGRATION_SOURCE, path):
+                raise AssertionError("M18_WAV_UI_NO_REAL_CHANGE " + path)
+        elif blob("HEAD", path) != blob(P2_INTEGRATION_SOURCE, path):
             raise AssertionError("INTEGRATED_P2_GUI_BLOB_UNPINNED " + path)
     if blob("HEAD", "ui/CMakeLists.txt") != blob(
         P2_INTEGRATION_SOURCE, "ui/CMakeLists.txt"
     ):
         raise AssertionError("INTEGRATED_P2_QML_REGISTRY_UNPINNED")
-    # Existing FQ99 Main/Workspace remain unchanged except the previously
-    # reviewed three analyzer-property links, which the original guard
-    # must still be able to subtract byte-for-byte.
+    # Preserve the old FQ99 delta verification using the prior CI-green
+    # P2 source, not by misrepresenting the new M18 UI as unchanged.
     for path in ("ui/qml/DspWorkspace.qml", "ui/qml/Main.qml"):
-        if normalize(path, blob("HEAD", path)) != blob(FQ99, path):
-            raise AssertionError("QUALIFIED_GUI_EXISTING_CONTENT_CHANGED " + path)
-    print("FQ99_PLUS_P2_INTEGRATED_GUI_PIN=PASS "
-          "exact_prior_green_P2_QML_blobs=YES "
-          "legacy_Main_Workspace_FQ99_normalized=YES "
+        if normalize(path, blob(P2_INTEGRATION_SOURCE, path)) != blob(FQ99, path):
+            raise AssertionError("PREEXISTING_P2_GUI_BREAKS_FQ99 " + path)
+    # The earlier FQ99/P2 baseline remains known while the five new exact
+    # M18 blobs require their own current Windows Qt compile/screenshot gate.
+    print("FQ99_PLUS_P2_M18_WAV_UI_PIN=PASS "
+          "exact_prior_green_P2_GUI_base=YES "
+          "exact_PO_M18_UI_blobs=YES "
           "release_qualification=NO")
     return True
 
