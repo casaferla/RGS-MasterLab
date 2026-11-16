@@ -545,6 +545,11 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'selectGold(QUrl::fromLocalFile(refB))' in integration
     assert 'inflightCache.accept_completed_unchanged_render(' in integration
     assert 'inflightCache.accept_completed_unchanged_gold(' in integration
+    assert 'wrongGoldWorker.resource_identity=' in integration
+    assert 'completed.resource_identity!=gold_result_identity(oldCapture)' in inbox
+    assert 'gold_result_identity(*now.value())' in inbox
+    assert 'reused.resource_identity=gold_result_identity(now)' in inbox
+    assert 'result.resource_identity!=gold_result_identity(captured)' in inbox
     assert 'referenceCache.rebind_unchanged_independent_scopes(' in integration
     assert 'before.owner.identity.source_generation' in owner
     assert 'Project save/metadata revision alone is not a PCM revision.' in owner
