@@ -168,7 +168,13 @@ public:
                 product_,*fanout_,*selector_);
             if(!captured)continue;
             const auto& evidence=*captured.value();
-            if(column==Column::processed &&!evidence.processed)
+            // A revised MANUAL chain can coexist briefly with the
+            // PREVIOUS processed PCM while the preview renderer runs.
+            // Never analyze that stale predecessor as new PROCESSED data.
+            if(column==Column::processed
+               &&(!evidence.processed
+                  ||evidence.processed->chain_revision()
+                        !=evidence.owner.identity.chain_revision))
                 continue;
             // Exact immutable render identity is independent of the M18
             // owner epoch. A new render can be installed in the SAME
