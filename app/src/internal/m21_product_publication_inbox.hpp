@@ -119,22 +119,9 @@ public:
                    ||old->generation_token!=beforeCapture->owner.epoch
                    ||beforeCapture->owner.epoch==0
                    ||beforeCapture->owner.epoch>=now.owner.epoch
-                   ||!beforeCapture->source.same_resource_identity(now.source)
-                   ||beforeCapture->source_full_frames!=now.source_full_frames
-                   ||beforeCapture->prepared!=now.prepared)
+                   ||!Product::same_render_observation(
+                       *beforeCapture,now,column))
                     continue;
-                const auto& oldId=beforeCapture->owner.identity;
-                const auto& newId=now.owner.identity;
-                if(oldId.source_generation!=newId.source_generation
-                   ||oldId.project_generation!=newId.project_generation)
-                    continue; // never recycle across SOURCE/Project opens
-                if(column==Column::processed &&
-                   (!beforeCapture->processed
-                    ||beforeCapture->processed!=now.processed
-                    ||beforeCapture->processed_realization_id
-                         !=now.processed_realization_id
-                    ||oldId.chain_revision!=newId.chain_revision))
-                    continue; // DSP edit/realization invalidates PROCESSED
                 auto reused=*old; // exact measured cells and genuine PSD
                 reused.generation_token=now.owner.epoch;
                 if(accept_render(product,fanout,selector,now,reused))
@@ -160,14 +147,7 @@ public:
                &&old->generation_token==before.owner.epoch
                &&before.owner.epoch>0
                &&before.owner.epoch<now.owner.epoch
-               &&before.gold.same_resource_identity(now.gold)
-               &&before.sample_rate_hz==now.sample_rate_hz
-               &&before.full_frames==now.full_frames
-               &&before.channels==now.channels
-               &&before.owner.identity.source_generation
-                    ==now.owner.identity.source_generation
-               &&before.owner.identity.project_generation
-                    ==now.owner.identity.project_generation) {
+               &&Product::same_gold_observation(before,now)) {
                 auto reused=*old;
                 reused.generation_token=now.owner.epoch;
                 reused.resource_identity="gold-file-generation:"+
