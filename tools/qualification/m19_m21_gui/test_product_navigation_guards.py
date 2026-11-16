@@ -269,8 +269,11 @@ def test_product_binds_status_without_demo() -> None:
     assert "M21ProductStatusViewModel::analysis_readouts() const" in status_cpp
     assert "if(!owner_thread() || !inbox_)" in status_cpp
     assert "inbox_->view_current(" in status_cpp
-    assert "metric==3U" in status_cpp
+    assert "metric==3U" not in status_cpp
     assert "cell.quality!=m21_private::Quality::present" in status_cpp
+    assert "m21_private::Quality::low_confidence" in status_cpp
+    assert "formal Gate G not asserted" in read(
+        "app/src/internal/m21_real_product_metrics_port.hpp")
     assert "evidence.prepared_to_gold[i]" in status_cpp
     assert "evidence.processed_to_gold[i]" in status_cpp
     assert "m20StaticPsd" in status_cpp
