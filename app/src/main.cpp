@@ -1151,33 +1151,42 @@ int main(int argc, char* argv[])
     // selector; real numeric publication still requires Phase-6 Product gates.
     dspChainAdapterModel.bindAnalysisStatusViewModel(
         &m21ProductStatusViewModel);
+    // All these signals are QUEUED: the full Product mutation has
+    // finished before we reconcile the three independent measurements.
+    // Reauthenticate cache first, THEN refresh QML, instead of showing
+    // a transient STALE frame for up to the next 250-ms worker poll.
+    const auto refreshM21AfterReconcile=
+        [&m21AnalysisCoordinator,&m21ProductStatusViewModel] {
+            m21AnalysisCoordinator.tick();
+            m21ProductStatusViewModel.refresh();
+        };
     // Direct SOURCE commit observer: some successful source batches
     // retire old PCM before audition routing emits its own changed().
     // Queue until the Product-wide mutation/epoch lease has unwound.
     QObject::connect(&sourceSelection,
         &rgsml::app::SourceSelectionViewModel::sourceChanged,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
     QObject::connect(&goldSelection,
         &rgsml::app::GoldSelectionViewModel::changed,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
     QObject::connect(&projectSession,
         &rgsml::app::ProjectSessionViewModel::changed,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
     QObject::connect(&previewController,
         &rgsml::app::MasteringPreviewController::changed,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
     // Master clock and M17 terminal revisions can stale M21 Product
     // evidence without a SOURCE/REFERENCE picker event. The genuine
@@ -1186,12 +1195,12 @@ int main(int argc, char* argv[])
     QObject::connect(&masterOutputRate,
         &rgsml::app::MasterOutputRateState::changed,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
     QObject::connect(&terminalLimiterViewModel,
         &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &m21ProductStatusViewModel,
-        &rgsml::app::M21ProductStatusViewModel::refresh,
+        refreshM21AfterReconcile,
         Qt::QueuedConnection);
 
     // Invalidate the *visible* Export affordance whenever a Product
