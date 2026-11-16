@@ -7141,6 +7141,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                 QVERIFY2(find_child_by_name(originalPages[index],
                     QStringLiteral("m21MetricRow_%1").arg(row)),
                     "Missing one of the nine approved M21 metric rows");
+                for(int deltaColumn=4;deltaColumn<=5;++deltaColumn) {
+                    const auto barName=QStringLiteral("m21DeltaBar_%1_%2")
+                        .arg(row).arg(deltaColumn);
+                    const auto numberName=QStringLiteral("m21NumericCell_%1_%2")
+                        .arg(row).arg(deltaColumn);
+                    auto* bar=qobject_cast<QQuickItem*>(
+                        find_child_by_name(originalPages[index],barName));
+                    auto* number=qobject_cast<QQuickItem*>(
+                        find_child_by_name(originalPages[index],numberName));
+                    QVERIFY2(bar && number,
+                        "M21 delta must retain numeric value and graph peers");
+                    QVERIFY2(!bar->isVisible(),
+                        "Unavailable Product delta must never display bar");
+                    QCOMPARE(number->property("text").toString(),
+                        QStringLiteral("—"));
+                    QVERIFY2(bar->width()<=44.1 && bar->height()<=8.1,
+                        "M21 bar must remain visibly subordinate to number");
+                }
             }
         }
         QCOMPARE(originalPages[index]->parentItem(),
@@ -7204,7 +7222,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QCOMPARE(availability->property("text").toString(),
                      QStringLiteral("VERIFIED ANALYSIS UNAVAILABLE"));
             const QString anchorName=index==0
-                ?QStringLiteral("m19MetricsGrid")
+                ?QStringLiteral("m19LevelsPage")
                 :index==1
                 ?QStringLiteral("m20SpectrumPanel")
                 :QStringLiteral("m21ComparisonPage");
@@ -7214,13 +7232,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             const QPointF anchorPos=analysisAnchor->mapToItem(
                 analysisBody,QPointF{});
             if(size.height()==688) firstAnalysisAnchor=anchorPos;
-            else if(index<2) {
+            else if(index==1) {
                 QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5
                          &&std::abs(anchorPos.y()-firstAnalysisAnchor.y())<1.5,
-                         "M19/M20 must preserve the top-left anchor");
+                         "M20 must preserve the top-left anchor");
             } else {
                 QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5,
-                         "M21 must retain horizontal left alignment");
+                         "M19/M21 must retain horizontal left alignment");
             }
             if(index==0) {
                 auto* grid=find_child_by_name(originalPages[index],
@@ -7233,6 +7251,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                 QVERIFY2(relation && relation->height()>=98.0
                          && relation->height()<=162.1,
                          "M19 reference relation must expand only within bounds");
+                const qreal centerTop=std::max(
+                    0.0,(analysisBody->height()-analysisAnchor->height())/2.0);
+                QVERIFY2(std::abs(anchorPos.y()-centerTop)<1.5,
+                         "M19 whole 3+2 grid and relation must center vertically");
+                auto* m19Viewport=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m19CenteredViewport")));
+                QVERIFY2(m19Viewport
+                         &&m19Viewport->height()>=analysisBody->height()-1.0,
+                         "M19 viewport must occupy real analysis height");
                 auto* hero=qobject_cast<QQuickItem*>(
                     find_child_by_name(originalPages[index],
                         QStringLiteral("m19MetricValue_lufs")));
