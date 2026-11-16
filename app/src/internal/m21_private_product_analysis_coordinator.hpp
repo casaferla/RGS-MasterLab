@@ -1,10 +1,12 @@
 #pragma once
 // M21 genuine Product integration: strict Qt-owner capture, ONE
 // immutable off-thread M19/M20 analysis, Qt-owner acceptance into the
-// existing PRIVATE M21 inbox. Never sends private numbers to QML and
-// never grants official Phase-6 FeatureStatus/Gate S/U/G authority.
-// A mutation while a worker runs is harmless: the same physical M18
-// epoch + resource + scope must pass accept_render/accept_gold on return.
+// existing PRIVATE M21 inbox. A separate owner-only DEVELOPMENT readout
+// may display genuine CURRENT numeric cells but never grants official
+// Phase-6 FeatureStatus/Gate S/U/G authority.
+// On worker completion, M18 validates the current Product owner; if
+// epoch changed, exact independent PCM/REFERENCE identity must match
+// before a measured result can be reauthenticated (never remeasured).
 // The worker owns neither a QObject nor a reference to this coordinator.
 // Work is single-flight and source-key coalesced: no burst of workers
 // on each QML refresh, navigation, or Qt notification.
