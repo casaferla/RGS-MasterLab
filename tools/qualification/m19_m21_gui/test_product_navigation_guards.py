@@ -544,6 +544,10 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'root.terminalLimiterViewModel.requestPrepare()' in host
     assert 'accept_render(product,fanout,selector,now,reused)' in independently
     assert 'accept_gold(product,fanout,selector,gold,now,reused)' in independently
+    assert 'M21_PROCESSED_RENDER_CHAIN_REVISION_NOT_YET_CURRENT' in owner
+    assert 'evidence.processed->chain_revision()' in coordinator
+    assert 'result.column==Column::processed' in inbox
+    assert 'render->chain_revision()' in inbox
 
     editor=read("ui/qml/StreamingTruePeakLimiterEditor.qml")
     icon=read("ui/qml/StudioIcon.qml")
