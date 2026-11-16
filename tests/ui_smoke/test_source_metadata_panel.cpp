@@ -7089,12 +7089,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QStringLiteral("PREPARED"),
             QStringLiteral("PROCESSED"),
             QStringLiteral("REFERENCE")};
+        // M19/M20 selectors belong to the existing canonical HOST header.
+        // M21 presents all three columns simultaneously; a selector would
+        // be misleading and must not be visible.
         for(int roleIndex=0;roleIndex<3;++roleIndex) {
-            auto* choice=find_child_by_name(originalPages[index],
+            auto* choice=find_child_by_name(dspEditorHostObj,
                 QStringLiteral("analysisSourceOption_%1").arg(roleIndex));
-            QVERIFY2(choice,"Missing real analysis source selector");
+            QVERIFY2(choice,"Missing real host-level analysis source selector");
             QCOMPARE(choice->property("text").toString(),
                 orderedRoles[static_cast<std::size_t>(roleIndex)]);
+            QCOMPARE(choice->isVisible(),index<2);
         }
         if(i==0) {
             for(const auto& key:std::array<QString,5>{

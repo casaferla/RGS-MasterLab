@@ -152,7 +152,7 @@ Flickable {
                         width: (levelGrid.width
                             - (levelGrid.columns-1)*levelGrid.columnSpacing)
                             / levelGrid.columns
-                        height: 148
+                        height: 116
                         radius: 7
                         color: root.raised
                         border.color: root.edge
@@ -196,7 +196,7 @@ Flickable {
             }
             Rectangle {
                 width: parent.width
-                height: 135
+                height: 130
                 color: root.panel
                 border.color: root.edge
                 radius: 7
@@ -283,7 +283,7 @@ Flickable {
             spacing: 8
             Rectangle {
                 width: parent.width
-                height: 211
+                height: 166
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -427,7 +427,7 @@ Flickable {
             }
             Rectangle {
                 width: parent.width
-                height: 112
+                height: 97
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -479,7 +479,7 @@ Flickable {
             }
             Rectangle {
                 width: parent.width
-                height: 78
+                height: 65
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -515,7 +515,7 @@ Flickable {
         }
 
         // M21 approved nine-metric table: the six display columns are
-        // metric / PREPARED / REFERENCE / PROCESSED / two deltas.
+        // metric / PREPARED / PROCESSED / REFERENCE / two deltas.
         Column {
             id: m21
             objectName: "m21ComparisonPage"
@@ -524,7 +524,7 @@ Flickable {
             spacing: 6
             Rectangle {
                 width: parent.width
-                height: 42
+                height: 33
                 radius: 6
                 color: "#38291D"
                 border.color: "#886946"
@@ -542,7 +542,7 @@ Flickable {
             }
             Rectangle {
                 width: parent.width
-                height: 48
+                height: 38
                 color: "#1B3545"
                 border.color: root.edge
                 radius: 5
@@ -569,7 +569,7 @@ Flickable {
             Text {
                 objectName: "m21MissingComparisonNotice"
                 width: parent.width
-                height: 37
+                height: 26
                 text: root.anyRowValue()
                     ? "CURRENT MEASUREMENTS · MISSING CELLS SHOWN AS —"
                     : root.lifecycle === "STALE"
@@ -594,7 +594,7 @@ Flickable {
                     readonly property var observed: root.m21Rows.length > metricIndex
                         ? root.m21Rows[metricIndex] : ({})
                     width: m21.width
-                    height: 28
+                    height: 25
                     color: index%2===0 ? "#14232F" : "#0E1C26"
                     Row {
                         anchors.fill: parent
@@ -655,7 +655,7 @@ Flickable {
 
         Rectangle {
             width: parent.width
-            height: 53
+            height: 46
             color: root.panel
             border.color: root.edge
             radius: 6

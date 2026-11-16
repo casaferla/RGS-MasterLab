@@ -189,7 +189,8 @@ public:
            ||before.sample_rate_hz!=newGold.sample_rate_hz
            ||before.full_frames!=newGold.full_frames
            ||before.channels!=newGold.channels
-           ||oldPrepared.owner!=before.owner
+           ||oldPrepared.owner.epoch!=before.owner.epoch
+           ||oldPrepared.owner.identity!=before.owner.identity
            ||!oldPrepared.source.same_resource_identity(now.source)
            ||oldPrepared.source_full_frames!=now.source_full_frames
            ||oldPrepared.prepared!=now.prepared)

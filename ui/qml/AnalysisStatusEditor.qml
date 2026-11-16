@@ -43,17 +43,19 @@ Item {
         anchors.margins: 18
         spacing: 12
 
-        // DspEditorHost already renders the canonical module title and
-        // workflow context. Do not duplicate either inside M19/M20/M21.
-        // The source chooser retains its useful caption and the research
-        // authority warning, now in one compact row.
+        // DspEditorHost owns M19/M20 source choices in its fixed top-right
+        // action slot. M21 is a simultaneous three-column comparison and
+        // intentionally has no source-selection affordance. Keep only
+        // the truthful status and context here, not a second action row.
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 18
             spacing: 8
             Text {
                 objectName: "analysisSourceHeading"
-                text: "INDEPENDENT ANALYSIS SOURCE"
+                text: root.panelIndex === 2
+                    ? "THREE INDEPENDENT MEASUREMENTS"
+                    : "CURRENT SCOPE · " + root.selectedRole
                 font.family: "Segoe UI"
                 font.pixelSize: 11
                 font.bold: true
@@ -74,43 +76,6 @@ Item {
                 font.pixelSize: 10
                 color: root.authorized ? "#B6D6CA" : "#F0C87D"
             }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-            Repeater {
-                // Match the global audition order, leaving backend column IDs
-                // and independent M21 REFERENCE-minus-current math unchanged.
-                model: ["PREPARED", "PROCESSED", "REFERENCE"]
-                delegate: StudioButton {
-                    objectName: "analysisSourceOption_" + index
-                    text: modelData
-                    minimumControlWidth: 114
-                    selected: root.selectedRole === modelData
-                    accentColor: "#6CBCCF"
-                    enabled: !!root.statusViewModel
-                    onClicked: {
-                        if (root.statusViewModel)
-                            root.statusViewModel.selectPanelSource(
-                                root.panelIndex, modelData)
-                    }
-                    ToolTip.text: modelData === "REFERENCE"
-                        ? "Analyze the independently selected REFERENCE WAV, "
-                          + "using its own sample rate and full-track scope."
-                        : modelData === "PREPARED"
-                        ? "Show the current source after PREPARATION; "
-                          + "no DSP or audio state changes by selecting it."
-                        : "Show the current processed source analysis; "
-                          + "selection does not render or alter processing."
-                    ToolTip.visible: sourceChoiceDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: sourceChoiceDwell
-                        anchors.fill: parent
-                    }
-                }
-            }
-            Item {Layout.fillWidth: true}
         }
 
         // Approved independent Product visuals, clipped and scrollable INSIDE

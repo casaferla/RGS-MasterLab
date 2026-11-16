@@ -147,6 +147,14 @@ Rectangle {
         ? root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER" : false
     readonly property bool isMeterEditor: root.activeModule
         ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
+    readonly property bool isM19AnalysisEditor: root.activeModule
+        ? root.activeModule.editorContentKey === "M19_ANALYSIS" : false
+    readonly property bool isM20AnalysisEditor: root.activeModule
+        ? root.activeModule.editorContentKey === "M20_ANALYSIS" : false
+    readonly property var activeAnalysisFrame: !root.analysisStatusViewModel
+        ? ({}) : root.isM19AnalysisEditor
+        ? root.analysisStatusViewModel.m19 : root.isM20AnalysisEditor
+        ? root.analysisStatusViewModel.m20 : ({})
     readonly property color activeFamilyAccent: root.isLimiterEditor
         ? (root.activeModule.bypass ? "#6CBCCF" : "#C4774A")
         : (root.activeModule ? root.activeModule.familyAccent : "#262A6C9F")
@@ -288,6 +296,45 @@ Rectangle {
             }
 
             Item { Layout.fillWidth: true }
+
+            // M19/M20 are read-only modules: use the SAME top-right
+            // header slot that editable DSPs use for READY/Active/Bypass.
+            // M21 has all three columns simultaneously and intentionally
+            // has NO pointless source selector. The identical docked/
+            // floating host owns these controls; no duplicated popup.
+            RowLayout {
+                objectName: "analysisHeaderSourceChooser"
+                visible: root.isM19AnalysisEditor || root.isM20AnalysisEditor
+                spacing: 5
+                Repeater {
+                    model: ["PREPARED", "PROCESSED", "REFERENCE"]
+                    delegate: StudioButton {
+                        objectName: "analysisSourceOption_" + index
+                        text: modelData
+                        minimumControlWidth: 103
+                        selected: !!root.activeAnalysisFrame
+                            && root.activeAnalysisFrame.sourceRole === modelData
+                        accentColor: "#6CBCCF"
+                        enabled: !!root.analysisStatusViewModel
+                        onClicked: {
+                            if(root.analysisStatusViewModel)
+                                root.analysisStatusViewModel.selectPanelSource(
+                                    root.isM19AnalysisEditor ? 0 : 1,modelData)
+                        }
+                        ToolTip.text: modelData === "REFERENCE"
+                            ? "Show the independent REFERENCE WAV analysis."
+                            : modelData === "PREPARED"
+                            ? "Show the source after PREPARATION; no DSP changes."
+                            : "Show the current rendered DSP output analysis."
+                        ToolTip.visible: headerAnalysisDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: headerAnalysisDwell
+                            anchors.fill: parent
+                        }
+                    }
+                }
+            }
 
             // Preview Status Badge
             Rectangle {

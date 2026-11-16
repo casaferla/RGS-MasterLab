@@ -79,7 +79,12 @@ def test_product_binds_status_without_demo() -> None:
     assert 'fixtureMode' not in visuals
     assert "m19MetricValue_" in visuals and "heroReadout: true" in visuals
     assert "m20WorkbenchSpectrum" in visuals
-    assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in editor
+    assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in host
+    assert 'objectName: "analysisHeaderSourceChooser"' in host
+    assert 'root.isM19AnalysisEditor || root.isM20AnalysisEditor' in host
+    assert 'selectPanelSource(' in host
+    assert 'analysisSourceOption_' not in editor
+    assert 'root.panelIndex === 2' in editor
     assert 'model: ["METRIC","PREPARED","PROCESSED","REFERENCE",' in visuals
     assert 'objectName: "m20FrequencyTick_" + index' in visuals
     assert 'parent.width*Math.log10(modelData.hz/20)' in visuals

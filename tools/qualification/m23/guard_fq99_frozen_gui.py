@@ -69,6 +69,10 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # CI #33 startup root cause: Main assigned an unknown property to the
 # intermediate DspWorkspace. Exact docked AND floating forwarding is now
 # separately SHA-pinned, without touching DSP or M18 Product authority.
+# PO physical 2026-11-16: exact-pinned M19/M20 source controls moved into
+# canonical host top-right DSP action slot; redundant M21 controls removed.
+# Compact native cards preserve readout fonts, full 9-row M21 table and
+# the genuine log-scaled M20 spectrum. No source/authenticator is relaxed.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 # Exact PO-observed 2026-11-16 M19–M21 usability changes:
 # ordered source selectors/table, genuine worker-activity label, and
@@ -76,10 +80,10 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # pre-existing additive analysis files are exact-pinned, NOT released
 # or declared FQ99-identical. M16 Gate G remains separate.
 M18_WAV_OUTPUT_UI_BLOBS = {
-    "ui/qml/AnalysisApprovedContent.qml": "570b6ac0828b982794d90c901cd20cc26d673a50",
-    "ui/qml/AnalysisStatusEditor.qml": "2ed453aaffa75cd8b76d1ecc0c3ff77d661dbfab",
+    "ui/qml/AnalysisApprovedContent.qml": "488323bbe655b5c34972f16406f9cf393fcfee2e",
+    "ui/qml/AnalysisStatusEditor.qml": "d3f2246fe19c2b052f331814c30838936da1f162",
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
-    "ui/qml/DspEditorHost.qml": "8d0829fc8734441ca76a616d421469f4134d5ca6",
+    "ui/qml/DspEditorHost.qml": "73a16ea01815d2a0bf05573381f24c2316475632",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "b354658f9164258b41c9cac3a6cfd2d42e421802",
