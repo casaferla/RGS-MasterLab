@@ -44,6 +44,10 @@ public:
         std::shared_ptr<const render::RenderResult> prepared;
         std::shared_ptr<const render::RenderResult> processed;
         std::optional<core::RealizationId> processed_realization_id;
+        // Exact accepted DSP payload, NOT ProcessingChain::revision():
+        // parameter-only Gain/EQ/Compressor/P2 edits do NOT advance that
+        // structural revision but MUST retire old PROCESSED measurements.
+        std::vector<dsp::ModuleExecutionBinding> manual_bindings;
     };
 
     [[nodiscard]] static core::Result<Capture> capture(
@@ -83,7 +87,8 @@ public:
             return R::failure(failed("M21_CAPTURE_EMPTY_REAL_RENDER"));
         return R::success(Capture{
             *owner,source->reference(),product.upstream.source.frame_count(),
-            std::move(prepared),std::move(processed),id});
+            std::move(prepared),std::move(processed),id,
+            product.upstream.chain.execution_bindings()});
     }
 
     // A value-copy of the Product epoch and retained immutable PCM is
@@ -153,7 +158,8 @@ public:
                &&before.processed_realization_id
                     ==now.processed_realization_id
                &&before.owner.identity.chain_revision
-                    ==now.owner.identity.chain_revision);
+                    ==now.owner.identity.chain_revision
+               &&before.manual_bindings==now.manual_bindings);
     }
     [[nodiscard]] static bool same_gold_observation(
         const GoldCapture& before,const GoldCapture& now) noexcept
