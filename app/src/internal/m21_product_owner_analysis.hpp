@@ -357,6 +357,11 @@ public:
             return R::failure(failed("M21_WORKER_REQUIRES_AUTHENTIC_RETAINED_CAPTURE"));
         const auto render=column==Column::prepared
             ?captured.prepared:captured.processed;
+        if(column==Column::processed &&render
+           &&render->chain_revision()
+                !=captured.owner.identity.chain_revision)
+            return R::failure(failed(
+                "M21_PROCESSED_RENDER_CHAIN_REVISION_NOT_YET_CURRENT"));
         if(!render)
             return R::failure(failed("M21_COLUMN_OWNER_NOT_PUBLISHED"));
         const auto view=render->view();
