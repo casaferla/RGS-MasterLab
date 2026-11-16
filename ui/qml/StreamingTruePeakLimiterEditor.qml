@@ -168,12 +168,17 @@ Item {
                                 selectionColor: "#40C4774A"
                                 selectedTextColor: "#F5F8FC"
                                 activeFocusOnTab: true
-                                Binding {
-                                    target: ceilingEntry
-                                    property: "text"
-                                    value: root.ceiling.toFixed(1)
-                                    when: !ceilingEntry.activeFocus
+                                // Synchronize EXTERNAL slider/default edits
+                                // without overwriting a live numeric draft
+                                // during focus loss (commit runs on blur).
+                                Connections {
+                                    target: root
+                                    function onCeilingChanged() {
+                                        if(!ceilingEntry.activeFocus)
+                                            ceilingEntry.text=root.ceiling.toFixed(1)
+                                    }
                                 }
+                                Component.onCompleted: text=root.ceiling.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
                                     root.commitNumeric(ceilingEntry,-12,0,
                                         root.ceiling,function(v) {
@@ -305,12 +310,17 @@ Item {
                                 selectionColor: "#40C4774A"
                                 selectedTextColor: "#F5F8FC"
                                 activeFocusOnTab: true
-                                Binding {
-                                    target: driveEntry
-                                    property: "text"
-                                    value: root.drive.toFixed(1)
-                                    when: !driveEntry.activeFocus
+                                // Synchronize EXTERNAL slider/default edits
+                                // without overwriting a live numeric draft
+                                // during focus loss (commit runs on blur).
+                                Connections {
+                                    target: root
+                                    function onDriveChanged() {
+                                        if(!driveEntry.activeFocus)
+                                            driveEntry.text=root.drive.toFixed(1)
+                                    }
                                 }
+                                Component.onCompleted: text=root.drive.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
                                     root.commitNumeric(driveEntry,-24,24,
                                         root.drive,function(v) {
