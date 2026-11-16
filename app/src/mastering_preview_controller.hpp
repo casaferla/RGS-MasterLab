@@ -67,6 +67,10 @@ public:
     [[nodiscard]] QString preview_status() const;
     [[nodiscard]] QString preview_error() const;
     [[nodiscard]] std::uint64_t stale_results_discarded() const noexcept;
+    // Exact Product MANUAL owner proof for M21: an old PROCESSED PCM
+    // cannot be analyzed under new parameter-only DSP settings merely
+    // because ProcessingChain::revision() remains unchanged.
+    [[nodiscard]] bool published_preview_matches_current_bindings() const;
 
     Q_INVOKABLE void request_preview();
 
@@ -89,6 +93,9 @@ private:
     std::uint64_t staleResultsDiscarded_{0};
     QString previewStatus_{QStringLiteral("IDLE")};
     QString previewError_;
+    std::uint64_t acceptedPreviewGeneration_{0};
+    std::vector<dsp::ModuleExecutionBinding> pendingPreviewBindings_{};
+    std::vector<dsp::ModuleExecutionBinding> acceptedPreviewBindings_{};
 
     std::mutex workerMutex_;
     std::condition_variable workerCond_;
