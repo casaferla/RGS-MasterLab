@@ -282,6 +282,7 @@ private slots:
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
     void m18CompleteRealProductBinderRequiresVerifiedM17BeforeUserConsent();
     void m18RealProductVerifiedMasterToPcm24AndFloat32WavAck();
+    void m18VerifiedEpochSurvivesOnlyAlreadyVerifiedManualReturn();
     void m22LiveProductCrossRateQ0M17PreviewFullExportAndRevocation();
     void m18RegionGateCannotSelfUninstallOrCrossThread();
     void m18ProjectMutationDeniedBeforeOpenOrSavePublication();
@@ -961,6 +962,46 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(longRetired.columns[1].has_value());
     QCOMPARE(longRetired.columns[1]->lifecycle,
              app::m21_private::Lifecycle::stale);
+}
+
+void ProjectSessionTest::
+m18VerifiedEpochSurvivesOnlyAlreadyVerifiedManualReturn()
+{
+    // Epoch-policy regression based on Windows physical M18 B01.
+    // This does not simulate a completed real render or Product export:
+    // the complete binder must independently validate all real owners.
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{11U,12U,13U,14U,48000U,5U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(101U,id);
+    M18OwnerMutationFanout fanout{owner,101U,id};
+    const auto admit=fanout.status_admission();
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("restore_manual"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("renderer_changed"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("return_monitor_to_manual"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("restore_manual"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("comparison_suspend"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("restore_manual"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    // Parameter-only DSP edits ALWAYS revoke, even after transport.
+    QVERIFY(admit("gain_parameters"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("restore_manual"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    // A retired source cannot be resurrected by the same transport call.
+    QVERIFY(admit("renderer_changed"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("source_selection"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("restore_manual"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
 }
 
 void ProjectSessionTest::

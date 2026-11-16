@@ -329,13 +329,18 @@ public:
             if(!allowed)return allowed;
             state->identity=nextIdentity;
             state->epoch=nextEpoch;
-            // Only completion of a real M17 render or a M17 comparison
-            // retirement may establish a current stage again. A mere
-            // Gain/EQ/Compressor parameter write always retires it even
-            // if chain().revision() and a cached stage pointer match.
+            // An exact MANUAL sink restore is a transport transition,
+            // not a replacement of M17's immutable verified MASTER.
+            // Carry an ALREADY current verification epoch only; never
+            // mint one when absent. Product M18 still checks the actual
+            // staged PCM, SOURCE, chain, rate and ceiling before consent.
+            const bool preserveExactManualReturn=
+                op=="restore_manual"
+                &&state->verifiedM17Epoch==state->epoch;
             state->verifiedM17Epoch=(op=="renderer_changed"
                 ||op=="comparison_suspend"
-                ||op=="return_monitor_to_manual")
+                ||op=="return_monitor_to_manual"
+                ||preserveExactManualReturn)
                 ?nextEpoch:0;
             return core::Status::success();
         };
