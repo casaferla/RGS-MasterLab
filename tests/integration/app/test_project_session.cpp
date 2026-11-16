@@ -2203,6 +2203,19 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              preparedNumbers.value()->metrics[0].unrounded);
     QCOMPARE(afterReuse.columns[2]->metrics[5].unrounded,
              processedNumbers.value()->metrics[5].unrounded);
+    // Physical Qt readout: a new REFERENCE invalidates only its own
+    // cells; PREPARED and PROCESSED Sample Peak must stay visible.
+    app::M21ProductStatusViewModel actualNumericUi{
+        controllers,fanout,session.selector,session.gold,referenceCache};
+    const auto afterReferenceUi=actualNumericUi.analysis_readouts()
+        .value("m21Rows").toList();
+    QCOMPARE(afterReferenceUi.size(),qsizetype{9});
+    const auto samplePeakAfterRef=afterReferenceUi.at(2).toMap();
+    QVERIFY(samplePeakAfterRef.value("prepared").isValid());
+    QVERIFY(samplePeakAfterRef.value("processed").isValid());
+    QVERIFY(!samplePeakAfterRef.value("reference").isValid());
+    QVERIFY(!samplePeakAfterRef.value("deltaPrepared").isValid());
+    QVERIFY(!samplePeakAfterRef.value("deltaProcessed").isValid());
     const auto noDuplicate=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(!noDuplicate[0]&&!noDuplicate[1]&&!noDuplicate[2]);
@@ -2273,6 +2286,15 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              app::m21_private::Lifecycle::current);
     QCOMPARE(stillMeasured.columns[2]->lifecycle,
              app::m21_private::Lifecycle::stale);
+    const auto afterDspUi=actualNumericUi.analysis_readouts()
+        .value("m21Rows").toList();
+    QCOMPARE(afterDspUi.size(),qsizetype{9});
+    const auto samplePeakAfterDsp=afterDspUi.at(2).toMap();
+    QVERIFY(samplePeakAfterDsp.value("prepared").isValid());
+    QVERIFY(samplePeakAfterDsp.value("reference").isValid());
+    QVERIFY(!samplePeakAfterDsp.value("processed").isValid());
+    QVERIFY(samplePeakAfterDsp.value("deltaPrepared").isValid());
+    QVERIFY(!samplePeakAfterDsp.value("deltaProcessed").isValid());
     QCOMPARE(stillMeasured.columns[0]->metrics[0].unrounded,
              preparedNumbers.value()->metrics[0].unrounded);
     QCOMPARE(stillMeasured.columns[1]->metrics[0].unrounded,
