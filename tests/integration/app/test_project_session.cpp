@@ -620,7 +620,9 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
              selectedGold.value()->owner.epoch);
     QVERIFY(!goldMeasured.value()->resource_identity.empty());
     QCOMPARE(goldMeasured.value()->metrics[3].quality,
-             app::m21_private::Quality::missing); // M16 not qualified
+             app::m21_private::Quality::low_confidence);
+    QVERIFY(goldMeasured.value()->metrics[3].unrounded.has_value());
+    // Authentic M16 True Peak is exposed for development; no Gate G.
     QVERIFY(goldMeasured.value()->metrics[2].unrounded.has_value());
     app::internal::M21ProductPublicationInbox goldInbox;
     QVERIFY(goldInbox.accept_gold(
@@ -890,7 +892,10 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QCOMPARE(longMeasured->value()->scope_frames,kLongStereoFrames);
     QVERIFY(longMeasured->value()->metrics[0].unrounded.has_value());
     QCOMPARE(longMeasured->value()->metrics[3].quality,
-             app::m21_private::Quality::missing); // no M16 qualification
+             app::m21_private::Quality::low_confidence);
+    QVERIFY(longMeasured->value()->metrics[3].unrounded.has_value());
+    // Streamed independent 192-kHz REFERENCE uses original M16 TP,
+    // development observation, not qualified release evidence.
     QCOMPARE(longMeasured->value()->metrics[5].quality,
              app::m21_private::Quality::present);
     QVERIFY(longMeasured->value()->metrics[5].unrounded.has_value());
