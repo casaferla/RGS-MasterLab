@@ -28,6 +28,9 @@ Rectangle {
     property var masterListeningHandler: null
     property var masterExportModel: null
     property var masterExportHandler: null
+    // Forward Main-owned UI affordance through the workspace to BOTH
+    // docked and detached editor hosts. Real M18 authorization unchanged.
+    property bool masterExportAutoReturnAvailable: false
     property int masterExportFormatIndex: 0
     property var masterRateState: null
     property var memoryAdvisor: null
@@ -69,6 +72,7 @@ Rectangle {
             masterListeningHandler: root.masterListeningHandler
             masterExportModel: root.masterExportModel
             masterExportHandler: root.masterExportHandler
+            masterExportAutoReturnAvailable: root.masterExportAutoReturnAvailable
             masterExportFormatIndex: root.masterExportFormatIndex
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
@@ -129,6 +133,7 @@ Rectangle {
         masterListeningHandler: root.masterListeningHandler
         masterExportModel: root.masterExportModel
         masterExportHandler: root.masterExportHandler
+        masterExportAutoReturnAvailable: root.masterExportAutoReturnAvailable
         masterExportFormatIndex: root.masterExportFormatIndex
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor

@@ -66,13 +66,16 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # original MANUAL DEVICE owner, revalidates native M18 canExport, then
 # opens SaveFile. Nonconforming, recovering or stale owners are excluded.
 # No export consent, DSP authority, QML geometry or layout is relaxed.
+# CI #33 startup root cause: Main assigned an unknown property to the
+# intermediate DspWorkspace. Exact docked AND floating forwarding is now
+# separately SHA-pinned, without touching DSP or M18 Product authority.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
     "ui/qml/DspEditorHost.qml": "8d0829fc8734441ca76a616d421469f4134d5ca6",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
-    "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",
+    "ui/qml/DspWorkspace.qml": "b354658f9164258b41c9cac3a6cfd2d42e421802",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
     "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
 }

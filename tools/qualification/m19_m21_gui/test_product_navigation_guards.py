@@ -365,6 +365,11 @@ def test_export_permission_unchanged() -> None:
         'root.appM18ExportModel.canExport') < flow.index(
         'm18ExportFileDialog.open()')
     assert 'masterExportAutoReturnAvailable' in host
+    workspace = read("ui/qml/DspWorkspace.qml")
+    assert 'property bool masterExportAutoReturnAvailable: false' in workspace
+    assert workspace.count(
+        'masterExportAutoReturnAvailable: root.masterExportAutoReturnAvailable') == 2
+    assert 'masterExportAutoReturnAvailable: root.m18AutoReturnForExportAvailable' in qml
     assert 'return "RETURN + EXPORT"' in host
     assert 'if (root.masterExportHandler(0))' in host
     assert 'if (root.masterExportHandler(1))' in host
