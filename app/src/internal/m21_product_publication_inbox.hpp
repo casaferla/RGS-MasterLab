@@ -153,9 +153,7 @@ public:
                &&Product::same_gold_observation(before,now)) {
                 auto reused=*old;
                 reused.generation_token=now.owner.epoch;
-                reused.resource_identity="gold-file-generation:"+
-                    std::to_string(now.owner.epoch)+"|"+
-                    now.gold.provider_id()+"|"+now.gold.locator();
+                reused.resource_identity=gold_result_identity(now);
                 if(accept_gold(product,fanout,selector,gold,now,reused))
                     accepted[static_cast<std::size_t>(Column::gold)]=true;
             }
@@ -197,7 +195,10 @@ public:
         const Product::GoldCapture& oldCapture,const Snapshot& completed)
     {
         if(completed.column!=Column::gold
-           ||completed.generation_token!=oldCapture.owner.epoch)
+           ||completed.generation_token!=oldCapture.owner.epoch
+           ||completed.resource_identity!=gold_result_identity(oldCapture))
+            // Do not launder unrelated worker measurements by retagging
+            // a false original identity to the current REFERENCE.
             return false;
         const auto now=Product::capture_gold(
             product,fanout,selector,gold);
@@ -209,10 +210,8 @@ public:
             return false;
         auto reauthenticated=completed;
         reauthenticated.generation_token=now.value()->owner.epoch;
-        reauthenticated.resource_identity="gold-file-generation:"+
-            std::to_string(now.value()->owner.epoch)+"|"+
-            now.value()->gold.provider_id()+"|"+
-            now.value()->gold.locator();
+        reauthenticated.resource_identity=
+            gold_result_identity(*now.value());
         return accept_gold(
             product,fanout,selector,gold,
             *now.value(),reauthenticated);
@@ -236,10 +235,7 @@ public:
                 captured.full_frames)
            ||result.sample_rate_hz!=captured.sample_rate_hz
            ||result.analysis_scope_label!="Full Track"
-           ||result.resource_identity!=(
-                "gold-file-generation:"+
-                std::to_string(captured.owner.epoch)+"|"+
-                captured.gold.provider_id()+"|"+captured.gold.locator())
+           ||result.resource_identity!=gold_result_identity(captured)
            ||!publisher_.expect(result.column,result.generation_token)
            ||!publisher_.publish(result))
             return false;
@@ -279,6 +275,16 @@ public:
     }
 
 private:
+    // The same worker identity is authenticated BEFORE any retagging
+    // and after an epoch rebind. Keep its formatting in one location.
+    [[nodiscard]] static std::string gold_result_identity(
+        const Product::GoldCapture& capture)
+    {
+        return "gold-file-generation:"+
+            std::to_string(capture.owner.epoch)+"|"+
+            capture.gold.provider_id()+"|"+capture.gold.locator();
+    }
+
     // One and only one Qt-owner stale gate serves BOTH full private
     // comparison evidence and the numeric-free readiness receipt.
     // This prevents a status-only shortcut from calling obsolete evidence
