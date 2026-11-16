@@ -535,6 +535,11 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'rebind_after_reference_only_change(' not in integration
     assert 'rebind_unchanged_prepared_reference(' not in integration
     assert 'referenceCache.rebind_unchanged_independent_scopes(' in integration
+    assert 'siblingChanged.processed.reset();' in integration
+    assert 'same_render_observation(' in integration
+    assert 'paramsChanged.manual_bindings.clear();' in integration
+    assert 'same_gold_observation(' in integration
+    assert 'newSelection.selection_revision' in integration
     assert 'structuralRevision' in integration
     assert 'session.masteringChainState->set_gain_parameters(' in integration
     assert 'selectGold(QUrl::fromLocalFile(refB))' in integration
@@ -547,7 +552,8 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
         'same_render_observation('):owner.index('same_gold_observation(')]
     assert 'before.selection_revision==now.selection_revision' in owner
     assert 'gold.selection_revision()!=expected.selection_revision' in owner
-    assert '*goldSelectionRevision_==gold.selection_revision()' in independently
+    assert 'goldCapture_->selection_revision==gold.selection_revision()' in independently
+    assert 'goldSelectionRevision_' not in inbox
     assert 'beforeCapture->owner.epoch>=now.owner.epoch' in independently
     # No duplicate whole-WAV scan when an in-flight completed result can
     # be reauthenticated with the exact current immutable PCM.
@@ -570,6 +576,15 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'evidence.processed->chain_revision()' in coordinator
     assert 'result.column==Column::processed' in inbox
     assert 'render->chain_revision()' in inbox
+    # The status-only and numeric readout paths MUST retire each scope
+    # without consulting unrelated sibling PCM pointers. This is a real
+    # same-epoch bug even when all later epoch-rebind cases are correct.
+    retirement=inbox[inbox.index('template<class T>'):
+                     inbox.index('m21_private::PrivatePublicationGuard publisher_')]
+    assert 'Product::same_render_observation(' in retirement
+    assert 'Product::same_gold_observation(' in retirement
+    assert 'Product::still_current(' not in retirement
+    assert 'Product::gold_still_current(' not in retirement
 
     editor=read("ui/qml/StreamingTruePeakLimiterEditor.qml")
     icon=read("ui/qml/StudioIcon.qml")
