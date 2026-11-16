@@ -31,6 +31,8 @@ class MasteringPreviewController final : public QObject {
 public:
     using PreparedSnapshotProvider = std::function<std::shared_ptr<const render::RenderResult>()>;
     using ProcessedRealizationPublisher = std::function<core::Status(render::RenderResult)>;
+    using AcceptedProcessedProvider =
+        std::function<std::shared_ptr<const render::RenderResult>()>;
 
     struct PreviewJob final {
         std::uint64_t generation{0};
@@ -57,6 +59,9 @@ public:
     void set_chain_state(MasteringChainState* chainState) noexcept;
     void set_snapshot_provider(PreparedSnapshotProvider snapshotProvider);
     void set_publisher(ProcessedRealizationPublisher publisher);
+    // The exact accepted immutable PCM is read ONLY after a successful
+    // Product publisher callback, on the Qt owner thread. No copy of PCM.
+    void set_accepted_processed_provider(AcceptedProcessedProvider provider);
     void set_preview_executor(PreviewExecutor executor);
     // Research-only timing evidence, never used in ordinary Product builds.
     // Call once on the owner thread before scheduling any preview jobs.
@@ -86,6 +91,7 @@ private:
     MasteringChainState* chainState_{nullptr};
     PreparedSnapshotProvider snapshotProvider_;
     ProcessedRealizationPublisher publisher_;
+    AcceptedProcessedProvider acceptedProcessedProvider_;
     PreviewExecutor previewExecutor_;
     dsp::ModuleRegistry registry_{*dsp::ModuleRegistry::create_dsp_package_v1().value()};
 
@@ -96,6 +102,7 @@ private:
     std::uint64_t acceptedPreviewGeneration_{0};
     std::vector<dsp::ModuleExecutionBinding> pendingPreviewBindings_{};
     std::vector<dsp::ModuleExecutionBinding> acceptedPreviewBindings_{};
+    std::weak_ptr<const render::RenderResult> acceptedPreviewOwner_{};
 
     std::mutex workerMutex_;
     std::condition_variable workerCond_;
