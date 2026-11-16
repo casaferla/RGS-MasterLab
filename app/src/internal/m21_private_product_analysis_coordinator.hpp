@@ -62,16 +62,45 @@ public:
                 expectedGeneration)) {
                 bool accepted=false;
                 const auto& evidence=*completed->result;
-                if(active_->column==Column::gold &&active_->gold)
+                if(active_->column==Column::gold &&active_->gold) {
                     accepted=inbox_->accept_gold(
                         product_,*fanout_,*selector_,*gold_,
                         *active_->gold,evidence);
-                else if(active_->render)
+                    if(!accepted)
+                        accepted=inbox_->accept_completed_unchanged_gold(
+                            product_,*fanout_,*selector_,*gold_,
+                            *active_->gold,evidence);
+                } else if(active_->render) {
                     accepted=inbox_->accept_render(
                         product_,*fanout_,*selector_,
                         *active_->render,evidence);
-                // Only quality/lifecycle labels are exposed; not values.
-                if(accepted)status_->refresh();
+                    if(!accepted)
+                        accepted=inbox_->accept_completed_unchanged_render(
+                            product_,*fanout_,*selector_,
+                            *active_->render,evidence);
+                }
+                if(accepted) {
+                    // Avoid immediately starting a redundant same-PCM job
+                    // with the *new* Product epoch key in this same tick.
+                    const auto idx=static_cast<std::size_t>(active_->column);
+                    if(active_->column==Column::gold) {
+                        const auto goldNow=Product::capture_gold(
+                            product_,*fanout_,*selector_,*gold_);
+                        if(goldNow)attempted_[idx]=gold_key(*goldNow.value());
+                    } else {
+                        const auto renderNow=Product::capture(
+                            product_,*fanout_,*selector_);
+                        if(renderNow) {
+                            const auto owner=active_->column==Column::prepared
+                                ?renderNow.value()->prepared
+                                :renderNow.value()->processed;
+                            renderAttempts_[idx].remember(
+                                render_key(*renderNow.value(),
+                                           active_->column),owner);
+                        }
+                    }
+                    status_->refresh();
+                }
             }
             active_.reset();
             status_->set_running_analysis_role({});
@@ -209,7 +238,8 @@ private:
             key,captured.gold.locator());
         key+=std::to_string(captured.sample_rate_hz)+"|"+
             std::to_string(captured.full_frames)+"|"+
-            std::to_string(captured.channels);
+            std::to_string(captured.channels)+"|"+
+            std::to_string(captured.selection_revision);
         return key;
     }
 
