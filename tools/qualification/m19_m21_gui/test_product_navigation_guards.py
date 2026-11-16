@@ -558,6 +558,12 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'session.masteringChainState->set_gain_parameters(' in integration
     assert 'selectGold(QUrl::fromLocalFile(refB))' in integration
     assert 'inflightCache.accept_completed_unchanged_render(' in integration
+    assert 'M21ProductStatusViewModel actualNumericUi' in integration
+    assert 'samplePeakAfterRef.value("processed").isValid()' in integration
+    assert '!samplePeakAfterRef.value("reference").isValid()' in integration
+    assert 'samplePeakAfterDsp.value("reference").isValid()' in integration
+    assert '!samplePeakAfterDsp.value("processed").isValid()' in integration
+    assert 'samplePeakAfterDsp.value("deltaPrepared").isValid()' in integration
     assert 'inflightCache.accept_completed_unchanged_gold(' in integration
     assert 'wrongGoldWorker.resource_identity=' in integration
     assert 'completed.resource_identity!=gold_result_identity(oldCapture)' in inbox
