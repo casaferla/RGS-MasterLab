@@ -275,6 +275,13 @@ void MasteringPreviewController::set_publisher(ProcessedRealizationPublisher pub
     publisher_ = std::move(publisher);
 }
 
+void MasteringPreviewController::set_accepted_processed_provider(
+    AcceptedProcessedProvider provider)
+{
+    acceptedProcessedProvider_=std::move(provider);
+    acceptedPreviewOwner_.reset();
+}
+
 void MasteringPreviewController::set_preview_executor(PreviewExecutor executor)
 {
     previewExecutor_ = std::move(executor);
@@ -309,10 +316,13 @@ std::uint64_t MasteringPreviewController::stale_results_discarded() const noexce
 
 bool MasteringPreviewController::published_preview_matches_current_bindings() const
 {
-    return chainState_ && acceptedPreviewGeneration_!=0
+    const auto published=acceptedPreviewOwner_.lock();
+    return chainState_ &&acceptedProcessedProvider_&&published
+        && acceptedPreviewGeneration_!=0
         && acceptedPreviewGeneration_==previewGeneration_
         && previewStatus_==QStringLiteral("READY")
-        && acceptedPreviewBindings_==chainState_->execution_bindings();
+        && acceptedPreviewBindings_==chainState_->execution_bindings()
+        && acceptedProcessedProvider_()==published;
 }
 
 void MasteringPreviewController::request_preview()
@@ -483,6 +493,13 @@ void MasteringPreviewController::publish_preview_result(
         }
     }
 
+    // Capture the actual newly installed PCM owner only AFTER the
+    // real Product publisher confirms success. If another source/owner
+    // replaced it, M21 refuses stale PROCESSED even with matching DSP
+    // parameters and the same (unchanged) structural chain revision.
+    acceptedPreviewOwner_=acceptedProcessedProvider_
+        ?acceptedProcessedProvider_()
+        :std::shared_ptr<const render::RenderResult>{};
     acceptedPreviewBindings_=pendingPreviewBindings_;
     acceptedPreviewGeneration_=generation;
     previewStatus_ = QStringLiteral("READY");
