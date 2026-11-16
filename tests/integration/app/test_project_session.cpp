@@ -2071,6 +2071,36 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     auto samePcm=M21Owners::capture(
         controllers,fanout,session.selector);
     QVERIFY(firstReference&&samePcm);
+    // Same-epoch independence: a PROCESSED handoff cannot invalidate
+    // PREPARED solely because its sibling pointer/RealizationId changed.
+    // No fabricated FFT/level values are involved in these identity checks.
+    using M21Column=app::m21_private::Column;
+    auto siblingChanged=*samePcm.value();
+    siblingChanged.processed.reset();
+    siblingChanged.processed_realization_id.reset();
+    QVERIFY(M21Owners::same_render_observation(
+        *samePcm.value(),siblingChanged,M21Column::prepared));
+    QVERIFY(!M21Owners::same_render_observation(
+        *samePcm.value(),siblingChanged,M21Column::processed));
+    // A parameter-only mutation is not a ProcessingChain structural
+    // revision. It must be irrelevant to PREPARED, not PROCESSED.
+    QVERIFY(!samePcm.value()->manual_bindings.empty());
+    auto paramsChanged=*samePcm.value();
+    paramsChanged.manual_bindings.clear();
+    QVERIFY(M21Owners::same_render_observation(
+        *samePcm.value(),paramsChanged,M21Column::prepared));
+    QVERIFY(!M21Owners::same_render_observation(
+        *samePcm.value(),paramsChanged,M21Column::processed));
+    // REFERENCE is independent of a different SOURCE/chain epoch; only
+    // a new Gold selection or resource/format can invalidate its numbers.
+    auto unrelatedEpoch=*firstReference.value();
+    ++unrelatedEpoch.owner.epoch;
+    QVERIFY(M21Owners::same_gold_observation(
+        *firstReference.value(),unrelatedEpoch));
+    auto newSelection=unrelatedEpoch;
+    ++newSelection.selection_revision;
+    QVERIFY(!M21Owners::same_gold_observation(
+        *firstReference.value(),newSelection));
     const auto firstReferenceNumbers=M21Owners::measure_gold_worker(
         *firstReference.value());
     const auto preparedNumbers=M21Owners::measure_render_worker(
