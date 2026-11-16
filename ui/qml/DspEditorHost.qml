@@ -63,6 +63,8 @@ Rectangle {
     // encoding, but cannot grant consent, choose a path or publish the WAV.
     property var masterExportModel: null
     property var masterExportHandler: null
+    // Informative click affordance; final consent remains in native M18.
+    property bool masterExportAutoReturnAvailable: false
     property int masterExportFormatIndex: 0
     // A result is retained by the native M18 transaction until explicit ACK.
     // Track one actual active worker to reveal the inline receipt after it
@@ -1350,6 +1352,9 @@ Rectangle {
                                         ? "CANCEL" : "FAILED"
                                 }
                                 if (root.m18ExportFailed) return "ERROR"
+                                if (root.masterExportAutoReturnAvailable
+                                    && root.masterExportHandler)
+                                    return "RETURN + EXPORT"
                                 if (!root.canExportVerifiedWav || !root.masterExportHandler) {
                                     const reason = m.exportReadinessReason
                                     return "BLOCKED · " + (!root.masterExportHandler
@@ -1366,6 +1371,9 @@ Rectangle {
                                 if (m.errorText.length > 0) return m.errorText
                                 if (m.verifiedSha256.length === 64)
                                     return "Verified WAV SHA-256: " + m.verifiedSha256
+                                if (root.masterExportAutoReturnAvailable
+                                    && root.masterExportHandler)
+                                    return "Export will return to Source and reverify the Master before Save WAV."
                                 if (!root.canExportVerifiedWav || !root.masterExportHandler)
                                     return "Export unavailable · " + (!root.masterExportHandler
                                         ? "EXPORT HANDLER UNAVAILABLE"
@@ -1456,19 +1464,27 @@ Rectangle {
                         accentColor: root.activeFamilyAccent
                         showDisabledAccent: true
                         enabled: root.canExportVerifiedWav
-                            && !!root.masterExportHandler
+                            ? !!root.masterExportHandler
+                            : root.masterExportAutoReturnAvailable
+                              && !!root.masterExportHandler
                         onClicked: {
-                            if (!root.canExportVerifiedWav
-                                || !root.masterExportHandler) return
-                            rateTimePopup.close()
-                            root.masterExportHandler(0)
+                            if (!root.masterExportHandler
+                                || (!root.canExportVerifiedWav
+                                    && !root.masterExportAutoReturnAvailable))
+                                return
+                            // Main returns true only after synchronous,
+                            // exact-owner Return and fresh Product eligibility.
+                            if (root.masterExportHandler(0))
+                                rateTimePopup.close()
                         }
                         Accessible.name: "Export verified Master as 24-bit PCM WAV with TPDF dither"
                         ToolTip.text: "24-bit PCM with TPDF dither. "
                             + (enabled ? "Choose a NEW WAV filename."
-                                       : "Export unavailable: " + (root.masterExportModel
-                                           ? root.masterExportModel.exportReadinessReason
-                                           : "M18 model missing"))
+                                       : root.masterExportAutoReturnAvailable
+                                         ? "Click to return to Source and verify the Master before choosing a WAV filename."
+                                         : "Export unavailable: " + (root.masterExportModel
+                                             ? root.masterExportModel.exportReadinessReason
+                                             : "M18 model missing"))
                         ToolTip.visible: hovered && exportPcm24Dwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {
@@ -1484,19 +1500,27 @@ Rectangle {
                         accentColor: root.activeFamilyAccent
                         showDisabledAccent: true
                         enabled: root.canExportVerifiedWav
-                            && !!root.masterExportHandler
+                            ? !!root.masterExportHandler
+                            : root.masterExportAutoReturnAvailable
+                              && !!root.masterExportHandler
                         onClicked: {
-                            if (!root.canExportVerifiedWav
-                                || !root.masterExportHandler) return
-                            rateTimePopup.close()
-                            root.masterExportHandler(1)
+                            if (!root.masterExportHandler
+                                || (!root.canExportVerifiedWav
+                                    && !root.masterExportAutoReturnAvailable))
+                                return
+                            // Main returns true only after synchronous,
+                            // exact-owner Return and fresh Product eligibility.
+                            if (root.masterExportHandler(1))
+                                rateTimePopup.close()
                         }
                         Accessible.name: "Export verified Master as IEEE 32-bit floating-point WAV without dither"
                         ToolTip.text: "IEEE Float32, no dither. "
                             + (enabled ? "Choose a NEW WAV filename."
-                                       : "Export unavailable: " + (root.masterExportModel
-                                           ? root.masterExportModel.exportReadinessReason
-                                           : "M18 model missing"))
+                                       : root.masterExportAutoReturnAvailable
+                                         ? "Click to return to Source and verify the Master before choosing a WAV filename."
+                                         : "Export unavailable: " + (root.masterExportModel
+                                             ? root.masterExportModel.exportReadinessReason
+                                             : "M18 model missing"))
                         ToolTip.visible: hovered && exportFloat32Dwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {

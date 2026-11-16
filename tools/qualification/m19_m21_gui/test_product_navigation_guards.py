@@ -355,6 +355,19 @@ def test_export_permission_unchanged() -> None:
     assert '&& !!root.masterExportHandler' in host
     assert 'root.masterExportHandler(0)' in host
     assert 'root.masterExportHandler(1)' in host
+    # The auto-return is a convenience only. Product canExport is checked
+    # immediately AFTER exact device retirement, BEFORE SaveFile can open.
+    assert 'root.m18AutoReturnForExportAvailable' in qml
+    flow = qml[qml.index('function requestVerifiedWavExport('):
+               qml.index('readonly property var appMemoryAdvisor:')]
+    assert flow.index('root.returnFromM17Audition()') < flow.index(
+        'root.appM18ExportModel.refresh()') < flow.rindex(
+        'root.appM18ExportModel.canExport') < flow.index(
+        'm18ExportFileDialog.open()')
+    assert 'masterExportAutoReturnAvailable' in host
+    assert 'return "RETURN + EXPORT"' in host
+    assert 'if (root.masterExportHandler(0))' in host
+    assert 'if (root.masterExportHandler(1))' in host
 
 
 def test_original_source_open_guard_preserved() -> None:

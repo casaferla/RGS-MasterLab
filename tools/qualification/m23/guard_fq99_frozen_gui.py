@@ -61,10 +61,15 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # M18 physical B01 2026-11-15: exact-pinned diagnostic-only UI delta.
 # Show the existing Product exportReadinessReason in the fixed receipt slot,
 # without changing verified identity, consent, DSP, layout or button authority.
+# PO 2026-11-16: exact-pinned one-click WAV export UX from verified
+# M17 preview/listen. The only newly actionable affordance restores the
+# original MANUAL DEVICE owner, revalidates native M18 canExport, then
+# opens SaveFile. Nonconforming, recovering or stale owners are excluded.
+# No export consent, DSP authority, QML geometry or layout is relaxed.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
 M18_WAV_OUTPUT_UI_BLOBS = {
-    "ui/qml/Main.qml": "e0aa937c2acfe674b61e1a363dd548e3d17b4521",
-    "ui/qml/DspEditorHost.qml": "ecba730427113f0efe5298a79b133542ad62475a",
+    "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
+    "ui/qml/DspEditorHost.qml": "8d0829fc8734441ca76a616d421469f4134d5ca6",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "003415f58b7280beefae539de0732413ec6e9c03",

@@ -69,17 +69,43 @@ ApplicationWindow {
         ? projectSession : null
     readonly property int m18ExportFormatIndex: root.appM18ProjectSession
         ? root.appM18ProjectSession.m18WavEncodingIndex : 0
-    // The requested one-shot button format is NOT a second Project
-    // preference. A cancelled SaveFile leaves the stored format untouched.
+    // Transport-only convenience, NOT M18 authorization: on a verified
+    // M17 preview/listen, an Export click may first return the original
+    // MANUAL SOURCE. Recovery, unqualified audition, in-flight export
+    // and unacknowledged receipts cannot invoke this shortcut.
+    readonly property bool m18AutoReturnForExportAvailable:
+        !!root.appM18ExportModel
+        && !root.appM18ExportModel.exportInProgress
+        && !root.appM18ExportModel.canAcknowledge
+        && ((root.directM17ReturnAvailable
+             && root.appTerminalLimiterViewModel
+             && root.appTerminalLimiterViewModel.audioStatus
+                 === "ACTIVE · AUDITION UNQUALIFIED")
+            || (root.monitorExclusive
+                && !root.m17RecoveryExitRequired
+                && root.appTerminalMonitorViewModel
+                && root.appTerminalMonitorViewModel.monitorInstalled
+                && !root.appTerminalMonitorViewModel.monitorPreparing
+                && !root.appTerminalMonitorViewModel.monitorCancelling
+                && root.appTerminalLimiterViewModel
+                && root.appTerminalLimiterViewModel.audioStatus
+                    === "MONITOR · PRIVATE PCM (NOT LIVE)"))
+    // QML never mints an export Ticket. Exact Return must succeed, and
+    // native M18 canExport must become true BEFORE opening OS SaveFile.
+    // The real worker gate checks it again after the filename is chosen.
     property int m18PendingExportFormatIndex: -1
-    // The actual M18 export result is shown inline in M17 Rate & Time.
-    // The OS destination picker is the only additional dialog.
     function requestVerifiedWavExport(formatIndex) {
         if ((formatIndex !== 0 && formatIndex !== 1)
-            || !root.appM18ExportModel
-            || !root.appM18ExportModel.canExport) return
+            || !root.appM18ExportModel) return false
+        if (!root.appM18ExportModel.canExport) {
+            if (!root.m18AutoReturnForExportAvailable) return false
+            if (!root.returnFromM17Audition()) return false
+            root.appM18ExportModel.refresh()
+            if (!root.appM18ExportModel.canExport) return false
+        }
         root.m18PendingExportFormatIndex = formatIndex
         m18ExportFileDialog.open()
+        return true
     }
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
@@ -1032,8 +1058,9 @@ ApplicationWindow {
             masterListeningHandler: function() { return root.listenToPreparedMaster() }
             masterExportModel: root.appM18ExportModel
             masterExportHandler: function(formatIndex) {
-                root.requestVerifiedWavExport(formatIndex)
+                return root.requestVerifiedWavExport(formatIndex)
             }
+            masterExportAutoReturnAvailable: root.m18AutoReturnForExportAvailable
             masterExportFormatIndex: root.m18ExportFormatIndex
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
@@ -1177,7 +1204,8 @@ ApplicationWindow {
                             objectName: "menuExportMaster"
                             text: "Export verified Master…"
                             enabled: !!root.appM18ExportModel
-                                && root.appM18ExportModel.canExport
+                                && (root.appM18ExportModel.canExport
+                                    || root.m18AutoReturnForExportAvailable)
                             onTriggered: m18ExportFormatDialog.open()
                         }
                         MenuSeparator { }
