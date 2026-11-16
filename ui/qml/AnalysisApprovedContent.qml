@@ -94,6 +94,16 @@ Item {
            || hasNumber(m20Values.P10) || hasNumber(m20Values.P50)
            || hasNumber(m20Values.P90))
         : anyRowValue()
+    // M19: bounded vertical elasticity without reflow or font scaling.
+    readonly property real m19SpareHeight: Math.max(0, root.height - 306)
+    readonly property real m19TileHeight: 96
+        + Math.min(56, root.m19SpareHeight * 0.33)
+    readonly property real m19RelationHeight: 98
+        + Math.min(64, root.m19SpareHeight * 0.34)
+    // M21: each row grows gently 23..36 logical px, never further.
+    // The whole comparison page centers after its final natural size.
+    readonly property real m21RowHeight: Math.max(23,
+        Math.min(36, (root.height - 66) / 9))
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -152,16 +162,16 @@ Item {
                         width: (levelGrid.width
                             - (levelGrid.columns-1)*levelGrid.columnSpacing)
                             / levelGrid.columns
-                        height: 96
+                        height: root.m19TileHeight
                         radius: 7
                         color: root.raised
                         border.color: root.edge
-                        Column {
+                        Item {
                             anchors.fill: parent
                             anchors.margins: 5
-                            spacing: 0
                             StudioReadOnlyMeasurement {
                                 objectName: "m19MetricValue_" + modelData.key
+                                anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width
                                 // Preserve 36px numeric typography; trim
                                 // only unused 102px intrinsic bottom space.
@@ -190,7 +200,7 @@ Item {
             Rectangle {
                 objectName: "m19ReferenceRelationPanel"
                 width: parent.width
-                height: 98
+                height: root.m19RelationHeight
                 color: root.panel
                 border.color: root.edge
                 radius: 7
@@ -202,8 +212,11 @@ Item {
                     anchors.fill: parent
                 }
                 Column {
-                    anchors.fill: parent
-                    anchors.margins: 6
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
                     spacing: 2
                     Text {
                         text: "LEVELS  /  REFERENCE RELATION"
@@ -503,118 +516,128 @@ Item {
 
         // M21 approved nine-metric table: the six display columns are
         // metric / PREPARED / PROCESSED / REFERENCE / two deltas.
-        Column {
-            id: m21
-            objectName: "m21ComparisonPage"
+        // M21 occupies its normal height at minimum. Rows grow continuously
+        // to 36 px; any additional space goes ABOVE and BELOW the complete
+        // table, keeping its vertical center fixed. Text remains unscaled.
+        Item {
+            id: m21Viewport
+            objectName: "m21CenteredViewport"
             visible: root.panelIndex === 2
             width: parent.width
-            spacing: 6
-            Rectangle {
+            height: root.height
+            Column {
+                id: m21
+                objectName: "m21ComparisonPage"
                 width: parent.width
-                height: 32
-                color: "#1B3545"
-                border.color: root.edge
-                radius: 5
-                Row {
-                    anchors.fill: parent
-                    Repeater {
-                        model: ["METRIC","PREPARED","PROCESSED","REFERENCE",
-                                "Δ PREP → REF","Δ PROC → REF"]
-                        delegate: Text {
-                            width: parent.width/6
-                            height: parent.height
-                            text: modelData
-                            color: index === 3 ? root.copper : root.ink
-                            font.family: "Segoe UI"
-                            font.pixelSize: 10
-                            font.bold: true
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
+                y: Math.max(0, (m21Viewport.height - m21.height) / 2)
+                spacing: 6
+                Rectangle {
+                    width: parent.width
+                    height: 32
+                    color: "#1B3545"
+                    border.color: root.edge
+                    radius: 5
+                    Row {
+                        anchors.fill: parent
+                        Repeater {
+                            model: ["METRIC","PREPARED","PROCESSED","REFERENCE",
+                                    "Δ PREP → REF","Δ PROC → REF"]
+                            delegate: Text {
+                                width: parent.width/6
+                                height: parent.height
+                                text: modelData
+                                color: index === 3 ? root.copper : root.ink
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                font.bold: true
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
                 }
-            }
-            Text {
-                objectName: "m21MissingComparisonNotice"
-                width: parent.width
-                height: 22
-                text: root.anyRowValue()
-                    ? "CURRENT MEASUREMENTS · MISSING CELLS SHOWN AS —"
-                    : root.lifecycle === "STALE"
-                    ? "METRICS STALE · REANALYZE ALL SELECTED SOURCES"
-                    : "METRICS UNAVAILABLE · SELECT AND ANALYZE SOURCES"
-                color: root.amber
-                font.family: "Segoe UI"
-                font.pixelSize: 11
-                font.bold: true
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-            // Group rows without a 6px ColumnLayout gap between each
-            // metric; all nine readings remain visible at 1184x688.
-            Column {
-                id: m21MetricRows
-                objectName: "m21FullNineMetricRows"
-                width: m21.width
-                spacing: 0
-                Repeater {
-                    model: ["Integrated LUFS","RMS Level","Sample Peak",
-                            "True Peak · M16","Crest Factor","Stereo Width",
-                            "Correlation P10","Correlation P50","Correlation P90"]
-                    delegate: Rectangle {
-                        id: m21MetricRow
-                        objectName: "m21MetricRow_" + index
-                        readonly property int metricIndex: index
-                        readonly property string metricName: modelData
-                        readonly property var observed: root.m21Rows.length > metricIndex
-                            ? root.m21Rows[metricIndex] : ({})
-                        width: m21.width
-                        height: 23
-                        color: index%2===0 ? "#14232F" : "#0E1C26"
-                        Row {
-                            anchors.fill: parent
-                            Repeater {
-                                model: [m21MetricRow.metricName,
-                                    root.metricText(m21MetricRow.observed.prepared,
-                                                    m21MetricRow.observed.key),
-                                    root.metricText(m21MetricRow.observed.processed,
-                                                    m21MetricRow.observed.key),
-                                    root.metricText(m21MetricRow.observed.reference,
-                                                    m21MetricRow.observed.key),
-                                    root.deltaText(m21MetricRow.observed.deltaPrepared,
-                                                    m21MetricRow.observed.key),
-                                    root.deltaText(m21MetricRow.observed.deltaProcessed,
-                                                    m21MetricRow.observed.key)]
-                                delegate: Text {
-                                    width: parent.width/6
-                                    height: parent.height
-                                    text: modelData
-                                    font.family: index===0 ? "Segoe UI" : "Consolas"
-                                    font.pixelSize: 10
-                                    font.bold: index===0
-                                    color: index===3 ? root.copper
-                                        : index===0 ? root.ink : root.dim
-                                    horizontalAlignment: index===0
-                                        ? Text.AlignLeft : Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: index===0 ? 7 : 0
-                                    elide: Text.ElideRight
+                Text {
+                    objectName: "m21MissingComparisonNotice"
+                    width: parent.width
+                    height: 22
+                    text: root.anyRowValue()
+                        ? "CURRENT MEASUREMENTS · MISSING CELLS SHOWN AS —"
+                        : root.lifecycle === "STALE"
+                        ? "METRICS STALE · REANALYZE ALL SELECTED SOURCES"
+                        : "METRICS UNAVAILABLE · SELECT AND ANALYZE SOURCES"
+                    color: root.amber
+                    font.family: "Segoe UI"
+                    font.pixelSize: 11
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                // Group rows without a 6px ColumnLayout gap between each
+                // metric; all nine readings remain visible at 1184x688.
+                Column {
+                    id: m21MetricRows
+                    objectName: "m21FullNineMetricRows"
+                    width: m21.width
+                    spacing: 0
+                    Repeater {
+                        model: ["Integrated LUFS","RMS Level","Sample Peak",
+                                "True Peak · M16","Crest Factor","Stereo Width",
+                                "Correlation P10","Correlation P50","Correlation P90"]
+                        delegate: Rectangle {
+                            id: m21MetricRow
+                            objectName: "m21MetricRow_" + index
+                            readonly property int metricIndex: index
+                            readonly property string metricName: modelData
+                            readonly property var observed: root.m21Rows.length > metricIndex
+                                ? root.m21Rows[metricIndex] : ({})
+                            width: m21.width
+                            height: root.m21RowHeight
+                            color: index%2===0 ? "#14232F" : "#0E1C26"
+                            Row {
+                                anchors.fill: parent
+                                Repeater {
+                                    model: [m21MetricRow.metricName,
+                                        root.metricText(m21MetricRow.observed.prepared,
+                                                        m21MetricRow.observed.key),
+                                        root.metricText(m21MetricRow.observed.processed,
+                                                        m21MetricRow.observed.key),
+                                        root.metricText(m21MetricRow.observed.reference,
+                                                        m21MetricRow.observed.key),
+                                        root.deltaText(m21MetricRow.observed.deltaPrepared,
+                                                        m21MetricRow.observed.key),
+                                        root.deltaText(m21MetricRow.observed.deltaProcessed,
+                                                        m21MetricRow.observed.key)]
+                                    delegate: Text {
+                                        width: parent.width/6
+                                        height: parent.height
+                                        text: modelData
+                                        font.family: index===0 ? "Segoe UI" : "Consolas"
+                                        font.pixelSize: 10
+                                        font.bold: index===0
+                                        color: index===3 ? root.copper
+                                            : index===0 ? root.ink : root.dim
+                                        horizontalAlignment: index===0
+                                            ? Text.AlignLeft : Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        leftPadding: index===0 ? 7 : 0
+                                        elide: Text.ElideRight
+                                    }
                                 }
                             }
-                        }
-                        ToolTip.text: m21MetricRow.metricName + " · "
-                            + root.metricExplanation(m21MetricRow.observed.key)
-                            + " PREPARED, independent REFERENCE and PROCESSED "
-                            + "are separate real measurements. Delta columns "
-                            + "are REFERENCE minus PREPARED or PROCESSED, "
-                            + "calculated from unrounded operands. "
-                            + "Missing, stale or incompatible results show —."
-                        ToolTip.visible: m21RowDwell.ready
-                        ToolTip.delay: 0
-                        StudioTooltipDwell {
-                            id: m21RowDwell
-                            anchors.fill: parent
+                            ToolTip.text: m21MetricRow.metricName + " · "
+                                + root.metricExplanation(m21MetricRow.observed.key)
+                                + " PREPARED, independent REFERENCE and PROCESSED "
+                                + "are separate real measurements. Delta columns "
+                                + "are REFERENCE minus PREPARED or PROCESSED, "
+                                + "calculated from unrounded operands. "
+                                + "Missing, stale or incompatible results show —."
+                            ToolTip.visible: m21RowDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m21RowDwell
+                                anchors.fill: parent
+                            }
                         }
                     }
                 }

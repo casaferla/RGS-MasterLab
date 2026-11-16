@@ -1512,7 +1512,7 @@ int main(int argc, char* argv[])
                     // show the current role; M21 has no redundant source
                     // selector and labels its simultaneous measurements.
                     const QString expectedHeading = milestone == 21
-                        ? QStringLiteral("THREE INDEPENDENT MEASUREMENTS")
+                        ? QStringLiteral("Δ = REFERENCE − CURRENT")
                         : QStringLiteral("CURRENT SCOPE · ")
                             + (editor
                                 ? editor->property("selectedRole").toString()

@@ -89,6 +89,13 @@ def test_product_binds_status_without_demo() -> None:
     assert "compactFit" not in visuals
     assert "columns: 3" in visuals
     assert 'objectName: "m19MetricsGrid"' in visuals
+    assert 'm19SpareHeight' in visuals
+    assert 'm19RelationHeight' in visuals
+    assert 'm21RowHeight' in visuals
+    assert 'objectName: "m21CenteredViewport"' in visuals
+    assert 'y: Math.max(0, (m21Viewport.height - m21.height) / 2)' in visuals
+    assert 'height: root.m21RowHeight' in visuals
+    assert 'QStringLiteral("Δ = REFERENCE − CURRENT")' in main
     assert 'height: Math.max(140, root.height - 166)' in visuals
     assert 'objectName: "analysisDetailFooter"' not in visuals
     assert 'THREE INDEPENDENT MEASUREMENTS' not in editor

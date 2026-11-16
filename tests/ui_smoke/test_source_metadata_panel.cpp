@@ -7204,28 +7204,60 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QCOMPARE(availability->property("text").toString(),
                      QStringLiteral("VERIFIED ANALYSIS UNAVAILABLE"));
             const QString anchorName=index==0
-                ?QStringLiteral("m19MetricValue_lufs")
+                ?QStringLiteral("m19MetricsGrid")
                 :index==1
                 ?QStringLiteral("m20SpectrumPanel")
-                :QStringLiteral("m21MetricRow_0");
+                :QStringLiteral("m21ComparisonPage");
             auto* analysisAnchor=qobject_cast<QQuickItem*>(
                 find_child_by_name(originalPages[index],anchorName));
             QVERIFY2(analysisAnchor,"Analysis top-left landmark missing");
             const QPointF anchorPos=analysisAnchor->mapToItem(
                 analysisBody,QPointF{});
             if(size.height()==688) firstAnalysisAnchor=anchorPos;
-            else QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5
-                          &&std::abs(anchorPos.y()-firstAnalysisAnchor.y())<1.5,
-                          "Product analysis content jumped during native resize");
+            else if(index<2) {
+                QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5
+                         &&std::abs(anchorPos.y()-firstAnalysisAnchor.y())<1.5,
+                         "M19/M20 must preserve the top-left anchor");
+            } else {
+                QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5,
+                         "M21 must retain horizontal left alignment");
+            }
             if(index==0) {
                 auto* grid=find_child_by_name(originalPages[index],
                     QStringLiteral("m19MetricsGrid"));
-                QVERIFY2(grid&&grid->property("columns").toInt()==3,
-                         "M19 must retain exactly three columns at every width");
+                auto* relation=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m19ReferenceRelationPanel")));
+                QVERIFY2(grid && grid->property("columns").toInt()==3,
+                         "M19 must retain exactly 3+2 cards");
+                QVERIFY2(relation && relation->height()>=98.0
+                         && relation->height()<=162.1,
+                         "M19 reference relation must expand only within bounds");
+                auto* hero=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m19MetricValue_lufs")));
+                QVERIFY2(hero && hero->property("numericPixelSize").toInt()==36,
+                         "M19 numeric typography must not scale");
             } else if(index==1) {
                 QVERIFY2(analysisAnchor->height()+1.0>=priorSpectrumHeight,
                          "M20 spectrum must stretch with spare editor height");
                 priorSpectrumHeight=analysisAnchor->height();
+            } else {
+                const auto* row=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m21MetricRow_0")));
+                QVERIFY2(row && row->height()>=22.9 && row->height()<=36.1,
+                         "M21 nine-row table must use bounded 23-36px rows");
+                const qreal centerTop=std::max(
+                    0.0,(analysisBody->height()-analysisAnchor->height())/2.0);
+                QVERIFY2(std::abs(anchorPos.y()-centerTop)<1.5,
+                         "M21 whole table must remain vertically centered");
+                auto* viewport=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m21CenteredViewport")));
+                QVERIFY2(viewport
+                         &&viewport->height()>=analysisBody->height()-1.0,
+                         "M21 centered viewport must retain full height");
             }
             if(size.height()==688) {
                 // All essential content must be inside the actual clipped
