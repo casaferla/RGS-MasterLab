@@ -93,7 +93,8 @@ def test_product_binds_status_without_demo() -> None:
     assert 'objectName: "analysisDetailFooter"' not in visuals
     assert 'THREE INDEPENDENT MEASUREMENTS' not in editor
     assert 'anchors.margins: 8' in editor
-    assert 'for(const QSize size : {QSize{1184,688},QSize{1350,750}' in qt_smoke
+    assert 'for(const QSize size : {QSize{1184,688},QSize{1350,750}' in read(
+        "tests/ui_smoke/test_source_metadata_panel.cpp")
     qt_smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     assert "analysisStack->implicitHeight()" in qt_smoke
     assert "<=analysisBody->height()+1.0" in qt_smoke
