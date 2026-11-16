@@ -2113,6 +2113,27 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     const auto recycled=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(recycled[0]&&!recycled[1]&&recycled[2]);
+    // Separate live Product inbox models an analysis that finished WHILE
+    // REFERENCE was changed. Reuse genuine completed observations through
+    // the new epoch without re-running their M16/M19/M20 calculations.
+    app::internal::M21ProductPublicationInbox inflightCache;
+    QVERIFY(inflightCache.accept_completed_unchanged_render(
+        controllers,fanout,session.selector,
+        *samePcm.value(),*preparedNumbers.value()));
+    QVERIFY(inflightCache.accept_completed_unchanged_render(
+        controllers,fanout,session.selector,
+        *samePcm.value(),*processedNumbers.value()));
+    QVERIFY(!inflightCache.accept_completed_unchanged_gold(
+        controllers,fanout,session.selector,session.gold,
+        *firstReference.value(),*firstReferenceNumbers.value()));
+    const auto savedInFlight=inflightCache.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(savedInFlight.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(savedInFlight.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(savedInFlight.columns[0]->metrics[0].unrounded,
+             preparedNumbers.value()->metrics[0].unrounded);
     const auto afterReuse=referenceCache.view_current(
         controllers,fanout,session.selector,session.gold);
     QCOMPARE(afterReuse.columns[0]->lifecycle,
@@ -2160,6 +2181,15 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(afterTwoDspMutations->epoch>=priorParamEpoch->epoch+2);
     QCOMPARE(session.masteringChainState->chain().revision(),
              structuralRevision);
+    // The prior PROCESSED cannot be re-published with stale audio even
+    // if a worker happened to complete after these two parameter edits.
+    QVERIFY(!inflightCache.accept_completed_unchanged_render(
+        controllers,fanout,session.selector,
+        *samePcm.value(),*processedNumbers.value()));
+    // Unchanged independent Gold B remains valid across the DSP edit.
+    QVERIFY(inflightCache.accept_completed_unchanged_gold(
+        controllers,fanout,session.selector,session.gold,
+        *secondReference.value(),*measuredRefB.value()));
     // A parameter-only edit intentionally does NOT increment the
     // ProcessingChain structural revision. Compare the actual typed
     // DSP bindings, otherwise the old PROCESSED is incorrectly recycled.
