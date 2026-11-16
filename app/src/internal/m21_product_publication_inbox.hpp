@@ -78,13 +78,13 @@ public:
     // identity of the measured audio. Independently reauthenticate each
     // immutable observation after an unrelated owner-epoch transition.
     //
-    // PREPARED is SOURCE PCM: retain through DSP edits, REFERENCE changes,
-    // playback-target selection and terminal M17 Prepare if the authentic
-    // SOURCE generation, project and retained PREPARED PCM have not changed.
+    // PREPARED is SOURCE PCM: retain through DSP edits, REFERENCE
+    // changes, playback-target selection and M17 Render Master when
+    // the authentic SOURCE generation and PREPARED owner are unchanged.
     //
-    // PROCESSED is one exact manual realization: additionally require the
-    // same processed owner/RealizationId AND unchanged MANUAL chain revision.
-    // A new DSP revision must require a new PROCESSED analysis.
+    // PROCESSED additionally requires the same immutable manual PCM,
+    // RealizationId and exact typed DSP parameter bindings. Structural
+    // chain revision alone does not track parameter-only edits.
     //
     // REFERENCE is an independently selected WAV: retain across all of the
     // above only when GoldSelectionViewModel's monotonic revision and exact
@@ -135,8 +135,8 @@ public:
         // Gold is independent of whether PREPARED/PROCESSED have already
         // completed or whether a worker is currently retiring. Never gate
         // this conservation on another column's readiness.
-        if(refResult &&goldCapture_ &&goldSelectionRevision_
-           &&*goldSelectionRevision_==gold.selection_revision()
+        if(refResult &&goldCapture_
+           &&goldCapture_->selection_revision==gold.selection_revision()
            &&gold.selection_revision()!=
                (std::numeric_limits<std::uint64_t>::max)()
            &&Product::gold_still_current(
@@ -244,7 +244,6 @@ public:
            ||!publisher_.publish(result))
             return false;
         goldCapture_=captured;
-        goldSelectionRevision_=gold.selection_revision();
         return true;
     }
 
@@ -326,7 +325,6 @@ private:
     std::optional<Product::Capture> preparedCapture_{};
     std::optional<Product::Capture> processedCapture_{};
     std::optional<Product::GoldCapture> goldCapture_{};
-    std::optional<std::uint64_t> goldSelectionRevision_{};
 };
 
 } // namespace rgsml::app::internal
