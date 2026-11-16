@@ -307,6 +307,14 @@ std::uint64_t MasteringPreviewController::stale_results_discarded() const noexce
     return staleResultsDiscarded_;
 }
 
+bool MasteringPreviewController::published_preview_matches_current_bindings() const
+{
+    return chainState_ && acceptedPreviewGeneration_!=0
+        && acceptedPreviewGeneration_==previewGeneration_
+        && previewStatus_==QStringLiteral("READY")
+        && acceptedPreviewBindings_==chainState_->execution_bindings();
+}
+
 void MasteringPreviewController::request_preview()
 {
     if (!chainState_) {
@@ -338,6 +346,10 @@ void MasteringPreviewController::request_preview()
         chainState_->registry_snapshot()
     };
 
+    // The pending snapshot is the exact DSP input of the accepted
+    // preview request; unlike structural chain revision, it detects
+    // parameter-only edits even while a prior PROCESSED owner survives.
+    pendingPreviewBindings_=job.bindings;
     {
         const std::lock_guard<std::mutex> lock(workerMutex_);
         pendingJob_ = std::move(job);
@@ -471,6 +483,8 @@ void MasteringPreviewController::publish_preview_result(
         }
     }
 
+    acceptedPreviewBindings_=pendingPreviewBindings_;
+    acceptedPreviewGeneration_=generation;
     previewStatus_ = QStringLiteral("READY");
     previewError_.clear();
     emit changed();
