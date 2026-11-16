@@ -2216,6 +2216,14 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!inflightCache.accept_completed_unchanged_render(
         controllers,fanout,session.selector,
         *samePcm.value(),*processedNumbers.value()));
+    // Forged/incorrect old worker resource identity MUST NOT be
+    // rewritten into a legitimate current REFERENCE identity. Reject
+    // before consuming the current publisher generation.
+    auto wrongGoldWorker=*measuredRefB.value();
+    wrongGoldWorker.resource_identity="gold-file-generation:alien";
+    QVERIFY(!inflightCache.accept_completed_unchanged_gold(
+        controllers,fanout,session.selector,session.gold,
+        *secondReference.value(),wrongGoldWorker));
     // Unchanged independent Gold B remains valid across the DSP edit.
     QVERIFY(inflightCache.accept_completed_unchanged_gold(
         controllers,fanout,session.selector,session.gold,
