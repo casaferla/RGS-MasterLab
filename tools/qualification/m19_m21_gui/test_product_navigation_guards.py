@@ -82,6 +82,8 @@ def test_product_binds_status_without_demo() -> None:
     assert "m20WorkbenchSpectrum" in visuals
     assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in host
     assert 'objectName: "analysisHeaderSourceChooser"' in host
+    assert 'Reset Export TP Limiter Ceiling to 0.0 dBTP' in host
+    assert 'Restore Export Ceiling to 0.0 dBTP' in host
     assert 'root.isM19AnalysisEditor || root.isM20AnalysisEditor' in host
     assert 'selectPanelSource(' in host
     assert 'analysisSourceOption_' not in editor

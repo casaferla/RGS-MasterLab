@@ -455,8 +455,8 @@ Rectangle {
                     enabled: root.isLimiterEditor && !root.monitorExclusive
                         && root.activeModule && root.activeModule.resetSupported
                     onClicked: if (root.activeModule) root.activeModule.resetToDefault()
-                    Accessible.name: "Reset TP Limiter Ceiling to -1.0 dBTP"
-                    ToolTip.text: "Restore Ceiling to -1.0 dBTP without changing Active or Bypass"
+                    Accessible.name: "Reset Export TP Limiter Ceiling to 0.0 dBTP"
+                    ToolTip.text: "Restore Export Ceiling to 0.0 dBTP without changing Active or Bypass"
                     ToolTip.visible: hovered && m17ResetTooltipDwell.ready
                     ToolTip.delay: 0
                     StudioTooltipDwell {
