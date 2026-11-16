@@ -552,8 +552,10 @@ Rectangle {
                 visible: root.isLimiterEditor && !root.m17Preparing
                     && !root.m18ExportActive
                 objectName: "m17PrepareButton"
-                text: "Prepare"
-                minimumControlWidth: 86
+                // PREPARED is an audio pipeline role. This action renders
+                // and verifies M17's final Master, NOT PREPARED state.
+                text: "Render Master"
+                minimumControlWidth: 124
                 accentColor: "#C4774A"
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
@@ -561,19 +563,19 @@ Rectangle {
                     && !!root.masterRateState
                     && root.masterRateState.currentMasterRateAdmissible
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
-                Accessible.name: "Prepare offline TP limiter"
+                Accessible.name: "Render and verify full Master with Export TP Limiter"
                 ToolTip.text: root.masterRateState
                     && !root.masterRateState.currentMasterRateAdmissible
                     ? root.masterRateState.final_src_path_status(
                         root.masterRateState.masterRateHz)
                     : root.terminalLimiterViewModel
                         && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
-                        ? "Master already verified: use Listen to Master or change parameters to prepare a different master."
+                        ? "Master already verified: use Listen to Master or change parameters to render another master."
                         : root.terminalLimiterViewModel
                             && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                                 || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE"))
                             ? "A measured or active candidate is present. This button cannot override its verification; change a setting or return to normal preparation first."
-                            : "Render and verify the full master; Play never starts this job."
+                            : "Render and verify the full Master; PREPARED audio is unaffected."
                 ToolTip.visible: hovered && m17PrepareTooltipDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -585,9 +587,9 @@ Rectangle {
                 visible: root.isLimiterEditor && root.m17Preparing
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
-                // Same fixed slot as Prepare: WAV Export must never jump
-                // horizontally during an in-flight full-resource job.
-                minimumControlWidth: 86
+                // Same width as Render Master: WAV Export never jumps
+                // during an in-flight full-resource job.
+                minimumControlWidth: 124
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
@@ -625,14 +627,14 @@ Rectangle {
             StudioButton {
                 visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 objectName: "m17PreviewPreparedButton"
-                text: "Preview Prepared"
+                text: "Preview Master"
                 minimumControlWidth: 130
                 accentColor: "#C4774A"
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
-                Accessible.name: "Preview verified limiter audio"
+                Accessible.name: "Preview rendered Master audio"
             }
             StudioButton {
                 objectName: "m17CancelExportButton"
@@ -673,7 +675,7 @@ Rectangle {
                         && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                             || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE · NON-CONFORMING"))
                         ? "Master is not Ceiling-verified. Preview Anyway is a separate unqualified audition, not Listen to Master."
-                        : "No verified Master is available for this source and rate; Prepare M17 first."
+                        : "No verified Master is available for this source and rate; Render Master first."
                 ToolTip.visible: hovered && m17MasterListenDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
