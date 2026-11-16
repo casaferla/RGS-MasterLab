@@ -39,7 +39,10 @@ public:
             return false;
         const auto render=result.column==Column::prepared
             ?captured.prepared:captured.processed;
-        if(!render)return false;
+        if(!render ||(result.column==Column::processed
+           &&render->chain_revision()
+                !=captured.owner.identity.chain_revision))
+            return false;
         const auto view=render->view();
         const auto expectedIdentity=result.column==Column::prepared
             ?("prepared-source-generation:"+
