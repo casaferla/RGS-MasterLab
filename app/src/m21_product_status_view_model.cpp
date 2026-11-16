@@ -15,6 +15,13 @@ M21ProductStatusViewModel::M21ProductStatusViewModel(
 {
     refresh();
 }
+void M21ProductStatusViewModel::set_running_analysis_role(
+    const QString& role)
+{
+    if(!owner_thread() || runningAnalysisRole_==role) return;
+    runningAnalysisRole_=role;
+    emit changed();
+}
 bool M21ProductStatusViewModel::owner_thread() const noexcept {
     return QThread::currentThread()==thread()
         &&thread()==selector_->thread()

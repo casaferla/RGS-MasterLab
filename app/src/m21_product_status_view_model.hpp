@@ -14,6 +14,10 @@ class M21ProductStatusViewModel final : public QObject {
     Q_PROPERTY(QVariantMap m19 READ m19 NOTIFY changed)
     Q_PROPERTY(QVariantMap m20 READ m20 NOTIFY changed)
     Q_PROPERTY(QVariantMap m21 READ m21 NOTIFY changed)
+    // Actual asynchronous Product worker activity (never a fabricated
+    // progress percentage or claim that a SOURCE is qualified).
+    Q_PROPERTY(QString runningAnalysisRole READ running_analysis_role
+               NOTIFY changed)
     Q_PROPERTY(bool productionAuthorized READ production_authorized CONSTANT)
     // Strictly empty in current Product builds: only a future canonical
     // Phase-6 Gate G issuer may activate this release-only readout path.
@@ -38,6 +42,10 @@ public:
     [[nodiscard]] QVariantMap m20() const {return frame_.panels[1];}
     [[nodiscard]] QVariantMap m21() const {return frame_.panels[2];}
     [[nodiscard]] bool production_authorized() const noexcept {return false;}
+    [[nodiscard]] QString running_analysis_role() const { return runningAnalysisRole_; }
+    // Only the exact owner-thread coordinator may report an actual
+    // running PREPARED / REFERENCE / PROCESSED measurement.
+    void set_running_analysis_role(const QString& role);
     // Existing authenticated inbox is the ONE eventual numerical source.
     // Current code does not issue a FeatureStatus or unlock Gate G.
     [[nodiscard]] QVariantMap phase6_release_readouts() const;
@@ -63,5 +71,6 @@ private:
     const Inbox* inbox_;
     Bridge::Routing routing_{};
     Bridge::Frame frame_{};
+    QString runningAnalysisRole_{};
 };
 } // namespace rgsml::app

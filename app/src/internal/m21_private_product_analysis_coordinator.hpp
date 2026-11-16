@@ -74,6 +74,7 @@ public:
                 if(accepted)status_->refresh();
             }
             active_.reset();
+            status_->set_running_analysis_role({});
         }
         if(worker_.busy())return;
 
@@ -100,6 +101,7 @@ public:
                 next_request_id_+=1;
                 active_=Active{id,column,std::nullopt,evidence};
                 attempted_[index]=key;
+                status_->set_running_analysis_role(QStringLiteral("REFERENCE"));
                 return;
             }
 
@@ -128,6 +130,8 @@ public:
             next_request_id_+=1;
             active_=Active{id,column,evidence,std::nullopt};
             renderAttempts_[index].remember(std::move(key),render);
+            status_->set_running_analysis_role(column==Column::prepared
+                ?QStringLiteral("PREPARED"):QStringLiteral("PROCESSED"));
             return;
         }
     }
