@@ -74,6 +74,10 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # Compact native cards preserve readout fonts, full 9-row M21 table and
 # the genuine log-scaled M20 spectrum. No source/authenticator is relaxed.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
+# PO-approved 2026-11-16 Streaming TP Limiter controls and Gain icon:
+# exact-pin numeric 120x32 wells, reset/action row, removal of Research Margin
+# and experimental copy, and the single horizontal slider pictogram.
+# M16 diagnostic data authorization does NOT imply release Gate G.
 # Exact PO-observed 2026-11-16 M19–M21 usability changes:
 # ordered source selectors/table, genuine worker-activity label, and
 # logarithmically aligned M20 frequency tick positions. These two
@@ -84,7 +88,8 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
     "ui/qml/DspEditorHost.qml": "ad0fd9ffa4b485ae7e188b1f0036587c4b79bcce",
-    "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
+    "ui/qml/StreamingTruePeakLimiterEditor.qml": "1d9266195ba2f108cc492273e0bfca66d8d5ef79",
+    "ui/qml/StudioIcon.qml": "6fdb001df1c1296852ccc21c15b0dc62c1ebbb52",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "b354658f9164258b41c9cac3a6cfd2d42e421802",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
