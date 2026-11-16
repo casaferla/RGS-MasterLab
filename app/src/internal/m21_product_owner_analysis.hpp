@@ -139,10 +139,11 @@ public:
     {
         if(column!=Column::prepared &&column!=Column::processed)
             return false;
+        // Project save/metadata revision alone is not a PCM revision.
+        // SOURCE generation plus the exact immutable RenderResult owner
+        // protect a project reopen or a genuine PREPARED replacement.
         if(before.owner.identity.source_generation
                 !=now.owner.identity.source_generation
-           ||before.owner.identity.project_generation
-                !=now.owner.identity.project_generation
            ||!before.source.same_resource_identity(now.source)
            ||before.source_full_frames!=now.source_full_frames
            ||!before.prepared||before.prepared!=now.prepared)
