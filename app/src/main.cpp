@@ -1507,10 +1507,20 @@ int main(int argc, char* argv[])
                         QStringLiteral("analysisSourceHeading")) : nullptr;
                     const auto* redundantFootnote = editor ? editor->findChild<QObject*>(
                         QStringLiteral("analysisEvidenceState")) : nullptr;
+                    // Read the selected editor's actual scope, not the
+                    // previous pre-compaction fixed heading. M19/M20
+                    // show the current role; M21 has no redundant source
+                    // selector and labels its simultaneous measurements.
+                    const QString expectedHeading = milestone == 21
+                        ? QStringLiteral("THREE INDEPENDENT MEASUREMENTS")
+                        : QStringLiteral("CURRENT SCOPE · ")
+                            + (editor
+                                ? editor->property("selectedRole").toString()
+                                : QString{});
                     const bool compact = sourceHeading
                         && sourceHeading->property("visible").toBool()
                         && sourceHeading->property("text").toString()
-                            == QStringLiteral("INDEPENDENT ANALYSIS SOURCE")
+                            == expectedHeading
                         && redundantFootnote
                         && !redundantFootnote->property("visible").toBool();
                     bool captureReady = true;

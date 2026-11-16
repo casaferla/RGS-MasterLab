@@ -7098,7 +7098,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QVERIFY2(choice,"Missing real host-level analysis source selector");
             QCOMPARE(choice->property("text").toString(),
                 orderedRoles[static_cast<std::size_t>(roleIndex)]);
-            QCOMPARE(choice->isVisible(),index<2);
+            auto* choiceItem=qobject_cast<QQuickItem*>(choice);
+            QVERIFY2(choiceItem,"Analysis source selector must be a real QQuickItem");
+            QCOMPARE(choiceItem->isVisible(),index<2);
         }
         if(i==0) {
             for(const auto& key:std::array<QString,5>{
