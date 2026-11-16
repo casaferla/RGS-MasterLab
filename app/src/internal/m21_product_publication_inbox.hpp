@@ -160,6 +160,61 @@ public:
         return accepted;
     }
 
+    // A numerical worker can finish after M17, a target switch, a
+    // REFERENCE selection or a chain edit that advances the Product epoch.
+    // If—and ONLY if—the independent resource measured by that worker is
+    // still exactly the current resource, revalidate under the live owner
+    // and publish its ORIGINAL numeric cells with the current token.
+    // No second M16/M19/M20 run and no cross-realization PROCESSED reuse.
+    [[nodiscard]] bool accept_completed_unchanged_render(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const Product::Capture& oldCapture,const Snapshot& completed)
+    {
+        if(completed.column==Column::gold
+           ||completed.generation_token!=oldCapture.owner.epoch)
+            return false;
+        const auto now=Product::capture(product,fanout,selector);
+        if(!now ||now.value()->owner.epoch<oldCapture.owner.epoch
+           ||!Product::still_current(
+               product,fanout,selector,*now.value())
+           ||!Product::same_render_observation(
+               oldCapture,*now.value(),completed.column))
+            return false;
+        auto reauthenticated=completed;
+        reauthenticated.generation_token=now.value()->owner.epoch;
+        return accept_render(
+            product,fanout,selector,*now.value(),reauthenticated);
+    }
+
+    [[nodiscard]] bool accept_completed_unchanged_gold(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,
+        const Product::GoldCapture& oldCapture,const Snapshot& completed)
+    {
+        if(completed.column!=Column::gold
+           ||completed.generation_token!=oldCapture.owner.epoch)
+            return false;
+        const auto now=Product::capture_gold(
+            product,fanout,selector,gold);
+        if(!now||now.value()->owner.epoch<oldCapture.owner.epoch
+           ||!Product::gold_still_current(
+               product,fanout,selector,gold,*now.value())
+           ||!Product::same_gold_observation(
+               oldCapture,*now.value()))
+            return false;
+        auto reauthenticated=completed;
+        reauthenticated.generation_token=now.value()->owner.epoch;
+        reauthenticated.resource_identity="gold-file-generation:"+
+            std::to_string(now.value()->owner.epoch)+"|"+
+            now.value()->gold.provider_id()+"|"+
+            now.value()->gold.locator();
+        return accept_gold(
+            product,fanout,selector,gold,
+            *now.value(),reauthenticated);
+    }
+
     // GOLD is only accepted from a distinct selected WAV resource
     // captured on the true Qt owner. Measure on worker, revalidate on
     // return; never align Gold file frames with SOURCE by guesswork.
