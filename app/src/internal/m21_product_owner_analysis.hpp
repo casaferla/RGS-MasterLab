@@ -169,6 +169,8 @@ public:
         // new file-picker selection, even for an identical local path.
         return before.selection_revision==now.selection_revision
             &&before.selection_revision!=0
+            &&before.selection_revision!=
+                (std::numeric_limits<std::uint64_t>::max)()
             &&before.gold.same_resource_identity(now.gold)
             &&before.sample_rate_hz==now.sample_rate_hz
             &&before.full_frames==now.full_frames
