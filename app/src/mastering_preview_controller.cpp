@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/render/render_preview.hpp>
+#include <QThread>
 #include <rgsml/render/render_request.hpp>
 
 #include <QMetaObject>
@@ -278,6 +279,7 @@ void MasteringPreviewController::set_publisher(ProcessedRealizationPublisher pub
 void MasteringPreviewController::set_accepted_processed_provider(
     AcceptedProcessedProvider provider)
 {
+    if(QThread::currentThread()!=thread())return;
     acceptedProcessedProvider_=std::move(provider);
     acceptedPreviewOwner_.reset();
 }
@@ -316,6 +318,9 @@ std::uint64_t MasteringPreviewController::stale_results_discarded() const noexce
 
 bool MasteringPreviewController::published_preview_matches_current_bindings() const
 {
+    // Only the Qt owner may inspect accepted preview and mutable chain
+    // identities. A background DSP worker cannot call this accessor.
+    if(QThread::currentThread()!=thread())return false;
     const auto published=acceptedPreviewOwner_.lock();
     return chainState_ &&acceptedProcessedProvider_&&published
         && acceptedPreviewGeneration_!=0
