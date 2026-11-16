@@ -296,6 +296,23 @@ jobs:
               Select-String -Pattern 'FAIL!', 'QFATAL', 'QCOMPARE', 'QVERIFY', 'ASSERT', 'M21_PROCESSED_' -Context 2,12 |
               Select-Object -First 12 | Out-String -Width 240 |
               Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
+            # Qt GUI-subsystem test exes may have no CTest stdout even on
+            # assertion failure. On failure ONLY, request the QtTest text
+            # reporter into a temporary file and extract bounded FAIL
+            # neighborhoods, never publishing the complete report.
+            $projectExe=Get-ChildItem 'build/m23-native' -Filter 'rgsml_project_session_tests.exe' -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]Release[\\/]' } |
+              Select-Object -First 1
+            if ($projectExe) {
+              $qtReport=Join-Path $env:RUNNER_TEMP 'm23-project-qt-diagnostic.txt'
+              & $projectExe.FullName -o "$qtReport,txt" *> $null
+              if (Test-Path $qtReport) {
+                Get-Content $qtReport |
+                  Select-String -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'QCOMPARE', 'QVERIFY' -Context 2,12 |
+                  Select-Object -First 12 | Out-String -Width 240 |
+                  Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
+              }
+            }
             # The old one-case/screenshots-on A/B was NOT controlled.
             # Retain real candidate failure; controlled matrix has its
             # separate bounded artifact and cannot greenwash this gate.
