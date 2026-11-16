@@ -52,9 +52,9 @@ QVariantMap M21ProductStatusViewModel::analysis_readouts() const
         return released;
 
     const auto read=[&](std::size_t role,std::size_t metric)->QVariant {
-        // No numerical M16 True Peak has been release-qualified. The
-        // visible row remains absent regardless of private PCM evidence.
-        if(metric>=m21_private::kMetricSpecs.size() || metric==3U ||
+        // Diagnostic M16 values are genuine, and stay separate from
+        // formally qualified Phase-6 release properties.
+        if(metric>=m21_private::kMetricSpecs.size() ||
            role>=evidence.columns.size() || !evidence.columns[role])
             return {};
         const auto& record=*evidence.columns[role];
@@ -63,14 +63,16 @@ QVariantMap M21ProductStatusViewModel::analysis_readouts() const
            record.scope_frames==0 || record.sample_rate_hz==0)
             return {};
         const auto& cell=record.metrics[metric];
-        if(cell.quality!=m21_private::Quality::present ||
+        if((cell.quality!=m21_private::Quality::present &&
+            cell.quality!=m21_private::Quality::low_confidence) ||
            !cell.unrounded || !std::isfinite(*cell.unrounded))
             return {};
         return QVariant::fromValue(*cell.unrounded);
     };
     const auto released_delta=[&](const m21_private::Cell& cell,
                                   std::size_t metric)->QVariant {
-        if(metric==3U || cell.quality!=m21_private::Quality::present ||
+        if((cell.quality!=m21_private::Quality::present &&
+            cell.quality!=m21_private::Quality::low_confidence) ||
            !cell.unrounded || !std::isfinite(*cell.unrounded))
             return {};
         return QVariant::fromValue(*cell.unrounded);
