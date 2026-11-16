@@ -85,7 +85,9 @@ def test_product_binds_status_without_demo() -> None:
     assert "analysisProductContentStack" in visuals
     assert "m21FullNineMetricRows" in visuals
     assert "root.compactFit" in visuals
+    qt_smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     assert "analysisStack->implicitHeight()<=analysisBody->height()+1.0" in qt_smoke
+    assert "Last essential readout clipped at minimum 1184x688" in qt_smoke
     assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in host
     assert 'objectName: "analysisHeaderSourceChooser"' in host
     assert 'Reset Export TP Limiter Ceiling to 0.0 dBTP' in host
