@@ -520,7 +520,9 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'before.processed_realization_id' in owner
     assert 'before.owner.identity.chain_revision' in owner
     assert 'before.owner.identity.source_generation' in owner
-    assert 'before.owner.identity.project_generation' in owner
+    assert 'Project save/metadata revision alone is not a PCM revision.' in owner
+    assert 'before.owner.identity.project_generation' not in owner[owner.index(
+        'same_render_observation('):owner.index('same_gold_observation(')]
     assert 'before.selection_revision==now.selection_revision' in owner
     assert 'gold.selection_revision()!=expected.selection_revision' in owner
     assert '*goldSelectionRevision_==gold.selection_revision()' in independently
