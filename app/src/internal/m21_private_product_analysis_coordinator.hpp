@@ -144,8 +144,8 @@ public:
                &&(!evidence.processed
                   ||evidence.processed->chain_revision()
                         !=evidence.owner.identity.chain_revision
-                  ||(processedPreviewMatches_ &&
-                     !processedPreviewMatches_())))
+                  ||!processedPreviewMatches_
+                  ||!processedPreviewMatches_()))
                 continue;
             // Exact immutable render identity is independent of the M18
             // owner epoch. A new render can be installed in the SAME
