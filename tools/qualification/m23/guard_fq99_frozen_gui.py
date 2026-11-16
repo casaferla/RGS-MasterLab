@@ -70,7 +70,14 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # intermediate DspWorkspace. Exact docked AND floating forwarding is now
 # separately SHA-pinned, without touching DSP or M18 Product authority.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
+# Exact PO-observed 2026-11-16 M19–M21 usability changes:
+# ordered source selectors/table, genuine worker-activity label, and
+# logarithmically aligned M20 frequency tick positions. These two
+# pre-existing additive analysis files are exact-pinned, NOT released
+# or declared FQ99-identical. M16 Gate G remains separate.
 M18_WAV_OUTPUT_UI_BLOBS = {
+    "ui/qml/AnalysisApprovedContent.qml": "570b6ac0828b982794d90c901cd20cc26d673a50",
+    "ui/qml/AnalysisStatusEditor.qml": "2ed453aaffa75cd8b76d1ecc0c3ff77d661dbfab",
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
     "ui/qml/DspEditorHost.qml": "8d0829fc8734441ca76a616d421469f4134d5ca6",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
