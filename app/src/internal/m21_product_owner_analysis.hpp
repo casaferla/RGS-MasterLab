@@ -126,7 +126,47 @@ public:
         std::uint32_t sample_rate_hz{0};
         std::int64_t full_frames{0};
         std::size_t channels{0};
+        // New selection of even the SAME path is new evidence.
+        std::uint64_t selection_revision{0};
     };
+
+    // Immutable audio identity is narrower than the M18 global owner:
+    // M17 terminal work, target switches and REFERENCE selection may
+    // advance an operation epoch without changing these PCM samples.
+    // Never confuse a distinct PROCESSED RealizationId with an old one.
+    [[nodiscard]] static bool same_render_observation(
+        const Capture& before,const Capture& now,Column column) noexcept
+    {
+        if(column!=Column::prepared &&column!=Column::processed)
+            return false;
+        if(before.owner.identity.source_generation
+                !=now.owner.identity.source_generation
+           ||before.owner.identity.project_generation
+                !=now.owner.identity.project_generation
+           ||!before.source.same_resource_identity(now.source)
+           ||before.source_full_frames!=now.source_full_frames
+           ||!before.prepared||before.prepared!=now.prepared)
+            return false;
+        return column==Column::prepared
+            ||(before.processed&&before.processed==now.processed
+               &&before.processed_realization_id
+                    ==now.processed_realization_id
+               &&before.owner.identity.chain_revision
+                    ==now.owner.identity.chain_revision);
+    }
+    [[nodiscard]] static bool same_gold_observation(
+        const GoldCapture& before,const GoldCapture& now) noexcept
+    {
+        // A REFERENCE may legitimately survive a different SOURCE,
+        // Project revision or Manual chain revision. It cannot survive a
+        // new file-picker selection, even for an identical local path.
+        return before.selection_revision==now.selection_revision
+            &&before.selection_revision!=0
+            &&before.gold.same_resource_identity(now.gold)
+            &&before.sample_rate_hz==now.sample_rate_hz
+            &&before.full_frames==now.full_frames
+            &&before.channels==now.channels;
+    }
 
     // GOLD is an INDEPENDENT, read-only WAV resource owned by the
     // actual GoldSelectionViewModel. It is never a processed alias,
@@ -159,7 +199,8 @@ public:
             return R::failure(failed("M21_GOLD_INVALID_NATIVE_WAV_SCOPE"));
         return R::success(GoldCapture{
             *productEpoch,resource->reference(),
-            static_cast<std::uint32_t>(fs),frames,channels});
+            static_cast<std::uint32_t>(fs),frames,channels,
+            gold.selection_revision()});
     }
 
     [[nodiscard]] static bool gold_still_current(
@@ -180,6 +221,7 @@ public:
         if(!current||!resource
            ||current->epoch!=expected.owner.epoch
            ||current->identity!=expected.owner.identity
+           ||gold.selection_revision()!=expected.selection_revision
            ||!resource->reference().same_resource_identity(expected.gold))
             return false;
         const auto& info=resource->wav_info();
