@@ -36,8 +36,9 @@ def test_product_binds_status_without_demo() -> None:
     assert "bindAnalysisStatusViewModel(\n        &m21ProductStatusViewModel)" in main
     assert "m21ProductStatusViewModel" in read("ui/qml/Main.qml")
     editor = read("ui/qml/AnalysisStatusEditor.qml")
+    host = read("ui/qml/DspEditorHost.qml")
     assert "productionAuthorized === true" in editor
-    assert "selectPanelSource(" in editor
+    assert "selectPanelSource(" in host
     assert "fixtureMode" not in editor
     assert "AnalysisApprovedContent {" in editor
     assert 'objectName: "analysisApprovedContent"' in editor
@@ -69,8 +70,8 @@ def test_product_binds_status_without_demo() -> None:
     assert 'root.deltaText(m21MetricRow.observed.deltaPrepared,' in visuals
     assert 'root.deltaText(m21MetricRow.observed.deltaProcessed,' in visuals
     assert 'root.metricText(m21MetricRow.observed.reference,' in visuals
-    assert 'ToolTip.visible: sourceChoiceDwell.ready' in editor
-    assert editor.count('StudioTooltipDwell {') >= 1
+    assert 'ToolTip.visible: headerAnalysisDwell.ready' in host
+    assert host.count('StudioTooltipDwell {') >= 1
     dwell = read("ui/qml/StudioTooltipDwell.qml")
     assert 'interval: 1000' in dwell
     assert 'onPointChanged: guard.resetDwell()' in dwell
