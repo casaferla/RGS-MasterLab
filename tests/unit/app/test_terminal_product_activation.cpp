@@ -397,10 +397,10 @@ m18DirectTerminalStateMutationRequiresProductEpoch()
     QCOMPARE(calls,std::size_t{2});
     QCOMPARE(state.value()->parameter_revision(),paramsRevision);
     QCOMPARE(state.value()->chain().revision(),chainRevision);
-    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),0.0);
     QVERIFY(state.value()->bypassed());
     // True no-ops do not manufacture a new Product generation.
-    QVERIFY(state.value()->set_ceiling_db_tp(-1.0));
+    QVERIFY(state.value()->set_ceiling_db_tp(0.0));
     QVERIFY(state.value()->set_user_bypass(true));
     QCOMPARE(calls,std::size_t{2});
     // A foreign worker is rejected BEFORE its callback can mutate state.
@@ -556,7 +556,7 @@ m18DirectTerminalMutationRejectsReentrantEpochCallback()
     QCOMPARE(calls,std::size_t{1});
     QVERIFY(!state.value()->bypassed());
     QCOMPARE(state.value()->parameter_revision(),initialCeilingRevision);
-    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),0.0);
     QVERIFY(state.value()->chain().revision()>initialChainRevision);
     // The guard has been released: a second genuine, non-reentrant
     // edit may be admitted normally instead of staying permanently busy.
@@ -615,7 +615,7 @@ m18TerminalViewModelUsesSingleDirectStateEpochAuthority()
     QVERIFY(vm.validation_message().isEmpty());
     QCOMPARE(admitted,std::size_t{3});
     QCOMPARE(accepted.count(),3);
-    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),0.0);
     state.value()->set_private_m18_mutation_admission({});
 }
 
@@ -648,7 +648,7 @@ void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority()
     QVERIFY(!vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),invalidCeiling));
     QVERIFY(!vm.commitDraft());
     QCOMPARE(state.value()->parameter_revision(),revision);
-    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),0.0);
     QCOMPARE(accepted.count(),0);
     QCOMPARE(unsafe.count(),0);
     vm.cancelDraft();
@@ -666,13 +666,17 @@ void TerminalActivationIntegrationTest::unchangedCeilingLeavesRevisionAndConsent
     auto state=app::TerminalLimiterState::create_default(*registry.value(),*id.value());
     QVERIFY(state);
     app::TerminalLimiterViewModel vm{state.value()};
+    // New launch, before any Prepare or M18 epoch, is exactly 0 dBTP.
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),0.0);
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
+    QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("0.00"));
     QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
     QSignalSpy unverified{&vm,&app::TerminalLimiterViewModel::previewNonconformingRequested};
     QSignalSpy verified{&vm,&app::TerminalLimiterViewModel::previewRequested};
     QVERIFY(accepted.isValid()&&unverified.isValid()&&verified.isValid());
     qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RESET";
     vm.resetToDefault();
-    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),0.0));
     QVERIFY(vm.commitDraft());
     QCOMPARE(state.value()->parameter_revision(),std::uint64_t{0});
     QCOMPARE(accepted.count(),0);

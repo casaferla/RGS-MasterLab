@@ -23,7 +23,7 @@ TerminalLimiterViewModel::TerminalLimiterViewModel(
 
 double TerminalLimiterViewModel::ceiling_db_tp() const noexcept
 {
-    return state_?state_->parameters().ceiling_db_tp():-1.0;
+    return state_?state_->parameters().ceiling_db_tp():0.0;
 }
 QString TerminalLimiterViewModel::ceiling_db_tp_text() const
 {
@@ -149,8 +149,10 @@ void TerminalLimiterViewModel::cancelDraft()
 void TerminalLimiterViewModel::resetToDefault()
 {
     if(m18_foreign_owner_thread()||!state_)return;
-    // Use the same DSP constructor/authority as ordinary accepted edits.
-    const auto defaults=dsp::TruePeakLimiterParameters::create_default();
+    // Reset the Export Product to the same initial 0 dBTP used at launch.
+    // Preserve native range validation, commit-epoch admission, and the
+    // separate frozen DSP-package default for non-Product callers.
+    const auto defaults=dsp::TruePeakLimiterParameters::create(0.0);
     if(!defaults) {
         set_validation(QStringLiteral("True Peak Limiter defaults unavailable"));
         return;

@@ -29,6 +29,8 @@ public:
     {return std::this_thread::get_id()==ownerThread_;}
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
     {return static_cast<bool>(m18MutationAdmission_);}
+    // Export TP Limiter starts at 0 dBTP; explicit Project/user values
+    // and the separate Streaming TP Limiter remain independent.
     [[nodiscard]] static core::Result<TerminalLimiterState> create_default(
         const dsp::ModuleRegistry& registry, dsp::ModuleInstanceId id);
     [[nodiscard]] static core::Result<TerminalLimiterState> create(

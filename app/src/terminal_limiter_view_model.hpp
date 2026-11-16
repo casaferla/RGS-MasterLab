@@ -85,7 +85,8 @@ public:
     Q_INVOKABLE bool setDraftFieldText(const QString& field, const QString& text);
     Q_INVOKABLE bool commitDraft();
     Q_INVOKABLE void cancelDraft();
-    // Canonical -1.0 dBTP default, independent of user bypass.
+    // Export Product default 0.00 dBTP, independent of user bypass.
+    // Does not alter the separate Streaming TP Limiter or DSP core default.
     Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void setBypass(bool bypass);
     Q_INVOKABLE void requestPrepare();

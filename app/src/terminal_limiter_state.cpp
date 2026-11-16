@@ -6,7 +6,11 @@ namespace rgsml::app {
 core::Result<TerminalLimiterState> TerminalLimiterState::create_default(
     const dsp::ModuleRegistry& registry, dsp::ModuleInstanceId id)
 {
-    auto params=dsp::TruePeakLimiterParameters::create_default();
+    // Product Export TP Limiter policy (PO 2026-11-16):
+    // no implicit -1 dBTP mastering attenuation on a fresh launch.
+    // Preserve the frozen DSP-package create_default() contract (-1 dBTP)
+    // for other callers; only the terminal Export Product starts at 0.
+    auto params=dsp::TruePeakLimiterParameters::create(0.0);
     if(!params)return core::Result<TerminalLimiterState>::failure(*params.error());
     return create(registry,id,*params.value(),true);
 }
