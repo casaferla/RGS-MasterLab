@@ -2132,7 +2132,18 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     const auto noDuplicate=referenceCache.rebind_after_reference_only_change(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(!noDuplicate[0]&&!noDuplicate[1]&&!noDuplicate[2]);
-    // A real parameter-only DSP mutation revokes BOTH inherited columns.
+    // A real parameter-only DSP mutation must retire PROCESSED, but its
+    // exact original PREPARED PCM and independently selected Gold WAV
+    // still have the same measurements. First measure the NEW Gold B;
+    // its old A measurement is never reused.
+    const auto measuredRefB=M21Owners::measure_gold_worker(
+        *secondReference.value());
+    QVERIFY(measuredRefB);
+    QVERIFY(referenceCache.accept_gold(
+        controllers,fanout,session.selector,session.gold,
+        *secondReference.value(),*measuredRefB.value()));
+    const auto refRevision=session.gold.selection_revision();
+    QVERIFY(refRevision>0);
     const auto gainAgain=dsp::GainParameters::create(-1.75);
     QVERIFY(gainAgain);
     const auto structuralRevision=
@@ -2148,8 +2159,37 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         controllers,fanout,session.selector,session.gold);
     QCOMPARE(afterDSPChange.columns[0]->lifecycle,
              app::m21_private::Lifecycle::stale);
+    QCOMPARE(afterDSPChange.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::stale);
     QCOMPARE(afterDSPChange.columns[2]->lifecycle,
              app::m21_private::Lifecycle::stale);
+    const auto selective=referenceCache.rebind_unchanged_prepared_reference(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(selective[0] &&selective[1] &&!selective[2]);
+    const auto stillMeasured=referenceCache.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(stillMeasured.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(stillMeasured.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(stillMeasured.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QCOMPARE(stillMeasured.columns[0]->metrics[0].unrounded,
+             preparedNumbers.value()->metrics[0].unrounded);
+    QCOMPARE(stillMeasured.columns[1]->metrics[0].unrounded,
+             measuredRefB.value()->metrics[0].unrounded);
+    const auto avoidDuplicate=referenceCache.rebind_unchanged_prepared_reference(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(!avoidDuplicate[0]&&!avoidDuplicate[1]&&!avoidDuplicate[2]);
+
+    // Reselecting even the SAME reference path must have a different
+    // selection revision, so it is never recycled as unchanged content.
+    session.gold.selectGold(QUrl::fromLocalFile(refB));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(session.gold.selection_revision()>refRevision);
+    const auto rejectSamePath=referenceCache.rebind_unchanged_prepared_reference(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(!rejectSamePath[0]&&!rejectSamePath[1]&&!rejectSamePath[2]);
 }
 
 void ProjectSessionTest::

@@ -8,6 +8,7 @@
 #include <QUrl>
 
 #include <optional>
+#include <cstdint>
 #include <functional>
 #include <utility>
 
@@ -32,6 +33,10 @@ public:
     [[nodiscard]] QString metadata() const;
     [[nodiscard]] QString error_message() const;
     [[nodiscard]] const audio::SourceResource* gold_resource() const noexcept;
+    // Exact owner-thread selection identity. Distinguishes reselecting an
+    // identical path from unchanged REFERENCE through DSP parameter edits.
+    [[nodiscard]] std::uint64_t selection_revision() const noexcept
+    {return selectionRevision_;}
     // PREPRODUCTION M18: Product-owned admission before an independently
     // selected GOLD replacement or clear. Inert unless explicitly installed.
     // SOURCE-driven GOLD retirement must instead be within its SOURCE/Project
@@ -66,6 +71,8 @@ private:
     mutable bool m18GoldAdmitting_{false};
     bool m18GoldPublicationActive_{false};
     std::optional<audio::SourceResource> gold_;
+    // Monotonic; exhausted revisions disable M21 cache recycling.
+    std::uint64_t selectionRevision_{0};
     QString displayName_;
     QString metadata_;
     QString errorMessage_;

@@ -76,6 +76,32 @@ public:
             active_.reset();
             status_->set_running_analysis_role({});
         }
+        // Preserve unaffected numeric measurements even while a previous
+        // single-flight CPU worker is retiring. No worker is started here:
+        // only immutable, already computed results are reauthenticated.
+        const auto unchanged=inbox_->rebind_unchanged_prepared_reference(
+            product_,*fanout_,*selector_,*gold_);
+        if(unchanged[static_cast<std::size_t>(Column::prepared)]
+           ||unchanged[static_cast<std::size_t>(Column::gold)]) {
+            if(unchanged[static_cast<std::size_t>(Column::prepared)]) {
+                const auto fresh=Product::capture(
+                    product_,*fanout_,*selector_);
+                if(fresh) {
+                    renderAttempts_[
+                        static_cast<std::size_t>(Column::prepared)]
+                        .remember(render_key(*fresh.value(),Column::prepared),
+                                  fresh.value()->prepared);
+                }
+            }
+            if(unchanged[static_cast<std::size_t>(Column::gold)]) {
+                const auto fresh=Product::capture_gold(
+                    product_,*fanout_,*selector_,*gold_);
+                if(fresh)attempted_[
+                    static_cast<std::size_t>(Column::gold)]=
+                        gold_key(*fresh.value());
+            }
+            status_->refresh();
+        }
         if(worker_.busy())return;
 
         // A genuine REFERENCE-only change advances the global M18 epoch,

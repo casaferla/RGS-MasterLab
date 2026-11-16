@@ -8,6 +8,7 @@
 #include <QThread>
 
 #include <string_view>
+#include <limits>
 #include <utility>
 
 namespace rgsml::app {
@@ -163,6 +164,8 @@ core::Status GoldSelectionViewModel::adopt_probed_gold(audio::SourceResource can
         return committed;
     }
     gold_.emplace(std::move(candidate));
+    if(selectionRevision_!=(std::numeric_limits<std::uint64_t>::max)())
+        ++selectionRevision_;
     displayName_ = QString::fromUtf8(
         gold_->reference().display_name().data(),
         static_cast<qsizetype>(gold_->reference().display_name().size()));
@@ -216,6 +219,8 @@ void GoldSelectionViewModel::clearGold()
         return;
     }
     gold_.reset();
+    if(selectionRevision_!=(std::numeric_limits<std::uint64_t>::max)())
+        ++selectionRevision_;
     displayName_.clear();
     metadata_.clear();
     errorMessage_.clear();
@@ -230,6 +235,9 @@ void GoldSelectionViewModel::sourceChanged()
     // mutation before it changes the selector; GOLD cannot retroactively
     // refuse that already-published outer transaction.
     if (!selector_->gold_available()) {
+        if(gold_ &&selectionRevision_!=
+                (std::numeric_limits<std::uint64_t>::max)())
+            ++selectionRevision_;
         gold_.reset();
         displayName_.clear();
         metadata_.clear();
