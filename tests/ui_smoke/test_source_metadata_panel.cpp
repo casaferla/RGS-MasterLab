@@ -7163,8 +7163,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             // PO strict NO-SCROLL: content is a plain QQuickItem, not
             // a Flickable whose invisible scrollbar conceals overflow.
             auto* analysisBody=qobject_cast<QQuickItem*>(
+                // AnalysisStatusEditor overrides the QML component root's
+                // objectName at instantiation, as is standard Qt QML.
+                // Query the genuine authored instance name, not the
+                // component definition's shadowed default name.
                 find_child_by_name(originalPages[index],
-                    QStringLiteral("approvedAnalysisProductContent")));
+                    QStringLiteral("analysisApprovedContent")));
             auto* analysisStack=qobject_cast<QQuickItem*>(
                 find_child_by_name(originalPages[index],
                     QStringLiteral("analysisProductContentStack")));

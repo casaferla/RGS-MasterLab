@@ -87,6 +87,7 @@ def test_product_binds_status_without_demo() -> None:
     assert "root.compactFit" in visuals
     qt_smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     assert "analysisStack->implicitHeight()<=analysisBody->height()+1.0" in qt_smoke
+    assert 'QStringLiteral("analysisApprovedContent")' in qt_smoke
     assert "Last essential readout clipped at minimum 1184x688" in qt_smoke
     assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in host
     assert 'objectName: "analysisHeaderSourceChooser"' in host
