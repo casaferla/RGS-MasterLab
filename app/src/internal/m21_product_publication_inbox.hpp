@@ -145,8 +145,8 @@ public:
     }
 
     // Reuse only immutable PREPARED and REFERENCE measurements after an
-    // EXACT one-epoch Product mutation with unchanged SOURCE, PREPARED
-    // PCM and REFERENCE selection. This covers changes to MANUAL DSP
+    // authenticated Product epoch advances with unchanged SOURCE, PREPARED
+    // PCM and REFERENCE selection. This covers repeated MANUAL DSP
     // parameters (PROCESSSED must be recomputed) without assuming every
     // master-generation transition was a DSP edit.
     // In particular, GoldSelectionViewModel's monotonic selection
@@ -178,11 +178,9 @@ public:
         const auto& before=*goldCapture_;
         const auto& oldPrepared=*preparedCapture_;
         if(before.owner.epoch==0
-           ||before.owner.epoch==
-                  (std::numeric_limits<std::uint64_t>::max)()
-           ||before.owner.identity.master_generation==
-                  (std::numeric_limits<std::uint64_t>::max)()
-           ||before.owner.epoch+1!=now.owner.epoch
+           ||before.owner.epoch>=now.owner.epoch
+           ||before.owner.identity.master_generation>=
+                  now.owner.identity.master_generation
            ||newGold.owner.epoch!=now.owner.epoch
            ||newGold.owner.identity!=now.owner.identity
            ||!before.gold.same_resource_identity(newGold.gold)
@@ -195,9 +193,18 @@ public:
            ||oldPrepared.source_full_frames!=now.source_full_frames
            ||oldPrepared.prepared!=now.prepared)
             return accepted;
-        auto onlyMaster=before.owner.identity;
-        ++onlyMaster.master_generation;
-        if(now.owner.identity!=onlyMaster)return accepted;
+        // Source/Project/rate are monotonic authorities: if ANY changed,
+        // including a same-file reselection, this is NOT a DSP-only
+        // conservation proof. Repeated parameter, bypass or ordering edits
+        // can legitimately advance master generation and chain revision
+        // by more than one before the next Qt timer tick.
+        const auto& oldId=before.owner.identity;
+        const auto& newId=now.owner.identity;
+        if(oldId.source_generation!=newId.source_generation
+           ||oldId.project_generation!=newId.project_generation
+           ||oldId.master_rate_revision!=newId.master_rate_revision
+           ||oldId.master_rate_hz!=newId.master_rate_hz)
+            return accepted;
         const auto prior=publisher_.view().columns;
         const auto& oldPreparedRecord=prior[
             static_cast<std::size_t>(Column::prepared)];

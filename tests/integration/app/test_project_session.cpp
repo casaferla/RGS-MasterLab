@@ -2145,11 +2145,19 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     const auto refRevision=session.gold.selection_revision();
     QVERIFY(refRevision>0);
     const auto gainAgain=dsp::GainParameters::create(-1.75);
-    QVERIFY(gainAgain);
+    const auto gainTwice=dsp::GainParameters::create(-1.50);
+    QVERIFY(gainAgain&&gainTwice);
+    const auto priorParamEpoch=fanout.current_owner_snapshot();
+    QVERIFY(priorParamEpoch);
     const auto structuralRevision=
         session.masteringChainState->chain().revision();
     QVERIFY(session.masteringChainState->set_gain_parameters(
         *gainAgain.value()));
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *gainTwice.value()));
+    const auto afterTwoDspMutations=fanout.current_owner_snapshot();
+    QVERIFY(afterTwoDspMutations);
+    QVERIFY(afterTwoDspMutations->epoch>=priorParamEpoch->epoch+2);
     QCOMPARE(session.masteringChainState->chain().revision(),
              structuralRevision);
     const auto noStaleReuse=referenceCache.rebind_after_reference_only_change(
