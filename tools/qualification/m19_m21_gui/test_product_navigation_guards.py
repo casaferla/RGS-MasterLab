@@ -536,6 +536,13 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert '!controller.published_preview_matches_current_bindings()' in unit
     assert 'publishedResult=make_unit_prepared_result();' in unit
     assert 'processedPreviewMatches_()' in coordinator
+    workflow=read(".github/workflows/m23-failure-matrix-focused.yml")
+    assert workflow.count('name: Windows - M23 true file faults') == 1
+    assert workflow.count('name: RGS-M23-Bounded-Windows') == 1
+    assert workflow.count('name: RGS-M23-Bounded-Linux') == 1
+    assert workflow.count('M21 accepted PROCESSED owner and binding test (Linux)') == 1
+    assert workflow.count('M21 accepted PROCESSED owner and binding test (Windows)') == 1
+    assert workflow.count(" -R '^rgsml_mastering_preview_controller_tests$'") == 2
     assert 'published_preview_matches_current_bindings()' in read(
         "app/src/main.cpp")
     integration=read("tests/integration/app/test_project_session.cpp")
