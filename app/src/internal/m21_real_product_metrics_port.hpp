@@ -46,9 +46,12 @@ struct RealProductPortResult final {
             return {{},Quality::invalid,"Invalid available M19 scalar"};
         return {metric.db,Quality::present,{}};
     case S::M16_SUPPORTED_UNQUALIFIED:
-        // A numerical true peak returned by the M16 public API is not
-        // evidence of release qualification. NEVER silently elevate it.
-        return {{},Quality::missing,"M16 TP public status unqualified"};
+        // Development-only readout: do not promote the official M16
+        // qualification_status or the separately gated Phase-6 contract.
+        if(!metric.db || !std::isfinite(*metric.db))
+            return {{},Quality::invalid,"Invalid M16 True Peak reading"};
+        return {metric.db,Quality::low_confidence,
+                "M16 numerical observation; formal Gate G not asserted"};
     case S::NUMERIC_UNDEFINED:
         return {{},Quality::invalid,"M19 numerical analysis undefined"};
     case S::SILENCE:
