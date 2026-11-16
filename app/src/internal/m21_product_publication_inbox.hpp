@@ -290,21 +290,36 @@ private:
                       const AuditionSourceSelector& selector,
                       const GoldSelectionViewModel& gold) const
     {
-        if(latest[0] &&
-           (!preparedCapture_ ||
-            !Product::still_current(
-                product,fanout,selector,*preparedCapture_)))
-            latest[0]->lifecycle=m21_private::Lifecycle::stale;
-        if(latest[1] &&
-           (!goldCapture_ ||
-            !Product::gold_still_current(
-                product,fanout,selector,gold,*goldCapture_)))
-            latest[1]->lifecycle=m21_private::Lifecycle::stale;
-        if(latest[2] &&
-           (!processedCapture_ ||
-            !Product::still_current(
-                product,fanout,selector,*processedCapture_)))
-            latest[2]->lifecycle=m21_private::Lifecycle::stale;
+        // Source captures include BOTH manual PCM pointers. Calling the
+        // old all-or-nothing Product::still_current for PREPARED would
+        // falsely stale it whenever only PROCESSED was replaced (even
+        // when this occurs within the same Product epoch). Readiness and
+        // numerical readouts must use the SAME per-column identity gate.
+        const auto currentRender=Product::capture(product,fanout,selector);
+        const auto currentGold=Product::capture_gold(
+            product,fanout,selector,gold);
+        const auto renderCurrent=[&](const std::optional<Product::Capture>& old,
+                                      Column column) {
+            return old &&currentRender
+                &&old->owner.epoch==currentRender.value()->owner.epoch
+                &&Product::same_render_observation(
+                    *old,*currentRender.value(),column);
+        };
+        const auto goldCurrent=goldCapture_&&currentGold
+            &&goldCapture_->owner.epoch==currentGold.value()->owner.epoch
+            &&Product::same_gold_observation(
+                *goldCapture_,*currentGold.value());
+        if(latest[static_cast<std::size_t>(Column::prepared)]
+           &&!renderCurrent(preparedCapture_,Column::prepared))
+            latest[static_cast<std::size_t>(Column::prepared)]
+                ->lifecycle=m21_private::Lifecycle::stale;
+        if(latest[static_cast<std::size_t>(Column::gold)]&&!goldCurrent)
+            latest[static_cast<std::size_t>(Column::gold)]
+                ->lifecycle=m21_private::Lifecycle::stale;
+        if(latest[static_cast<std::size_t>(Column::processed)]
+           &&!renderCurrent(processedCapture_,Column::processed))
+            latest[static_cast<std::size_t>(Column::processed)]
+                ->lifecycle=m21_private::Lifecycle::stale;
     }
 
     m21_private::PrivatePublicationGuard publisher_{};
