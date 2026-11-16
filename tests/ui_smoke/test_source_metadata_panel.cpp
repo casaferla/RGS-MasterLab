@@ -7083,6 +7083,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QStringLiteral("m21MissingComparisonNotice")};
         QVERIFY2(find_child_by_name(originalPages[index],landmarks[index]),
                  "Missing approved individual analysis visual landmark");
+        // The per-panel selected SOURCE must follow the global physical
+        // audition sequence, without reordering core Column identities.
+        const std::array<QString,3> orderedRoles{
+            QStringLiteral("PREPARED"),
+            QStringLiteral("PROCESSED"),
+            QStringLiteral("REFERENCE")};
+        for(int roleIndex=0;roleIndex<3;++roleIndex) {
+            auto* choice=find_child_by_name(originalPages[index],
+                QStringLiteral("analysisSourceOption_%1").arg(roleIndex));
+            QVERIFY2(choice,"Missing real analysis source selector");
+            QCOMPARE(choice->property("text").toString(),
+                orderedRoles[static_cast<std::size_t>(roleIndex)]);
+        }
         if(i==0) {
             for(const auto& key:std::array<QString,5>{
                 QStringLiteral("lufs"),QStringLiteral("rms"),
@@ -7104,6 +7117,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QCOMPARE(width->property("dataAvailable").toBool(),false);
             QVERIFY(find_child_by_name(originalPages[index],
                 QStringLiteral("m20MissingProfileNotice")));
+            // Axis ticks share the exact logarithmic frequency mapping
+            // with the 20..20000 Hz Canvas, including endpoints.
+            const std::array<QString,5> tickLabels{
+                QStringLiteral("20 Hz"),QStringLiteral("100 Hz"),
+                QStringLiteral("1 kHz"),QStringLiteral("10 kHz"),
+                QStringLiteral("20 kHz")};
+            for(int tick=0;tick<5;++tick) {
+                auto* tickItem=find_child_by_name(originalPages[index],
+                    QStringLiteral("m20FrequencyTick_%1").arg(tick));
+                QVERIFY2(tickItem,"Missing M20 logarithmic frequency tick");
+                QCOMPARE(tickItem->property("text").toString(),
+                    tickLabels[static_cast<std::size_t>(tick)]);
+            }
         } else {
             for(int row=0;row<9;++row) {
                 QVERIFY2(find_child_by_name(originalPages[index],

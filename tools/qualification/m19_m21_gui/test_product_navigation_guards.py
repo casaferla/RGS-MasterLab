@@ -231,6 +231,13 @@ def test_product_binds_status_without_demo() -> None:
     assert "observedReadouts: root.observedReadouts" in status_qml
     assert 'ANALYSIS · DEVELOPMENT' in status_qml
 
+    # The progress label is driven solely by the genuine currently
+    # running single-flight worker; no playback or synthetic percentage.
+    assert "Q_PROPERTY(QString runningAnalysisRole" in status_header
+    assert "set_running_analysis_role(" in status_cpp
+    assert 'status_->set_running_analysis_role(QStringLiteral("REFERENCE"))' in driver
+    assert 'QStringLiteral("PREPARED"):QStringLiteral("PROCESSED")' in driver
+    assert "status_->set_running_analysis_role({});" in driver
     assert "M21PrivateSingleFlight::matches_expected(" in driver
     assert "completed.result->column==column" in single_flight
     assert "completed.result->generation_token==generation" in single_flight
