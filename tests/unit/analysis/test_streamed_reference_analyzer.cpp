@@ -135,8 +135,12 @@ void StreamedReferenceAnalyzerTest::sixRatesAndBothLayoutsMatchExistingEngines()
                            level.value()->sample_peak_dbfs);
             compare_scalar(got.value()->level.sample_peak_crest_db,
                            level.value()->sample_peak_crest_db);
-            QCOMPARE(got.value()->level.true_peak_db_tp.state,
-                BasicLevelValueState::M16_SCOPE_UNAVAILABLE);
+            // Six-rate 4x frozen FIR must equal the ORIGINAL complete-
+            // resource M16. The stream retains no full-track PCM.
+            const auto complete=measure_basic_level_full_resource(*owner.value());
+            QVERIFY(complete);
+            compare_scalar(got.value()->level.true_peak_db_tp,
+                           complete.value()->true_peak_db_tp);
             QCOMPARE(got.value()->level.retained_block_union.size(),
                      level.value()->retained_block_union.size());
             for(std::size_t i=0;i<level.value()->retained_block_union.size();++i){
@@ -178,6 +182,9 @@ void StreamedReferenceAnalyzerTest::silentEmptyGateAndPartialBlock()
     QVERIFY(decoded);
     QVERIFY(decoded.value()->level.retained_block_disclosure_complete);
     QVERIFY(decoded.value()->level.retained_block_union.empty());
+    QCOMPARE(decoded.value()->level.true_peak_db_tp.state,
+             BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED);
+    QVERIFY(!decoded.value()->level.true_peak_db_tp.db);
     QVERIFY(!decoded.value()->tonal.width_all_scope_fallback);
     QCOMPARE(decoded.value()->tonal.width_ratio.state,
              TonalStereoMetricState::INSUFFICIENT_CONTENT);
@@ -303,7 +310,10 @@ realStereoReferenceOver128MiBHasAuthenticGatedWidth()
     QVERIFY(measured.value()->tonal.correlation_p50.value.has_value());
     QVERIFY(std::abs(*measured.value()->tonal.correlation_p50.value+1.0)<1e-12);
     QCOMPARE(measured.value()->level.true_peak_db_tp.state,
-             BasicLevelValueState::M16_SCOPE_UNAVAILABLE);
+             BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED);
+    QVERIFY(measured.value()->level.true_peak_db_tp.db);
+    // Nonzero sparse stereo PCM: no sample-peak substitution.
+    QVERIFY(std::isfinite(*measured.value()->level.true_peak_db_tp.db));
     QVERIFY(measured.value()->max_decoded_block_frames<=4096U);
     QVERIFY(measured.value()->max_correlation_window_frames<=76800U);
     QVERIFY(control->largestReadRequest<=4096U*4U);
