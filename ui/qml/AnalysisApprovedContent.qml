@@ -221,8 +221,8 @@ Flickable {
                     Repeater {
                         model: [
                             {name:"PREPARED",tone:"#76CDE9"},
-                            {name:"REFERENCE",tone:"#D19562"},
-                            {name:"PROCESSED",tone:"#7CDDC8"}
+                            {name:"PROCESSED",tone:"#7CDDC8"},
+                            {name:"REFERENCE",tone:"#D19562"}
                         ]
                         delegate: Row {
                             width: parent.width
@@ -390,20 +390,37 @@ Flickable {
                     id: spectrumDwell
                     anchors.fill: parent
                 }
-                Row {
+                // The canvas uses a fixed 20..20000 Hz logarithmic axis.
+                // Labels must be placed on those SAME log-frequency grid
+                // coordinates, not in five equally sized Row cells.
+                Item {
                     anchors.left: spectrumCanvas.left
                     anchors.right: spectrumCanvas.right
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 7
+                    height: 16
                     Repeater {
-                        model: ["20 Hz","100 Hz","1 kHz","10 kHz","20 kHz"]
+                        model: [
+                            {label:"20 Hz",hz:20},
+                            {label:"100 Hz",hz:100},
+                            {label:"1 kHz",hz:1000},
+                            {label:"10 kHz",hz:10000},
+                            {label:"20 kHz",hz:20000}
+                        ]
                         delegate: Text {
-                            width: parent.width/5
-                            text: modelData
+                            objectName: "m20FrequencyTick_" + index
+                            width: 56
+                            height: parent.height
+                            x: Math.max(0,Math.min(parent.width-width,
+                                parent.width*Math.log10(modelData.hz/20)
+                                /Math.log10(20000/20)-width/2))
+                            text: modelData.label
                             color: root.dim
                             font.family: "Segoe UI"
                             font.pixelSize: 10
-                            horizontalAlignment: Text.AlignHCenter
+                            horizontalAlignment: index===0 ? Text.AlignLeft
+                                : index===4 ? Text.AlignRight
+                                : Text.AlignHCenter
                         }
                     }
                 }
@@ -532,13 +549,13 @@ Flickable {
                 Row {
                     anchors.fill: parent
                     Repeater {
-                        model: ["METRIC","PREPARED","REFERENCE","PROCESSED",
+                        model: ["METRIC","PREPARED","PROCESSED","REFERENCE",
                                 "Δ PREP → REF","Δ PROC → REF"]
                         delegate: Text {
                             width: parent.width/6
                             height: parent.height
                             text: modelData
-                            color: index === 2 ? root.copper : root.ink
+                            color: index === 3 ? root.copper : root.ink
                             font.family: "Segoe UI"
                             font.pixelSize: 10
                             font.bold: true
@@ -585,9 +602,9 @@ Flickable {
                             model: [m21MetricRow.metricName,
                                 root.metricText(m21MetricRow.observed.prepared,
                                                 m21MetricRow.observed.key),
-                                root.metricText(m21MetricRow.observed.reference,
-                                                m21MetricRow.observed.key),
                                 root.metricText(m21MetricRow.observed.processed,
+                                                m21MetricRow.observed.key),
+                                root.metricText(m21MetricRow.observed.reference,
                                                 m21MetricRow.observed.key),
                                 root.deltaText(m21MetricRow.observed.deltaPrepared,
                                                 m21MetricRow.observed.key),
@@ -600,7 +617,7 @@ Flickable {
                                 font.family: index===0 ? "Segoe UI" : "Consolas"
                                 font.pixelSize: 10
                                 font.bold: index===0
-                                color: index===2 ? root.copper
+                                color: index===3 ? root.copper
                                     : index===0 ? root.ink : root.dim
                                 horizontalAlignment: index===0
                                     ? Text.AlignLeft : Text.AlignHCenter

@@ -79,6 +79,11 @@ def test_product_binds_status_without_demo() -> None:
     assert 'fixtureMode' not in visuals
     assert "m19MetricValue_" in visuals and "heroReadout: true" in visuals
     assert "m20WorkbenchSpectrum" in visuals
+    assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in editor
+    assert 'model: ["METRIC","PREPARED","PROCESSED","REFERENCE",' in visuals
+    assert 'objectName: "m20FrequencyTick_" + index' in visuals
+    assert 'parent.width*Math.log10(modelData.hz/20)' in visuals
+    assert 'root.statusViewModel.runningAnalysisRole' in editor
     assert "m20MissingSpectrumNotice" in visuals
     assert "m20MissingProfileNotice" in visuals
     assert "m21MissingComparisonNotice" in visuals

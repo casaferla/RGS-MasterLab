@@ -62,7 +62,14 @@ Item {
             Item { Layout.fillWidth: true }
             Text {
                 objectName: "analysisProductAuthorityLabel"
-                text: root.authorized ? "PRODUCT DATA" : "ANALYSIS · DEVELOPMENT"
+                // The exact owner-thread worker informs this status.
+                // Playback is unrelated; NEVER invent progress percentages.
+                text: root.statusViewModel
+                    && root.statusViewModel.runningAnalysisRole
+                    && root.statusViewModel.runningAnalysisRole.length > 0
+                    ? "ANALYZING " + root.statusViewModel.runningAnalysisRole
+                        + " · DEVELOPMENT"
+                    : root.authorized ? "PRODUCT DATA" : "ANALYSIS · DEVELOPMENT"
                 font.family: "Segoe UI"
                 font.pixelSize: 10
                 color: root.authorized ? "#B6D6CA" : "#F0C87D"
@@ -72,7 +79,9 @@ Item {
             Layout.fillWidth: true
             spacing: 8
             Repeater {
-                model: ["PREPARED", "REFERENCE", "PROCESSED"]
+                // Match the global audition order, leaving backend column IDs
+                // and independent M21 REFERENCE-minus-current math unchanged.
+                model: ["PREPARED", "PROCESSED", "REFERENCE"]
                 delegate: StudioButton {
                     objectName: "analysisSourceOption_" + index
                     text: modelData
