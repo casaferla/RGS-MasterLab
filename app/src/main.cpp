@@ -510,6 +510,14 @@ int main(int argc, char* argv[])
             return auditionSelector.set_processed_realization(std::move(result));
         }
     };
+    // The Product's accepted immutable PROCESSED owner is the only
+    // legitimate provenance of a ready preview. Merely matching DSP
+    // parameter values does not prove that playback/analysis still
+    // refers to the accepted PCM after a SOURCE or Project handoff.
+    previewController.set_accepted_processed_provider(
+        [&auditionSelector] {
+            return auditionSelector.processed_realization_snapshot();
+        });
     // The opt-in research bundle writes timing evidence next to its EXE.
     // No file I/O occurs in the audio callback or on the Qt GUI thread.
     if (p2PreviewOptIn) {
