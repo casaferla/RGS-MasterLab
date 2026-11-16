@@ -479,6 +479,69 @@ def test_m17_export_ui_presentation_order() -> None:
     assert 'root.terminalLimiterViewModel.requestPrepare()' in section
 
 
+
+def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
+    # The actual True Peak is the ORIGINAL M16 4x FIR on all three sources,
+    # including bounded external references >128 MiB. No release authority.
+    stream = read("analysis/src/streamed_reference_analyzer.cpp")
+    assert 'internal::TruePeakItu4xChannelStream' in stream
+    assert "m16[ch].finalize()" in stream
+    assert "M16_SUPPORTED_UNQUALIFIED" in stream
+    port = read("app/src/internal/m21_real_product_metrics_port.hpp")
+    assert 'return {metric.db,Quality::low_confidence,' in port
+    view = read("app/src/m21_product_status_view_model.cpp")
+    assert "metric==3U" not in view
+    assert "m21_private::Quality::low_confidence" in view
+    assert "phase6_release_readouts()" in view
+    basic = read("analysis/src/true_peak_measurement.cpp")
+    assert "qualification_status_ is deliberately left SUPPORTED_UNQUALIFIED" in basic
+    tests = read("tests/unit/analysis/test_streamed_reference_analyzer.cpp")
+    assert "measure_basic_level_full_resource(*owner.value())" in tests
+    assert "BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED" in tests
+
+    # A global M18 epoch revocation cannot force all three independently
+    # authenticated PCM scopes to be reanalyzed after a harmless action.
+    inbox = read("app/src/internal/m21_product_publication_inbox.hpp")
+    coordinator = read("app/src/internal/m21_private_product_analysis_coordinator.hpp")
+    assert 'rebind_unchanged_independent_scopes(' in inbox
+    assert 'inbox_->rebind_unchanged_independent_scopes(' in coordinator
+    assert 'rebind_after_reference_only_change(' not in inbox
+    assert 'rebind_unchanged_prepared_reference(' not in inbox
+    assert coordinator.index('inbox_->rebind_unchanged_independent_scopes(') < coordinator.index(
+        'if(worker_.busy())return;')
+    independently = inbox[inbox.index('rebind_unchanged_independent_scopes('):
+                          inbox.index('// GOLD is only accepted')]
+    assert 'for(const auto column:{Column::prepared,Column::processed})' in independently
+    assert 'beforeCapture->prepared!=now.prepared' in independently
+    assert 'beforeCapture->processed!=now.processed' in independently
+    assert 'oldId.chain_revision!=newId.chain_revision' in independently
+    assert 'oldId.source_generation!=newId.source_generation' in independently
+    assert '*goldSelectionRevision_==gold.selection_revision()' in independently
+    assert 'before.gold.same_resource_identity(now.gold)' in independently
+    assert 'accept_render(product,fanout,selector,now,reused)' in independently
+    assert 'accept_gold(product,fanout,selector,gold,now,reused)' in independently
+
+    editor=read("ui/qml/StreamingTruePeakLimiterEditor.qml")
+    icon=read("ui/qml/StudioIcon.qml")
+    for marker in ('streamingP2CeilingNumericWell','streamingP2DriveNumericWell',
+                   'streamingP2CeilingNumericInput','streamingP2DriveNumericInput',
+                   'streamingP2ActionBar','streamingP2ResetButton'):
+        assert marker in editor
+    assert editor.count('width: 120; height: 32; radius: 4') == 2
+    assert editor.count('font.pixelSize: 16') == 2
+    assert 'Research margin' not in editor
+    assert 'streamingP2Margin2Button' not in editor
+    assert 'streamingP2Margin5Button' not in editor
+    assert 'EXPERIMENTAL:' not in editor
+    assert editor.index('objectName: "streamingP2ResetButton"') < editor.index(
+        'objectName: "streamingP2MainPanel"')
+    assert 'P2_I2_NUMERIC_WELLS=%s' in read("app/src/main.cpp")
+    single=icon[icon.index('if (kind === "module-gain")'):
+                icon.index('} else if (kind === "module-eq")')]
+    assert single.count('line(') == 2
+    assert 'line(2.4, 9.0, 15.6, 9.0)' in single
+    assert 'ctx.shadowBlur = icon.glowBlur' in icon
+
 if __name__ == "__main__":
     for test in (
         test_visual_order_and_no_chain_mutation,
@@ -486,6 +549,7 @@ if __name__ == "__main__":
         test_export_permission_unchanged,
         test_m17_export_ui_presentation_order,
         test_original_source_open_guard_preserved,
+        test_physical_po_m16_reference_cache_and_p2_numeric,
     ):
         test()
     print("M19_M21_PRODUCT_NAVIGATION_SOURCE_GUARD_NONRELEASE_PASS")
