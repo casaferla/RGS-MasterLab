@@ -934,7 +934,14 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     const auto observedRho=longRows.at(7).toMap().value("reference");
     QVERIFY(observedRho.isValid());
     QVERIFY(std::abs(observedRho.toDouble()+1.0)<1e-12);
-    QVERIFY(!longRows.at(3).toMap().value("reference").isValid());
+    // Genuine M16 True Peak is now available in DEVELOPMENT, including
+    // independent 192-kHz streamed REFERENCE. Assert the exact original
+    // analyser value, not absence or a fabricated numerical fallback.
+    const auto referenceTruePeak=longRows.at(3).toMap().value("reference");
+    QVERIFY(referenceTruePeak.isValid());
+    QVERIFY(longMeasured->value()->metrics[3].unrounded.has_value());
+    QVERIFY(std::abs(referenceTruePeak.toDouble()-
+        *longMeasured->value()->metrics[3].unrounded)<1e-12);
     QVERIFY(longStatus.selectPanelSource(1,QStringLiteral("REFERENCE")));
     const auto actualM20=longStatus.analysis_readouts();
     QVERIFY(std::abs(actualM20.value("m20").toMap()
@@ -2068,8 +2075,10 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         session.masteringChainState->chain(),
         session.masteringChainState->execution_bindings());
     QVERIFY2(refreshedManual,refreshedManual?"":refreshedManual.error()->message().c_str());
-    QVERIFY(session.selector.set_processed_realization(
-        std::move(*refreshedManual.value())));
+    const auto refreshedPublication=session.selector.set_processed_realization(
+        std::move(*refreshedManual.value()));
+    QVERIFY2(refreshedPublication,refreshedPublication?""
+        :refreshedPublication.error()->message().c_str());
     const auto acceptedCurrentManual=
         session.selector.processed_realization_snapshot();
     QVERIFY(acceptedCurrentManual);
