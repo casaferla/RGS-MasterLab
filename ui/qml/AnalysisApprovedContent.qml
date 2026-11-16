@@ -199,7 +199,7 @@ Item {
             Rectangle {
                 objectName: "m19ReferenceRelationPanel"
                 width: parent.width
-                height: root.compactFit ? 92 : 130
+                height: root.compactFit ? 98 : 130
                 color: root.panel
                 border.color: root.edge
                 radius: 7
@@ -212,8 +212,8 @@ Item {
                 }
                 Column {
                     anchors.fill: parent
-                    anchors.margins: root.compactFit ? 8 : 11
-                    spacing: root.compactFit ? 3 : 6
+                    anchors.margins: root.compactFit ? 6 : 11
+                    spacing: root.compactFit ? 2 : 6
                     Text {
                         text: "LEVELS  /  REFERENCE RELATION"
                         color: root.ink
@@ -229,7 +229,7 @@ Item {
                         ]
                         delegate: Row {
                             width: parent.width
-                            height: root.compactFit ? 20 : 23
+                            height: root.compactFit ? 18 : 23
                             spacing: 8
                             Rectangle {
                                 width: 4
