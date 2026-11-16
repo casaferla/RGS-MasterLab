@@ -55,6 +55,26 @@ Item {
             || key === "P50" || key === "P90" ? 3 : 2)
         return value > 0 ? "+" + shown : shown
     }
+    // Display scales, not mastering quality scores or admissible errors.
+    // Only correlation deltas have an exact finite physical maximum (2).
+    function deltaDisplayLimit(key) {
+        switch(key) {
+        case "lufs": return 6.0
+        case "rms": return 6.0
+        case "samplePeak": return 6.0
+        case "truePeak": return 6.0
+        case "crest": return 6.0
+        case "width": return 1.0
+        case "P10": case "P50": case "P90": return 2.0
+        default: return NaN
+        }
+    }
+    function deltaDisplayUnit(key) {
+        return key === "lufs" ? "LU"
+            : key === "width" || key === "P10"
+              || key === "P50" || key === "P90"
+              ? "ratio" : "dB"
+    }
     function metricExplanation(key) {
         switch(key) {
         case "lufs": return "Integrated K-weighted loudness, in LUFS; gated over each independently measured scope."
@@ -125,14 +145,20 @@ Item {
         width: root.width
         spacing: 8
 
-        // M19 keeps three columns and two rows at EVERY supported size.
-        // Never jump to five columns; preserve the 36px readout font.
-        Column {
-            id: m19
-            objectName: "m19LevelsPage"
+        // The M19 cards grow only to their bounded limit. Afterwards
+        // the entire 3+2 group and relation panel center vertically.
+        Item {
+            id: m19Viewport
+            objectName: "m19CenteredViewport"
             visible: root.panelIndex === 0
             width: parent.width
-            spacing: 8
+            height: root.height
+            Column {
+                id: m19
+                objectName: "m19LevelsPage"
+                width: parent.width
+                y: Math.max(0, (m19Viewport.height - m19.height) / 2)
+                spacing: 8
             Grid {
                 id: levelGrid
                 objectName: "m19MetricsGrid"
@@ -268,6 +294,7 @@ Item {
                     }
                 }
             }
+        }
         }
 
         // M20 static PSD, P06 Width and local Grid100 correlations.
@@ -608,20 +635,120 @@ Item {
                                                         m21MetricRow.observed.key),
                                         root.deltaText(m21MetricRow.observed.deltaProcessed,
                                                         m21MetricRow.observed.key)]
-                                    delegate: Text {
+                                    delegate: Item {
+                                        id: m21ValueCell
                                         width: parent.width/6
                                         height: parent.height
-                                        text: modelData
-                                        font.family: index===0 ? "Segoe UI" : "Consolas"
-                                        font.pixelSize: 10
-                                        font.bold: index===0
-                                        color: index===3 ? root.copper
-                                            : index===0 ? root.ink : root.dim
-                                        horizontalAlignment: index===0
-                                            ? Text.AlignLeft : Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                        leftPadding: index===0 ? 7 : 0
-                                        elide: Text.ElideRight
+                                        readonly property bool isDelta: index===4 || index===5
+                                        readonly property var deltaValue: index===4
+                                            ? m21MetricRow.observed.deltaPrepared
+                                            : index===5
+                                            ? m21MetricRow.observed.deltaProcessed
+                                            : undefined
+                                        readonly property real displayLimit:
+                                            root.deltaDisplayLimit(m21MetricRow.observed.key)
+                                        readonly property bool hasDelta: isDelta
+                                            && root.hasNumber(deltaValue)
+                                            && Number.isFinite(displayLimit)
+                                        readonly property real barWidth: Math.min(
+                                            44,Math.max(24,width*0.37))
+                                        Text {
+                                            objectName: "m21NumericCell_"
+                                                + m21MetricRow.metricIndex + "_" + index
+                                            anchors.left: parent.left
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            width: m21ValueCell.hasDelta
+                                                ? Math.max(0,parent.width
+                                                    - m21ValueCell.barWidth - 5)
+                                                : parent.width
+                                            text: modelData
+                                            font.family: index===0 ? "Segoe UI" : "Consolas"
+                                            font.pixelSize: 10
+                                            font.bold: index===0
+                                            color: index===3 ? root.copper
+                                                : index===0 ? root.ink : root.dim
+                                            horizontalAlignment: index===0
+                                                ? Text.AlignLeft : Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                            leftPadding: index===0 ? 7 : 0
+                                            elide: Text.ElideRight
+                                        }
+                                        // Only actual finite Product-owned delta values
+                                        // may render a bar. No substitutes or scores.
+                                        Canvas {
+                                            id: divergenceBar
+                                            objectName: "m21DeltaBar_"
+                                                + m21MetricRow.metricIndex + "_" + index
+                                            visible: m21ValueCell.hasDelta
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 3
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: m21ValueCell.barWidth
+                                            height: 8
+                                            readonly property var deltaValue:
+                                                m21ValueCell.deltaValue
+                                            readonly property real displayLimit:
+                                                m21ValueCell.displayLimit
+                                            onWidthChanged: requestPaint()
+                                            onDeltaValueChanged: requestPaint()
+                                            onDisplayLimitChanged: requestPaint()
+                                            onVisibleChanged: if (visible) requestPaint()
+                                            onPaint: {
+                                                const ctx=getContext("2d")
+                                                ctx.reset()
+                                                if(!root.hasNumber(deltaValue)
+                                                    || !Number.isFinite(displayLimit)
+                                                    || displayLimit<=0) return
+                                                const mid=width/2
+                                                const half=Math.max(0,mid-2)
+                                                const ratio=Math.min(1,
+                                                    Math.abs(deltaValue)/displayLimit)
+                                                const span=half*ratio
+                                                const y=2
+                                                ctx.fillStyle="#36556B"
+                                                ctx.fillRect(1,y,width-2,4)
+                                                if(span>0) {
+                                                    const gradient=deltaValue<0
+                                                        ? ctx.createLinearGradient(
+                                                            mid-half,0,mid,0)
+                                                        : ctx.createLinearGradient(
+                                                            mid,0,mid+half,0)
+                                                    if(deltaValue<0) {
+                                                        gradient.addColorStop(0,"#D96959")
+                                                        gradient.addColorStop(0.5,"#E7BA50")
+                                                        gradient.addColorStop(1,"#41C69B")
+                                                    } else {
+                                                        gradient.addColorStop(0,"#41C69B")
+                                                        gradient.addColorStop(0.5,"#E7BA50")
+                                                        gradient.addColorStop(1,"#D96959")
+                                                    }
+                                                    ctx.fillStyle=gradient
+                                                    ctx.fillRect(deltaValue<0
+                                                        ? mid-span : mid,y,span,4)
+                                                }
+                                                ctx.fillStyle="#A8D5CB"
+                                                ctx.fillRect(mid-0.5,0,1,8)
+                                            }
+                                            ToolTip.text: "Δ = REFERENCE − CURRENT: "
+                                                + modelData + " "
+                                                + root.deltaDisplayUnit(
+                                                    m21MetricRow.observed.key)
+                                                + ". Display limit ±"
+                                                + m21ValueCell.displayLimit + " "
+                                                + root.deltaDisplayUnit(
+                                                    m21MetricRow.observed.key)
+                                                + (Math.abs(m21ValueCell.deltaValue)
+                                                    >m21ValueCell.displayLimit
+                                                    ? " · SCALE SATURATED" : "")
+                                                + ". Color encodes deviation magnitude, NOT audio quality."
+                                            ToolTip.visible: deltaDwell.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: deltaDwell
+                                                anchors.fill: parent
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -631,6 +758,9 @@ Item {
                                 + "are separate real measurements. Delta columns "
                                 + "are REFERENCE minus PREPARED or PROCESSED, "
                                 + "calculated from unrounded operands. "
+                                + "Signed zero-centered bars use per-metric "
+                                + "visual scales, not audio-quality scores. "
+                                + "Saturation never changes the numeric delta. "
                                 + "Missing, stale or incompatible results show —."
                             ToolTip.visible: m21RowDwell.ready
                             ToolTip.delay: 0
