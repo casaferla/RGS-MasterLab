@@ -15,12 +15,12 @@ namespace rgsml::tests {
 class M21RealProductMetricsPortTest final : public QObject {
     Q_OBJECT
 private slots:
-    void actualM19M20GoldMinusPreparedAndNoUnqualifiedTP();
+    void actualM19M20GoldMinusPreparedWithAuthenticM16TP();
     void mismatchedScopeOrUntrustedOwnerDenied();
 };
 
 void M21RealProductMetricsPortTest::
-actualM19M20GoldMinusPreparedAndNoUnqualifiedTP()
+actualM19M20GoldMinusPreparedWithAuthenticM16TP()
 {
     using namespace app::m21_private;
     const auto rate=core::SampleRate::create(48000);
@@ -62,8 +62,12 @@ actualM19M20GoldMinusPreparedAndNoUnqualifiedTP()
     QVERIFY(gImported.snapshot.has_value());
     QVERIFY(pImported.problem==RealProductPortProblem::none);
     QVERIFY(gImported.problem==RealProductPortProblem::none);
-    QCOMPARE(pImported.snapshot->metrics[3].quality,Quality::missing);
-    QVERIFY(!pImported.snapshot->metrics[3].unrounded);
+    QCOMPARE(pImported.snapshot->metrics[3].quality,Quality::low_confidence);
+    QVERIFY(pImported.snapshot->metrics[3].unrounded);
+    QVERIFY(std::isfinite(*pImported.snapshot->metrics[3].unrounded));
+    QVERIFY(pl.value()->true_peak_db_tp.db);
+    QVERIFY(std::abs(*pImported.snapshot->metrics[3].unrounded-
+                     *pl.value()->true_peak_db_tp.db)<1e-12);
     QVERIFY(!pImported.snapshot->average_spectrum.empty());
 
     PrivatePublicationGuard guard;
@@ -77,8 +81,12 @@ actualM19M20GoldMinusPreparedAndNoUnqualifiedTP()
     QVERIFY(first.prepared_to_gold[1].unrounded);
     QVERIFY(std::abs(*first.prepared_to_gold[1].unrounded-
                      20.0*std::log10(2.0))<1e-6);
-    QCOMPARE(first.prepared_to_gold[3].quality,Quality::missing);
-    QVERIFY(!first.prepared_to_gold[3].unrounded);
+    QCOMPARE(first.prepared_to_gold[3].quality,Quality::low_confidence);
+    QVERIFY(first.prepared_to_gold[3].unrounded);
+    QVERIFY(gl.value()->true_peak_db_tp.db);
+    QVERIFY(std::abs(*first.prepared_to_gold[3].unrounded-(
+        *gl.value()->true_peak_db_tp.db-
+        *pl.value()->true_peak_db_tp.db))<1e-12);
     QCOMPARE(first.prepared_to_gold[5].quality,Quality::not_applicable);
     QCOMPARE(first.processed_to_gold[1].quality,Quality::missing);
 
