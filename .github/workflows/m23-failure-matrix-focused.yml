@@ -263,6 +263,13 @@ jobs:
               Select-String -Pattern 'QT_LINE_[0-9]+: FAIL!' -Context 2,14 |
               Select-Object -First 12 | Out-String -Width 240 |
               Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
+            # A failed Qt test can be buried before the last 60 CTest
+            # lines. Preserve only bounded failure neighborhoods, never
+            # the full test stream or unrelated user/process logs.
+            Get-Content "$env:RUNNER_TEMP/m23-ctest.log" |
+              Select-String -Pattern 'FAIL!', 'QFATAL', 'QCOMPARE', 'QVERIFY', 'ASSERT', 'M21_PROCESSED_' -Context 2,12 |
+              Select-Object -First 12 | Out-String -Width 240 |
+              Add-Content "$env:RUNNER_TEMP/m23-failure-bounded.txt"
             # The old one-case/screenshots-on A/B was NOT controlled.
             # Retain real candidate failure; controlled matrix has its
             # separate bounded artifact and cannot greenwash this gate.
