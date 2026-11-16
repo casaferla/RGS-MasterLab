@@ -16,13 +16,42 @@ Item {
         Math.max(0, Math.min(1, (root.height - 300) / 155))
     readonly property double ceiling: limiterModule ? limiterModule.ceilingDbTp : -1.0
     readonly property double drive: limiterModule ? limiterModule.driveDb : 0.0
+    // Numeric drafts never render on each keystroke. Same 120x32,
+    // Consolas 16, GAIN-field visual grammar as InputGainEditor.
+    function commitNumeric(control, low, high, current, setter) {
+        if(!root.limiterModule) return
+        const parsed=Number(control.text.trim().replace(",","."))
+        if(!Number.isFinite(parsed) || parsed<low || parsed>high) {
+            control.text=current.toFixed(1)
+            return
+        }
+        const canonical=Math.round(parsed*10)/10
+        if(canonical!==current) setter(canonical)
+        control.text=canonical.toFixed(1)
+    }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
         spacing: 5
-        // The DspEditorHost already provides the module title and context.
-        // Reserve vertical space for the two Input Gain-sized DSP controls.
+        // Reset belongs to the outer action bar, as in Input Gain and
+        // other DSP editors, NEVER buried in the main parameter well.
+        RowLayout {
+            objectName: "streamingP2ActionBar"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 32
+            spacing: 8
+            Item { Layout.fillWidth: true }
+            StudioButton {
+                objectName: "streamingP2ResetButton"
+                text: "Reset to Default"
+                minimumControlWidth: 130
+                accentColor: root.copper
+                enabled: !!root.limiterModule
+                onClicked: if(root.limiterModule) root.limiterModule.resetToDefault()
+                Accessible.name: "Reset Streaming TP Limiter to defaults"
+            }
+        }
 
         Rectangle {
             objectName: "streamingP2MainPanel"
@@ -105,6 +134,82 @@ Item {
                             if (root.limiterModule) root.limiterModule.setCeilingDbTp(v)
                         }
                     }
+                    RowLayout {
+                        objectName: "streamingP2CeilingNumericRow"
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: 12
+                        Text {
+                            text: "CEILING"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+                        Rectangle {
+                            objectName: "streamingP2CeilingNumericWell"
+                            width: 120; height: 32; radius: 4
+                            color: "#0E1F2E"
+                            border.width: ceilingEntry.activeFocus ? 2 : 1
+                            border.color: ceilingEntry.activeFocus
+                                ? root.copper : "#2C5A78"
+                            TextInput {
+                                id: ceilingEntry
+                                objectName: "streamingP2CeilingNumericInput"
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                verticalAlignment: TextInput.AlignVCenter
+                                horizontalAlignment: TextInput.AlignRight
+                                text: "-1.0"
+                                font.family: "Consolas"
+                                font.pixelSize: 16
+                                color: "#F5F8FC"
+                                selectByMouse: true
+                                selectionColor: "#40C4774A"
+                                selectedTextColor: "#F5F8FC"
+                                activeFocusOnTab: true
+                                Binding {
+                                    target: ceilingEntry
+                                    property: "text"
+                                    value: root.ceiling.toFixed(1)
+                                    when: !ceilingEntry.activeFocus
+                                }
+                                Keys.onReturnPressed: function(event) {
+                                    root.commitNumeric(ceilingEntry,-12,0,
+                                        root.ceiling,function(v) {
+                                            root.limiterModule.setCeilingDbTp(v)
+                                        })
+                                    ceilingEntry.focus=false
+                                    event.accepted=true
+                                }
+                                Keys.onEnterPressed: function(event) {
+                                    root.commitNumeric(ceilingEntry,-12,0,
+                                        root.ceiling,function(v) {
+                                            root.limiterModule.setCeilingDbTp(v)
+                                        })
+                                    ceilingEntry.focus=false
+                                    event.accepted=true
+                                }
+                                Keys.onEscapePressed: function(event) {
+                                    ceilingEntry.text=root.ceiling.toFixed(1)
+                                    ceilingEntry.focus=false
+                                    event.accepted=true
+                                }
+                                onActiveFocusChanged: if(!activeFocus)
+                                    root.commitNumeric(ceilingEntry,-12,0,
+                                        root.ceiling,function(v) {
+                                            root.limiterModule.setCeilingDbTp(v)
+                                        })
+                                Accessible.name: "Streaming TP Ceiling numeric dBTP"
+                            }
+                        }
+                        Text {
+                            text: "dBTP"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                        }
+                    }
                 }
 
                 ColumnLayout {
@@ -166,76 +271,86 @@ Item {
                             if (root.limiterModule) root.limiterModule.setDriveDb(v)
                         }
                     }
+                    RowLayout {
+                        objectName: "streamingP2DriveNumericRow"
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: 12
+                        Text {
+                            text: "DRIVE"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+                        Rectangle {
+                            objectName: "streamingP2DriveNumericWell"
+                            width: 120; height: 32; radius: 4
+                            color: "#0E1F2E"
+                            border.width: driveEntry.activeFocus ? 2 : 1
+                            border.color: driveEntry.activeFocus
+                                ? root.copper : "#2C5A78"
+                            TextInput {
+                                id: driveEntry
+                                objectName: "streamingP2DriveNumericInput"
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                verticalAlignment: TextInput.AlignVCenter
+                                horizontalAlignment: TextInput.AlignRight
+                                text: "0.0"
+                                font.family: "Consolas"
+                                font.pixelSize: 16
+                                color: "#F5F8FC"
+                                selectByMouse: true
+                                selectionColor: "#40C4774A"
+                                selectedTextColor: "#F5F8FC"
+                                activeFocusOnTab: true
+                                Binding {
+                                    target: driveEntry
+                                    property: "text"
+                                    value: root.drive.toFixed(1)
+                                    when: !driveEntry.activeFocus
+                                }
+                                Keys.onReturnPressed: function(event) {
+                                    root.commitNumeric(driveEntry,-24,24,
+                                        root.drive,function(v) {
+                                            root.limiterModule.setDriveDb(v)
+                                        })
+                                    driveEntry.focus=false
+                                    event.accepted=true
+                                }
+                                Keys.onEnterPressed: function(event) {
+                                    root.commitNumeric(driveEntry,-24,24,
+                                        root.drive,function(v) {
+                                            root.limiterModule.setDriveDb(v)
+                                        })
+                                    driveEntry.focus=false
+                                    event.accepted=true
+                                }
+                                Keys.onEscapePressed: function(event) {
+                                    driveEntry.text=root.drive.toFixed(1)
+                                    driveEntry.focus=false
+                                    event.accepted=true
+                                }
+                                onActiveFocusChanged: if(!activeFocus)
+                                    root.commitNumeric(driveEntry,-24,24,
+                                        root.drive,function(v) {
+                                            root.limiterModule.setDriveDb(v)
+                                        })
+                                Accessible.name: "Streaming TP Drive numeric dB"
+                            }
+                        }
+                        Text {
+                            text: "dB"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                        }
+                    }
                 }
 
-                // Research variant only. The shipping margin will be fixed
-                // after P2 qualification, not promoted to user-facing DSP UI.
-                RowLayout {
-                    objectName: "streamingP2ResearchMarginRow"
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredHeight: 24 + 8 * root.verticalSpaceFactor
-                    spacing: 8
-                    Text {
-                        text: "Research margin"
-                        color: "#A1B5C9"
-                        font.family: "Segoe UI"
-                        font.pixelSize: 11
-                    }
-                    StudioButton {
-                        objectName: "streamingP2Margin2Button"
-                        text: "2%"; minimumControlWidth: 60
-                        accentColor: root.copper
-                        enabled: !!root.limiterModule
-                        onClicked: if (root.limiterModule) root.limiterModule.setMarginPercent(2)
-                    }
-                    StudioButton {
-                        objectName: "streamingP2Margin5Button"
-                        text: "5%"; minimumControlWidth: 60
-                        accentColor: root.copper
-                        enabled: !!root.limiterModule
-                        onClicked: if (root.limiterModule) root.limiterModule.setMarginPercent(5)
-                    }
-                    Text {
-                        text: root.limiterModule ? "Selected: " + root.limiterModule.marginPercent + "%" : "—"
-                        color: root.copper
-                        font.family: "Consolas"
-                        font.pixelSize: 12
-                    }
-                    Item { Layout.fillWidth: true }
-                    StudioButton {
-                        objectName: "streamingP2ResetButton"
-                        text: "Reset to Default"
-                        minimumControlWidth: 130
-                        accentColor: root.copper
-                        enabled: !!root.limiterModule
-                        onClicked: if (root.limiterModule) root.limiterModule.resetToDefault()
-                    }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 15 + 13 * root.verticalSpaceFactor
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    text: root.limiterModule
-                        ? root.limiterModule.stateText + " · " + root.limiterModule.previewStatus
-                        : "P2 has no verified audio owner."
-                    color: root.limiterModule && root.limiterModule.hasError ? "#F27683" : "#D1E2E8"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 12
-                    ToolTip.text: text
-                    ToolTip.visible: statusHover.hovered
-                    ToolTip.delay: 900
-                    HoverHandler { id: statusHover }
-                }
+
             }
-        }
-        Text {
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            text: "EXPERIMENTAL: preview audio only. No project save or export qualification."
-            color: "#A1B5C9"
-            font.family: "Segoe UI"
-            font.pixelSize: 11
         }
     }
 }
