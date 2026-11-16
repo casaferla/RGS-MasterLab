@@ -74,6 +74,8 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # Compact native cards preserve readout fonts, full 9-row M21 table and
 # the genuine log-scaled M20 spectrum. No source/authenticator is relaxed.
 # Other original FQ99/P2 controls remain pinned to their prior green base.
+# PO 2026-11-16: M17 UI verb is Render Master (and Preview Master),
+# while PREPARED stays a distinct audio pipeline scope. Only UI wording.
 # PO-approved 2026-11-16 Streaming TP Limiter controls and Gain icon:
 # exact-pin numeric 120x32 wells, reset/action row, removal of Research Margin
 # and experimental copy, and the single horizontal slider pictogram.
@@ -87,7 +89,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AnalysisApprovedContent.qml": "dd8b970a12b13434decd33c6273d44770376afe6",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
-    "ui/qml/DspEditorHost.qml": "ad0fd9ffa4b485ae7e188b1f0036587c4b79bcce",
+    "ui/qml/DspEditorHost.qml": "330e3cc5c012a7248aa12b0734b9c362db880736",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
     "ui/qml/StudioIcon.qml": "6fdb001df1c1296852ccc21c15b0dc62c1ebbb52",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
