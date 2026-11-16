@@ -330,9 +330,13 @@ public:
             // Evaluate using the PREVIOUS Product epoch, before its
             // monotonic advance. Checking after state->epoch=nextEpoch
             // always reports false and wrongly blocks unchanged M17 PCM.
-            // This is transport-only: no verification can be minted here.
-            const bool preserveExactManualReturn=
-                op=="restore_manual"
+            // Both the exact MANUAL restore and the final A/B re-arm
+            // preserve an ALREADY-current M17 proof. In particular, the
+            // Preview Prepared -> Return to Source flow ends with
+            // comparison_resume AFTER comparison_suspend + restore_manual.
+            // No transport-only step may mint a missing verification.
+            const bool preserveVerifiedTransport =
+                (op=="restore_manual" || op=="comparison_resume")
                 &&state->verifiedM17Epoch==state->epoch;
             state->identity=nextIdentity;
             state->epoch=nextEpoch;
@@ -341,7 +345,7 @@ public:
             state->verifiedM17Epoch=(op=="renderer_changed"
                 ||op=="comparison_suspend"
                 ||op=="return_monitor_to_manual"
-                ||preserveExactManualReturn)
+                ||preserveVerifiedTransport)
                 ?nextEpoch:0;
             return core::Status::success();
         };

@@ -986,14 +986,20 @@ m18VerifiedEpochSurvivesOnlyAlreadyVerifiedManualReturn()
     QVERIFY(fanout.m17_verified_epoch_current());
     QVERIFY(admit("restore_manual"));
     QVERIFY(fanout.m17_verified_epoch_current());
+    // Physical Windows B01: Preview Prepared / Return to Source:
+    // suspend, restore the exact manual, then explicitly re-arm.
     QVERIFY(admit("comparison_suspend"));
     QVERIFY(fanout.m17_verified_epoch_current());
     QVERIFY(admit("restore_manual"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("comparison_resume"));
     QVERIFY(fanout.m17_verified_epoch_current());
     // Parameter-only DSP edits ALWAYS revoke, even after transport.
     QVERIFY(admit("gain_parameters"));
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(admit("restore_manual"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("comparison_resume"));
     QVERIFY(!fanout.m17_verified_epoch_current());
     // A retired source cannot be resurrected by the same transport call.
     QVERIFY(admit("renderer_changed"));
@@ -1001,6 +1007,8 @@ m18VerifiedEpochSurvivesOnlyAlreadyVerifiedManualReturn()
     QVERIFY(admit("source_selection"));
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(admit("restore_manual"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("comparison_resume"));
     QVERIFY(!fanout.m17_verified_epoch_current());
 }
 
