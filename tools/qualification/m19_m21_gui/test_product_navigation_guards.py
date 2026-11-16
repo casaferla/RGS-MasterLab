@@ -560,6 +560,12 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'selectGold(QUrl::fromLocalFile(refB))' in integration
     assert 'inflightCache.accept_completed_unchanged_render(' in integration
     assert 'M21ProductStatusViewModel actualNumericUi' in integration
+    # Real Windows Product test must support both initial PCM prepare and
+    # the genuine same-target PROCESSED handoff. A prepare-only fake
+    # produces a false red when new immutable manual PCM is published.
+    assert 'session.transport.set_pcm_handoff_handler(' in integration
+    assert 'M18_TEST_PROCESSED_HANDOFF_REQUIRES_CURRENT_MANUAL_SINK' in integration
+    assert 'currentDevice.value()->audibleRealization.realizationId' in integration
     assert 'samplePeakAfterRef.value("processed").isValid()' in integration
     assert '!samplePeakAfterRef.value("reference").isValid()' in integration
     assert 'samplePeakAfterDsp.value("reference").isValid()' in integration
