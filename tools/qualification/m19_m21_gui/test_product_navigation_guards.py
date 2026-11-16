@@ -528,7 +528,7 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'acceptedPreviewGeneration_==previewGeneration_' in preview
     assert 'pendingPreviewBindings_=job.bindings' in preview
     assert 'acceptedPreviewBindings_=pendingPreviewBindings_' in preview
-    assert 'published_preview_matches_current_bindings()' in coordinator
+    assert 'processedPreviewMatches_()' in coordinator
     assert 'published_preview_matches_current_bindings()' in read(
         "app/src/main.cpp")
     integration=read("tests/integration/app/test_project_session.cpp")
