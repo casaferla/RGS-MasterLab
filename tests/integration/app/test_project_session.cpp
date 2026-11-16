@@ -2135,7 +2135,12 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
         *samePcm.value(),app::m21_private::Column::prepared);
     const auto processedNumbers=M21Owners::measure_render_worker(
         *samePcm.value(),app::m21_private::Column::processed);
-    QVERIFY(firstReferenceNumbers&&preparedNumbers&&processedNumbers);
+    QVERIFY2(firstReferenceNumbers,
+             firstReferenceNumbers?"":firstReferenceNumbers.error()->message().c_str());
+    QVERIFY2(preparedNumbers,
+             preparedNumbers?"":preparedNumbers.error()->message().c_str());
+    QVERIFY2(processedNumbers,
+             processedNumbers?"":processedNumbers.error()->message().c_str());
     app::internal::M21ProductPublicationInbox referenceCache;
     QVERIFY(referenceCache.accept_render(
         controllers,fanout,session.selector,*samePcm.value(),
