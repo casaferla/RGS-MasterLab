@@ -2,8 +2,9 @@
 // L1-M21 Product result inbox: **no** worker owns or reads QObjects.
 // All methods are Qt-owner only. A numerical worker may finish with a
 // valid old snapshot, but Qt's real M18/source/Gold authorities decide
-// if and when any result is current. No official Phase-6 publication
-// or QML wiring is claimed by this private Product adapter.
+// if and when each independent column is current. Authentic numbers are
+// available only through owner-checked DEVELOPMENT readouts, not official
+// Phase-6 release or its qualification gates.
 #include "m21_product_owner_analysis.hpp"
 #include "m21_metrics_comparison_candidate.hpp"
 #include <array>
@@ -26,8 +27,8 @@ public:
     using Comparison=m21_private::Comparison;
 
     // Complete private Product acceptance of PREPARED/PROCESSED worker
-    // results. No explicit or implicit UI publish; this inbox will only
-    // display results through view_current() after live epoch checking.
+    // results. The owner-only analysis readout may display values only
+    // through view_current() after per-column live identity checking.
     [[nodiscard]] bool accept_render(
         const Controllers& product,const Fanout& fanout,
         const AuditionSourceSelector& selector,
