@@ -1139,7 +1139,10 @@ int main(int argc, char* argv[])
     rgsml::app::internal::M21PrivateProductAnalysisCoordinator
         m21AnalysisCoordinator{
             m18Controllers,m18Fanout,auditionSelector,goldSelection,
-            m21ProductInbox,m21ProductStatusViewModel};
+            m21ProductInbox,m21ProductStatusViewModel,
+            [&previewController] {
+                return previewController.published_preview_matches_current_bindings();
+            }};
     QTimer m21AnalysisPollTimer;
     m21AnalysisPollTimer.setInterval(250);
     QObject::connect(&m21AnalysisPollTimer,&QTimer::timeout,
