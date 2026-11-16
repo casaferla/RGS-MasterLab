@@ -538,6 +538,9 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'structuralRevision' in integration
     assert 'session.masteringChainState->set_gain_parameters(' in integration
     assert 'selectGold(QUrl::fromLocalFile(refB))' in integration
+    assert 'inflightCache.accept_completed_unchanged_render(' in integration
+    assert 'inflightCache.accept_completed_unchanged_gold(' in integration
+    assert 'referenceCache.rebind_unchanged_independent_scopes(' in integration
     assert 'before.owner.identity.source_generation' in owner
     assert 'Project save/metadata revision alone is not a PCM revision.' in owner
     assert 'before.owner.identity.project_generation' not in owner[owner.index(
