@@ -79,9 +79,10 @@ public:
     // identity of the measured audio. Independently reauthenticate each
     // immutable observation after an unrelated owner-epoch transition.
     //
-    // PREPARED is SOURCE PCM: retain through DSP edits, REFERENCE
-    // changes, playback-target selection and M17 Render Master when
-    // the authentic SOURCE generation and PREPARED owner are unchanged.
+    // PREPARED is currently source-derived PCM (before the future
+    // restoration stage). Its identity is the actual immutable PREPARED
+    // owner, not the M17 Render Master operation. Retain its numbers
+    // through independent DSP, REFERENCE, audition and M17 actions.
     //
     // PROCESSED additionally requires the same immutable manual PCM,
     // RealizationId and exact typed DSP parameter bindings. Structural
