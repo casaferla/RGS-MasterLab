@@ -76,57 +76,37 @@ public:
             active_.reset();
             status_->set_running_analysis_role({});
         }
-        // Preserve unaffected numeric measurements even while a previous
-        // single-flight CPU worker is retiring. No worker is started here:
-        // only immutable, already computed results are reauthenticated.
-        const auto unchanged=inbox_->rebind_unchanged_prepared_reference(
+        // Reauthenticate EVERY unchanged scope independently at the Qt
+        // owner, before the running worker can delay another attempt.
+        // A new REFERENCE must not invalidate already measured PROCESSED,
+        // and DSP edits must never retire unchanged PREPARED/REFERENCE.
+        // Keep the single-flight worker and full M18 epoch checks intact.
+        const auto unchanged=inbox_->rebind_unchanged_independent_scopes(
             product_,*fanout_,*selector_,*gold_);
         if(unchanged[static_cast<std::size_t>(Column::prepared)]
-           ||unchanged[static_cast<std::size_t>(Column::gold)]) {
-            if(unchanged[static_cast<std::size_t>(Column::prepared)]) {
-                const auto fresh=Product::capture(
-                    product_,*fanout_,*selector_);
-                if(fresh) {
-                    renderAttempts_[
-                        static_cast<std::size_t>(Column::prepared)]
-                        .remember(render_key(*fresh.value(),Column::prepared),
-                                  fresh.value()->prepared);
-                }
-            }
-            if(unchanged[static_cast<std::size_t>(Column::gold)]) {
-                const auto fresh=Product::capture_gold(
-                    product_,*fanout_,*selector_,*gold_);
-                if(fresh)attempted_[
-                    static_cast<std::size_t>(Column::gold)]=
-                        gold_key(*fresh.value());
-            }
-            status_->refresh();
-        }
-        if(worker_.busy())return;
-
-        // A genuine REFERENCE-only change advances the global M18 epoch,
-        // but does not change any retained PREPARED/PROCESSED PCM. The
-        // inbox alone decides whether old measurements may be re-stamped
-        // under the new epoch after STRICT source/chain/render validation.
-        const auto reused=inbox_->rebind_after_reference_only_change(
-            product_,*fanout_,*selector_,*gold_);
-        if(reused[static_cast<std::size_t>(Column::prepared)]
-           ||reused[static_cast<std::size_t>(Column::processed)]) {
-            // Update per-render deduplication only AFTER actual inbox
-            // acceptance; otherwise tick() would recompute immediately.
+           ||unchanged[static_cast<std::size_t>(Column::gold)]
+           ||unchanged[static_cast<std::size_t>(Column::processed)]) {
             auto fresh=Product::capture(product_,*fanout_,*selector_);
             if(fresh) {
                 for(const auto column:{Column::prepared,Column::processed}) {
                     const auto i=static_cast<std::size_t>(column);
-                    if(!reused[i])continue;
+                    if(!unchanged[i])continue;
                     const auto render=column==Column::prepared
                         ?fresh.value()->prepared:fresh.value()->processed;
                     renderAttempts_[i].remember(
                         render_key(*fresh.value(),column),render);
                 }
             }
+            if(unchanged[static_cast<std::size_t>(Column::gold)]) {
+                const auto goldEvidence=Product::capture_gold(
+                    product_,*fanout_,*selector_,*gold_);
+                if(goldEvidence)
+                    attempted_[static_cast<std::size_t>(Column::gold)]=
+                        gold_key(*goldEvidence.value());
+            }
             status_->refresh();
         }
+        if(worker_.busy())return;
 
         // Fixed round-robin priority, at most ONE CPU analysis active;
         // attempts are remembered per exact Product identity so a
