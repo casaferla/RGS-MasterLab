@@ -2101,6 +2101,11 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     ++newSelection.selection_revision;
     QVERIFY(!M21Owners::same_gold_observation(
         *firstReference.value(),newSelection));
+    auto saturatedSelection=*firstReference.value();
+    saturatedSelection.selection_revision=
+        (std::numeric_limits<std::uint64_t>::max)();
+    QVERIFY(!M21Owners::same_gold_observation(
+        saturatedSelection,saturatedSelection));
     const auto firstReferenceNumbers=M21Owners::measure_gold_worker(
         *firstReference.value());
     const auto preparedNumbers=M21Owners::measure_render_worker(
