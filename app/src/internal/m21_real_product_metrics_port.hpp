@@ -48,7 +48,10 @@ struct RealProductPortResult final {
     case S::M16_SUPPORTED_UNQUALIFIED:
         // Development-only readout: do not promote the official M16
         // qualification_status or the separately gated Phase-6 contract.
-        if(!metric.db || !std::isfinite(*metric.db))
+        // Silence has no finite dBTP; never invent minus infinity.
+        if(!metric.db)
+            return {{},Quality::missing,"Silent M16 resource: no dBTP"};
+        if(!std::isfinite(*metric.db))
             return {{},Quality::invalid,"Invalid M16 True Peak reading"};
         return {metric.db,Quality::low_confidence,
                 "M16 numerical observation; formal Gate G not asserted"};
