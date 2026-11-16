@@ -528,6 +528,13 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'acceptedPreviewGeneration_==previewGeneration_' in preview
     assert 'pendingPreviewBindings_=job.bindings' in preview
     assert 'acceptedPreviewBindings_=pendingPreviewBindings_' in preview
+    assert 'acceptedProcessedProvider_()==published' in preview
+    assert 'acceptedPreviewOwner_=acceptedProcessedProvider_' in preview
+    assert 'set_accepted_processed_provider(' in read("app/src/main.cpp")
+    unit=read("tests/unit/app/test_mastering_preview_controller.cpp")
+    assert 'controller.published_preview_matches_current_bindings()' in unit
+    assert '!controller.published_preview_matches_current_bindings()' in unit
+    assert 'publishedResult=make_unit_prepared_result();' in unit
     assert 'processedPreviewMatches_()' in coordinator
     assert 'published_preview_matches_current_bindings()' in read(
         "app/src/main.cpp")
