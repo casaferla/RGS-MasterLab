@@ -4,6 +4,8 @@
 #include "internal/m19_basic_level_candidate.hpp"
 #include "internal/m20_bounded_spectrum_candidate.hpp"
 #include "internal/m20_stereo_candidate.hpp"
+#include "internal/true_peak_itu4x_channel_stream.hpp"
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -68,8 +70,9 @@ using M20State=TonalStereoMetricState;
     out.full_scope_rms_dbfs=available_or_silent(s.full_scope_rms_dbfs);
     out.sample_peak_dbfs=available_or_silent(s.sample_peak_dbfs);
     out.sample_peak_crest_db=available_or_silent(s.sample_peak_crest_db);
-    // M16 public true peak accepts an entire owning buffer only.
-    // Never substitute peak or claim qualification on streaming input.
+    // The caller later applies the SAME chronological 4x M16 channel
+    // stream over the complete bounded-decode pass, then its 11-zero EOS.
+    // This pre-initialized missing state is never exposed as a fake peak.
     out.true_peak_db_tp={std::nullopt,BasicLevelValueState::M16_SCOPE_UNAVAILABLE};
     return out;
 }
@@ -120,6 +123,9 @@ core::Result<StreamedReferenceAnalysis> measure_streamed_reference_scope(
                                                0,total);
     m20_private::BoundedSpectrumAccumulatorCandidate m20(
         fs,0,total,static_cast<std::uint32_t>(channels),false,{});
+    // Reuse the ORIGINAL M16 FIR evaluator, no substitute oversampler.
+    // Sequential blocks preserve channel history and exact finalization.
+    std::array<internal::TruePeakItu4xChannelStream,2> m16{};
     for(std::uint64_t pos=0;pos<total;){
         const auto count=std::min(kBlock,total-pos);
         auto block=decode(pos,count);
@@ -137,6 +143,12 @@ core::Result<StreamedReferenceAnalysis> measure_streamed_reference_scope(
             return R::failure(bad("M21_STREAM_M19_PCM_OR_SCOPE_INVALID"));
         if(!m20.push(*l.value(),right))
             return R::failure(bad("M21_STREAM_M20_PSD_PCM_INVALID"));
+        auto lPeak=m16[0].push_chunk(*l.value());
+        if(!lPeak)return R::failure(*lPeak.error());
+        if(channels==2U) {
+            auto rPeak=m16[1].push_chunk(right);
+            if(!rPeak)return R::failure(*rPeak.error());
+        }
         pos+=count;
     }
     auto pre=m19.finalize();
@@ -148,6 +160,24 @@ core::Result<StreamedReferenceAnalysis> measure_streamed_reference_scope(
     StreamedReferenceAnalysis result;
     result.max_decoded_block_frames=static_cast<std::size_t>(kBlock);
     result.level=copy_m19(*pre);
+    double globalLinearPeak=0.0;
+    for(std::size_t ch=0;ch<channels;++ch) {
+        auto measured=m16[ch].finalize(); // EXACT 11 zero-EOS, once
+        if(!measured)return R::failure(*measured.error());
+        if(!std::isfinite(*measured.value())||*measured.value()<0.0)
+            return R::failure(bad("M21_STREAM_M16_NONFINITE_PEAK"));
+        globalLinearPeak=std::max(globalLinearPeak,*measured.value());
+    }
+    if(globalLinearPeak==0.0) {
+        result.level.true_peak_db_tp={
+            std::nullopt,BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED};
+    } else {
+        const double dbTp=20.0*std::log10(globalLinearPeak);
+        if(!std::isfinite(dbTp))
+            return R::failure(bad("M21_STREAM_M16_NONFINITE_DBTP"));
+        result.level.true_peak_db_tp={
+            dbTp,BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED};
+    }
     auto& out=result.tonal;
     out.scope_begin_frame=0;
     out.scope_frame_count=total64;
