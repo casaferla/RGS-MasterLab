@@ -80,8 +80,8 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # pre-existing additive analysis files are exact-pinned, NOT released
 # or declared FQ99-identical. M16 Gate G remains separate.
 M18_WAV_OUTPUT_UI_BLOBS = {
-    "ui/qml/AnalysisApprovedContent.qml": "77bf72a88a32f57d2fb7a388348bcf4863c514cd",
-    "ui/qml/AnalysisStatusEditor.qml": "96edde9883222716dd9028a692748589f425d26f",
+    "ui/qml/AnalysisApprovedContent.qml": "3bf2cb0df82ee652d2734dea4e59a66c49f9d21c",
+    "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
     "ui/qml/DspEditorHost.qml": "ad0fd9ffa4b485ae7e188b1f0036587c4b79bcce",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",
@@ -415,10 +415,17 @@ def main() -> int:
         'm20StaticPsd',
         'root.metricText(m21MetricRow.observed.',
         'StudioTooltipDwell {',
-        'VERIFIED ANALYSIS UNAVAILABLE',
     ):
         if required not in approved_content:
             raise AssertionError("APPROVED_ANALYSIS_CONTENT_MISSING " + required)
+    status_editor = blob("HEAD", "ui/qml/AnalysisStatusEditor.qml")
+    for required in (
+        'objectName: "analysisVerificationStatus"',
+        'VERIFIED ANALYSIS UNAVAILABLE',
+        'MEASUREMENTS AVAILABLE',
+    ):
+        if required not in status_editor:
+            raise AssertionError("APPROVED_ANALYSIS_HEADER_STATUS_MISSING " + required)
     # PO explicitly authorized genuine numerical development UI on
     # 2026-11-10. This remains additive only: FQ99 shared geometry and
     # vector slots are still byte-protected by normalize() above.

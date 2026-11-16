@@ -7152,7 +7152,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                 "Unselected permanent analysis page must remain hidden");
             QVERIFY(!originalPages[other]->isEnabled());
         }
-        for(const QSize size : {QSize{1184,688},QSize{1440,900}}) {
+        QPointF firstAnalysisAnchor;
+        qreal priorSpectrumHeight=0.0;
+        for(const QSize size : {QSize{1184,688},QSize{1350,750},
+                               QSize{1440,900}}) {
             const auto png=QStringLiteral("PRODUCT_REAL_MAIN_%1_%2x%3_UNAVAILABLE.png")
                 .arg(screenshotStems[index]).arg(size.width()).arg(size.height());
             QVERIFY2(capture_visual_evidence(window,png,size),
@@ -7188,9 +7191,43 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QVERIFY2(analysisStack->implicitHeight()
                      <=analysisBody->height()+1.0,
                      qPrintable(fitDiagnostic));
+            // No 490px mode switch, no M19 column reflow and no hidden
+            // status footer. Compare actual scenegraph positions after
+            // Qt's native layout polish at several window sizes.
+            QVERIFY2(!analysisBody->property("compactFit").isValid(),
+                     "Product analysis must not depend on compact breakpoint");
+            auto* availability=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],
+                    QStringLiteral("analysisVerificationStatus")));
+            QVERIFY2(availability&&availability->isVisible(),
+                     "Verification summary must remain in top header");
+            QCOMPARE(availability->property("text").toString(),
+                     QStringLiteral("VERIFIED ANALYSIS UNAVAILABLE"));
+            const QString anchorName=index==0
+                ?QStringLiteral("m19MetricValue_lufs")
+                :index==1
+                ?QStringLiteral("m20SpectrumPanel")
+                :QStringLiteral("m21MetricRow_0");
+            auto* analysisAnchor=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],anchorName));
+            QVERIFY2(analysisAnchor,"Analysis top-left landmark missing");
+            const QPointF anchorPos=analysisAnchor->mapToItem(
+                analysisBody,QPointF{});
+            if(size.height()==688) firstAnalysisAnchor=anchorPos;
+            else QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5
+                          &&std::abs(anchorPos.y()-firstAnalysisAnchor.y())<1.5,
+                          "Product analysis content jumped during native resize");
+            if(index==0) {
+                auto* grid=find_child_by_name(originalPages[index],
+                    QStringLiteral("m19MetricsGrid"));
+                QVERIFY2(grid&&grid->property("columns").toInt()==3,
+                         "M19 must retain exactly three columns at every width");
+            } else if(index==1) {
+                QVERIFY2(analysisAnchor->height()+1.0>=priorSpectrumHeight,
+                         "M20 spectrum must stretch with spare editor height");
+                priorSpectrumHeight=analysisAnchor->height();
+            }
             if(size.height()==688) {
-                QVERIFY2(analysisBody->property("compactFit").toBool(),
-                         "Minimum window must use strict compact layout");
                 // All essential content must be inside the actual clipped
                 // viewport; presence-only checks are insufficient.
                 const QString lastName=index==0

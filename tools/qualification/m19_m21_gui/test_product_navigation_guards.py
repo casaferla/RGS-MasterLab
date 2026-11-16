@@ -45,7 +45,9 @@ def test_product_binds_status_without_demo() -> None:
     visuals = read("ui/qml/AnalysisApprovedContent.qml")
     # Preserve the original explicit unavailable visual gate, now owned
     # by the approved Product read-only content rather than the wrapper.
-    assert "VERIFIED ANALYSIS UNAVAILABLE" in visuals
+    assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
+    assert 'objectName: "analysisVerificationStatus"' in editor
+    assert 'text: approvedContent.panelHasData' in editor
     assert "fixtureMode" not in visuals
     # Genuine development measurements now come from the one Product
     # inbox; the release Gate G property remains separately disabled.
@@ -84,7 +86,14 @@ def test_product_binds_status_without_demo() -> None:
     assert "ScrollBar.vertical" not in visuals
     assert "analysisProductContentStack" in visuals
     assert "m21FullNineMetricRows" in visuals
-    assert "root.compactFit" in visuals
+    assert "compactFit" not in visuals
+    assert "columns: 3" in visuals
+    assert 'objectName: "m19MetricsGrid"' in visuals
+    assert 'height: Math.max(140, root.height - 166)' in visuals
+    assert 'objectName: "analysisDetailFooter"' not in visuals
+    assert 'THREE INDEPENDENT MEASUREMENTS' not in editor
+    assert 'anchors.margins: 8' in editor
+    assert 'for(const QSize size : {QSize{1184,688},QSize{1350,750}' in qt_smoke
     qt_smoke = read("tests/ui_smoke/test_source_metadata_panel.cpp")
     assert "analysisStack->implicitHeight()" in qt_smoke
     assert "<=analysisBody->height()+1.0" in qt_smoke

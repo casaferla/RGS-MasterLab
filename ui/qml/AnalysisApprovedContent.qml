@@ -8,11 +8,9 @@ import QtQuick.Layouts
 Item {
     id: root
     objectName: "approvedAnalysisProductContent"
-    // PO 2026-11-16: STRICT zero-scroll Product analysis at 1184x688.
-    // Compact only structural padding, captions and spectrum height;
-    // all five M19 hero readouts, four M20 stereo values, all nine
-    // M21 rows and both delta columns remain present and visible.
-    readonly property bool compactFit: root.height < 490
+    // PO 2026-11-16: continuous, no-scroll top-left layout.
+    // No vertical/horizontal mode switch; only the genuine M20
+    // spectrum expands into spare vertical space.
     property int panelIndex: 0
     property string lifecycle: "MISSING"
     // These are observed, authentic M19–M21 Product measurements under
@@ -112,11 +110,13 @@ Item {
     Column {
         id: stack
         objectName: "analysisProductContentStack"
+        anchors.left: parent.left
+        anchors.top: parent.top
         width: root.width
         spacing: 8
 
-        // M19 approved InputGain-style heroes. Reflow to 3 columns at the
-        // genuine ~730px DSP host. Never shrink 36px to fake 1440 geometry.
+        // M19 keeps three columns and two rows at EVERY supported size.
+        // Never jump to five columns; preserve the 36px readout font.
         Column {
             id: m19
             objectName: "m19LevelsPage"
@@ -125,8 +125,9 @@ Item {
             spacing: 8
             Grid {
                 id: levelGrid
+                objectName: "m19MetricsGrid"
                 width: parent.width
-                columns: width >= 1040 ? 5 : (width >= 460 ? 3 : 2)
+                columns: 3
                 columnSpacing: 8
                 rowSpacing: 8
                 Repeater {
@@ -151,20 +152,20 @@ Item {
                         width: (levelGrid.width
                             - (levelGrid.columns-1)*levelGrid.columnSpacing)
                             / levelGrid.columns
-                        height: root.compactFit ? 96 : 116
+                        height: 96
                         radius: 7
                         color: root.raised
                         border.color: root.edge
                         Column {
                             anchors.fill: parent
-                            anchors.margins: root.compactFit ? 5 : 9
-                            spacing: root.compactFit ? 0 : 6
+                            anchors.margins: 5
+                            spacing: 0
                             StudioReadOnlyMeasurement {
                                 objectName: "m19MetricValue_" + modelData.key
                                 width: parent.width
                                 // Preserve 36px numeric typography; trim
                                 // only unused 102px intrinsic bottom space.
-                                height: root.compactFit ? 86 : implicitHeight
+                                height: 86
                                 heroReadout: true
                                 labelText: modelData.name
                                 unitText: modelData.unit
@@ -174,16 +175,6 @@ Item {
                                     root.m19Values[modelData.key])
                                 accentColor: modelData.key === "truePeak"
                                     ? root.amber : root.cyan
-                            }
-                            Text {
-                                visible: !root.compactFit
-                                width: parent.width
-                                text: modelData.hint
-                                color: modelData.key === "truePeak"
-                                    ? root.amber : root.dim
-                                font.family: "Segoe UI"
-                                font.pixelSize: 10
-                                wrapMode: Text.WordWrap
                             }
                         }
                         ToolTip.text: modelData.tooltip
@@ -199,7 +190,7 @@ Item {
             Rectangle {
                 objectName: "m19ReferenceRelationPanel"
                 width: parent.width
-                height: root.compactFit ? 98 : 130
+                height: 98
                 color: root.panel
                 border.color: root.edge
                 radius: 7
@@ -212,8 +203,8 @@ Item {
                 }
                 Column {
                     anchors.fill: parent
-                    anchors.margins: root.compactFit ? 6 : 11
-                    spacing: root.compactFit ? 2 : 6
+                    anchors.margins: 6
+                    spacing: 2
                     Text {
                         text: "LEVELS  /  REFERENCE RELATION"
                         color: root.ink
@@ -229,7 +220,7 @@ Item {
                         ]
                         delegate: Row {
                             width: parent.width
-                            height: root.compactFit ? 18 : 23
+                            height: 18
                             spacing: 8
                             Rectangle {
                                 width: 4
@@ -264,16 +255,6 @@ Item {
                     }
                 }
             }
-            Text {
-                visible: !root.compactFit
-                width: parent.width
-                text: "TRUE PEAK requires the independent M16 authority. " +
-                      "No reference bars or values may be invented from sample peak."
-                color: root.dim
-                font.family: "Segoe UI"
-                font.pixelSize: 11
-                wrapMode: Text.WordWrap
-            }
         }
 
         // M20 static PSD, P06 Width and local Grid100 correlations.
@@ -288,7 +269,7 @@ Item {
             Rectangle {
                 objectName: "m20SpectrumPanel"
                 width: parent.width
-                height: root.compactFit ? 140 : 166
+                height: Math.max(140, root.height - 166)
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -432,7 +413,7 @@ Item {
             }
             Rectangle {
                 width: parent.width
-                height: root.compactFit ? 90 : 97
+                height: 90
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -485,7 +466,7 @@ Item {
             Rectangle {
                 objectName: "m20TonalProfilePanel"
                 width: parent.width
-                height: root.compactFit ? 60 : 65
+                height: 60
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -530,25 +511,7 @@ Item {
             spacing: 6
             Rectangle {
                 width: parent.width
-                height: root.compactFit ? 26 : 33
-                radius: 6
-                color: "#38291D"
-                border.color: "#886946"
-                Text {
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    text: "INDEPENDENT REFERENCE SCOPE  ·  Δ = REFERENCE − CURRENT"
-                    color: "#E7C99D"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 11
-                    font.bold: true
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                }
-            }
-            Rectangle {
-                width: parent.width
-                height: root.compactFit ? 32 : 38
+                height: 32
                 color: "#1B3545"
                 border.color: root.edge
                 radius: 5
@@ -575,7 +538,7 @@ Item {
             Text {
                 objectName: "m21MissingComparisonNotice"
                 width: parent.width
-                height: root.compactFit ? 22 : 26
+                height: 22
                 text: root.anyRowValue()
                     ? "CURRENT MEASUREMENTS · MISSING CELLS SHOWN AS —"
                     : root.lifecycle === "STALE"
@@ -607,7 +570,7 @@ Item {
                         readonly property var observed: root.m21Rows.length > metricIndex
                             ? root.m21Rows[metricIndex] : ({})
                         width: m21.width
-                        height: root.compactFit ? 23 : 25
+                        height: 23
                         color: index%2===0 ? "#14232F" : "#0E1C26"
                         Row {
                             anchors.fill: parent
@@ -656,53 +619,7 @@ Item {
                     }
                 }
             }
-            Text {
-                visible: !root.compactFit
-                width: parent.width
-                text: "CURRENT / STALE / MISSING · Every column needs its own " +
-                      "validated generation, realization, scope and owner."
-                color: root.dim
-                font.family: "Segoe UI"
-                font.pixelSize: 10
-                wrapMode: Text.WordWrap
-            }
         }
 
-        Rectangle {
-            objectName: "analysisDetailFooter"
-            // Authority/status already appears in the editor heading and
-            // cell tooltips; repeat it only when the window has room.
-            visible: !root.compactFit
-            width: parent.width
-            height: 46
-            color: root.panel
-            border.color: root.edge
-            radius: 6
-            Column {
-                anchors.centerIn: parent
-                spacing: 5
-                Text {
-                    objectName: "analysisUnavailableTitle"
-                    text: root.panelHasData
-                        ? "READ-ONLY ANALYSIS · MEASUREMENTS AVAILABLE"
-                        : root.lifecycle === "STALE"
-                        ? "STALE · REANALYZE"
-                        : "VERIFIED ANALYSIS UNAVAILABLE"
-                    color: root.amber
-                    font.family: "Segoe UI"
-                    font.pixelSize: 11
-                    font.bold: true
-                }
-                Text {
-                    objectName: "analysisUnavailableExplanation"
-                    text: root.panelHasData
-                        ? "Genuine selected-scope results; qualification tracked separately."
-                        : "Select and analyze an authentic source to populate values."
-                    color: root.dim
-                    font.family: "Segoe UI"
-                    font.pixelSize: 10
-                }
-            }
-        }
     }
 }

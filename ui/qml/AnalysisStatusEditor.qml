@@ -40,11 +40,9 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        // The host's genuine 1184x688 viewport gives ~300px to the
-        // approved product content. Recover structural whitespace (not
-        // measurements) and let all three NO-SCROLL panels fit.
-        anchors.margins: root.height < 490 ? 8 : 18
-        spacing: root.height < 490 ? 6 : 12
+        // Fixed insets eliminate former height-based layout jumps.
+        anchors.margins: 8
+        spacing: 6
 
         // DspEditorHost owns M19/M20 source choices in its fixed top-right
         // action slot. M21 is a simultaneous three-column comparison and
@@ -57,7 +55,7 @@ Item {
             Text {
                 objectName: "analysisSourceHeading"
                 text: root.panelIndex === 2
-                    ? "THREE INDEPENDENT MEASUREMENTS"
+                    ? "Δ = REFERENCE − CURRENT"
                     : "CURRENT SCOPE · " + root.selectedRole
                 font.family: "Segoe UI"
                 font.pixelSize: 11
@@ -65,6 +63,34 @@ Item {
                 color: "#A4BBCB"
             }
             Item { Layout.fillWidth: true }
+            // This explicit data-availability status always occupies the
+            // same header row, including at 1184x688. Genuine development
+            // data remains distinct from formal numerical Gate G release.
+            Text {
+                objectName: "analysisVerificationStatus"
+                Layout.minimumWidth: 0
+                Layout.maximumWidth: 240
+                text: approvedContent.panelHasData
+                    ? "MEASUREMENTS AVAILABLE"
+                    : root.lifecycle === "STALE"
+                    ? "STALE · REANALYZE"
+                    : "VERIFIED ANALYSIS UNAVAILABLE"
+                font.family: "Segoe UI"
+                font.pixelSize: 10
+                font.bold: true
+                color: approvedContent.panelHasData ? "#B6D6CA" : "#F0C87D"
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
+                ToolTip.text: approvedContent.panelHasData
+                    ? "Authentic selected-scope development measurements. Formal qualification is separate."
+                    : "No current verified analysis data. Missing or stale measurements are never inferred."
+                ToolTip.visible: analysisStateDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: analysisStateDwell
+                    anchors.fill: parent
+                }
+            }
             Text {
                 objectName: "analysisProductAuthorityLabel"
                 // The exact owner-thread worker informs this status.
@@ -85,6 +111,7 @@ Item {
         // Their responsive layout fits the 1184x688 Product minimum.
         // Keep this editor instance permanently alive.
         AnalysisApprovedContent {
+            id: approvedContent
             objectName: "analysisApprovedContent"
             panelIndex: root.panelIndex
             lifecycle: root.lifecycle
