@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -68,6 +69,79 @@ public:
             preparedCapture_=captured;
         else processedCapture_=captured;
         return true;
+    }
+
+    // A reference-only Product epoch transition does NOT change any PCM
+    // samples in immutable PREPARED/PROCESSED RenderResults. Reuse their
+    // previously measured M19/M20 numbers only after a complete and
+    // exceptionally narrow Qt-owner proof:
+    //   - a DIFFERENT authenticated Gold WAV is selected;
+    //   - exactly ONE Product epoch and ONE master generation advanced;
+    //   - every other Product identity field is bit-for-bit unchanged;
+    //   - authentic SOURCE, full scope and BOTH PCM owners/realization ID
+    //     are identical to those that produced the old numeric evidence;
+    //   - old reference and both numeric records shared the same epoch.
+    // No previous Gold proof, intermediate DSP edit, source replacement,
+    // altered channel/rate/region, or uncertain authority => no reuse.
+    // Re-publication goes through the SAME strict inbox acceptance as a
+    // worker result; no M18 ticket/consent or qualified Gate G is minted.
+    [[nodiscard]] std::array<bool,3> rebind_after_reference_only_change(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold)
+    {
+        std::array<bool,3> rebounded{};
+        if(!goldCapture_)return rebounded;
+        const auto replacement=Product::capture_gold(
+            product,fanout,selector,gold);
+        const auto current=Product::capture(product,fanout,selector);
+        if(!replacement||!current
+           ||!Product::gold_still_current(product,fanout,selector,gold,
+                                          *replacement.value())
+           ||!Product::still_current(product,fanout,selector,
+                                     *current.value()))
+            return rebounded;
+        const auto& oldRef=*goldCapture_;
+        const auto& now=*current.value();
+        if(oldRef.owner.epoch==0
+           ||oldRef.owner.epoch==
+                 (std::numeric_limits<std::uint64_t>::max)()
+           ||oldRef.owner.identity.master_generation==
+                 (std::numeric_limits<std::uint64_t>::max)()
+           ||oldRef.gold.same_resource_identity(replacement.value()->gold)
+           ||oldRef.owner.epoch+1!=now.owner.epoch
+           ||replacement.value()->owner.epoch!=now.owner.epoch
+           ||replacement.value()->owner.identity!=now.owner.identity)
+            return rebounded;
+        auto exclusivelyGold=oldRef.owner.identity;
+        ++exclusivelyGold.master_generation;
+        if(now.owner.identity!=exclusivelyGold)return rebounded;
+
+        const auto previous=publisher_.view().columns;
+        for(const auto column:{Column::prepared,Column::processed}) {
+            const auto i=static_cast<std::size_t>(column);
+            const auto& oldCapture=column==Column::prepared
+                ?preparedCapture_:processedCapture_;
+            const auto& oldSnapshot=previous[i];
+            if(!oldCapture||!oldSnapshot
+               ||oldCapture->owner.epoch!=oldRef.owner.epoch
+               ||oldCapture->owner.identity!=oldRef.owner.identity
+               ||oldSnapshot->lifecycle!=m21_private::Lifecycle::current
+               ||oldSnapshot->column!=column
+               ||oldSnapshot->generation_token!=oldRef.owner.epoch
+               ||!oldCapture->source.same_resource_identity(now.source)
+               ||oldCapture->source_full_frames!=now.source_full_frames
+               ||oldCapture->prepared!=now.prepared
+               ||oldCapture->processed!=now.processed
+               ||oldCapture->processed_realization_id
+                    !=now.processed_realization_id)
+                continue;
+            auto reused=*oldSnapshot; // exact immutable measured evidence
+            reused.generation_token=now.owner.epoch;
+            if(accept_render(product,fanout,selector,now,reused))
+                rebounded[i]=true;
+        }
+        return rebounded; // the REFERENCE itself is NEVER cached here
     }
 
     // GOLD is only accepted from a distinct selected WAV resource

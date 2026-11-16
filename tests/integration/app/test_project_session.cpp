@@ -2052,6 +2052,104 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!ui.beginExport(QUrl::fromLocalFile(stalePath),0));
     QVERIFY(!action.has_unacknowledged_export());
     QVERIFY(!QFileInfo::exists(stalePath));
+
+    // Real selected-REFERENCE-only replacement: reuse the genuine
+    // independently computed PREPARED/PROCESSED PCM M19+M20 evidence,
+    // while keeping the new Gold metrics MISSING until its own worker
+    // measures the actual newly selected WAV. A change to DSP even with
+    // the same chain structural revision must NEVER use this shortcut.
+    const auto refA=wav(directory,
+        QStringLiteral("m21-ref-cache-a.wav"),31,48000U,1024U);
+    const auto refB=wav(directory,
+        QStringLiteral("m21-ref-cache-b.wav"),47,48000U,1024U);
+    QVERIFY(!refA.isEmpty()&&!refB.isEmpty());
+    session.gold.selectGold(QUrl::fromLocalFile(refA));
+    QVERIFY2(session.gold.has_gold(),
+             session.gold.error_message().toUtf8().constData());
+    auto firstReference=M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold);
+    auto samePcm=M21Owners::capture(
+        controllers,fanout,session.selector);
+    QVERIFY(firstReference&&samePcm);
+    const auto firstReferenceNumbers=M21Owners::measure_gold_worker(
+        *firstReference.value());
+    const auto preparedNumbers=M21Owners::measure_render_worker(
+        *samePcm.value(),app::m21_private::Column::prepared);
+    const auto processedNumbers=M21Owners::measure_render_worker(
+        *samePcm.value(),app::m21_private::Column::processed);
+    QVERIFY(firstReferenceNumbers&&preparedNumbers&&processedNumbers);
+    app::internal::M21ProductPublicationInbox referenceCache;
+    QVERIFY(referenceCache.accept_render(
+        controllers,fanout,session.selector,*samePcm.value(),
+        *preparedNumbers.value()));
+    QVERIFY(referenceCache.accept_render(
+        controllers,fanout,session.selector,*samePcm.value(),
+        *processedNumbers.value()));
+    QVERIFY(referenceCache.accept_gold(
+        controllers,fanout,session.selector,session.gold,
+        *firstReference.value(),*firstReferenceNumbers.value()));
+    const auto originalCacheEpoch=fanout.current_owner_snapshot();
+    QVERIFY(originalCacheEpoch);
+    // Same user workflow as physical Windows M19-M21: load REFERENCE B,
+    // without any SOURCE or DSP mutation between file selections.
+    session.gold.selectGold(QUrl::fromLocalFile(refB));
+    QVERIFY2(session.gold.has_gold(),
+             session.gold.error_message().toUtf8().constData());
+    const auto secondReference=M21Owners::capture_gold(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(secondReference);
+    const auto afterReference=fanout.current_owner_snapshot();
+    QVERIFY(afterReference);
+    QCOMPARE(afterReference->epoch,originalCacheEpoch->epoch+1);
+    QCOMPARE(afterReference->identity.master_generation,
+             originalCacheEpoch->identity.master_generation+1);
+    // Old Product snapshots are STALE until rechecked and republished.
+    const auto staleBeforeReuse=referenceCache.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(staleBeforeReuse.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QCOMPARE(staleBeforeReuse.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    const auto recycled=referenceCache.rebind_after_reference_only_change(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(recycled[0]&&!recycled[1]&&recycled[2]);
+    const auto afterReuse=referenceCache.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(afterReuse.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(afterReuse.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(afterReuse.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::stale); // New Gold not measured
+    QCOMPARE(afterReuse.columns[0]->generation_token,
+             afterReference->epoch);
+    QCOMPARE(afterReuse.columns[2]->generation_token,
+             afterReference->epoch);
+    QCOMPARE(afterReuse.columns[0]->metrics[0].unrounded,
+             preparedNumbers.value()->metrics[0].unrounded);
+    QCOMPARE(afterReuse.columns[2]->metrics[5].unrounded,
+             processedNumbers.value()->metrics[5].unrounded);
+    const auto noDuplicate=referenceCache.rebind_after_reference_only_change(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(!noDuplicate[0]&&!noDuplicate[1]&&!noDuplicate[2]);
+    // A real parameter-only DSP mutation revokes BOTH inherited columns.
+    const auto gainAgain=dsp::GainParameters::create(-1.75);
+    QVERIFY(gainAgain);
+    const auto structuralRevision=
+        session.masteringChainState->chain().revision();
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *gainAgain.value()));
+    QCOMPARE(session.masteringChainState->chain().revision(),
+             structuralRevision);
+    const auto noStaleReuse=referenceCache.rebind_after_reference_only_change(
+        controllers,fanout,session.selector,session.gold);
+    QVERIFY(!noStaleReuse[0]&&!noStaleReuse[1]&&!noStaleReuse[2]);
+    const auto afterDSPChange=referenceCache.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(afterDSPChange.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QCOMPARE(afterDSPChange.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::stale);
 }
 
 void ProjectSessionTest::

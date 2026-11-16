@@ -78,6 +78,30 @@ public:
         }
         if(worker_.busy())return;
 
+        // A genuine REFERENCE-only change advances the global M18 epoch,
+        // but does not change any retained PREPARED/PROCESSED PCM. The
+        // inbox alone decides whether old measurements may be re-stamped
+        // under the new epoch after STRICT source/chain/render validation.
+        const auto reused=inbox_->rebind_after_reference_only_change(
+            product_,*fanout_,*selector_,*gold_);
+        if(reused[static_cast<std::size_t>(Column::prepared)]
+           ||reused[static_cast<std::size_t>(Column::processed)]) {
+            // Update per-render deduplication only AFTER actual inbox
+            // acceptance; otherwise tick() would recompute immediately.
+            auto fresh=Product::capture(product_,*fanout_,*selector_);
+            if(fresh) {
+                for(const auto column:{Column::prepared,Column::processed}) {
+                    const auto i=static_cast<std::size_t>(column);
+                    if(!reused[i])continue;
+                    const auto render=column==Column::prepared
+                        ?fresh.value()->prepared:fresh.value()->processed;
+                    renderAttempts_[i].remember(
+                        render_key(*fresh.value(),column),render);
+                }
+            }
+            status_->refresh();
+        }
+
         // Fixed round-robin priority, at most ONE CPU analysis active;
         // attempts are remembered per exact Product identity so a
         // nonpublishable or unsupported WAV cannot spin at 4 Hz forever.
