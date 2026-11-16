@@ -16,6 +16,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <utility>
@@ -33,9 +34,11 @@ public:
     M21PrivateProductAnalysisCoordinator(
         Controllers product,const Fanout& fanout,
         AuditionSourceSelector& selector,GoldSelectionViewModel& gold,
-        Inbox& inbox,M21ProductStatusViewModel& status)
+        Inbox& inbox,M21ProductStatusViewModel& status,
+        std::function<bool()> processedPreviewMatches={})
         :product_(product),fanout_(&fanout),selector_(&selector),
          gold_(&gold),inbox_(&inbox),status_(&status),
+         processedPreviewMatches_(std::move(processedPreviewMatches)),
          owner_(QThread::currentThread()) {}
     M21PrivateProductAnalysisCoordinator(
         const M21PrivateProductAnalysisCoordinator&)=delete;
@@ -174,7 +177,9 @@ public:
             if(column==Column::processed
                &&(!evidence.processed
                   ||evidence.processed->chain_revision()
-                        !=evidence.owner.identity.chain_revision))
+                        !=evidence.owner.identity.chain_revision
+                  ||(processedPreviewMatches_ &&
+                     !processedPreviewMatches_())))
                 continue;
             // Exact immutable render identity is independent of the M18
             // owner epoch. A new render can be installed in the SAME
@@ -255,6 +260,7 @@ private:
     GoldSelectionViewModel* gold_;
     Inbox* inbox_;
     M21ProductStatusViewModel* status_;
+    std::function<bool()> processedPreviewMatches_;
     QThread* owner_;
     M21PrivateSingleFlight worker_;
     std::uint64_t next_request_id_{1};
