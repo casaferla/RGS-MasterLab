@@ -1458,7 +1458,52 @@ int main(int argc, char* argv[])
                     p2InputGainLayout ? "PASS" : "FAIL",
                     ceilingItem ? ceilingItem->width() : -1.0,
                     driveItem ? driveItem->width() : -1.0);
+                // PO 2026-11-16: the real P2 min-window editor must show
+                // TWO independent 120x32 numeric wells after the sliders,
+                // 16px Consolas text, and Reset in the external top row.
+                const auto* ceilingWell = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2CeilingNumericWell")));
+                const auto* driveWell = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2DriveNumericWell")));
+                const auto* ceilingInput = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2CeilingNumericInput"));
+                const auto* driveInput = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2DriveNumericInput"));
+                const auto* resetAction = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2ResetButton")));
+                const auto* p2MainPanel = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2MainPanel")));
+                const auto numericReady = [](const QQuickItem* well,
+                                             const QObject* input) {
+                    const auto font=input
+                        ?input->property("font").value<QFont>():QFont{};
+                    return well && input
+                        && std::abs(well->width()-120.0)<0.5
+                        && std::abs(well->height()-32.0)<0.5
+                        && font.family()==QStringLiteral("Consolas")
+                        && font.pixelSize()==16
+                        && well->isVisible();
+                };
+                const bool p2NumericReady =
+                    numericReady(ceilingWell,ceilingInput)
+                    && numericReady(driveWell,driveInput)
+                    && p2MainPanel && resetAction
+                    && resetAction->isVisible()
+                    && resetAction->mapToItem(p2MainPanel,QPointF{}).y()<0.0
+                    && ceilingWell->mapToItem(
+                        const_cast<QQuickItem*>(ceilingItem),
+                        QPointF{}).y()>0.0
+                    && driveWell->mapToItem(
+                        const_cast<QQuickItem*>(driveItem),
+                        QPointF{}).y()>0.0;
+                std::fprintf(stderr,"P2_I2_NUMERIC_WELLS=%s\n",
+                             p2NumericReady ? "PASS" : "FAIL");
                 const bool valid = p2WheelReady && p2InputGainLayout
+                    && p2NumericReady
                     && p2InViewMenu && window->width() == 1184
                     && window->height() == 688
                     && selected
