@@ -71,168 +71,112 @@ public:
         return true;
     }
 
-    // A reference-only Product epoch transition does NOT change any PCM
-    // samples in immutable PREPARED/PROCESSED RenderResults. Reuse their
-    // previously measured M19/M20 numbers only after a complete and
-    // exceptionally narrow Qt-owner proof:
-    //   - a DIFFERENT authenticated Gold WAV is selected;
-    //   - exactly ONE Product epoch and ONE master generation advanced;
-    //   - every other Product identity field is bit-for-bit unchanged;
-    //   - authentic SOURCE, full scope and BOTH PCM owners/realization ID
-    //     are identical to those that produced the old numeric evidence;
-    //   - old reference and both numeric records shared the same epoch.
-    // No previous Gold proof, intermediate DSP edit, source replacement,
-    // altered channel/rate/region, or uncertain authority => no reuse.
-    // Re-publication goes through the SAME strict inbox acceptance as a
-    // worker result; no M18 ticket/consent or qualified Gate G is minted.
-    [[nodiscard]] std::array<bool,3> rebind_after_reference_only_change(
-        const Controllers& product,const Fanout& fanout,
-        const AuditionSourceSelector& selector,
-        const GoldSelectionViewModel& gold)
-    {
-        std::array<bool,3> rebounded{};
-        if(!goldCapture_)return rebounded;
-        const auto replacement=Product::capture_gold(
-            product,fanout,selector,gold);
-        const auto current=Product::capture(product,fanout,selector);
-        if(!replacement||!current
-           ||!Product::gold_still_current(product,fanout,selector,gold,
-                                          *replacement.value())
-           ||!Product::still_current(product,fanout,selector,
-                                     *current.value()))
-            return rebounded;
-        const auto& oldRef=*goldCapture_;
-        const auto& now=*current.value();
-        if(oldRef.owner.epoch==0
-           ||oldRef.owner.epoch==
-                 (std::numeric_limits<std::uint64_t>::max)()
-           ||oldRef.owner.identity.master_generation==
-                 (std::numeric_limits<std::uint64_t>::max)()
-           ||oldRef.gold.same_resource_identity(replacement.value()->gold)
-           ||oldRef.owner.epoch+1!=now.owner.epoch
-           ||replacement.value()->owner.epoch!=now.owner.epoch
-           ||replacement.value()->owner.identity!=now.owner.identity)
-            return rebounded;
-        auto exclusivelyGold=oldRef.owner.identity;
-        ++exclusivelyGold.master_generation;
-        if(now.owner.identity!=exclusivelyGold)return rebounded;
-
-        const auto previous=publisher_.view().columns;
-        for(const auto column:{Column::prepared,Column::processed}) {
-            const auto i=static_cast<std::size_t>(column);
-            const auto& oldCapture=column==Column::prepared
-                ?preparedCapture_:processedCapture_;
-            const auto& oldSnapshot=previous[i];
-            if(!oldCapture||!oldSnapshot
-               ||oldCapture->owner.epoch!=oldRef.owner.epoch
-               ||oldCapture->owner.identity!=oldRef.owner.identity
-               ||oldSnapshot->lifecycle!=m21_private::Lifecycle::current
-               ||oldSnapshot->column!=column
-               ||oldSnapshot->generation_token!=oldRef.owner.epoch
-               ||!oldCapture->source.same_resource_identity(now.source)
-               ||oldCapture->source_full_frames!=now.source_full_frames
-               ||oldCapture->prepared!=now.prepared
-               ||oldCapture->processed!=now.processed
-               ||oldCapture->processed_realization_id
-                    !=now.processed_realization_id)
-                continue;
-            auto reused=*oldSnapshot; // exact immutable measured evidence
-            reused.generation_token=now.owner.epoch;
-            if(accept_render(product,fanout,selector,now,reused))
-                rebounded[i]=true;
-        }
-        return rebounded; // the REFERENCE itself is NEVER cached here
-    }
-
-    // Reuse only immutable PREPARED and REFERENCE measurements after an
-    // authenticated Product epoch advances with unchanged SOURCE, PREPARED
-    // PCM and REFERENCE selection. This covers repeated MANUAL DSP
-    // parameters (PROCESSSED must be recomputed) without assuming every
-    // master-generation transition was a DSP edit.
-    // In particular, GoldSelectionViewModel's monotonic selection
-    // revision forbids reuse across a same-path reference replacement
-    // that would be indistinguishable by ResourceReference alone.
-    // M18's owner identity and all native export tickets remain untouched.
-    [[nodiscard]] std::array<bool,3> rebind_unchanged_prepared_reference(
+    // Product epoch is an export/operation safety boundary, NOT the
+    // identity of the measured audio. Independently reauthenticate each
+    // immutable observation after an unrelated owner-epoch transition.
+    //
+    // PREPARED is SOURCE PCM: retain through DSP edits, REFERENCE changes,
+    // playback-target selection and terminal M17 Prepare if the authentic
+    // SOURCE generation, project and retained PREPARED PCM have not changed.
+    //
+    // PROCESSED is one exact manual realization: additionally require the
+    // same processed owner/RealizationId AND unchanged MANUAL chain revision.
+    // A new DSP revision must require a new PROCESSED analysis.
+    //
+    // REFERENCE is an independently selected WAV: retain across all of the
+    // above only when GoldSelectionViewModel's monotonic revision and exact
+    // WAV resource/format remain unchanged. A same-path re-selection is
+    // a NEW selection and must be measured anew.
+    //
+    // The M18 global epoch, master generation or final output-rate revision
+    // may advance for reasons unrelated to these measured PCM samples.
+    // Never transfer tickets, export consent or a Phase-6/Gate-G claim.
+    // Strict accept_render/accept_gold still performs final live owner,
+    // sample scope, published generation and resource validation.
+    [[nodiscard]] std::array<bool,3> rebind_unchanged_independent_scopes(
         const Controllers& product,const Fanout& fanout,
         const AuditionSourceSelector& selector,
         const GoldSelectionViewModel& gold)
     {
         std::array<bool,3> accepted{};
-        if(!goldCapture_ ||!preparedCapture_ ||!goldSelectionRevision_
-           ||*goldSelectionRevision_!=gold.selection_revision()
-           ||gold.selection_revision()==
-              (std::numeric_limits<std::uint64_t>::max)())
-            return accepted;
-        const auto current=Product::capture(product,fanout,selector);
-        const auto currentGold=Product::capture_gold(
+        const auto nowResult=Product::capture(product,fanout,selector);
+        const auto refResult=Product::capture_gold(
             product,fanout,selector,gold);
-        if(!current||!currentGold
-           ||!Product::still_current(product,fanout,selector,
-                                     *current.value())
-           ||!Product::gold_still_current(product,fanout,selector,gold,
-                                          *currentGold.value()))
-            return accepted;
-        const auto& now=*current.value();
-        const auto& newGold=*currentGold.value();
-        const auto& before=*goldCapture_;
-        const auto& oldPrepared=*preparedCapture_;
-        if(before.owner.epoch==0
-           ||before.owner.epoch>=now.owner.epoch
-           ||before.owner.identity.master_generation>=
-                  now.owner.identity.master_generation
-           ||newGold.owner.epoch!=now.owner.epoch
-           ||newGold.owner.identity!=now.owner.identity
-           ||!before.gold.same_resource_identity(newGold.gold)
-           ||before.sample_rate_hz!=newGold.sample_rate_hz
-           ||before.full_frames!=newGold.full_frames
-           ||before.channels!=newGold.channels
-           ||oldPrepared.owner.epoch!=before.owner.epoch
-           ||oldPrepared.owner.identity!=before.owner.identity
-           ||!oldPrepared.source.same_resource_identity(now.source)
-           ||oldPrepared.source_full_frames!=now.source_full_frames
-           ||oldPrepared.prepared!=now.prepared)
-            return accepted;
-        // Source/Project/rate are monotonic authorities: if ANY changed,
-        // including a same-file reselection, this is NOT a DSP-only
-        // conservation proof. Repeated parameter, bypass or ordering edits
-        // can legitimately advance master generation and chain revision
-        // by more than one before the next Qt timer tick.
-        const auto& oldId=before.owner.identity;
-        const auto& newId=now.owner.identity;
-        if(oldId.source_generation!=newId.source_generation
-           ||oldId.project_generation!=newId.project_generation
-           ||oldId.master_rate_revision!=newId.master_rate_revision
-           ||oldId.master_rate_hz!=newId.master_rate_hz)
-            return accepted;
-        const auto prior=publisher_.view().columns;
-        const auto& oldPreparedRecord=prior[
-            static_cast<std::size_t>(Column::prepared)];
-        const auto& oldGoldRecord=prior[
-            static_cast<std::size_t>(Column::gold)];
-        const auto previousEpoch=before.owner.epoch;
-        if(oldPreparedRecord
-           &&oldPreparedRecord->lifecycle==m21_private::Lifecycle::current
-           &&oldPreparedRecord->column==Column::prepared
-           &&oldPreparedRecord->generation_token==previousEpoch) {
-            auto recycled=*oldPreparedRecord;
-            recycled.generation_token=now.owner.epoch;
-            if(accept_render(product,fanout,selector,now,recycled))
-                accepted[static_cast<std::size_t>(Column::prepared)]=true;
+        const auto previous=publisher_.view().columns;
+
+        if(nowResult &&
+           Product::still_current(product,fanout,selector,
+                                  *nowResult.value())) {
+            const auto& now=*nowResult.value();
+            for(const auto column:{Column::prepared,Column::processed}) {
+                const auto i=static_cast<std::size_t>(column);
+                const auto& beforeCapture=column==Column::prepared
+                    ?preparedCapture_:processedCapture_;
+                const auto& old=previous[i];
+                if(!beforeCapture || !old
+                   ||old->column!=column
+                   ||old->lifecycle!=m21_private::Lifecycle::current
+                   ||old->generation_token!=beforeCapture->owner.epoch
+                   ||beforeCapture->owner.epoch==0
+                   ||beforeCapture->owner.epoch>=now.owner.epoch
+                   ||!beforeCapture->source.same_resource_identity(now.source)
+                   ||beforeCapture->source_full_frames!=now.source_full_frames
+                   ||beforeCapture->prepared!=now.prepared)
+                    continue;
+                const auto& oldId=beforeCapture->owner.identity;
+                const auto& newId=now.owner.identity;
+                if(oldId.source_generation!=newId.source_generation
+                   ||oldId.project_generation!=newId.project_generation)
+                    continue; // never recycle across SOURCE/Project opens
+                if(column==Column::processed &&
+                   (!beforeCapture->processed
+                    ||beforeCapture->processed!=now.processed
+                    ||beforeCapture->processed_realization_id
+                         !=now.processed_realization_id
+                    ||oldId.chain_revision!=newId.chain_revision))
+                    continue; // DSP edit/realization invalidates PROCESSED
+                auto reused=*old; // exact measured cells and genuine PSD
+                reused.generation_token=now.owner.epoch;
+                if(accept_render(product,fanout,selector,now,reused))
+                    accepted[i]=true;
+            }
         }
-        if(oldGoldRecord
-           &&oldGoldRecord->lifecycle==m21_private::Lifecycle::current
-           &&oldGoldRecord->column==Column::gold
-           &&oldGoldRecord->generation_token==previousEpoch) {
-            auto recycled=*oldGoldRecord;
-            recycled.generation_token=now.owner.epoch;
-            recycled.resource_identity="gold-file-generation:"+
-                std::to_string(now.owner.epoch)+"|"+
-                newGold.gold.provider_id()+"|"+newGold.gold.locator();
-            if(accept_gold(product,fanout,selector,gold,newGold,recycled))
-                accepted[static_cast<std::size_t>(Column::gold)]=true;
+
+        // Gold is independent of whether PREPARED/PROCESSED have already
+        // completed or whether a worker is currently retiring. Never gate
+        // this conservation on another column's readiness.
+        if(refResult &&goldCapture_ &&goldSelectionRevision_
+           &&*goldSelectionRevision_==gold.selection_revision()
+           &&gold.selection_revision()!=
+               (std::numeric_limits<std::uint64_t>::max)()
+           &&Product::gold_still_current(
+                product,fanout,selector,gold,*refResult.value())) {
+            const auto& now=*refResult.value();
+            const auto& before=*goldCapture_;
+            const auto& old=previous[static_cast<std::size_t>(Column::gold)];
+            if(old
+               &&old->column==Column::gold
+               &&old->lifecycle==m21_private::Lifecycle::current
+               &&old->generation_token==before.owner.epoch
+               &&before.owner.epoch>0
+               &&before.owner.epoch<now.owner.epoch
+               &&before.gold.same_resource_identity(now.gold)
+               &&before.sample_rate_hz==now.sample_rate_hz
+               &&before.full_frames==now.full_frames
+               &&before.channels==now.channels
+               &&before.owner.identity.source_generation
+                    ==now.owner.identity.source_generation
+               &&before.owner.identity.project_generation
+                    ==now.owner.identity.project_generation) {
+                auto reused=*old;
+                reused.generation_token=now.owner.epoch;
+                reused.resource_identity="gold-file-generation:"+
+                    std::to_string(now.owner.epoch)+"|"+
+                    now.gold.provider_id()+"|"+now.gold.locator();
+                if(accept_gold(product,fanout,selector,gold,now,reused))
+                    accepted[static_cast<std::size_t>(Column::gold)]=true;
+            }
         }
-        // The processed numerical column is NEVER admitted here.
         return accepted;
     }
 
