@@ -5,9 +5,14 @@ import QtQuick.Layouts
 // Approved M19/M20/M21 visual review, PR #91 Qt Windows #13.
 // Real Product owns one permanent instance per panel. No DEMO, fake DSP
 // output, stale numeric residue, or data publication without Phase-6 owner.
-Flickable {
+Item {
     id: root
     objectName: "approvedAnalysisProductContent"
+    // PO 2026-11-16: STRICT zero-scroll Product analysis at 1184x688.
+    // Compact only structural padding, captions and spectrum height;
+    // all five M19 hero readouts, four M20 stereo values, all nine
+    // M21 rows and both delta columns remain present and visible.
+    readonly property bool compactFit: root.height < 490
     property int panelIndex: 0
     property string lifecycle: "MISSING"
     // These are observed, authentic M19–M21 Product measurements under
@@ -104,16 +109,10 @@ Flickable {
     // current owner, real source, live PCM and finite cell are mandatory.
     // Missing, stale and unmeasured values stay visibly unavailable.
     clip: true
-    boundsBehavior: Flickable.StopAtBounds
-    contentWidth: width
-    contentHeight: stack.implicitHeight
-    ScrollBar.vertical: ScrollBar {
-        policy: root.contentHeight > root.height
-            ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
-    }
     Column {
         id: stack
-        width: Math.max(0,root.width-5)
+        objectName: "analysisProductContentStack"
+        width: root.width
         spacing: 8
 
         // M19 approved InputGain-style heroes. Reflow to 3 columns at the
@@ -152,18 +151,20 @@ Flickable {
                         width: (levelGrid.width
                             - (levelGrid.columns-1)*levelGrid.columnSpacing)
                             / levelGrid.columns
-                        height: 116
+                        height: root.compactFit ? 104 : 116
                         radius: 7
                         color: root.raised
                         border.color: root.edge
                         Column {
                             anchors.fill: parent
-                            anchors.margins: 9
-                            spacing: 6
+                            anchors.margins: root.compactFit ? 8 : 9
+                            spacing: root.compactFit ? 0 : 6
                             StudioReadOnlyMeasurement {
                                 objectName: "m19MetricValue_" + modelData.key
                                 width: parent.width
-                                height: implicitHeight
+                                // Preserve 36px numeric typography; trim
+                                // only unused 102px intrinsic bottom space.
+                                height: root.compactFit ? 86 : implicitHeight
                                 heroReadout: true
                                 labelText: modelData.name
                                 unitText: modelData.unit
@@ -175,6 +176,7 @@ Flickable {
                                     ? root.amber : root.cyan
                             }
                             Text {
+                                visible: !root.compactFit
                                 width: parent.width
                                 text: modelData.hint
                                 color: modelData.key === "truePeak"
@@ -195,8 +197,9 @@ Flickable {
                 }
             }
             Rectangle {
+                objectName: "m19ReferenceRelationPanel"
                 width: parent.width
-                height: 130
+                height: root.compactFit ? 102 : 130
                 color: root.panel
                 border.color: root.edge
                 radius: 7
@@ -209,8 +212,8 @@ Flickable {
                 }
                 Column {
                     anchors.fill: parent
-                    anchors.margins: 11
-                    spacing: 6
+                    anchors.margins: root.compactFit ? 8 : 11
+                    spacing: root.compactFit ? 3 : 6
                     Text {
                         text: "LEVELS  /  REFERENCE RELATION"
                         color: root.ink
@@ -226,7 +229,7 @@ Flickable {
                         ]
                         delegate: Row {
                             width: parent.width
-                            height: 23
+                            height: root.compactFit ? 20 : 23
                             spacing: 8
                             Rectangle {
                                 width: 4
@@ -262,6 +265,7 @@ Flickable {
                 }
             }
             Text {
+                visible: !root.compactFit
                 width: parent.width
                 text: "TRUE PEAK requires the independent M16 authority. " +
                       "No reference bars or values may be invented from sample peak."
@@ -282,8 +286,9 @@ Flickable {
             width: parent.width
             spacing: 8
             Rectangle {
+                objectName: "m20SpectrumPanel"
                 width: parent.width
-                height: 166
+                height: root.compactFit ? 150 : 166
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -427,7 +432,7 @@ Flickable {
             }
             Rectangle {
                 width: parent.width
-                height: 97
+                height: root.compactFit ? 94 : 97
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -478,6 +483,7 @@ Flickable {
                 }
             }
             Rectangle {
+                objectName: "m20TonalProfilePanel"
                 width: parent.width
                 height: 65
                 radius: 7
@@ -524,7 +530,7 @@ Flickable {
             spacing: 6
             Rectangle {
                 width: parent.width
-                height: 33
+                height: root.compactFit ? 26 : 33
                 radius: 6
                 color: "#38291D"
                 border.color: "#886946"
@@ -542,7 +548,7 @@ Flickable {
             }
             Rectangle {
                 width: parent.width
-                height: 38
+                height: root.compactFit ? 32 : 38
                 color: "#1B3545"
                 border.color: root.edge
                 radius: 5
@@ -569,7 +575,7 @@ Flickable {
             Text {
                 objectName: "m21MissingComparisonNotice"
                 width: parent.width
-                height: 26
+                height: root.compactFit ? 22 : 26
                 text: root.anyRowValue()
                     ? "CURRENT MEASUREMENTS · MISSING CELLS SHOWN AS —"
                     : root.lifecycle === "STALE"
@@ -582,67 +588,76 @@ Flickable {
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
-            Repeater {
-                model: ["Integrated LUFS","RMS Level","Sample Peak",
-                        "True Peak · M16","Crest Factor","Stereo Width",
-                        "Correlation P10","Correlation P50","Correlation P90"]
-                delegate: Rectangle {
-                    id: m21MetricRow
-                    objectName: "m21MetricRow_" + index
-                    readonly property int metricIndex: index
-                    readonly property string metricName: modelData
-                    readonly property var observed: root.m21Rows.length > metricIndex
-                        ? root.m21Rows[metricIndex] : ({})
-                    width: m21.width
-                    height: 25
-                    color: index%2===0 ? "#14232F" : "#0E1C26"
-                    Row {
-                        anchors.fill: parent
-                        Repeater {
-                            model: [m21MetricRow.metricName,
-                                root.metricText(m21MetricRow.observed.prepared,
-                                                m21MetricRow.observed.key),
-                                root.metricText(m21MetricRow.observed.processed,
-                                                m21MetricRow.observed.key),
-                                root.metricText(m21MetricRow.observed.reference,
-                                                m21MetricRow.observed.key),
-                                root.deltaText(m21MetricRow.observed.deltaPrepared,
-                                                m21MetricRow.observed.key),
-                                root.deltaText(m21MetricRow.observed.deltaProcessed,
-                                                m21MetricRow.observed.key)]
-                            delegate: Text {
-                                width: parent.width/6
-                                height: parent.height
-                                text: modelData
-                                font.family: index===0 ? "Segoe UI" : "Consolas"
-                                font.pixelSize: 10
-                                font.bold: index===0
-                                color: index===3 ? root.copper
-                                    : index===0 ? root.ink : root.dim
-                                horizontalAlignment: index===0
-                                    ? Text.AlignLeft : Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                leftPadding: index===0 ? 7 : 0
-                                elide: Text.ElideRight
+            // Group rows without a 6px ColumnLayout gap between each
+            // metric; all nine readings remain visible at 1184x688.
+            Column {
+                id: m21MetricRows
+                objectName: "m21FullNineMetricRows"
+                width: m21.width
+                spacing: 0
+                Repeater {
+                    model: ["Integrated LUFS","RMS Level","Sample Peak",
+                            "True Peak · M16","Crest Factor","Stereo Width",
+                            "Correlation P10","Correlation P50","Correlation P90"]
+                    delegate: Rectangle {
+                        id: m21MetricRow
+                        objectName: "m21MetricRow_" + index
+                        readonly property int metricIndex: index
+                        readonly property string metricName: modelData
+                        readonly property var observed: root.m21Rows.length > metricIndex
+                            ? root.m21Rows[metricIndex] : ({})
+                        width: m21.width
+                        height: root.compactFit ? 23 : 25
+                        color: index%2===0 ? "#14232F" : "#0E1C26"
+                        Row {
+                            anchors.fill: parent
+                            Repeater {
+                                model: [m21MetricRow.metricName,
+                                    root.metricText(m21MetricRow.observed.prepared,
+                                                    m21MetricRow.observed.key),
+                                    root.metricText(m21MetricRow.observed.processed,
+                                                    m21MetricRow.observed.key),
+                                    root.metricText(m21MetricRow.observed.reference,
+                                                    m21MetricRow.observed.key),
+                                    root.deltaText(m21MetricRow.observed.deltaPrepared,
+                                                    m21MetricRow.observed.key),
+                                    root.deltaText(m21MetricRow.observed.deltaProcessed,
+                                                    m21MetricRow.observed.key)]
+                                delegate: Text {
+                                    width: parent.width/6
+                                    height: parent.height
+                                    text: modelData
+                                    font.family: index===0 ? "Segoe UI" : "Consolas"
+                                    font.pixelSize: 10
+                                    font.bold: index===0
+                                    color: index===3 ? root.copper
+                                        : index===0 ? root.ink : root.dim
+                                    horizontalAlignment: index===0
+                                        ? Text.AlignLeft : Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: index===0 ? 7 : 0
+                                    elide: Text.ElideRight
+                                }
                             }
                         }
-                    }
-                    ToolTip.text: m21MetricRow.metricName + " · "
-                        + root.metricExplanation(m21MetricRow.observed.key)
-                        + " PREPARED, independent REFERENCE and PROCESSED "
-                        + "are separate real measurements. Delta columns "
-                        + "are REFERENCE minus PREPARED or PROCESSED, "
-                        + "calculated from unrounded operands. "
-                        + "Missing, stale or incompatible results show —."
-                    ToolTip.visible: m21RowDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: m21RowDwell
-                        anchors.fill: parent
+                        ToolTip.text: m21MetricRow.metricName + " · "
+                            + root.metricExplanation(m21MetricRow.observed.key)
+                            + " PREPARED, independent REFERENCE and PROCESSED "
+                            + "are separate real measurements. Delta columns "
+                            + "are REFERENCE minus PREPARED or PROCESSED, "
+                            + "calculated from unrounded operands. "
+                            + "Missing, stale or incompatible results show —."
+                        ToolTip.visible: m21RowDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: m21RowDwell
+                            anchors.fill: parent
+                        }
                     }
                 }
             }
             Text {
+                visible: !root.compactFit
                 width: parent.width
                 text: "CURRENT / STALE / MISSING · Every column needs its own " +
                       "validated generation, realization, scope and owner."
@@ -654,6 +669,10 @@ Flickable {
         }
 
         Rectangle {
+            objectName: "analysisDetailFooter"
+            // Authority/status already appears in the editor heading and
+            // cell tooltips; repeat it only when the window has room.
+            visible: !root.compactFit
             width: parent.width
             height: 46
             color: root.panel

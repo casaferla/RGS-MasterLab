@@ -78,8 +78,9 @@ Item {
             }
         }
 
-        // Approved independent Product visuals, clipped and scrollable INSIDE
-        // the existing host. Keep this editor instance permanently alive.
+        // Approved independent Product visuals are strictly NO-SCROLL.
+        // Their responsive layout fits the 1184x688 Product minimum.
+        // Keep this editor instance permanently alive.
         AnalysisApprovedContent {
             objectName: "analysisApprovedContent"
             panelIndex: root.panelIndex

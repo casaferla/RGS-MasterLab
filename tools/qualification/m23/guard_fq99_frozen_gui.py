@@ -80,8 +80,8 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # pre-existing additive analysis files are exact-pinned, NOT released
 # or declared FQ99-identical. M16 Gate G remains separate.
 M18_WAV_OUTPUT_UI_BLOBS = {
-    "ui/qml/AnalysisApprovedContent.qml": "488323bbe655b5c34972f16406f9cf393fcfee2e",
-    "ui/qml/AnalysisStatusEditor.qml": "d3f2246fe19c2b052f331814c30838936da1f162",
+    "ui/qml/AnalysisApprovedContent.qml": "29e6a06687aaecdf14afd3c1be949df6effbfa08",
+    "ui/qml/AnalysisStatusEditor.qml": "15e339ce78c980fc9c0fa85c6abb38ba13d7be7a",
     "ui/qml/Main.qml": "b58e6839786127ca81ba93757dc8438850a9f72a",
     "ui/qml/DspEditorHost.qml": "ad0fd9ffa4b485ae7e188b1f0036587c4b79bcce",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "be8c5b36971bf12234d425531f3ae117977965c8",

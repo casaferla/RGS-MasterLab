@@ -7160,6 +7160,42 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QVERIFY2(check_item_contained_in_ancestor(
                          originalPages[index],qobject_cast<QQuickItem*>(dspEditorHostObj)),
                      "Selected genuine analysis page must fit real DSP host");
+            // PO strict NO-SCROLL: content is a plain QQuickItem, not
+            // a Flickable whose invisible scrollbar conceals overflow.
+            auto* analysisBody=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],
+                    QStringLiteral("approvedAnalysisProductContent")));
+            auto* analysisStack=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],
+                    QStringLiteral("analysisProductContentStack")));
+            QVERIFY2(analysisBody&&analysisStack,
+                     "Missing genuine non-scrolling analysis layout");
+            QVERIFY2(!analysisBody->property("contentY").isValid(),
+                     "Analysis panel must never expose Flickable scrolling");
+            QTRY_VERIFY_WITH_TIMEOUT(analysisBody->height()>0.0,5000);
+            QTRY_VERIFY_WITH_TIMEOUT(
+                analysisStack->implicitHeight()<=analysisBody->height()+1.0,
+                5000);
+            if(size.height()==688) {
+                QVERIFY2(analysisBody->property("compactFit").toBool(),
+                         "Minimum window must use strict compact layout");
+                // All essential content must be inside the actual clipped
+                // viewport; presence-only checks are insufficient.
+                const QString lastName=index==0
+                    ?QStringLiteral("m19ReferenceRelationPanel")
+                    :index==1
+                    ?QStringLiteral("m20TonalProfilePanel")
+                    :QStringLiteral("m21MetricRow_8");
+                auto* last=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],lastName));
+                QVERIFY2(last&&last->isVisible(),
+                         "Last essential readout unavailable at minimum");
+                const QPointF offset=last->mapToItem(
+                    analysisBody,QPointF(0,0));
+                QVERIFY2(offset.y()>=-1.0
+                    &&offset.y()+last->height()<=analysisBody->height()+1.0,
+                    "Last essential readout clipped at minimum 1184x688");
+            }
         }
     }
     dspChainAdapterModel.selectModuleByInstanceId(

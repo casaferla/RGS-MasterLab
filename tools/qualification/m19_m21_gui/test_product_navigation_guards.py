@@ -80,6 +80,12 @@ def test_product_binds_status_without_demo() -> None:
     assert 'fixtureMode' not in visuals
     assert "m19MetricValue_" in visuals and "heroReadout: true" in visuals
     assert "m20WorkbenchSpectrum" in visuals
+    assert "Flickable {" not in visuals
+    assert "ScrollBar.vertical" not in visuals
+    assert "analysisProductContentStack" in visuals
+    assert "m21FullNineMetricRows" in visuals
+    assert "root.compactFit" in visuals
+    assert "analysisStack->implicitHeight()<=analysisBody->height()+1.0" in qt_smoke
     assert 'model: ["PREPARED", "PROCESSED", "REFERENCE"]' in host
     assert 'objectName: "analysisHeaderSourceChooser"' in host
     assert 'Reset Export TP Limiter Ceiling to 0.0 dBTP' in host
