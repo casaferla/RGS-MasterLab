@@ -6549,11 +6549,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Presentation seam must freeze, not fabricate, outside active wet
     // audition. Stage 3B2 owns the canonical state transitions.
     observedPlayback->state = core::PlaybackState::PAUSED;
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(
+    // Compressor telemetry is resolved on the real 33 ms Qt timer.
+    // A fixed 50 ms wait can miss one tick on loaded Windows runners,
+    // leaving the previous ACTIVE WET presentation cached. Require the
+    // SAME truthful PAUSED state and unchanged history, but allow bounded
+    // event-loop convergence (as for the PREPARED and BYPASS gates below).
+    QTRY_COMPARE_WITH_TIMEOUT(
         compressorViewModel.telemetry_status(),
-        QStringLiteral("PAUSED"));
+        QStringLiteral("PAUSED"),
+        1000);
     QCOMPARE(
         compressorViewModel.telemetry_history_lanes(),
         liveHistory);
