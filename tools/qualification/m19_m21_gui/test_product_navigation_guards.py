@@ -89,6 +89,28 @@ def test_product_binds_status_without_demo() -> None:
     assert "compactFit" not in visuals
     assert "columns: 3" in visuals
     assert 'objectName: "m19MetricsGrid"' in visuals
+    assert 'objectName: "m19CenteredViewport"' in visuals
+    assert 'y: Math.max(0, (m19Viewport.height - m19.height) / 2)' in visuals
+    assert 'QStringLiteral("m19CenteredViewport")' in read(
+        "tests/ui_smoke/test_source_metadata_panel.cpp")
+    # Signed, display-only graphical comparisons use only finite genuine
+    # Product deltas, not fabricated matches or normalized audio scores.
+    assert 'function deltaDisplayLimit(key)' in visuals
+    for key,limit in (("lufs","6.0"),("rms","6.0"),
+                      ("samplePeak","6.0"),("truePeak","6.0"),
+                      ("crest","6.0"),("width","1.0")):
+        assert f'case "{key}": return {limit}' in visuals
+    assert 'case "P10": case "P50": case "P90": return 2.0' in visuals
+    assert 'objectName: "m21DeltaBar_"' in visuals
+    assert 'visible: m21ValueCell.hasDelta' in visuals
+    assert 'root.hasNumber(deltaValue)' in visuals
+    assert 'Number.isFinite(displayLimit)' in visuals
+    assert 'onDeltaValueChanged: requestPaint()' in visuals
+    assert 'Math.abs(deltaValue)/displayLimit' in visuals
+    assert 'deltaValue<0' in visuals
+    assert 'NOT audio quality' in visuals
+    assert 'QStringLiteral("m21DeltaBar_%1_%2")' in read(
+        "tests/ui_smoke/test_source_metadata_panel.cpp")
     assert 'm19SpareHeight' in visuals
     assert 'm19RelationHeight' in visuals
     assert 'm21RowHeight' in visuals
