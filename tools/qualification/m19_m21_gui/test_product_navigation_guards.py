@@ -516,7 +516,7 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'Product::same_gold_observation(before,now)' in independently
     owner = read("app/src/internal/m21_product_owner_analysis.hpp")
     assert 'before.prepared!=now.prepared' in owner
-    assert 'before.processed!=now.processed' in owner
+    assert 'before.processed==now.processed' in owner
     assert 'before.processed_realization_id' in owner
     assert 'before.owner.identity.chain_revision' in owner
     assert 'before.owner.identity.source_generation' in owner
