@@ -2053,6 +2053,24 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(!action.has_unacknowledged_export());
     QVERIFY(!QFileInfo::exists(stalePath));
 
+    // The preceding M18 negative test deliberately changed MANUAL
+    // bypass and retired its old PCM. Before beginning the independent
+    // M21 cache test, construct a NEW authentic full PROCESSED using the
+    // current chain and typed bindings, then publish it via the real
+    // selector/M18 authority. Never use an old render from a stale
+    // structural revision as a "current" M21 fixture.
+    auto refreshedManual=renderManual(
+        session.masteringChainState->chain(),
+        session.masteringChainState->execution_bindings());
+    QVERIFY2(refreshedManual,refreshedManual?"":refreshedManual.error()->message().c_str());
+    QVERIFY(session.selector.set_processed_realization(
+        std::move(*refreshedManual.value())));
+    const auto acceptedCurrentManual=
+        session.selector.processed_realization_snapshot();
+    QVERIFY(acceptedCurrentManual);
+    QCOMPARE(acceptedCurrentManual->chain_revision(),
+             session.masteringChainState->chain().revision());
+
     // Real selected-REFERENCE-only replacement: reuse the genuine
     // independently computed PREPARED/PROCESSED PCM M19+M20 evidence,
     // while keeping the new Gold metrics MISSING until its own worker
