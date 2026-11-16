@@ -66,16 +66,14 @@ Canvas {
         // Keep the family hue, opacity and fixed 16px row slot in
         // DspChainSelector; these are semantic glyphs, never LED dots.
         if (kind === "module-gain") {
-            // Three HORIZONTAL slider tracks; never the old single fader.
-            line(2.5, 3.6, 10.2, 3.6)
-            line(13.0, 3.6, 15.5, 3.6)
-            line(11.6, 1.9, 11.6, 5.2)
-            line(2.5, 9.0, 4.6, 9.0)
-            line(7.4, 9.0, 15.5, 9.0)
-            line(6.0, 7.3, 6.0, 10.7)
-            line(2.5, 14.5, 10.8, 14.5)
-            line(13.6, 14.5, 15.5, 14.5)
-            line(12.2, 12.8, 12.2, 16.2)
+            // ONE luminous horizontal GAIN fader, distinct from EQ's
+            // three vertical sliders. Preserve 18x18 scale, single-track
+            // phosphor halo and caller-owned dim/glow/bypass semantics.
+            line(2.4, 9.0, 15.6, 9.0)
+            ctx.save()
+            ctx.lineWidth = 2.2
+            line(10.5, 5.2, 10.5, 12.8)
+            ctx.restore()
         } else if (kind === "module-eq") {
             // Three VERTICAL mixing faders, staggered per source artwork.
             line(3.5, 2.0, 3.5, 9.2)
