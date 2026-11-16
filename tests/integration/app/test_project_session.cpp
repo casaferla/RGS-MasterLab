@@ -1068,6 +1068,36 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
                 core::AudibleHandoffPhase::NEW,id};
             return core::Status::success();
         });
+    // The real app wires BOTH PCM seams. The original M18 fixture wired
+    // only initial prepare; later M21 reconciliation now correctly replaces
+    // PROCESSED while the target is already selected, which requires
+    // handoff_pcm rather than a second prepare. Model the genuine atomic
+    // device handoff, keeping playback position and rejecting alien state.
+    session.transport.set_pcm_handoff_handler(
+        [&session](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            const auto current=session.observed->snapshot();
+            if(!lease||!id||id->value==0
+               ||view.frame_count().value()<=0
+               ||!current ||!current.value()->duration
+               ||current.value()->state==core::PlaybackState::NO_SOURCE
+               ||current.value()->audibleRealization.phase
+                    !=core::AudibleHandoffPhase::NEW
+               ||!current.value()->audibleRealization.realizationId
+               ||current.value()->audibleRealization.realizationId==id
+               ||current.value()->position<view.absolute_start_frame()
+               ||current.value()->position>view.absolute_end_frame())
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_TEST_PROCESSED_HANDOFF_REQUIRES_CURRENT_MANUAL_SINK"});
+            // Do not reset position or clear a live device merely to
+            // publish another immutable, exact MANUAL realization.
+            session.observed->duration=view.frame_count();
+            session.observed->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     auto rate48=core::SampleRate::create(48000);
     auto frames=core::FrameCount::create(static_cast<std::int64_t>(n));
@@ -2084,6 +2114,15 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(acceptedCurrentManual);
     QCOMPARE(acceptedCurrentManual->chain_revision(),
              session.masteringChainState->chain().revision());
+    const auto currentManualId=session.selector.processed_realization_id();
+    QVERIFY(currentManualId);
+    QVERIFY(currentManualId->value>manualId->value);
+    const auto currentDevice=session.observed->snapshot();
+    QVERIFY(currentDevice);
+    QCOMPARE(currentDevice.value()->audibleRealization.realizationId,
+             currentManualId);
+    QCOMPARE(currentDevice.value()->duration,
+             std::optional{*frames.value()});
 
     // Real selected-REFERENCE-only replacement: reuse the genuine
     // independently computed PREPARED/PROCESSED PCM M19+M20 evidence,
