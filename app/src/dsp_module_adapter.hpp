@@ -439,7 +439,7 @@ public:
     { return QStringLiteral("Export TP Limiter"); }
     [[nodiscard]] QString workspace_context_label() const override { return context_; }
     [[nodiscard]] QString configuration_state() const override
-    { return state_ && state_->parameters().ceiling_db_tp()!=-1.0
+    { return state_ && state_->parameters().ceiling_db_tp()!=0.0
         ? QStringLiteral("Manual") : QStringLiteral("Default"); }
     [[nodiscard]] bool bypass_supported() const noexcept override { return vm_!=nullptr; }
     [[nodiscard]] bool bypass() const noexcept override { return !state_||state_->bypassed(); }

@@ -443,7 +443,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QVERIFY(limiter->reset_supported());
     QVERIFY(!limiter->can_undo());
     QVERIFY(!limiter->can_redo());
-    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
     const auto oldRevision=terminal.value()->chain().revision();
     QSignalSpy commits(&vm,&TerminalLimiterViewModel::acceptedStateChanged);
     QVERIFY(commits.isValid());
@@ -464,7 +464,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QCOMPARE(commits.size(),2);
     const auto revisionBeforeReset=terminal.value()->parameter_revision();
     limiter->resetToDefault();
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
     QCOMPARE(terminal.value()->parameter_revision(),revisionBeforeReset+1);
     QVERIFY(!limiter->bypass());
     QCOMPARE(limiter->configuration_state(),QStringLiteral("Default"));
@@ -481,13 +481,13 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     limiter->resetToDefault();
     QCOMPARE(commits.size(),6);
     QVERIFY(limiter->bypass());
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
     QVERIFY(!vm.setDraftFieldText(QStringLiteral("ceilingDbTp"),
         QStringLiteral("not-a-number")));
     QVERIFY(!vm.validation_message().isEmpty());
     limiter->resetToDefault(); // Also cancels an invalid uncommitted draft.
     QCOMPARE(vm.validation_message(),QString{});
-    QCOMPARE(vm.draft_ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.draft_ceiling_db_tp(),0.0);
     QCOMPARE(commits.size(),6);
     limiter->undo();
     limiter->redo();
@@ -506,7 +506,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     // The typed limiter adapter now forwards only the accepted DSP state.
     // Production must also pass the exact owned audio session coordinator;
     // this isolated adapter fixture does not install or claim audio.
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
 }
 
 void DspModuleAdapterTest::testReadOnlyTruePeakAnalysisDoesNotEnterProcessingChain()
