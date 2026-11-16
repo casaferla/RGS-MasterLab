@@ -40,8 +40,11 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 18
-        spacing: 12
+        // The host's genuine 1184x688 viewport gives ~300px to the
+        // approved product content. Recover structural whitespace (not
+        // measurements) and let all three NO-SCROLL panels fit.
+        anchors.margins: root.height < 490 ? 8 : 18
+        spacing: root.height < 490 ? 6 : 12
 
         // DspEditorHost owns M19/M20 source choices in its fixed top-right
         // action slot. M21 is a simultaneous three-column comparison and

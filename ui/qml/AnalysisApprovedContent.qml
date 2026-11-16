@@ -151,13 +151,13 @@ Item {
                         width: (levelGrid.width
                             - (levelGrid.columns-1)*levelGrid.columnSpacing)
                             / levelGrid.columns
-                        height: root.compactFit ? 104 : 116
+                        height: root.compactFit ? 96 : 116
                         radius: 7
                         color: root.raised
                         border.color: root.edge
                         Column {
                             anchors.fill: parent
-                            anchors.margins: root.compactFit ? 8 : 9
+                            anchors.margins: root.compactFit ? 5 : 9
                             spacing: root.compactFit ? 0 : 6
                             StudioReadOnlyMeasurement {
                                 objectName: "m19MetricValue_" + modelData.key
@@ -199,7 +199,7 @@ Item {
             Rectangle {
                 objectName: "m19ReferenceRelationPanel"
                 width: parent.width
-                height: root.compactFit ? 102 : 130
+                height: root.compactFit ? 92 : 130
                 color: root.panel
                 border.color: root.edge
                 radius: 7
@@ -288,7 +288,7 @@ Item {
             Rectangle {
                 objectName: "m20SpectrumPanel"
                 width: parent.width
-                height: root.compactFit ? 150 : 166
+                height: root.compactFit ? 140 : 166
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -432,7 +432,7 @@ Item {
             }
             Rectangle {
                 width: parent.width
-                height: root.compactFit ? 94 : 97
+                height: root.compactFit ? 90 : 97
                 radius: 7
                 color: root.panel
                 border.color: root.edge
@@ -485,7 +485,7 @@ Item {
             Rectangle {
                 objectName: "m20TonalProfilePanel"
                 width: parent.width
-                height: 65
+                height: root.compactFit ? 60 : 65
                 radius: 7
                 color: root.panel
                 border.color: root.edge

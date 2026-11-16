@@ -7178,8 +7178,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                      "Analysis panel must never expose Flickable scrolling");
             QTRY_VERIFY_WITH_TIMEOUT(analysisBody->height()>0.0,5000);
             QTRY_VERIFY_WITH_TIMEOUT(
-                analysisStack->implicitHeight()<=analysisBody->height()+1.0,
-                5000);
+                analysisStack->implicitHeight()>0.0,5000);
+            const auto fitDiagnostic=QStringLiteral(
+                "M%1 viewport=%2 px, content=%3 px at %4x%5")
+                .arg(index+19)
+                .arg(analysisBody->height(),0,'f',1)
+                .arg(analysisStack->implicitHeight(),0,'f',1)
+                .arg(size.width()).arg(size.height());
+            QVERIFY2(analysisStack->implicitHeight()
+                     <=analysisBody->height()+1.0,
+                     qPrintable(fitDiagnostic));
             if(size.height()==688) {
                 QVERIFY2(analysisBody->property("compactFit").toBool(),
                          "Minimum window must use strict compact layout");
