@@ -327,16 +327,17 @@ public:
             const auto allowed=state->authority->try_transition(
                 state->epoch,nextEpoch,nextIdentity,false);
             if(!allowed)return allowed;
-            state->identity=nextIdentity;
-            state->epoch=nextEpoch;
-            // An exact MANUAL sink restore is a transport transition,
-            // not a replacement of M17's immutable verified MASTER.
-            // Carry an ALREADY current verification epoch only; never
-            // mint one when absent. Product M18 still checks the actual
-            // staged PCM, SOURCE, chain, rate and ceiling before consent.
+            // Evaluate using the PREVIOUS Product epoch, before its
+            // monotonic advance. Checking after state->epoch=nextEpoch
+            // always reports false and wrongly blocks unchanged M17 PCM.
+            // This is transport-only: no verification can be minted here.
             const bool preserveExactManualReturn=
                 op=="restore_manual"
                 &&state->verifiedM17Epoch==state->epoch;
+            state->identity=nextIdentity;
+            state->epoch=nextEpoch;
+            // M18 still validates the exact staged M17 PCM, SOURCE,
+            // current manual revision, rate and ceiling before consent.
             state->verifiedM17Epoch=(op=="renderer_changed"
                 ||op=="comparison_suspend"
                 ||op=="return_monitor_to_manual"
