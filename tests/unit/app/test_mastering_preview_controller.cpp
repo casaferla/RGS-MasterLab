@@ -132,6 +132,9 @@ void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
         }
     };
 
+    controller.set_accepted_processed_provider([&publishedResult] {
+        return publishedResult;
+    });
     controller.request_preview();
 
     for (int i = 0; i < 100 && controller.preview_status() == QStringLiteral("RENDERING"); ++i) {
@@ -154,6 +157,24 @@ void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
 
     // Binding 2: Compressor
     QCOMPARE(sigs[2].type_id, std::string("rgsml.dsp.compressor"));
+
+    // A READY status and identical settings are insufficient: the
+    // Product must still retain the exact accepted immutable PCM.
+    QVERIFY(controller.published_preview_matches_current_bindings());
+    const auto acceptedOwner=publishedResult;
+    publishedResult=make_unit_prepared_result();
+    QVERIFY(!controller.published_preview_matches_current_bindings());
+    publishedResult=acceptedOwner;
+    QVERIFY(controller.published_preview_matches_current_bindings());
+
+    // A parameter-only edit leaves the structural chain revision
+    // unchanged, but must invalidate the old PROCESSED acceptance.
+    const auto oldRevision=state.value()->chain().revision();
+    const auto changedGain=dsp::GainParameters::create(-1.75);
+    QVERIFY(changedGain);
+    QVERIFY(state.value()->set_gain_parameters(*changedGain.value()));
+    QCOMPARE(state.value()->chain().revision(),oldRevision);
+    QVERIFY(!controller.published_preview_matches_current_bindings());
 }
 
 void MasteringPreviewControllerTest::testStereoMsOptInProductPreview()
