@@ -512,12 +512,34 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     independently = inbox[inbox.index('rebind_unchanged_independent_scopes('):
                           inbox.index('// GOLD is only accepted')]
     assert 'for(const auto column:{Column::prepared,Column::processed})' in independently
-    assert 'beforeCapture->prepared!=now.prepared' in independently
-    assert 'beforeCapture->processed!=now.processed' in independently
-    assert 'oldId.chain_revision!=newId.chain_revision' in independently
-    assert 'oldId.source_generation!=newId.source_generation' in independently
+    assert 'Product::same_render_observation(' in independently
+    assert 'Product::same_gold_observation(before,now)' in independently
+    owner = read("app/src/internal/m21_product_owner_analysis.hpp")
+    assert 'before.prepared!=now.prepared' in owner
+    assert 'before.processed!=now.processed' in owner
+    assert 'before.processed_realization_id' in owner
+    assert 'before.owner.identity.chain_revision' in owner
+    assert 'before.owner.identity.source_generation' in owner
+    assert 'before.owner.identity.project_generation' in owner
+    assert 'before.selection_revision==now.selection_revision' in owner
+    assert 'gold.selection_revision()!=expected.selection_revision' in owner
     assert '*goldSelectionRevision_==gold.selection_revision()' in independently
-    assert 'before.gold.same_resource_identity(now.gold)' in independently
+    assert 'beforeCapture->owner.epoch>=now.owner.epoch' in independently
+    # No duplicate whole-WAV scan when an in-flight completed result can
+    # be reauthenticated with the exact current immutable PCM.
+    assert 'accept_completed_unchanged_render(' in inbox
+    assert 'accept_completed_unchanged_gold(' in inbox
+    assert 'accept_completed_unchanged_render(' in coordinator
+    assert 'accept_completed_unchanged_gold(' in coordinator
+    assert 'renderAttempts_[idx].remember(' in coordinator
+    assert 'attempted_[idx]=gold_key(' in coordinator
+    main = read("app/src/main.cpp")
+    assert 'refreshM21AfterReconcile' in main
+    assert main.count('refreshM21AfterReconcile,') == 7
+    host = read("ui/qml/DspEditorHost.qml")
+    assert 'text: "Render Master"' in host
+    assert 'text: "Preview Master"' in host
+    assert 'root.terminalLimiterViewModel.requestPrepare()' in host
     assert 'accept_render(product,fanout,selector,now,reused)' in independently
     assert 'accept_gold(product,fanout,selector,gold,now,reused)' in independently
 
