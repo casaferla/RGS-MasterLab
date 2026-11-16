@@ -69,8 +69,7 @@ QVariantMap M21ProductStatusViewModel::analysis_readouts() const
             return {};
         return QVariant::fromValue(*cell.unrounded);
     };
-    const auto released_delta=[&](const m21_private::Cell& cell,
-                                  std::size_t metric)->QVariant {
+    const auto released_delta=[&](const m21_private::Cell& cell)->QVariant {
         if((cell.quality!=m21_private::Quality::present &&
             cell.quality!=m21_private::Quality::low_confidence) ||
            !cell.unrounded || !std::isfinite(*cell.unrounded))
@@ -97,9 +96,9 @@ QVariantMap M21ProductStatusViewModel::analysis_readouts() const
         row.insert(QStringLiteral("reference"),read(1U,i));
         row.insert(QStringLiteral("processed"),read(2U,i));
         row.insert(QStringLiteral("deltaPrepared"),
-                   released_delta(evidence.prepared_to_gold[i],i));
+                   released_delta(evidence.prepared_to_gold[i]));
         row.insert(QStringLiteral("deltaProcessed"),
-                   released_delta(evidence.processed_to_gold[i],i));
+                   released_delta(evidence.processed_to_gold[i]));
         rows.append(row);
     }
 
