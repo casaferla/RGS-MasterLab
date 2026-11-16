@@ -1131,10 +1131,11 @@ int main(int argc, char* argv[])
     rgsml::app::M18ProductExportViewModel m18ExportViewModel{
         m18ExportAction,m18Controllers};
 
-    // Same real M18 Product authority, Source and REFERENCE objects.
-    // The M21 worker inbox is separate from the QML view: until the
-    // canonical Phase-6 feature registry/gates are qualified, this
-    // native presenter MUST report readiness only, never numeric values.
+    // M19-M21 use the real M18 Product authority and independent
+    // SOURCE / REFERENCE owners. The status envelope remains strictly
+    // readiness-only; a separate PO-authorized DEVELOPMENT readout
+    // exposes genuine current numerical evidence without granting
+    // Phase-6 certified publication or export consent.
     rgsml::app::internal::M21ProductPublicationInbox m21ProductInbox;
     rgsml::app::M21ProductStatusViewModel m21ProductStatusViewModel{
         m18Controllers,m18Fanout,auditionSelector,goldSelection,
@@ -1142,8 +1143,8 @@ int main(int argc, char* argv[])
     // Private Product evidence only: a single Qt-free worker analyzes
     // immutable PREPARED, independent REFERENCE, or genuine PROCESSED.
     // The 250ms owner loop never performs PCM I/O or numerical DSP;
-    // successful completions are accepted only if the M18 owner still
-    // matches. QML remains numerically masked pending Phase-6 gates.
+    // each completion is reauthenticated under the current M18 owner.
+    // AnalysisReadouts is DEVELOPMENT-only; Phase-6 release stays gated.
     rgsml::app::internal::M21PrivateProductAnalysisCoordinator
         m21AnalysisCoordinator{
             m18Controllers,m18Fanout,auditionSelector,goldSelection,
