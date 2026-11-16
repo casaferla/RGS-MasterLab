@@ -83,25 +83,7 @@ public:
                             *active_->render,evidence);
                 }
                 if(accepted) {
-                    // Avoid immediately starting a redundant same-PCM job
-                    // with the *new* Product epoch key in this same tick.
-                    const auto idx=static_cast<std::size_t>(active_->column);
-                    if(active_->column==Column::gold) {
-                        const auto goldNow=Product::capture_gold(
-                            product_,*fanout_,*selector_,*gold_);
-                        if(goldNow)attempted_[idx]=gold_key(*goldNow.value());
-                    } else {
-                        const auto renderNow=Product::capture(
-                            product_,*fanout_,*selector_);
-                        if(renderNow) {
-                            const auto owner=active_->column==Column::prepared
-                                ?renderNow.value()->prepared
-                                :renderNow.value()->processed;
-                            renderAttempts_[idx].remember(
-                                render_key(*renderNow.value(),
-                                           active_->column),owner);
-                        }
-                    }
+                    remember_current_attempt(active_->column);
                     status_->refresh();
                 }
             }
@@ -115,29 +97,13 @@ public:
         // Keep the single-flight worker and full M18 epoch checks intact.
         const auto unchanged=inbox_->rebind_unchanged_independent_scopes(
             product_,*fanout_,*selector_,*gold_);
-        if(unchanged[static_cast<std::size_t>(Column::prepared)]
-           ||unchanged[static_cast<std::size_t>(Column::gold)]
-           ||unchanged[static_cast<std::size_t>(Column::processed)]) {
-            auto fresh=Product::capture(product_,*fanout_,*selector_);
-            if(fresh) {
-                for(const auto column:{Column::prepared,Column::processed}) {
-                    const auto i=static_cast<std::size_t>(column);
-                    if(!unchanged[i])continue;
-                    const auto render=column==Column::prepared
-                        ?fresh.value()->prepared:fresh.value()->processed;
-                    renderAttempts_[i].remember(
-                        render_key(*fresh.value(),column),render);
-                }
-            }
-            if(unchanged[static_cast<std::size_t>(Column::gold)]) {
-                const auto goldEvidence=Product::capture_gold(
-                    product_,*fanout_,*selector_,*gold_);
-                if(goldEvidence)
-                    attempted_[static_cast<std::size_t>(Column::gold)]=
-                        gold_key(*goldEvidence.value());
-            }
-            status_->refresh();
+        bool restoredAny=false;
+        for(const auto column:{Column::prepared,Column::gold,Column::processed}) {
+            if(!unchanged[static_cast<std::size_t>(column)])continue;
+            remember_current_attempt(column);
+            restoredAny=true;
         }
+        if(restoredAny)status_->refresh();
         if(worker_.busy())return;
 
         // Fixed round-robin priority, at most ONE CPU analysis active;
@@ -215,6 +181,27 @@ private:
         std::optional<Product::Capture> render{};
         std::optional<Product::GoldCapture> gold{};
     };
+
+    // All accepted results—fresh worker completions or epoch rebinds—
+    // use the same attempt identity. Otherwise a harmless M18 epoch
+    // change can immediately requeue the identical whole-file analysis.
+    void remember_current_attempt(Column column)
+    {
+        const auto idx=static_cast<std::size_t>(column);
+        if(column==Column::gold) {
+            const auto current=Product::capture_gold(
+                product_,*fanout_,*selector_,*gold_);
+            if(current)attempted_[idx]=gold_key(*current.value());
+            return;
+        }
+        const auto current=Product::capture(
+            product_,*fanout_,*selector_);
+        if(!current)return;
+        const auto pcm=column==Column::prepared
+            ?current.value()->prepared:current.value()->processed;
+        if(pcm)renderAttempts_[idx].remember(
+            render_key(*current.value(),column),pcm);
+    }
 
     [[nodiscard]] static std::string render_key(
         const Product::Capture& captured,Column column)
