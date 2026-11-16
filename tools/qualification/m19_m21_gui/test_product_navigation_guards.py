@@ -519,6 +519,25 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'before.processed==now.processed' in owner
     assert 'before.processed_realization_id' in owner
     assert 'before.owner.identity.chain_revision' in owner
+    # A parameter-only edit preserves ProcessingChain::revision()!
+    # The binding payloads must be compared, not just the structural rev.
+    assert 'before.manual_bindings==now.manual_bindings' in owner
+    assert 'product.upstream.chain.execution_bindings()' in owner
+    preview=read("app/src/mastering_preview_controller.cpp")
+    assert 'acceptedPreviewBindings_==chainState_->execution_bindings()' in preview
+    assert 'acceptedPreviewGeneration_==previewGeneration_' in preview
+    assert 'pendingPreviewBindings_=job.bindings' in preview
+    assert 'acceptedPreviewBindings_=pendingPreviewBindings_' in preview
+    assert 'published_preview_matches_current_bindings()' in coordinator
+    assert 'published_preview_matches_current_bindings()' in read(
+        "app/src/main.cpp")
+    integration=read("tests/integration/app/test_project_session.cpp")
+    assert 'rebind_after_reference_only_change(' not in integration
+    assert 'rebind_unchanged_prepared_reference(' not in integration
+    assert 'referenceCache.rebind_unchanged_independent_scopes(' in integration
+    assert 'structuralRevision' in integration
+    assert 'session.masteringChainState->set_gain_parameters(' in integration
+    assert 'selectGold(QUrl::fromLocalFile(refB))' in integration
     assert 'before.owner.identity.source_generation' in owner
     assert 'Project save/metadata revision alone is not a PCM revision.' in owner
     assert 'before.owner.identity.project_generation' not in owner[owner.index(
