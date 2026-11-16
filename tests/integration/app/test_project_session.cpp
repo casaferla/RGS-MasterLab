@@ -2110,7 +2110,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              app::m21_private::Lifecycle::stale);
     QCOMPARE(staleBeforeReuse.columns[2]->lifecycle,
              app::m21_private::Lifecycle::stale);
-    const auto recycled=referenceCache.rebind_after_reference_only_change(
+    const auto recycled=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(recycled[0]&&!recycled[1]&&recycled[2]);
     const auto afterReuse=referenceCache.view_current(
@@ -2129,7 +2129,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              preparedNumbers.value()->metrics[0].unrounded);
     QCOMPARE(afterReuse.columns[2]->metrics[5].unrounded,
              processedNumbers.value()->metrics[5].unrounded);
-    const auto noDuplicate=referenceCache.rebind_after_reference_only_change(
+    const auto noDuplicate=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(!noDuplicate[0]&&!noDuplicate[1]&&!noDuplicate[2]);
     // A real parameter-only DSP mutation must retire PROCESSED, but its
@@ -2160,9 +2160,9 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     QVERIFY(afterTwoDspMutations->epoch>=priorParamEpoch->epoch+2);
     QCOMPARE(session.masteringChainState->chain().revision(),
              structuralRevision);
-    const auto noStaleReuse=referenceCache.rebind_after_reference_only_change(
-        controllers,fanout,session.selector,session.gold);
-    QVERIFY(!noStaleReuse[0]&&!noStaleReuse[1]&&!noStaleReuse[2]);
+    // A parameter-only edit intentionally does NOT increment the
+    // ProcessingChain structural revision. Compare the actual typed
+    // DSP bindings, otherwise the old PROCESSED is incorrectly recycled.
     const auto afterDSPChange=referenceCache.view_current(
         controllers,fanout,session.selector,session.gold);
     QCOMPARE(afterDSPChange.columns[0]->lifecycle,
@@ -2171,7 +2171,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              app::m21_private::Lifecycle::stale);
     QCOMPARE(afterDSPChange.columns[2]->lifecycle,
              app::m21_private::Lifecycle::stale);
-    const auto selective=referenceCache.rebind_unchanged_prepared_reference(
+    const auto selective=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(selective[0] &&selective[1] &&!selective[2]);
     const auto stillMeasured=referenceCache.view_current(
@@ -2186,7 +2186,7 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
              preparedNumbers.value()->metrics[0].unrounded);
     QCOMPARE(stillMeasured.columns[1]->metrics[0].unrounded,
              measuredRefB.value()->metrics[0].unrounded);
-    const auto avoidDuplicate=referenceCache.rebind_unchanged_prepared_reference(
+    const auto avoidDuplicate=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
     QVERIFY(!avoidDuplicate[0]&&!avoidDuplicate[1]&&!avoidDuplicate[2]);
 
@@ -2195,9 +2195,19 @@ m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()
     session.gold.selectGold(QUrl::fromLocalFile(refB));
     QVERIFY(session.gold.has_gold());
     QVERIFY(session.gold.selection_revision()>refRevision);
-    const auto rejectSamePath=referenceCache.rebind_unchanged_prepared_reference(
+    const auto rejectSamePath=referenceCache.rebind_unchanged_independent_scopes(
         controllers,fanout,session.selector,session.gold);
-    QVERIFY(!rejectSamePath[0]&&!rejectSamePath[1]&&!rejectSamePath[2]);
+    // SOURCE PCM still has the same immutable owner; the SAME-PATH
+    // REFERENCE is deliberately a new selection and must be measured.
+    QVERIFY(rejectSamePath[0]&&!rejectSamePath[1]&&!rejectSamePath[2]);
+    const auto afterSamePath=referenceCache.view_current(
+        controllers,fanout,session.selector,session.gold);
+    QCOMPARE(afterSamePath.columns[0]->lifecycle,
+             app::m21_private::Lifecycle::current);
+    QCOMPARE(afterSamePath.columns[1]->lifecycle,
+             app::m21_private::Lifecycle::stale);
+    QCOMPARE(afterSamePath.columns[2]->lifecycle,
+             app::m21_private::Lifecycle::stale);
 }
 
 void ProjectSessionTest::
