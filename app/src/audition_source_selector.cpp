@@ -642,6 +642,15 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
            ||(target==AuditionTarget::GOLD &&!gold_))
             return unavailable("The requested audition target has no authoritative realization.");
     }
+    // An already verified M17 DEVICE/session must be parked using the
+    // existing exact-owner comparison transaction BEFORE this transport
+    // switch retires its sink. Never start a second M17 render, change
+    // limiter bypass or reenter the selector from an unrelated callback.
+    if(activeTarget_==AuditionTarget::PROCESSED
+       &&target!=AuditionTarget::PROCESSED &&beforeIndependentAudition_) {
+        const auto parked=beforeIndependentAudition_(target);
+        if(!parked)return parked; // current target remains untouched
+    }
     if(const auto admission=admit_m18_source_mutation("switch_target");
        !admission)return admission;
     M18ScopedAuditionMutation lifetime{
