@@ -497,6 +497,19 @@ void AuditionRegionViewModel::source_committed(
     emit changed();
 }
 
+void AuditionRegionViewModel::clear_independent_reference()
+{
+    if(!referenceMode_)return;
+    sourceFrames_=0;
+    sampleRate_=0;
+    waveformReady_=false;
+    region_.reset();
+    loopEnabled_=false;
+    lastCanLoop_=false;
+    errorMessage_.clear();
+    emit changed();
+}
+
 void AuditionRegionViewModel::set_waveform_ready(bool ready)
 {
     if(m18_foreign_owner_thread())return;
