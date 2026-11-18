@@ -262,12 +262,74 @@ Canvas {
             ctx.stroke()
             ctx.restore()
         } else if (kind === "fit-region") {
-            line(2.0, 3.0, 2.0, 15.0); line(16.0, 3.0, 16.0, 15.0)
-            dashRect(5.0, 5.0, 8.0, 8.0, 2.0, 2.0)
-            line(4.0, 9.0, 7.0, 9.0); line(4.0, 9.0, 6.0, 7.0); line(4.0, 9.0, 6.0, 11.0)
-            line(14.0, 9.0, 11.0, 9.0); line(14.0, 9.0, 12.0, 7.0); line(14.0, 9.0, 12.0, 11.0)
+            // Transport/Region v2: selected-span brackets and inward
+            // arrows, on the same 24px optical grid as Zoom v2.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.scale(0.75, 0.75)
+            ctx.globalAlpha = 0.82
+            ctx.lineWidth = 2.1
+            line(4.5, 5.0, 4.5, 19.0)
+            line(19.5, 5.0, 19.5, 19.0)
+            ctx.globalAlpha = 1.0
+            ctx.lineWidth = 2.4
+            line(7.3, 12, 11.0, 12)
+            line(8.7, 9.9, 11.0, 12)
+            line(8.7, 14.1, 11.0, 12)
+            line(16.7, 12, 13.0, 12)
+            line(15.3, 9.9, 13.0, 12)
+            line(15.3, 14.1, 13.0, 12)
+            ctx.restore()
         } else if (kind === "clear-region") {
-            dashRect(3.0, 4.0, 12.0, 10.0, 3.0, 3.0)
+            // Selection release, NOT deleting audio: interrupted region
+            // frame with a narrow diagonal release stroke, never a trash X.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.scale(0.75, 0.75)
+            ctx.lineWidth = 2.1
+            ctx.globalAlpha = 0.82
+            ctx.setLineDash([3.5, 2.6])
+            ctx.strokeRect(4.7, 5.2, 14.6, 13.6)
+            ctx.setLineDash([])
+            ctx.globalAlpha = 1.0
+            ctx.lineWidth = 2.5
+            line(7.4, 16.5, 16.6, 7.5)
+            ctx.restore()
+        } else if (kind === "source-import" || kind === "reference-import") {
+            // Source/Reference load family: a precision audio-page glyph
+            // with the SAME waveform core; a stacked page marks Reference.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.lineWidth = 1.7
+            if (kind === "reference-import") {
+                ctx.globalAlpha = 0.52
+                line(5, 1.6, 14, 1.6)
+                line(16.4, 4.1, 16.4, 14.6)
+                ctx.globalAlpha = 1.0
+            }
+            ctx.beginPath()
+            ctx.moveTo(3.0, 3.3)
+            ctx.lineTo(10.8, 3.3)
+            ctx.lineTo(14.6, 7.1)
+            ctx.lineTo(14.6, 15.0)
+            ctx.quadraticCurveTo(14.6, 15.8, 13.8, 15.8)
+            ctx.lineTo(3.8, 15.8)
+            ctx.quadraticCurveTo(3.0, 15.8, 3.0, 15.0)
+            ctx.closePath()
+            ctx.stroke()
+            line(10.8, 3.3, 10.8, 7.1)
+            line(10.8, 7.1, 14.6, 7.1)
+            ctx.lineWidth = 1.65
+            ctx.beginPath()
+            ctx.moveTo(4.6, 11.1)
+            ctx.lineTo(6.0, 11.1)
+            ctx.lineTo(7.15, 8.7)
+            ctx.lineTo(8.5, 13.0)
+            ctx.lineTo(9.8, 10.0)
+            ctx.lineTo(10.9, 11.1)
+            ctx.lineTo(12.5, 11.1)
+            ctx.stroke()
+            ctx.restore()
         } else if (kind === "source") {
             ctx.beginPath(); ctx.moveTo(4.0, 2.0); ctx.lineTo(11.5, 2.0); ctx.lineTo(15.0, 5.5); ctx.lineTo(15.0, 16.0); ctx.lineTo(4.0, 16.0); ctx.closePath(); ctx.stroke()
             line(11.5, 2.0, 11.5, 5.5); line(11.5, 5.5, 15.0, 5.5)
