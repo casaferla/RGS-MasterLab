@@ -813,6 +813,18 @@ void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful
     QCOMPARE(observed->position.value(), std::int64_t{55});
     QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
     QCOMPARE(observed->position.value(), std::int64_t{77});
+    // Replacing Gold while it is selected must keep the audible target
+    // REFERENCE and initialize the new file at cue zero.
+    auto secondGold=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/replacement.wav",true,false,
+        "replacement.wav");
+    QVERIFY(secondGold);
+    QVERIFY(selector.set_gold(std::move(*secondGold.value()),
+        *core::SampleRate::create(48'000).value(),
+        *core::FrameCount::create(100).value()));
+    QVERIFY(selector.gold_active());
+    QCOMPARE(selector.active_target(),std::optional{app::AuditionTarget::GOLD});
+    QCOMPARE(observed->position.value(),std::int64_t{0});
     QVERIFY(selector.clear_gold());
     QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
     QVERIFY(!selector.gold_available());
