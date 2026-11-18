@@ -737,6 +737,13 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    // The selector must ask the established M17 coordinator to park an
+    // accepted Master BEFORE an independent target switch retires DEVICE
+    // playback. SOURCE/REFERENCE waveform navigation never rerenders M17.
+    auditionSelector.set_before_independent_audition(
+        [&terminalProductActivation](rgsml::app::AuditionTarget target) {
+            return terminalProductActivation.before_independent_audition(target);
+        });
     // Cross-rate measured NON-CONFORMING preview uses the same Windows
     // endpoint/RAM evidence as verified Master Audition, but NOT its
     // verified master transport ticket. Caution is denied unless a separate
