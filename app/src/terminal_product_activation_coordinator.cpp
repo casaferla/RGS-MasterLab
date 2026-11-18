@@ -856,7 +856,11 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
 core::Status TerminalProductActivationCoordinator::before_independent_audition(
     AuditionTarget target)
 {
-    if(QThread::currentThread()!=thread()||target==AuditionTarget::PROCESSED)
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD"});
+    if(target==AuditionTarget::PROCESSED)
         return core::Status::success();
     if(session_->monitoring_transaction_active())
         return core::Status::failure(core::Error{
