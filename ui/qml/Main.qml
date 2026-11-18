@@ -25,6 +25,11 @@ ApplicationWindow {
     readonly property color textSecondary: "#8A97A3"
     readonly property color accent: "#00C8FF"
     readonly property color warning: "#F2B632"
+    // The reference waveform is an independently cached WAV summary.
+    readonly property bool referenceWaveformActive:
+        !root.monitorExclusive && auditionSelector.goldActive
+    readonly property var displayedWaveform:
+        root.referenceWaveformActive ? referenceWaveform : sourceWaveform
     readonly property color error: "#F27683"
     // Explicitly confirmed in-RAM MASTER loss alone permits exiting a
     // recovery state without reinstalling the original Windows DEVICE.
@@ -729,19 +734,24 @@ ApplicationWindow {
                 height: 20; color: "#0A151D"
                 RowLayout {
                     anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
-                    Label { text: "SOURCE WAVEFORM"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
+                    Label {
+                        objectName: "activeWaveformScopeLabel"
+                        text: root.referenceWaveformActive ? "REFERENCE WAVEFORM" : "SOURCE WAVEFORM"
+                        color: root.referenceWaveformActive ? root.warning : root.textSecondary
+                        font.pixelSize: 9; font.weight: Font.DemiBold
+                    }
                     Item { Layout.fillWidth: true }
                     Label {
                         objectName: "sourceWaveformVisibleClock"
-                        visible: sourceWaveform.canNavigate
+                        visible: root.displayedWaveform.canNavigate
                         Layout.maximumWidth: Math.max(0, waveformRuler.width - 130)
                         elide: Text.ElideRight
-                        text: sourceWaveform.viewportStartText.slice(0,8)
-                            + " · " + sourceWaveform.viewportEndText.slice(0,8)
+                        text: root.displayedWaveform.viewportStartText.slice(0,8)
+                            + " · " + root.displayedWaveform.viewportEndText.slice(0,8)
                         color: "#647682"; font.family: "Consolas"; font.pixelSize: 9
                         HoverHandler { id: waveformClockHover }
-                        ToolTip.text: sourceWaveform.viewportStartText
-                            + " — " + sourceWaveform.viewportEndText
+                        ToolTip.text: root.displayedWaveform.viewportStartText
+                            + " — " + root.displayedWaveform.viewportEndText
                         ToolTip.visible: (waveformClockHover.hovered && waveformClockDwell.ready)
                         ToolTip.delay: 0
                         StudioTooltipDwell {
@@ -756,7 +766,7 @@ ApplicationWindow {
                 objectName: "sourceWaveformOverview"
                 anchors.left: parent.left; anchors.right: parent.right; anchors.top: waveformRuler.bottom; anchors.bottom: parent.bottom
                 anchors.leftMargin: 12; anchors.rightMargin: 12; anchors.topMargin: 6; anchors.bottomMargin: 6
-                presentation: sourceWaveform
+                presentation: root.displayedWaveform
                 positionFrames: root.monitorExclusive
                     && root.appTerminalMonitorViewModel
                     && root.appTerminalMonitorViewModel.masterDurationFrames > 0
@@ -765,25 +775,30 @@ ApplicationWindow {
                         Math.floor(root.appTerminalMonitorViewModel.masterPositionFrames
                             * sourceWaveform.sourceFrameCount
                             / root.appTerminalMonitorViewModel.masterDurationFrames))
-                    : auditionSelector.sourcePlayheadVisible
+                    : (auditionSelector.sourcePlayheadVisible || root.referenceWaveformActive)
                         ? playbackTransport.positionFrames : 0
                 durationFrames: root.monitorExclusive
-                    ? sourceWaveform.sourceFrameCount : playbackTransport.durationFrames
-                waveformColor: root.accent
+                    ? sourceWaveform.sourceFrameCount
+                    : root.displayedWaveform.sourceFrameCount
+                waveformColor: root.referenceWaveformActive ? root.warning : root.accent
                 zeroLineColor: "#29414F"
                 playheadColor: root.monitorExclusive || auditionSelector.sourcePlayheadVisible
-                    ? root.warning : "transparent"
+                    || root.referenceWaveformActive ? root.warning : "transparent"
                 overrangeColor: root.error
                 regionColor: "#2A87A95C"
                 regionHandleColor: "#E6EEF0"
-                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                visible: root.displayedWaveform.ready && root.displayedWaveform.sourceFrameCount > 0
                 activeFocusOnTab: visible
                 enabled: !root.monitorExclusive
                 KeyNavigation.backtab: sourceOpenButton
                 KeyNavigation.tab: zoomOutButton
                 Accessible.role: Accessible.Pane
-                Accessible.name: sourceWaveform.channelCount === 2 ? "Source waveform, separate left and right lanes" : "Source waveform, mono lane"
-                Accessible.description: "Click to seek, drag to pan, Shift drag to create an Audition Region"
+                Accessible.name: (root.referenceWaveformActive ? "Reference" : "Source")
+                    + (root.displayedWaveform.channelCount === 2
+                        ? " waveform, separate left and right lanes" : " waveform, mono lane")
+                Accessible.description: root.referenceWaveformActive
+                    ? "Click to seek within Reference, drag to pan and zoom independently"
+                    : "Click to seek, drag to pan, Shift drag to create an Audition Region"
             }
             // MASTER sees the same waveform timeline, but click-to-seek
             // addresses only the anonymous DEVICE monitor's MASTER frames.
@@ -811,18 +826,18 @@ ApplicationWindow {
                 }
             }
             Rectangle {
-                visible: waveformOverview.visible && sourceWaveform.channelCount === 2
+                visible: waveformOverview.visible && root.displayedWaveform.channelCount === 2
                 anchors.left: waveformOverview.left; anchors.right: waveformOverview.right; anchors.verticalCenter: waveformOverview.verticalCenter
                 height: 12; color: "#071117"
                 Rectangle { anchors.verticalCenter: parent.verticalCenter; width: parent.width; height: 1; color: "#20313D" }
             }
-            Label { objectName: "sourceWaveformLeftLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.top: waveformOverview.top; anchors.topMargin: 2; visible: waveformOverview.visible && sourceWaveform.channelCount === 2; text: "L"; color: root.textSecondary; font.pixelSize: 10 }
-            Label { objectName: "sourceWaveformRightLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.bottom: waveformOverview.bottom; anchors.bottomMargin: 2; visible: waveformOverview.visible && sourceWaveform.channelCount === 2; text: "R"; color: root.textSecondary; font.pixelSize: 10 }
-            Label { objectName: "sourceWaveformMonoLane"; anchors.left: waveformOverview.left; anchors.verticalCenter: waveformOverview.verticalCenter; visible: waveformOverview.visible && sourceWaveform.channelCount === 1; text: "C"; color: root.textSecondary; font.pixelSize: 10 }
-            Label { id: sourceWaveformStatus; objectName: "sourceWaveformStatus"; anchors.centerIn: waveformOverview; width: waveformOverview.width - 40; visible: !sourceWaveform.ready || sourceWaveform.sourceFrameCount === 0; text: sourceWaveform.statusText; color: sourceWaveform.state === "FAILED" ? root.error : root.textSecondary; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; font.pixelSize: 12 }
-            BusyIndicator { objectName: "sourceWaveformBuildingIndicator"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.bottom: sourceWaveformStatus.top; running: sourceWaveform.state === "BUILDING"; visible: running }
-            StudioButton { objectName: "sourceWaveformRetryButton"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.top: sourceWaveformStatus.bottom; anchors.topMargin: 8; text: "Retry waveform analysis"; visible: sourceWaveform.state === "FAILED"; onClicked: sourceWaveform.requestRetry() }
-            Label { anchors.right: waveformOverview.right; anchors.bottom: waveformOverview.bottom; visible: waveformOverview.visible && sourceWaveform.hasOverrange; text: "Source peaks exceed 1.0"; color: root.error; font.pixelSize: 10 }
+            Label { objectName: "sourceWaveformLeftLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.top: waveformOverview.top; anchors.topMargin: 2; visible: waveformOverview.visible && root.displayedWaveform.channelCount === 2; text: "L"; color: root.textSecondary; font.pixelSize: 10 }
+            Label { objectName: "sourceWaveformRightLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.bottom: waveformOverview.bottom; anchors.bottomMargin: 2; visible: waveformOverview.visible && root.displayedWaveform.channelCount === 2; text: "R"; color: root.textSecondary; font.pixelSize: 10 }
+            Label { objectName: "sourceWaveformMonoLane"; anchors.left: waveformOverview.left; anchors.verticalCenter: waveformOverview.verticalCenter; visible: waveformOverview.visible && root.displayedWaveform.channelCount === 1; text: "C"; color: root.textSecondary; font.pixelSize: 10 }
+            Label { id: sourceWaveformStatus; objectName: "sourceWaveformStatus"; anchors.centerIn: waveformOverview; width: waveformOverview.width - 40; visible: !root.displayedWaveform.ready || root.displayedWaveform.sourceFrameCount === 0; text: root.displayedWaveform.statusText; color: root.displayedWaveform.state === "FAILED" ? root.error : root.textSecondary; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; font.pixelSize: 12 }
+            BusyIndicator { objectName: "sourceWaveformBuildingIndicator"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.bottom: sourceWaveformStatus.top; running: root.displayedWaveform.state === "BUILDING"; visible: running }
+            StudioButton { objectName: "sourceWaveformRetryButton"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.top: sourceWaveformStatus.bottom; anchors.topMargin: 8; text: "Retry waveform analysis"; visible: root.displayedWaveform.state === "FAILED"; onClicked: root.displayedWaveform.requestRetry() }
+            Label { anchors.right: waveformOverview.right; anchors.bottom: waveformOverview.bottom; visible: waveformOverview.visible && root.displayedWaveform.hasOverrange; text: root.referenceWaveformActive ? "Reference peaks exceed 1.0" : "Source peaks exceed 1.0"; color: root.error; font.pixelSize: 10 }
         }
 
         Rectangle {
@@ -837,24 +852,24 @@ ApplicationWindow {
                 anchors.leftMargin: root.upperStripHorizontalPadding
                 anchors.rightMargin: root.upperStripHorizontalPadding
                 spacing: 8
-                StudioIconButton { id: zoomOutButton; objectName: "waveformZoomOutButton"; iconKind: "zoom-out"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: waveformOverview; KeyNavigation.tab: zoomControl; onClicked: sourceWaveform.zoomOut(); Accessible.name: "Zoom out Source waveform" }
+                StudioIconButton { id: zoomOutButton; objectName: "waveformZoomOutButton"; iconKind: "zoom-out"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; KeyNavigation.backtab: waveformOverview; KeyNavigation.tab: zoomControl; onClicked: root.displayedWaveform.zoomOut(); Accessible.name: "Zoom out Source waveform" }
                 Slider {
                     id: zoomControl
                     objectName: "waveformZoomControl"
                     Layout.preferredWidth: 160
                     from: 0.0; to: 1.0; stepSize: 0.001
-                    enabled: sourceWaveform.canNavigate
+                    enabled: root.displayedWaveform.canNavigate
                     activeFocusOnTab: true
                     KeyNavigation.backtab: zoomOutButton
                     KeyNavigation.tab: zoomInButton
-                    onMoved: sourceWaveform.setZoomPosition(value)
+                    onMoved: root.displayedWaveform.setZoomPosition(value)
                     Accessible.name: "Continuous Source waveform zoom"
-                    Binding { target: zoomControl; property: "value"; value: sourceWaveform.zoomPosition; when: !zoomControl.pressed }
+                    Binding { target: zoomControl; property: "value"; value: root.displayedWaveform.zoomPosition; when: !zoomControl.pressed }
                     background: Rectangle { x: zoomControl.leftPadding; y: zoomControl.topPadding + zoomControl.availableHeight / 2 - height / 2; width: zoomControl.availableWidth; height: 6; radius: 3; color: "#253642" }
                     handle: Rectangle { x: zoomControl.leftPadding + zoomControl.visualPosition * (zoomControl.availableWidth - width); y: zoomControl.topPadding + zoomControl.availableHeight / 2 - height / 2; width: 14; height: 14; radius: 7; color: zoomControl.enabled ? "#DDE6F3" : "#586773"; border.color: zoomControl.activeFocus ? root.accent : "#253642"; border.width: zoomControl.activeFocus ? 2 : 1 }
                 }
-                StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
-                StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
+                StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: root.displayedWaveform.canNavigate && root.displayedWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: root.displayedWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
+                StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: root.displayedWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 // Master-specific commands are in True Peak Limiter.
                 // The ordinary transport retains only shared Play/Pause/Stop.
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
@@ -989,7 +1004,7 @@ ApplicationWindow {
                     }
                 }
                 Item { Layout.fillWidth: true }
-                StudioButton { id: fitRegionButton; objectName: "waveformFitRegionButton"; text: "Fit Region"; iconKind: "fit-region"; minimumControlWidth: 80; enabled: !root.monitorExclusive && auditionRegion.controlsEnabled && auditionRegion.hasRegion; KeyNavigation.backtab: auditionEndEditor.lastField; KeyNavigation.tab: loopRegionCheckBox; onClicked: sourceWaveform.fitRegion(); Accessible.name: "Fit Audition Region in waveform" }
+                StudioButton { id: fitRegionButton; objectName: "waveformFitRegionButton"; text: "Fit Region"; iconKind: "fit-region"; minimumControlWidth: 80; enabled: !root.monitorExclusive && !root.referenceWaveformActive && auditionRegion.controlsEnabled && auditionRegion.hasRegion; KeyNavigation.backtab: auditionEndEditor.lastField; KeyNavigation.tab: loopRegionCheckBox; onClicked: sourceWaveform.fitRegion(); Accessible.name: "Fit Audition Region in waveform" }
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: root.border }
                 StudioToggle {
                     id: loopRegionCheckBox; objectName: "auditionRegionLoopCheckBox"
@@ -1286,9 +1301,9 @@ ApplicationWindow {
                             }
                         }
                         MenuSeparator { }
-                        StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
-                        StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
-                        StudioMenuItem { text: "Fit Source\tHome"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
+                        StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: root.displayedWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
+                        StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
+                        StudioMenuItem { text: "Fit Source\tHome"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
                         StudioMenuItem { text: "Fit Region"; enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion; onTriggered: sourceWaveform.fitRegion() }
                     }
                     Menu {
