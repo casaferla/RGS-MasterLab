@@ -145,6 +145,35 @@ ApplicationWindow {
         && root.appTerminalProductActivation.directReturnAvailable
     readonly property bool m17ReturnAvailable: root.monitorExclusive
         || root.directM17ReturnAvailable
+    // The user may A/B a verified M17 Preview with independent
+    // REFERENCE/PREPARED, then restore that same PCM without a new render.
+    property bool restorePreviewAfterComparison: false
+    function requestAuditionTarget(target) {
+        if (root.monitorExclusive) {
+            if (!root.returnFromM17Audition() || root.monitorExclusive)
+                return false
+        }
+        const original=auditionSelector.activeTarget
+        if(original==="PROCESSED" &&target!=="PROCESSED"
+           &&root.directM17ReturnAvailable
+           &&root.appTerminalLimiterViewModel
+           &&root.appTerminalLimiterViewModel.audioStatus
+                ==="ACTIVE · AUDITION UNQUALIFIED")
+            root.restorePreviewAfterComparison=true
+        if(target==="PREPARED") auditionSelector.selectPrepared()
+        else if(target==="PROCESSED") auditionSelector.selectProcessed()
+        else if(target==="GOLD") auditionSelector.selectGold()
+        else return false
+        if(auditionSelector.activeTarget!==target)return false
+        if(target==="PROCESSED" &&root.restorePreviewAfterComparison) {
+            root.restorePreviewAfterComparison=false
+            // Reinstall only an exact already-cached, verified M17 Master.
+            // The native method checks DEVICE ID and comparison epoch.
+            if(root.appTerminalProductActivation)
+                root.appTerminalProductActivation.resumeParkedPreview()
+        }
+        return true
+    }
     function returnFromM17Audition() {
         // The monitor owns anonymous MASTER->DEVICE PCM. Direct M17
         // (including measured NON-CONFORMING Preview Anyway) owns a
@@ -1355,7 +1384,7 @@ ApplicationWindow {
                 }
 
                 Item { Layout.fillWidth: true }
-                AuditionSourceSelector { id: auditionTargetSelector; enabled: !root.monitorExclusive; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
+                AuditionSourceSelector { id: auditionTargetSelector; enabled: true; targetSwitchHandler: function(target) { return root.requestAuditionTarget(target) }; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
             }
         }
 
