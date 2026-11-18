@@ -646,6 +646,20 @@ void AuditionRegionViewModelTest::referenceLoopIsolationFromSourceAndClear()
     QCOMPARE(reference.region(),std::optional{range(200,300)});
     QCOMPARE(source.region(),std::optional{range(50,150)});
     QVERIFY(!source.loop_enabled());
+    // Unlike the legacy unguarded SOURCE fixture, an independent
+    // REFERENCE QObject must reject an off-thread region/loop edit even
+    // when no Product M18 mutation admission has been installed.
+    bool offThreadDenied=false;
+    std::thread nonOwner([&] {
+        const auto denied=reference.set_region(range(210,280));
+        offThreadDenied=!denied
+            &&denied.error()->code()==core::ErrorCode::InvalidState;
+        reference.requestLoopEnabled(false);
+    });
+    nonOwner.join();
+    QVERIFY(offThreadDenied);
+    QCOMPARE(reference.region(),std::optional{range(200,300)});
+    QVERIFY(reference.loop_enabled());
     const int installed=fake->setLoopCalls;
     // An inactive SOURCE loop must never overwrite active REFERENCE audio.
     QVERIFY(transport.set_loop_source_range(range(50,150)));
