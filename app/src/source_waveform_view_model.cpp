@@ -89,6 +89,23 @@ void SourceWaveformViewModel::source_committed(
     enqueue(source);
 }
 
+void SourceWaveformViewModel::clear()
+{
+    // Clearing REFERENCE is independent of the SOURCE waveform and its
+    // current viewport. A cancelled worker must not republish an old WAV.
+    currentReference_.reset();
+    currentSummary_.reset();
+    if(generation_ != (std::numeric_limits<std::uint64_t>::max)())
+        ++generation_;
+    {
+        const std::scoped_lock lock{mutex_};
+        if(workerActive_ ||pending_)++sourceReplacementCancellations_;
+        activeStop_.request_stop();
+        pending_.reset();
+    }
+    if(presentation_)presentation_->publish_empty();
+}
+
 void SourceWaveformViewModel::retry()
 {
     if (currentReference_) {
