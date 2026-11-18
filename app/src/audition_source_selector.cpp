@@ -350,6 +350,11 @@ void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provide
     sourceLoopProvider_ = std::move(provider);
 }
 
+void AuditionSourceSelector::set_reference_loop_provider(SourceLoopProvider provider)
+{
+    referenceLoopProvider_ = std::move(provider);
+}
+
 core::Status AuditionSourceSelector::source_committed(
     const core::ResourceReference& source)
 {
@@ -565,7 +570,11 @@ core::Status AuditionSourceSelector::set_gold(
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
     offlineProcessedAuthority_.reset();
-    if (activeTarget_ == AuditionTarget::GOLD) {
+    const bool wasGold=activeTarget_==AuditionTarget::GOLD;
+    bool wasPlaying=false;
+    if(wasGold) {
+        const auto old=playback_->playback_snapshot();
+        wasPlaying=old &&old.value()->state==core::PlaybackState::PLAYING;
         auto cleared = playback_->stop_and_clear();
         if (!cleared) {
             return cleared;
@@ -576,6 +585,19 @@ core::Status AuditionSourceSelector::set_gold(
     goldRate_ = sampleRate;
     goldFrames_ = frameCount;
     goldCue_ = core::FrameIndex{0};
+    // Replacing an actively auditioned REFERENCE must retain the selected
+    // target. Install the NEW file at cue zero, never the previous loop
+    // (its separate region is reset when the new selection is published).
+    if(wasGold) {
+        playback_->set_source_derived_active(false);
+        const auto prepared=playback_->prepare_file(*gold_,goldRate_->value());
+        if(!prepared) {
+            publish_error(QString::fromStdString(prepared.error()->message()));
+            return prepared;
+        }
+        if(wasPlaying)playback_->playOrResume();
+        activeTarget_=AuditionTarget::GOLD;
+    }
     statusText_.clear();
     emit changed();
     return core::Status::success();
@@ -737,6 +759,17 @@ core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(
     if (target == AuditionTarget::GOLD) {
         playback_->set_source_derived_active(false);
         preparedStatus = playback_->prepare_file(*gold_, goldRate_->value());
+        if (preparedStatus) {
+            const auto loop=referenceLoopProvider_?referenceLoopProvider_():std::nullopt;
+            if(loop) {
+                preparedStatus=playback_->set_loop_reference_range(loop);
+                // A previous cue may fall outside an armed REFERENCE region.
+                // Reposition only this independent timeline before playback.
+                if(preparedStatus && (goldCue_<loop->begin()
+                    ||goldCue_>=loop->end()))
+                    goldCue_=loop->begin();
+            }
+        }
         if (preparedStatus && goldCue_.value() > 0) {
             preparedStatus = playback_->seek_target_frame(goldCue_);
         }
