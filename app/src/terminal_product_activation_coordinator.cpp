@@ -39,6 +39,8 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::preview_nonconforming_requested);
     connect(selector_,&AuditionSourceSelector::changed,
             this,&TerminalProductActivationCoordinator::external_context_changed);
+    connect(transport_,&PlaybackTransportViewModel::playbackChanged,
+            this,&TerminalProductActivationCoordinator::maybe_rearm_parked_master);
     // Render latency is observational. This timer never asserts that M17
     // owns the sink or shortens any protected FP/verification deadline.
     measuredProgressTimer_.setInterval(300);
@@ -851,6 +853,44 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
     emit directReturnChanged();
 }
 
+core::Status TerminalProductActivationCoordinator::before_independent_audition(
+    AuditionTarget target)
+{
+    if(QThread::currentThread()!=thread()||target==AuditionTarget::PROCESSED)
+        return core::Status::success();
+    if(session_->monitoring_transaction_active())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REFERENCE_SWITCH_REQUIRES_EXPLICIT_MASTER_RETURN"});
+    if(transitioning_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REFERENCE_SWITCH_TRANSITION_IN_PROGRESS"});
+    if(!intent_)return core::Status::success();
+    // An active M17 full-resource computation cannot be silently
+    // discarded simply because the listener clicks on REFERENCE.
+    const auto status=session_->status();
+    if(status!=QStringLiteral("READY_TO_INSTALL")
+       &&status!=QStringLiteral("PRIVATE_INSTALLED")
+       &&status!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       &&status!=QStringLiteral("NONCONFORMING_INSTALLED"))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_RENDER_IN_PROGRESS_FINISH_OR_CANCEL_BEFORE_AUDITION_SWITCH"});
+    const auto exactManual=intent_->manualOwner;
+    const auto exactId=intent_->manualId;
+    deactivate(true);
+    if(state_->bypassed()||intent_||!session_->comparison_cached()
+       ||!session_->comparison_pcm_still_valid()
+       ||selector_->processed_realization_snapshot()!=exactManual
+       ||selector_->processed_realization_id()!=std::optional{exactId})
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REFERENCE_SWITCH_COULD_NOT_PARK_VERIFIED_MASTER"});
+    view_->setAudioStatus(QStringLiteral("MASTER RETAINED · SELECT PROCESSED"));
+    return core::Status::success();
+}
+
 bool TerminalProductActivationCoordinator::direct_return_available() const noexcept
 {
     if(transitioning_||!deviceActive_||!intent_||state_->bypassed()
@@ -1297,21 +1337,55 @@ void TerminalProductActivationCoordinator::source_committed_successfully()
     view_->setAudioStatus(QStringLiteral("BYPASS · NEW SOURCE"));
 }
 
+void TerminalProductActivationCoordinator::maybe_rearm_parked_master()
+{
+    if(transitioning_||intent_||state_->bypassed()
+       ||session_->monitoring_transaction_active()
+       ||!session_->comparison_cached())
+        return;
+    if(!session_->comparison_pcm_still_valid()) {
+        static_cast<void>(session_->cancel());
+        view_->clearVerificationTrim();
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+        return;
+    }
+    if(selector_->active_target()!=AuditionTarget::PROCESSED) {
+        view_->setAudioStatus(QStringLiteral("MASTER RETAINED · SELECT PROCESSED"));
+        return;
+    }
+    // A cross-target A/B switch can resume PLAYING. Never steal that
+    // transport from its user; wait for STOPPED to capture exact source
+    // cue and RealizationId. A second M17 Render is NOT requested.
+    const auto captured=selector_->capture_terminal_activation_intent();
+    if(!captured) {
+        view_->setAudioStatus(QStringLiteral(
+            "MASTER RETAINED · STOP TO PREVIEW"));
+        return;
+    }
+    if(!session_->comparison_owners_current())return;
+    transitioning_=true;
+    intent_=*captured.value();
+    const auto resumed=session_->resume_comparison();
+    transitioning_=false;
+    if(!resumed) {
+        intent_.reset();
+        view_->reportAudioError(QString::fromStdString(
+            resumed.error()->message()));
+        return;
+    }
+    private_session_changed(); // status READY, no new PCM or DSP work
+    emit directReturnChanged();
+}
+
 void TerminalProductActivationCoordinator::external_context_changed()
 {
     if(measuredPreparing_
        &&session_->capture_measured_master_for_device_conversion()
             !=pendingMeasured_)
         cancel_measured_crossrate_audition();
-    // Selector signals during MANUAL restoration cannot re-enter bypass.
-    if(session_->monitoring_transaction_active())return;
-    if(transitioning_)return;
+    if(session_->monitoring_transaction_active()||transitioning_)return;
     if(!intent_) {
-        if(session_->comparison_cached()
-           &&!session_->comparison_owners_current()) {
-            static_cast<void>(session_->cancel());
-            view_->clearVerificationTrim();
-        }
+        maybe_rearm_parked_master();
         return;
     }
     // A new manual owner or selected target invalidates any terminal
