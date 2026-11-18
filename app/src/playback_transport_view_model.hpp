@@ -91,6 +91,10 @@ public:
     [[nodiscard]] core::Status seek_source_frame(core::FrameIndex position);
     [[nodiscard]] core::Status set_loop_source_range(
         std::optional<core::FrameRange> loop);
+    // REFERENCE loop belongs to the current GOLD device file only; it
+    // never changes Source Region, M16 measurements or M18 identity.
+    [[nodiscard]] core::Status set_loop_reference_range(
+        std::optional<core::FrameRange> loop);
     [[nodiscard]] core::Result<core::PlaybackSnapshot> playback_snapshot() const;
 
     Q_INVOKABLE void playOrResume();
