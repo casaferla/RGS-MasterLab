@@ -2437,6 +2437,21 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         });
     const auto savedMaster=candidates.staged();
     const auto savedRenderCount=renderer.render_invocation_count();
+    const auto selectedReference=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/physical-po-reference.wav",
+        true,false,"physical-po-reference.wav");
+    QVERIFY(selectedReference);
+    QVERIFY(selector.set_gold(
+        *selectedReference.value(),*sourceRate.value(),*frames.value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(selector.gold_active());
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QVERIFY(product.comparison_pcm_still_valid());
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(candidates.staged(),savedMaster);
+    QCOMPARE(renderer.render_invocation_count(),savedRenderCount);
+    // User's exact sequence: completed M17 -> REFERENCE -> PREPARED.
+    // Neither switch must destroy verified MASTER PCM or invoke M17.
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QVERIFY(product.comparison_pcm_still_valid());
