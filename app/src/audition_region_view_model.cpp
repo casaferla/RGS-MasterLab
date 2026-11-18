@@ -161,9 +161,11 @@ private:
 
 AuditionRegionViewModel::AuditionRegionViewModel(
     PlaybackTransportViewModel* playback,
-    QObject* parent)
+    QObject* parent,
+    bool referenceMode)
     : QObject(parent)
     , playback_(playback)
+    , referenceMode_(referenceMode)
 {
     if (playback_) {
         connect(
@@ -321,7 +323,8 @@ core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
             publish_error(*beforeLoopUpdate.error());
             return core::Status::failure(*beforeLoopUpdate.error());
         }
-        const auto loopResult = playback_->set_loop_source_range(candidate);
+        const auto loopResult = (referenceMode_ ? playback_->set_loop_reference_range(candidate)
+            : playback_->set_loop_source_range(candidate));
         synchronize_playback();
         if (!loopResult) {
             publish_error(*loopResult.error());
@@ -386,7 +389,8 @@ core::Status AuditionRegionViewModel::clear_region()
         if (!playback_) {
             return invalid_region("Playback transport is unavailable.");
         }
-        const auto disabled = playback_->set_loop_source_range(std::nullopt);
+        const auto disabled = (referenceMode_ ? playback_->set_loop_reference_range(std::nullopt)
+            : playback_->set_loop_source_range(std::nullopt));
         if (!disabled) {
             publish_error(*disabled.error());
             return disabled;
@@ -436,8 +440,9 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
         }
         positionBeforeLoopUpdate = snapshot.value()->position;
     }
-    const auto result = playback_->set_loop_source_range(
-        enabled ? region_ : std::nullopt);
+    const auto result = referenceMode_
+        ? playback_->set_loop_reference_range(enabled ? region_ : std::nullopt)
+        : playback_->set_loop_source_range(enabled ? region_ : std::nullopt);
     if (!result) {
         publish_error(*result.error());
         return result;
@@ -464,7 +469,8 @@ core::Status AuditionRegionViewModel::seek(core::FrameIndex position)
             core::ErrorCode::InvalidState,
             "Playback transport is unavailable."});
     }
-    const auto result = playback_->seek_source_frame(position);
+    const auto result = (referenceMode_ ? playback_->seek_target_frame(position)
+        : playback_->seek_source_frame(position));
     if (!result) {
         publish_error(*result.error());
     } else if (!errorMessage_.isEmpty()) {
@@ -529,7 +535,8 @@ core::Status AuditionRegionViewModel::reposition_if_outside(
         emit changed();
         return core::Status::success();
     }
-    const auto seekResult = playback_->seek_source_frame(activeLoop.begin());
+    const auto seekResult = (referenceMode_ ? playback_->seek_target_frame(activeLoop.begin())
+        : playback_->seek_source_frame(activeLoop.begin()));
     if (!seekResult) {
         publish_error(*seekResult.error(), true);
         return seekResult;
