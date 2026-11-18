@@ -196,6 +196,7 @@ private slots:
     void m18InvalidProcessedCueDoesNotConsumeEpoch();
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
+    void failedActiveGoldReplacementRollsBackFileIdentity();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
     void playIntentIsRestoredAcrossTargetSwitches();
     void researchP2LivePreparedProcessedSwitchDoesNotStopPlayback();
@@ -878,6 +879,35 @@ void AuditionSourceSelectorTest::failedGoldSelectionPreservesPriorGoldAndSourceR
     QCOMPARE(gold.display_name(), QStringLiteral("gold.wav"));
     QVERIFY(!gold.error_message().isEmpty());
     QVERIFY(selector.prepared_available());
+}
+
+void AuditionSourceSelectorTest::failedActiveGoldReplacementRollsBackFileIdentity()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* device=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    app::AuditionSourceSelector selector{&transport};
+    const auto rate=*core::SampleRate::create(48000).value();
+    const auto frames=*core::FrameCount::create(100).value();
+    const auto original=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/first.wav",true,false,"first.wav");
+    const auto replacement=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/second.wav",true,false,"second.wav");
+    QVERIFY(original &&replacement);
+    QVERIFY(selector.set_gold(*original.value(),rate,frames));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(selector.gold_active());
+    device->failPrepare=true;
+    QVERIFY(!selector.set_gold(*replacement.value(),rate,frames));
+    // A failed second device install must not publish the new REFERENCE
+    // identity as though GoldSelection had committed it.
+    QVERIFY(selector.gold_available());
+    QVERIFY(!selector.gold_active()); // old device was retired fail-closed
+    device->failPrepare=false;
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::GOLD});
+    QVERIFY(selector.clear_gold());
 }
 
 void AuditionSourceSelectorTest::loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm()
