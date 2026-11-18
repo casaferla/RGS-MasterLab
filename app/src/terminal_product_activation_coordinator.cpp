@@ -922,6 +922,12 @@ bool TerminalProductActivationCoordinator::resumeParkedPreview()
            ||stopped.value()->audibleRealization.realizationId
                 !=selector_->processed_realization_id())
             return false;
+        // Stop may reset a Windows stream to frame zero. Restore the
+        // independently remembered MANUAL cue before the M17 epoch capture.
+        // SEEK is navigation-only; a failure cannot borrow another owner.
+        if(stopped.value()->position!=before.value()->position
+           &&!transport_->seek_source_frame(before.value()->position))
+            return false;
     }
     maybe_rearm_parked_master();
     if(!intent_ ||!readyToPreview_
