@@ -1378,7 +1378,7 @@ Rectangle {
                         Text {
                             objectName: "m18WavInlineResult"
                             Layout.fillWidth: true
-                            elide: Text.ElideRight
+                            elide: Text.ElideNone
                             color: root.m18ExportFailed ? "#F0A5A5"
                                 : !root.m18ExportActive && !root.m18ReceiptReady
                                   && (!root.canExportVerifiedWav || !root.masterExportHandler)
@@ -1405,11 +1405,20 @@ Rectangle {
                                     && root.masterExportHandler)
                                     return "RETURN + EXPORT"
                                 if (!root.canExportVerifiedWav || !root.masterExportHandler) {
-                                    const reason = m.exportReadinessReason
-                                    return "BLOCKED · " + (!root.masterExportHandler
-                                        ? "EXPORT HANDLER UNAVAILABLE"
-                                        : reason && reason.length > 0
-                                          ? reason : "NO VERIFIED EXPORT AUTHORITY")
+                                    // A fixed 120px receipt cannot contain diagnostic
+                                    // identifiers. Show a COMPLETE short human label;
+                                    // the full native reason remains in the tooltip.
+                                    const reason = String(m.exportReadinessReason || "")
+                                    if (!root.masterExportHandler) return "EXPORT UNAVAILABLE"
+                                    if (reason.indexOf("M17 VERIFIED EPOCH") !== -1)
+                                        return "M17 NOT CURRENT"
+                                    if (reason.indexOf("STAGE MISSING") !== -1)
+                                        return "RENDER REQUIRED"
+                                    if (reason.indexOf("BYPASS") !== -1)
+                                        return "M17 BYPASSED"
+                                    if (reason.indexOf("STALE") !== -1)
+                                        return "MASTER STALE"
+                                    return "EXPORT BLOCKED"
                                 }
                                 return "WAV OUTPUT"
                             }
