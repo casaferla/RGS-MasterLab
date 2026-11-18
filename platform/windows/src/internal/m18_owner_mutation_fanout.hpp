@@ -316,10 +316,13 @@ public:
                 ~Unwind(){*inProgress=false;}
             } unwind{&state->admitting};
             auto nextIdentity=state->identity;
-            // Conservative invalidation: every authorized Product write
-            // retires its prior verified-M17 export generation. The real
-            // source/project/chain identity MUST be reconciled by Product
-            // before it is ever permitted to mint a NEW worker ticket.
+            // Every authorized Product write advances the operation epoch.
+            // Source, chain, rate, terminal edits withdraw M17 verification.
+            // Transport-target and independent Reference selections do NOT
+            // change the authenticated SOURCE/PREPARED/MANUAL/MASTER PCM:
+            // they may carry a PREVIOUSLY verified identity, never create
+            // one. The full Product binder still checks all owners before
+            // any Export permission or Master playback installation.
             if(changesSource)++nextIdentity.source_generation;
             if(changesProject)++nextIdentity.project_generation;
             ++nextIdentity.master_generation;
@@ -336,7 +339,9 @@ public:
             // comparison_resume AFTER comparison_suspend + restore_manual.
             // No transport-only step may mint a missing verification.
             const bool preserveVerifiedTransport =
-                (op=="restore_manual" || op=="comparison_resume")
+                (op=="restore_manual" || op=="comparison_resume"
+                 ||op=="switch_target" ||op=="set_gold"
+                 ||op=="clear_gold")
                 &&state->verifiedM17Epoch==state->epoch;
             state->identity=nextIdentity;
             state->epoch=nextEpoch;
