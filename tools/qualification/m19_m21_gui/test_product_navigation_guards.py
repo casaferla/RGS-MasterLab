@@ -728,6 +728,9 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'referenceLoopIsolationFromSourceAndClear' in read(
         "tests/integration/app/test_audition_region_view_model.cpp")
     assert 'root.restorePreviewAfterComparison=true' in qml
+    assert 'root.restorePreviewAfterComparison=false' in qml
+    assert 'if (root.monitorExclusive) {' in qml
+    assert 'auditionSelector.activeTarget!==target' in qml
     assert 'root.appTerminalProductActivation.resumeParkedPreview()' in qml
     assert 'resumeParkedPreview()' in read(
         "app/src/terminal_product_activation_coordinator.cpp")
