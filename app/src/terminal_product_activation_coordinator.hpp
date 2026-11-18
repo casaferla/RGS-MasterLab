@@ -34,6 +34,11 @@ public:
     ~TerminalProductActivationCoordinator() override;
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
     [[nodiscard]] bool direct_return_available() const noexcept;
+    // Park a previously rendered exact M17 candidate before switching
+    // the DEVICE from PROCESSED to PREPARED or REFERENCE. A pending M17
+    // render is deliberately NOT sacrificed to a normal audition click.
+    [[nodiscard]] core::Status before_independent_audition(
+        AuditionTarget target);
     // Explicit UI Return from current exact M17 direct OUTPUT_RATE owner.
     // Never route to anonymous MASTER->DEVICE monitor or issue new Prepare.
     Q_INVOKABLE bool returnToSource();
