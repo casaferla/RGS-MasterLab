@@ -92,7 +92,7 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AnalysisApprovedContent.qml": "dd8b970a12b13434decd33c6273d44770376afe6",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
-    "ui/qml/Main.qml": "4a40b5751faac0bb4078d5929abbef55c33f3c18",
+    "ui/qml/Main.qml": "d9177b9828434518307cdfa280963f87f0d42be1",
     "ui/qml/DspEditorHost.qml": "330e3cc5c012a7248aa12b0734b9c362db880736",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
     "ui/qml/StudioIcon.qml": "6fdb001df1c1296852ccc21c15b0dc62c1ebbb52",
