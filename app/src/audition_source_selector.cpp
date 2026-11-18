@@ -570,6 +570,14 @@ core::Status AuditionSourceSelector::set_gold(
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
     offlineProcessedAuthority_.reset();
+    // The file picker may already have probed a valid WAV while the
+    // Windows playback endpoint refuses to install it. On that failure,
+    // retain the previous REFERENCE identity, matching GoldSelection's
+    // uncommitted UI state. Never publish mixed old/new GOLD owners.
+    const auto previousGold=gold_;
+    const auto previousRate=goldRate_;
+    const auto previousFrames=goldFrames_;
+    const auto previousCue=goldCue_;
     const bool wasGold=activeTarget_==AuditionTarget::GOLD;
     bool wasPlaying=false;
     if(wasGold) {
@@ -592,6 +600,13 @@ core::Status AuditionSourceSelector::set_gold(
         playback_->set_source_derived_active(false);
         const auto prepared=playback_->prepare_file(*gold_,goldRate_->value());
         if(!prepared) {
+            gold_=previousGold;
+            goldRate_=previousRate;
+            goldFrames_=previousFrames;
+            goldCue_=previousCue;
+            // The earlier device has already been retired, so there is
+            // intentionally no selected/audible target until explicit
+            // recovery. Retaining an old selector target would be a lie.
             publish_error(QString::fromStdString(prepared.error()->message()));
             return prepared;
         }
