@@ -1006,12 +1006,27 @@ m18VerifiedEpochSurvivesOnlyAlreadyVerifiedManualReturn()
     QVERIFY(fanout.m17_verified_epoch_current());
     QVERIFY(admit("comparison_resume"));
     QVERIFY(fanout.m17_verified_epoch_current());
+    // A/B audition of immutable, independently selected REFERENCE does
+    // not change M17's previously verified source-bound PCM. NONE of
+    // these operations may mint an M17 verification from an absent one.
+    QVERIFY(admit("switch_target"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("set_gold"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("switch_target"));
+    QVERIFY(fanout.m17_verified_epoch_current());
+    QVERIFY(admit("clear_gold"));
+    QVERIFY(fanout.m17_verified_epoch_current());
     // Parameter-only DSP edits ALWAYS revoke, even after transport.
     QVERIFY(admit("gain_parameters"));
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(admit("restore_manual"));
     QVERIFY(!fanout.m17_verified_epoch_current());
     QVERIFY(admit("comparison_resume"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("switch_target"));
+    QVERIFY(!fanout.m17_verified_epoch_current());
+    QVERIFY(admit("set_gold"));
     QVERIFY(!fanout.m17_verified_epoch_current());
     // A retired source cannot be resurrected by the same transport call.
     QVERIFY(admit("renderer_changed"));
