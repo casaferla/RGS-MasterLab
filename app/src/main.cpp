@@ -186,6 +186,10 @@ int main(int argc, char* argv[])
     rgsml::ui::WaveformPresentation referenceWaveformPresentation;
     rgsml::app::SourceWaveformViewModel referenceWaveform{
         &referenceWaveformPresentation};
+    // Independent REFERENCE region: no M18 SOURCE/Product epoch admission,
+    // no DSP processing, no effect on the immutable full-file M16 analysis.
+    rgsml::app::AuditionRegionViewModel referenceRegion{
+        &playbackTransport,nullptr,true};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::MasterOutputRateState masterOutputRate;
     rgsml::app::PrepareMemoryAdviceViewModel prepareRateAdvisor{
@@ -239,6 +243,11 @@ int main(int argc, char* argv[])
     auditionSelector.set_source_loop_provider([&auditionRegion] {
         return auditionRegion.loop_enabled()
             ? auditionRegion.region()
+            : std::nullopt;
+    });
+    auditionSelector.set_reference_loop_provider([&referenceRegion] {
+        return referenceRegion.loop_enabled()
+            ? referenceRegion.region()
             : std::nullopt;
     });
     if (p2PreviewOptIn) {
@@ -986,14 +995,21 @@ int main(int argc, char* argv[])
     QObject::connect(&goldSelection,
         &rgsml::app::GoldSelectionViewModel::changed,
         &referenceWaveformPresentation,
-        [&goldSelection,&referenceWaveform,
+        [&goldSelection,&referenceWaveform,&referenceRegion,
          lastRevision=std::uint64_t{0}]() mutable {
             const auto selected=goldSelection.selection_revision();
             if(selected==lastRevision)return;
             lastRevision=selected;
             const auto* resource=goldSelection.gold_resource();
-            if(resource)referenceWaveform.source_committed(resource->reference());
-            else referenceWaveform.clear();
+            if(resource) {
+                const auto& info=resource->wav_info();
+                referenceRegion.source_committed(
+                    info.frame_count(),info.audio_format().sample_rate());
+                referenceWaveform.source_committed(resource->reference());
+            } else {
+                referenceRegion.clear_independent_reference();
+                referenceWaveform.clear();
+            }
         });
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
@@ -1312,6 +1328,24 @@ int main(int argc, char* argv[])
         [&auditionRegion](rgsml::core::FrameRange candidate) {
             return auditionRegion.set_region(candidate);
         });
+    referenceWaveformPresentation.set_region_commit_handler(
+        [&referenceRegion](rgsml::core::FrameRange candidate) {
+            return referenceRegion.set_region(candidate);
+        });
+    QObject::connect(&referenceRegion,
+        &rgsml::app::AuditionRegionViewModel::changed,
+        &referenceWaveformPresentation,
+        [&referenceRegion,&referenceWaveformPresentation] {
+            referenceWaveformPresentation.set_displayed_region(
+                referenceRegion.region());
+        });
+    QObject::connect(&referenceWaveformPresentation,
+        &rgsml::ui::WaveformPresentation::changed,
+        &referenceRegion,
+        [&referenceRegion,&referenceWaveformPresentation] {
+            referenceRegion.set_waveform_ready(
+                referenceWaveformPresentation.ready());
+        });
     QObject::connect(
         &auditionRegion,
         &rgsml::app::AuditionRegionViewModel::changed,
@@ -1357,6 +1391,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"),
         &auditionRegion);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceRegion"),
+        &referenceRegion);
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionSelector"),
         &auditionSelector);
