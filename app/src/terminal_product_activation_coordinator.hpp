@@ -87,6 +87,7 @@ private:
     void master_rate_changed();
     void private_session_changed();
     void external_context_changed();
+    void maybe_rearm_parked_master();
     void begin_activation();
     void prepare_requested();
     void cancel_requested();
