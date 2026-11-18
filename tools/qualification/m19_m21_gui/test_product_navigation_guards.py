@@ -694,9 +694,24 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QVERIFY(!limiter.value()->bypassed());' in physical
     assert 'QVERIFY(!product.comparison_owners_current());' in physical
     assert 'QTRY_COMPARE_WITH_TIMEOUT(product.status(),' in physical
-    assert '&& auditionRegion.controlsEnabled && auditionRegion.hasRegion' in qml
-    assert 'enabled: !root.monitorExclusive && !root.referenceWaveformActive' in qml
-    assert 'checked: !root.monitorExclusive && !root.referenceWaveformActive' in qml
+    # PO accepted the independent REFERENCE loop. The old prohibition
+    # was a temporary safety guard, not a frozen UX requirement. Require
+    # both separate source/Gold region stores and exact owner-gated audio.
+    assert 'root.referenceWaveformActive ? referenceRegion : auditionRegion' in qml
+    assert 'root.activeAuditionRegion.controlsEnabled' in qml
+    assert 'root.activeAuditionRegion.loopEnabled' in qml
+    assert 'root.activeAuditionRegion.requestLoopEnabled(checked)' in qml
+    assert 'root.displayedWaveform.fitRegion()' in qml
+    assert 'referenceWaveformPresentation.set_region_commit_handler(' in main
+    assert 'referenceRegion.source_committed(' in main
+    assert 'referenceRegion.clear_independent_reference()' in main
+    assert 'auditionSelector.set_reference_loop_provider(' in main
+    transport=read("app/src/playback_transport_view_model.cpp")
+    region=read("app/src/audition_region_view_model.cpp")
+    assert 'REFERENCE_LOOP_REQUIRES_REFERENCE_DEVICE_OWNER' in transport
+    assert 'sourceDerivedActive_' in transport
+    assert 'set_loop_reference_range(' in transport
+    assert 'referenceMode_ ? playback_->set_loop_reference_range(' in region
     assert 'MASTER RETAINED · SELECT PROCESSED' in physical
 
 
