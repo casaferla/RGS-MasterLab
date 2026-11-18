@@ -688,6 +688,15 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'selector.set_before_independent_audition(' in physical
     assert 'product.comparison_pcm_still_valid()' in physical
     assert 'renderer.render_invocation_count(),savedRenderCount' in physical
+    assert 'QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));' in physical
+    assert 'QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));' in physical
+    assert 'QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));' in physical
+    assert 'QVERIFY(!limiter.value()->bypassed());' in physical
+    assert 'QVERIFY(!product.comparison_owners_current());' in physical
+    assert 'QTRY_COMPARE_WITH_TIMEOUT(product.status(),' in physical
+    assert '&& auditionRegion.controlsEnabled && auditionRegion.hasRegion' in qml
+    assert 'enabled: !root.monitorExclusive && !root.referenceWaveformActive' in qml
+    assert 'checked: !root.monitorExclusive && !root.referenceWaveformActive' in qml
     assert 'MASTER RETAINED · SELECT PROCESSED' in physical
 
 
