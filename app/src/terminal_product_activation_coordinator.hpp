@@ -42,6 +42,10 @@ public:
     // Explicit UI Return from current exact M17 direct OUTPUT_RATE owner.
     // Never route to anonymous MASTER->DEVICE monitor or issue new Prepare.
     Q_INVOKABLE bool returnToSource();
+    // Explicit A/B return only: reinstall the retained, verified Preview
+    // after a successful independent REFERENCE/PREPARED comparison.
+    // No Render Master, no foreign sink replacement, no M16 certificate.
+    Q_INVOKABLE bool resumeParkedPreview();
     // Explicit user handoff from an already installed M17 Preview Prepared
     // to Master Audition. Retires the exact M17 DEVICE owner, restores
     // MANUAL and keeps the SAME verified MASTER; never runs Prepare.
