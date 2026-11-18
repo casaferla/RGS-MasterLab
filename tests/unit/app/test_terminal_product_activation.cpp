@@ -2428,6 +2428,34 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.returnToSource()); // No direct lease left.
     QVERIFY(!limiter.value()->bypassed()); // Return is not a bypass flip.
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    // PO 2026-11-18: a successful expensive M17 Render Master must
+    // survive independent PREPARED audition (and, by the same selector
+    // contract, a REFERENCE WAV selection) without BYPASS or re-render.
+    selector.set_before_independent_audition(
+        [&coordinator](app::AuditionTarget target) {
+            return coordinator.before_independent_audition(target);
+        });
+    const auto savedMaster=candidates.staged();
+    const auto savedRenderCount=renderer.render_invocation_count();
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QVERIFY(product.comparison_pcm_still_valid());
+    QVERIFY(!product.comparison_owners_current()); // no audition permit
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(candidates.staged(),savedMaster);
+    QCOMPARE(renderer.render_invocation_count(),savedRenderCount);
+    QCOMPARE(vm.audio_status(),
+             QStringLiteral("MASTER RETAINED · SELECT PROCESSED"));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    // The real physical device may still be PLAYING after the A/B
+    // switch. Exact M17 rearm waits for STOP rather than steal playback.
+    transport.stop();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+                              QStringLiteral("READY_TO_INSTALL"),2000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(candidates.staged(),savedMaster);
+    QCOMPARE(renderer.render_invocation_count(),savedRenderCount);
+    QVERIFY(!limiter.value()->bypassed());
     vm.previewPrepared();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
