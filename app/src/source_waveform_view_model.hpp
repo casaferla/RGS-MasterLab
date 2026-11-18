@@ -40,6 +40,9 @@ public:
     SourceWaveformViewModel& operator=(const SourceWaveformViewModel&) = delete;
 
     void source_committed(const core::ResourceReference& source);
+    // Retire a selected REFERENCE waveform without altering SOURCE,
+    // including any unfinished background worker publication.
+    void clear();
     Q_INVOKABLE void retry();
 
     [[nodiscard]] std::uint64_t generation() const noexcept;
