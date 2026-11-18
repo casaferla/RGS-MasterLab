@@ -95,6 +95,10 @@ public:
     // never changes Source Region, M16 measurements or M18 identity.
     [[nodiscard]] core::Status set_loop_reference_range(
         std::optional<core::FrameRange> loop);
+    // An anonymous M17 monitor is not a REFERENCE owner even when the
+    // generic SOURCE/DEVICE Boolean happens to be false.
+    void set_reference_audition_checker(std::function<bool()> checker)
+    {referenceAuditionChecker_=std::move(checker);}
     [[nodiscard]] core::Result<core::PlaybackSnapshot> playback_snapshot() const;
 
     Q_INVOKABLE void playOrResume();
@@ -112,6 +116,7 @@ private:
     std::unique_ptr<core::IAudioPlaybackService> service_;
     PcmPrepareHandler pcmPrepareHandler_;
     PcmHandoffHandler pcmHandoffHandler_;
+    std::function<bool()> referenceAuditionChecker_;
     bool sourceDerivedActive_{true};
     TerminalSourceTransportPort* terminalGate_{nullptr};
     std::weak_ptr<const void> terminalLease_;
