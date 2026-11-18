@@ -117,6 +117,8 @@ public:
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
     {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
+    // Own REFERENCE loop provider: independent of the SOURCE/M18 loop epoch.
+    void set_reference_loop_provider(SourceLoopProvider provider);
     void set_before_independent_audition(BeforeIndependentAudition callback)
     { beforeIndependentAudition_=std::move(callback); }
     // Experimental P2-only SOURCE/SOURCE A-B handoff. Disabled by default,
@@ -179,6 +181,7 @@ private:
     mutable bool m18SourceAdmissionActive_{false};
     bool m18SourcePublicationActive_{false};
     SourceLoopProvider sourceLoopProvider_;
+    SourceLoopProvider referenceLoopProvider_;
     BeforeIndependentAudition beforeIndependentAudition_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
