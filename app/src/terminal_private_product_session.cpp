@@ -2393,9 +2393,9 @@ TerminalPrivateProductSession::private_installed_output_identity() const
         std::move(candidate),*privateId_,*audible.value(),*source.value()});
 }
 
-bool TerminalPrivateProductSession::comparison_owners_current() const
+bool TerminalPrivateProductSession::comparison_pcm_still_valid() const
 {
-    if(!comparison_cached()||!pending_||!selected_||!selected_()
+    if(!comparison_cached()||!pending_
        ||!prepared_||!manual_||!manualId_||!sourceLoop_
        ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
        ||manualId_()!=std::optional{pending_->manualId}
@@ -2417,6 +2417,13 @@ bool TerminalPrivateProductSession::comparison_owners_current() const
         && stage->original_manual_realization_id==pending_->manualId
         && stage->rendered.output_rate==pending_->outputRate
         && renderer_->status()==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
+}
+
+bool TerminalPrivateProductSession::comparison_owners_current() const
+{
+    // A cached PCM is NOT permission to install or export a Master.
+    // Require a newly selected, exact PROCESSED manual owner separately.
+    return selected_ && selected_() && comparison_pcm_still_valid();
 }
 
 std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
