@@ -112,6 +112,7 @@ private slots:
     void m18RegionAndLoopBusyForeignThreadAndReentrantCannotMutate();
     void m18InvalidOrUnchangedRegionNeverConsumesProductEpoch();
     void m18NestedRegionMutationDuringChangedSignalIsRejected();
+    void referenceLoopIsolationFromSourceAndClear();
 };
 
 void AuditionRegionViewModelTest::
@@ -621,6 +622,45 @@ void AuditionRegionViewModelTest::failureAndSourceReplacementRemainTruthful()
     QVERIFY(!model.has_region());
     QVERIFY(!model.loop_enabled());
     QVERIFY(!model.controls_enabled());
+}
+
+void AuditionRegionViewModelTest::referenceLoopIsolationFromSourceAndClear()
+{
+    auto service=std::make_unique<RegionPlaybackFake>();
+    auto* fake=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    app::AuditionRegionViewModel source{&transport};
+    app::AuditionRegionViewModel reference{&transport,nullptr,true};
+    source.source_committed(*core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(48000).value());
+    reference.source_committed(*core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(44100).value());
+    source.set_waveform_ready(true);
+    reference.set_waveform_ready(true);
+    QVERIFY(source.set_region(range(50,150)));
+    QVERIFY(reference.set_region(range(200,300)));
+    transport.set_source_derived_active(false); // actual GOLD owner
+    fake->position=core::FrameIndex{230};
+    QVERIFY(reference.set_loop_enabled(true));
+    QCOMPARE(fake->loop,std::optional{range(200,300)});
+    QCOMPARE(reference.region(),std::optional{range(200,300)});
+    QCOMPARE(source.region(),std::optional{range(50,150)});
+    QVERIFY(!source.loop_enabled());
+    const int installed=fake->setLoopCalls;
+    // An inactive SOURCE loop must never overwrite active REFERENCE audio.
+    QVERIFY(transport.set_loop_source_range(range(50,150)));
+    QCOMPARE(fake->setLoopCalls,installed);
+    QCOMPARE(fake->loop,std::optional{range(200,300)});
+    QVERIFY(reference.seek(core::FrameIndex{240}));
+    QCOMPARE(fake->position.value(),std::int64_t{240});
+    transport.set_source_derived_active(true); // actual selector will clear sink
+    QVERIFY(!transport.set_loop_reference_range(range(210,280)));
+    QCOMPARE(fake->loop,std::optional{range(200,300)});
+    reference.clear_independent_reference();
+    QVERIFY(!reference.has_region());
+    QVERIFY(!reference.loop_enabled());
+    QCOMPARE(source.region(),std::optional{range(50,150)});
+    QVERIFY(!reference.controls_enabled());
 }
 
 }  // namespace rgsml::tests
