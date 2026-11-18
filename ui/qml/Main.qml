@@ -150,6 +150,9 @@ ApplicationWindow {
     property bool restorePreviewAfterComparison: false
     function requestAuditionTarget(target) {
         if (root.monitorExclusive) {
+            // An anonymous Master monitor is a DIFFERENT device owner;
+            // never carry a pending direct-Preview A/B restore across it.
+            root.restorePreviewAfterComparison=false
             if (!root.returnFromM17Audition() || root.monitorExclusive)
                 return false
         }
@@ -164,7 +167,12 @@ ApplicationWindow {
         else if(target==="PROCESSED") auditionSelector.selectProcessed()
         else if(target==="GOLD") auditionSelector.selectGold()
         else return false
-        if(auditionSelector.activeTarget!==target)return false
+        if(auditionSelector.activeTarget!==target) {
+            // A refused target switch must never arm a later unrelated
+            // auto-install, even if the original Preview PCM still exists.
+            root.restorePreviewAfterComparison=false
+            return false
+        }
         if(target==="PROCESSED" &&root.restorePreviewAfterComparison) {
             root.restorePreviewAfterComparison=false
             // Reinstall only an exact already-cached, verified M17 Master.
