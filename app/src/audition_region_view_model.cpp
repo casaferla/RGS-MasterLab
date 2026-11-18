@@ -258,7 +258,9 @@ core::Status AuditionRegionViewModel::validate(core::FrameRange candidate) const
 
 bool AuditionRegionViewModel::m18_foreign_owner_thread() const noexcept
 {
-    return m18RegionMutationAdmission_
+    // REFERENCE has no M18 callback but owns Qt signals and DEVICE loop.
+    // Its native mutations must remain confined to the Qt owner thread.
+    return (referenceMode_ ||static_cast<bool>(m18RegionMutationAdmission_))
         &&QThread::currentThread()!=thread();
 }
 
@@ -499,7 +501,7 @@ void AuditionRegionViewModel::source_committed(
 
 void AuditionRegionViewModel::clear_independent_reference()
 {
-    if(!referenceMode_)return;
+    if(!referenceMode_ ||m18_foreign_owner_thread())return;
     sourceFrames_=0;
     sampleRate_=0;
     waveformReady_=false;
