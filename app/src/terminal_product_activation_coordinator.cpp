@@ -898,13 +898,19 @@ core::Status TerminalProductActivationCoordinator::before_independent_audition(
 
 bool TerminalProductActivationCoordinator::resumeParkedPreview()
 {
-    if(QThread::currentThread()!=thread() ||transitioning_ ||intent_
+    if(QThread::currentThread()!=thread() ||transitioning_
        ||state_->bypassed() ||session_->monitoring_transaction_active()
-       ||selector_->active_target()!=AuditionTarget::PROCESSED
-       ||!session_->comparison_cached()
-       ||!session_->comparison_pcm_still_valid()
-       ||!session_->comparison_owners_current())
+       ||selector_->active_target()!=AuditionTarget::PROCESSED)
         return false;
+    // selector.changed() may already have executed maybe_rearm_parked_master
+    // synchronously. In that case comparison_cached() is correctly FALSE:
+    // the verified cache has become an exact READY_TO_INSTALL ticket.
+    const bool alreadyRearmed=intent_ &&readyToPreview_
+        &&session_->status()==QStringLiteral("READY_TO_INSTALL");
+    const bool stillParked=!intent_ &&session_->comparison_cached()
+        &&session_->comparison_pcm_still_valid()
+        &&session_->comparison_owners_current();
+    if(!alreadyRearmed &&!stillParked)return false;
     // The current sink must still be the accepted MANUAL realization.
     // STOPPED is required by the native immutable M17 re-arm contract;
     // stop only that exact source before restoring the cached Preview.
@@ -929,7 +935,7 @@ bool TerminalProductActivationCoordinator::resumeParkedPreview()
            &&!transport_->seek_source_frame(before.value()->position))
             return false;
     }
-    maybe_rearm_parked_master();
+    if(stillParked)maybe_rearm_parked_master();
     if(!intent_ ||!readyToPreview_
        ||session_->status()!=QStringLiteral("READY_TO_INSTALL"))
         return false;
