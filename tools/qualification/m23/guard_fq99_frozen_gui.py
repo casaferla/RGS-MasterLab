@@ -89,13 +89,19 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # logarithmically aligned M20 frequency tick positions. These two
 # pre-existing additive analysis files are exact-pinned, NOT released
 # or declared FQ99-identical. M16 Gate G remains separate.
+# PO accepted 2026-11-18 Reference region/A-B, protected M17 restore,
+# WAV receipt wording and family-vector controls. The six changed GUI blobs
+# below are exact-pinned; FQ99/P2 reference baselines remain untouched.
 M18_WAV_OUTPUT_UI_BLOBS = {
+    "ui/qml/AuditionSourceSelector.qml": "1225337c5ca5f652cb01a022e3475be5afa1aa74",
+    "ui/qml/StudioButton.qml": "04abee78e09e9d6e9cc8f53b7957eca3691fc7a8",
+    "ui/qml/DspChainSelector.qml": "accaeba5700ec6bb11bddcaccb06bce35d36f81a",
     "ui/qml/AnalysisApprovedContent.qml": "dd8b970a12b13434decd33c6273d44770376afe6",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
-    "ui/qml/Main.qml": "82b760dcf44159d21bbc8c2a46837f12fe0facde",
-    "ui/qml/DspEditorHost.qml": "330e3cc5c012a7248aa12b0734b9c362db880736",
+    "ui/qml/Main.qml": "0d61c3672a3fffee22ac1e917185210b29c2058c",
+    "ui/qml/DspEditorHost.qml": "29df2795c114c1238d04b7c6b860b4accf2ac69b",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
-    "ui/qml/StudioIcon.qml": "6fdb001df1c1296852ccc21c15b0dc62c1ebbb52",
+    "ui/qml/StudioIcon.qml": "4dd165406dd1130dce6434bcb248df3211a11477",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "b354658f9164258b41c9cac3a6cfd2d42e421802",
     "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
