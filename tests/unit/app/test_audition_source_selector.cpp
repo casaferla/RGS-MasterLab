@@ -941,6 +941,8 @@ void AuditionSourceSelectorTest::failedActiveGoldReplacementRollsBackFileIdentit
     QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
     QCOMPARE(selector.active_target(),
         std::optional{app::AuditionTarget::GOLD});
+    QCOMPARE(device->lastPreparedLocator,
+        std::string(original.value()->locator()));
     QVERIFY(selector.clear_gold());
 }
 
