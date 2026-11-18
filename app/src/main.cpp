@@ -753,6 +753,14 @@ int main(int argc, char* argv[])
         [&terminalProductActivation](rgsml::app::AuditionTarget target) {
             return terminalProductActivation.before_independent_audition(target);
         });
+    // Separate from sourceDerivedActive_: the M17 monitor can own an
+    // anonymous DEVICE while SOURCE routing is suspended. REFERENCE
+    // Region must never send set_loop to that foreign audio owner.
+    playbackTransport.set_reference_audition_checker(
+        [&auditionSelector,&terminalMonitorViewModel] {
+            return auditionSelector.gold_active()
+                &&!terminalMonitorViewModel.monitor_exclusive();
+        });
     // Cross-rate measured NON-CONFORMING preview uses the same Windows
     // endpoint/RAM evidence as verified Master Audition, but NOT its
     // verified master transport ticket. Caution is denied unless a separate
