@@ -963,7 +963,7 @@ ApplicationWindow {
                     Label { text: "START"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     SegmentedTimeEditor {
                         id: auditionStartEditor; objectName: "auditionRegionStartEditor"; objectPrefix: "auditionRegionStart"; endpointName: root.monitorExclusive ? "Master Region start" : "Audition Region start"
-                        enabled: !root.monitorExclusive
+                        enabled: !root.monitorExclusive && !root.referenceWaveformActive
                             && auditionRegion.controlsEnabled && auditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionStartFrames : 0)
                         hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.startHours
@@ -986,7 +986,7 @@ ApplicationWindow {
                     Label { text: "END"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     SegmentedTimeEditor {
                         id: auditionEndEditor; objectName: "auditionRegionEndEditor"; objectPrefix: "auditionRegionEnd"; endpointName: root.monitorExclusive ? "Master Region end exclusive" : "Audition Region end exclusive"
-                        enabled: !root.monitorExclusive
+                        enabled: !root.monitorExclusive && !root.referenceWaveformActive
                             && auditionRegion.controlsEnabled && auditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionEndFrames : 0)
                         hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.endHours
@@ -1009,8 +1009,9 @@ ApplicationWindow {
                 StudioToggle {
                     id: loopRegionCheckBox; objectName: "auditionRegionLoopCheckBox"
                     text: "Loop Region"
-                    checked: !root.monitorExclusive && auditionRegion.loopEnabled
-                    enabled: !root.monitorExclusive
+                    checked: !root.monitorExclusive && !root.referenceWaveformActive
+                        && auditionRegion.loopEnabled
+                    enabled: !root.monitorExclusive && !root.referenceWaveformActive
                         && (auditionRegion.canLoop || auditionRegion.loopEnabled)
                     KeyNavigation.backtab: fitRegionButton
                     KeyNavigation.tab: clearRegionButton
@@ -1024,7 +1025,7 @@ ApplicationWindow {
                 StudioButton {
                     id: clearRegionButton; objectName: "auditionRegionClearButton"
                     text: "Clear Region"; iconKind: "clear-region"; minimumControlWidth: 80
-                    enabled: !root.monitorExclusive
+                    enabled: !root.monitorExclusive && !root.referenceWaveformActive
                         && auditionRegion.controlsEnabled && auditionRegion.hasRegion
                     KeyNavigation.backtab: loopRegionCheckBox
                     KeyNavigation.tab: sourceOpenButton
