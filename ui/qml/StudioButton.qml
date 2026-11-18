@@ -13,6 +13,8 @@ Button {
     // while truly disabled; unrelated StudioButtons keep historical styling.
     property bool showDisabledAccent: false
     property string iconKind: ""
+    // Optional semantic icon hue (e.g. amber Reference) without changing label text.
+    property color iconStrokeColor: label.color
     property color accentColor: tone === "gold" ? "#F2B632" : "#00C8FF"
     property int minimumControlWidth: 80
     property int contentPadding: 16
@@ -39,8 +41,8 @@ Button {
                 height: 16
                 anchors.verticalCenter: parent.verticalCenter
                 kind: control.iconKind
-                strokeColor: label.color
-                fillColor: label.color
+                strokeColor: control.iconStrokeColor
+                fillColor: control.iconStrokeColor
             }
             Text {
                 id: label
