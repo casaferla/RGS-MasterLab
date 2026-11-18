@@ -914,6 +914,7 @@ bool TerminalProductActivationCoordinator::resumeParkedPreview()
        ||before.value()->audibleRealization.phase
             !=core::AudibleHandoffPhase::NEW)
         return false;
+    const bool wasPlaying=before.value()->state==core::PlaybackState::PLAYING;
     if(before.value()->state!=core::PlaybackState::STOPPED) {
         transport_->stop();
         const auto stopped=transport_->playback_snapshot();
@@ -927,7 +928,25 @@ bool TerminalProductActivationCoordinator::resumeParkedPreview()
        ||session_->status()!=QStringLiteral("READY_TO_INSTALL"))
         return false;
     preview_requested();
-    return deviceActive_ &&session_->status()==QStringLiteral("PRIVATE_INSTALLED");
+    if(!deviceActive_ ||session_->status()!=QStringLiteral("PRIVATE_INSTALLED"))
+        return false;
+    // Preserve an in-progress A/B audition only after the exact M17
+    // DEVICE owner is installed. This is playback, never a new render.
+    if(wasPlaying) {
+        const auto exact=session_->private_installed_output_identity();
+        const auto installed=transport_->playback_snapshot();
+        if(!exact ||!installed
+           ||installed.value()->audibleRealization.realizationId
+                !=std::optional{exact.value()->realizationId})
+            return false;
+        transport_->playOrResume();
+        const auto playing=transport_->playback_snapshot();
+        if(!playing ||playing.value()->state!=core::PlaybackState::PLAYING
+           ||playing.value()->audibleRealization.realizationId
+                !=std::optional{exact.value()->realizationId})
+            return false;
+    }
+    return true;
 }
 
 bool TerminalProductActivationCoordinator::direct_return_available() const noexcept
