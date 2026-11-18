@@ -896,6 +896,40 @@ core::Status TerminalProductActivationCoordinator::before_independent_audition(
     return core::Status::success();
 }
 
+bool TerminalProductActivationCoordinator::resumeParkedPreview()
+{
+    if(QThread::currentThread()!=thread() ||transitioning_ ||intent_
+       ||state_->bypassed() ||session_->monitoring_transaction_active()
+       ||selector_->active_target()!=AuditionTarget::PROCESSED
+       ||!session_->comparison_cached()
+       ||!session_->comparison_pcm_still_valid()
+       ||!session_->comparison_owners_current())
+        return false;
+    // The current sink must still be the accepted MANUAL realization.
+    // STOPPED is required by the native immutable M17 re-arm contract;
+    // stop only that exact source before restoring the cached Preview.
+    const auto before=transport_->playback_snapshot();
+    if(!before ||before.value()->audibleRealization.realizationId
+            !=selector_->processed_realization_id()
+       ||before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW)
+        return false;
+    if(before.value()->state!=core::PlaybackState::STOPPED) {
+        transport_->stop();
+        const auto stopped=transport_->playback_snapshot();
+        if(!stopped ||stopped.value()->state!=core::PlaybackState::STOPPED
+           ||stopped.value()->audibleRealization.realizationId
+                !=selector_->processed_realization_id())
+            return false;
+    }
+    maybe_rearm_parked_master();
+    if(!intent_ ||!readyToPreview_
+       ||session_->status()!=QStringLiteral("READY_TO_INSTALL"))
+        return false;
+    preview_requested();
+    return deviceActive_ &&session_->status()==QStringLiteral("PRIVATE_INSTALLED");
+}
+
 bool TerminalProductActivationCoordinator::direct_return_available() const noexcept
 {
     if(transitioning_||!deviceActive_||!intent_||state_->bypassed()
