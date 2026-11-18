@@ -709,9 +709,23 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     transport=read("app/src/playback_transport_view_model.cpp")
     region=read("app/src/audition_region_view_model.cpp")
     assert 'REFERENCE_LOOP_REQUIRES_REFERENCE_DEVICE_OWNER' in transport
+    assert 'REFERENCE_LOOP_REQUIRES_READY_FILE_AND_VALID_TIMEBASE' in transport
+    assert 'referenceAuditionChecker_' in transport
+    assert 'set_reference_audition_checker(' in main
     assert 'sourceDerivedActive_' in transport
     assert 'set_loop_reference_range(' in transport
     assert 'referenceMode_ ? playback_->set_loop_reference_range(' in region
+    assert 'referenceMode_ ||static_cast<bool>(m18RegionMutationAdmission_)' in region
+    assert 'const auto previousGold=gold_' in selector
+    assert 'gold_=previousGold;' in selector
+    assert 'referenceLoopReinstalledAfterIndependentTargetSwitch' in read(
+        "tests/unit/app/test_audition_source_selector.cpp")
+    assert 'referenceLoopIsolationFromSourceAndClear' in read(
+        "tests/integration/app/test_audition_region_view_model.cpp")
+    assert 'root.restorePreviewAfterComparison=true' in qml
+    assert 'root.appTerminalProductActivation.resumeParkedPreview()' in qml
+    assert 'resumeParkedPreview()' in read(
+        "app/src/terminal_product_activation_coordinator.cpp")
     assert 'MASTER RETAINED · SELECT PROCESSED' in physical
 
 
