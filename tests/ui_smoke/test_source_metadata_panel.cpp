@@ -4002,7 +4002,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     app::SourceSelectionViewModel model;
     model.set_playback_transport(&playbackTransport);
     ui::WaveformPresentation waveformPresentation;
+    ui::WaveformPresentation referenceWaveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
+    app::AuditionRegionViewModel referenceRegion{&playbackTransport,nullptr,true};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
 
     auto moduleRegistry = dsp::ModuleRegistry::create_dsp_package_v1();
@@ -4143,7 +4145,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceWaveform"), &waveformPresentation);
     engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceWaveform"), &referenceWaveformPresentation);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"), &auditionRegion);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceRegion"), &referenceRegion);
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionSelector"), &auditionSelector);
     engine.rootContext()->setContextProperty(
