@@ -203,10 +203,11 @@ void TerminalProductActivationCoordinator::begin_activation()
     }
     readyToPreview_=false;
     view_->clearVerificationTrim();
-    // M17 belongs to PROCESSED. A normal PREPARED audition is a UI
-    // selection, not a DSP failure: select current accepted PROCESSED
-    // before capturing the exact MANUAL owner. Do not fabricate it.
-    if(selector_->active_target()==AuditionTarget::PREPARED) {
+    // PREPARED and REFERENCE are comparison targets, not M17 failures.
+    // Render Master requests an exact PROCESSED owner first. The existing
+    // sink and M18 admission guards remain authoritative.
+    if(selector_->active_target()==AuditionTarget::PREPARED
+       ||selector_->active_target()==AuditionTarget::GOLD) {
         if(!selector_->processed_available()) {
             view_->clearAudioError();
             view_->setAudioStatus(QStringLiteral(
