@@ -180,6 +180,12 @@ int main(int argc, char* argv[])
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     rgsml::app::SourceWaveformViewModel sourceWaveform{
         &waveformPresentation};
+    // Independent visual evidence: REFERENCE is not the SOURCE waveform.
+    // A separate cancellable worker and viewport keep both WAVs cached
+    // through A/B switches; this never touches M19–M21 or the audio DSP.
+    rgsml::ui::WaveformPresentation referenceWaveformPresentation;
+    rgsml::app::SourceWaveformViewModel referenceWaveform{
+        &referenceWaveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::MasterOutputRateState masterOutputRate;
     rgsml::app::PrepareMemoryAdviceViewModel prepareRateAdvisor{
@@ -967,6 +973,21 @@ int main(int argc, char* argv[])
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
+    // The Gold picker is the ONLY owner of the REFERENCE resource and
+    // selection revision. Redundant Qt changed signals must never cause
+    // the 3-minute REFERENCE waveform to be rebuilt or re-read.
+    QObject::connect(&goldSelection,
+        &rgsml::app::GoldSelectionViewModel::changed,
+        &referenceWaveformPresentation,
+        [&goldSelection,&referenceWaveform,
+         lastRevision=std::uint64_t{0}]() mutable {
+            const auto selected=goldSelection.selection_revision();
+            if(selected==lastRevision)return;
+            lastRevision=selected;
+            const auto* resource=goldSelection.gold_resource();
+            if(resource)referenceWaveform.source_committed(resource->reference());
+            else referenceWaveform.clear();
+        });
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
@@ -1270,6 +1291,16 @@ int main(int argc, char* argv[])
         [&auditionRegion](rgsml::core::FrameIndex position) {
             return auditionRegion.seek(position);
         });
+    referenceWaveformPresentation.set_seek_handler(
+        [&auditionSelector,&playbackTransport](rgsml::core::FrameIndex position) {
+            if(!auditionSelector.gold_active())
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "REFERENCE_WAVEFORM_SEEK_REQUIRES_ACTIVE_REFERENCE"});
+            // seek_target_frame() addresses the actual REFERENCE file's
+            // sample-rate/timebase, NOT the SOURCE region or source cue.
+            return playbackTransport.seek_target_frame(position);
+        });
     waveformPresentation.set_region_commit_handler(
         [&auditionRegion](rgsml::core::FrameRange candidate) {
             return auditionRegion.set_region(candidate);
@@ -1313,6 +1344,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceWaveform"),
         &waveformPresentation);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceWaveform"),
+        &referenceWaveformPresentation);
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"),
         &auditionRegion);
