@@ -30,6 +30,8 @@ ApplicationWindow {
         !root.monitorExclusive && auditionSelector.goldActive
     readonly property var displayedWaveform:
         root.referenceWaveformActive ? referenceWaveform : sourceWaveform
+    readonly property var activeAuditionRegion:
+        root.referenceWaveformActive ? referenceRegion : auditionRegion
     readonly property color error: "#F27683"
     // Explicitly confirmed in-RAM MASTER loss alone permits exiting a
     // recovery state without reinstalling the original Windows DEVICE.
@@ -491,7 +493,8 @@ ApplicationWindow {
         if (goldSelection.errorMessage.length > 0) return goldSelection.errorMessage
         if (auditionSelector.statusText.length > 0) return auditionSelector.statusText
         if (playbackTransport.errorMessage.length > 0) return playbackTransport.errorMessage
-        if (auditionRegion.errorMessage.length > 0) return auditionRegion.errorMessage
+        if (root.activeAuditionRegion.errorMessage.length > 0)
+            return root.activeAuditionRegion.errorMessage
         return ""
     }
     readonly property string statusSeverity: {
@@ -966,21 +969,22 @@ ApplicationWindow {
                     Label { text: "START"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     SegmentedTimeEditor {
                         id: auditionStartEditor; objectName: "auditionRegionStartEditor"; objectPrefix: "auditionRegionStart"; endpointName: root.monitorExclusive ? "Master Region start" : "Audition Region start"
-                        enabled: !root.monitorExclusive && !root.referenceWaveformActive
-                            && auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                        enabled: !root.monitorExclusive
+                            && root.activeAuditionRegion.controlsEnabled
+                            && root.activeAuditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionStartFrames : 0)
-                        hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.startHours
-                        minutesText: root.monitorExclusive ? masterParts[1] : auditionRegion.startMinutes
-                        secondsText: root.monitorExclusive ? masterParts[2] : auditionRegion.startSeconds
-                        fractionText: root.monitorExclusive ? masterParts[3] : auditionRegion.startFraction
+                        hoursText: root.monitorExclusive ? masterParts[0] : root.activeAuditionRegion.startHours
+                        minutesText: root.monitorExclusive ? masterParts[1] : root.activeAuditionRegion.startMinutes
+                        secondsText: root.monitorExclusive ? masterParts[2] : root.activeAuditionRegion.startSeconds
+                        fractionText: root.monitorExclusive ? masterParts[3] : root.activeAuditionRegion.startFraction
                         previousTabItem: playPauseButton; nextTabItem: auditionEndEditor.firstField
                         onCommitRequested: function(hours, minutes, seconds, fraction) {
                             if(root.monitorExclusive)root.updateSharedMasterRegion("start",hours,minutes,seconds,fraction)
-                            else auditionRegion.commitStartSegments(hours,minutes,seconds,fraction)
+                            else root.activeAuditionRegion.commitStartSegments(hours,minutes,seconds,fraction)
                         }
-                        onEscapeRequested: if(!root.monitorExclusive)auditionRegion.clearError()
-                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",-1); else auditionRegion.nudgeStartBackward()
-                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",1); else auditionRegion.nudgeStartForward()
+                        onEscapeRequested: if(!root.monitorExclusive)root.activeAuditionRegion.clearError()
+                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",-1); else root.activeAuditionRegion.nudgeStartBackward()
+                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",1); else root.activeAuditionRegion.nudgeStartForward()
                     }
                 }
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 28; color: root.border }
@@ -989,38 +993,39 @@ ApplicationWindow {
                     Label { text: "END"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
                     SegmentedTimeEditor {
                         id: auditionEndEditor; objectName: "auditionRegionEndEditor"; objectPrefix: "auditionRegionEnd"; endpointName: root.monitorExclusive ? "Master Region end exclusive" : "Audition Region end exclusive"
-                        enabled: !root.monitorExclusive && !root.referenceWaveformActive
-                            && auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                        enabled: !root.monitorExclusive
+                            && root.activeAuditionRegion.controlsEnabled
+                            && root.activeAuditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionEndFrames : 0)
-                        hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.endHours
-                        minutesText: root.monitorExclusive ? masterParts[1] : auditionRegion.endMinutes
-                        secondsText: root.monitorExclusive ? masterParts[2] : auditionRegion.endSeconds
-                        fractionText: root.monitorExclusive ? masterParts[3] : auditionRegion.endFraction
+                        hoursText: root.monitorExclusive ? masterParts[0] : root.activeAuditionRegion.endHours
+                        minutesText: root.monitorExclusive ? masterParts[1] : root.activeAuditionRegion.endMinutes
+                        secondsText: root.monitorExclusive ? masterParts[2] : root.activeAuditionRegion.endSeconds
+                        fractionText: root.monitorExclusive ? masterParts[3] : root.activeAuditionRegion.endFraction
                         previousTabItem: auditionStartEditor.lastField; nextTabItem: fitRegionButton
                         onCommitRequested: function(hours, minutes, seconds, fraction) {
                             if(root.monitorExclusive)root.updateSharedMasterRegion("end",hours,minutes,seconds,fraction)
-                            else auditionRegion.commitEndSegments(hours,minutes,seconds,fraction)
+                            else root.activeAuditionRegion.commitEndSegments(hours,minutes,seconds,fraction)
                         }
-                        onEscapeRequested: if(!root.monitorExclusive)auditionRegion.clearError()
-                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",-1); else auditionRegion.nudgeEndBackward()
-                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",1); else auditionRegion.nudgeEndForward()
+                        onEscapeRequested: if(!root.monitorExclusive)root.activeAuditionRegion.clearError()
+                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",-1); else root.activeAuditionRegion.nudgeEndBackward()
+                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",1); else root.activeAuditionRegion.nudgeEndForward()
                     }
                 }
                 Item { Layout.fillWidth: true }
-                StudioButton { id: fitRegionButton; objectName: "waveformFitRegionButton"; text: "Fit Region"; iconKind: "fit-region"; minimumControlWidth: 80; enabled: !root.monitorExclusive && !root.referenceWaveformActive && auditionRegion.controlsEnabled && auditionRegion.hasRegion; KeyNavigation.backtab: auditionEndEditor.lastField; KeyNavigation.tab: loopRegionCheckBox; onClicked: sourceWaveform.fitRegion(); Accessible.name: "Fit Audition Region in waveform" }
+                StudioButton { id: fitRegionButton; objectName: "waveformFitRegionButton"; text: "Fit Region"; iconKind: "fit-region"; minimumControlWidth: 80; enabled: !root.monitorExclusive && root.activeAuditionRegion.controlsEnabled && root.activeAuditionRegion.hasRegion; KeyNavigation.backtab: auditionEndEditor.lastField; KeyNavigation.tab: loopRegionCheckBox; onClicked: root.displayedWaveform.fitRegion(); Accessible.name: "Fit Audition Region in waveform" }
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: root.border }
                 StudioToggle {
                     id: loopRegionCheckBox; objectName: "auditionRegionLoopCheckBox"
                     text: "Loop Region"
-                    checked: !root.monitorExclusive && !root.referenceWaveformActive
-                        && auditionRegion.loopEnabled
-                    enabled: !root.monitorExclusive && !root.referenceWaveformActive
-                        && (auditionRegion.canLoop || auditionRegion.loopEnabled)
+                    checked: !root.monitorExclusive
+                        && root.activeAuditionRegion.loopEnabled
+                    enabled: !root.monitorExclusive
+                        && (root.activeAuditionRegion.canLoop || root.activeAuditionRegion.loopEnabled)
                     KeyNavigation.backtab: fitRegionButton
                     KeyNavigation.tab: clearRegionButton
                     onClicked: {
                         if (!root.monitorExclusive)
-                            auditionRegion.requestLoopEnabled(checked)
+                            root.activeAuditionRegion.requestLoopEnabled(checked)
                     }
                     Accessible.name: root.monitorExclusive ? "Loop Master Region" : "Loop Audition Region"
                 }
@@ -1028,12 +1033,13 @@ ApplicationWindow {
                 StudioButton {
                     id: clearRegionButton; objectName: "auditionRegionClearButton"
                     text: "Clear Region"; iconKind: "clear-region"; minimumControlWidth: 80
-                    enabled: !root.monitorExclusive && !root.referenceWaveformActive
-                        && auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                    enabled: !root.monitorExclusive
+                        && root.activeAuditionRegion.controlsEnabled
+                        && root.activeAuditionRegion.hasRegion
                     KeyNavigation.backtab: loopRegionCheckBox
                     KeyNavigation.tab: sourceOpenButton
                     onClicked: {
-                        if(!root.monitorExclusive)auditionRegion.requestClearRegion()
+                        if(!root.monitorExclusive)root.activeAuditionRegion.requestClearRegion()
                     }
                     Accessible.name: root.monitorExclusive ? "Clear Master Region" : "Clear Audition Region"
                 }
@@ -1308,7 +1314,7 @@ ApplicationWindow {
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: root.displayedWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
-                        StudioMenuItem { text: "Fit Region"; enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion; onTriggered: sourceWaveform.fitRegion() }
+                        StudioMenuItem { text: "Fit Region"; enabled: !root.monitorExclusive && root.activeAuditionRegion.controlsEnabled && root.activeAuditionRegion.hasRegion; onTriggered: root.displayedWaveform.fitRegion() }
                     }
                     Menu {
                         title: "&Transport"
@@ -1330,13 +1336,13 @@ ApplicationWindow {
                             onTriggered: root.returnFromM17Audition() }
                         MenuSeparator { }
                         StudioMenuItem {
-                            text: !root.monitorExclusive && auditionRegion.loopEnabled
+                            text: !root.monitorExclusive && root.activeAuditionRegion.loopEnabled
                                 ? "Disable Loop Region" : "Enable Loop Region"
                             enabled: !root.monitorExclusive
-                                && (auditionRegion.canLoop || auditionRegion.loopEnabled)
+                                && (root.activeAuditionRegion.canLoop || root.activeAuditionRegion.loopEnabled)
                             onTriggered: {
                                 if (!root.monitorExclusive)
-                                    auditionRegion.requestLoopEnabled(!auditionRegion.loopEnabled)
+                                    root.activeAuditionRegion.requestLoopEnabled(!root.activeAuditionRegion.loopEnabled)
                             }
                         }
                     }
