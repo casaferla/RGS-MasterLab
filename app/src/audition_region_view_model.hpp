@@ -37,7 +37,8 @@ class AuditionRegionViewModel final : public QObject {
 public:
     explicit AuditionRegionViewModel(
         PlaybackTransportViewModel* playback,
-        QObject* parent = nullptr);
+        QObject* parent = nullptr,
+        bool referenceMode = false);
 
     [[nodiscard]] bool has_region() const noexcept;
     [[nodiscard]] std::optional<core::FrameRange> region() const noexcept;
@@ -132,6 +133,8 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_{nullptr};
+    // Separate non-DSP timeline. Never registers the SOURCE/M18 region admission.
+    bool referenceMode_{false};
     M18RegionMutationAdmission m18RegionMutationAdmission_;
     mutable bool m18RegionAdmitting_{false};
     // Scoped across playback I/O and synchronous changed() notifications.
