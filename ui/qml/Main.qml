@@ -782,8 +782,11 @@ ApplicationWindow {
                     : root.displayedWaveform.sourceFrameCount
                 waveformColor: root.referenceWaveformActive ? root.warning : root.accent
                 zeroLineColor: "#29414F"
-                playheadColor: root.monitorExclusive || auditionSelector.sourcePlayheadVisible
-                    || root.referenceWaveformActive ? root.warning : "transparent"
+                // White cue over amber REFERENCE is discernible even in
+                // dense peaks; original SOURCE and MASTER keep amber cue.
+                playheadColor: root.referenceWaveformActive ? root.textPrimary
+                    : (root.monitorExclusive || auditionSelector.sourcePlayheadVisible
+                        ? root.warning : "transparent")
                 overrangeColor: root.error
                 regionColor: "#2A87A95C"
                 regionHandleColor: "#E6EEF0"
