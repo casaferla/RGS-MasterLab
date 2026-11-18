@@ -1,5 +1,7 @@
 #include "playback_transport_view_model.hpp"
 
+#include <QThread>
+
 #include <algorithm>
 #include <utility>
 
@@ -408,6 +410,12 @@ core::Status PlaybackTransportViewModel::set_loop_source_range(
 core::Status PlaybackTransportViewModel::set_loop_reference_range(
     std::optional<core::FrameRange> loop)
 {
+    // Owner predicates capture Qt source selector and monitor objects.
+    // Never read those from a worker or issue a foreign-thread loop write.
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "REFERENCE_LOOP_REQUIRES_QT_OWNER_THREAD"});
     // No SOURCE loop may be redirected to an independent REFERENCE file.
     // In particular, a terminal M17 OUTPUT_RATE owner must not be touched.
     if(!service_ ||terminalGate_ ||sourceDerivedActive_
