@@ -58,3 +58,9 @@ Real Windows PO validation still needed: load Source/Reference of different rate
 - No `main` merge, production claim or phase-6 numerical release has been authorized.
 
 **Verdict:** audit findings addressed in code; readiness **PENDING EXACT-SHA GREEN CI AND PHYSICAL REPLAY**, never blanket PASS.
+
+## Follow-on independent adversarial review (before next CI)
+- **A11 STALE QML INTENT**: `restorePreviewAfterComparison` could survive a refused switch or entry into anonymous Master Audition. Clearing it at both boundaries avoids unexpectedly reinstalling an earlier direct Master on an unrelated later PROCESSED selection; the owner gate still applies.
+- **A12 TRANSPORT THREAD**: the exact reference-owner checker captures Qt selector/monitor objects. The low-level `PlaybackTransportViewModel::set_loop_reference_range` must reject foreign threads before calling that checker, even if a caller bypasses the higher-level Region VM.
+- **A13 DEVICE FAILURE EVIDENCE**: the injected-WAV playback mock now records the exact file locator, so rollback tests prove the previous Gold resource is actually reinstalled, not merely that an arbitrary file can still play.
+- **A14 #67 M23 STATIC FINDING**: bounded Linux diagnostic shows all 11 M23 evidence selftests PASS. `test_export_permission_unchanged()` then rejects the old hard-coded `return "BLOCKED · "` display string in DspEditorHost. Updated only this obsolete UI expectation to assert full compact labels and retained native `exportReadinessReason` / `canExport` gating. No downgrade of the M18 permission gate. #67 was executed before this correction and cannot certify it.
