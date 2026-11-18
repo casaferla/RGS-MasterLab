@@ -82,6 +82,8 @@ public:
 
     void source_committed(core::FrameCount frameCount, core::SampleRate sampleRate);
     void set_waveform_ready(bool ready);
+    // Called only for the independent REFERENCE object upon Clear.
+    void clear_independent_reference();
     void synchronize_playback();
 
     Q_INVOKABLE void commitStartSegments(
