@@ -382,43 +382,49 @@ Rectangle {
                             }
                         }
 
-                        ColumnLayout {
+                        // The shared 52 px chain row owns two independent text
+                        // tracks. Status may wrap to two lines without shifting
+                        // the module title: this rule applies to EVERY module.
+                        Item {
                             Layout.fillWidth: true
+                            Layout.fillHeight: true
                             Layout.minimumWidth: 0
-                            spacing: 2
 
                             Text {
                                 objectName: "dspChainModuleTitle_" + rowItem.modelIndex
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.alignment: Qt.AlignLeft
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                y: 12
+                                height: 16
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
                                 color: rowItem.isBypassed ? "#9FB1BF"
                                     : rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
-                                // The concise "Streaming TP Limiter" label stays
-                                // on one line at minimum window width.
                                 elide: Text.ElideRight
                                 wrapMode: Text.NoWrap
+                                verticalAlignment: Text.AlignVCenter
                             }
 
                             Text {
                                 objectName: "dspChainStateText_" + rowItem.modelIndex
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.alignment: Qt.AlignLeft
-                                // Never show an ellipsis in the chain state.
-                                // A concise human label fits the canonical
-                                // 164px column; diagnostics remain discoverable.
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                y: 29
+                                height: 21
+                                // A multiline status occupies only the LOWER
+                                // portion, never moving the title or icon.
                                 wrapMode: Text.WordWrap
                                 elide: Text.ElideNone
+                                maximumLineCount: 2
+                                clip: true
                                 text: root.readableState(rowItem.moduleAdapter)
                                 color: rowItem.isBypassed ? "#8196A8" : "#7A8E9E"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
-                                visible: true
+                                lineHeight: 1.0
+                                verticalAlignment: Text.AlignTop
                                 ToolTip.text: root.stateHint(rowItem.moduleAdapter)
                                 ToolTip.visible: chainStateTooltipDwell.ready
                                 ToolTip.delay: 0
@@ -431,7 +437,7 @@ Rectangle {
                             }
                         }
 
-                        // Error indicator reserves its slot even when hidden.
+                                                // Error indicator reserves its slot even when hidden.
                         // FIX-UI-003: state/badge changes cannot move the title.
                         Item {
                             Layout.minimumWidth: 8
