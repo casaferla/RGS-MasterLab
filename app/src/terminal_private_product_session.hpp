@@ -193,6 +193,11 @@ public:
             ||status_==QStringLiteral("COMPARISON_NONCONFORMING");
     }
     [[nodiscard]] bool comparison_owners_current() const;
+    // A/B audition parking: immutable verified M17 PCM remains owned by
+    // the ORIGINAL SOURCE/PREPARED/MANUAL chain even when audible target
+    // is REFERENCE or PREPARED. This is NOT export/play permission.
+    // Resume still requires exact currently selected PROCESSED device.
+    [[nodiscard]] bool comparison_pcm_still_valid() const;
     // FIRST P0 PRODUCT BRIDGE: read-only borrowing of the same verified
     // immutable M17 MASTER from a pending/retained A/B Prepare. No new M17
     // render, DEVICE SRC, WAV export or sink/RealizationId publication.
