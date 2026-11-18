@@ -536,7 +536,7 @@ ApplicationWindow {
     FileDialog {
         id: goldDialog
         objectName: "goldFileDialog"
-        title: "Open Reference WAV"
+        title: goldSelection.hasGold ? "Replace Reference WAV" : "Open Reference WAV"
         fileMode: FileDialog.OpenFile
         nameFilters: ["WAV audio (*.wav *.wave)"]
         onAccepted: {
@@ -1215,7 +1215,7 @@ ApplicationWindow {
                         StudioMenuItem { objectName: "menuOpenProject"; text: "Open Project…"; enabled: !root.monitorExclusive; onTriggered: projectOpenDialog.open() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuOpenSource"; text: "Open Source\tCtrl+O"; enabled: !root.monitorExclusive; onTriggered: sourceDialog.open() }
-                        StudioMenuItem { objectName: "menuOpenGold"; text: "Open Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
+                        StudioMenuItem { objectName: "menuOpenGold"; text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
                         StudioMenuItem { objectName: "menuClearGold"; text: "Clear Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuSaveProjectAs"; text: "Save Project As…"; enabled: projectSession.canSaveProject; onTriggered: projectSaveDialog.open() }
@@ -1397,8 +1397,23 @@ ApplicationWindow {
                         }
                     }
                     StudioButton {
-                        text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110
-                        onClicked: sourceDialog.open(); Accessible.name: text
+                        text: sourceSelection.hasSource ? "Replace Source" : "Open Source"
+                        iconKind: "source-import"; tone: "primary"
+                        Layout.preferredWidth: 110
+                        onClicked: sourceDialog.open()
+                        Accessible.name: text
+                    }
+                    StudioButton {
+                        objectName: "referenceOpenButtonStandard"
+                        enabled: !root.monitorExclusive
+                        text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"
+                        iconKind: "reference-import"
+                        iconStrokeColor: root.warning
+                        tone: "secondary"
+                        contentPadding: 8
+                        Layout.preferredWidth: 154
+                        onClicked: goldDialog.open()
+                        Accessible.name: text
                     }
                 }
             }
@@ -1554,9 +1569,29 @@ ApplicationWindow {
                             }
                         }
                         StudioButton {
-                            id: sourceOpenButton; objectName: "sourceOpenButton"; enabled: !root.monitorExclusive; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110; Layout.preferredHeight: 32
-                            KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
-                            onClicked: sourceDialog.open(); Accessible.name: text
+                            id: sourceOpenButton; objectName: "sourceOpenButton"
+                            enabled: !root.monitorExclusive
+                            text: sourceSelection.hasSource ? "Replace Source" : "Open Source"
+                            iconKind: "source-import"; tone: "primary"
+                            Layout.preferredWidth: 110; Layout.preferredHeight: 32
+                            KeyNavigation.backtab: clearRegionButton
+                            KeyNavigation.tab: referenceOpenButton
+                            onClicked: sourceDialog.open()
+                            Accessible.name: text
+                        }
+                        StudioButton {
+                            id: referenceOpenButton; objectName: "referenceOpenButton"
+                            enabled: !root.monitorExclusive
+                            text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"
+                            iconKind: "reference-import"
+                            iconStrokeColor: root.warning
+                            tone: "secondary"
+                            contentPadding: 8
+                            Layout.preferredWidth: 154; Layout.preferredHeight: 32
+                            KeyNavigation.backtab: sourceOpenButton
+                            KeyNavigation.tab: waveformOverview
+                            onClicked: goldDialog.open()
+                            Accessible.name: text
                         }
                     }
 
