@@ -4520,6 +4520,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(sourcePanel);
     QCOMPARE(sourceOpen->property("height").toInt(), 32);
     QCOMPARE(sourceOpen->property("width").toInt(), 110);
+    // Both independently selected WAVs have first-class adjacent load actions.
+    auto* referenceOpen = root->findChild<QObject*>(
+        QStringLiteral("referenceOpenButton"));
+    QVERIFY2(referenceOpen, "Compact layout must expose Open/Replace Reference next to Source");
+    QCOMPARE(referenceOpen->property("height").toInt(), 32);
+    QVERIFY(referenceOpen->property("width").toInt() >= 150);
+    QCOMPARE(referenceOpen->property("text").toString(),
+             QStringLiteral("Open Reference"));
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFileDialog")));
     QVERIFY2((window->flags() & Qt::FramelessWindowHint) == 0, "Main window must NOT be frameless (native windowing model)");
     const auto itemCenter = [](QObject* object) {
