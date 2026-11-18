@@ -38,6 +38,10 @@ class AuditionSourceSelector final : public QObject {
 
 public:
     using SourceLoopProvider = std::function<std::optional<core::FrameRange>()>;
+    // Product coordinator can park an already-verified M17 output BEFORE
+    // changing from PROCESSED to an independent PREPARED/REFERENCE target.
+    // No callback is installed in legacy/frozen selector tests.
+    using BeforeIndependentAudition=std::function<core::Status(AuditionTarget)>;
 
     explicit AuditionSourceSelector(
         PlaybackTransportViewModel* playback,
@@ -113,6 +117,8 @@ public:
     [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
     {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
+    void set_before_independent_audition(BeforeIndependentAudition callback)
+    { beforeIndependentAudition_=std::move(callback); }
     // Experimental P2-only SOURCE/SOURCE A-B handoff. Disabled by default,
     // never enabled by saved Product projects or M17 terminal sessions.
     void set_research_p2_seamless_target_switch(bool enabled) noexcept
@@ -173,6 +179,7 @@ private:
     mutable bool m18SourceAdmissionActive_{false};
     bool m18SourcePublicationActive_{false};
     SourceLoopProvider sourceLoopProvider_;
+    BeforeIndependentAudition beforeIndependentAudition_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
     std::shared_ptr<const render::RenderResult> processed_;
