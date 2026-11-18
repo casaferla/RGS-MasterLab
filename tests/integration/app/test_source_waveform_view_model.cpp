@@ -82,6 +82,7 @@ class SourceWaveformViewModelTest final : public QObject {
 private slots:
     void replacementCancelsAndStaleCannotPublish();
     void failureRetryAndPlaybackRemainIndependent();
+    void clearRetiresReferenceWorkerWithoutTouchingSource();
     void shutdownCancelsAndPublishesNoCallback();
 };
 
@@ -129,6 +130,34 @@ void SourceWaveformViewModelTest::replacementCancelsAndStaleCannotPublish()
     const auto peak = base.value()->peak(0U, core::FrameIndex{0});
     QVERIFY(peak);
     QCOMPARE(peak.value()->minimum, 0.5);
+}
+
+void SourceWaveformViewModelTest::clearRetiresReferenceWorkerWithoutTouchingSource()
+{
+    ui::WaveformPresentation sourcePresentation,referencePresentation;
+    std::binary_semaphore entered{0},release{0};
+    app::SourceWaveformViewModel source{
+        &sourcePresentation,[&](const core::ResourceReference&,std::stop_token) {
+            return summary(0.4);
+        }};
+    app::SourceWaveformViewModel referenceModel{
+        &referencePresentation,[&](const core::ResourceReference&,std::stop_token) {
+            entered.release();
+            release.acquire(); // ignore cancellation to check generation
+            return summary(0.7);
+        }};
+    source.source_committed(reference("SOURCE"));
+    QVERIFY(await_state(sourcePresentation,QStringLiteral("READY")));
+    referenceModel.source_committed(reference("REFERENCE"));
+    entered.acquire();
+    referenceModel.clear();
+    QCOMPARE(referencePresentation.state_token(),QStringLiteral("EMPTY"));
+    QCOMPARE(referencePresentation.summary(),nullptr);
+    QVERIFY(sourcePresentation.ready());
+    release.release();
+    QTRY_VERIFY_WITH_TIMEOUT(referenceModel.stale_results_discarded()>=1,5000);
+    QVERIFY(!referencePresentation.ready());
+    QVERIFY(sourcePresentation.ready());
 }
 
 void SourceWaveformViewModelTest::failureRetryAndPlaybackRemainIndependent()
