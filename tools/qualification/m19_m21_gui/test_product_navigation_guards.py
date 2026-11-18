@@ -421,7 +421,12 @@ def test_export_permission_unchanged() -> None:
     assert "verified==c.candidates.staged()" in binder
     assert "export_readiness_reason(" in binder
     host = read("ui/qml/DspEditorHost.qml")
-    assert 'return "BLOCKED · "' in host
+    # The fixed 120px M18 receipt now uses complete short labels instead
+    # of truncating a long BLOCKED diagnostic. The real export permission
+    # and native reason must remain unchanged and present in tooltip.
+    assert 'return "EXPORT BLOCKED"' in host
+    assert 'return "M17 NOT CURRENT"' in host
+    assert 'reason.indexOf("M17 VERIFIED EPOCH")' in host
     assert 'm.exportReadinessReason' in host
     assert 'root.masterExportModel.exportReadinessReason' in host
     assert 'enabled: root.canExportVerifiedWav' in host
