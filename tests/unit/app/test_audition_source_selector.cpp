@@ -197,6 +197,7 @@ private slots:
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void failedActiveGoldReplacementRollsBackFileIdentity();
+    void referenceLoopReinstalledAfterIndependentTargetSwitch();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
     void playIntentIsRestoredAcrossTargetSwitches();
     void researchP2LivePreparedProcessedSwitchDoesNotStopPlayback();
@@ -879,6 +880,39 @@ void AuditionSourceSelectorTest::failedGoldSelectionPreservesPriorGoldAndSourceR
     QCOMPARE(gold.display_name(), QStringLiteral("gold.wav"));
     QVERIFY(!gold.error_message().isEmpty());
     QVERIFY(selector.prepared_available());
+}
+
+void AuditionSourceSelectorTest::referenceLoopReinstalledAfterIndependentTargetSwitch()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* fake=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,fake);
+    app::AuditionSourceSelector selector{&transport};
+    const auto sourceLoop=*core::FrameRange::create(
+        core::FrameIndex{20},core::FrameIndex{40}).value();
+    const auto referenceLoop=*core::FrameRange::create(
+        core::FrameIndex{70},core::FrameIndex{90}).value();
+    selector.set_source_loop_provider([&]{return std::optional{sourceLoop};});
+    selector.set_reference_loop_provider([&]{return std::optional{referenceLoop};});
+    QVERIFY(selector.set_prepared_realization(realization(0,100)));
+    QVERIFY(selector.set_processed_realization(realization(0,100)));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(fake->loop,std::optional{sourceLoop});
+    const auto reference=core::ResourceReference::create(
+        "rgsml.windows.local-file","C:/Gold/ref-loop.wav",true,false);
+    QVERIFY(reference);
+    QVERIFY(selector.set_gold(*reference.value(),
+        *core::SampleRate::create(48000).value(),
+        *core::FrameCount::create(100).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(fake->loop,std::optional{referenceLoop});
+    QCOMPARE(fake->position.value(),referenceLoop.begin().value());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(fake->loop,std::optional{sourceLoop});
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(fake->loop,std::optional{referenceLoop});
+    QVERIFY(selector.gold_active());
 }
 
 void AuditionSourceSelectorTest::failedActiveGoldReplacementRollsBackFileIdentity()
