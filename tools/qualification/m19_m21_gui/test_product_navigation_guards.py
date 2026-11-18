@@ -639,6 +639,58 @@ def test_physical_po_m16_reference_cache_and_p2_numeric() -> None:
     assert 'line(2.4, 9.0, 15.6, 9.0)' in single
     assert 'ctx.shadowBlur = icon.glowBlur' in icon
 
+def test_reference_waveform_and_master_parking_physical_po() -> None:
+    # Separate waveforms follow the selected audible target. The SOURCE
+    # viewport remains independent, with NO REFERENCE click mutating its
+    # region or forcing any M19/M21 source reanalysis.
+    main=read("app/src/main.cpp")
+    qml=read("ui/qml/Main.qml")
+    wave=read("app/src/source_waveform_view_model.cpp")
+    native=read("tests/integration/app/test_source_waveform_view_model.cpp")
+    selector=read("app/src/audition_source_selector.cpp")
+    ui=read("app/src/terminal_product_activation_coordinator.cpp")
+    session=read("app/src/terminal_private_product_session.cpp")
+    fanout=read("platform/windows/src/internal/m18_owner_mutation_fanout.hpp")
+    assert 'referenceWaveformPresentation' in main
+    assert 'referenceWaveform.source_committed(resource->reference())' in main
+    assert 'lastRevision=std::uint64_t{0}' in main
+    assert 'referenceWaveform.clear()' in main
+    assert 'referenceWaveformPresentation.set_seek_handler(' in main
+    assert 'auditionSelector.gold_active()' in main
+    assert 'playbackTransport.seek_target_frame(position)' in main
+    assert 'QStringLiteral("referenceWaveform")' in main
+    assert 'root.referenceWaveformActive ? referenceWaveform : sourceWaveform' in qml
+    assert 'text: root.referenceWaveformActive ? "REFERENCE WAVEFORM"' in qml
+    assert 'waveformColor: root.referenceWaveformActive ? root.warning : root.accent' in qml
+    assert 'presentation: root.displayedWaveform' in qml
+    assert 'root.displayedWaveform.sourceFrameCount' in qml
+    assert 'onClicked: root.displayedWaveform.fitSource()' in qml
+    assert 'SourceWaveformViewModel::clear()' in wave
+    assert 'activeStop_.request_stop();' in wave
+    assert 'clearRetiresReferenceWorkerWithoutTouchingSource' in native
+    assert 'beforeIndependentAudition_(target)' in selector
+    assert 'before_independent_audition(' in ui
+    assert 'M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD' in ui
+    assert 'deactivate(true);' in ui
+    assert 'comparison_pcm_still_valid()' in ui
+    assert 'resume_comparison()' in ui
+    assert 'acceptedPreviewOwner_' not in ui  # independent MANUAL
+    assert 'comparison_pcm_still_valid() const' in session
+    assert 'op=="switch_target" ||op=="set_gold"' in fanout
+    assert 'state->verifiedM17Epoch==state->epoch' in fanout
+    product=read("tests/integration/app/test_project_session.cpp")
+    assert 'M17_VERIFIED' not in product[product.index(
+        'm18VerifiedEpochSurvivesOnlyAlreadyVerifiedManualReturn()'):
+        product.index('m18RealProductVerifiedMasterToPcm24AndFloat32WavAck()')]
+    assert 'QVERIFY(admit("switch_target"));' in product
+    assert 'QVERIFY(admit("set_gold"));' in product
+    physical=read("tests/unit/app/test_terminal_product_activation.cpp")
+    assert 'selector.set_before_independent_audition(' in physical
+    assert 'product.comparison_pcm_still_valid()' in physical
+    assert 'renderer.render_invocation_count(),savedRenderCount' in physical
+    assert 'MASTER RETAINED · SELECT PROCESSED' in physical
+
+
 if __name__ == "__main__":
     for test in (
         test_visual_order_and_no_chain_mutation,
@@ -647,6 +699,7 @@ if __name__ == "__main__":
         test_m17_export_ui_presentation_order,
         test_original_source_open_guard_preserved,
         test_physical_po_m16_reference_cache_and_p2_numeric,
+        test_reference_waveform_and_master_parking_physical_po,
     ):
         test()
     print("M19_M21_PRODUCT_NAVIGATION_SOURCE_GUARD_NONRELEASE_PASS")
