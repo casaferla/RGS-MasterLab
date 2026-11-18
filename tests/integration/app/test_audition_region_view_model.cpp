@@ -640,6 +640,8 @@ void AuditionRegionViewModelTest::referenceLoopIsolationFromSourceAndClear()
     QVERIFY(source.set_region(range(50,150)));
     QVERIFY(reference.set_region(range(200,300)));
     transport.set_source_derived_active(false); // actual GOLD owner
+    bool exactGoldOwner=true;
+    transport.set_reference_audition_checker([&]{return exactGoldOwner;});
     fake->position=core::FrameIndex{230};
     QVERIFY(reference.set_loop_enabled(true));
     QCOMPARE(fake->loop,std::optional{range(200,300)});
@@ -665,6 +667,12 @@ void AuditionRegionViewModelTest::referenceLoopIsolationFromSourceAndClear()
     QVERIFY(transport.set_loop_source_range(range(50,150)));
     QCOMPARE(fake->setLoopCalls,installed);
     QCOMPARE(fake->loop,std::optional{range(200,300)});
+    // A foreign anonymous M17 Master monitor must not be treated as
+    // REFERENCE merely because SOURCE-derived routing was disabled.
+    exactGoldOwner=false;
+    QVERIFY(!transport.set_loop_reference_range(range(210,280)));
+    QCOMPARE(fake->loop,std::optional{range(200,300)});
+    exactGoldOwner=true;
     QVERIFY(reference.seek(core::FrameIndex{240}));
     QCOMPARE(fake->position.value(),std::int64_t{240});
     transport.set_source_derived_active(true); // actual selector will clear sink
