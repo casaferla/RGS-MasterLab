@@ -152,7 +152,7 @@ void SourceWaveformViewModelTest::clearRetiresReferenceWorkerWithoutTouchingSour
     entered.acquire();
     referenceModel.clear();
     QCOMPARE(referencePresentation.state_token(),QStringLiteral("EMPTY"));
-    QCOMPARE(referencePresentation.summary(),nullptr);
+    QVERIFY(!referencePresentation.summary());
     QVERIFY(sourcePresentation.ready());
     release.release();
     QTRY_VERIFY_WITH_TIMEOUT(referenceModel.stale_results_discarded()>=1,5000);
