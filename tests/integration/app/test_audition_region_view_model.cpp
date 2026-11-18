@@ -662,6 +662,15 @@ void AuditionRegionViewModelTest::referenceLoopIsolationFromSourceAndClear()
     QVERIFY(offThreadDenied);
     QCOMPARE(reference.region(),std::optional{range(200,300)});
     QVERIFY(reference.loop_enabled());
+    bool transportWorkerDenied=false;
+    std::thread rogueTransport([&] {
+        const auto denied=transport.set_loop_reference_range(range(250,350));
+        transportWorkerDenied=!denied
+            &&denied.error()->code()==core::ErrorCode::InvalidState;
+    });
+    rogueTransport.join();
+    QVERIFY(transportWorkerDenied);
+    QCOMPARE(fake->loop,std::optional{range(200,300)});
     const int installed=fake->setLoopCalls;
     // An inactive SOURCE loop must never overwrite active REFERENCE audio.
     QVERIFY(transport.set_loop_source_range(range(50,150)));
