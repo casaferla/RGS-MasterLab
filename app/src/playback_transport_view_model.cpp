@@ -405,6 +405,22 @@ core::Status PlaybackTransportViewModel::set_loop_source_range(
     return core::Status::success();
 }
 
+core::Status PlaybackTransportViewModel::set_loop_reference_range(
+    std::optional<core::FrameRange> loop)
+{
+    // No SOURCE loop may be redirected to an independent REFERENCE file.
+    // In particular, a terminal M17 OUTPUT_RATE owner must not be touched.
+    if(!service_ ||terminalGate_ ||sourceDerivedActive_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "REFERENCE_LOOP_REQUIRES_REFERENCE_DEVICE_OWNER"});
+    const auto result=service_->set_loop(std::move(loop));
+    if(!result){publish_failure(*result.error());refresh();return result;}
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
 core::Result<core::PlaybackSnapshot>
 PlaybackTransportViewModel::playback_snapshot() const
 {
