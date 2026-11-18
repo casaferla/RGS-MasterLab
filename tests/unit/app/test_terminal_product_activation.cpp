@@ -2471,9 +2471,13 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(candidates.staged(),savedMaster);
     QCOMPARE(renderer.render_invocation_count(),savedRenderCount);
     QVERIFY(!limiter.value()->bypassed());
-    vm.previewPrepared();
+    // The PO's A/B comparison must restore the already verified Preview
+    // without a manual second click or another offline M17 invocation.
+    // The synchronous changed signal may have ALREADY rearmed READY.
+    QVERIFY(coordinator.resumeParkedPreview());
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QCOMPARE(renderer.render_invocation_count(),savedRenderCount);
     QVERIFY(coordinator.direct_return_available());
     QCOMPARE(renderer.render_invocation_count(),preReturnRenderCount);
     // INSTALLED -> Master Audition requires explicit exact-owner retirement.
