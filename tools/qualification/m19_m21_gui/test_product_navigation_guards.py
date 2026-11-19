@@ -825,6 +825,30 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QCOMPARE(candidates.staged(),initialPreparedPcm);' in physical
     assert 'const auto bypassCrossRateMaster=candidates.staged();' in physical
     assert 'QCOMPARE(renderer.render_invocation_count(),bypassRenderCount);' in physical
+    # CI #82: DEVICE rate change is not a project MASTER rate change.
+    # Require a real PCM-preserving cross-rate monitor path and a
+    # restored same-rate direct Preview without a new render.
+    changed_device=physical[physical.index(
+        '// F06: the selected MASTER sample rate is independent of the'):
+        physical.index('// Edits to the current value must NOT lose')]
+    assert 'QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER")' in changed_device
+    assert 'QStringLiteral("COMPARISON_VERIFIED")' in changed_device
+    assert '!product.current_master_matches_device_for_preview()' in changed_device
+    assert 'QCOMPARE(candidates.staged(),initialPreparedPcm);' in changed_device
+    assert 'coordinator.external_context_changed();' in changed_device
+    assert 'QStringLiteral("READY_TO_INSTALL")' in changed_device
+    assert 'renderCountBeforeDeviceRateSwitch' in changed_device
+    # PREPARED/REFERENCE transport-only audition must park, not retire,
+    # the exact verified Master and demand a second full rendering.
+    retained_target=physical[physical.index(
+        'M17_EDGE_CASE=TARGET_CHANGE_RETAINS_VERIFIED_PCM'):
+        physical.index('// An actual parameter edit makes the OLD A/B PCM stale.')]
+    assert 'product.comparison_pcm_still_valid()' in retained_target
+    assert '!product.comparison_owners_current()' in retained_target
+    assert 'QStringLiteral("READY_TO_INSTALL")' in retained_target
+    assert 'QCOMPARE(candidates.staged(),savedBeforeTargetSwitch);' in retained_target
+    assert 'QCOMPARE(renderer.render_invocation_count(),renderCountBeforeTargetSwitch);' in retained_target
+    assert 'M17_EDGE_CASE=TARGET_CHANGE_DROPS_CACHED_PCM' not in physical
     # CI #80: the native monitor fixture deliberately STOPs MANUAL before
     # installing. Preserve the genuine stopped-to-playing transport proof,
     # not an unconditional PLAYING assertion that contradicts the fixture.
