@@ -200,11 +200,29 @@ ApplicationWindow {
     readonly property bool masterTransportPlaying: root.monitorExclusive
         && !!root.appTerminalMonitorViewModel
         && root.appTerminalMonitorViewModel.transportState === "PLAYING"
-    function listenToPreparedMaster() {
+    function listenToPreparedMaster(explicitlyAllowCaution) {
         if (!root.canListenMaster || !root.appTerminalMonitorViewModel)
             return false
-        const success = root.appTerminalMonitorViewModel.installMonitor(false)
-        if (!success && root.appTerminalMonitorViewModel.errorText.indexOf(
+        // Listen to Master plays an already verified ACTIVE M17 Master.
+        // If the UI is in BYPASS, restore the actual native M17 Active
+        // state BEFORE taking a separate anonymous DEVICE-monitor lease.
+        // The native BYPASS->ON path preserves the exact cross-rate Master
+        // and rejects stale SOURCE/owner/parameter revisions. A refused
+        // mutation must not leave blue BYPASS controls while monitoring.
+        if (root.appTerminalLimiterViewModel
+                && root.appTerminalLimiterViewModel.bypass) {
+            root.appTerminalLimiterViewModel.setBypass(false)
+            if (root.appTerminalLimiterViewModel.bypass)
+                return false
+        }
+        // The accepted ON transition must still expose the SAME verified
+        // Master. Never use Play or an empty status to bypass owner gates.
+        if (!root.canListenMaster)
+            return false
+        const approvedCaution = explicitlyAllowCaution === true
+        const success = root.appTerminalMonitorViewModel.installMonitor(approvedCaution)
+        if (!success && !approvedCaution
+                && root.appTerminalMonitorViewModel.errorText.indexOf(
                 "MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE") !== -1)
             limitedMemoryConfirmation.open()
         return success
@@ -2378,10 +2396,7 @@ ApplicationWindow {
                 + "Retry only if the memory policy permits limited headroom? "
                 + "Unknown or insufficient memory remains blocked."
         }
-        onAccepted: {
-            if (root.canListenMaster && root.appTerminalMonitorViewModel)
-                root.appTerminalMonitorViewModel.installMonitor(true)
-        }
+        onAccepted: root.listenToPreparedMaster(true)
     }
     Label { objectName: "playbackErrorMessage"; visible: false; text: playbackTransport.errorMessage }
     Label { objectName: "goldErrorLabel"; visible: false; text: goldSelection.errorMessage }
