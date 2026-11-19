@@ -749,6 +749,10 @@ int main(int argc, char* argv[])
     // The selector must ask the established M17 coordinator to park an
     // accepted Master BEFORE an independent target switch retires DEVICE
     // playback. SOURCE/REFERENCE waveform navigation never rerenders M17.
+    auditionSelector.set_independent_audition_preflight(
+        [&terminalProductActivation](rgsml::app::AuditionTarget target) {
+            return terminalProductActivation.can_begin_independent_audition(target);
+        });
     auditionSelector.set_before_independent_audition(
         [&terminalProductActivation](rgsml::app::AuditionTarget target) {
             return terminalProductActivation.before_independent_audition(target);
