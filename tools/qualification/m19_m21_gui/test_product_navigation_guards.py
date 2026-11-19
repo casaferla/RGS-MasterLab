@@ -729,9 +729,14 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     pos_selector=selector.index('core::Status AuditionSourceSelector::switch_to(')
     switch_body=selector[pos_selector:selector.index(
         'core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(',pos_selector)]
-    assert switch_body.index('admit_m18_source_mutation("switch_target")') < switch_body.index(
+    assert switch_body.index('independentAuditionPreflight_(target)') < switch_body.index(
+        'admit_m18_source_mutation("switch_target")') < switch_body.index(
         'beforeIndependentAudition_(target)') < switch_body.index(
         'M18ScopedAuditionMutation lifetime')
+    assert 'set_independent_audition_preflight(' in main
+    assert 'can_begin_independent_audition(target)' in main
+    assert 'M17_AUDIT_RENDER_IN_PROGRESS_NO_MUTATION' in read(
+        'tests/unit/app/test_terminal_product_activation.cpp')
     assert 'M18_AUDIT_BUSY_WITH_EXACT_OUTPUT_OWNER' in read(
         'tests/unit/app/test_terminal_product_activation.cpp')
     assert 'M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD' in ui
