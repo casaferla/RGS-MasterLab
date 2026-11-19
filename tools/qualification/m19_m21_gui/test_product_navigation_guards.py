@@ -840,6 +840,18 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QCOMPARE(device->state,core::PlaybackState::PLAYING);' in monitor_native
     assert 'QCOMPARE(candidates.staged(),positiveMasterOwner);' in monitor_native
     assert 'QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);' in monitor_native
+    # CI #81 exposed an old fixed 1600-frame oracle AFTER independent
+    # monitor Play/Pause/Play. Require exact MASTER->SOURCE rational cue
+    # projection, SOURCE Loop clamp and follow-up M17 BYPASS cue retention.
+    assert 'const auto monitorBeforeReturn=product.private_monitor_master_snapshot();' in monitor_native
+    assert 'const auto projectedSourceFrame=core::FrameIndex{' in monitor_native
+    assert 'const auto expectedSourceReturnCue=' in monitor_native
+    assert 'QCOMPARE(device->position,expectedSourceReturnCue);' in monitor_native
+    assert 'const auto exactManualCueAfterMonitor=device->position;' in monitor_native
+    post_monitor_bypass=physical[physical.index('const auto exactManualCueAfterMonitor='):
+        physical.index('// More than one A/B switch must keep the same immutable PCM')]
+    assert 'QCOMPARE(device->position,exactManualCueAfterMonitor);' in post_monitor_bypass
+    assert 'QCOMPARE(device->position,core::FrameIndex{1600});' not in post_monitor_bypass
     # PO accepted the independent REFERENCE loop. The old prohibition
     # was a temporary safety guard, not a frozen UX requirement. Require
     # both separate source/Gold region stores and exact owner-gated audio.
