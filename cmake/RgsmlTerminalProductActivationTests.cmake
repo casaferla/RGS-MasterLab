@@ -68,6 +68,12 @@ target_link_libraries(rgsml_terminal_product_activation_tests
         Qt6::Core
         Qt6::Test)
 rgsml_apply_project_warnings(rgsml_terminal_product_activation_tests)
+# The native M17 A/B/monitor suite exercises REAL Playback SRC and Q0.
+# Always build both historical frozen playback kernels and all fourteen
+# original Q0 files from the checked-in, SHA-pinned sources BEFORE running
+# this test executable. No fake/generated coefficient values are permitted.
+add_dependencies(rgsml_terminal_product_activation_tests
+    rgsml_external_fir_assets)
 add_test(NAME rgsml_terminal_product_activation_tests
     COMMAND rgsml_terminal_product_activation_tests)
 set_tests_properties(rgsml_terminal_product_activation_tests PROPERTIES
