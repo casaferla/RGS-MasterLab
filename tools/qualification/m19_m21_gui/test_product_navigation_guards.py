@@ -747,6 +747,15 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'rgsml_terminal_product_activation_tests' in focused
     assert 'M17_M18_AUDITION_OWNER_AND_CROSS_RATE_NATIVE=PASS' in focused
     assert 'P2_AB_M17_OWNER_TEST_FAIL' in focused
+    # CI #78 exposed an old blind spot: compiling the native M17 suite
+    # is not sufficient if its genuine 16-FIR Playback catalog has not
+    # been built and loaded. Keep the build dependency and SHA gate.
+    activation_cmake=read("cmake/RgsmlTerminalProductActivationTests.cmake")
+    assert 'add_dependencies(rgsml_terminal_product_activation_tests' in activation_cmake
+    assert '    rgsml_external_fir_assets)' in activation_cmake
+    assert 'M17_NATIVE_16_FIR_ROOT_VERIFIED=PASS' in focused
+    assert 'verify_installed_16_firs.py --fir-root "$firRoot"' in focused
+    assert '$env:RGSML_PLAYBACK_FIR_ROOT=$firRoot' in focused
     # F05: MONITOR_PRIVATE_RECOVERY_REQUIRED can still be 'installed'
     # natively but is not an ordinary export-return state. Keep the
     # convenience action disabled while explicit DEVICE recovery is needed.
