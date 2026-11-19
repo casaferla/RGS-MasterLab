@@ -79,6 +79,19 @@ jobs:
             Get-Content $buildLog -Tail 16
             throw "P2_AB_M17_OWNER_TEST_COMPILE_FAIL"
           }
+          # Native M17 builds use the genuine frozen 16-FIR catalog.
+          # Root-level CTest's inherited environment can be incomplete on
+          # the standalone Windows build; supply the explicit local root,
+          # validate hashes, and never let a missing resource masquerade
+          # as a test of M17 ownership/transport behavior.
+          $firRoot=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/generated/rgsml/fir"
+          if (!(Test-Path -LiteralPath $firRoot -PathType Container)) {
+            throw "M17_NATIVE_16_FIR_ASSET_TARGET_NOT_BUILT"
+          }
+          & python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$firRoot"
+          if ($LASTEXITCODE -ne 0) { throw "M17_NATIVE_16_FIR_ASSETS_NOT_VERIFIED" }
+          $env:RGSML_PLAYBACK_FIR_ROOT=$firRoot
+          Write-Host "M17_NATIVE_16_FIR_ROOT_VERIFIED=PASS"
           $env:PATH="$qt/bin;$env:PATH"
           $testLog=Join-Path $env:RUNNER_TEMP "m17-audition-ctest-bounded.log"
           & ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^(rgsml_audition_source_selector_tests|rgsml_audition_region_tests|rgsml_playback_support_tests|rgsml_terminal_product_activation_tests)$' *> $testLog
@@ -125,7 +138,7 @@ jobs:
               }
               $lastCTest=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/Testing/Temporary/LastTest.log"
               if (Test-Path -LiteralPath $lastCTest) {
-                $ctestHits=@(Select-String -LiteralPath $lastCTest -Pattern 'FAIL!','QFATAL','Received signal','***Failed','The following tests' -Context 2,3 | Select-Object -First 10)
+                $ctestHits=@(Select-String -LiteralPath $lastCTest -Pattern 'FAIL!','QFATAL','Received signal','\\*\\*\\*Failed','The following tests' -Context 2,3 | Select-Object -First 10)
                 foreach ($hit in $ctestHits) {
                   foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
                   Write-Host $hit.Line
