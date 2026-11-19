@@ -28,13 +28,14 @@ Rectangle {
         if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
             return moduleAdapter.bypassSupported && moduleAdapter.bypass
                 ? "Bypass · " + state : state
-        if (state.startsWith("NEEDS PREPARATION")) return "Needs preparation"
+        if (state.startsWith("NEEDS PREPARATION")) return "Needs render"
         if (state.startsWith("READY")) return "Ready · Preview"
         if (state.startsWith("ERROR")) return "Error · Bypass"
         if (state.startsWith("ACTIVE")) return "Limiter active"
-        if (state.startsWith("Preparing ·")) return state
+        if (state.startsWith("Preparing ·"))
+            return "Rendering ·" + state.slice("Preparing ·".length)
         if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
-            return "Preparing audio"
+            return "Rendering Master"
         if (state.startsWith("BYPASS")) return "Meter · Bypass"
         return state
     }
@@ -49,7 +50,7 @@ Rectangle {
             return moduleAdapter.bypassSupported && moduleAdapter.bypass
                 ? "Processing bypassed · " + state : state
         if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
-            return state + " · Elapsed preparation time, not a countdown. "
+            return "Rendering Master · Elapsed render time, not a countdown. "
                 + "The current Meter still observes MANUAL PROCESSED audio; "
                 + "Ceiling is not yet applied to what you hear."
         if (state.startsWith("ACTIVE"))
