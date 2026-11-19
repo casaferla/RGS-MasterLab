@@ -777,6 +777,17 @@ core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(
         if (preparedStatus) {
             const auto loop=referenceLoopProvider_?referenceLoopProvider_():std::nullopt;
             if(loop) {
+                // set_loop_reference_range() requires a genuine GOLD file
+                // owner. At this point the correct file has been installed,
+                // but activeTarget_ MUST remain unpublished until seek and
+                // playback resume succeed. Grant only this synchronous
+                // reattachment interval, never a generic device bypass.
+                referenceDeviceInstalling_=true;
+                struct ReferenceInstallScope final {
+                    bool& flag;
+                    ~ReferenceInstallScope(){flag=false;}
+                } referenceInstallScope{referenceDeviceInstalling_};
+                (void)referenceInstallScope;
                 preparedStatus=playback_->set_loop_reference_range(loop);
                 // A previous cue may fall outside an armed REFERENCE region.
                 // Reposition only this independent timeline before playback.
