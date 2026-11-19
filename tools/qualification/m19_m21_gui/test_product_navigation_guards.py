@@ -825,6 +825,21 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QCOMPARE(candidates.staged(),initialPreparedPcm);' in physical
     assert 'const auto bypassCrossRateMaster=candidates.staged();' in physical
     assert 'QCOMPARE(renderer.render_invocation_count(),bypassRenderCount);' in physical
+    # CI #80: the native monitor fixture deliberately STOPs MANUAL before
+    # installing. Preserve the genuine stopped-to-playing transport proof,
+    # not an unconditional PLAYING assertion that contradicts the fixture.
+    monitor_native=physical[physical.index('// MAIN TRANSPORT POSITIVE PATH:'):
+        physical.index('// Product cannot silently borrow an already installed')]
+    assert 'QCOMPARE(device->state,core::PlaybackState::STOPPED);' in monitor_native
+    assert 'QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED")' in monitor_native
+    assert 'QCOMPARE(handoffUi.transport_state(),QStringLiteral("STOPPED"));' in monitor_native
+    assert monitor_native.index('QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED")') < (
+        monitor_native.index('QVERIFY(handoffUi.play());')
+    )
+    assert 'QStringLiteral("MONITOR_PRIVATE_PAUSED")' in monitor_native
+    assert 'QCOMPARE(device->state,core::PlaybackState::PLAYING);' in monitor_native
+    assert 'QCOMPARE(candidates.staged(),positiveMasterOwner);' in monitor_native
+    assert 'QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);' in monitor_native
     # PO accepted the independent REFERENCE loop. The old prohibition
     # was a temporary safety guard, not a frozen UX requirement. Require
     # both separate source/Gold region stores and exact owner-gated audio.
