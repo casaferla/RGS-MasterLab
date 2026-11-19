@@ -7362,6 +7362,65 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                 QVERIFY2(viewport
                          &&viewport->height()>=analysisBody->height()-1.0,
                          "M21 centered viewport must retain full height");
+                // PO three-window M21 alignment gate: each Δ heading is
+                // centered between the NUMERIC CENTER and BAR CENTER,
+                // measured from genuine native Qt geometry at this size.
+                // The full source-role labels must fit the 32px header
+                // even at the minimum 1184x688 Product window.
+                auto* firstRow=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m21MetricRow_0")));
+                QVERIFY(firstRow);
+                const std::array<QString,6> roleHeaders{{
+                    QStringLiteral("METRIC"),
+                    QStringLiteral("PREPARED"),
+                    QStringLiteral("PROCESSED"),
+                    QStringLiteral("REFERENCE"),
+                    QStringLiteral("Δ PREPARED → REFERENCE"),
+                    QStringLiteral("Δ PROCESSED → REFERENCE")}};
+                for(int col=0;col<6;++col) {
+                    auto* header=qobject_cast<QQuickItem*>(
+                        find_child_by_name(originalPages[index],
+                            QStringLiteral("m21Header_%1").arg(col)));
+                    auto* cell=qobject_cast<QQuickItem*>(
+                        find_child_by_name(firstRow,
+                            QStringLiteral("m21ValueCell_0_%1").arg(col)));
+                    QVERIFY(header && cell);
+                    QCOMPARE(header->property("text").toString(),
+                             roleHeaders[static_cast<std::size_t>(col)]);
+                    QVERIFY2(!header->property("truncated").toBool(),
+                        "Full M21 role heading must not be truncated");
+                    QVERIFY2(header->property("contentHeight").toDouble()
+                        <=header->height()+0.5,
+                        "M21 heading exceeds fixed header at minimum window");
+                    const qreal hc=header->mapToItem(
+                        analysisAnchor,QPointF{header->width()/2,0}).x();
+                    const qreal cc=cell->mapToItem(
+                        analysisAnchor,QPointF{cell->width()/2,0}).x();
+                    QVERIFY2(std::abs(hc-cc)<1.5,
+                        "M21 header and data group must share a centre");
+                    if(col<4)continue;
+                    auto* number=qobject_cast<QQuickItem*>(
+                        find_child_by_name(cell,
+                            QStringLiteral("m21NumericCell_0_%1").arg(col)));
+                    auto* bar=qobject_cast<QQuickItem*>(
+                        find_child_by_name(cell,
+                            QStringLiteral("m21DeltaBar_0_%1").arg(col)));
+                    QVERIFY(number &&bar);
+                    const qreal left=cell->property("deltaGroupLeft").toDouble();
+                    const qreal numWidth=cell->property("numericWidth").toDouble();
+                    const qreal barWidth=cell->property("barWidth").toDouble();
+                    const qreal gap=cell->property("deltaGroupGap").toDouble();
+                    QVERIFY2(left>=-0.5
+                        &&left+numWidth+gap+barWidth<=cell->width()+0.5,
+                        "M21 delta number-and-bar group must fit in its column");
+                    const qreal numberCentre=cell->mapToItem(
+                        analysisAnchor,QPointF{left+numWidth/2,0}).x();
+                    const qreal barCentre=cell->mapToItem(
+                        analysisAnchor,QPointF{left+numWidth+gap+barWidth/2,0}).x();
+                    QVERIFY2(std::abs(hc-(numberCentre+barCentre)/2)<1.5,
+                        "M21 Δ header must center between numeric value and bar");
+                }
             }
             if(size.height()==688) {
                 // All essential content must be inside the actual clipped
