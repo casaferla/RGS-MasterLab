@@ -1640,7 +1640,7 @@ Window {
     QVERIFY(testTitle &&testState);
     const auto frozenTitleY=testTitle->mapToItem(testRow,QPointF{}).y();
     QVERIFY(testState->setProperty("text",QStringLiteral(
-        "READY · PROCESSED PCM\\n(select to listen)")));
+        "READY · PROCESSED PCM\n(select to listen)")));
     QCoreApplication::processEvents();
     QCOMPARE(testState->property("lineCount").toInt(),2);
     QVERIFY2(!testState->property("truncated").toBool(),
