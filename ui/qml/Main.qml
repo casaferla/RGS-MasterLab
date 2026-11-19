@@ -563,7 +563,7 @@ ApplicationWindow {
     FileDialog {
         id: sourceDialog
         objectName: "sourceFileDialog"
-        title: "Open Source WAV"
+        title: sourceSelection.hasSource ? "Replace Source WAV" : "Open Source WAV"
         fileMode: FileDialog.OpenFile
         nameFilters: ["WAV audio (*.wav *.wave)"]
         onAccepted: {
@@ -714,6 +714,17 @@ ApplicationWindow {
         }
     }
 
+    // File-menu text is only a caption; it does NOT create a native
+    // keyboard accelerator. Install the real application-wide binding.
+    // Reusing Ctrl+O for Replace Source is intentional: it always opens
+    // the same source WAV chooser, preserving SOURCE admission checks.
+    Shortcut {
+        objectName: "sourceLoadShortcut"
+        sequence: "Ctrl+O"
+        context: Qt.ApplicationShortcut
+        enabled: !root.monitorExclusive
+        onActivated: sourceDialog.open()
+    }
     Shortcut {
         sequence: "F10"
         context: Qt.ApplicationShortcut
@@ -1257,7 +1268,7 @@ ApplicationWindow {
                         StudioMenuItem { text: "New Project"; enabled: false }
                         StudioMenuItem { objectName: "menuOpenProject"; text: "Open Project…"; enabled: !root.monitorExclusive; onTriggered: projectOpenDialog.open() }
                         MenuSeparator { }
-                        StudioMenuItem { objectName: "menuOpenSource"; text: "Open Source\tCtrl+O"; enabled: !root.monitorExclusive; onTriggered: sourceDialog.open() }
+                        StudioMenuItem { objectName: "menuOpenSource"; text: (sourceSelection.hasSource ? "Replace Source" : "Open Source") + "\tCtrl+O"; enabled: !root.monitorExclusive; onTriggered: sourceDialog.open() }
                         StudioMenuItem { objectName: "menuOpenGold"; text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
                         StudioMenuItem { objectName: "menuClearGold"; text: "Clear Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
