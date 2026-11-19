@@ -154,3 +154,12 @@ During #77 the static M23 test on Windows and Linux revealed an obsolete asserti
 - CI #78's other red jobs were identical Windows/Linux FQ99 exact-GUI-pin refusals after reviewed F05. Only the new exact five-line Main QML blob was independently pinned in writer, no broader relaxation of FQ99/P2 scope.
 - Also repaired a diagnostic PowerShell regex that treated literal `***Failed` as invalid regex; failure logging remains bounded. The real native suite must PASS on its *first* CTest run; any diagnostic rerun is never credited toward the qualification.
 - Newly restored genuine tests may reveal functional defects previously masked by the missing FIR bootstrap. **No readiness claim until their actual execution and full focused CI.**
+
+### Finding F07 — successful same-rate BYPASS→ON rearm erroneously cancels Master (CI #79)
+Focused #79 on `1d12e4092a734a6c6916d6298a16a72c563d37ba` finished **6/7 GREEN**. The exact 16 external FIRs were generated and SHA verified; M23 Windows/Linux and P2/M18 were GREEN. The one Windows Qt/native red was a genuine F06 follow-up state-machine regression (not FIR bootstrap): `audibleOnBypassRestoresExactManualSourceAndLoop()`, `test_terminal_product_activation.cpp:2403`, expected `READY_TO_INSTALL`, actual `IDLE`. The other native M17 rate-path tests passed.
+
+**Root cause:** in the F06 BYPASS→ON branch, `maybe_rearm_parked_master()` correctly transformed valid same-rate `COMPARISON_VERIFIED` into `READY_TO_INSTALL`. This deliberately clears the *comparison-cached state* because the Master is now READY; the caller then interpreted `!comparison_cached()` as stale evidence and called `session_->cancel()`, destroying a successfully restored immutable checked Master.
+
+**Writer fix F07:** after `maybe_rearm_parked_master()`, explicitly recognize `READY_TO_INSTALL` / `MEASURED_NONCONFORMING_READY` as successful legal rearm terminal states and return immediately; continue to preserve valid cross-rate / independent-target `COMPARISON_VERIFIED` without attempting direct Preview. Only genuinely invalid/stale/alien manual-owner evidence can reach the final cancellation fallback. No DSP, M16/M17 numerical core, M18 ticket or FIR pin changed.
+
+**Regression:** the existing real native test already requires the exact `READY_TO_INSTALL` after ON, immutable staged PCM identity and unchanged renderer invocation count; this test caught F07. Product navigation guard now pins the success-before-cancel control flow. **F07 remains unqualified until the next exact-SHA full focused CI and physical PO validation.**
