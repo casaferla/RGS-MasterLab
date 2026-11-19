@@ -2867,31 +2867,48 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(candidates.staged());
     vm.setBypass(false);
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
-    // An A/B cache is bound to the physical OUTPUT_RATE. When the real
-    // device probe changes from 48 kHz to 44.1 kHz, neither a silent SRC
-    // nor an accidental M17 handoff is allowed, even for retained PCM.
+    // F06: the selected MASTER sample rate is independent of the
+    // physical Windows DEVICE rate. A 48k immutable verified MASTER must
+    // survive a 48k->44.1k DEVICE-only change and remain available for
+    // explicit cross-rate Listen to Master. Never silently install the
+    // 48k terminal PCM into a 44.1k device or rerender it as 44.1k.
     vm.setBypass(true);
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QCOMPARE(candidates.staged(),initialPreparedPcm);
+    const auto renderCountBeforeDeviceRateSwitch=
+        renderer.render_invocation_count();
     product.set_preferred_output_rate_probe(
         [sourceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
             return core::Result<core::SampleRate>::success(*sourceRate.value());
         });
     vm.setBypass(false);
-    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
-    QCOMPARE(product.status(),QStringLiteral("IDLE"));
-    QVERIFY(!candidates.staged());
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QVERIFY(product.comparison_pcm_still_valid());
+    QVERIFY(!product.current_master_matches_device_for_preview());
+    QVERIFY(!coordinator.direct_return_available());
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderer.render_invocation_count(),
+        renderCountBeforeDeviceRateSwitch);
     QVERIFY(!audioGate.has_session());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QCOMPARE(device->loop,std::optional{*region.value()});
+    // The test probe has no real Windows device-change signal. Explicitly
+    // deliver that event after the 48k DEVICE returns; the SAME PCM must
+    // become eligible for direct Preview, with zero new M17 invocations.
     product.set_preferred_output_rate_probe(
         [deviceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
             return core::Result<core::SampleRate>::success(*deviceRate.value());
         });
-    vm.requestPrepare();
+    coordinator.external_context_changed();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("READY_TO_INSTALL"),12000);
+        QStringLiteral("READY_TO_INSTALL"),2000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderer.render_invocation_count(),
+        renderCountBeforeDeviceRateSwitch);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     // Edits to the current value must NOT lose a minute-long accepted render.
     qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RETAINS_AB";
@@ -2927,20 +2944,27 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
 
-    // A saved PCM must not cross selection of a different audible target.
-    qInfo().noquote()<<"M17_EDGE_CASE=TARGET_CHANGE_DROPS_CACHED_PCM";
+    // An independent PREPARED audition is NOT a DSP edit. The verified
+    // immutable MASTER remains parked for the original PROCESSED owner,
+    // never borrowed for PREPARED playback and never silently installed.
+    qInfo().noquote()<<"M17_EDGE_CASE=TARGET_CHANGE_RETAINS_VERIFIED_PCM";
+    const auto savedBeforeTargetSwitch=candidates.staged();
+    const auto renderCountBeforeTargetSwitch=renderer.render_invocation_count();
     vm.setBypass(true);
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
-    QCOMPARE(product.status(),QStringLiteral("IDLE"));
-    QVERIFY(!candidates.staged());
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QVERIFY(product.comparison_pcm_still_valid());
+    QVERIFY(!product.comparison_owners_current());
+    QCOMPARE(candidates.staged(),savedBeforeTargetSwitch);
+    QVERIFY(!coordinator.device_active());
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     vm.setBypass(false);
-    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
-    vm.requestPrepare();
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(candidates.staged(),savedBeforeTargetSwitch);
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeTargetSwitch);
 
     // An actual parameter edit makes the OLD A/B PCM stale.
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
