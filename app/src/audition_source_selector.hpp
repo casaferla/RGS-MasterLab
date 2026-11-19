@@ -119,6 +119,11 @@ public:
     void set_source_loop_provider(SourceLoopProvider provider);
     // Own REFERENCE loop provider: independent of the SOURCE/M18 loop epoch.
     void set_reference_loop_provider(SourceLoopProvider provider);
+    // True only inside the verified GOLD file->DEVICE installation and
+    // loop reinstatement interval. Never exposed as an audition target,
+    // and never grants an M17/M18 ownership or rendering certificate.
+    [[nodiscard]] bool reference_device_installing() const noexcept
+    {return referenceDeviceInstalling_;}
     void set_before_independent_audition(BeforeIndependentAudition callback)
     { beforeIndependentAudition_=std::move(callback); }
     // Experimental P2-only SOURCE/SOURCE A-B handoff. Disabled by default,
@@ -182,6 +187,9 @@ private:
     bool m18SourcePublicationActive_{false};
     SourceLoopProvider sourceLoopProvider_;
     SourceLoopProvider referenceLoopProvider_;
+    // Qt-owner scoped activation guard; restores false before target
+    // publication, failure reporting or returning to event loop.
+    bool referenceDeviceInstalling_{false};
     BeforeIndependentAudition beforeIndependentAudition_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
