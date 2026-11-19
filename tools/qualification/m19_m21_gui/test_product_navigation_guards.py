@@ -737,6 +737,12 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'can_begin_independent_audition(target)' in main
     assert 'M17_AUDIT_RENDER_IN_PROGRESS_NO_MUTATION' in read(
         'tests/unit/app/test_terminal_product_activation.cpp')
+    # Do not let all seven job badges turn green while the exact native
+    # M17 Product/monitor test source is compiled nowhere in focused CI.
+    focused = read(".github/workflows/r1d-p2-i2-product-gui-smoke.yml")
+    assert 'rgsml_terminal_product_activation_tests' in focused
+    assert 'M17_M18_AUDITION_OWNER_AND_CROSS_RATE_NATIVE=PASS' in focused
+    assert 'P2_AB_M17_OWNER_TEST_FAIL' in focused
     assert 'M18_AUDIT_BUSY_WITH_EXACT_OUTPUT_OWNER' in read(
         'tests/unit/app/test_terminal_product_activation.cpp')
     assert 'M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD' in ui
