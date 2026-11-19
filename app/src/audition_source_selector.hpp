@@ -124,6 +124,11 @@ public:
     // and never grants an M17/M18 ownership or rendering certificate.
     [[nodiscard]] bool reference_device_installing() const noexcept
     {return referenceDeviceInstalling_;}
+    // Pure preflight for the same coordinator: a rejected M17 switch
+    // must not consume an M18 epoch, while an M18 denial must not park
+    // a live M17 DEVICE owner. The real parking callback stays separate.
+    void set_independent_audition_preflight(BeforeIndependentAudition callback)
+    { independentAuditionPreflight_=std::move(callback); }
     void set_before_independent_audition(BeforeIndependentAudition callback)
     { beforeIndependentAudition_=std::move(callback); }
     // Experimental P2-only SOURCE/SOURCE A-B handoff. Disabled by default,
@@ -190,6 +195,7 @@ private:
     // Qt-owner scoped activation guard; restores false before target
     // publication, failure reporting or returning to event loop.
     bool referenceDeviceInstalling_{false};
+    BeforeIndependentAudition independentAuditionPreflight_;
     BeforeIndependentAudition beforeIndependentAudition_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
