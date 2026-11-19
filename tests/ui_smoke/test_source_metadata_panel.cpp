@@ -1604,6 +1604,51 @@ Window {
     QVERIFY(!find_child_by_name(host,QStringLiteral("stereoMsViewport")));
     QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakMeterViewport")));
     QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakLimiterViewport")));
+    // PO 2026-11-19: the fixed 52px Chain tile must render TWO state
+    // lines without cropping, and a longer status must never shift its
+    // semantic title. Exercise the real Qt Text metrics at the 164px
+    // sidebar width, not just static QML source coordinates.
+    for(int i=0;i<7;++i) {
+        auto* row=qobject_cast<QQuickItem*>(find_child_by_name(
+            root.data(),QStringLiteral("dspChainRow_%1").arg(i)));
+        QVERIFY(row);
+        auto* title=qobject_cast<QQuickItem*>(find_child_by_name(
+            row,QStringLiteral("dspChainModuleTitle_%1").arg(i)));
+        auto* state=qobject_cast<QQuickItem*>(find_child_by_name(
+            row,QStringLiteral("dspChainStateText_%1").arg(i)));
+        QVERIFY(title &&state);
+        QCOMPARE(row->height(),52.0);
+        const auto titleTop=title->mapToItem(row,QPointF{}).y();
+        const auto stateTop=state->mapToItem(row,QPointF{}).y();
+        QVERIFY2(titleTop>=0 &&titleTop+title->height()<stateTop,
+            "Shared DSP Chain title and status must occupy independent tracks");
+        QVERIFY2(stateTop+state->height()<=row->height()+0.5,
+            "Shared DSP Chain status well must remain inside fixed row");
+        QVERIFY2(state->property("contentHeight").toReal()
+            <=state->height()+0.5,
+            "Shared DSP Chain must not clip any native default state text");
+    }
+    // Force the exact two-line STREAMING TP status reported physically,
+    // using the existing real Qt Text child (no DSP adapter mutation).
+    auto* testRow=qobject_cast<QQuickItem*>(find_child_by_name(
+        root.data(),QStringLiteral("dspChainRow_4")));
+    QVERIFY(testRow);
+    auto* testTitle=qobject_cast<QQuickItem*>(find_child_by_name(
+        testRow,QStringLiteral("dspChainModuleTitle_4")));
+    auto* testState=qobject_cast<QQuickItem*>(find_child_by_name(
+        testRow,QStringLiteral("dspChainStateText_4")));
+    QVERIFY(testTitle &&testState);
+    const auto frozenTitleY=testTitle->mapToItem(testRow,QPointF{}).y();
+    QVERIFY(testState->setProperty("text",QStringLiteral(
+        "READY · PROCESSED PCM\\n(select to listen)")));
+    QCoreApplication::processEvents();
+    QCOMPARE(testState->property("lineCount").toInt(),2);
+    QVERIFY2(!testState->property("truncated").toBool(),
+        "Streaming TP second line must not be truncated");
+    QVERIFY2(testState->property("contentHeight").toReal()
+        <=testState->height()+0.5,
+        "Streaming TP second line must fit into the status text well");
+    QCOMPARE(testTitle->mapToItem(testRow,QPointF{}).y(),frozenTitleY);
     model.setSelectedIndex(0);
     window->close();
 }
