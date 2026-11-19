@@ -37,6 +37,11 @@ public:
     // Park a previously rendered exact M17 candidate before switching
     // the DEVICE from PROCESSED to PREPARED or REFERENCE. A pending M17
     // render is deliberately NOT sacrificed to a normal audition click.
+    // Pure, owner-thread-only read gate. Must be called before consuming
+    // an M18 switch_target epoch: refusing an in-flight M17 render must
+    // leave both Product epochs and audible DEVICE ownership unchanged.
+    [[nodiscard]] core::Status can_begin_independent_audition(
+        AuditionTarget target) const;
     [[nodiscard]] core::Status before_independent_audition(
         AuditionTarget target);
     // Explicit UI Return from current exact M17 direct OUTPUT_RATE owner.
