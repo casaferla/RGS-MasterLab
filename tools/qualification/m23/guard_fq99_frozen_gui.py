@@ -98,7 +98,12 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/DspChainSelector.qml": "2973190d6293ab1dbb766fe03aac6a6b19f081f2",
     "ui/qml/AnalysisApprovedContent.qml": "c7c4cc4c58c0a3e9c598f2d4c65c3374a405df0a",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
-    "ui/qml/Main.qml": "c665dd2bb79367245a853908ab25575c7b97aba1",
+    # PO-directed pre-M24 adversarial repair F05: unchanged native M18
+    # ticket/consent and FQ99 geometry; only the recovery-only monitor
+    # predicate is added to the already approved Return + Export path.
+    # Review against the prior pinned blob: exactly five QML lines replaced,
+    # no other Main.qml line changed. Same exact Git-blob enforcement.
+    "ui/qml/Main.qml": "3e222232b54305994970b073e16a977c63ccaf47",
     "ui/qml/DspEditorHost.qml": "8028ac7e80b70cfb1a5f97a0bbfb118872359919",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
     "ui/qml/StudioIcon.qml": "4dd165406dd1130dce6434bcb248df3211a11477",
