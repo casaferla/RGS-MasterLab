@@ -653,6 +653,14 @@ int main(int argc, char* argv[])
     // Explicit user-only Windows MASTER->DEVICE monitor, with no LIVE identity.
     rgsml::app::TerminalMonitorViewModel terminalMonitorViewModel{
         privateProductSession,playbackTransport};
+    // PREPARED/REFERENCE->PROCESSED can change Master eligibility while
+    // preserving STOPPED state, duration and cue. No playbackChanged()
+    // occurs in that case; publish the verified Listen affordance now,
+    // without a fake Play action or additional M17 render.
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &terminalMonitorViewModel,
+        &rgsml::app::TerminalMonitorViewModel::refresh_install_availability);
     // The Qt-facing Windows service probes endpoint, negotiated rate and
     // fresh OS headroom BEFORE and AFTER the off-thread FIR. No Qt device
     // objects or memory probes ever run on the background DSP worker.
