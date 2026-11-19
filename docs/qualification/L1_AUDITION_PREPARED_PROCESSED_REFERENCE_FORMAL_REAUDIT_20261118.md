@@ -100,6 +100,11 @@ Previously, `AuditionSourceSelector::switch_to` executed `beforeIndependentAudit
 
 **Writer fix:** require `comparison_owners_current()` plus `verified_master_rate_for_monitoring()` (which independently checks immutable staged PCM and the real audible MANUAL DEVICE owner), and present `MASTER VERIFIED · LISTEN TO MASTER` before the direct-Preview cue capture. Same-rate direct Preview still uses the exact old cue, Loop, RealizationId and STOP-to-install guards. No fabricated verified state on missing/alien playback owner. Regression exercises a real PLAYING cross-rate comparison.
 
+### Finding F04 — Focused CI did not execute the M17 Product regression suite
+The real `tests/unit/app/test_terminal_product_activation.cpp` suite is registered as `rgsml_terminal_product_activation_tests` via `cmake/RgsmlTerminalProductActivationTests.cmake` at repository root, **not** through the ordinary `tests/CMakeLists.txt`. The seven jobs in #74 and the already-running #75 compiled the main Product and ran narrower tests but did **not** explicitly build/run this exact combined M17 + monitor integration target. A green badge cannot be cited as execution evidence for its newly added native cases.
+
+**Writer correction for the next complete focused CI:** Windows Product Qt workflow explicitly builds `rgsml_terminal_product_activation_tests` and includes it in the bounded CTest selection, while retaining source-selector, region and transport tests. The static Product navigation guard fails if this coverage silently disappears. Existing 65-minute job budget and no-full-log diagnostic policy are retained. This change cannot alter the SHA or results of a CI already running.
+
 ### Audit boundaries / not downgraded
 - Current safety policy intentionally invalidates or refuses an M17 candidate for changed SOURCE loop/epoch, altered ceiling/chain, different source/manual ID, or project MASTER rate. Do not treat these as cheap navigation-only changes without independent M18 epoch analysis and explicit approval.
 - During an in-flight standalone DEVICE PCM SRC, cancellation is not equivalent to a full M17 Render cancellation; keep the normal borrowed verified M17 source owner and the independent anonymous monitor admission checks. Existing native async tests are retained.
