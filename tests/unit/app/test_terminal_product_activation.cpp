@@ -2895,14 +2895,20 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QCOMPARE(device->loop,std::optional{*region.value()});
-    // The test probe has no real Windows device-change signal. Explicitly
-    // deliver that event after the 48k DEVICE returns; the SAME PCM must
-    // become eligible for direct Preview, with zero new M17 invocations.
+    // The fake device probe does not emit a Windows DEVICE-rate event.
+    // Exercise the coordinator's existing PUBLIC transport signal rather
+    // than calling its private external_context_changed() helper: the
+    // user's explicit STOP emits playbackChanged, whose connected
+    // maybe_rearm_parked_master() rechecks the exact current device rate.
+    // A 48k device has returned, so this must reuse the SAME checked PCM
+    // with no new M17 job, and never silently start audio on its own.
     product.set_preferred_output_rate_probe(
         [deviceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
             return core::Result<core::SampleRate>::success(*deviceRate.value());
         });
-    coordinator.external_context_changed();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    transport.stop();
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),2000);
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
