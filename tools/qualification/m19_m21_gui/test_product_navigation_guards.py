@@ -850,13 +850,35 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     # the exact verified Master and demand a second full rendering.
     retained_target=physical[physical.index(
         'M17_EDGE_CASE=TARGET_CHANGE_RETAINS_VERIFIED_PCM'):
-        physical.index('// An actual parameter edit makes the OLD A/B PCM stale.')]
+        physical.index('// A genuine Ceiling edit must invalidate the previous checked PCM.')]
     assert 'product.comparison_pcm_still_valid()' in retained_target
     assert '!product.comparison_owners_current()' in retained_target
     assert 'QStringLiteral("READY_TO_INSTALL")' in retained_target
     assert 'QCOMPARE(candidates.staged(),savedBeforeTargetSwitch);' in retained_target
     assert 'QCOMPARE(renderer.render_invocation_count(),renderCountBeforeTargetSwitch);' in retained_target
     assert 'M17_EDGE_CASE=TARGET_CHANGE_DROPS_CACHED_PCM' not in physical
+    # CI #84: Product TerminalLimiterState::create_default starts at 0 dBTP.
+    # The no-op test may not hard-code generic DSP -1 dBTP as its value.
+    # A-B-A MUST restore the ORIGINAL accepted numeric value, while its
+    # monotonically increasing parameter revision still invalidates PCM.
+    noop_ceiling=physical[physical.index(
+        'M17_EDGE_CASE=NOOP_CEILING_RETAINS_AB'):
+        physical.index('M17_EDGE_CASE=LOOP_CHANGED_DURING_CACHED_BYPASS')]
+    assert 'const auto acceptedCeilingBeforeEdits=' in noop_ceiling
+    assert 'QCOMPARE(acceptedCeilingBeforeEdits,0.0);' in noop_ceiling
+    assert 'QStringLiteral("ceilingDbTp"),acceptedCeilingBeforeEdits' in noop_ceiling
+    assert 'QCOMPARE(limiter.value()->parameter_revision(),revisionBeforeNoop);' in noop_ceiling
+    assert 'QCOMPARE(renderer.render_invocation_count(),renderCountBeforeNoop);' in noop_ceiling
+    assert 'QCOMPARE(candidates.staged(),currentAdmitted);' in noop_ceiling
+    assert 'QStringLiteral("ceilingDbTp"),-1.0' not in noop_ceiling
+    ceiling_roundtrip=physical[physical.index(
+        '// A genuine Ceiling edit must invalidate the previous checked PCM.'):
+        physical.index('// Cancel only an ACTIVE preparation;')]
+    assert 'QStringLiteral("ceilingDbTp"),-2.0' in ceiling_roundtrip
+    assert 'QStringLiteral("ceilingDbTp"),acceptedCeilingBeforeEdits' in ceiling_roundtrip
+    assert 'revisionAfterChange+1' in ceiling_roundtrip
+    assert 'QVERIFY(!candidates.staged());' in ceiling_roundtrip
+    assert 'QStringLiteral("ceilingDbTp"),-1.0' not in ceiling_roundtrip
     # CI #80: the native monitor fixture deliberately STOPs MANUAL before
     # installing. Preserve the genuine stopped-to-playing transport proof,
     # not an unconditional PLAYING assertion that contradicts the fixture.
