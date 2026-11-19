@@ -2735,6 +2735,26 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
     QCOMPARE(candidates.staged(),positiveMasterOwner);
     QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
+    // The monitor has its OWN MASTER clock; the later MANUAL Return must
+    // use that current playhead projected to SOURCE frames, not a stale
+    // 1600-frame cue captured before the REFERENCE/STOP/monitor sequence.
+    // The original SOURCE Loop remains authoritative and clamps a cue
+    // outside [begin,end) to its exact first frame.
+    const auto monitorBeforeReturn=product.private_monitor_master_snapshot();
+    QVERIFY(monitorBeforeReturn);
+    const auto monitorFrame=monitorBeforeReturn.value()
+        ->master_display_position.value();
+    const auto monitorHz=monitorBeforeReturn.value()->master_rate.value();
+    const auto sourceHz=sourceRate.value()->value();
+    QVERIFY(monitorHz>0);
+    QVERIFY(monitorFrame>=0 && monitorFrame<=4800);
+    const auto projectedSourceFrame=core::FrameIndex{
+        (monitorFrame/monitorHz)*sourceHz
+            +(monitorFrame%monitorHz)*sourceHz/monitorHz};
+    const auto expectedSourceReturnCue=
+        (projectedSourceFrame<region.value()->begin()
+         ||projectedSourceFrame>=region.value()->end())
+        ?region.value()->begin():projectedSourceFrame;
     // Close the exact independent DEVICE owner and restore the MANUAL source
     // without consuming the immutable MASTER. M17 READY can be previewed
     // immediately, with the same renderer invocation and no second job.
@@ -2743,10 +2763,12 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    // Return follows the last explicit monitor Play (not the old
-    // stopped predecessor); this is the genuine SOURCE transport result.
+    // The MONITOR master cue, projected and loop-clamped to original
+    // SOURCE frames, must survive the independent DEVICE retirement.
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->position,expectedSourceReturnCue);
     QCOMPARE(device->loop,std::optional{*region.value()});
+    const auto exactManualCueAfterMonitor=device->position;
     QCOMPARE(candidates.staged(),positiveMasterOwner);
     QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
     vm.previewPrepared();
@@ -2776,7 +2798,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QCOMPARE(device->position,core::FrameIndex{1600});
+    // A second direct-M17 Preview/BYPASS preserves the freshly proven
+    // monitor-returned SOURCE cue; it may NOT time-travel to the older
+    // 1600-frame location that preceded independent monitoring.
+    QCOMPARE(device->position,exactManualCueAfterMonitor);
     QCOMPARE(device->loop,std::optional{*region.value()});
     QVERIFY(!product.private_id());
     QVERIFY(candidates.staged()); // Retained, NEVER audible on Bypass.
