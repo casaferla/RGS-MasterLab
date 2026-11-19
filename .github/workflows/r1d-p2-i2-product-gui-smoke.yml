@@ -53,11 +53,14 @@ jobs:
             throw "P2_PRODUCT_QT_BUILD_FAILED"
           }
           Write-Host "P2_REAL_PRODUCT_APP_COMPILE=PASS"
-      - name: Verify P2 seamless switching and M17 exact-owner A-B regressions
+      # PO scope reset 2026-11-19: this qualification-candidate builder
+      # runs the PRE-ADVERSARIAL focused Qt tests, not the legacy 1500-line
+      # M17+monitor integration scenario. That extra scenario remains
+      # registered in CMake for independent, explicitly requested diagnosis.
+      # Its exclusion is a DOCUMENTED OPEN QUALIFICATION ITEM, never a PASS.
+      - name: Verify source, Reference and P2 focused Qt audition contracts
         shell: pwsh
         run: |
-          # Keep the release-like Product config unchanged: compile only
-          # the existing targeted audition selector suite separately.
           $qt = Join-Path $env:GITHUB_WORKSPACE "6.8.3/msvc2022_64"
           cmake -S . -B build-p2-audition-tests -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_CONFIGURATION_TYPES=Release `
@@ -68,90 +71,31 @@ jobs:
             -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }} `
             -DRGSML_QT_ROOT="$qt"
           if ($LASTEXITCODE -ne 0) { throw "P2_AB_TEST_CONFIG_FAIL" }
-          # Real M17 Qt activation suite is registered via
-          # cmake/RgsmlTerminalProductActivationTests.cmake, not tests/.
-          # It must be compiled and executed, not inferred from app startup.
-          $buildLog=Join-Path $env:RUNNER_TEMP "m17-audition-compile-bounded.log"
-          & cmake --build build-p2-audition-tests --config Release --parallel 4 --target rgsml_audition_source_selector_tests rgsml_audition_region_tests rgsml_playback_support_tests rgsml_terminal_product_activation_tests *> $buildLog
+          $buildLog=Join-Path $env:RUNNER_TEMP "p2-audition-compile-bounded.log"
+          & cmake --build build-p2-audition-tests --config Release --parallel 4 --target rgsml_audition_source_selector_tests rgsml_audition_region_tests rgsml_playback_support_tests *> $buildLog
           if ($LASTEXITCODE -ne 0) {
             Select-String -Path $buildLog -Pattern 'error C[0-9]+','error LNK[0-9]+','fatal error','FAILED:' |
               Select-Object -First 16 | ForEach-Object { Write-Host $_.Line }
             Get-Content $buildLog -Tail 16
-            throw "P2_AB_M17_OWNER_TEST_COMPILE_FAIL"
+            throw "P2_AUDITION_FOCUSED_TEST_COMPILE_FAIL"
           }
-          # Native M17 builds use the genuine frozen 16-FIR catalog.
-          # Root-level CTest's inherited environment can be incomplete on
-          # the standalone Windows build; supply the explicit local root,
-          # validate hashes, and never let a missing resource masquerade
-          # as a test of M17 ownership/transport behavior.
-          $firRoot=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/generated/rgsml/fir"
-          if (!(Test-Path -LiteralPath $firRoot -PathType Container)) {
-            throw "M17_NATIVE_16_FIR_ASSET_TARGET_NOT_BUILT"
-          }
-          & python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$firRoot"
-          if ($LASTEXITCODE -ne 0) { throw "M17_NATIVE_16_FIR_ASSETS_NOT_VERIFIED" }
-          $env:RGSML_PLAYBACK_FIR_ROOT=$firRoot
-          Write-Host "M17_NATIVE_16_FIR_ROOT_VERIFIED=PASS"
           $env:PATH="$qt/bin;$env:PATH"
-          $testLog=Join-Path $env:RUNNER_TEMP "m17-audition-ctest-bounded.log"
-          & ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^(rgsml_audition_source_selector_tests|rgsml_audition_region_tests|rgsml_playback_support_tests|rgsml_terminal_product_activation_tests)$' *> $testLog
+          $testLog=Join-Path $env:RUNNER_TEMP "p2-audition-ctest-bounded.log"
+          & ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^(rgsml_audition_source_selector_tests|rgsml_audition_region_tests|rgsml_playback_support_tests)$' *> $testLog
           if ($LASTEXITCODE -ne 0) {
-            # QtTest outputs all case lines, and CTest's last 75 lines
-            # often hide the first real FAIL! assertion. Show only bounded
-            # failure records with context; never dump complete CI logs.
-            $fails=@(Select-String -LiteralPath $testLog -Pattern 'FAIL!','FAIL\\s*:','QFATAL','ASSERT:','Segmentation fault','Exception:' -Context 3,5 | Select-Object -First 20)
-            Write-Host "M17_NATIVE_FAIL_ASSERTION_RECORDS=$($fails.Count)"
+            $fails=@(Select-String -LiteralPath $testLog -Pattern 'FAIL!','QFATAL','ASSERT:','Exception:','Failed' -Context 2,3 | Select-Object -First 16)
             foreach ($hit in $fails) {
               foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
               Write-Host $hit.Line
               foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
-              Write-Host "--- M17 BOUNDED CASE ---"
             }
-            if ($fails.Count -eq 0) {
-              # CTest on MSVC can report a failing native Qt suite without
-              # forwarding QtTest case details to the PowerShell redirect.
-              # Run the SAME already-built executable exactly once more in
-              # diagnostic-only mode with its own QtTest TXT output file.
-              # Never interpret this rerun as qualification or hide the red.
-              $nativeExe=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/Release/rgsml_terminal_product_activation_tests.exe"
-              $caseLog=Join-Path $env:RUNNER_TEMP "m17-qt-native-assertions.txt"
-              $consoleLog=Join-Path $env:RUNNER_TEMP "m17-qt-native-console.txt"
-              if (Test-Path -LiteralPath $nativeExe) {
-                & $nativeExe -o "$caseLog,txt" *> $consoleLog
-                Write-Host "M17_NATIVE_DIAGNOSTIC_RERUN_EXIT=$LASTEXITCODE"
-                if (Test-Path -LiteralPath $caseLog) {
-                  $caseHits=@(Select-String -LiteralPath $caseLog -Pattern 'FAIL!','QFATAL','Received signal','Totals:','SKIP','M17_' -Context 2,3 | Select-Object -First 25)
-                  Write-Host "M17_NATIVE_DIAGNOSTIC_CASE_RECORDS=$($caseHits.Count)"
-                  foreach ($hit in $caseHits) {
-                    foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
-                    Write-Host $hit.Line
-                    foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
-                    Write-Host "--- M17 DIAGNOSTIC CASE ---"
-                  }
-                  if ($caseHits.Count -eq 0) { Get-Content $caseLog -Tail 35 }
-                } else {
-                  Write-Host "M17_NATIVE_DIAGNOSTIC_TXT_NOT_CREATED"
-                  if (Test-Path -LiteralPath $consoleLog) { Get-Content $consoleLog -Tail 35 }
-                }
-              } else {
-                Write-Host "M17_NATIVE_DIAGNOSTIC_EXE_NOT_FOUND"
-              }
-              $lastCTest=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/Testing/Temporary/LastTest.log"
-              if (Test-Path -LiteralPath $lastCTest) {
-                $ctestHits=@(Select-String -LiteralPath $lastCTest -Pattern 'FAIL!','QFATAL','Received signal','\*\*\*Failed','The following tests' -Context 2,3 | Select-Object -First 10)
-                foreach ($hit in $ctestHits) {
-                  foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
-                  Write-Host $hit.Line
-                  foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
-                }
-              }
-            }
-            throw "P2_AB_M17_OWNER_TEST_FAIL"
+            if ($fails.Count -eq 0) { Get-Content $testLog -Tail 28 }
+            throw "P2_AUDITION_FOCUSED_TEST_FAIL"
           }
           Get-Content $testLog -Tail 12
           Write-Host "P2_44K1_AB_NO_STOP_NO_CLEAR_UNIT=PASS"
           Write-Host "P2_44K1_TO_48K_SRC_HANDOFF_NEGATIVE_ORACLE=PASS"
-          Write-Host "M17_M18_AUDITION_OWNER_AND_CROSS_RATE_NATIVE=PASS"
+          Write-Host "M17_LEGACY_COMBINED_NATIVE=NOT_RUN_SCOPE_RESET_PENDING_PO_PHYSICAL"
 
       - name: Run genuine application Qt Main startup smoke
         shell: pwsh
