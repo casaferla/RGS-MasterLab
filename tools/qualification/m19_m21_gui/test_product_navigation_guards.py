@@ -465,6 +465,19 @@ def test_export_permission_unchanged() -> None:
     # The auto-return is a convenience only. Product canExport is checked
     # immediately AFTER exact device retirement, BEFORE SaveFile can open.
     assert 'root.m18AutoReturnForExportAvailable' in qml
+    # Audit #74: m17RecoveryExitRequired is IDENTICAL to monitorExclusive
+    # for the window-close warning. Its old negation made the verified
+    # monitor -> Return -> native M18 export branch unreachable.
+    auto_return = qml[qml.index('readonly property bool m18AutoReturnForExportAvailable:'):
+                      qml.index('property int m18PendingExportFormatIndex:')]
+    assert '&& !root.m17RecoveryExitRequired' not in auto_return
+    for token in (
+        'root.appTerminalMonitorViewModel.monitorInstalled',
+        '!root.appTerminalMonitorViewModel.monitorPreparing',
+        '!root.appTerminalMonitorViewModel.monitorCancelling',
+        '=== "MONITOR · PRIVATE PCM (NOT LIVE)"',
+    ):
+        assert token in auto_return
     flow = qml[qml.index('function requestVerifiedWavExport('):
                qml.index('readonly property var appMemoryAdvisor:')]
     assert flow.index('root.returnFromM17Audition()') < flow.index(
@@ -710,6 +723,17 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'clearRetiresReferenceWorkerWithoutTouchingSource' in native
     assert 'beforeIndependentAudition_(target)' in selector
     assert 'before_independent_audition(' in ui
+    # Audit #74: an M18-denied target switch may NOT first retire the
+    # live M17 sink. The admission precedes the M17 park, but the
+    # selector publication scope still starts AFTER nested MANUAL restore.
+    pos_selector=selector.index('core::Status AuditionSourceSelector::switch_to(')
+    switch_body=selector[pos_selector:selector.index(
+        'core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(',pos_selector)]
+    assert switch_body.index('admit_m18_source_mutation("switch_target")') < switch_body.index(
+        'beforeIndependentAudition_(target)') < switch_body.index(
+        'M18ScopedAuditionMutation lifetime')
+    assert 'M18_AUDIT_BUSY_WITH_EXACT_OUTPUT_OWNER' in read(
+        'tests/unit/app/test_terminal_product_activation.cpp')
     assert 'M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD' in ui
     assert 'deactivate(true);' in ui
     assert 'comparison_pcm_still_valid()' in ui
@@ -745,6 +769,8 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QVERIFY(handoffUi.cancel());' in physical
     assert '"M17_PO_CROSS_RATE_MONITOR_WRONG_PRE_FLIGHT_SOURCE"' in physical
     assert 'QVERIFY(handoffUi.can_install()); // still usable without Render Master' in physical
+    assert 'QCOMPARE(device->state,core::PlaybackState::PLAYING);' in physical
+    assert 'session_->verified_master_rate_for_monitoring()' in ui
     assert 'QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);' in physical
     # PO accepted the independent REFERENCE loop. The old prohibition
     # was a temporary safety guard, not a frozen UX requirement. Require
