@@ -679,6 +679,15 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
            ||(target==AuditionTarget::GOLD &&!gold_))
             return unavailable("The requested audition target has no authoritative realization.");
     }
+    // First reject an M17-ineligible switch without touching the M18
+    // Product epoch. This callback is a read-only coordinator preflight,
+    // not DEVICE retirement or an M17 rendering mutation.
+    if(activeTarget_==AuditionTarget::PROCESSED
+       &&target!=AuditionTarget::PROCESSED
+       &&independentAuditionPreflight_) {
+        const auto eligible=independentAuditionPreflight_(target);
+        if(!eligible)return eligible;
+    }
     // Admission must precede ANY physical M17 retirement. In particular
     // an active M18 export/epoch lease can deny switch_target; the rejected
     // click may not retire audible M17 while leaving PROCESSED selected.
