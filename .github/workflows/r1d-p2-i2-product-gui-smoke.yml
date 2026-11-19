@@ -138,7 +138,7 @@ jobs:
               }
               $lastCTest=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/Testing/Temporary/LastTest.log"
               if (Test-Path -LiteralPath $lastCTest) {
-                $ctestHits=@(Select-String -LiteralPath $lastCTest -Pattern 'FAIL!','QFATAL','Received signal','\\*\\*\\*Failed','The following tests' -Context 2,3 | Select-Object -First 10)
+                $ctestHits=@(Select-String -LiteralPath $lastCTest -Pattern 'FAIL!','QFATAL','Received signal','\*\*\*Failed','The following tests' -Context 2,3 | Select-Object -First 10)
                 foreach ($hit in $ctestHits) {
                   foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
                   Write-Host $hit.Line
