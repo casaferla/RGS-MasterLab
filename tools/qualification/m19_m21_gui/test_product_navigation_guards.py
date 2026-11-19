@@ -810,9 +810,19 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);' in physical
     # F06: ON after BYPASS is not permission to discard a cross-rate
     # verified Master by attempting same-rate direct Preview rearm.
-    assert 'maybe_rearm_parked_master();' in ui[ui.index(
+    f07_on_handler=ui[ui.index(
         'void TerminalProductActivationCoordinator::limiter_accepted()'):
         ui.index('void TerminalProductActivationCoordinator::manual_preview_changed(')]
+    assert 'maybe_rearm_parked_master();' in f07_on_handler
+    # F07: successful direct rearm consumes comparison_cached(), but must
+    # return from ON before the invalidation/cancel branch is considered.
+    assert 'if(rearmed==QStringLiteral("READY_TO_INSTALL")' in f07_on_handler
+    assert '||rearmed==QStringLiteral("MEASURED_NONCONFORMING_READY"))' in f07_on_handler
+    assert f07_on_handler.index('if(rearmed==QStringLiteral("READY_TO_INSTALL")') < (
+        f07_on_handler.index('static_cast<void>(session_->cancel());',
+                             f07_on_handler.index('maybe_rearm_parked_master();')))
+    assert 'QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));' in physical
+    assert 'QCOMPARE(candidates.staged(),initialPreparedPcm);' in physical
     assert 'const auto bypassCrossRateMaster=candidates.staged();' in physical
     assert 'QCOMPARE(renderer.render_invocation_count(),bypassRenderCount);' in physical
     # PO accepted the independent REFERENCE loop. The old prohibition
