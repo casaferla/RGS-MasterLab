@@ -83,7 +83,18 @@ jobs:
           $testLog=Join-Path $env:RUNNER_TEMP "m17-audition-ctest-bounded.log"
           & ctest --test-dir build-p2-audition-tests -C Release --output-on-failure -R '^(rgsml_audition_source_selector_tests|rgsml_audition_region_tests|rgsml_playback_support_tests|rgsml_terminal_product_activation_tests)$' *> $testLog
           if ($LASTEXITCODE -ne 0) {
-            Get-Content $testLog -Tail 75
+            # QtTest outputs all case lines, and CTest's last 75 lines
+            # often hide the first real FAIL! assertion. Show only bounded
+            # failure records with context; never dump complete CI logs.
+            $fails=@(Select-String -LiteralPath $testLog -Pattern 'FAIL!','FAIL\\s*:','QFATAL','ASSERT:','Segmentation fault','Exception:' -Context 3,5 | Select-Object -First 20)
+            Write-Host "M17_NATIVE_FAIL_ASSERTION_RECORDS=$($fails.Count)"
+            foreach ($hit in $fails) {
+              foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
+              Write-Host $hit.Line
+              foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
+              Write-Host "--- M17 BOUNDED CASE ---"
+            }
+            if ($fails.Count -eq 0) { Get-Content $testLog -Tail 75 }
             throw "P2_AB_M17_OWNER_TEST_FAIL"
           }
           Get-Content $testLog -Tail 12
