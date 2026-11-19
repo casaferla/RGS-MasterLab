@@ -1423,32 +1423,30 @@ void TerminalProductActivationCoordinator::maybe_rearm_parked_master()
         view_->setAudioStatus(QStringLiteral("MASTER RETAINED · SELECT PROCESSED"));
         return;
     }
-    // A cross-target A/B switch can resume PLAYING. Never steal that
-    // transport from its user; wait for STOPPED to capture exact source
-    // cue and RealizationId. A second M17 Render is NOT requested.
-    const auto captured=selector_->capture_terminal_activation_intent();
-    if(!captured) {
-        view_->setAudioStatus(QStringLiteral(
-            "MASTER RETAINED · STOP TO PREVIEW"));
-        return;
-    }
     if(!session_->comparison_owners_current())return;
-    // A verified PROJECT MASTER may have a different output rate from
-    // the physical DEVICE. That is a valid Listen to Master candidate,
-    // not a direct M17 Preview candidate. The latter's immutable
-    // resume_comparison() gate requires exact DEVICE rate by design.
-    // Keep the checked PCM parked and the genuine MANUAL sink audible;
-    // do not ask resume_comparison() to install a forbidden cross-rate
-    // ticket, nor turn its predictable refusal into a persistent GUI
-    // error. On-demand Master monitoring retains its separate SRC,
-    // memory preflight and fresh DEVICE ownership admission.
+    // Verify the *actual* current immutable MASTER and MANUAL device
+    // owner, not only cached SOURCE-side provenance. A cross-rate stage
+    // has a legal monitor-only path while PLAYING, even when a transient
+    // cue/Loop-wrap snapshot cannot be captured for direct Preview.
+    // Never substitute a missing/alien DEVICE owner with a fictitious
+    // "MASTER VERIFIED" status.
     if(session_->status()==QStringLiteral("COMPARISON_VERIFIED")
+       &&session_->verified_master_rate_for_monitoring()
        &&!session_->current_master_matches_device_for_preview()) {
         readyToPreview_=false;
         view_->clearAudioError();
         view_->setAudioStatus(QStringLiteral(
             "MASTER VERIFIED · LISTEN TO MASTER"));
         emit directReturnChanged();
+        return;
+    }
+    // Same-rate direct Preview still requires the separately captured
+    // exact MANUAL owner, stable cue, Loop and current playback lease.
+    // A valid monitor-only MASTER does not borrow this direct install.
+    const auto captured=selector_->capture_terminal_activation_intent();
+    if(!captured) {
+        view_->setAudioStatus(QStringLiteral(
+            "MASTER RETAINED · STOP TO PREVIEW"));
         return;
     }
     transitioning_=true;
