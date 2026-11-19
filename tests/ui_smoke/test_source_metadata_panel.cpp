@@ -3984,6 +3984,14 @@ void SourceMetadataPanelSmokeTest::referenceTerminologyOnRealMain()
     };
     QVERIFY2(checkLabel("menuOpenGold","Open Reference"),
         "Real Main file menu must show Open Reference");
+    QVERIFY2(checkLabel("menuOpenSource","Open Source\tCtrl+O"),
+        "File menu must show Open Source while no SOURCE is installed");
+    auto* openSourceShortcut=root->findChild<QObject*>(
+        QStringLiteral("sourceLoadShortcut"));
+    QVERIFY2(openSourceShortcut,"Ctrl+O must have a real Shortcut object");
+    QCOMPARE(openSourceShortcut->property("sequence").toString(),
+             QStringLiteral("Ctrl+O"));
+    QVERIFY(openSourceShortcut->property("enabled").toBool());
     QVERIFY2(checkLabel("menuClearGold","Clear Reference"),
         "Real Main file menu must show Clear Reference");
     QVERIFY2(checkLabel("adaptiveModeToggle_Gold","Reference / AutoMatch"),
@@ -4862,6 +4870,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         directory, QStringLiteral("UI Source.wav"), valid_wav());
     model.selectSource(QUrl::fromLocalFile(validPath));
     QCoreApplication::processEvents();
+    auto* sourceMenuAfterLoad=root->findChild<QObject*>(
+        QStringLiteral("menuOpenSource"));
+    auto* sourceDialogAfterLoad=root->findChild<QObject*>(
+        QStringLiteral("sourceFileDialog"));
+    QVERIFY(sourceMenuAfterLoad &&sourceDialogAfterLoad);
+    QCOMPARE(sourceMenuAfterLoad->property("text").toString(),
+             QStringLiteral("Replace Source\tCtrl+O"));
+    QCOMPARE(sourceDialogAfterLoad->property("title").toString(),
+             QStringLiteral("Replace Source WAV"));
     QVERIFY(saveProjectItem->property("enabled").toBool());
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
