@@ -3047,17 +3047,30 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
 
-    // PAUSED stays paused while re-auditioning the retained PCM; Preview Prepared installs an
-    // OUTPUT_RATE owner only after an explicit request.
+    // CI #85: the preceding DEVICE-rate restoration and other native
+    // tests leave exact MANUAL deliberately STOPPED. Pause from STOPPED
+    // is NOT an instruction to start audio. Establish the PAUSED case
+    // via an explicit source-owner PLAY first, then PAUSE the same owner.
+    // Preview Prepared must preserve the source cue and PAUSED state;
+    // no implicit Play, direct foreign owner or new full M17 render.
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));
+    QCOMPARE(device->position,core::FrameIndex{2600});
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    transport.playOrResume();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
     transport.pause();
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->position,core::FrameIndex{2600});
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
-    QCOMPARE(device->state,core::PlaybackState::PAUSED);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
+    const auto renderCountBeforePausedPreview=
+        renderer.render_invocation_count();
     vm.previewPrepared();
     QVERIFY(coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforePausedPreview);
     const auto pausedTerminalId=device->audibleRealization.realizationId;
     QVERIFY(pausedTerminalId && pausedTerminalId!=firstTerminalId);
     qInfo().noquote()<<"M17_EDGE_CASE=STOPPED_AB_TRANSPORT";
