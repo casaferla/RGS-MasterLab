@@ -139,6 +139,18 @@ def test_product_binds_status_without_demo() -> None:
     assert 'analysisSourceOption_' not in editor
     assert 'root.panelIndex === 2' in editor
     assert 'model: ["METRIC","PREPARED","PROCESSED","REFERENCE",' in visuals
+    assert '"Δ PREPARED → REFERENCE"' in visuals
+    assert '"Δ PROCESSED → REFERENCE"' in visuals
+    assert 'readonly property real m21ColumnGap: 8' in visuals
+    assert 'function m21ColumnWidth(column, tableWidth)' in visuals
+    assert 'width: root.m21ColumnWidth(index,parent.width)' in visuals
+    assert 'objectName: "m21Header_" + index' in visuals
+    assert 'objectName: "m21ValueCell_"' in visuals
+    assert 'readonly property real deltaGroupLeft:' in visuals
+    assert 'm21ValueCell.numericWidth' in visuals
+    assert 'm21ValueCell.deltaGroupGap' in visuals
+    assert '"M21 Δ header must center between numeric value and bar"' in read(
+        "tests/ui_smoke/test_source_metadata_panel.cpp")
     assert 'objectName: "m20FrequencyTick_" + index' in visuals
     assert 'parent.width*Math.log10(modelData.hz/20)' in visuals
     assert 'root.statusViewModel.runningAnalysisRole' in editor
