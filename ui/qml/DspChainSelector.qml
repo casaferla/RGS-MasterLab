@@ -394,7 +394,9 @@ Rectangle {
                                 objectName: "dspChainModuleTitle_" + rowItem.modelIndex
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                y: 12
+                                // Stable top baseline: independent from the
+                                // status track even when that track wraps.
+                                y: 8
                                 height: 16
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
                                 color: rowItem.isBypassed ? "#9FB1BF"
@@ -411,10 +413,14 @@ Rectangle {
                                 objectName: "dspChainStateText_" + rowItem.modelIndex
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                y: 29
-                                height: 21
-                                // A multiline status occupies only the LOWER
-                                // portion, never moving the title or icon.
+                                // The former 21px well clipped the second
+                                // line of Streaming TP Limiter. Keep 52px rows:
+                                // title [8,24], status [25,51], 1px bottom.
+                                y: 25
+                                height: 26
+                                // TWO rendered lines fit at 9px without
+                                // forcing the title down or touching another
+                                // tile. Long diagnostics remain in Tooltip.
                                 wrapMode: Text.WordWrap
                                 elide: Text.ElideNone
                                 maximumLineCount: 2
