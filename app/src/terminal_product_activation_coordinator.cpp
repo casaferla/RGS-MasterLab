@@ -1215,16 +1215,25 @@ void TerminalProductActivationCoordinator::limiter_accepted()
         return;
     }
     if(session_->comparison_cached()) {
-        // ON does not re-render or auto-play M17. Re-establish the exact
-        // currently audible MANUAL owner; the user must click Preview
-        // Prepared / Preview Anyway, respectively, to hear cached PCM.
-        auto captured=selector_->capture_terminal_activation_intent();
-        if(captured && session_->comparison_owners_current()) {
-            intent_=*captured.value();
-            auto resumed=session_->resume_comparison();
-            if(resumed)return; // private_session_changed publishes READY.
-            intent_.reset();
+        // BYPASS -> ON is not a new Ceiling, SOURCE or MASTER generation.
+        // Reconcile through the SAME exact-owner parked-Master path used
+        // after PREPARED / REFERENCE navigation. A verified cross-rate
+        // MASTER must remain MONITOR-only, never call resume_comparison()
+        // (which rightly requires MASTER == DEVICE for direct Preview).
+        // Same-rate, stopped/playing cue races and other independent
+        // targets also retain the immutable PCM until a true invalidation.
+        const bool currentTarget=selector_->active_target()
+            ==AuditionTarget::PROCESSED;
+        if(session_->comparison_pcm_still_valid()
+           &&(!currentTarget||session_->comparison_owners_current())) {
+            maybe_rearm_parked_master();
+            if(session_->comparison_cached()
+               &&session_->comparison_pcm_still_valid()
+               &&(!currentTarget||session_->comparison_owners_current()))
+                return;
         }
+        // Alien MANUAL owner or genuinely invalidated staged PCM cannot
+        // be promoted merely by toggling the limiter switch back ON.
         static_cast<void>(session_->cancel());
     }
     if(intent_)deactivate(false);
