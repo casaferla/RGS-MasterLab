@@ -95,7 +95,7 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AuditionSourceSelector.qml": "1225337c5ca5f652cb01a022e3475be5afa1aa74",
     "ui/qml/StudioButton.qml": "04abee78e09e9d6e9cc8f53b7957eca3691fc7a8",
-    "ui/qml/DspChainSelector.qml": "accaeba5700ec6bb11bddcaccb06bce35d36f81a",
+    "ui/qml/DspChainSelector.qml": "cc337feb5bcb3d792799f4146f270c1dcdf984fb",
     "ui/qml/AnalysisApprovedContent.qml": "dd8b970a12b13434decd33c6273d44770376afe6",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
     "ui/qml/Main.qml": "a8869ee3335be12f621e52958961fe7e1eafa7fc",
