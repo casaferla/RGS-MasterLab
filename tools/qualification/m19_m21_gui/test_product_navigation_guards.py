@@ -465,12 +465,16 @@ def test_export_permission_unchanged() -> None:
     # The auto-return is a convenience only. Product canExport is checked
     # immediately AFTER exact device retirement, BEFORE SaveFile can open.
     assert 'root.m18AutoReturnForExportAvailable' in qml
-    # Audit #74: m17RecoveryExitRequired is IDENTICAL to monitorExclusive
-    # for the window-close warning. Its old negation made the verified
-    # monitor -> Return -> native M18 export branch unreachable.
+    # #74 removed an old impossible guard where recovery was inferred
+    # from monitorExclusive. F05 instead uses the NARROW, current
+    # recovery-required predicate, while healthy verified monitoring
+    # remains eligible for an exact native Return + Export. Do not turn
+    # this back into a blanket monitor exclusion.
     auto_return = qml[qml.index('readonly property bool m18AutoReturnForExportAvailable:'):
                       qml.index('property int m18PendingExportFormatIndex:')]
-    assert '&& !root.m17RecoveryExitRequired' not in auto_return
+    assert '&& !root.m17RecoveryExitRequired' in auto_return
+    assert 'String(root.appTerminalMonitorViewModel.statusText)' in qml
+    assert 'indexOf("RECOVERY REQUIRED") !== -1' in qml
     for token in (
         'root.appTerminalMonitorViewModel.monitorInstalled',
         '!root.appTerminalMonitorViewModel.monitorPreparing',
