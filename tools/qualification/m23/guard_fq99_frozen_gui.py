@@ -101,9 +101,15 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     # PO-directed pre-M24 adversarial repair F05: unchanged native M18
     # ticket/consent and FQ99 geometry; only the recovery-only monitor
     # predicate is added to the already approved Return + Export path.
-    # Review against the prior pinned blob: exactly five QML lines replaced,
-    # no other Main.qml line changed. Same exact Git-blob enforcement.
-    "ui/qml/Main.qml": "3e222232b54305994970b073e16a977c63ccaf47",
+    # Previous approved Main.qml blob:
+    # 3e222232b54305994970b073e16a977c63ccaf47.
+    # PO physical #87 (2026-11-19) found Listen from M17 BYPASS
+    # left the module blue, and authorized explicit Active before Master
+    # monitoring. This exact-pinned QML edit reuses native setBypass(false),
+    # rechecks canInstall, and routes RAM-caution confirmation through
+    # the same owner-gated action. No layout/FQ99 DSP changes or native
+    # monitor admission bypass is authorized by this new hash.
+    "ui/qml/Main.qml": "c67c65e6ce6109821b9c1dd63521e584cb2906fa",
     "ui/qml/DspEditorHost.qml": "8028ac7e80b70cfb1a5f97a0bbfb118872359919",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
     "ui/qml/StudioIcon.qml": "4dd165406dd1130dce6434bcb248df3211a11477",
