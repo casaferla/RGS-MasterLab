@@ -830,7 +830,7 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     # restored same-rate direct Preview without a new render.
     changed_device=physical[physical.index(
         '// F06: the selected MASTER sample rate is independent of the'):
-        physical.index('// Edits to the current value must NOT lose')]
+        physical.index('// The Product default is 0 dBTP (distinct from the frozen generic')]
     assert 'QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER")' in changed_device
     assert 'QStringLiteral("COMPARISON_VERIFIED")' in changed_device
     assert '!product.current_master_matches_device_for_preview()' in changed_device
