@@ -455,12 +455,18 @@ def test_export_permission_unchanged() -> None:
 
 def test_original_source_open_guard_preserved() -> None:
     qml = read("ui/qml/Main.qml")
-    # The unqualified Ctrl+O Shortcut would mutate an already qualified
-    # Main.qml. Retain its existing guarded Open Source button instead.
+    # PO physical #68: the old caption-only Ctrl+O did nothing. Retain
+    # the M17 monitor admission and SOURCE picker transaction; require an
+    # actual application Shortcut, plus dynamic Open/Replace menu text.
     assert 'id: sourceOpenButton' in qml
     assert 'enabled: !root.monitorExclusive' in qml
     assert "onClicked: sourceDialog.open()" in qml
-    assert 'objectName: "openSourceStandardShortcut"' not in qml
+    assert 'objectName: "sourceLoadShortcut"' in qml
+    assert 'sequence: "Ctrl+O"' in qml
+    assert 'context: Qt.ApplicationShortcut' in qml
+    assert 'onActivated: sourceDialog.open()' in qml
+    assert 'text: (sourceSelection.hasSource ? "Replace Source" : "Open Source")' in qml
+    assert 'title: sourceSelection.hasSource ? "Replace Source WAV" : "Open Source WAV"' in qml
 
 
 def test_m17_export_ui_presentation_order() -> None:
@@ -717,6 +723,13 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'REFERENCE_LOOP_REQUIRES_READY_FILE_AND_VALID_TIMEBASE' in transport
     assert 'referenceAuditionChecker_' in transport
     assert 'set_reference_audition_checker(' in main
+    assert 'auditionSelector.reference_device_installing()' in main
+    assert 'referenceDeviceInstalling_=true' in selector
+    assert 'referenceDeviceInstalling_' in read(
+        "app/src/audition_source_selector.hpp")
+    assert 'referenceInstallScope{referenceDeviceInstalling_}' in selector
+    assert 'sawScopedRearmBeforePublication' in read(
+        "tests/unit/app/test_audition_source_selector.cpp")
     assert 'sourceDerivedActive_' in transport
     assert 'set_loop_reference_range(' in transport
     assert 'referenceMode_ ? playback_->set_loop_reference_range(' in region
