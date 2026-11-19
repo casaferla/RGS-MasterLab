@@ -111,6 +111,23 @@ def test_product_binds_status_without_demo() -> None:
     assert 'NOT audio quality' in visuals
     assert 'QStringLiteral("m21DeltaBar_%1_%2")' in read(
         "tests/ui_smoke/test_source_metadata_panel.cpp")
+    # PO 2026-11-19: M17 renders the MASTER. PREPARED is a distinct
+    # audition identity. Preserve native Prepare API/state compatibility.
+    tp_rail = read("ui/qml/TruePeakMeterEditor.qml")
+    selector = read("ui/qml/DspChainSelector.qml")
+    assert ': root.limiterPreparationVisible ? "RENDERING" : "GR HISTORY"' in tp_rail
+    assert '"Offline Master rendering progress"' in tp_rail
+    assert '"CONVERTING PLAYBACK"' in tp_rail
+    assert 'QStringLiteral("RENDERING")' in read(
+        "tests/ui_smoke/test_source_metadata_panel.cpp")
+    assert 'function m17RenderCopy(value)' in host
+    assert 'root.m17RenderCopy(root.terminalLimiterViewModel.audioStatus)' in host
+    assert 'return "Needs render"' in selector
+    assert 'return "Rendering Master"' in selector
+    assert '"Select the output sample rate before Render Master;' in host
+    assert "m17PrepareButton" in host and "requestPrepare()" in host
+    assert "PREPARED" in host
+
     assert 'm19SpareHeight' in visuals
     assert 'm19RelationHeight' in visuals
     assert 'm21RowHeight' in visuals
