@@ -3266,6 +3266,18 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
     QVERIFY(product.comparison_cached());
+    // F06 second edge: do not destroy the parked MASTER if BYPASS -> ON
+    // happens while independent REFERENCE is selected. Master borrowing
+    // remains disabled until the exact PROCESSED MANUAL is restored.
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),crossRateStage);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(vm.audio_status(),QStringLiteral(
+        "MASTER RETAINED · SELECT PROCESSED"));
+    QCOMPARE(candidates.staged(),crossRateStage);
+    QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
