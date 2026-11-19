@@ -94,7 +94,45 @@ jobs:
               foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
               Write-Host "--- M17 BOUNDED CASE ---"
             }
-            if ($fails.Count -eq 0) { Get-Content $testLog -Tail 75 }
+            if ($fails.Count -eq 0) {
+              # CTest on MSVC can report a failing native Qt suite without
+              # forwarding QtTest case details to the PowerShell redirect.
+              # Run the SAME already-built executable exactly once more in
+              # diagnostic-only mode with its own QtTest TXT output file.
+              # Never interpret this rerun as qualification or hide the red.
+              $nativeExe=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/Release/rgsml_terminal_product_activation_tests.exe"
+              $caseLog=Join-Path $env:RUNNER_TEMP "m17-qt-native-assertions.txt"
+              $consoleLog=Join-Path $env:RUNNER_TEMP "m17-qt-native-console.txt"
+              if (Test-Path -LiteralPath $nativeExe) {
+                & $nativeExe -o "$caseLog,txt" *> $consoleLog
+                Write-Host "M17_NATIVE_DIAGNOSTIC_RERUN_EXIT=$LASTEXITCODE"
+                if (Test-Path -LiteralPath $caseLog) {
+                  $caseHits=@(Select-String -LiteralPath $caseLog -Pattern 'FAIL!','QFATAL','Received signal','Totals:','SKIP','M17_' -Context 2,3 | Select-Object -First 25)
+                  Write-Host "M17_NATIVE_DIAGNOSTIC_CASE_RECORDS=$($caseHits.Count)"
+                  foreach ($hit in $caseHits) {
+                    foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
+                    Write-Host $hit.Line
+                    foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
+                    Write-Host "--- M17 DIAGNOSTIC CASE ---"
+                  }
+                  if ($caseHits.Count -eq 0) { Get-Content $caseLog -Tail 35 }
+                } else {
+                  Write-Host "M17_NATIVE_DIAGNOSTIC_TXT_NOT_CREATED"
+                  if (Test-Path -LiteralPath $consoleLog) { Get-Content $consoleLog -Tail 35 }
+                }
+              } else {
+                Write-Host "M17_NATIVE_DIAGNOSTIC_EXE_NOT_FOUND"
+              }
+              $lastCTest=Join-Path $env:GITHUB_WORKSPACE "build-p2-audition-tests/Testing/Temporary/LastTest.log"
+              if (Test-Path -LiteralPath $lastCTest) {
+                $ctestHits=@(Select-String -LiteralPath $lastCTest -Pattern 'FAIL!','QFATAL','Received signal','***Failed','The following tests' -Context 2,3 | Select-Object -First 10)
+                foreach ($hit in $ctestHits) {
+                  foreach ($entry in @($hit.Context.PreContext)) { Write-Host $entry }
+                  Write-Host $hit.Line
+                  foreach ($entry in @($hit.Context.PostContext)) { Write-Host $entry }
+                }
+              }
+            }
             throw "P2_AB_M17_OWNER_TEST_FAIL"
           }
           Get-Content $testLog -Tail 12
