@@ -741,21 +741,25 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'can_begin_independent_audition(target)' in main
     assert 'M17_AUDIT_RENDER_IN_PROGRESS_NO_MUTATION' in read(
         'tests/unit/app/test_terminal_product_activation.cpp')
-    # Do not let all seven job badges turn green while the exact native
-    # M17 Product/monitor test source is compiled nowhere in focused CI.
+    # PO 2026-11-19 scope reset: the large additional M17 Qt test
+    # remains available in CMake, but it is NOT the Product artifact gate.
+    # The focused lane must prove source/Reference/transport tests and
+    # explicitly label the exploratory native M17 test NOT RUN (no
+    # fraudulent native-qualification PASS while its oracle is stale).
     focused = read(".github/workflows/r1d-p2-i2-product-gui-smoke.yml")
-    assert 'rgsml_terminal_product_activation_tests' in focused
-    assert 'M17_M18_AUDITION_OWNER_AND_CROSS_RATE_NATIVE=PASS' in focused
-    assert 'P2_AB_M17_OWNER_TEST_FAIL' in focused
-    # CI #78 exposed an old blind spot: compiling the native M17 suite
-    # is not sufficient if its genuine 16-FIR Playback catalog has not
-    # been built and loaded. Keep the build dependency and SHA gate.
+    for target in ('rgsml_audition_source_selector_tests',
+                   'rgsml_audition_region_tests',
+                   'rgsml_playback_support_tests'):
+        assert target in focused
+    assert 'M17_LEGACY_COMBINED_NATIVE=NOT_RUN_SCOPE_RESET_PENDING_PO_PHYSICAL' in focused
+    assert 'M17_M18_AUDITION_OWNER_AND_CROSS_RATE_NATIVE=PASS' not in focused
+    assert 'P2_AB_M17_OWNER_TEST_FAIL' not in focused
+    # The genuine 16 frozen FIR admission remains part of the OPTIONAL
+    # native suite and the other strict M17/M18 checks; never unpin assets.
     activation_cmake=read("cmake/RgsmlTerminalProductActivationTests.cmake")
     assert 'add_dependencies(rgsml_terminal_product_activation_tests' in activation_cmake
     assert '    rgsml_external_fir_assets)' in activation_cmake
-    assert 'M17_NATIVE_16_FIR_ROOT_VERIFIED=PASS' in focused
-    assert 'verify_installed_16_firs.py --fir-root "$firRoot"' in focused
-    assert '$env:RGSML_PLAYBACK_FIR_ROOT=$firRoot' in focused
+    assert 'rgsml_external_fir_assets' in activation_cmake
     # F05: MONITOR_PRIVATE_RECOVERY_REQUIRED can still be 'installed'
     # natively but is not an ordinary export-return state. Keep the
     # convenience action disabled while explicit DEVICE recovery is needed.
