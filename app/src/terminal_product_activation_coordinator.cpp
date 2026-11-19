@@ -1433,6 +1433,24 @@ void TerminalProductActivationCoordinator::maybe_rearm_parked_master()
         return;
     }
     if(!session_->comparison_owners_current())return;
+    // A verified PROJECT MASTER may have a different output rate from
+    // the physical DEVICE. That is a valid Listen to Master candidate,
+    // not a direct M17 Preview candidate. The latter's immutable
+    // resume_comparison() gate requires exact DEVICE rate by design.
+    // Keep the checked PCM parked and the genuine MANUAL sink audible;
+    // do not ask resume_comparison() to install a forbidden cross-rate
+    // ticket, nor turn its predictable refusal into a persistent GUI
+    // error. On-demand Master monitoring retains its separate SRC,
+    // memory preflight and fresh DEVICE ownership admission.
+    if(session_->status()==QStringLiteral("COMPARISON_VERIFIED")
+       &&!session_->current_master_matches_device_for_preview()) {
+        readyToPreview_=false;
+        view_->clearAudioError();
+        view_->setAudioStatus(QStringLiteral(
+            "MASTER VERIFIED · LISTEN TO MASTER"));
+        emit directReturnChanged();
+        return;
+    }
     transitioning_=true;
     intent_=*captured.value();
     const auto resumed=session_->resume_comparison();
