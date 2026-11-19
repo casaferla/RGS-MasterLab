@@ -835,7 +835,15 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QStringLiteral("COMPARISON_VERIFIED")' in changed_device
     assert '!product.current_master_matches_device_for_preview()' in changed_device
     assert 'QCOMPARE(candidates.staged(),initialPreparedPcm);' in changed_device
-    assert 'coordinator.external_context_changed();' in changed_device
+    # CI #83: external_context_changed() is deliberately private.
+    # Exercise the REAL public PlaybackTransportViewModel::stop() signal,
+    # connected to maybe_rearm_parked_master() in the Product coordinator.
+    # A synthetic test must never bypass Product public transport wiring.
+    assert 'coordinator.external_context_changed();' not in physical
+    assert 'transport.stop();' in changed_device
+    assert 'QCOMPARE(device->state,core::PlaybackState::PLAYING);' in changed_device
+    assert 'QCOMPARE(device->state,core::PlaybackState::STOPPED);' in changed_device
+    assert 'PlaybackTransportViewModel::playbackChanged' in ui
     assert 'QStringLiteral("READY_TO_INSTALL")' in changed_device
     assert 'renderCountBeforeDeviceRateSwitch' in changed_device
     # PREPARED/REFERENCE transport-only audition must park, not retire,
