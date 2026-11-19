@@ -2916,13 +2916,23 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),
         renderCountBeforeDeviceRateSwitch);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    // Edits to the current value must NOT lose a minute-long accepted render.
+    // The Product default is 0 dBTP (distinct from the frozen generic
+    // DSP package default of -1 dBTP). A true no-op edits the current
+    // accepted value; hard-coding -1 would make this a genuine revision.
     qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RETAINS_AB";
+    const auto acceptedCeilingBeforeEdits=
+        limiter.value()->parameters().ceiling_db_tp();
+    QCOMPARE(acceptedCeilingBeforeEdits,0.0);
     const auto currentAdmitted=candidates.staged();
     const auto revisionBeforeNoop=limiter.value()->parameter_revision();
-    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    const auto renderCountBeforeNoop=renderer.render_invocation_count();
+    QVERIFY(vm.setDraftFieldValue(
+        QStringLiteral("ceilingDbTp"),acceptedCeilingBeforeEdits));
     QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameters().ceiling_db_tp(),
+             acceptedCeilingBeforeEdits);
     QCOMPARE(limiter.value()->parameter_revision(),revisionBeforeNoop);
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeNoop);
     QCOMPARE(candidates.staged(),currentAdmitted);
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
 
@@ -2972,18 +2982,23 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(candidates.staged(),savedBeforeTargetSwitch);
     QCOMPARE(renderer.render_invocation_count(),renderCountBeforeTargetSwitch);
 
-    // An actual parameter edit makes the OLD A/B PCM stale.
+    // A genuine Ceiling edit must invalidate the previous checked PCM.
+    // Prove A->B->A against the *same* accepted Product value (0 dBTP)
+    // tested above, not the unrelated generic DSP -1 dBTP default.
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
     QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameters().ceiling_db_tp(),-2.0);
+    QCOMPARE(limiter.value()->parameter_revision(),revisionBeforeNoop+1);
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
-    // Reverting to the exact original numeric Ceiling does NOT restore
-    // the old PCM: the parameter revision proves A->B->A was an edit.
     qInfo().noquote()<<"M17_EDGE_CASE=CEILING_ROUNDTRIP_NEVER_REVIVES_PCM";
     const auto revisionAfterChange=limiter.value()->parameter_revision();
-    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.setDraftFieldValue(
+        QStringLiteral("ceilingDbTp"),acceptedCeilingBeforeEdits));
     QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameters().ceiling_db_tp(),
+             acceptedCeilingBeforeEdits);
     QCOMPARE(limiter.value()->parameter_revision(),revisionAfterChange+1);
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
