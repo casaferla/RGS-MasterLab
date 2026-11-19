@@ -1208,7 +1208,7 @@ Rectangle {
                                 property string interactionHint: !rateRow.admissible
                                     ? "Final SRC BLOCKED: this SOURCE/MASTER pair cannot render. "
                                         + (rateRow.advice && rateRow.advice.details
-                                            ? rateRow.advice.details
+                                            ? root.m17RenderCopy(rateRow.advice.details)
                                             : root.masterRateState
                                                 ? root.masterRateState.final_src_path_status(
                                                     rateRow.modelData) : "")
@@ -1252,9 +1252,9 @@ Rectangle {
                                     : "Complete future Master render ETA N/A."
                                 Layout.preferredWidth: 62
                                 text: forecast && forecast.label
-                                    ? (forecast.kind === "historical_actual"
+                                    ? root.m17RenderCopy(forecast.kind === "historical_actual"
                                         ? "Last " + forecast.label.replace(/^ACT /, "")
-                                        : root.m17RenderCopy(forecast.label)) : "N/A"
+                                        : forecast.label) : "N/A"
                                 elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
                                 ToolTip.text: interactionHint
