@@ -697,6 +697,16 @@ bool TerminalMonitorViewModel::clearMasterRegion()
     emit changed();
     return true;
 }
+void TerminalMonitorViewModel::refresh_install_availability()
+{
+    const bool install=can_install();
+    const bool offline=can_prepare_offline();
+    if(install==lastCanInstall_ &&offline==lastCanPrepareOffline_)return;
+    lastCanInstall_=install;
+    lastCanPrepareOffline_=offline;
+    emit changed();
+}
+
 void TerminalMonitorViewModel::refresh()
 {
     if(!monitor_installed())return;
