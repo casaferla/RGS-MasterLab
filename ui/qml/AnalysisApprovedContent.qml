@@ -124,6 +124,17 @@ Item {
     // The whole comparison page centers after its final natural size.
     readonly property real m21RowHeight: Math.max(23,
         Math.min(36, (root.height - 66) / 9))
+    // M21 six semantic groups, common to header and each metric row.
+    // Five equal 8px gutters; narrower single-number columns make room
+    // for two (number + deviation bar) groups at minimum width.
+    // Fractions sum to 1: metric .20, 3 readings .13, 2 deltas .205.
+    readonly property real m21ColumnGap: 8
+    function m21ColumnWidth(column, tableWidth) {
+        const usable=Math.max(0,tableWidth - 5*m21ColumnGap)
+        if(column===0)return usable*0.20
+        if(column>=1 &&column<=3)return usable*0.13
+        return usable*0.205
+    }
     readonly property color ink: "#E6EEF0"
     readonly property color dim: "#92A5B2"
     readonly property color cyan: "#00C8FF"
@@ -566,11 +577,14 @@ Item {
                     radius: 5
                     Row {
                         anchors.fill: parent
+                        spacing: root.m21ColumnGap
                         Repeater {
                             model: ["METRIC","PREPARED","PROCESSED","REFERENCE",
-                                    "Δ PREP → REF","Δ PROC → REF"]
+                                    "Δ PREPARED → REFERENCE",
+                                    "Δ PROCESSED → REFERENCE"]
                             delegate: Text {
-                                width: parent.width/6
+                                objectName: "m21Header_" + index
+                                width: root.m21ColumnWidth(index,parent.width)
                                 height: parent.height
                                 text: modelData
                                 color: index === 3 ? root.copper : root.ink
@@ -623,6 +637,7 @@ Item {
                             color: index%2===0 ? "#14232F" : "#0E1C26"
                             Row {
                                 anchors.fill: parent
+                                spacing: root.m21ColumnGap
                                 Repeater {
                                     model: [m21MetricRow.metricName,
                                         root.metricText(m21MetricRow.observed.prepared,
@@ -637,7 +652,9 @@ Item {
                                                         m21MetricRow.observed.key)]
                                     delegate: Item {
                                         id: m21ValueCell
-                                        width: parent.width/6
+                                        objectName: "m21ValueCell_"
+                                            + m21MetricRow.metricIndex + "_" + index
+                                        width: root.m21ColumnWidth(index,parent.width)
                                         height: parent.height
                                         readonly property bool isDelta: index===4 || index===5
                                         readonly property var deltaValue: index===4
@@ -651,16 +668,26 @@ Item {
                                             && root.hasNumber(deltaValue)
                                             && Number.isFinite(displayLimit)
                                         readonly property real barWidth: Math.min(
-                                            44,Math.max(24,width*0.37))
+                                            44,Math.max(24,width*0.28))
+                                        readonly property real numericWidth: Math.min(
+                                            64,Math.max(48,width*0.41))
+                                        readonly property real deltaGroupGap: 8
+                                        // The MIDPOINT between the numeric-centre
+                                        // and bar-centre is exactly the CELL centre.
+                                        // Both positions are shared by all 9 rows.
+                                        readonly property real deltaGroupLeft:
+                                            (width - numericWidth - deltaGroupGap
+                                             - barWidth)/2
+                                            - (numericWidth - barWidth)/4
                                         Text {
                                             objectName: "m21NumericCell_"
                                                 + m21MetricRow.metricIndex + "_" + index
-                                            anchors.left: parent.left
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
+                                            x: m21ValueCell.hasDelta
+                                                ? m21ValueCell.deltaGroupLeft : 0
+                                            y: 0
+                                            height: parent.height
                                             width: m21ValueCell.hasDelta
-                                                ? Math.max(0,parent.width
-                                                    - m21ValueCell.barWidth - 5)
+                                                ? m21ValueCell.numericWidth
                                                 : parent.width
                                             text: modelData
                                             font.family: index===0 ? "Segoe UI" : "Consolas"
@@ -681,9 +708,10 @@ Item {
                                             objectName: "m21DeltaBar_"
                                                 + m21MetricRow.metricIndex + "_" + index
                                             visible: m21ValueCell.hasDelta
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 3
-                                            anchors.verticalCenter: parent.verticalCenter
+                                            x: m21ValueCell.deltaGroupLeft
+                                                + m21ValueCell.numericWidth
+                                                + m21ValueCell.deltaGroupGap
+                                            y: (parent.height - height)/2
                                             width: m21ValueCell.barWidth
                                             height: 8
                                             readonly property var deltaValue:
