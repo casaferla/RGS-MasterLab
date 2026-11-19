@@ -7379,22 +7379,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                     QStringLiteral("Δ PREPARED → REFERENCE"),
                     QStringLiteral("Δ PROCESSED → REFERENCE")}};
                 for(int col=0;col<6;++col) {
-                    auto* header=qobject_cast<QQuickItem*>(
+                    auto* m21ColumnHeader=qobject_cast<QQuickItem*>(
                         find_child_by_name(originalPages[index],
                             QStringLiteral("m21Header_%1").arg(col)));
                     auto* cell=qobject_cast<QQuickItem*>(
                         find_child_by_name(firstRow,
                             QStringLiteral("m21ValueCell_0_%1").arg(col)));
-                    QVERIFY(header && cell);
-                    QCOMPARE(header->property("text").toString(),
+                    QVERIFY(m21ColumnHeader && cell);
+                    QCOMPARE(m21ColumnHeader->property("text").toString(),
                              roleHeaders[static_cast<std::size_t>(col)]);
-                    QVERIFY2(!header->property("truncated").toBool(),
+                    QVERIFY2(!m21ColumnHeader->property("truncated").toBool(),
                         "Full M21 role heading must not be truncated");
-                    QVERIFY2(header->property("contentHeight").toDouble()
-                        <=header->height()+0.5,
+                    QVERIFY2(m21ColumnHeader->property("contentHeight").toDouble()
+                        <=m21ColumnHeader->height()+0.5,
                         "M21 heading exceeds fixed header at minimum window");
-                    const qreal hc=header->mapToItem(
-                        analysisAnchor,QPointF{header->width()/2,0}).x();
+                    const qreal hc=m21ColumnHeader->mapToItem(
+                        analysisAnchor,QPointF{m21ColumnHeader->width()/2,0}).x();
                     const qreal cc=cell->mapToItem(
                         analysisAnchor,QPointF{cell->width()/2,0}).x();
                     QVERIFY2(std::abs(hc-cc)<1.5,
