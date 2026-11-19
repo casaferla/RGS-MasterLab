@@ -3218,6 +3218,77 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QCOMPARE(candidates.staged(),crossRateStage);
     QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
+    // PO #72, cross-rate actual MONITOR round trip (MASTER 44.1k on
+    // DEVICE 48k): the product Main routes a user target change through
+    // TerminalMonitorViewModel::cancel(), which must return the exact
+    // monitored DEVICE lease without discarding the checked Master.
+    // Reuse the same native, preflighted monitor mock and its real SRC
+    // conversion, rather than asserting a synthetic audioStatus string.
+    product.set_monitoring_preflight_materializer(
+        [&](audio::AudioBufferView view,core::FrameCount block,
+            std::uint64_t reserved,
+            const app::TerminalPrivateProductSession::
+                MonitoringPreallocationDecision& decision)
+            ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Result=core::Result<
+                std::shared_ptr<const audio::MonitoringPcmCandidate>>;
+            if(block!=*offlineBlock.value() ||reserved!=0
+               ||view.format().sample_rate()!=*masterRate.value())
+                return Result::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M17_PO_CROSS_RATE_MONITOR_WRONG_PRE_FLIGHT_SOURCE"});
+            auto advice=audio::advise_imminent_monitoring_pcm_allocation(
+                view.format().sample_rate(),view.frame_count(),
+                *deviceRate.value(),view.format().channel_layout(),
+                audio::MonitoringMemoryObservation{
+                    UINT64_C(4)*1024*1024*1024,
+                    UINT64_C(5)*1024*1024*1024,reserved});
+            if(!advice)return Result::failure(*advice.error());
+            const auto allowed=decision(*advice.value());
+            if(!allowed)return Result::failure(*allowed.error());
+            auto converted=audio::materialize_monitoring_pcm_candidate(
+                view,*deviceRate.value(),block);
+            if(!converted)return Result::failure(*converted.error());
+            return Result::success(
+                std::make_shared<const audio::MonitoringPcmCandidate>(
+                    std::move(*converted.value())));
+        });
+    QVERIFY(handoffUi.can_install());
+    QVERIFY(handoffUi.installMonitor(false));
+    QVERIFY(handoffUi.monitor_exclusive());
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QVERIFY(activeMasterDevice);
+    QCOMPARE(activeMasterDevice->immutable_master_rate,*masterRate.value());
+    QCOMPARE(activeMasterDevice->device_rate,*deviceRate.value());
+    QCOMPARE(candidates.staged(),crossRateStage);
+    QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
+    // Same cancel() invoked by Main.qml on a REFERENCE target click.
+    QVERIFY(handoffUi.cancel());
+    QVERIFY(!handoffUi.monitor_exclusive());
+    QVERIFY(!activeMasterDevice);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(product.comparison_cached());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(vm.validation_field(),QString{});
+    QCOMPARE(candidates.staged(),crossRateStage);
+    QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
+    QVERIFY(handoffUi.can_install()); // still usable without Render Master
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(vm.validation_field(),QString{});
+    QCOMPARE(candidates.staged(),crossRateStage);
+    QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
+    QVERIFY(handoffUi.can_install());
     // A revised Project target invalidates, it does NOT silently reprepare.
     QVERIFY(projectMaster.choose_master_rate(48000));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
