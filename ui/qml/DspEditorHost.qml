@@ -116,11 +116,11 @@ Rectangle {
     function m17RenderCopy(value) {
         if (value === null || value === undefined) return ""
         return String(value)
-            .replace(/\\bNEEDS PREPARATION\\b/g, "NEEDS RENDER")
-            .replace(/\\bPREPARATION\\b/g, "RENDERING")
-            .replace(/\\bPreparing\\b/g, "Rendering")
-            .replace(/\\bpreparation\\b/g, "rendering")
-            .replace(/\\bPrepare\\b/g, "Render")
+            .replace(/\bNEEDS PREPARATION\b/g, "NEEDS RENDER")
+            .replace(/\bPREPARATION\b/g, "RENDERING")
+            .replace(/\bPreparing\b/g, "Rendering")
+            .replace(/\bpreparation\b/g, "rendering")
+            .replace(/\bPrepare\b/g, "Render")
     }
     function rateLabel(hz) {
         if (!hz || hz <= 0) return "—"
