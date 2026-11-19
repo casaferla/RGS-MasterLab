@@ -3159,6 +3159,44 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),callsBeforeIgnoredPreview);
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    // PO physical #72: a checked 44.1k MASTER on a 48k DEVICE survived
+    // REFERENCE and PREPARED A/B, but the automatic return tried to
+    // re-arm it as a same-rate direct Preview. That INVALID refusal left
+    // a persistent red footer despite a valid monitor-only MASTER.
+    // Selecting PROCESSED in either order must remain a noninstalling
+    // Master monitoring invitation; no new render/DEVICE owner/error.
+    const auto crossRateStage=candidates.staged();
+    const auto crossRateRenderCount=renderer.render_invocation_count();
+    QCOMPARE(crossRateStage,firstProjectMaster);
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(product.comparison_cached());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(vm.validation_field(),QString{});
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    QVERIFY(!product.current_master_matches_device_for_preview());
+    QVERIFY(!coordinator.direct_return_available());
+    QCOMPARE(candidates.staged(),crossRateStage);
+    QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(product.comparison_cached());
+    // Previous fault text must not linger after a clean, exact-owner
+    // monitor-only return. This is view feedback, never an install permit.
+    vm.reportAudioError(QStringLiteral(
+        "M17 comparison output rate or exact MANUAL authority changed."));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(vm.validation_field(),QString{});
+    QCOMPARE(vm.validation_message(),QString{});
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(candidates.staged(),crossRateStage);
+    QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);
     // Coordinator is subscribed to Project rate *revision* only. A lease
     // eligibility update must NOT become a false rate edit and retire the
     // same immutable M17 candidate, even when QML bindings refresh.
