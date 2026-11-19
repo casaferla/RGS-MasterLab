@@ -795,6 +795,13 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QCOMPARE(device->state,core::PlaybackState::PLAYING);' in physical
     assert 'session_->verified_master_rate_for_monitoring()' in ui
     assert 'QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);' in physical
+    # F06: ON after BYPASS is not permission to discard a cross-rate
+    # verified Master by attempting same-rate direct Preview rearm.
+    assert 'maybe_rearm_parked_master();' in ui[ui.index(
+        'void TerminalProductActivationCoordinator::limiter_accepted()'):
+        ui.index('void TerminalProductActivationCoordinator::manual_preview_changed(')]
+    assert 'const auto bypassCrossRateMaster=candidates.staged();' in physical
+    assert 'QCOMPARE(renderer.render_invocation_count(),bypassRenderCount);' in physical
     # PO accepted the independent REFERENCE loop. The old prohibition
     # was a temporary safety guard, not a frozen UX requirement. Require
     # both separate source/Gold region stores and exact owner-gated audio.
