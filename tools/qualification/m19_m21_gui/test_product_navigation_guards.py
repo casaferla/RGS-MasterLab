@@ -879,6 +879,19 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'revisionAfterChange+1' in ceiling_roundtrip
     assert 'QVERIFY(!candidates.staged());' in ceiling_roundtrip
     assert 'QStringLiteral("ceilingDbTp"),-1.0' not in ceiling_roundtrip
+    # CI #85: the earlier physical DEVICE-rate rearm deliberately STOPPED
+    # exact MANUAL. A later PAUSED-source test MUST explicitly start the
+    # original MANUAL first; pause() on STOPPED cannot create PAUSED.
+    paused_start=physical[physical.index(
+        '// CI #85: the preceding DEVICE-rate restoration'):
+        physical.index('M17_EDGE_CASE=STOPPED_AB_TRANSPORT')]
+    assert 'QCOMPARE(device->state,core::PlaybackState::STOPPED);' in paused_start
+    assert 'QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));' in paused_start
+    assert paused_start.index('transport.playOrResume();') < paused_start.index('transport.pause();')
+    assert 'QCOMPARE(device->state,core::PlaybackState::PLAYING);' in paused_start
+    assert 'QCOMPARE(device->state,core::PlaybackState::PAUSED);' in paused_start
+    assert 'QCOMPARE(device->position,core::FrameIndex{2600});' in paused_start
+    assert 'QCOMPARE(renderer.render_invocation_count(),renderCountBeforePausedPreview);' in paused_start
     # CI #80: the native monitor fixture deliberately STOPs MANUAL before
     # installing. Preserve the genuine stopped-to-playing transport proof,
     # not an unconditional PLAYING assertion that contradicts the fixture.
