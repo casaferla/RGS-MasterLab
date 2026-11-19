@@ -2431,6 +2431,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // PO 2026-11-18: a successful expensive M17 Render Master must
     // survive independent PREPARED audition (and, by the same selector
     // contract, a REFERENCE WAV selection) without BYPASS or re-render.
+    selector.set_independent_audition_preflight(
+        [&coordinator](app::AuditionTarget target) {
+            return coordinator.can_begin_independent_audition(target);
+        });
     selector.set_before_independent_audition(
         [&coordinator](app::AuditionTarget target) {
             return coordinator.before_independent_audition(target);
@@ -2498,6 +2502,23 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
                     "M18_AUDIT_BUSY_WITH_EXACT_OUTPUT_OWNER"});
             }
             return core::Status::success();
+        });
+    selector.set_independent_audition_preflight(
+        [](app::AuditionTarget)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M17_AUDIT_RENDER_IN_PROGRESS_NO_MUTATION"});
+        });
+    const auto m17PreflightDenied=selector.switch_to(
+        app::AuditionTarget::PREPARED);
+    QVERIFY(!m17PreflightDenied);
+    QCOMPARE(deniedSwitchAdmissions,std::size_t{0});
+    QCOMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+    QCOMPARE(device->audibleRealization.realizationId,beforeDeniedAudition);
+    QCOMPARE(candidates.staged(),beforeDeniedMaster);
+    selector.set_independent_audition_preflight(
+        [&coordinator](app::AuditionTarget target) {
+            return coordinator.can_begin_independent_audition(target);
         });
     const auto deniedSwitch=selector.switch_to(app::AuditionTarget::PREPARED);
     QVERIFY(!deniedSwitch);
