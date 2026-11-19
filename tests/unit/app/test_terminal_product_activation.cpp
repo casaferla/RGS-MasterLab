@@ -2480,6 +2480,37 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),savedRenderCount);
     QVERIFY(coordinator.direct_return_available());
     QCOMPARE(renderer.render_invocation_count(),preReturnRenderCount);
+    // Audit 2026-11-19: a refused M18 target admission MUST NOT first
+    // park/retire this exact installed M17 output. The old selector
+    // ordering left PROCESSED selected but silently switched audible M17
+    // to MANUAL before discovering an M18 worker/epoch refusal.
+    const auto beforeDeniedAudition=device->audibleRealization.realizationId;
+    const auto beforeDeniedMaster=candidates.staged();
+    const auto beforeDeniedRender=renderer.render_invocation_count();
+    std::size_t deniedSwitchAdmissions=0;
+    selector.set_private_m18_mutation_admission(
+        [&deniedSwitchAdmissions](const char* operation)->core::Status {
+            if(operation &&QString::fromLatin1(operation)
+                    ==QStringLiteral("switch_target")) {
+                ++deniedSwitchAdmissions;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_AUDIT_BUSY_WITH_EXACT_OUTPUT_OWNER"});
+            }
+            return core::Status::success();
+        });
+    const auto deniedSwitch=selector.switch_to(app::AuditionTarget::PREPARED);
+    QVERIFY(!deniedSwitch);
+    QCOMPARE(deniedSwitchAdmissions,std::size_t{1});
+    QCOMPARE(selector.active_target(),
+        std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+    QVERIFY(coordinator.device_active());
+    QVERIFY(coordinator.direct_return_available());
+    QCOMPARE(device->audibleRealization.realizationId,beforeDeniedAudition);
+    QCOMPARE(candidates.staged(),beforeDeniedMaster);
+    QCOMPARE(renderer.render_invocation_count(),beforeDeniedRender);
+    selector.set_private_m18_mutation_admission({});
     // INSTALLED -> Master Audition requires explicit exact-owner retirement.
     // The user starts audition directly, not a second whole-resource Prepare.
     // This fixture intentionally lacks DEVICE-monitor preflight: the
