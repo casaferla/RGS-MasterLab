@@ -854,8 +854,8 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
     emit directReturnChanged();
 }
 
-core::Status TerminalProductActivationCoordinator::before_independent_audition(
-    AuditionTarget target)
+core::Status TerminalProductActivationCoordinator::can_begin_independent_audition(
+    AuditionTarget target) const
 {
     if(QThread::currentThread()!=thread())
         return core::Status::failure(core::Error{
@@ -882,6 +882,18 @@ core::Status TerminalProductActivationCoordinator::before_independent_audition(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M17_RENDER_IN_PROGRESS_FINISH_OR_CANCEL_BEFORE_AUDITION_SWITCH"});
+    return core::Status::success();
+}
+
+core::Status TerminalProductActivationCoordinator::before_independent_audition(
+    AuditionTarget target)
+{
+    // Repeat the pure gate at the actual parking boundary: SOURCE/M17
+    // ownership may have changed between the preflight and M18 admission.
+    const auto allowed=can_begin_independent_audition(target);
+    if(!allowed)return allowed;
+    if(target==AuditionTarget::PROCESSED||!intent_)
+        return core::Status::success();
     const auto exactManual=intent_->manualOwner;
     const auto exactId=intent_->manualId;
     deactivate(true);
