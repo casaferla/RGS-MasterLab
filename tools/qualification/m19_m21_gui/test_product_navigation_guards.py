@@ -734,6 +734,18 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'QVERIFY(!limiter.value()->bypassed());' in physical
     assert 'QVERIFY(!product.comparison_owners_current());' in physical
     assert 'QTRY_COMPARE_WITH_TIMEOUT(product.status(),' in physical
+    # PO #72: returning a verified cross-rate Master (88.2k on a 48k
+    # endpoint) from REFERENCE/PREPARED must not attempt direct Preview
+    # rearm. Retain real checked Master for Listen to Master with its
+    # separate SRC and exact monitor ownership admission.
+    assert 'session_->status()==QStringLiteral("COMPARISON_VERIFIED")' in ui
+    assert '!session_->current_master_matches_device_for_preview()' in ui
+    assert '"MASTER VERIFIED · LISTEN TO MASTER"' in ui
+    assert 'view_->clearAudioError();' in ui
+    assert 'QVERIFY(handoffUi.cancel());' in physical
+    assert '"M17_PO_CROSS_RATE_MONITOR_WRONG_PRE_FLIGHT_SOURCE"' in physical
+    assert 'QVERIFY(handoffUi.can_install()); // still usable without Render Master' in physical
+    assert 'QCOMPARE(renderer.render_invocation_count(),crossRateRenderCount);' in physical
     # PO accepted the independent REFERENCE loop. The old prohibition
     # was a temporary safety guard, not a frozen UX requirement. Require
     # both separate source/Gold region stores and exact owner-gated audio.
