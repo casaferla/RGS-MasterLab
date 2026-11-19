@@ -3211,6 +3211,25 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),callsBeforeIgnoredPreview);
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    // F06: toggling BYPASS -> ON without changing Ceiling is transport
+    // and UI state, not permission to resume 44.1k MASTER directly on a
+    // 48k DEVICE. The old ON handler tried direct resume_comparison(),
+    // failed its correct rate gate, then cancelled this checked Master.
+    const auto bypassCrossRateMaster=candidates.staged();
+    const auto bypassRenderCount=renderer.render_invocation_count();
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),bypassCrossRateMaster);
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(vm.audio_status(),QStringLiteral(
+        "MASTER VERIFIED · LISTEN TO MASTER"));
+    QCOMPARE(vm.validation_field(),QString{});
+    QCOMPARE(candidates.staged(),bypassCrossRateMaster);
+    QCOMPARE(renderer.render_invocation_count(),bypassRenderCount);
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    QVERIFY(!product.current_master_matches_device_for_preview());
     // Coordinator is subscribed to Project rate *revision* only. A lease
     // eligibility update must NOT become a false rate edit and retire the
     // same immutable M17 candidate, even when QML bindings refresh.
