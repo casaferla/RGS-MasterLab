@@ -89,11 +89,11 @@ ApplicationWindow {
              && root.appTerminalLimiterViewModel.audioStatus
                  === "ACTIVE · AUDITION UNQUALIFIED")
             || (root.monitorExclusive
-                // m17RecoveryExitRequired intentionally equals monitorExclusive
-                // for the WINDOW close guard. Reusing it here made this
-                // verified-monitor export-return path permanently false.
-                // The exact installed + not preparing/cancelling + native
-                // canExport-after-retirement checks below still fail closed.
+                // The recovery-only guard must stay distinct from
+                // monitorExclusive. A monitor with RECOVERY REQUIRED must
+                // use explicit DEVICE-owner recovery, never the ordinary
+                // return-for-export convenience path.
+                && !root.m17RecoveryExitRequired
                 && root.appTerminalMonitorViewModel
                 && root.appTerminalMonitorViewModel.monitorInstalled
                 && !root.appTerminalMonitorViewModel.monitorPreparing
