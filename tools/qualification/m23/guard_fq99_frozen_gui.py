@@ -95,16 +95,16 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AuditionSourceSelector.qml": "1225337c5ca5f652cb01a022e3475be5afa1aa74",
     "ui/qml/StudioButton.qml": "04abee78e09e9d6e9cc8f53b7957eca3691fc7a8",
-    "ui/qml/DspChainSelector.qml": "cc337feb5bcb3d792799f4146f270c1dcdf984fb",
+    "ui/qml/DspChainSelector.qml": "2973190d6293ab1dbb766fe03aac6a6b19f081f2",
     "ui/qml/AnalysisApprovedContent.qml": "c7c4cc4c58c0a3e9c598f2d4c65c3374a405df0a",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
     "ui/qml/Main.qml": "a8869ee3335be12f621e52958961fe7e1eafa7fc",
-    "ui/qml/DspEditorHost.qml": "29df2795c114c1238d04b7c6b860b4accf2ac69b",
+    "ui/qml/DspEditorHost.qml": "8028ac7e80b70cfb1a5f97a0bbfb118872359919",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
     "ui/qml/StudioIcon.qml": "4dd165406dd1130dce6434bcb248df3211a11477",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "b354658f9164258b41c9cac3a6cfd2d42e421802",
-    "ui/qml/TruePeakMeterEditor.qml": "0a61388a330e1de6e1eee64601727a494fb5fa29",
+    "ui/qml/TruePeakMeterEditor.qml": "71cb0fe236ea683a027f78713449661fc7ebdb1e",
     "ui/qml/TruePeakLimiterEditor.qml": "a92485ba49571dd6e2259d41c79ff51157574161",
 }
 M18_APPROVED_GUI_DELTA = P2_EXPECTED_GUI_DELTA | set(M18_WAV_OUTPUT_UI_BLOBS)
