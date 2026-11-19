@@ -3220,9 +3220,14 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     const auto crossRateStage=candidates.staged();
     const auto crossRateRenderCount=renderer.render_invocation_count();
     QCOMPARE(crossRateStage,firstProjectMaster);
+    // A/B while playing must NOT force STOP or require a stable stopped
+    // cue merely to present Listen to Master at a different output rate.
+    transport.playOrResume();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
     QVERIFY(product.comparison_cached());
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QCOMPARE(vm.audio_status(),
         QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
