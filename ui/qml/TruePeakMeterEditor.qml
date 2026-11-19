@@ -29,14 +29,14 @@ Item {
         && !!root.exportModel && root.exportModel.exportInProgress
     readonly property bool devicePreparing: root.showLimiterGrHistory
         && root.monitorViewModel && root.monitorViewModel.monitorPreparing
-    // The lower bay is stable: show PREPARATION only for an actual job.
+    // The lower bay is stable: show RENDERING only for an actual Master job.
     // READY, MONITOR, Return to Source, ERROR, BYPASS and NEEDS PREPARATION
     // all show the GR HISTORY chrome. A current source-bound MASTER may
     // show its immutable OFFLINE SAMPLED GR without asserting a device
     // consumed-output LIVE measurement. No current MASTER means EMPTY.
     readonly property string terminalAudioStatus: root.limiterViewModel
         ? root.limiterViewModel.audioStatus : ""
-    // PREPARE and WAV export share the SAME copper progress rail and
+    // MASTER rendering and WAV export share the SAME copper progress rail and
     // physical lower-band geometry. Once export terminates, restore GR.
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
         && (root.exportActive || root.devicePreparing
@@ -251,8 +251,8 @@ Item {
                             Text {
                                 objectName: "m17GrHistoryHeading"
                                 text: root.exportActive ? "EXPORTING MASTER WAV"
-                                    : root.devicePreparing ? "PREPARING PLAYBACK"
-                                    : root.limiterPreparationVisible ? "PREPARATION" : "GR HISTORY"
+                                    : root.devicePreparing ? "CONVERTING PLAYBACK"
+                                    : root.limiterPreparationVisible ? "RENDERING" : "GR HISTORY"
                                 color: "#B3C9D9"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -321,7 +321,7 @@ Item {
                                     ? "M18 WAV encoding progress, not delivery confirmation"
                                     : root.devicePreparing
                                     ? "Master to playback device conversion progress"
-                                    : "Offline limiter preparation progress"
+                                    : "Offline Master rendering progress"
                                 // Dynamics copper, the same rounded geometry as Studio controls.
                                 background: Rectangle {
                                     radius: 5
@@ -371,7 +371,7 @@ Item {
                                 // The backend owns all timings. QML only lays
                                 // out the exact observed phase / elapsed /
                                 // central estimate / interval on separate
-                                // visible lines, including the FIRST Prepare.
+                                // visible lines, including the FIRST render.
                                 text: {
                                     if (root.exportActive) {
                                         const v = root.exportModel
@@ -400,7 +400,7 @@ Item {
                                                ? "\n" + v.devicePreparationEta : "")
                                     }
                                     const v = root.limiterViewModel
-                                    if (!v) return "PREPARATION UNAVAILABLE"
+                                    if (!v) return "RENDERING UNAVAILABLE"
                                     if (!v.audioStatus.startsWith("Preparing"))
                                         return v.audioStatus
                                     const pct = v.preparationDeterminate
