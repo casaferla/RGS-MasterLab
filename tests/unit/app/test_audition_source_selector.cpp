@@ -889,6 +889,15 @@ void AuditionSourceSelectorTest::referenceLoopReinstalledAfterIndependentTargetS
     app::PlaybackTransportViewModel transport{std::move(service)};
     install_pcm_handler(transport,fake);
     app::AuditionSourceSelector selector{&transport};
+    // Mirror the Product's exact-owner guard. When re-entering GOLD
+    // the file is already installed but GOLD must not be published until
+    // the loop/seek/playback transaction succeeds.
+    bool sawScopedRearmBeforePublication=false;
+    transport.set_reference_audition_checker([&] {
+        if(selector.reference_device_installing() &&!selector.gold_active())
+            sawScopedRearmBeforePublication=true;
+        return selector.gold_active() ||selector.reference_device_installing();
+    });
     const auto sourceLoop=*core::FrameRange::create(
         core::FrameIndex{20},core::FrameIndex{40}).value();
     const auto referenceLoop=*core::FrameRange::create(
@@ -899,6 +908,8 @@ void AuditionSourceSelectorTest::referenceLoopReinstalledAfterIndependentTargetS
     QVERIFY(selector.set_processed_realization(realization(0,100)));
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     QCOMPARE(fake->loop,std::optional{sourceLoop});
+    transport.playOrResume();
+    QCOMPARE(fake->state,core::PlaybackState::PLAYING);
     const auto reference=core::ResourceReference::create(
         "rgsml.windows.local-file","C:/Gold/ref-loop.wav",true,false);
     QVERIFY(reference);
@@ -906,13 +917,25 @@ void AuditionSourceSelectorTest::referenceLoopReinstalledAfterIndependentTargetS
         *core::SampleRate::create(48000).value(),
         *core::FrameCount::create(100).value()));
     QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(sawScopedRearmBeforePublication);
+    QVERIFY(!selector.reference_device_installing());
     QCOMPARE(fake->loop,std::optional{referenceLoop});
     QCOMPARE(fake->position.value(),referenceLoop.begin().value());
+    QCOMPARE(fake->state,core::PlaybackState::PLAYING);
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(fake->loop,std::optional{sourceLoop});
+    QCOMPARE(fake->state,core::PlaybackState::PLAYING);
     QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
     QCOMPARE(fake->loop,std::optional{referenceLoop});
+    QCOMPARE(fake->state,core::PlaybackState::PLAYING);
     QVERIFY(selector.gold_active());
+    QVERIFY(!selector.reference_device_installing());
+    // Switching back to a SOURCE-owned endpoint must reject a late
+    // REFERENCE loop command, leaving SOURCE playback untouched.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(fake->loop,std::optional{sourceLoop});
+    QVERIFY(!transport.set_loop_reference_range(referenceLoop));
+    QCOMPARE(fake->loop,std::optional{sourceLoop});
 }
 
 void AuditionSourceSelectorTest::failedActiveGoldReplacementRollsBackFileIdentity()
