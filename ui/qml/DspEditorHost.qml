@@ -110,6 +110,18 @@ Rectangle {
     readonly property bool m17Preparing: root.terminalLimiterViewModel
         && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
             || root.terminalLimiterViewModel.nonconformingDevicePreparing)
+    // Presentation-only vocabulary. Native M17 state-machine strings,
+    // preparation* API names, readiness guards and the PREPARED audition
+    // identity remain unchanged. Prepare never means the M17 Master action.
+    function m17RenderCopy(value) {
+        if (value === null || value === undefined) return ""
+        return String(value)
+            .replace(/\\bNEEDS PREPARATION\\b/g, "NEEDS RENDER")
+            .replace(/\\bPREPARATION\\b/g, "RENDERING")
+            .replace(/\\bPreparing\\b/g, "Rendering")
+            .replace(/\\bpreparation\\b/g, "rendering")
+            .replace(/\\bPrepare\\b/g, "Render")
+    }
     function rateLabel(hz) {
         if (!hz || hz <= 0) return "—"
         return (hz / 1000).toFixed(1).replace(".0", "") + " kHz"
@@ -324,7 +336,7 @@ Rectangle {
                         ToolTip.text: modelData === "REFERENCE"
                             ? "Show the independent REFERENCE WAV analysis."
                             : modelData === "PREPARED"
-                            ? "Show the source after PREPARATION; no DSP changes."
+                            ? "Show the PREPARED source before manual DSP processing."
                             : "Show the current rendered DSP output analysis."
                         ToolTip.visible: headerAnalysisDwell.ready
                         ToolTip.delay: 0
@@ -543,7 +555,7 @@ Rectangle {
                 }
                 Accessible.name: rateTimePopup.opened
                     ? "Close WAV export settings" : "Open WAV export settings"
-                ToolTip.text: "Select output sample rate before Prepare; view time/memory estimates. Export verified PCM24 or Float32 afterward."
+                ToolTip.text: "Select the output sample rate before Render Master; view time/memory estimates. Export verified PCM24 or Float32 afterward."
                 ToolTip.visible: hovered && rateDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
@@ -574,7 +586,7 @@ Rectangle {
                         : root.terminalLimiterViewModel
                             && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                                 || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE"))
-                            ? "A measured or active candidate is present. This button cannot override its verification; change a setting or return to normal preparation first."
+                            ? "A measured or active candidate is present. This button cannot override its verification; change a setting and render the Master again."
                             : "Render and verify the full Master; PREPARED audio is unaffected."
                 ToolTip.visible: hovered && m17PrepareTooltipDwell.ready
                 ToolTip.delay: 0
@@ -595,7 +607,7 @@ Rectangle {
                     && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
                         || root.terminalLimiterViewModel.nonconformingDevicePreparing)
                 onClicked: root.terminalLimiterViewModel.cancelPreparation()
-                Accessible.name: "Cancel offline limiter preparation"
+                Accessible.name: "Cancel offline Master rendering"
             }
             StudioButton {
                 visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
@@ -615,7 +627,7 @@ Rectangle {
                         && !root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable)
                     ? "Device audition is unavailable until the measured PCM has an exact, current Windows playback endpoint."
                     : root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable
-                        ? "Explicit NON-CONFORMING preview: prepare a separate DEVICE-rate FIR PCM asynchronously. MASTER stays unchanged; LIVE meter is not certified."
+                        ? "Explicit NON-CONFORMING preview: convert a separate DEVICE-rate FIR PCM asynchronously. MASTER stays unchanged; LIVE meter is not certified."
                         : "Measured result exceeds requested Ceiling. Direct preview is unverified and requires your explicit choice."
                 ToolTip.visible: hovered && m17NonconformingDwell.ready
                 ToolTip.delay: 0
@@ -687,7 +699,7 @@ Rectangle {
                 objectName: "m17ReturnSourceButton"
                 text: root.terminalMonitorViewModel
                         && root.terminalMonitorViewModel.monitorPreparing
-                    ? "Cancel Playback Prep"
+                    ? "Cancel Playback Conversion"
                     : root.terminalMonitorViewModel
                         && root.terminalMonitorViewModel.monitorCancelling
                         ? "Cancelling…"
@@ -737,7 +749,8 @@ Rectangle {
                     ? "#F0C87D" : "#B6CADA"
                 elide: Text.ElideRight
                 text: root.terminalLimiterViewModel
-                    ? root.terminalLimiterViewModel.audioStatus : "UNAVAILABLE"
+                    ? root.m17RenderCopy(root.terminalLimiterViewModel.audioStatus)
+                    : "UNAVAILABLE"
             }
         }
 
@@ -1080,7 +1093,7 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
-                            property string interactionHint: "HOST ~range is an indicative future total Prepare estimate from three or more accepted full runs. ACT is only a past completed Prepare. DSP estimates are M17/M16 compute projections only, NOT total Prepare. SRC N/A is blocked."
+                            property string interactionHint: "HOST ~range is an indicative future total Render Master estimate from three or more accepted full runs. ACT is only a past completed render. DSP estimates are M17/M16 compute projections only, NOT the total Master render. SRC N/A is blocked."
                             text: "TIME"
                             HoverHandler { id: timeHeaderHover }
                             ToolTip.text: interactionHint
@@ -1193,13 +1206,13 @@ Rectangle {
                                 id: rateMemoryText
                                 objectName: "m17RateMemory_" + rateRow.index
                                 property string interactionHint: !rateRow.admissible
-                                    ? "Final SRC BLOCKED: this SOURCE/MASTER pair cannot Prepare. "
+                                    ? "Final SRC BLOCKED: this SOURCE/MASTER pair cannot render. "
                                         + (rateRow.advice && rateRow.advice.details
                                             ? rateRow.advice.details
                                             : root.masterRateState
                                                 ? root.masterRateState.final_src_path_status(
                                                     rateRow.modelData) : "")
-                                    : rateRow.advice ? rateRow.advice.details
+                                    : rateRow.advice ? root.m17RenderCopy(rateRow.advice.details)
                                     : "No Windows memory observation is available for this rate."
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
@@ -1235,13 +1248,13 @@ Rectangle {
                                     ? root.memoryAdvisor.prepareTimeRows[rateRow.index]
                                     : null
                                 property string interactionHint: forecast && forecast.details
-                                    ? forecast.details
-                                    : "Complete future Prepare ETA N/A."
+                                    ? root.m17RenderCopy(forecast.details)
+                                    : "Complete future Master render ETA N/A."
                                 Layout.preferredWidth: 62
                                 text: forecast && forecast.label
                                     ? (forecast.kind === "historical_actual"
                                         ? "Last " + forecast.label.replace(/^ACT /, "")
-                                        : forecast.label) : "N/A"
+                                        : root.m17RenderCopy(forecast.label)) : "N/A"
                                 elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
                                 ToolTip.text: interactionHint
@@ -1259,8 +1272,8 @@ Rectangle {
                                 font.pixelSize: 10
                                 Accessible.name: text + (forecast
                                     && forecast.isFutureWholePrepare
-                                    ? ". Indicative host full-Prepare future range."
-                                    : ". Not a whole-Prepare future ETA.")
+                                    ? ". Indicative host full-Master-render future range."
+                                    : ". Not a whole-Master-render future ETA.")
                             }
                         }
                     }
@@ -1295,11 +1308,11 @@ Rectangle {
                         font.pixelSize: 9
                         text: root.memoryAdvisor
                             && root.memoryAdvisor.calibrationRunning
-                            ? root.memoryAdvisor.calibrationStatus
+                            ? root.m17RenderCopy(root.memoryAdvisor.calibrationStatus)
                             : rateTimePopup.selectedAdvice
                                 && rateTimePopup.selectedAdvice.summary
-                                ? rateTimePopup.selectedAdvice.summary
-                                : "Memory N/A · Total Prepare ETA N/A"
+                                ? root.m17RenderCopy(rateTimePopup.selectedAdvice.summary)
+                                : "Memory N/A · Total Master Render ETA N/A"
                     }
                     // Real, explicitly triggered offline M17+M16 probes run
                     // only in a cancellable non-audio worker. The resulting
@@ -1348,7 +1361,7 @@ Rectangle {
                                     root.memoryAdvisor.calibrate(
                                         root.terminalLimiterViewModel.ceilingDbTp)
                             }
-                            Accessible.name: text + " local M17/M16 only; total Prepare ETA unavailable"
+                            Accessible.name: text + " local M17/M16 only; total Master Render ETA unavailable"
                         }
                     }
                 }
