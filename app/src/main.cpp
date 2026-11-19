@@ -758,7 +758,12 @@ int main(int argc, char* argv[])
     // Region must never send set_loop to that foreign audio owner.
     playbackTransport.set_reference_audition_checker(
         [&auditionSelector,&terminalMonitorViewModel] {
-            return auditionSelector.gold_active()
+            // A newly installed GOLD file owns the playback service
+            // before AuditionSourceSelector publishes activeTarget=GOLD.
+            // Permit only its synchronous loop rearm interval as well as
+            // steady-state GOLD. Anonymous M17 monitor stays excluded.
+            return (auditionSelector.gold_active()
+                    ||auditionSelector.reference_device_installing())
                 &&!terminalMonitorViewModel.monitor_exclusive();
         });
     // Cross-rate measured NON-CONFORMING preview uses the same Windows
