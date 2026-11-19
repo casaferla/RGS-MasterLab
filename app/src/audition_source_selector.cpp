@@ -679,6 +679,14 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
            ||(target==AuditionTarget::GOLD &&!gold_))
             return unavailable("The requested audition target has no authoritative realization.");
     }
+    // Admission must precede ANY physical M17 retirement. In particular
+    // an active M18 export/epoch lease can deny switch_target; the rejected
+    // click may not retire audible M17 while leaving PROCESSED selected.
+    // Keep M18's publication RAII BELOW the parking callback because
+    // M17 retirement may legally restore its exact MANUAL through the
+    // selector's separate nested "restore_manual" transaction.
+    if(const auto admission=admit_m18_source_mutation("switch_target");
+       !admission)return admission;
     // An already verified M17 DEVICE/session must be parked using the
     // existing exact-owner comparison transaction BEFORE this transport
     // switch retires its sink. Never start a second M17 render, change
@@ -688,8 +696,6 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
         const auto parked=beforeIndependentAudition_(target);
         if(!parked)return parked; // current target remains untouched
     }
-    if(const auto admission=admit_m18_source_mutation("switch_target");
-       !admission)return admission;
     M18ScopedAuditionMutation lifetime{
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
