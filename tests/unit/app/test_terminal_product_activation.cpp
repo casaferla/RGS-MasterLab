@@ -2701,10 +2701,17 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
                 *playback.value(),requestedMasterLoop);
         });
     QVERIFY(handoffUi.can_install());
+    // The preceding REFERENCE->PROCESSED proof explicitly STOPPED the
+    // MANUAL transport. Installing a new exact-owner DEVICE audition is
+    // not implicit consent to PLAY: preserve the SOURCE transport state.
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QVERIFY(handoffUi.installMonitor(false));
     QVERIFY(handoffUi.monitor_exclusive());
     QVERIFY(handoffUi.monitor_controllable());
-    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    QCOMPARE(handoffUi.transport_state(),QStringLiteral("STOPPED"));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(positivePreflightCount,std::size_t{1});
     QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
     QCOMPARE(candidates.staged(),positiveMasterOwner);
@@ -2715,10 +2722,19 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     // The main physical transport drives MASTER-specific controls through
     // the existing typed monitor VM; SOURCE cannot be silently selected.
-    QVERIFY(handoffUi.pause());
-    QCOMPARE(handoffUi.transport_state(),QStringLiteral("PAUSED"));
+    // Explicit Play is required after a STOPPED predecessor, and Pause
+    // then Resume must operate on the *same* immutable monitored PCM.
     QVERIFY(handoffUi.play());
     QCOMPARE(handoffUi.transport_state(),QStringLiteral("PLAYING"));
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QVERIFY(handoffUi.pause());
+    QCOMPARE(handoffUi.transport_state(),QStringLiteral("PAUSED"));
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PAUSED"));
+    QVERIFY(handoffUi.play());
+    QCOMPARE(handoffUi.transport_state(),QStringLiteral("PLAYING"));
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QCOMPARE(candidates.staged(),positiveMasterOwner);
+    QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
     // Close the exact independent DEVICE owner and restore the MANUAL source
     // without consuming the immutable MASTER. M17 READY can be previewed
     // immediately, with the same renderer invocation and no second job.
@@ -2727,6 +2743,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
+    // Return follows the last explicit monitor Play (not the old
+    // stopped predecessor); this is the genuine SOURCE transport result.
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->loop,std::optional{*region.value()});
     QCOMPARE(candidates.staged(),positiveMasterOwner);
     QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
     vm.previewPrepared();
