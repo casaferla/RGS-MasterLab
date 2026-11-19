@@ -98,7 +98,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/DspChainSelector.qml": "accaeba5700ec6bb11bddcaccb06bce35d36f81a",
     "ui/qml/AnalysisApprovedContent.qml": "dd8b970a12b13434decd33c6273d44770376afe6",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
-    "ui/qml/Main.qml": "021923c0ebb3653c454699b3af4f6878281f71c4",
+    "ui/qml/Main.qml": "a8869ee3335be12f621e52958961fe7e1eafa7fc",
     "ui/qml/DspEditorHost.qml": "29df2795c114c1238d04b7c6b860b4accf2ac69b",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
     "ui/qml/StudioIcon.qml": "4dd165406dd1130dce6434bcb248df3211a11477",
