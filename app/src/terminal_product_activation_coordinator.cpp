@@ -1280,9 +1280,26 @@ void TerminalProductActivationCoordinator::manual_preview_changed(
               ||previewStatus==QStringLiteral("IDLE")) {
         manualPreviewInProgress_=false;
         waitingForManualPreview_=false;
-        // Upstream completion never triggers Prepare.
-        if(!state_->bypassed()&&!intent_)
-            view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+        // An upstream completion never schedules another M17 Render.
+        // In particular, the ordinary Preview READY notification may
+        // arrive AFTER a cross-rate, exact-owner M17 rearm has already
+        // published a valid "MASTER VERIFIED" monitoring status. Do not
+        // overwrite that evidence with "NEEDS PREPARATION". Conversely,
+        // an actually changed MANUAL or selected Project MASTER rate must
+        // continue to request rendering; never revive stale PCM by text.
+        if(!state_->bypassed()&&!intent_) {
+            const auto verified=session_->verified_master_rate_for_monitoring();
+            const bool projectRateCurrent=verified
+                &&(!masterRateState_
+                   ||masterRateState_->master_rate_hz()==verified->value());
+            if(projectRateCurrent) {
+                view_->clearAudioError();
+                view_->setAudioStatus(QStringLiteral(
+                    "MASTER VERIFIED · LISTEN TO MASTER"));
+            } else {
+                view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+            }
+        }
     }
 }
 
