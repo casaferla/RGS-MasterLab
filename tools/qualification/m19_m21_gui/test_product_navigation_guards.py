@@ -743,6 +743,18 @@ def test_reference_waveform_and_master_parking_physical_po() -> None:
     assert 'rgsml_terminal_product_activation_tests' in focused
     assert 'M17_M18_AUDITION_OWNER_AND_CROSS_RATE_NATIVE=PASS' in focused
     assert 'P2_AB_M17_OWNER_TEST_FAIL' in focused
+    # F05: MONITOR_PRIVATE_RECOVERY_REQUIRED can still be 'installed'
+    # natively but is not an ordinary export-return state. Keep the
+    # convenience action disabled while explicit DEVICE recovery is needed.
+    export_ui=qml[qml.index('readonly property bool m18AutoReturnForExportAvailable:'):
+                  qml.index('// QML never mints an export Ticket.')]
+    assert '&& !root.m17RecoveryExitRequired' in export_ui
+    assert export_ui.index('root.monitorExclusive') < export_ui.index(
+        '&& !root.m17RecoveryExitRequired') < export_ui.index(
+        'root.appTerminalMonitorViewModel.monitorInstalled')
+    monitor=read('app/src/terminal_monitor_view_model.cpp')
+    assert 'MONITOR_PRIVATE_RECOVERY_REQUIRED' in monitor
+    assert 'AUDITION RECOVERY REQUIRED · OWNER CHECK' in monitor
     assert 'M18_AUDIT_BUSY_WITH_EXACT_OUTPUT_OWNER' in read(
         'tests/unit/app/test_terminal_product_activation.cpp')
     assert 'M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD' in ui
