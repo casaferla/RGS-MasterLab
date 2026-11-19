@@ -1227,6 +1227,19 @@ void TerminalProductActivationCoordinator::limiter_accepted()
         if(session_->comparison_pcm_still_valid()
            &&(!currentTarget||session_->comparison_owners_current())) {
             maybe_rearm_parked_master();
+            // Successful same-rate rearm CONSUMES the comparison-cache
+            // state and publishes READY_TO_INSTALL (or the separately
+            // consent-gated measured candidate). A vanished cache is
+            // therefore NOT evidence that the MASTER went stale:
+            // cancelling here discarded the verified PCM after success.
+            const auto rearmed=session_->status();
+            if(rearmed==QStringLiteral("READY_TO_INSTALL")
+               ||rearmed==QStringLiteral("MEASURED_NONCONFORMING_READY"))
+                return;
+            // Cross-rate monitoring and independent REFERENCE/PREPARED
+            // navigation deliberately leave the exact cache parked.
+            // A transient cue/owner refusal may likewise leave it parked,
+            // with its real error visible, never silently destroy it.
             if(session_->comparison_cached()
                &&session_->comparison_pcm_still_valid()
                &&(!currentTarget||session_->comparison_owners_current()))
