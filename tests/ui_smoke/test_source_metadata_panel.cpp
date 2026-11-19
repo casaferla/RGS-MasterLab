@@ -2566,6 +2566,11 @@ Window {
     QVERIFY(fixture->setProperty("bypass",true));
     QCoreApplication::processEvents();
     expectSlot("Preparing audio",true);
+    auto* renderHeading=find_child_by_name(
+        m17,QStringLiteral("m17GrHistoryHeading"));
+    QVERIFY(renderHeading);
+    QCOMPARE(renderHeading->property("text").toString(),
+        QStringLiteral("RENDERING"));
     auto* liveEta=find_child_by_name(
         m17,QStringLiteral("m17PreparationProgressLabel"));
     auto* liveProgress=find_child_by_name(
