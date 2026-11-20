@@ -64,6 +64,13 @@ struct SpectrumPoint {
     double hz{};
     Cell power_density{};
 };
+// Read-only M20 *measured band energy*, not the separately gated
+// normalized M20/M21 shape/delta feature. No FFT or inferred eligibility.
+struct MeasuredTonalBandEnergy {
+    double center_hz{};
+    double linear_energy{};
+    bool fully_supported{};
+};
 struct Snapshot {
     Column column{Column::prepared};
     std::uint64_t generation_token{};
@@ -79,6 +86,7 @@ struct Snapshot {
     std::string common_comparison_support_id{};
     std::vector<TonalBand> tonal_profile{};
     std::vector<SpectrumPoint> average_spectrum{};
+    std::vector<MeasuredTonalBandEnergy> measured_band_energy_1_12{};
 };
 // Qt UI STATUS-ONLY projection. A receipt has no double, spectral
 // vector, tonal profile, metric Cell, reference audio or producer permission.
