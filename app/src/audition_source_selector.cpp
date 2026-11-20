@@ -1059,4 +1059,16 @@ void AuditionSourceSelector::publish_error(QString message)
     emit changed();
 }
 
+void AuditionSourceSelector::clear_completed_m17_render_switch_refusal()
+{
+    // The denied switch was safe and did not change target/device/epochs.
+    // Its M17-render-in-progress explanation is no longer current after
+    // the worker finishes; do not clear any other, possibly live error.
+    if(statusText_!=QStringLiteral(
+        "M17_RENDER_IN_PROGRESS_FINISH_OR_CANCEL_BEFORE_AUDITION_SWITCH"))
+        return;
+    statusText_.clear();
+    emit changed();
+}
+
 }  // namespace rgsml::app
