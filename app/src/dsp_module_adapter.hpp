@@ -575,12 +575,11 @@ public:
     [[nodiscard]] QString family_accent() const override
     {return QStringLiteral("#6CBCCF");}
     [[nodiscard]] QString state_text() const override {
-        if(!statusVm_)return QStringLiteral("UNAVAILABLE");
-        // All existing M21 status maps are deliberately NON-authorizing.
-        // A current private result cannot be marketed as a Product analysis.
-        return statusVm_->property("productionAuthorized").toBool()
-            ?QStringLiteral("Analysis ready")
-            :QStringLiteral("Not yet qualified");
+        // An always-on read-only analyzer has no configuration/Bypass
+        // state. Its values are presented independently with genuine
+        // CURRENT/STALE/MISSING source data, not a release-gate badge.
+        return statusVm_ ? QStringLiteral("Read-only analysis")
+                         : QStringLiteral("No analysis source");
     }
     [[nodiscard]] bool has_error() const noexcept override{return false;}
     void setBypass(bool) override {}
