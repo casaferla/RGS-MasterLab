@@ -55,6 +55,11 @@ public:
     [[nodiscard]] bool gold_active() const noexcept;
     [[nodiscard]] bool source_playhead_visible() const noexcept;
     [[nodiscard]] QString status_text() const;
+    // Clear ONLY the transient refusal issued when the user tried to
+    // change audition targets during an unfinished M17 whole-Master render.
+    // Called after that render has ended, not during an active render;
+    // unrelated SOURCE/REFERENCE/M18/transport faults remain visible.
+    void clear_completed_m17_render_switch_refusal();
     [[nodiscard]] std::optional<AuditionTarget> active_target() const noexcept;
     [[nodiscard]] core::FrameIndex source_derived_cue() const noexcept;
     [[nodiscard]] core::FrameIndex gold_cue() const noexcept;
