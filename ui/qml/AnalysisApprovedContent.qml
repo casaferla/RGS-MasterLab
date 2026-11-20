@@ -25,6 +25,12 @@ Item {
     readonly property var spectrumPoints: observedReadouts
         && observedReadouts.m20StaticPsd
         ? observedReadouts.m20StaticPsd : []
+    // Read-only 1/12-octave energy of the existing M20 measured bands.
+    // These are NOT the separately gated normalized Phase-6 fractions.
+    readonly property var bandEnergyPoints: observedReadouts
+        && observedReadouts.m20BandEnergy
+        ? observedReadouts.m20BandEnergy : []
+    readonly property bool hasBandEnergy: bandEnergyPoints.length > 1
     function hasMeasuredSpectrumEnergy() {
         if(!spectrumPoints || spectrumPoints.length < 2) return false
         for(let i=0;i<spectrumPoints.length;++i)
@@ -521,33 +527,97 @@ Item {
                 radius: 7
                 color: root.panel
                 border.color: root.edge
-                ToolTip.text: "Normalized 1/12-octave bands are shown only when an authoritative eligible-band and common-bandwidth support exists. The real static PSD above remains available independently."
+                ToolTip.text: "Genuine measured 1/12-octave linear band energies from the same M20 PCM and scope as the static spectrum above. Relative 48 dB display scale; no independent FFT, normalized fractions or reference-matching score."
                 ToolTip.visible: profileDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
                     id: profileDwell
                     anchors.fill: parent
                 }
-                Column {
-                    anchors.fill: parent
+                Text {
+                    text: "TONAL PROFILE  /  1/12-OCTAVE BAND ENERGY"
+                    anchors.left: parent.left
+                    anchors.top: parent.top
                     anchors.margins: 10
-                    spacing: 6
-                    Text {
-                        text: "TONAL PROFILE  /  1/12-OCTAVE BANDS"
-                        color: root.ink
-                        font.family: "Segoe UI"
-                        font.pixelSize: 12
-                        font.bold: true
+                    color: root.ink
+                    font.family: "Segoe UI"
+                    font.pixelSize: 12
+                    font.bold: true
+                }
+                // The real M20 engine already computed the band energies.
+                // Qt only draws their relative heights; no signal-analysis
+                // algorithm or unsupported normalized shape is introduced.
+                Canvas {
+                    id: bandEnergyCanvas
+                    objectName: "m20MeasuredBandEnergy"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    anchors.topMargin: 27
+                    anchors.bottomMargin: 7
+                    visible: root.hasBandEnergy
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    Connections {
+                        target: root
+                        function onBandEnergyPointsChanged() {
+                            bandEnergyCanvas.requestPaint()
+                        }
                     }
-                    Text {
-                        objectName: "m20MissingProfileNotice"
-                        text: root.lifecycle === "STALE"
-                            ? "TONAL PROFILE STALE"
-                            : "TONAL PROFILE UNAVAILABLE · SUPPORTED BANDS ONLY"
-                        color: root.amber
-                        font.family: "Segoe UI"
-                        font.pixelSize: 11
+                    onPaint: {
+                        const ctx=getContext("2d")
+                        ctx.reset()
+                        const points=root.bandEnergyPoints
+                        if(!root.hasBandEnergy || width<=0 || height<=0)return
+                        let maxDb=-Infinity
+                        for(let i=0;i<points.length;++i) {
+                            const p=points[i]
+                            if(p.hz<20 || p.hz>20000 ||
+                               p.linearEnergy<=0)continue
+                            const db=10*Math.log10(p.linearEnergy)
+                            if(Number.isFinite(db))maxDb=Math.max(maxDb,db)
+                        }
+                        if(!Number.isFinite(maxDb))return
+                        const span=48
+                        const frequencySpan=Math.log10(20000/20)
+                        ctx.save()
+                        ctx.strokeStyle=root.cyan
+                        ctx.lineCap="round"
+                        ctx.lineWidth=Math.max(1.2,
+                            Math.min(5.0,width/points.length*0.48))
+                        for(let i=0;i<points.length;++i) {
+                            const p=points[i]
+                            if(p.hz<20 || p.hz>20000 ||
+                               p.linearEnergy<=0)continue
+                            const db=10*Math.log10(p.linearEnergy)
+                            if(!Number.isFinite(db))continue
+                            const x=Math.log10(p.hz/20)/frequencySpan*width
+                            const normalized=Math.max(0,Math.min(1,
+                                (db-(maxDb-span))/span))
+                            ctx.beginPath()
+                            ctx.moveTo(x,height)
+                            ctx.lineTo(x,height*(1-normalized))
+                            ctx.stroke()
+                        }
+                        ctx.restore()
                     }
+                }
+                Text {
+                    objectName: "m20MissingProfileNotice"
+                    visible: !root.hasBandEnergy
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 9
+                    text: root.lifecycle === "STALE"
+                        ? "BAND ENERGY STALE · REANALYZE"
+                        : "NO MEASURED BAND ENERGY"
+                    color: root.dim
+                    font.family: "Segoe UI"
+                    font.pixelSize: 11
                 }
             }
         }
