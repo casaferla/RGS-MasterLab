@@ -83,11 +83,25 @@ Item {
         height: root.designSize
         scale: Math.max(0.01,Math.min(root.width,root.height)/root.designSize)
         visible: root.vectorPath.length > 0
-        // Subtle same-hue second stroke: NO independent LED or raster glow.
+        // Always-on analysis services use the SAME icon-halo semantics as
+        // M16's lit StudioIcon. The old 20%-opacity one-pixel vector
+        // outline was practically invisible at 16px. Two same-hue,
+        // concentric translucent strokes create a visible soft-edge glow
+        // without adding a separate LED, image, changing geometry, or
+        // claiming that a missing measurement is "inactive".
         ShapePath {
             strokeColor: Qt.rgba(root.strokeColor.r,root.strokeColor.g,
-                root.strokeColor.b,root.glowEnabled ? 0.20 : 0)
-            strokeWidth: root.opticalStroke + 2.1
+                root.strokeColor.b,root.glowEnabled ? 0.15 : 0)
+            strokeWidth: root.opticalStroke + 6.0
+            capStyle: ShapePath.RoundCap
+            joinStyle: ShapePath.RoundJoin
+            fillColor: "transparent"
+            PathSvg { path: root.vectorPath }
+        }
+        ShapePath {
+            strokeColor: Qt.rgba(root.strokeColor.r,root.strokeColor.g,
+                root.strokeColor.b,root.glowEnabled ? 0.42 : 0)
+            strokeWidth: root.opticalStroke + 3.0
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
             fillColor: "transparent"
