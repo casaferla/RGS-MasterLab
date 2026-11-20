@@ -541,11 +541,13 @@ public:
     {return QStringLiteral("analysis:rgsml.m%1").arg(milestone_);}
     [[nodiscard]] QString type_id() const override
     {return QStringLiteral("rgsml.analysis.m%1").arg(milestone_);}
+    // Product-visible names are stable functional labels. M19/M20/M21
+    // remain ONLY the internal routing, serialized-free service identities.
     [[nodiscard]] QString display_name() const override {
         switch(milestone_) {
-        case 19:return QStringLiteral("M19 · Levels");
-        case 20:return QStringLiteral("M20 · Tonal/Stereo");
-        default:return QStringLiteral("M21 · Metrics/Delta");
+        case 19:return QStringLiteral("Levels");
+        case 20:return QStringLiteral("Spectrum / Stereo");
+        default:return QStringLiteral("Metrics / Delta");
         }
     }
     [[nodiscard]] QString workspace_context_label() const override
