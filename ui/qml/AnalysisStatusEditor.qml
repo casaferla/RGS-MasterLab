@@ -74,7 +74,7 @@ Item {
                     ? "MEASUREMENTS AVAILABLE"
                     : root.lifecycle === "STALE"
                     ? "STALE · REANALYZE"
-                    : "VERIFIED ANALYSIS UNAVAILABLE"
+                    : "NO MEASUREMENTS"
                 font.family: "Segoe UI"
                 font.pixelSize: 10
                 font.bold: true
@@ -82,8 +82,8 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 elide: Text.ElideRight
                 ToolTip.text: approvedContent.panelHasData
-                    ? "Authentic selected-scope development measurements. Formal qualification is separate."
-                    : "No current verified analysis data. Missing or stale measurements are never inferred."
+                    ? "Measured values for the selected audio scope."
+                    : "No current measurements for this scope."
                 ToolTip.visible: analysisStateDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -99,11 +99,10 @@ Item {
                     && root.statusViewModel.runningAnalysisRole
                     && root.statusViewModel.runningAnalysisRole.length > 0
                     ? "ANALYZING " + root.statusViewModel.runningAnalysisRole
-                        + " · DEVELOPMENT"
-                    : root.authorized ? "PRODUCT DATA" : "ANALYSIS · DEVELOPMENT"
+                    : "ANALYSIS"
                 font.family: "Segoe UI"
                 font.pixelSize: 10
-                color: root.authorized ? "#B6D6CA" : "#F0C87D"
+                color: "#A4BBCB"
             }
         }
 
