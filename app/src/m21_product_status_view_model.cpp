@@ -147,9 +147,44 @@ QVariantMap M21ProductStatusViewModel::analysis_readouts() const
             if(!valid)spectrum.clear();
         }
     }
+    // Reuse only genuinely measured M20 primary 1/12-octave band
+    // energies on the same current Product/source owner. No additional
+    // FFT, scope calculation, band-eligibility inference or tonal delta.
+    QVariantList bandEnergy;
+    if(m20Role<evidence.columns.size() &&evidence.columns[m20Role]) {
+        const auto& s=*evidence.columns[m20Role];
+        if(s.lifecycle==m21_private::Lifecycle::current &&
+           s.generation_token!=0 &&!s.resource_identity.empty() &&
+           s.scope_frames>0 &&s.sample_rate_hz>0 &&
+           s.measured_band_energy_1_12.size()<=256U) {
+            double previous=0.0;
+            bool valid=true;
+            for(const auto& band:s.measured_band_energy_1_12) {
+                if(!std::isfinite(band.center_hz) ||
+                   band.center_hz<=previous ||
+                   !std::isfinite(band.linear_energy) ||
+                   band.linear_energy<0.0 ||
+                   band.center_hz>static_cast<double>(s.sample_rate_hz)*0.5) {
+                    valid=false;
+                    break;
+                }
+                if(band.fully_supported &&band.linear_energy>0.0 &&
+                   band.center_hz>=20.0 &&band.center_hz<=20000.0) {
+                    QVariantMap point;
+                    point.insert(QStringLiteral("hz"),band.center_hz);
+                    point.insert(QStringLiteral("linearEnergy"),
+                                 band.linear_energy);
+                    bandEnergy.append(point);
+                }
+                previous=band.center_hz;
+            }
+            if(!valid)bandEnergy.clear();
+        }
+    }
     released.insert(QStringLiteral("m19"),level);
     released.insert(QStringLiteral("m20"),stereo);
     released.insert(QStringLiteral("m20StaticPsd"),spectrum);
+    released.insert(QStringLiteral("m20BandEnergy"),bandEnergy);
     released.insert(QStringLiteral("m21Rows"),rows);
     // Development observation only. Values do not certify Phase-6 Gate G.
     // Official qualified release remains separately gated above.
