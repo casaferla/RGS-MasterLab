@@ -98,6 +98,12 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/DspChainSelector.qml": "2973190d6293ab1dbb766fe03aac6a6b19f081f2",
     "ui/qml/AnalysisApprovedContent.qml": "c7c4cc4c58c0a3e9c598f2d4c65c3374a405df0a",
     "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
+    # PO physical #90: M19/M20/M21 service icons are ALWAYS ON yet
+    # their former single weak vector outline did not display the
+    # same apparent phosphor halo as the other active chain modules.
+    # Exact-pin ONLY the reviewed same-hue multi-stroke ShapePaths;
+    # no new row, LED, layout, Qt import or synthetic analyzer data.
+    "ui/qml/AnalysisModuleIcon.qml": "c72ee1d900380296545de71a71d8b15d16ce9705",
     # PO-directed pre-M24 adversarial repair F05: unchanged native M18
     # ticket/consent and FQ99 geometry; only the recovery-only monitor
     # predicate is added to the already approved Return + Export path.
