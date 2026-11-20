@@ -164,6 +164,27 @@ struct RealProductPortResult final {
     }else if(!s.mean_linear_psd.empty()) {
         return fail(RealProductPortProblem::invalid_spectrum);
     }
+    // M20 has already calculated real 1/12-octave *linear energy* on
+    // the same authenticated PCM and scope. Pass it to the read-only
+    // presentation; do not derive any new PSD, normalize to a fictional
+    // eligible-band shape, or publish this as an M21 tonal delta.
+    if(s.spectrum_state==analysis::TonalStereoMetricState::AVAILABLE) {
+        if(s.primary_bands_1_12.size()>256U)
+            return fail(RealProductPortProblem::invalid_spectrum);
+        double previous_hz=0.0;
+        for(const auto& band:s.primary_bands_1_12) {
+            if(!std::isfinite(band.center_hz) ||
+               band.center_hz<=previous_hz ||
+               !std::isfinite(band.measured_linear_energy) ||
+               band.measured_linear_energy<0.0 ||
+               band.center_hz>static_cast<double>(out.sample_rate_hz)*0.5)
+                return fail(RealProductPortProblem::invalid_spectrum);
+            out.measured_band_energy_1_12.push_back({
+                band.center_hz,band.measured_linear_energy,
+                band.fully_supported});
+            previous_hz=band.center_hz;
+        }
+    }
     out.profile_denominator=0; // linear fractions != shape dB
     return {std::move(out),RealProductPortProblem::none};
 }
