@@ -653,6 +653,23 @@ int main(int argc, char* argv[])
     // Explicit user-only Windows MASTER->DEVICE monitor, with no LIVE identity.
     rgsml::app::TerminalMonitorViewModel terminalMonitorViewModel{
         privateProductSession,playbackTransport};
+    // PO physical #89: a denied target switch while M17 is RENDERING
+    // must protect the running worker, but its precise error may not
+    // remain red after the final M17 outcome. Dispatch AFTER the session
+    // has notified all its native owners, avoiding reentrant target
+    // callbacks; never clear unrelated SOURCE/REFERENCE/transport faults.
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &auditionSelector,
+        [&privateProductSession,&auditionSelector] {
+            const auto status=privateProductSession.status();
+            if(status==QStringLiteral("READY_TO_INSTALL")
+               ||status==QStringLiteral("MEASURED_NONCONFORMING_READY")
+               ||status==QStringLiteral("ERROR")
+               ||status==QStringLiteral("STALE")
+               ||status==QStringLiteral("IDLE"))
+                auditionSelector.clear_completed_m17_render_switch_refusal();
+        },Qt::QueuedConnection);
     // PREPARED/REFERENCE->PROCESSED can change Master eligibility while
     // preserving STOPPED state, duration and cue. No playbackChanged()
     // occurs in that case; publish the verified Listen affordance now,
