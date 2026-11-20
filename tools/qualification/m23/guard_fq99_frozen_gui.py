@@ -89,6 +89,11 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # logarithmically aligned M20 frequency tick positions. These two
 # pre-existing additive analysis files are exact-pinned, NOT released
 # or declared FQ99-identical. M16 Gate G remains separate.
+# PO physical 2026-11-21: genuine M20 measured 1/12-octave band
+# energy from the existing product snapshot, read-only QML projection,
+# and neutral analysis UI labels (no synthetic certified status).
+# Only AnalysisApprovedContent/AnalysisStatusEditor exact blob hashes
+# change here. The historic FQ99 normalization and unrelated pins stay.
 # PO accepted 2026-11-18 Reference region/A-B, protected M17 restore,
 # WAV receipt wording and family-vector controls. The six changed GUI blobs
 # below are exact-pinned; FQ99/P2 reference baselines remain untouched.
@@ -96,8 +101,8 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AuditionSourceSelector.qml": "1225337c5ca5f652cb01a022e3475be5afa1aa74",
     "ui/qml/StudioButton.qml": "04abee78e09e9d6e9cc8f53b7957eca3691fc7a8",
     "ui/qml/DspChainSelector.qml": "2973190d6293ab1dbb766fe03aac6a6b19f081f2",
-    "ui/qml/AnalysisApprovedContent.qml": "c7c4cc4c58c0a3e9c598f2d4c65c3374a405df0a",
-    "ui/qml/AnalysisStatusEditor.qml": "6fd80287caa32e5ec180c91b3933e8529293a55b",
+    "ui/qml/AnalysisApprovedContent.qml": "2ef187e2074cfc16f9da18e00db6721f94962d1f",
+    "ui/qml/AnalysisStatusEditor.qml": "a0d14be916ca19a3d9fd781f70178b71c4c53df5",
     # PO physical #90: M19/M20/M21 service icons are ALWAYS ON yet
     # their former single weak vector outline did not display the
     # same apparent phosphor halo as the other active chain modules.
@@ -455,7 +460,7 @@ def main() -> int:
     status_editor = blob("HEAD", "ui/qml/AnalysisStatusEditor.qml")
     for required in (
         'objectName: "analysisVerificationStatus"',
-        'VERIFIED ANALYSIS UNAVAILABLE',
+        'NO MEASUREMENTS',
         'MEASUREMENTS AVAILABLE',
     ):
         if required not in status_editor:
