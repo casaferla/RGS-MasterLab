@@ -27,7 +27,7 @@ def test_visual_order_and_no_chain_mutation() -> None:
     for term in ("non_processing_service() const noexcept override{return true;}",
                  "bypass_supported() const noexcept override{return false;}",
                  "void setBypass(bool) override {}",
-                 "QStringLiteral(\"Not yet qualified\")"):
+                 "QStringLiteral(\"Read-only analysis\")"):
         assert term in part, term
 
 
@@ -45,7 +45,9 @@ def test_product_binds_status_without_demo() -> None:
     visuals = read("ui/qml/AnalysisApprovedContent.qml")
     # Preserve the original explicit unavailable visual gate, now owned
     # by the approved Product read-only content rather than the wrapper.
-    assert "VERIFIED ANALYSIS UNAVAILABLE" in editor
+    assert "NO MEASUREMENTS" in editor
+    assert "VERIFIED ANALYSIS UNAVAILABLE" not in editor
+    assert "ANALYSIS · DEVELOPMENT" not in editor
     assert 'objectName: "analysisVerificationStatus"' in editor
     assert 'text: approvedContent.panelHasData' in editor
     assert "fixtureMode" not in visuals
@@ -173,6 +175,22 @@ def test_product_binds_status_without_demo() -> None:
     assert 'root.statusViewModel.runningAnalysisRole' in editor
     assert "m20MissingSpectrumNotice" in visuals
     assert "m20MissingProfileNotice" in visuals
+    # Measured M20 1/12 octave band energy is an already-produced
+    # Product value, not a fabricated normalized or "qualified" shape.
+    assert 'objectName: "m20MeasuredBandEnergy"' in visuals
+    assert 'observedReadouts.m20BandEnergy' in visuals
+    assert 'p.linearEnergy<=0' in visuals
+    assert 'ctx.lineTo(x,height*(1-normalized))' in visuals
+    assert 'NO MEASURED BAND ENERGY' in visuals
+    assert 'TONAL PROFILE UNAVAILABLE · SUPPORTED BANDS ONLY' not in visuals
+    authentic_port=read("app/src/internal/m21_real_product_metrics_port.hpp")
+    assert 's.primary_bands_1_12' in authentic_port
+    assert 'out.measured_band_energy_1_12.push_back' in authentic_port
+    assert 'out.profile_denominator=0; // linear fractions != shape dB' in authentic_port
+    snapshots=read("app/src/internal/m21_metrics_comparison_candidate.hpp")
+    assert 'std::vector<MeasuredTonalBandEnergy> measured_band_energy_1_12{};' in snapshots
+    assert 'struct ReadinessSnapshot final' in snapshots
+    assert 'measured_band_energy_1_12' not in snapshots[snapshots.index('struct ReadinessSnapshot final'):]
     assert "m21MissingComparisonNotice" in visuals
     assert "m21MetricRow_" in visuals
     # PO-approved 16px vectors: only three analysis services, never
@@ -306,6 +324,9 @@ def test_product_binds_status_without_demo() -> None:
     assert "evidence.prepared_to_gold[i]" in status_cpp
     assert "evidence.processed_to_gold[i]" in status_cpp
     assert "m20StaticPsd" in status_cpp
+    assert "m20BandEnergy" in status_cpp
+    assert "s.measured_band_energy_1_12" in status_cpp
+    assert "s.measured_band_energy_1_12.size()<=256U" in status_cpp
     assert "QVariant::fromValue(*cell.unrounded)" in status_cpp
     # PSD must satisfy the same live resource/scope requirements as
     # scalar values; the status-only bridge remains numerical-free.
@@ -319,7 +340,8 @@ def test_product_binds_status_without_demo() -> None:
     assert "phase6ReleaseReadouts" not in status_qml
     assert "analysisReadouts" in status_qml
     assert "observedReadouts: root.observedReadouts" in status_qml
-    assert 'ANALYSIS · DEVELOPMENT' in status_qml
+    assert '"ANALYSIS"' in status_qml
+    assert 'ANALYSIS · DEVELOPMENT' not in status_qml
 
     # The progress label is driven solely by the genuine currently
     # running single-flight worker; no playback or synthetic percentage.
