@@ -7,6 +7,8 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_module.hpp>
+#include <rgsml/dsp/module_descriptor.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
@@ -31,6 +33,7 @@ private slots:
     void l3OfflineSearchScoresCurrentRealM21ProducerEvidence();
     void l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence();
     void l3ActualGainCandidateRunsExistingRendererAndM19M20();
+    void l3C01FullPrefixCandidateMeasuresRealM21Evidence();
 };
 
 void M21RealProductMetricsPortTest::
@@ -511,6 +514,136 @@ l3ActualGainCandidateRunsExistingRendererAndM19M20()
     // trial: Product must capture a new baseline, not render a stale trial.
     QVERIFY(chain.value()->set_user_bypass(*gainId.value(),true));
     QVERIFY(!candidate->still_matches(*chain.value(),baseline));
+}
+
+void M21RealProductMetricsPortTest::
+l3C01FullPrefixCandidateMeasuresRealM21Evidence()
+{
+    using namespace app::m21_private;
+    using namespace app::l3_automatch;
+    // Direct IModule from true frame-zero prefix. This is real C01 PCM,
+    // NOT a claim that the Product renderer/registry already supports
+    // Dynamic EQ random access or a certified finite pre-context.
+    dsp::ModuleDescriptorSpec d{};
+    d.type_id="rgsml.dsp.dynamic-eq";
+    d.display_name_key="rgsml.dsp.dynamic-eq.display-name";
+    d.categories={dsp::ModuleCategory::FILTER_EQ};
+    d.allowed_stages={dsp::ProcessingStage::MASTER};
+    d.allowed_segments={dsp::ChainSegment::MANUAL};
+    d.duplicable=true;
+    d.bypassable=true;
+    d.placement_class=dsp::PlacementClass::INLINE_CHAIN;
+    d.algorithm_version="1.0.0";
+    d.parameter_schema_id="rgsml.dsp.dynamic-eq.parameters/1.0.0";
+    auto desc=dsp::ModuleDescriptor::create(std::move(d));
+    QVERIFY(desc);
+    dsp::DynamicEqBandSpec band{};
+    band.band_id=*core::Uuid::parse(
+        "01234567-89ab-4cde-8123-456789abcdef").value();
+    band.shape=dsp::DynamicEqBellShape{440.0,0.707};
+    band.control.base_gain_db=0.0;
+    band.control.range_db=6.0;
+    band.control.threshold_dbfs=-80.0;
+    band.control.ratio=20.0;
+    band.control.attack_ms=0.1;
+    auto typed=dsp::DynamicEqBandParameters::create(band);
+    QVERIFY(typed);
+    auto params=dsp::DynamicEqParameters::create({*typed.value()});
+    QVERIFY(params);
+    auto module=dsp::DynamicEqModule::create(*desc.value(),*params.value());
+    QVERIFY(module);
+    const auto rate=core::SampleRate::create(48000);
+    const auto count=core::FrameCount::create(48000);
+    const auto block=core::FrameCount::create(4096);
+    QVERIFY(rate&&count&&block);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    const dsp::DspProcessSpec processing{
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        *block.value()};
+    QVERIFY(module.value()->get()->prepare(processing));
+    auto source=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    auto candidate=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    auto reference=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    QVERIFY(source&&candidate&&reference);
+    auto x=source.value()->mutable_view().channel(0);
+    auto ref=reference.value()->mutable_view().channel(0);
+    QVERIFY(x&&ref);
+    for(std::size_t i=0;i<x.value()->size();++i) {
+        const double tone=std::sin(
+            2.0*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
+        (*x.value())[i]=0.2*tone;
+        (*ref.value())[i]=0.4*tone; // independent target, not candidate PCM
+    }
+    for(std::int64_t begin=0;begin<48000;begin+=4096) {
+        const auto n=std::min<std::int64_t>(4096,48000-begin);
+        const auto size=core::FrameCount::create(n);
+        const auto range=core::FrameRange::create(
+            core::FrameIndex{begin},core::FrameIndex{begin+n});
+        QVERIFY(size&&range);
+        auto source_part=source.value()->view().subview(
+            core::FrameIndex{begin},*size.value());
+        auto candidate_part=candidate.value()->mutable_view().subview(
+            core::FrameIndex{begin},*size.value());
+        QVERIFY(source_part&&candidate_part);
+        QVERIFY(module.value()->get()->process(
+            *source_part.value(),*candidate_part.value(),
+            dsp::DspProcessContext{*range.value(),begin==0,begin+n==48000}));
+    }
+    const auto levels_base=analysis::measure_basic_level_full_resource(
+        *source.value());
+    const auto levels_trial=analysis::measure_basic_level_full_resource(
+        *candidate.value());
+    const auto levels_ref=analysis::measure_basic_level_full_resource(
+        *reference.value());
+    const auto stereo_base=analysis::measure_tonal_stereo_scope(
+        source.value()->view(),core::FrameIndex{0},*count.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    const auto stereo_trial=analysis::measure_tonal_stereo_scope(
+        candidate.value()->view(),core::FrameIndex{0},*count.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    const auto stereo_ref=analysis::measure_tonal_stereo_scope(
+        reference.value()->view(),core::FrameIndex{0},*count.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(levels_base&&levels_trial&&levels_ref);
+    QVERIFY(stereo_base&&stereo_trial&&stereo_ref);
+    const auto baseMetrics=import_real_product_metrics(
+        *levels_base.value(),*stereo_base.value(),
+        {Column::processed,1U,"c01-baseline-source","Full Track",true});
+    const auto candidateMetrics=import_real_product_metrics(
+        *levels_trial.value(),*stereo_trial.value(),
+        {Column::processed,2U,"c01-full-prefix-processed","Full Track",true});
+    const auto referenceMetrics=import_real_product_metrics(
+        *levels_ref.value(),*stereo_ref.value(),
+        {Column::gold,1U,"independent-c01-reference","Full Track",true});
+    QVERIFY(baseMetrics.snapshot);
+    QVERIFY(candidateMetrics.snapshot);
+    QVERIFY(referenceMetrics.snapshot);
+    PrivatePublicationGuard producer;
+    QVERIFY(producer.expect(Column::processed,1U));
+    QVERIFY(producer.expect(Column::gold,1U));
+    QVERIFY(producer.publish(*baseMetrics.snapshot));
+    QVERIFY(producer.publish(*referenceMetrics.snapshot));
+    auto search=OfflineSearch::begin(140U,producer.view(),
+        {{"c01-full-prefix-BELL-RANGE-6"}},
+        {{Metric::full_scope_rms,1.0,1.0}});
+    QVERIFY(search);
+    const auto ticket=search->next();
+    QVERIFY(ticket);
+    QVERIFY(producer.expect(Column::processed,2U));
+    QVERIFY(producer.publish(*candidateMetrics.snapshot));
+    QCOMPARE(search->complete(*ticket,producer.view()),Submission::improved);
+    QVERIFY(search->best().typed_dsp_fingerprint.has_value());
+    QCOMPARE(*search->best().typed_dsp_fingerprint,
+             std::string{"c01-full-prefix-BELL-RANGE-6"});
+    QVERIFY(search->best().weighted_error<0.5);
 }
 
 } // namespace rgsml::tests
