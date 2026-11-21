@@ -317,6 +317,7 @@ Rectangle {
                         // One symbol REPLACES the previous configuration LED.
                         // Fixed 16px glyph slot, no extra 8px dot to its right.
                         // Family hue stays constant: DIM = Default, BRIGHT = Manual.
+                        // Extra glow intensity is drawn by each glyph renderer.
                         // Bypass separately mutes the ROW while retaining the
                         // true Default/Manual semantic and stable coordinates.
                         StudioIcon {
@@ -330,7 +331,7 @@ Rectangle {
                             Layout.maximumHeight: 16
                             kind: root.moduleIconKind(rowItem.moduleAdapter)
                             strokeWidth: rowItem.permanentlyLit || !rowItem.isDefaultState
-                                ? 2.1 : 1.65
+                                ? 2.3 : 1.65
                             strokeColor: root.moduleIconColor(rowItem.moduleAdapter)
                             // Approved LED semantics: Manual=lit, Default=dim.
                             // Analysis/service modules stay lit unless bypassed.

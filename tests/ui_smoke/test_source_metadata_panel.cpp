@@ -5559,6 +5559,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(chainEqIcon->opacity(), 1.0);
     QVERIFY2(chainEqIcon->property("glowEnabled").toBool(),
              "Manual EQ must glow while its family hue and 16px slot remain unchanged");
+    QCOMPARE(chainEqIcon->property("glowBlur").toDouble(),10.0);
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
     QVERIFY(gainHostUndoBtn->property("enabled").toBool());
@@ -5801,6 +5802,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow1->property("isBypassed").toBool(), "EQ chain row must reflect bypass without a badge");
     QVERIFY2(!chainEqIcon->property("glowEnabled").toBool(),
              "Bypassed Manual must keep configuration but extinguish its light");
+    QCOMPARE(chainEqIcon->property("glowBlur").toDouble(),0.0);
     QCOMPARE(chainEqIcon->width(),16.0);
     QCOMPARE(chainEqIcon->mapToItem(
         qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x(),eqIconXBefore);
@@ -7147,6 +7149,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             find_child_by_name(root,vectorName));
         QVERIFY2(vectorIcon,"Selected Product analysis Shape is not a QQuickItem");
         QCOMPARE(vectorIcon->property("kind").toString(),analysisIconKinds[index]);
+        QVERIFY2(vectorIcon->property("glowEnabled").toBool(),
+                 "Permanent analysis module must retain its bright halo");
+        QCOMPARE(vectorIcon->property("outerHaloAlpha").toDouble(),0.32);
+        QCOMPARE(vectorIcon->property("innerHaloAlpha").toDouble(),0.72);
         QVERIFY2(vectorIcon->isVisible(),"Selected vector icon must be visible");
         QTRY_COMPARE_WITH_TIMEOUT(qRound(vectorIcon->width()),16,5000);
         QTRY_COMPARE_WITH_TIMEOUT(qRound(vectorIcon->height()),16,5000);

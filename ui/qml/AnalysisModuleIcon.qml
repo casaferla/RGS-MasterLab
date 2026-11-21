@@ -17,6 +17,11 @@ Item {
     implicitWidth: 16
     implicitHeight: 16
     clip: false
+    // Stronger two-pass same-hue halo at the fixed 16px chain slot.
+    // The core silhouette and all dark/default/bypass states are unchanged.
+    readonly property color haloTint: Qt.lighter(strokeColor, 1.55)
+    readonly property real outerHaloAlpha: glowEnabled ? 0.32 : 0.0
+    readonly property real innerHaloAlpha: glowEnabled ? 0.72 : 0.0
 
     readonly property bool small: Math.min(width,height) <= 20
     readonly property real designSize: 24
@@ -85,23 +90,23 @@ Item {
         visible: root.vectorPath.length > 0
         // Always-on analysis services use the SAME icon-halo semantics as
         // M16's lit StudioIcon. The old 20%-opacity one-pixel vector
-        // outline was practically invisible at 16px. Two same-hue,
-        // concentric translucent strokes create a visible soft-edge glow
+        // outline was practically invisible at 16px. Two brighter,
+        // concentric translucent strokes create a high-contrast soft-edge glow
         // without adding a separate LED, image, changing geometry, or
         // claiming that a missing measurement is "inactive".
         ShapePath {
-            strokeColor: Qt.rgba(root.strokeColor.r,root.strokeColor.g,
-                root.strokeColor.b,root.glowEnabled ? 0.15 : 0)
-            strokeWidth: root.opticalStroke + 6.0
+            strokeColor: Qt.rgba(root.haloTint.r,root.haloTint.g,
+                root.haloTint.b,root.outerHaloAlpha)
+            strokeWidth: root.opticalStroke + 7.0
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
             fillColor: "transparent"
             PathSvg { path: root.vectorPath }
         }
         ShapePath {
-            strokeColor: Qt.rgba(root.strokeColor.r,root.strokeColor.g,
-                root.strokeColor.b,root.glowEnabled ? 0.42 : 0)
-            strokeWidth: root.opticalStroke + 3.0
+            strokeColor: Qt.rgba(root.haloTint.r,root.haloTint.g,
+                root.haloTint.b,root.innerHaloAlpha)
+            strokeWidth: root.opticalStroke + 3.5
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
             fillColor: "transparent"
