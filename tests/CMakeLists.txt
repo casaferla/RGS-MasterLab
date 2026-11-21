@@ -2614,3 +2614,16 @@ add_test(NAME rgsml_l3_m09_abstract_family_tests
 set_tests_properties(rgsml_l3_m09_abstract_family_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m09;family_enumeration;nonrelease")
+
+# L3-M09 proxy ordered only when supplied authentic M10 cost operands.
+qt_add_executable(rgsml_l3_m09_pre_render_proxy_tests
+    unit/app/test_l3_m09_pre_render_proxy.cpp)
+target_include_directories(rgsml_l3_m09_pre_render_proxy_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m09_pre_render_proxy_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m09_pre_render_proxy_tests)
+add_test(NAME rgsml_l3_m09_pre_render_proxy_tests
+    COMMAND rgsml_l3_m09_pre_render_proxy_tests)
+set_tests_properties(rgsml_l3_m09_pre_render_proxy_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m09;proxy;nonrelease")
