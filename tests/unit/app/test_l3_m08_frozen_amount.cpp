@@ -16,6 +16,7 @@ namespace rgsml::tests {
 namespace {
 namespace m08=rgsml::app::l3_automatch::m08_frozen;
 namespace m07=rgsml::app::l3_automatch::m07_frozen;
+namespace m10=rgsml::app::l3_automatch::m10_frozen;
 [[nodiscard]] std::array<m08::DomainAmount,4> ordered(
     double t=1.0,double d=1.0,double s=1.0,double l=1.0) {
     return {{
