@@ -5,6 +5,7 @@
 #include "internal/l3_product_offline_trial_job.hpp"
 #include "internal/l3_offline_private_metric_probe.hpp"
 #include "internal/l3_private_scalar_candidate_batch.hpp"
+#include "internal/l3_private_scalar_batch_single_flight.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -483,6 +484,30 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QCOMPARE(progress->completed(),3U);
     QVERIFY(progress->finished());
     QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
+
+    // Exercise the same PCM work through the detached, single-flight
+    // owner-poll interface without any QObject on the numerical worker.
+    PrivateScalarBatchSingleFlight worker;
+    QVERIFY(worker.start(417,batchJobs,*imported.snapshot,
+                         {rms.begin(),rms.end()}));
+    QVERIFY(worker.busy());
+    QVERIFY(!worker.start(418,batchJobs,*imported.snapshot,
+                          {rms.begin(),rms.end()}));
+    auto workerProgress=worker.progress();
+    QVERIFY(workerProgress);
+    QTRY_VERIFY_WITH_TIMEOUT(worker.finished(),20000);
+    const auto completion=worker.take_finished();
+    QVERIFY(completion);
+    QCOMPARE(completion->request_id,std::uint64_t{417});
+    QVERIFY(!completion->error);
+    QVERIFY(completion->report);
+    QVERIFY(completion->report->end==PrivateBatchEnd::all_attempted);
+    QCOMPARE(completion->report->completed,3U);
+    QCOMPARE(completion->report->failed,0U);
+    QVERIFY(completion->report->best);
+    QVERIFY(workerProgress->finished());
+    QVERIFY(!worker.busy());
+    QVERIFY(!worker.take_finished());
 
     // Cancellation before dispatch consumes no render or analyzer work.
     auto cancelled=std::make_shared<PrivateBatchProgress>();
