@@ -47,8 +47,8 @@ jobs:
           cmake --build build-l3 --config Release --parallel 4 --target rgsml_dsp_dynamic_eq_parameters_tests rgsml_dsp_dynamic_eq_c01_coefficients_tests rgsml_dsp_dynamic_eq_c01_engine_tests rgsml_dsp_dynamic_eq_imodule_tests rgsml_dsp_dynamic_eq_static_equivalence_tests rgsml_dsp_dynamic_eq_perf_measure_tests rgsml_m21_real_product_metrics_port_tests rgsml_l3_dynamic_eq_canonical_render_tests rgsml_module_parameter_codec_tests rgsml_app *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 95; throw 'L3_BUILD_FAILED' }
           $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
-          ctest --test-dir build-l3 -C Release --output-on-failure -R '^(rgsml_dsp_dynamic_eq_(parameters|c01_coefficients|c01_engine|imodule|static_equivalence|perf_measure)_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_l3_dynamic_eq_canonical_render_tests|rgsml_module_parameter_codec_tests)$' *> $log
-          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 140; throw 'L3_TEST_FAILED' }
+          ctest --test-dir build-l3 -C Release --output-on-failure -V -R '^(rgsml_dsp_dynamic_eq_(parameters|c01_coefficients|c01_engine|imodule|static_equivalence|perf_measure)_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_l3_dynamic_eq_canonical_render_tests|rgsml_module_parameter_codec_tests)$' *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 220; throw 'L3_TEST_FAILED' }
           Get-Content $log -Tail 24
       - name: Compile and test macro suite Linux
         if: runner.os == 'Linux'
@@ -57,6 +57,6 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           cmake -S . -B build-l3 -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON > /tmp/l3-macro.log 2>&1 || { tail -n 70 /tmp/l3-macro.log; exit 1; }
-          cmake --build build-l3 --parallel 4 --target rgsml_dsp_dynamic_eq_parameters_tests rgsml_dsp_dynamic_eq_c01_coefficients_tests rgsml_dsp_dynamic_eq_c01_engine_tests rgsml_dsp_dynamic_eq_imodule_tests rgsml_dsp_dynamic_eq_static_equivalence_tests rgsml_dsp_dynamic_eq_perf_measure_tests rgsml_m21_real_product_metrics_port_tests rgsml_l3_dynamic_eq_canonical_render_tests rgsml_module_parameter_codec_tests rgsml_app > /tmp/l3-macro.log 2>&1 || { tail -n 95 /tmp/l3-macro.log; exit 1; }
-          ctest --test-dir build-l3 --output-on-failure -R '^(rgsml_dsp_dynamic_eq_(parameters|c01_coefficients|c01_engine|imodule|static_equivalence|perf_measure)_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_l3_dynamic_eq_canonical_render_tests|rgsml_module_parameter_codec_tests)$' > /tmp/l3-macro.log 2>&1 || { tail -n 140 /tmp/l3-macro.log; exit 1; }
+          cmake --build build-l3 --parallel 4 --target rgsml_dsp_dynamic_eq_parameters_tests rgsml_dsp_dynamic_eq_c01_coefficients_tests rgsml_dsp_dynamic_eq_c01_engine_tests rgsml_dsp_dynamic_eq_imodule_tests rgsml_dsp_dynamic_eq_static_equivalence_tests rgsml_dsp_dynamic_eq_perf_measure_tests rgsml_m21_real_product_metrics_port_tests rgsml_l3_dynamic_eq_canonical_render_tests rgsml_module_parameter_codec_tests > /tmp/l3-macro.log 2>&1 || { tail -n 95 /tmp/l3-macro.log; exit 1; }
+          ctest --test-dir build-l3 --output-on-failure -V -R '^(rgsml_dsp_dynamic_eq_(parameters|c01_coefficients|c01_engine|imodule|static_equivalence|perf_measure)_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_l3_dynamic_eq_canonical_render_tests|rgsml_module_parameter_codec_tests)$' > /tmp/l3-macro.log 2>&1 || { tail -n 220 /tmp/l3-macro.log; exit 1; }
           tail -n 24 /tmp/l3-macro.log
