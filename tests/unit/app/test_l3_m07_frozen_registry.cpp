@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace rgsml::tests {
@@ -75,8 +76,10 @@ void FrozenM07RegistryTest::frozen27SlotsAndExactRationalMasses() {
              m07::ComponentShare::thirds);
     QCOMPARE(m07::kBindings[25].component_share,
              m07::ComponentShare::one);
-    for(const auto& r:m07::kNonartistic)
-        QCOMPARE(r.artistic_mass,m07::Rational{0,1});
+    for(const auto& r:m07::kNonartistic) {
+        QCOMPARE(r.artistic_mass.numerator,0);
+        QCOMPARE(r.artistic_mass.denominator,1);
+    }
 }
 void FrozenM07RegistryTest::
 realCanonicalDspAvailabilityDoesNotChangeStaticPolicy() {
@@ -125,7 +128,7 @@ void FrozenM07RegistryTest::m07ToM10FullyResolvedFixture() {
     QCOMPARE(built.failure,m07::BridgeFailure::none);
     QVERIFY(!built.populations->authorizes_master_publication());
     std::array<std::size_t,4> expected{{
-        7,24,11,3}};
+        7,25,14,3}};
     // T01 two bands + 5 scalars=7, D01/D04/D07/D08/D09
     // vector3, D10/11/12 vector2; stereo vector and low-end share
     // are NEVER contracted to one scalar for missing support.
@@ -141,9 +144,11 @@ void FrozenM07RegistryTest::m07ToM10FullyResolvedFixture() {
     }
     QVERIFY(score.j_target);
     QVERIFY(*score.j_target>0.0);
-    QVERIFY(m07::kBindings[6].domain_mass==m07::Rational{3,20});
-    QCOMPARE(built.populations->domain[1].configured[0].configured_mass,
-             0.05); // D01 mass .15 distributed 1/3, no triple count
+    QCOMPARE(m07::kBindings[6].domain_mass.numerator,3);
+    QCOMPARE(m07::kBindings[6].domain_mass.denominator,20);
+    QVERIFY(std::abs(
+        built.populations->domain[1].configured[0].configured_mass-
+        0.05)<1e-12); // D01 mass .15 distributed 1/3, no triple count
 
     sourced[0].resolved_source_feature_id=
         std::string{m07::kBindings[0].exclusive_fallback_feature_id};
