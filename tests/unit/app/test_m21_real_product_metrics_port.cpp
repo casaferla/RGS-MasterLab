@@ -1,6 +1,13 @@
 #include "internal/m21_real_product_metrics_port.hpp"
 #include "internal/l2_automatch_evidence_bridge.hpp"
 #include "internal/l3_automatch_offline_search.hpp"
+#include "internal/l3_automatch_typed_gain_trial.hpp"
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/core/uuid.hpp>
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
@@ -23,6 +30,7 @@ private slots:
     void l2RejectsMissingStaleAndUnsupportedScopes();
     void l3OfflineSearchScoresCurrentRealM21ProducerEvidence();
     void l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence();
+    void l3ActualGainCandidateRunsExistingRendererAndM19M20();
 };
 
 void M21RealProductMetricsPortTest::
@@ -374,6 +382,135 @@ l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence()
     QVERIFY(search->cancelled());
     QVERIFY(!search->next());
     QVERIFY(search->complete(*ticket,producer.view())==Submission::cancelled);
+}
+
+
+void M21RealProductMetricsPortTest::
+l3ActualGainCandidateRunsExistingRendererAndM19M20()
+{
+    using namespace app::m21_private;
+    using namespace app::l3_automatch;
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto uuid=core::Uuid::parse(
+        "aad00000-0000-4000-8000-000000000001");
+    QVERIFY(uuid);
+    const auto gainId=dsp::ModuleInstanceId::from_uuid(*uuid.value());
+    QVERIFY(gainId);
+    QVERIFY(chain.value()->add(*gainId.value(),"rgsml.dsp.gain",0));
+    const auto initialGain=dsp::GainParameters::create(0.);
+    QVERIFY(initialGain);
+    const std::vector<dsp::ModuleExecutionBinding> baseline{
+        {*gainId.value(),*initialGain.value()}};
+    auto candidate=make_gain_trial(*chain.value(),baseline,*gainId.value(),
+        6.020599913279624,"typed-actual-gain-6db");
+    QVERIFY(candidate);
+    QVERIFY(candidate->still_matches(*chain.value(),baseline));
+    QCOMPARE(candidate->candidate_bindings.size(),std::size_t{1});
+    QVERIFY(candidate->candidate_bindings!=baseline);
+    QVERIFY(!make_gain_trial(*chain.value(),baseline,*gainId.value(),
+        0.0,"noop"));
+    QVERIFY(!make_gain_trial(*chain.value(),baseline,*gainId.value(),
+        25.0,"out-of-range"));
+    QVERIFY(!make_gain_trial(*chain.value(),baseline,*gainId.value(),
+        4.0,""));
+    const auto rate=core::SampleRate::create(48000);
+    const auto count=core::FrameCount::create(48000);
+    const auto block=core::FrameCount::create(4096);
+    QVERIFY(rate&&count&&block);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    auto source=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    auto reference=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    QVERIFY(source&&reference);
+    const auto a=source.value()->mutable_view().channel(0);
+    const auto b=reference.value()->mutable_view().channel(0);
+    QVERIFY(a&&b);
+    for(std::size_t i=0;i<a.value()->size();++i) {
+        const auto tone=std::sin(
+            2.0*std::numbers::pi*440.0*static_cast<double>(i)/48000.);
+        (*a.value())[i]=0.15*tone;
+        (*b.value())[i]=0.30*tone;
+    }
+    // The *same* canonical renderer that MasteringPreviewController
+    // invokes: this is not a second DSP implementation or a fake score.
+    const auto originalRequest=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *chain.value(),baseline,*block.value());
+    QVERIFY(originalRequest);
+    const auto trialRequest=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *chain.value(),candidate->candidate_bindings,*block.value());
+    QVERIFY(trialRequest);
+    const auto rendered0=render::render_preview(
+        *originalRequest.value(),*registry.value());
+    const auto rendered1=render::render_preview(
+        *trialRequest.value(),*registry.value());
+    QVERIFY(rendered0&&rendered1);
+    QVERIFY(candidate->still_matches(*chain.value(),baseline));
+    const auto baseLevels=analysis::measure_basic_level_full_resource(
+        rendered0.value()->buffer());
+    const auto gainLevels=analysis::measure_basic_level_full_resource(
+        rendered1.value()->buffer());
+    const auto refLevels=analysis::measure_basic_level_full_resource(
+        *reference.value());
+    QVERIFY(baseLevels&&gainLevels&&refLevels);
+    const auto baseStereo=analysis::measure_tonal_stereo_scope(
+        rendered0.value()->view(),core::FrameIndex{0},*count.value(),
+        rendered0.value()->view().timebase().frame_domain_id());
+    const auto gainStereo=analysis::measure_tonal_stereo_scope(
+        rendered1.value()->view(),core::FrameIndex{0},*count.value(),
+        rendered1.value()->view().timebase().frame_domain_id());
+    const auto refStereo=analysis::measure_tonal_stereo_scope(
+        reference.value()->view(),core::FrameIndex{0},*count.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(baseStereo&&gainStereo&&refStereo);
+    const auto baselineMetrics=import_real_product_metrics(
+        *baseLevels.value(),*baseStereo.value(),
+        {Column::processed,1U,"real-gain-render-0","Full Track",true});
+    const auto trialMetrics=import_real_product_metrics(
+        *gainLevels.value(),*gainStereo.value(),
+        {Column::processed,2U,"real-gain-render-1","Full Track",true});
+    const auto referenceMetrics=import_real_product_metrics(
+        *refLevels.value(),*refStereo.value(),
+        {Column::gold,1U,"real-reference-a","Full Track",true});
+    QVERIFY(baselineMetrics.snapshot);
+    QVERIFY(trialMetrics.snapshot);
+    QVERIFY(referenceMetrics.snapshot);
+    PrivatePublicationGuard producer;
+    QVERIFY(producer.expect(Column::gold,1U));
+    QVERIFY(producer.expect(Column::processed,1U));
+    QVERIFY(producer.publish(*referenceMetrics.snapshot));
+    QVERIFY(producer.publish(*baselineMetrics.snapshot));
+    auto search=OfflineSearch::begin(81U,producer.view(),
+        {{candidate->ticket_identity}},
+        {{Metric::full_scope_rms,1.,1.}});
+    QVERIFY(search);
+    const auto t=search->next();
+    QVERIFY(t);
+    QVERIFY(candidate->matches_ticket(*t));
+    QVERIFY(producer.expect(Column::processed,2U));
+    QVERIFY(producer.publish(*trialMetrics.snapshot));
+    QVERIFY(search->complete(*t,producer.view())==Submission::improved);
+    QVERIFY(search->complete());
+    QVERIFY(search->best().typed_dsp_fingerprint);
+    QCOMPARE(*search->best().typed_dsp_fingerprint,
+        candidate->ticket_identity);
+    QVERIFY(search->best().weighted_error
+        <0.001); // +6.020599913 dB gain against exact doubled tone
+
+    // Modifying the actual source chain invalidates a prepared immutable
+    // trial: Product must capture a new baseline, not render a stale trial.
+    QVERIFY(chain.value()->set_user_bypass(*gainId.value(),true));
+    QVERIFY(!candidate->still_matches(*chain.value(),baseline));
 }
 
 } // namespace rgsml::tests

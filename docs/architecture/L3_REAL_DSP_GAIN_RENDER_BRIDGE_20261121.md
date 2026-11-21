@@ -1,0 +1,11 @@
+# L3 first actual DSP candidate and measurement loop — 2026-11-21
+
+**Source baseline:** L3 PR #102 on `main` `478eb806a5d440c1ea0b49467caf1e7782f36201`. L3 Focused #1 Windows/Linux SUCCESS.
+
+This second L3 macro-lot advances beyond synthetic numerical snapshots. `l3_automatch_typed_gain_trial.hpp` constructs a fully typed **Gain** proposal using exactly the existing `dsp::GainParameters::create` validation, the real full `ProcessingChain` instances, and all supplied baseline `ModuleExecutionBinding` values. It changes only the Gain payload in a private immutable copy; EQ/Compressor/M-S/P2 and module bypass are preserved. The Product chain, project, GUI and M18 epoch are never mutated. Invalid type/ID/order, bypassed Gain, duplicate/missing bindings, illegal gain values and stale graph claims are denied.
+
+The native test builds a canonical 48-kHz mono prepared PCM, an independent reference and real DSP Gain chain. It executes **the existing** `render::render_preview` twice (baseline/trial), measures the returned actual PCM via existing **M19** and **M20**, imports the true metrics through the existing M21 typed port and private generation publisher, then submits both outcomes to the new L3 `OfflineSearch`. The expected matching Gain trial improves the genuine RMS error; preserving reference identity and full-graph fingerprint/parameter copy is tested. This is a test fixture, **not** a claim of production M18/Qt owner acceptance.
+
+The next step remains a Product-epoch-aware asynchronous Qt adapter: capture immutable prepared owner + M18 source and chain mutation epochs, invoke existing full-song worker without unapproved live parameter changes, accept output through existing Product realization publication, let M21 recapture true current processed/reference snapshots, and fail closed if source/project/REFERENCE changes. No independent second renderer or unsound auto-apply. User-facing AutoMatch controls and multi-DSP search follow once this genuine Product route is covered.
+
+FQ #102 remains a separate historical development-baseline issue, not a new L3 release certificate.
