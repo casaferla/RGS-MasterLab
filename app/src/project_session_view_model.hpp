@@ -63,6 +63,10 @@ public:
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
 
+    // Optional independent REFERENCE timeline. Install once on Qt owner,
+    // before Project Open; no DSP or extra Project epoch authority.
+    void set_reference_region_view_model(AuditionRegionViewModel* region);
+
     // M18 PREPRODUCTION: one opt-in Product-authoritative epoch gate
     // before the FIRST destructive Project-open or SaveAs publication.
     // No production caller installs this until all other mutators are
@@ -168,10 +172,12 @@ private:
     void on_source_changed();
     void on_gold_changed();
     void on_region_changed();
+    void on_reference_region_changed();
 
     SourceSelectionViewModel* source_;
     GoldSelectionViewModel* gold_;
     AuditionRegionViewModel* region_;
+    AuditionRegionViewModel* referenceRegion_{nullptr};
     PlaybackTransportViewModel* playback_;
     MasteringChainState* masteringChainState_{nullptr};
     GainViewModel* gainViewModel_{nullptr};
@@ -197,6 +203,7 @@ private:
     std::optional<core::Uuid> referenceId_;
     std::optional<core::Uuid> regionId_;
     std::optional<core::Uuid> clearedRegionId_;
+    std::optional<core::Uuid> referenceRegionId_;
     std::optional<core::ResourceReference> lastSource_;
     std::optional<core::ResourceReference> lastGold_;
     bool degraded_{false};

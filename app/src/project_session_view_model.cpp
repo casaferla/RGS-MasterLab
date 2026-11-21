@@ -126,7 +126,7 @@ private:
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
         doc.history.canonical_utf8() != "[]" ||
         doc.extensions.canonical_utf8() != "{}" ||
-        doc.timeSelections.auditionRegions.size() > 1U) {
+        doc.timeSelections.auditionRegions.size() > 2U) {
         return true;
     }
 
@@ -511,6 +511,16 @@ ProjectSessionViewModel::ProjectSessionViewModel(
             this, &ProjectSessionViewModel::on_region_changed);
 }
 
+void ProjectSessionViewModel::set_reference_region_view_model(
+    AuditionRegionViewModel* region)
+{
+    if(!region ||referenceRegion_ ||QThread::currentThread()!=thread()
+       ||m18ProjectOperationActive_||isCommittingProjectOpen_)return;
+    referenceRegion_=region;
+    connect(referenceRegion_,&AuditionRegionViewModel::changed,
+            this,&ProjectSessionViewModel::on_reference_region_changed);
+}
+
 bool ProjectSessionViewModel::can_save_project() const noexcept
 {
     // The I2 fifth MANUAL module now has a distinct typed JSON codec and
@@ -565,10 +575,14 @@ void ProjectSessionViewModel::on_source_changed()
 void ProjectSessionViewModel::on_gold_changed()
 {
     const auto* gold = gold_->gold_resource();
-    if (!gold) { goldId_.reset(); referenceId_.reset(); lastGold_.reset(); }
+    if (!gold) {
+        goldId_.reset(); referenceId_.reset();
+        referenceRegionId_.reset(); lastGold_.reset();
+    }
     else {
         if (lastGold_ && !lastGold_->same_resource_identity(gold->reference())) {
             goldId_.reset(); referenceId_.reset();
+            referenceRegionId_.reset();
         }
         lastGold_ = gold->reference();
     }
@@ -581,6 +595,13 @@ void ProjectSessionViewModel::on_region_changed()
         clearedRegionId_ = regionId_;
         regionId_.reset();
     }
+    emit changed();
+}
+
+void ProjectSessionViewModel::on_reference_region_changed()
+{
+    if(referenceRegion_ &&!referenceRegion_->region())
+        referenceRegionId_.reset();
     emit changed();
 }
 
@@ -639,10 +660,26 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
             doc.timeSelections.auditionRegions.end(),
             [this](const project::AuditionRegion& item) { return item.regionId == *regionId_; });
         project::AuditionRegion value{*regionId_, *sourceId_, "SOURCE",
-            region->begin().value(), region->end().value()};
+            region->begin().value(), region->end().value(),
+            region_->loop_enabled()};
         if (found == doc.timeSelections.auditionRegions.end())
             doc.timeSelections.auditionRegions.push_back(std::move(value));
         else *found = std::move(value);
+    }
+
+    // REFERENCE is a distinct original file and frame clock. No recorded
+    // REFERENCE interval may survive a removed/replaced reference resource.
+    std::erase_if(doc.timeSelections.auditionRegions,
+        [](const project::AuditionRegion& item) {
+            return item.frameDomain=="REFERENCE";
+        });
+    if(gold &&goldId_ &&referenceRegion_ &&referenceRegion_->region()) {
+        const auto refRange=*referenceRegion_->region();
+        if(!referenceRegionId_)referenceRegionId_=next_id();
+        doc.timeSelections.auditionRegions.push_back({
+            *referenceRegionId_,*goldId_,"REFERENCE",
+            refRange.begin().value(),refRange.end().value(),
+            referenceRegion_->loop_enabled()});
     }
 
     if (masteringChainState_ && (!opened_ || sessionChainMaterialized_)) {
@@ -982,19 +1019,39 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         goldCandidate.emplace(std::move(*candidate.value()));
     }
     std::optional<core::FrameRange> regionCandidate;
+    std::optional<core::FrameRange> referenceRegionCandidate;
+    bool sourceLoop=false;
+    bool referenceLoop=false;
+    std::optional<core::Uuid> persistedSourceRegionId;
+    std::optional<core::Uuid> persistedReferenceRegionId;
+    // Resolve BOTH frame domains before the first destructive source or
+    // Product epoch mutation. Wrong clock, reference or missing controller
+    // rejects the entire open without touching the prior session.
     for (const auto& persisted : doc.timeSelections.auditionRegions) {
-        if (persisted.resourceId != doc.sourceResourceId ||
-            persisted.endFrameExclusive >
-                sourceCandidate.value()->wav_info().frame_count().value()) {
-            publish_error(invalid("timeSelections.auditionRegions")); return;
-        }
-    }
-    if (!doc.timeSelections.auditionRegions.empty()) {
-        const auto& persisted = doc.timeSelections.auditionRegions.front();
-        auto range = core::FrameRange::create(core::FrameIndex{persisted.startFrame},
+        const auto range = core::FrameRange::create(
+            core::FrameIndex{persisted.startFrame},
             core::FrameIndex{persisted.endFrameExclusive});
-        if (!range) { publish_error(*range.error()); return; }
-        regionCandidate = *range.value();
+        if(!range) {publish_error(*range.error());return;}
+        if(persisted.frameDomain=="SOURCE") {
+            if(persisted.resourceId!=doc.sourceResourceId
+               ||persisted.endFrameExclusive>
+                   sourceCandidate.value()->wav_info().frame_count().value()) {
+                publish_error(invalid("timeSelections.auditionRegions"));return;
+            }
+            regionCandidate=*range.value();
+            persistedSourceRegionId=persisted.regionId;
+            sourceLoop=persisted.loopEnabled;
+        } else if(persisted.frameDomain=="REFERENCE") {
+            if(!referenceRegion_ ||!goldCandidate ||!goldResourceId
+               ||persisted.resourceId!=*goldResourceId
+               ||persisted.endFrameExclusive>
+                   goldCandidate->wav_info().frame_count().value()) {
+                publish_error(invalid("timeSelections.auditionRegions"));return;
+            }
+            referenceRegionCandidate=*range.value();
+            persistedReferenceRegionId=persisted.regionId;
+            referenceLoop=persisted.loopEnabled;
+        } else {publish_error(invalid("timeSelections.auditionRegions"));return;}
     }
 
     auto registryRes = dsp::ModuleRegistry::create_dsp_package_v1();
@@ -1128,6 +1185,26 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             publish_error(*accepted.error());
             return;
         }
+        accepted=region_->restore_project_loop_preference(sourceLoop);
+        if(!accepted) {
+            isCommittingProjectOpen_=false;
+            publish_error(*accepted.error());
+            return;
+        }
+    }
+    if(referenceRegionCandidate) {
+        auto accepted=referenceRegion_->set_region(*referenceRegionCandidate);
+        if(!accepted) {
+            isCommittingProjectOpen_=false;
+            publish_error(*accepted.error());
+            return;
+        }
+        accepted=referenceRegion_->restore_project_loop_preference(referenceLoop);
+        if(!accepted) {
+            isCommittingProjectOpen_=false;
+            publish_error(*accepted.error());
+            return;
+        }
     }
 
     if (masteringChainState_ && chainCandidate.value()->chainState) {
@@ -1157,9 +1234,8 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     const auto persistedProjectId = doc.projectId;
     const auto persistedSourceId = doc.sourceResourceId;
     const auto persistedReferenceId = doc.references.activeReferenceId;
-    const auto persistedRegionId = doc.timeSelections.auditionRegions.empty() ?
-        std::optional<core::Uuid>{} :
-        std::optional<core::Uuid>{doc.timeSelections.auditionRegions.front().regionId};
+    // Exact IDs are captured by frame domain, not vector order.
+    const auto persistedRegionId=persistedSourceRegionId;
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
     // Publish the validated WAV preference only after the entire
@@ -1172,6 +1248,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     referenceId_ = persistedReferenceId;
     goldId_ = goldResourceId;
     regionId_ = persistedRegionId;
+    referenceRegionId_=persistedReferenceRegionId;
     clearedRegionId_.reset();
     lastSource_ = source_->source_resource()->reference();
     lastGold_ = gold_->gold_resource() ?

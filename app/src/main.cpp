@@ -1057,6 +1057,7 @@ int main(int argc, char* argv[])
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
     projectSession.set_master_output_rate_state(&masterOutputRate);
+    projectSession.set_reference_region_view_model(&referenceRegion);
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
