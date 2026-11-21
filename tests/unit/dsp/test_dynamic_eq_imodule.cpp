@@ -91,6 +91,7 @@ private slots:
     void checkpointExactContinuationAndIdentity();
     void badCheckpointAndContextAreAtomic();
     void resetEosAndPrecontextGate();
+    void disabledBandsRequireNoMemoryAndGhostLaneRejected();
 };
 void DynamicEqIModuleTest::checkpointExactContinuationAndIdentity() {
     const auto d=descriptor();
@@ -247,6 +248,61 @@ void DynamicEqIModuleTest::resetEosAndPrecontextGate() {
     QVERIFY(*module->runtime_checkpoint().value()==*a.value());
     QVERIFY(module->process(src.value()->view(),dst.value()->mutable_view(),
         DspProcessContext{frame_range(0,4),true,false}));
+}
+void DynamicEqIModuleTest::disabledBandsRequireNoMemoryAndGhostLaneRejected() {
+    const auto d=descriptor();
+    const auto fmt=format(audio::ChannelLayout::STEREO_LR);
+    const DspProcessSpec spec{fmt,
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,frame_count(64)};
+    DynamicEqBandSpec disabled;
+    disabled.band_id=*core::Uuid::parse(
+        "44444444-4444-4444-8444-444444444444").value();
+    disabled.enabled=false;
+    disabled.routing=EqRouting::SIDE;
+    auto b=DynamicEqBandParameters::create(disabled);
+    QVERIFY(b);
+    auto p=DynamicEqParameters::create({*b.value()});
+    QVERIFY(p);
+    auto bypass=make(d,*p.value());
+    auto req=bypass->runtime_requirements(spec);
+    QVERIFY(req);
+    QCOMPARE(req.value()->algorithmic_latency_frames.value(),0);
+    QCOMPARE(req.value()->pre_context_frames.value(),0);
+    QCOMPARE(req.value()->post_context_frames.value(),0);
+    QCOMPARE(req.value()->effective_tail_frames.value(),0);
+    QVERIFY(bypass->prepare(spec));
+    std::array<double,8> left{0.1,0.2,-0.3,0.4,0.5,-0.6,0.7,0.8};
+    std::array<double,8> right{-0.1,0.2,0.3,0.4,-0.5,-0.6,0.7,-0.8};
+    auto src=make_buffer(fmt,0,left,right);
+    auto dst=make_buffer(fmt,0,left,right);
+    QVERIFY(src&&dst);
+    QVERIFY(bypass->process(src.value()->view(),dst.value()->mutable_view(),
+        DspProcessContext{frame_range(0,8),true,false}));
+    for(std::size_t i=0;i<left.size();++i) {
+        QCOMPARE((*dst.value()->view().channel(0).value())[i],left[i]);
+        QCOMPARE((*dst.value()->view().channel(1).value())[i],right[i]);
+    }
+
+    auto source=make(d,params());
+    auto destination=make(d,params());
+    QVERIFY(source->prepare(spec));
+    QVERIFY(destination->prepare(spec));
+    QVERIFY(source->process(src.value()->view(),dst.value()->mutable_view(),
+        DspProcessContext{frame_range(0,8),true,false}));
+    const auto actual=source->runtime_checkpoint();
+    const auto before=destination->runtime_checkpoint();
+    QVERIFY(actual&&before);
+    auto ghost=*actual.value();
+    QCOMPARE(ghost.payload.size(),std::size_t{192});
+    // Second enabled band is MID; its second detector/audio lane is absent.
+    // Packed state starts at 16, second band at 104, second lane at 144.
+    const std::uint64_t bits=std::bit_cast<std::uint64_t>(1.0);
+    for(std::size_t i=0;i<8;++i)
+        ghost.payload[144+i]=static_cast<std::uint8_t>((bits>>(8*i))&255U);
+    QVERIFY(!destination->restore_runtime_checkpoint(ghost));
+    QCOMPARE(*destination->runtime_checkpoint().value(),*before.value());
+    QVERIFY(destination->restore_runtime_checkpoint(*actual.value()));
+    QVERIFY(destination->runtime_checkpoint());
 }
 } // namespace
 } // namespace rgsml::tests
