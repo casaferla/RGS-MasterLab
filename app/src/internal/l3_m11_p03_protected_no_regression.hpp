@@ -2,6 +2,7 @@
 // L3-M11 P03 ACCEPTED_FROZEN: exact transformed-coordinate protected
 // component no-regression candidate hard gate. No per-domain averaging,
 // soft penalty, 1e-9 tolerance or stale/partial-K shortcut.
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
