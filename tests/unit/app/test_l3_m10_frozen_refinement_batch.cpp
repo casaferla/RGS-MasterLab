@@ -1,6 +1,7 @@
 #include "internal/l3_m10_frozen_refinement_batch.hpp"
 #include <QtTest/QTest>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -31,6 +32,7 @@ private slots:
     void partialBudgetKeepsMeasuredWinnerNo801stAttempt();
     void staleInventoryOrUnreadySeedNeverCallsEvaluator();
     void cancellationNeverClaimsCompletedMaster();
+    void twoRunsReuseOnlyExactlyIdenticalCompletedCoordinates();
 };
 void M10RefinementBatchTest::
 sameFrozenStepsAcrossMeasuredTop2AndSharedBudget() {
@@ -125,6 +127,51 @@ void M10RefinementBatchTest::cancellationNeverClaimsCompletedMaster() {
         },&cancelled);
     QCOMPARE(outcome.reason,m10::RefinementBatchReason::cancelled);
     QVERIFY(!outcome.winning_refinement_index);
+}
+void M10RefinementBatchTest::
+twoRunsReuseOnlyExactlyIdenticalCompletedCoordinates() {
+    const std::vector<m10::SeedTrial> seeds{trial(7,1.0,7)};
+    const auto coords=inventories(1);
+    m10::ExactCompletedEvaluationCache cache{{0xAF,0x71}};
+    std::uint32_t physical_renders=0U;
+    const auto make_key=[](std::size_t ordinal,
+                           const std::vector<double>& u)
+        -> std::optional<m10::ExactExecutionCacheKey> {
+        const auto bits=std::bit_cast<std::uint64_t>(u[0]);
+        std::vector<std::uint8_t> exact{
+            static_cast<std::uint8_t>(ordinal)};
+        for(unsigned i=0;i<8U;++i)
+            exact.push_back(static_cast<std::uint8_t>(
+                (bits>>(8U*i))&0xffU));
+        return m10::ExactExecutionCacheKey{
+            {0xAF,0x71},exact,exact,{0x88}};
+    };
+    const auto render=[&](std::size_t ordinal,
+                          const std::vector<double>& u) {
+        ++physical_renders;
+        const double d=u[0]-0.75;
+        const auto key=make_key(ordinal,u);
+        return m10::FreshCompleteEvidence{
+            m10::MeasuredOrderKey{d*d,d*d,0.0,1,
+                                  key->canonical_current_tuple,{0x88}},
+            true};
+    };
+    const auto allowed=[](std::size_t,const std::vector<double>&) {
+        return true;
+    };
+    const auto first=m10::run_frozen_top2_refinements_with_exact_cache(
+        seeds,coords,0,true,cache,make_key,allowed,render);
+    QCOMPARE(first.reason,m10::RefinementBatchReason::complete);
+    const auto attempted_first=first.total_attempted;
+    QVERIFY(attempted_first>1U);
+    const auto rendered_first=physical_renders;
+    const auto second=m10::run_frozen_top2_refinements_with_exact_cache(
+        seeds,coords,0,true,cache,make_key,allowed,render);
+    QCOMPARE(second.reason,m10::RefinementBatchReason::complete);
+    QCOMPARE(second.total_attempted,std::uint32_t{1});
+    QCOMPARE(physical_renders,rendered_first);
+    QVERIFY(second.winning_refinement_index);
+    QVERIFY(!second.authorizes_product_publication());
 }
 } // namespace
 } // namespace rgsml::tests

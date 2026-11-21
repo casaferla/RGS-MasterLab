@@ -5,6 +5,7 @@
 // exact completed cache and Product owner staleness checks remain at the
 // supplied evaluator boundary; no proxy, M21 scalar or synthetic audio.
 #include "l3_m10_measured_seed_shortlist.hpp"
+#include "l3_m10_cache_aware_evaluator.hpp"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -106,5 +107,39 @@ template<typename Evaluate>
     // Winner remains a measured SOLVER-stage result, not M13 verified,
     // nor an M12 REF_LINKED Product candidate for publication.
     return result;
+}
+
+// Convenience binding: the caller supplies the exact M07-M11
+// canonical execution serializer and real Product evaluator, while
+// numerical M10 owns shared-budget sequencing and full-cache reuse.
+// NO implicit normalization, JSON invention or stale candidate aliases.
+template<typename MakeExactKey,typename Preflight,typename FreshExecute>
+[[nodiscard]] inline RefinementBatchResult
+run_frozen_top2_refinements_with_exact_cache(
+    std::span<const SeedTrial> ordered_seed_trials,
+    std::span<const std::vector<Coordinate>> active_inventories,
+    std::uint32_t attempts_before_seeds,
+    bool all_product_owners_current,
+    ExactCompletedEvaluationCache& cache,
+    MakeExactKey&& make_canonical_key,
+    Preflight&& source_binding_hard_preflight,
+    FreshExecute&& execute_real_candidate,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    return run_frozen_top2_refinements(
+        ordered_seed_trials,active_inventories,attempts_before_seeds,
+        all_product_owners_current,
+        [&](std::size_t ordinal,const std::vector<double>& u,
+            bool allow_new) -> Evaluation {
+            const auto key=make_canonical_key(ordinal,u);
+            if(!key)
+                return {EvaluationKind::preflight_rejected,{}};
+            return evaluate_with_exact_completed_cache(
+                cache,*key,
+                source_binding_hard_preflight(ordinal,u),
+                allow_new,[&]() {
+                    return execute_real_candidate(ordinal,u);
+                });
+        },cancellation);
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen

@@ -15,3 +15,9 @@ caller must supply fresh typed legal render/analysis with exact
 M05/M06 support-mass objective and M11 hard constraints. This pure
 numeric orchestrator cannot materialize REF_LINKED, alter Input Gain,
 publish audio, report verified proximity or replace M13 verification.
+
+A cache-aware entrypoint now routes coordinate proposals through the
+exact completed-evaluation cache: full canonical key/owner + hard
+preflight, completed current reuse, otherwise a real budgeted callback.
+The scorer and worker remain independently authoritative; no
+cross-ordinal, stale or numerically-tolerated cache equivalence.
