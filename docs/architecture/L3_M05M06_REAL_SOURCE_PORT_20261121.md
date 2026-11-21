@@ -54,3 +54,38 @@ M05/M06 authoritative feature producers and their stable M07/M08
 feature registry/target bindings, then wiring true full-cost
 candidate evaluation into M10 with M11/M12 ownership and later fresh
 M13 verification. A partial M21 nine-cell probe is not an alternative.
+
+## Further M05 tonal reuse — T2–T6 (subsequent writer macro-lot)
+
+`l3_m05_real_tonal_statistics.hpp` reads **the original M20
+mean-channel canonical time-averaged PSD and the existing 1/12-octave
+band energies**. It does NOT perform any other STFT/FFT, introduce a
+second spectral producer or assume the M07 common-band comparison.
+
+- T3 spectral centroid is the exact continuous clipped-cell first
+  moment divided by common-band PSD energy.
+- T4/T5 are the first positive continuous PSD cell whose cumulative
+  power crosses 85%/95% with within-cell frequency interpolation,
+  never nearest-bin.
+- All three use an **identical M07-supplied commonComparisonBandwidth**
+  fully supported by actual M20 Fs and the frozen source E≥1e-12
+  condition. The raw Hz and transformed log2(f/1Hz) observations
+  remain separately available.
+- T2 tilt and T6 8–16k HF slope reuse the M20 measured canonical
+  band energy per Hz. Named full intervals (100–10k, 8–16k), ≥3
+  usable bands and ≥80% above-floor are enforced before unweighted
+  OLS in (log2(fc/1kHz),10log10(energy/Hz)).
+- **The exact spectral floor is an external M07/configuration input**;
+  without it, OLS is unavailable. Source/reference comparison
+  must use the same immutable interval/floor/evidence identity.
+- No M05 ≥2-s source-grade/Phase-6 status, absent 1/3 fallback,
+  M08 optimizationTarget, 27-feature objective, constraint or
+  M13 verification is manufactured from mathematical observations.
+  `OfflineProductCandidateMeasurement::observed_m05_tonal`
+  reuses the Product's already computed M20 readings.
+
+Native analytical test oracles include *flat power/Hz* PSD
+(E=9900, centroid=5050Hz, rolloff P85=8515Hz, P95=9505Hz for
+[100,10000]) and synthetic 2.5dB/oct power-density OLS over
+actual M20 band geometry, missing/invalid energy, explicit floor,
+full named intervals, ≥80% support and direct M03 Product reuse.
