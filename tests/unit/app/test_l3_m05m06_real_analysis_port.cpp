@@ -22,6 +22,7 @@ private slots:
     void pairedT1RequiresSameSupportedCanonicalPopulation();
     void malformedOwnerScopeAndUnavailableCannotFabricateM10();
     void realM20PsdT3T5AndIndependentFlatDensityOracle();
+    void frozenT2T6ExternalFloorAndUnweightedOlsOracle();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
     double scale,double harmonic) {
@@ -227,6 +228,51 @@ realM20PsdT3T5AndIndependentFlatDensityOracle() {
     QVERIFY(observed->rolloff85_hz<=observed->rolloff95_hz);
     // Numerical observation alone never qualifies the source for
     // the M05 >=2s reference-grade/eligible M07 producer.
+}
+void M05M06RealPortTest::
+frozenT2T6ExternalFloorAndUnweightedOlsOracle() {
+    auto pcm=example(0.41,0.22);
+    QVERIFY(pcm);
+    auto actual=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{0},
+        pcm.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(actual);
+    auto synthetic=*actual.value();
+    // Independent analytical density oracle on authentic M20
+    // 1/12 geometry. Exactly 2.5 dB per log2 octave is inserted;
+    // this is not an assertion of source-grade qualification.
+    for(auto& band:synthetic.primary_bands_1_12) {
+        const double x=std::log2(band.center_hz/1000.0);
+        const double density=std::pow(10.0,(2.5*x)/10.0);
+        band.measured_linear_energy=
+            density*(band.high_hz-band.low_hz);
+    }
+    const auto tilt=real::observe_m05_t2_or_t6(
+        synthetic,{20.0,20000.0},1e-12,false);
+    const auto high=real::observe_m05_t2_or_t6(
+        synthetic,{20.0,20000.0},1e-12,true);
+    QVERIFY(tilt&&high);
+    QVERIFY(std::abs(tilt->slope_db_per_octave-2.5)<1e-11);
+    QVERIFY(std::abs(high->slope_db_per_octave-2.5)<1e-11);
+    QVERIFY(tilt->configured_bands>high->configured_bands);
+    QCOMPARE(tilt->above_floor_bands,tilt->configured_bands);
+    QCOMPARE(high->above_floor_bands,high->configured_bands);
+    QVERIFY(!real::observe_m05_t2_or_t6(
+        synthetic,{20.0,20000.0},0.0,false));
+    QVERIFY(!real::observe_m05_t2_or_t6(
+        synthetic,{200.0,20000.0},1e-12,false));
+    QVERIFY(!real::observe_m05_t2_or_t6(
+        synthetic,{20.0,15000.0},1e-12,true));
+    auto insufficient=synthetic;
+    std::size_t count=0;
+    for(auto& band:insufficient.primary_bands_1_12) {
+        if(band.center_hz>=8000.0&&band.center_hz<=16000.0
+           &&count++%2==0)
+            band.measured_linear_energy=0.0;
+    }
+    QVERIFY(!real::observe_m05_t2_or_t6(
+        insufficient,{20.0,20000.0},1e-12,true));
 }
 void M05M06RealPortTest::
 malformedOwnerScopeAndUnavailableCannotFabricateM10() {
