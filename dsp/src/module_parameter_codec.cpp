@@ -650,6 +650,15 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
                 return encode_true_peak_limiter_parameters_json(params);
             } else if constexpr (std::is_same_v<T, StreamingTruePeakLimiterParameters>) {
                 return encode_streaming_true_peak_limiter_parameters_json(params);
+            } else {
+                // Dynamic EQ is currently an explicit offline-only L3
+                // module. A fake or legacy-schema JSON write would corrupt
+                // .rgsml persistence and violate the project freeze.
+                // Do not silently serialize as Parametric EQ.
+                return Result<std::string>::failure(codec_error(
+                    ErrorCode::UnsupportedOperation,
+                    "DYNAMIC_EQ_PERSISTENCE_NOT_AUTHORIZED",
+                    "Dynamic EQ has no authorized saved-project parameter codec yet."));
             }
         },
         payload);
