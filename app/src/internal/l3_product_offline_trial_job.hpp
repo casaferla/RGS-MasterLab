@@ -6,6 +6,7 @@
 // adapter must supply a fresh M18/SOURCE/REFERENCE epoch stamp, recheck it
 // before accepting any result, and keep the actual M21 authority separate.
 #include "l3_automatch_typed_gain_trial.hpp"
+#include "l3_automatch_typed_dynamic_eq_trial.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -22,6 +23,7 @@
 #include <new>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -56,16 +58,19 @@ struct OfflineProductCandidateMeasurement final {
 
 class OfflineProductTrialJob final {
 public:
-    // An accepted BoundGainTrial is the full typed-graph copy. None of
-    // the PRODUCT registry, chain or bindings may be mutated in this call.
+    // An accepted, fully validated Gain or Dynamic EQ trial is a complete
+    // immutable graph copy; neither mutates Product registry/chain/bindings.
+    template<typename Trial>
     [[nodiscard]] static core::Result<OfflineProductTrialJob> create(
         OfflineProductOwnerStamp stamp,
         std::shared_ptr<const render::RenderResult> prepared,
         std::shared_ptr<const dsp::ModuleRegistry> product_registry,
         const dsp::ProcessingChain& live_chain,
         std::span<const dsp::ModuleExecutionBinding> live_bindings,
-        const BoundGainTrial& trial,core::FrameCount maximum_block_frames)
+        const Trial& trial,core::FrameCount maximum_block_frames)
     {
+        static_assert(std::is_same_v<Trial,BoundGainTrial>
+                   ||std::is_same_v<Trial,BoundDynamicEqTrial>);
         using R=core::Result<OfflineProductTrialJob>;
         if(!stamp.populated() ||!prepared ||!product_registry
            ||!trial.still_matches(live_chain,live_bindings)
