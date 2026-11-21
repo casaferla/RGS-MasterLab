@@ -2667,3 +2667,16 @@ add_test(NAME rgsml_l3_m10_authoritative_candidate_cost_tests
 set_tests_properties(rgsml_l3_m10_authoritative_candidate_cost_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;authoritative_features;nonrelease")
+
+# L3-M11 P03 protected component exact transformed-coordinate hard veto.
+qt_add_executable(rgsml_l3_m11_p03_protected_guard_tests
+    unit/app/test_l3_m11_p03_protected_no_regression.cpp)
+target_include_directories(rgsml_l3_m11_p03_protected_guard_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m11_p03_protected_guard_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m11_p03_protected_guard_tests)
+add_test(NAME rgsml_l3_m11_p03_protected_guard_tests
+    COMMAND rgsml_l3_m11_p03_protected_guard_tests)
+set_tests_properties(rgsml_l3_m11_p03_protected_guard_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m11;protected;nonrelease")
