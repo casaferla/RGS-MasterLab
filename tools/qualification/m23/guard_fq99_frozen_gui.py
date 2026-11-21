@@ -105,6 +105,12 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # source candidate, not silent relaxation of the hash/ancestry guards or
 # FQ99/release qualification. Keep this SHA allowlist exact and rerun the
 # full focused suite including M23 source checks on the amended candidate.
+# PO visual correction 2026-11-21: CI #94 M19-M21 glow was too bright;
+# TP Meter is the approved brightness reference. Decrease ONLY the two
+# AnalysisModuleIcon vector halo opacities/widths and remove the color
+# lightening, preserving the exact icon silhouettes, family accents, and
+# on/bypass contract. This single revised QML blob is pinned fail-closed
+# like all other GUI changes, not exempted from M23 or qualified as release.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AuditionSourceSelector.qml": "1225337c5ca5f652cb01a022e3475be5afa1aa74",
     "ui/qml/StudioButton.qml": "04abee78e09e9d6e9cc8f53b7957eca3691fc7a8",
@@ -116,7 +122,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     # same apparent phosphor halo as the other active chain modules.
     # Exact-pin ONLY the reviewed same-hue multi-stroke ShapePaths;
     # no new row, LED, layout, Qt import or synthetic analyzer data.
-    "ui/qml/AnalysisModuleIcon.qml": "ac88bac023ba386a91ca4da2b3ac73d3e9aaf40a",
+    "ui/qml/AnalysisModuleIcon.qml": "44e9c407390dfbb63d75fbd6b5401bebfab9f7db",
     # PO-directed pre-M24 adversarial repair F05: unchanged native M18
     # ticket/consent and FQ99 geometry; only the recovery-only monitor
     # predicate is added to the already approved Return + Export path.

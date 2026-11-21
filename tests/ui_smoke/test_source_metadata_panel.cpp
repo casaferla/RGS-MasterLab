@@ -7151,8 +7151,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCOMPARE(vectorIcon->property("kind").toString(),analysisIconKinds[index]);
         QVERIFY2(vectorIcon->property("glowEnabled").toBool(),
                  "Permanent analysis module must retain its bright halo");
-        QCOMPARE(vectorIcon->property("outerHaloAlpha").toDouble(),0.32);
-        QCOMPARE(vectorIcon->property("innerHaloAlpha").toDouble(),0.72);
+        QCOMPARE(vectorIcon->property("outerHaloAlpha").toDouble(),0.10);
+        QCOMPARE(vectorIcon->property("innerHaloAlpha").toDouble(),0.24);
+        QCOMPARE(vectorIcon->property("haloTint").value<QColor>(),
+                 vectorIcon->property("strokeColor").value<QColor>());
         QVERIFY2(vectorIcon->isVisible(),"Selected vector icon must be visible");
         QTRY_COMPARE_WITH_TIMEOUT(qRound(vectorIcon->width()),16,5000);
         QTRY_COMPARE_WITH_TIMEOUT(qRound(vectorIcon->height()),16,5000);
