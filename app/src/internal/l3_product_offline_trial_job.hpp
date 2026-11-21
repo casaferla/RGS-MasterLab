@@ -8,6 +8,7 @@
 #include "l3_automatch_typed_gain_trial.hpp"
 #include "l3_automatch_typed_dynamic_eq_trial.hpp"
 #include "l3_automatch_typed_transient_trial.hpp"
+#include "l3_m05m06_real_analysis_port.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -56,6 +57,17 @@ struct OfflineProductCandidateMeasurement final {
     analysis::TonalStereoAnalysisResult tonal;
     // Authentic canonical unrounded analysis; not a manufactured M21
     // "current" snapshot. Product Qt owner authenticates it after return.
+
+    // Zero extra render/FFT: map the EXISTING Product candidate's actual
+    // M19/M16/M20 output into the partial frozen feature carrier. This
+    // is read-only and cannot elevate a caller-supplied SourceIdentity
+    // to authoritative Phase6/Qt status or a complete 27-feature M10 cost.
+    [[nodiscard]] m05m06_real::Import observed_m05m06(
+        m05m06_real::SourceIdentity verified_by_caller) const
+    {
+        return m05m06_real::import_actual_full_source(
+            levels,tonal,std::move(verified_by_caller));
+    }
 };
 
 class OfflineProductTrialJob final {
