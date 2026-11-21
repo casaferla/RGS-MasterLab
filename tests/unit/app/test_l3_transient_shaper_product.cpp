@@ -183,6 +183,16 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(calculated);
     QVERIFY(job.value()->result_has_expected_scope(
         calculated.value()->rendered));
+    // M03's actual rendered PCM already has real M19+M20 observations.
+    // The new M05/M06 carrier reads them WITHOUT another renderer,
+    // and cannot invent gated LUFS on this 4096-frame short fixture.
+    auto actual=calculated.value()->observed_m05m06(
+        {"owner-proved-candidate",54,true});
+    QVERIFY(actual.source);
+    QCOMPARE(actual.source->scope_frame_count,std::int64_t{4096});
+    QVERIFY(!actual.source->integrated_lufs.ready());
+    QVERIFY(!calculated.value()->observed_m05m06(
+        {"unverified",54,false}).source);
     QCOMPARE(calculated.value()->rendered.signatures().size(),
              std::size_t{2});
     QVERIFY(std::holds_alternative<
