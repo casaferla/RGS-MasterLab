@@ -4625,6 +4625,10 @@ void ProjectSessionTest::gold_region_roundtrip()
     QVERIFY(restored.gold.has_gold());
     QCOMPARE(restored.region.region()->begin().value(), std::int64_t{7});
     QCOMPARE(restored.region.region()->end().value(), std::int64_t{19});
+    // Region is remembered but Loop was absent/disabled in the old schema:
+    // no forced transport seek on an unarmed Region.
+    QVERIFY(!restored.region.loop_enabled());
+    QCOMPARE(restored.observed->position.value(),std::int64_t{0});
 }
 
 void ProjectSessionTest::reference_region_and_independent_loop_project_roundtrip()
@@ -4675,13 +4679,19 @@ void ProjectSessionTest::reference_region_and_independent_loop_project_roundtrip
     QCOMPARE(reopened.referenceRegion.region()->end().value(),std::int64_t{321});
     QVERIFY(reopened.region.loop_enabled());
     QVERIFY(reopened.referenceRegion.loop_enabled());
-    // Restore never starts playback. Source/reference loops attach
-    // exclusively when their actual audio owner is selected.
-    QVERIFY(reopened.observed->state!=core::PlaybackState::PLAYING);
+    // An armed SOURCE loop must position the stopped playhead at its
+    // first frame on Project Open, exactly like selecting REFERENCE.
+    QVERIFY(reopened.observed->state==core::PlaybackState::STOPPED);
+    QCOMPARE(reopened.observed->position.value(),std::int64_t{7});
+    QCOMPARE(reopened.observed->playCalls,0);
+    QVERIFY(reopened.observed->loop &&*reopened.observed->loop==*sourceRange.value());
     QVERIFY(reopened.selector.switch_to(app::AuditionTarget::GOLD));
     QVERIFY(reopened.observed->loop &&*reopened.observed->loop==*referenceRange.value());
+    QCOMPARE(reopened.observed->position.value(),std::int64_t{123});
     QVERIFY(reopened.selector.switch_to(app::AuditionTarget::PREPARED));
     QVERIFY(reopened.observed->loop &&*reopened.observed->loop==*sourceRange.value());
+    QCOMPARE(reopened.observed->position.value(),std::int64_t{7});
+    QCOMPARE(reopened.observed->playCalls,0);
     QCOMPARE(reopened.region.region()->begin().value(),std::int64_t{7});
     QCOMPARE(reopened.referenceRegion.region()->begin().value(),std::int64_t{123});
 

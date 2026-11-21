@@ -469,14 +469,22 @@ core::Status AuditionRegionViewModel::restore_project_loop_preference(bool enabl
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidArgument,
             "PROJECT_LOOP_RESTORE_REQUIRES_REGION"});
-    // No extra M18 Product epoch; caller already holds the Project Open
-    // exclusive batch. REFERENCE is not the current DEVICE owner here.
+    // No extra Product epoch: Project Open already owns the exclusive batch.
+    // Apply the same cursor/Loop contract as a user activating Loop Region:
+    // a SOURCE cursor outside the saved loop starts at its first frame.
+    // REFERENCE remains deferred to its separate file-owner switch.
+    std::optional<core::FrameIndex> sourceCue;
     if(enabled &&!referenceMode_ &&playback_ &&playback_->playback_available()) {
+        const auto before=playback_->source_display_snapshot();
+        if(!before)return core::Status::failure(*before.error());
+        sourceCue=before.value()->position;
         const auto installed=playback_->set_loop_source_range(region_);
         if(!installed)return installed;
     }
     loopEnabled_=enabled;
     lastCanLoop_=can_loop();
+    if(enabled &&sourceCue)
+        return reposition_if_outside(*region_,*sourceCue);
     errorMessage_.clear();
     emit changed();
     return core::Status::success();
