@@ -8,6 +8,7 @@
 // the next candidate and never publishes partial PCM.
 #include "l3_offline_private_metric_probe.hpp"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -102,6 +103,23 @@ public:
            ||authenticated_gold.resource_identity.empty()
            ||authenticated_gold.analysis_scope_label!="Full Track")
             return reject("L3_PRIVATE_BATCH_UNAUTHENTICATED_REFERENCE");
+        // Explicit reference-side objective suitability is knowable before
+        // DSP dispatch. Reject invalid/duplicate/Gold-unavailable objectives
+        // now: they must NOT consume solver render/analyzer budget.
+        std::array<bool,9> selected{};
+        for(const auto& objective:objectives) {
+            const auto index=static_cast<std::size_t>(objective.metric);
+            if(index>=selected.size()||selected[index]
+               ||!std::isfinite(objective.tolerance)
+               ||!std::isfinite(objective.weight)
+               ||objective.tolerance<=0.0||objective.weight<=0.0)
+                return reject("L3_PRIVATE_BATCH_INVALID_OBJECTIVE");
+            selected[index]=true;
+            const auto& cell=authenticated_gold.metrics[index];
+            if(cell.quality!=m21_private::Quality::present
+               ||!cell.unrounded||!std::isfinite(*cell.unrounded))
+                return reject("L3_PRIVATE_BATCH_REFERENCE_OBJECTIVE_UNSUPPORTED");
+        }
         std::unordered_set<std::string> fingerprints;
         fingerprints.reserve(jobs.size());
         for(const auto& job:jobs) {

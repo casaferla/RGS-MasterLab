@@ -494,16 +494,14 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(!stopped.value()->best);
     QVERIFY(cancelled->finished());
 
-    // Low-confidence M16 TP is never coerced into a successful trial;
-    // each actual render+analyzer attempt is charged as a failure.
+    // Unsupported REFERENCE M16 TP is a preflight rejection, not three
+    // fictitiously attempted DSP evaluations. Charge zero budget.
     auto unusable=std::make_shared<PrivateBatchProgress>();
     const auto noTp=PrivateScalarCandidateBatch::run(
         batchJobs,*imported.snapshot,m16tp,unusable);
-    QVERIFY(noTp);
-    QCOMPARE(noTp.value()->attempted,3U);
-    QCOMPARE(noTp.value()->failed,3U);
-    QCOMPARE(noTp.value()->completed,0U);
-    QVERIFY(!noTp.value()->best);
+    QVERIFY(!noTp);
+    QCOMPARE(unusable->attempted(),0U);
+    QVERIFY(!unusable->finished());
 
     // Two identical tickets are not two unambiguous candidates.
     auto duplicates=batchJobs;
