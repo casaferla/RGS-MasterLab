@@ -36,7 +36,8 @@ struct Ticket final {
 };
 enum class Submission : std::uint8_t {
     accepted, improved, no_pending_ticket, mismatched_ticket,
-    stale_or_invalid_product, missing_objective, nonfinite_score, cancelled
+    stale_or_invalid_product, missing_objective, nonfinite_score, cancelled,
+    attempted_evaluation_failed
 };
 struct Best final {
     std::optional<std::string> typed_dsp_fingerprint; // absent == starting DSP
@@ -52,7 +53,7 @@ public:
         std::uint64_t run_id,const m21::Comparison& live,
         std::vector<Proposal> candidates,std::vector<Objective> objectives)
     {
-        if(run_id==0 ||candidates.empty() ||candidates.size()>64
+        if(run_id==0 ||candidates.empty() ||candidates.size()>800
            ||objectives.empty() ||objectives.size()>9)
             return std::nullopt;
         const auto initial=l2::make_evidence_pair(live,m21::Column::processed);
@@ -139,6 +140,24 @@ public:
             return Submission::improved;
         }
         return Submission::accepted;
+    }
+    // M10 budget bookkeeping for one genuinely ATTEMPTED render+analysis.
+    // This is NOT a successful candidate measurement, cannot replace the
+    // retained best and does not mint synthetic M21 evidence. An attempted
+    // failure consumes one slot; preflight rejection BEFORE dispatch does
+    // not call this method and consumes zero. Exact completed-cache reuse
+    // remains a separate, proof-bearing future adapter.
+    [[nodiscard]] Submission attempted_evaluation_failed(
+        const Ticket& ticket) noexcept {
+        if(cancelled_)return Submission::cancelled;
+        if(!pending_)return Submission::no_pending_ticket;
+        if(ticket.run_id!=pending_->run_id
+           ||ticket.ordinal!=pending_->ordinal
+           ||ticket.typed_dsp_fingerprint!=pending_->typed_dsp_fingerprint)
+            return Submission::mismatched_ticket;
+        ++index_;
+        pending_.reset();
+        return Submission::attempted_evaluation_failed;
     }
     void cancel() noexcept {cancelled_=true;pending_.reset();}
     [[nodiscard]] bool cancelled() const noexcept {return cancelled_;}
