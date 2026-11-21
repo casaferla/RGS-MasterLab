@@ -23,6 +23,7 @@ namespace m10=rgsml::app::l3_automatch::m10_frozen;
     input.m11_fixed_and_protected_snapshot_current=true;
     input.fresh_candidate_render_and_analysis_current=true;
     input.hard_m11_and_independent_safety_preflight_passed=true;
+    input.m11_full_k_dependency_and_order_attested=true;
     input.active_owned_modules=2;
     input.enabled_artistic_bands=3;
     input.canonical_current_tuple={0x01};
@@ -37,10 +38,13 @@ namespace m10=rgsml::app::l3_automatch::m10_frozen;
             ?std::size_t{3}:
             binding.component_share==m07::ComponentShare::configured_n
             ?std::size_t{2}:std::size_t{1};
-        for(std::size_t i=0;i<n;++i)
+        for(std::size_t i=0;i<n;++i) {
             slot.configured.push_back({
                 true,1.0,{12.0,m08::Endpoint::ordinary},
                 {9.0,m08::Endpoint::ordinary},10.5,true});
+            input.protected_full_k.push_back({
+                true,true,true,12.0,9.0,10.5,10.5,0.5});
+        }
         input.exact_pair_slots.push_back(std::move(slot));
     }
     return input;
@@ -52,6 +56,7 @@ private slots:
     void missingSourceOrFixedCannotBeReplacedWithM21();
     void candidateRequiredDropoutRejectsInsteadOfRenormalizing();
     void noCorrectionNeedsIndependentFixedProofNotNoneTop8();
+    void m11HardGuardAppliesBeforeAnyNumericScore();
 };
 void M10AuthoritativeCostTest::full27SlotExactTargetAndNonzeroComplexity() {
     const auto r=m10::score_exact_candidate_population(source());
@@ -93,6 +98,21 @@ candidateRequiredDropoutRejectsInsteadOfRenormalizing() {
     input.exact_pair_slots.pop_back(); // can't use 26 instead of 27
     QCOMPARE(m10::score_exact_candidate_population(input).reason,
              m10::AuthoritativeCostReason::invalid_27_slot_population);
+}
+void M10AuthoritativeCostTest::
+m11HardGuardAppliesBeforeAnyNumericScore() {
+    auto input=source();
+    input.protected_full_k[0].candidate_z=20.0;
+    const auto rejected=m10::score_exact_candidate_population(input);
+    QCOMPARE(rejected.reason,
+             m10::AuthoritativeCostReason::
+                missing_actual_candidate_or_protection);
+    QVERIFY(!rejected.measured);
+    input=source();
+    input.protected_full_k.pop_back();
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                missing_actual_candidate_or_protection);
 }
 void M10AuthoritativeCostTest::
 noCorrectionNeedsIndependentFixedProofNotNoneTop8() {

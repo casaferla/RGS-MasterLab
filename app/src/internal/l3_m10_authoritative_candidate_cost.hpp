@@ -6,6 +6,7 @@
 // No render, persistence or M13 verification lives in this helper.
 #include "l3_m08_frozen_targeted_population.hpp"
 #include "l3_m10_frozen_total_cost.hpp"
+#include "l3_m11_p03_protected_no_regression.hpp"
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -33,6 +34,10 @@ struct AuthoritativeCostInput final {
     bool fresh_candidate_render_and_analysis_current{};
     bool hard_m11_and_independent_safety_preflight_passed{};
     bool m11_no_correction_full_evidence_attested{};
+    // Ordered full M11 K, structurally matching M07 configured
+    // component count. Actual transformed values must come from M11.
+    std::vector<m11_frozen::ProtectedComponent> protected_full_k;
+    bool m11_full_k_dependency_and_order_attested{};
     std::vector<ActiveReferenceCoordinate> active_coordinates;
     std::uint32_t active_owned_modules{};
     std::uint32_t enabled_artistic_bands{};
@@ -73,6 +78,20 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
     if(!population.value)
         return {{},{},
             AuthoritativeCostReason::invalid_27_slot_population};
+    std::size_t expected_k_size=0U;
+    for(const auto& slot:input.exact_pair_slots)
+        expected_k_size+=slot.configured.size();
+    if(expected_k_size!=input.protected_full_k.size())
+        return {{},{},
+            AuthoritativeCostReason::missing_actual_candidate_or_protection};
+    const auto protected_check=
+        m11_frozen::verify_frozen_protected_no_regression(
+            input.protected_full_k,
+            input.m11_full_k_dependency_and_order_attested,
+            input.hard_m11_and_independent_safety_preflight_passed);
+    if(!protected_check.is_admissible())
+        return {{},{},
+            AuthoritativeCostReason::missing_actual_candidate_or_protection};
     const auto measured=compute_frozen_target_cost(
         population.value->objective_input);
     if(!measured.valid_measured())

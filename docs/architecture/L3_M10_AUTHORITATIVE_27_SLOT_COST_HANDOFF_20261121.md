@@ -19,3 +19,9 @@ returns a fake Jtarget=0. All candidate hard constraints, safety and
 M13 fresh final verification remain separately mandatory. The code
 does not use UI M21 9-cell differences, apply audio DSP, mint plan
 UUIDs, or authorize release.
+
+The M11 P03 full-K protected-component hard veto is now executed
+before a candidate obtains any numeric cost, and K cardinality is
+checked against the full canonical M07 resolved configured population.
+This still requires an authoritative current M11 Fixed/endpoint
+producer and full identity/order attestation; it is not M13 verification.
