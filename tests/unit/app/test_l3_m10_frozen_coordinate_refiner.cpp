@@ -1,6 +1,7 @@
 #include "internal/l3_m10_frozen_coordinate_refiner.hpp"
 #include "internal/l3_m10_frozen_coordinate_transform.hpp"
 #include "internal/l3_m10_frozen_target_objective.hpp"
+#include "internal/l3_m10_frozen_total_cost.hpp"
 #include <QtTest/QTest>
 #include <algorithm>
 #include <array>
@@ -39,6 +40,7 @@ private slots:
     void maximum48CoordinatesDeterministicOrder();
     void invalidDirectionsNeverSpendBudgetAndExactCacheIsFree();
     void authoritativeM05M06SupportMassAndCoverage();
+    void frozenWeightedRComplexityAndTotalJ();
 };
 void FrozenM10RefinerTest::exactP01TransformsAndNoClamps() {
     const std::array<std::tuple<Transform,double,double>,5> specs{{
@@ -283,6 +285,37 @@ authoritativeM05M06SupportMassAndCoverage() {
     const auto empty=compute_frozen_target_cost(domain);
     QVERIFY(empty.status==TargetCostStatus::no_correction_required);
     QVERIFY(!empty.j_target); // no synthetic J=0
+}
+void FrozenM10RefinerTest::frozenWeightedRComplexityAndTotalJ() {
+    const std::array<ActiveReferenceCoordinate,2> coords{{
+        {0.5,0.0,1.0},{1.0,0.0,0.25}}};
+    const auto R=normalized_reference_distance(coords);
+    QVERIFY(R);
+    QCOMPARE(*R,0.4); // (.25*1 + 1*.25)/1.25
+    const auto C=complexity_cost(4,6);
+    QVERIFY(C);
+    QCOMPARE(*C,0.5);
+    TargetCost target;
+    target.status=TargetCostStatus::measured;
+    target.j_target=2.0;
+    auto measured=total_measured_cost(
+        target,coords,4,6,{42},{88});
+    QVERIFY(measured);
+    QVERIFY(std::abs(measured->total_j-2.013)<1e-12);
+    QCOMPARE(measured->target_j,2.0);
+    QCOMPARE(measured->processing_r,0.4);
+    QCOMPARE(measured->active_owned_modules,4U);
+    QCOMPARE(*normalized_reference_distance(
+        std::span<const ActiveReferenceCoordinate>{}),0.0);
+    QCOMPARE(*complexity_cost(0,0),0.0);
+    QVERIFY(!complexity_cost(9,0));
+    QVERIFY(!complexity_cost(0,13));
+    const std::array<ActiveReferenceCoordinate,1> invalid{{
+        {0.5,0.3,0.0}}};
+    QVERIFY(!normalized_reference_distance(invalid));
+    target.status=TargetCostStatus::no_correction_required;
+    target.j_target.reset();
+    QVERIFY(!total_measured_cost(target,coords,4,6,{42},{88}));
 }
 void FrozenM10RefinerTest::maximum48CoordinatesDeterministicOrder() {
     std::vector<Coordinate> coordinates;
