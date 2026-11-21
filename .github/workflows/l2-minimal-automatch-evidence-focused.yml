@@ -30,7 +30,9 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ninja-build qt6-base-dev qt6-declarative-dev qt6-multimedia-dev libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
         with:
@@ -54,7 +56,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          cmake -S . -B build-l2 -G Ninja -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON > /tmp/l2-native-bounded.log 2>&1 || { tail -n 55 /tmp/l2-native-bounded.log; exit 1; }
+          cmake -S . -B build-l2 -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON > /tmp/l2-native-bounded.log 2>&1 || { tail -n 55 /tmp/l2-native-bounded.log; exit 1; }
           cmake --build build-l2 --parallel 4 --target rgsml_m21_real_product_metrics_port_tests > /tmp/l2-native-bounded.log 2>&1 || { tail -n 55 /tmp/l2-native-bounded.log; exit 1; }
           ctest --test-dir build-l2 --output-on-failure -R '^rgsml_m21_real_product_metrics_port_tests$' > /tmp/l2-native-bounded.log 2>&1 || { tail -n 65 /tmp/l2-native-bounded.log; exit 1; }
           tail -n 7 /tmp/l2-native-bounded.log
