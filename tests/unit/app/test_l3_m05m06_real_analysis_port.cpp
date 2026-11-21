@@ -1,4 +1,5 @@
 #include "internal/l3_m05m06_real_analysis_port.hpp"
+#include "internal/l3_m05_real_tonal_statistics.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
@@ -20,6 +21,7 @@ private slots:
     void actualM19M16M20FullResourceAndFrozenFeatureReadiness();
     void pairedT1RequiresSameSupportedCanonicalPopulation();
     void malformedOwnerScopeAndUnavailableCannotFabricateM10();
+    void realM20PsdT3T5AndIndependentFlatDensityOracle();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
     double scale,double harmonic) {
@@ -178,6 +180,53 @@ pairedT1RequiresSameSupportedCanonicalPopulation() {
     QVERIFY(!rejected.pair);
     QCOMPARE(rejected.problem,
              real::PairProblem::incompatible_measurement_geometry);
+}
+void M05M06RealPortTest::
+realM20PsdT3T5AndIndependentFlatDensityOracle() {
+    analysis::TonalStereoAnalysisResult constant;
+    constant.sample_rate_hz=48000;
+    constant.complete_spectral_windows=1;
+    constant.spectrum_state=analysis::TonalStereoMetricState::AVAILABLE;
+    constant.mean_linear_psd.assign(2049,1.0); // Nfft=4096
+    const auto uniform=real::observe_m05_t3t5(
+        constant,{100.0,10000.0});
+    QVERIFY(uniform);
+    // Constant power/Hz: E=9900, continuous centroid=5050Hz;
+    // quantiles 100+0.85*9900=8515 and 100+0.95*9900=9505 Hz.
+    QVERIFY(std::abs(uniform->energy-9900.0)<1e-9);
+    QVERIFY(std::abs(uniform->centroid_hz-5050.0)<1e-9);
+    QVERIFY(std::abs(uniform->rolloff85_hz-8515.0)<1e-9);
+    QVERIFY(std::abs(uniform->rolloff95_hz-9505.0)<1e-9);
+    QVERIFY(std::abs(uniform->centroid_log2_hz-
+                     std::log2(5050.0))<1e-12);
+    QVERIFY(!real::observe_m05_t3t5(
+        constant,{100.0,20100.0}));
+    QVERIFY(!real::observe_m05_t3t5(
+        constant,{10000.0,100.0}));
+    auto broken=constant;
+    broken.mean_linear_psd[20]=-1.0;
+    QVERIFY(!real::observe_m05_t3t5(
+        broken,{100.0,10000.0}));
+    broken=constant;
+    broken.mean_linear_psd.assign(2049,0.0);
+    QVERIFY(!real::observe_m05_t3t5(
+        broken,{100.0,10000.0})); // no E>=1e-12
+
+    auto realPcm=example(0.45,0.2);
+    QVERIFY(realPcm);
+    const auto measured=analysis::measure_tonal_stereo_scope(
+        realPcm.value()->view(),core::FrameIndex{0},
+        realPcm.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(measured);
+    const auto observed=real::observe_m05_t3t5(
+        *measured.value(),{100.0,10000.0});
+    QVERIFY(observed);
+    QVERIFY(observed->centroid_hz>=100.0);
+    QVERIFY(observed->centroid_hz<=10000.0);
+    QVERIFY(observed->rolloff85_hz<=observed->rolloff95_hz);
+    // Numerical observation alone never qualifies the source for
+    // the M05 >=2s reference-grade/eligible M07 producer.
 }
 void M05M06RealPortTest::
 malformedOwnerScopeAndUnavailableCannotFabricateM10() {
