@@ -2928,3 +2928,17 @@ add_test(NAME rgsml_l3_m06_native_transient_tests
 set_tests_properties(rgsml_l3_m06_native_transient_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;transient;native_descriptors;nonrelease")
+
+# L3 M06 D07-D09 canonical Phase6 P04 -> original M07 3x3 binding.
+qt_add_executable(rgsml_l3_m06_transient_binding_tests
+    unit/app/test_l3_m06_d07_d09_native_binding.cpp)
+target_include_directories(rgsml_l3_m06_transient_binding_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_transient_binding_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_transient_binding_tests)
+add_test(NAME rgsml_l3_m06_transient_binding_tests
+    COMMAND rgsml_l3_m06_transient_binding_tests)
+set_tests_properties(rgsml_l3_m06_transient_binding_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;m07;transient_binding;nonrelease")
