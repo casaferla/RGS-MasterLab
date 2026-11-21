@@ -130,7 +130,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     # same apparent phosphor halo as the other active chain modules.
     # Exact-pin ONLY the reviewed same-hue multi-stroke ShapePaths;
     # no new row, LED, layout, Qt import or synthetic analyzer data.
-    "ui/qml/AnalysisModuleIcon.qml": "038d05900469b107997b29618aed77e4eded82d2",
+    "ui/qml/AnalysisModuleIcon.qml": "68909161fa1c1faabf0b86c5d81f6e8e90ddaa4e",
     # PO-directed pre-M24 adversarial repair F05: unchanged native M18
     # ticket/consent and FQ99 geometry; only the recovery-only monitor
     # predicate is added to the already approved Return + Export path.
