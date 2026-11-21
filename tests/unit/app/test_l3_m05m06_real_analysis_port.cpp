@@ -22,14 +22,15 @@ private slots:
     void pairedT1RequiresSameSupportedCanonicalPopulation();
     void malformedOwnerScopeAndUnavailableCannotFabricateM10();
     void realM20PsdT3T5AndIndependentFlatDensityOracle();
+    void realNativeM19ShortTermP50PairedSupportAndNoReanalysis();
     void frozenT2T6ExternalFloorAndUnweightedOlsOracle();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
-    double scale,double harmonic) {
+    double scale,double harmonic,int seconds=1) {
     auto fs=core::SampleRate::create(48000);
     auto format=audio::AudioFormat::create(
         *fs.value(),audio::ChannelLayout::STEREO_LR);
-    auto frames=core::FrameCount::create(48000);
+    auto frames=core::FrameCount::create(48000*seconds);
     auto source=audio::AudioBuffer::create(
         *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
         core::FrameIndex{0},*frames.value());
@@ -273,6 +274,51 @@ frozenT2T6ExternalFloorAndUnweightedOlsOracle() {
     }
     QVERIFY(!real::observe_m05_t2_or_t6(
         insufficient,{20.0,20000.0},1e-12,true));
+}
+void M05M06RealPortTest::
+realNativeM19ShortTermP50PairedSupportAndNoReanalysis() {
+    auto prepared=example(0.28,0.15,10);
+    auto reference=example(0.45,0.15,10);
+    QVERIFY(prepared&&reference);
+    const auto lp=analysis::measure_basic_level_full_resource(
+        *prepared.value());
+    const auto lg=analysis::measure_basic_level_full_resource(
+        *reference.value());
+    QVERIFY(lp&&lg);
+    const auto ps=analysis::measure_tonal_stereo_scope(
+        prepared.value()->view(),core::FrameIndex{0},
+        prepared.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    const auto gs=analysis::measure_tonal_stereo_scope(
+        reference.value()->view(),core::FrameIndex{0},
+        reference.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(ps&&gs);
+    auto p=real::import_actual_full_source(
+        *lp.value(),*ps.value(),{"native-prepared-10s",71,true});
+    auto g=real::import_actual_full_source(
+        *lg.value(),*gs.value(),{"native-reference-10s",72,true});
+    QVERIFY(p.source&&g.source);
+    QVERIFY(p.source->short_term_p50_lufs.ready());
+    QVERIFY(g.source->short_term_p50_lufs.ready());
+    QCOMPARE(p.source->short_term_complete_windows,std::uint64_t{71});
+    QCOMPARE(p.source->short_term_valid_windows,std::uint64_t{71});
+    QCOMPARE(*p.source->short_term_native_support,1.0);
+    const auto pair=real::pair_actual_sources(*p.source,*g.source);
+    QVERIFY(pair.pair);
+    QVERIFY(pair.pair->short_term_p50_lufs.ready());
+    QCOMPARE(*pair.pair->short_term_pair_support,1.0);
+    const double expected=20.0*std::log10(0.45/0.28);
+    const double actual=
+        *g.source->short_term_p50_lufs.unrounded-
+        *p.source->short_term_p50_lufs.unrounded;
+    QVERIFY(std::abs(actual-expected)<1e-9);
+    QVERIFY(!pair.pair->full_m05m06_objective_ready());
+    // A zero valid observation is not made available by shortening
+    // the configured window denominator or substituting -70 LUFS.
+    auto corrupted=*p.source;
+    corrupted.short_term_p50_lufs={};
+    QVERIFY(!corrupted.short_term_p50_lufs.ready());
 }
 void M05M06RealPortTest::
 malformedOwnerScopeAndUnavailableCannotFabricateM10() {
