@@ -2774,3 +2774,17 @@ add_test(NAME rgsml_l3_m06_d03d04_binding_tests
 set_tests_properties(rgsml_l3_m06_d03d04_binding_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;m07;m08;native_pcm;nonrelease")
+
+# L3 M06 D02 discrete EBU LRA from existing real M19 ungated ST native grid.
+qt_add_executable(rgsml_l3_m06_lra_native_tests
+    unit/app/test_l3_m06_real_lra_native.cpp)
+target_include_directories(rgsml_l3_m06_lra_native_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_lra_native_tests
+    PRIVATE rgsml_analysis rgsml_audio Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_lra_native_tests)
+add_test(NAME rgsml_l3_m06_lra_native_tests
+    COMMAND rgsml_l3_m06_lra_native_tests)
+set_tests_properties(rgsml_l3_m06_lra_native_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;lra;ebu_discrete;nonrelease")
