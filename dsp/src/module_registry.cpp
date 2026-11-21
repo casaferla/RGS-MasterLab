@@ -596,19 +596,31 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
 Result<ModuleRegistry> ModuleRegistry::with_dynamic_eq_offline(
     ModuleRegistry baseline)
 {
-    auto descriptor=ModuleDescriptor::create(make_spec(
-        kDynamicEqTypeId,
-        {ModuleCategory::FILTER_EQ},
-        {ProcessingStage::RESTORE_PREP,ProcessingStage::MASTER},
-        {ChainSegment::MANUAL,ChainSegment::DNA_LINKED,ChainSegment::REF_LINKED},
-        true,PlacementClass::INLINE_CHAIN,std::nullopt,
-        {},false,false,"1.0.0",
-        "rgsml.dsp.dynamic-eq.parameters/1.0.0"));
-    if(!descriptor)return Result<ModuleRegistry>::failure(*descriptor.error());
-    auto value=std::move(*descriptor.value());
-    auto factory=std::make_shared<DynamicEqOfflineFactory>(value);
+    // L1 package_v1 already freezes a Dynamic EQ descriptor as a
+    // factory-less placeholder. Never add a second registration: that
+    // would fail DUPLICATE_MODULE_TYPE and could diverge from the frozen
+    // placement/ordering/capability authority.
     auto registrations=std::move(baseline.registrations_);
-    registrations.push_back(ModuleRegistration{std::move(value),std::move(factory)});
+    const auto iter=std::find_if(
+        registrations.begin(),registrations.end(),
+        [](const ModuleRegistration& entry) {
+            return entry.descriptor.type_id()==kDynamicEqTypeId;
+        });
+    if(iter==registrations.end())
+        return Result<ModuleRegistry>::failure(registry_error(
+            ErrorCode::ResourceNotFound,"DYNAMIC_EQ_PLACEHOLDER_MISSING",
+            "Frozen package-v1 Dynamic EQ descriptor is absent."));
+    if(iter->factory)
+        return Result<ModuleRegistry>::failure(registry_error(
+            ErrorCode::InvalidState,"DYNAMIC_EQ_ALREADY_ACTIVATED",
+            "Opt-in Dynamic EQ implementation is already attached."));
+    if(iter->descriptor.algorithm_version()!=std::optional<std::string_view>{"1.0.0"} ||
+       iter->descriptor.parameter_schema_id()!=
+           std::optional<std::string_view>{"rgsml.dsp.dynamic-eq.parameters/1.0.0"})
+        return Result<ModuleRegistry>::failure(registry_error(
+            ErrorCode::InvalidState,"DYNAMIC_EQ_FROZEN_IDENTITY_MISMATCH",
+            "Existing descriptor does not match the accepted C01 identity."));
+    iter->factory=std::make_shared<DynamicEqOfflineFactory>(iter->descriptor);
     return create(std::move(registrations));
 }
 
