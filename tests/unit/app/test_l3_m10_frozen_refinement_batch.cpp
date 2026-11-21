@@ -33,6 +33,7 @@ private slots:
     void staleInventoryOrUnreadySeedNeverCallsEvaluator();
     void cancellationNeverClaimsCompletedMaster();
     void twoRunsReuseOnlyExactlyIdenticalCompletedCoordinates();
+    void exhaustedSeedBudgetAndInvalidTrialRemainDistinct();
 };
 void M10RefinementBatchTest::
 sameFrozenStepsAcrossMeasuredTop2AndSharedBudget() {
@@ -172,6 +173,27 @@ twoRunsReuseOnlyExactlyIdenticalCompletedCoordinates() {
     QCOMPARE(physical_renders,rendered_first);
     QVERIFY(second.winning_refinement_index);
     QVERIFY(!second.authorizes_product_publication());
+}
+void M10RefinementBatchTest::
+exhaustedSeedBudgetAndInvalidTrialRemainDistinct() {
+    const std::vector<m10::SeedTrial> seeds{
+        trial(7,0.7,7),trial(9,0.8,9)};
+    const auto coords=inventories(2);
+    const auto never=[](std::size_t,const std::vector<double>&,bool) {
+        return m10::Evaluation{
+            m10::EvaluationKind::attempted_failure,{}};
+    };
+    const auto over=m10::run_frozen_top2_refinements(
+        seeds,coords,799,true,never);
+    QCOMPARE(over.reason,
+             m10::RefinementBatchReason::seed_attempt_budget_exceeded);
+    QVERIFY(over.candidate_refinements.empty());
+    auto malformed=seeds;
+    malformed[1].frozen_measured.reset();
+    const auto bad=m10::run_frozen_top2_refinements(
+        malformed,coords,0,true,never);
+    QCOMPARE(bad.reason,m10::RefinementBatchReason::invalid_seed_trial);
+    QVERIFY(bad.candidate_refinements.empty());
 }
 } // namespace
 } // namespace rgsml::tests

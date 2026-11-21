@@ -17,7 +17,8 @@
 namespace rgsml::app::l3_automatch::m10_frozen {
 enum class RefinementBatchReason:std::uint8_t {
     complete,budget_exhausted,cancelled,invalid_inventory,
-    no_complete_seed_or_stale_source,invalid_evaluation
+    no_complete_seed_or_stale_source,seed_attempt_budget_exceeded,
+    invalid_seed_trial,invalid_evaluation
 };
 struct RefinedSeed final {
     std::size_t original_seed_trial_index{};
@@ -57,8 +58,12 @@ template<typename Evaluate>
         ordered_combined_seed_trials,attempts_before_seed_trials);
     result.total_attempted=shortlist.attempted_total;
     if(shortlist.reason!=ShortlistReason::ready) {
-        result.reason=RefinementBatchReason::
-            no_complete_seed_or_stale_source;
+        result.reason=shortlist.reason==ShortlistReason::budget_exceeded
+            ?RefinementBatchReason::seed_attempt_budget_exceeded
+            :shortlist.reason==
+                ShortlistReason::invalid_selected_identity_or_result
+                ?RefinementBatchReason::invalid_seed_trial
+                :RefinementBatchReason::no_complete_seed_or_stale_source;
         return result;
     }
     for(const auto index:shortlist.best_trial_indices) {
