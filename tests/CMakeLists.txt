@@ -2030,6 +2030,21 @@ set_tests_properties(rgsml_l3_m05m06_real_analysis_port_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m05;m06;real_pcm;support;nonrelease")
 
+# L3-M07 ACCEPTED_FROZEN static 27-slot rational registry and actual
+# one-ModuleRegistry availability snapshot. M08/M10 fail-closed bridge.
+qt_add_executable(rgsml_l3_m07_frozen_registry_tests
+    unit/app/test_l3_m07_frozen_registry.cpp)
+target_include_directories(rgsml_l3_m07_frozen_registry_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m07_frozen_registry_tests PRIVATE
+    rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m07_frozen_registry_tests)
+add_test(NAME rgsml_l3_m07_frozen_registry_tests
+    COMMAND rgsml_l3_m07_frozen_registry_tests)
+set_tests_properties(rgsml_l3_m07_frozen_registry_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m07;frozen_registry;availability;m10;nonrelease")
+
 qt_add_executable(rgsml_l3_m10_frozen_coordinate_refiner_tests
     unit/app/test_l3_m10_frozen_coordinate_refiner.cpp)
 target_include_directories(rgsml_l3_m10_frozen_coordinate_refiner_tests
