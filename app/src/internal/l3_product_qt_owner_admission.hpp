@@ -92,10 +92,10 @@ public:
             owner.value()->owner.epoch,
             owner.value()->owner.identity.source_generation,
             reference.value()->selection_revision,
-            owner.value()->source.provider_id()+"|"
-                +owner.value()->source.locator(),
-            reference.value()->gold.provider_id()+"|"
-                +reference.value()->gold.locator()};
+            owner.value()->source.provider_id(),
+            owner.value()->source.locator(),
+            reference.value()->gold.provider_id(),
+            reference.value()->gold.locator()};
         auto job=OfflineProductTrialJob::create(
             stamp,owner.value()->prepared,
             product.upstream.chain.registry_snapshot(),
@@ -142,10 +142,10 @@ public:
             accepted.render.owner.epoch,
             accepted.render.owner.identity.source_generation,
             gold.selection_revision(),
-            accepted.render.source.provider_id()+"|"+
-                accepted.render.source.locator(),
-            accepted.gold.gold.provider_id()+"|"+
-                accepted.gold.gold.locator()};
+            accepted.render.source.provider_id(),
+            accepted.render.source.locator(),
+            accepted.gold.gold.provider_id(),
+            accepted.gold.gold.locator()};
         return accepted.job.still_current(
             stamp,selector.prepared_realization_snapshot(),current,bindings);
     }

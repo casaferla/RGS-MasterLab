@@ -30,16 +30,19 @@ struct OfflineProductOwnerStamp final {
     std::uint64_t m18_owner_epoch{};
     std::uint64_t source_generation{};
     std::uint64_t reference_selection_revision{};
-    std::string source_resource_identity;
-    std::string reference_resource_identity;
+    std::string source_provider_id;
+    std::string source_locator;
+    std::string reference_provider_id;
+    std::string reference_locator;
     friend bool operator==(const OfflineProductOwnerStamp&,
                            const OfflineProductOwnerStamp&)=default;
     [[nodiscard]] bool populated() const noexcept {
         return m18_owner_epoch>0 &&source_generation>0
             &&reference_selection_revision>0
-            &&!source_resource_identity.empty()
-            &&!reference_resource_identity.empty()
-            &&source_resource_identity!=reference_resource_identity;
+            &&!source_provider_id.empty()&&!source_locator.empty()
+            &&!reference_provider_id.empty()&&!reference_locator.empty()
+            &&(source_provider_id!=reference_provider_id
+               ||source_locator!=reference_locator);
     }
 };
 

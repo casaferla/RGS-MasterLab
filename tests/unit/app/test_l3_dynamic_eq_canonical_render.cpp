@@ -394,7 +394,8 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
         std::move(*preparedRender.value()));
 
     const OfflineProductOwnerStamp stamp{
-        19,5,3,"source:actual-owner-5","reference:actual-picker-3"};
+        19,5,3,"test.provider","source:actual-owner-5",
+        "test.provider","reference:actual-picker-3"};
     auto job=OfflineProductTrialJob::create(
         stamp,prepared,product,*manual.value(),baseline,*bound,*block.value());
     QVERIFY(job);
@@ -487,7 +488,7 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
     stale=stamp;stale.reference_selection_revision++;
     QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
-    stale=stamp;stale.reference_resource_identity+="another-selection";
+    stale=stamp;stale.reference_locator+="another-selection";
     QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
     auto changedBindings=baseline;
     changedBindings[0].parameters=*dsp::GainParameters::create(1.0).value();
