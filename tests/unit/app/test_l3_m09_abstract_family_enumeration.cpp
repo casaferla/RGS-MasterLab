@@ -16,16 +16,25 @@ void M09FamilyEnumerationTest::
 allFrozenFamiliesPreserveCardinalityWithoutM10Truncation() {
     const auto full=m09::enumerate_frozen_abstract_families(6,3,3,true);
     QVERIFY(full);
-    QCOMPARE(full->ordered.size(),std::size_t{37632});
+    QCOMPARE(full->ordered.size(),std::size_t{43008});
     QVERIFY(!full->authorizes_product_publication());
     QCOMPARE(full->ordered.front().tonal_eq_prefix,std::uint8_t{0});
     QCOMPARE(full->ordered.back().tonal_eq_prefix,std::uint8_t{6});
     QCOMPARE(full->ordered.back().spectral_dynamic_eq_prefix,std::uint8_t{3});
     QCOMPARE(full->ordered.back().stereo_side_eq_prefix,std::uint8_t{3});
-    QCOMPARE(full->ordered.back().stereo_mode_index,std::uint8_t{6});
+    QCOMPARE(full->ordered.back().stereo_mode_index,std::uint8_t{7});
     QCOMPARE(full->ordered.back().loudness,
              m09::LoudnessMode::terminal_limiter_only);
-    // M10 domain8/combined32/shortlist2 caps must NOT truncate M09.
+    // 1 absent M/S plus 7 active M/S configurations, including
+    // broadband M/S present with low-bass OFF. M10 caps never truncate.
+    m09::AbstractFamilyChoice absent{};
+    m09::AbstractFamilyChoice broadband{};
+    broadband.stereo_mode_index=1;
+    QVERIFY(m09::ordered_abstract_roles(absent).empty());
+    const auto broadband_roles=m09::ordered_abstract_roles(broadband);
+    QCOMPARE(broadband_roles.size(),std::size_t{1});
+    QCOMPARE(broadband_roles.front(),m09::IntentRole::stereo_ms);
+    QCOMPARE(m09::kLowBassAlternatives[0].mode,m09::LowBassMode::off);
 }
 void M09FamilyEnumerationTest::
 monoExcludesStereoBranchesButNotDSPDynamicAlternatives() {

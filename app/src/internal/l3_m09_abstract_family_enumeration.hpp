@@ -26,7 +26,7 @@ struct AbstractFamilyChoice final {
     MacroMode macro{MacroMode::none};
     MicroMode micro{MicroMode::none};
     std::uint8_t stereo_side_eq_prefix{};
-    std::uint8_t stereo_mode_index{}; // exact kLowBassAlternatives index
+    std::uint8_t stereo_mode_index{}; // 0 = absent, 1..7 = kLowBassAlternatives[index-1]
     LoudnessMode loudness{LoudnessMode::none};
     [[nodiscard]] constexpr bool executable_or_pub_ready()
         const noexcept{return false;}
@@ -75,7 +75,9 @@ enumerate_frozen_abstract_families(
        (!stereo_source&&n_eligible_stereo_side_eq_prefixes!=0U))
         return std::nullopt;
     const auto macro_modes=stereo_source?3U:2U;
-    const auto ms_modes=stereo_source?kLowBassAlternatives.size():1U;
+    // Preserve both NO Stereo/M-S node and present Stereo/M-S with
+    // low-bass OFF; the latter still has broadband stereo behavior.
+    const auto ms_modes=stereo_source?kLowBassAlternatives.size()+1U:1U;
     FamilyStream stream;
     const std::size_t count=
         (std::size_t{1}+n_eligible_tonal_prefixes)*
