@@ -1,5 +1,6 @@
 #include "internal/l3_m10_frozen_coordinate_refiner.hpp"
 #include "internal/l3_m10_frozen_coordinate_transform.hpp"
+#include "internal/l3_m10_frozen_target_objective.hpp"
 #include <QtTest/QTest>
 #include <algorithm>
 #include <array>
@@ -37,6 +38,7 @@ private slots:
     void malformedEvidenceAndCancellation();
     void maximum48CoordinatesDeterministicOrder();
     void invalidDirectionsNeverSpendBudgetAndExactCacheIsFree();
+    void authoritativeM05M06SupportMassAndCoverage();
 };
 void FrozenM10RefinerTest::exactP01TransformsAndNoClamps() {
     const std::array<std::tuple<Transform,double,double>,5> specs{{
@@ -218,6 +220,69 @@ invalidDirectionsNeverSpendBudgetAndExactCacheIsFree() {
     QCOMPARE(c->evaluated_complete,8U);
     QCOMPARE(c->winner.total_j,0.0);
     QCOMPARE(c->coordinates[0].normalized_u,0.25);
+}
+void FrozenM10RefinerTest::
+authoritativeM05M06SupportMassAndCoverage() {
+    const auto f=[](double mass,bool eligible,double support,
+                    double candidate,double target) {
+        return AuthoritativeComponent{
+            mass,eligible,support,1.0,candidate,target,true};
+    };
+    std::array<DomainPopulation,4> domain{{
+        {Domain::tonal,true,{
+            f(0.80,true,1.0,2.0,0.0),
+            f(0.20,true,0.5,3.0,0.0)}},
+        {Domain::dynamics,false,{
+            f(1.0,false,1.0,0.0,0.0)}},
+        {Domain::stereo,false,{
+            f(1.0,false,1.0,0.0,0.0)}},
+        {Domain::loudness,true,{
+            f(0.70,true,1.0,1.0,0.0),
+            f(0.15,true,1.0,1.0,0.0),
+            f(0.15,true,1.0,1.0,0.0)}}}};
+    const auto scored=compute_frozen_target_cost(domain);
+    QVERIFY(scored.valid_measured());
+    QVERIFY(std::abs(*scored.effective_coverage[0]-0.90)<1e-12);
+    QVERIFY(std::abs(*scored.domain_loss[0]-(4.1/0.9))<1e-12);
+    QVERIFY(std::abs(*scored.domain_loss[3]-1.0)<1e-12);
+    QVERIFY(std::abs(*scored.j_target-
+        (4.1/0.9+1.0)/2.0)<1e-12);
+    QVERIFY(!scored.domain_loss[1]);
+    QVERIFY(!scored.domain_loss[2]);
+
+    // Missing half the second tonal component does not reduce the
+    // configured denominator, hence coverage changes 0.90→0.80.
+    domain[0].configured[1].pair_support=0.0;
+    const auto partial=compute_frozen_target_cost(domain);
+    QVERIFY(partial.valid_measured());
+    QVERIFY(std::abs(*partial.effective_coverage[0]-0.8)<1e-12);
+    QVERIFY(std::abs(*partial.j_target-2.5)<1e-12);
+
+    domain[0].configured[0].pair_support=0.5;
+    domain[0].configured[1].pair_support=0.5;
+    const auto insufficient=compute_frozen_target_cost(domain);
+    QVERIFY(insufficient.status==
+        TargetCostStatus::insufficient_effective_coverage);
+    QVERIFY(!insufficient.j_target);
+
+    // Required candidate dropout cannot create an apparent free pass
+    // by deleting a failing binding from the measured population.
+    domain[0].configured[0].pair_support=1.0;
+    domain[0].configured[1].pair_support=1.0;
+    domain[0].configured[0].candidate_z.reset();
+    const auto missing=compute_frozen_target_cost(domain);
+    QVERIFY(missing.status==
+        TargetCostStatus::missing_required_candidate);
+    QVERIFY(!missing.j_target);
+    domain[0].configured[0].candidate_z=100.0;
+    domain[0].configured[1].candidate_z=100.0;
+    const auto saturated=compute_frozen_target_cost(domain);
+    QVERIFY(saturated.valid_measured());
+    QCOMPARE(*saturated.domain_loss[0],16.0); // robust cap16
+    for(auto& d:domain)d.requested_corrective=false;
+    const auto empty=compute_frozen_target_cost(domain);
+    QVERIFY(empty.status==TargetCostStatus::no_correction_required);
+    QVERIFY(!empty.j_target); // no synthetic J=0
 }
 void FrozenM10RefinerTest::maximum48CoordinatesDeterministicOrder() {
     std::vector<Coordinate> coordinates;
