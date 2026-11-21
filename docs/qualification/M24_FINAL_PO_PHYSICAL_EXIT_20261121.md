@@ -1,6 +1,6 @@
 # RGS MasterLab — M24 final PO physical exit: finite acceptance (2026-11-21)
 
-**Status:** approved GUI baseline; final real-hardware audio/Region/tonal-profile observations still OPEN. **Not** a declaration of full M24, FQ, Phase-6 Gate G or release PASS.
+**Status:** approved GUI baseline; final real-hardware audio/SOURCE Region/tonal-profile observations still OPEN. **Not** a declaration of full M24, FQ, Phase-6 Gate G or release PASS.
 
 ## Frozen test baseline and provenance
 
@@ -22,12 +22,12 @@
 
 Use the **exact #97 ZIP**, not an earlier #90/#92/#96 build. Retain the original SOURCE and REFERENCE files unchanged. Record a screenshot only where needed; do not rerun full M19/M20/M21 coverage already accepted.
 
-### A. Nonempty Region save/reopen (missing evidence)
+### A. Nonempty SOURCE Region save/reopen and independent REFERENCE Region in-session
 
 1. Open existing `Prova 10.rgsml` in the #97 research build; confirm the correct SOURCE and REFERENCE are present and P2 typed values remain the accepted values above.
-2. Select an **actual nonempty SOURCE Region** (start/end both inside the track) and enable its relevant Loop control. Switch to REFERENCE; define a **different nonempty REFERENCE Region** and its intended loop behavior. Confirm the REFERENCE region edit has not changed SOURCE coordinates.
-3. Save As **a new** `.rgsml` (never overwrite the accepted `Prova 10.rgsml` or source audio). Close and reopen the new project. Verify exact SOURCE/REFERENCE locators, their distinct nonempty Region coordinates and selected loop behavior, P2 Ceiling/Drive/Bypass, module order and selected Master output format/rate.
-4. A missing, shifted, swapped or silently emptied region after reopen is a **real blocker**. Record the specific before/after values or a screenshot; do not silently mark a missing field accepted.
+2. Select an **actual nonempty SOURCE Region** (start/end both inside the track) and test its Loop control. Switch to REFERENCE; define a **different nonempty REFERENCE Region** and test its independent Loop control **in the active session**. Confirm the REFERENCE region edit has not changed SOURCE coordinates.
+3. Save As **a new** `.rgsml` (never overwrite accepted `Prova 10.rgsml` or source audio). Close and reopen the new project. Verify exact SOURCE and REFERENCE file locators, the **SOURCE Region start/end** and P2 Ceiling/Drive/Bypass, module order and selected Master output format/rate.
+4. A missing/shifted SOURCE Region after reopening is a blocker. **Do not expect persisted REFERENCE Region or Loop state:** the current `ProjectSessionViewModel` saves only the single SOURCE-tagged `timeSelections.auditionRegions` entry, and does not serialize REFERENCE Region/Loop. The native `gold_region_roundtrip` test covers a nonempty SOURCE Region (`[7,19)`) but has not replaced the PO physical save/reopen observation. Treat persistence of REFERENCE Region/Loop as a separate future-scope decision, not an M24 regression invented by this checklist.
 
 ### B. Final listening and owner/target continuity
 
@@ -42,9 +42,16 @@ Use the **exact #97 ZIP**, not an earlier #90/#92/#96 build. Retain the original
 - With an actually analyzed non-silent source selected, open **Spectrum / Stereo** and inspect the `TONAL PROFILE / 1/12-OCTAVE BAND ENERGY` panel. It should show only measured, fully supported positive-energy bands on the new relative scale, or honestly display `NO MEASURED BAND ENERGY` when data is unavailable. Verify that PREPARED, PROCESSED, REFERENCE still identify the correct owner without changing analysis data unexpectedly. A runner screenshot with no audio is **not** proof of the populated band plot.
 - The already accepted M21 nine-metric matrix and M18 PCM24/F32 WAV need no duplicate full test unless this final session reveals a new anomaly.
 
+## Persistence scope explicitly verified in repository
+
+- `ProjectSessionViewModel::current_snapshot` writes at most one `project::AuditionRegion` with role `"SOURCE"` (source code around lines 635–646).
+- `ProjectSessionViewModel::openProject` reads `timeSelections.auditionRegions.front()` into the SOURCE region model (around lines 984–997, 1124–1131); it does not restore a REFERENCE Region or a Loop toggle.
+- `tests/integration/app/test_project_session.cpp::gold_region_roundtrip` persists then opens an actual nonempty SOURCE `[7,19)` range. These facts are software coverage, not the pending Windows PO physical sign-off.
+- A product requirement to persist REFERENCE Region/Loop must be explicitly scoped and implemented with compatibility safeguards; it is **not** silently assumed or accepted by this M24 exit.
+
 ## M24 exit decision
 
-**PASS only if** A Region Save/Reopen, B real full-chain listening/continuity and C genuine M20 band-energy presentation all pass on the same identified Windows #97 research build, with no unresolved actual defect. Keep source/target/rate and test-build identity in the final PO report.
+**PASS only if** A SOURCE Region Save/Reopen plus in-session REFERENCE/Loop independence, B real full-chain listening/continuity and C genuine M20 band-energy presentation all pass on the same identified Windows #97 research build, with no unresolved actual defect. Keep source/target/rate and test-build identity in the final PO report.
 
 An unresolved symptom must be reproduced on exact build/owner and repaired narrowly (writer → focused CI → new physical replay of the affected path). Do not generate speculative safety suites or alter approved UI/DSP to chase a guessed regression.
 
