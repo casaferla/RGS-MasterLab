@@ -89,6 +89,21 @@ core::Status C01FrameEngine::restore_states(
            b.unsigned_magnitude_db>std::abs(bands_[i].control.range_db)||
            (bands_[i].fixed_audio&&b.unsigned_magnitude_db!=0.0))
             return core::Status::failure(fail("CHECKPOINT_CONTROL"));
+        // A lane which is not routed in the effective execution is
+        // structurally absent. It cannot carry a ghost audio/detector
+        // history into a supposedly compatible continuation.
+        const auto zero_lane=[](const C01LaneState& l) noexcept {
+            return l.detector.s1==0.0&&l.detector.s2==0.0&&
+                   l.audio.s1==0.0&&l.audio.s2==0.0&&l.power==0.0;
+        };
+        const auto route=bands_[i].routing;
+        const bool first_only=channels_==1||
+            route==EqRouting::LEFT||route==EqRouting::MID;
+        const bool second_only=channels_==2&&
+            (route==EqRouting::RIGHT||route==EqRouting::SIDE);
+        if((first_only&&!zero_lane(b.lanes[1]))||
+           (second_only&&!zero_lane(b.lanes[0])))
+            return core::Status::failure(fail("CHECKPOINT_UNUSED_LANE"));
         for(const auto& lane:b.lanes) {
             if(!std::isfinite(lane.audio.s1)||
                !std::isfinite(lane.audio.s2)||
