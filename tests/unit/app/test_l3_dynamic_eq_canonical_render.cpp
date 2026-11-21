@@ -67,9 +67,23 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     auto base=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(base);
     QVERIFY(!base.value()->has_factory("rgsml.dsp.dynamic-eq"));
+    // The frozen L1 catalog already contains the Dynamic EQ *descriptor*.
+    // The opt-in must activate this exact slot, not introduce a duplicate.
+    const auto prior=base.value()->find_descriptor("rgsml.dsp.dynamic-eq");
+    QVERIFY(prior);
+    const auto descriptor_count=base.value()->descriptors().size();
+    const auto prior_categories=std::vector<dsp::ModuleCategory>(
+        prior.value()->get().categories().begin(),
+        prior.value()->get().categories().end());
     auto opt=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*base.value()));
     QVERIFY(opt);
     QVERIFY(opt.value()->has_factory("rgsml.dsp.dynamic-eq"));
+    QCOMPARE(opt.value()->descriptors().size(),descriptor_count);
+    const auto activated=opt.value()->find_descriptor("rgsml.dsp.dynamic-eq");
+    QVERIFY(activated);
+    QVERIFY(std::equal(activated.value()->get().categories().begin(),
+                       activated.value()->get().categories().end(),
+                       prior_categories.begin(),prior_categories.end()));
     QVERIFY(!opt.value()->create_module("rgsml.dsp.dynamic-eq"));
 
     auto chain=dsp::ProcessingChain::create(*opt.value(),{
@@ -319,6 +333,9 @@ void L3CanonicalC01RenderTest::signatureExcludesDisabledAndUuidIdentity() {
     QCOMPARE(x.value()->size(),y.value()->size());
     QVERIFY(std::equal(x.value()->begin(),x.value()->end(),
                        y.value()->begin()));
+    // Opt-in is a one-time factory attachment, never additive registration.
+    QVERIFY(!dsp::ModuleRegistry::with_dynamic_eq_offline(
+        std::move(*registry.value())));
 }
 
 } // namespace
