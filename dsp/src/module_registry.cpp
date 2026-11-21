@@ -794,6 +794,20 @@ ModuleRegistry::create_module(
             return Result<std::unique_ptr<IModule>>::success(std::move(result));
         }
 
+        if (type_id == kDynamicEqTypeId) {
+            const auto* parameters=std::get_if<DynamicEqParameters>(&payload);
+            if(!parameters) {
+                return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                    ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "Dynamic EQ requires typed DynamicEqParameters."));
+            }
+            auto module=DynamicEqModule::create(iterator->descriptor,*parameters);
+            if(!module)return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            std::unique_ptr<IModule> output=std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(output));
+        }
+
         if (type_id == kCompressorTypeId) {
             const auto* comp_params = std::get_if<CompressorParameters>(&payload);
             if (comp_params == nullptr) {
