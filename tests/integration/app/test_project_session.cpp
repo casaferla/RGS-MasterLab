@@ -172,6 +172,7 @@ struct Session final {
     app::AuditionSourceSelector selector;
     app::GoldSelectionViewModel gold;
     app::AuditionRegionViewModel region;
+    app::AuditionRegionViewModel referenceRegion;
     core::Uuid chainId;
     dsp::ModuleInstanceId gainId;
     dsp::ModuleInstanceId eqId;
@@ -188,6 +189,7 @@ struct Session final {
         : observed(new FakePlaybackService()),
           transport(std::unique_ptr<core::IAudioPlaybackService>(observed)),
           source(), selector(&transport), gold(&selector), region(&transport),
+          referenceRegion(&transport,nullptr,true),
           chainId(*core::Uuid::parse("10000000-0000-4000-8000-000000000001").value()),
           gainId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value()),
           eqId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value()),
@@ -207,6 +209,19 @@ struct Session final {
                   gainViewModel.get(), eqViewModel.get(), adapterModel.get(), previewController.get(),
                   std::move(uuidFactory))
     {
+        project.set_reference_region_view_model(&referenceRegion);
+        QObject::connect(&gold,&app::GoldSelectionViewModel::changed,
+            &referenceRegion,[this,lastRevision=std::uint64_t{0}]() mutable {
+                const auto revision=gold.selection_revision();
+                if(revision==lastRevision)return;
+                lastRevision=revision;
+                const auto* resource=gold.gold_resource();
+                if(resource) {
+                    const auto& info=resource->wav_info();
+                    referenceRegion.source_committed(
+                        info.frame_count(),info.audio_format().sample_rate());
+                } else referenceRegion.clear_independent_reference();
+            });
         transport.set_pcm_prepare_handler(
             [this](
                 audio::AudioBufferView view,
@@ -299,6 +314,7 @@ private slots:
     void m18ProjectOpenBatchKeepsWorkerLockAcrossNestedSourceCommit();
     void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
+    void reference_region_and_independent_loop_project_roundtrip();
     void missing_source_preflight_preserves_live_session();
     void clear_region_and_replace_source_save_as();
     void invalid_gold_and_hardlink_preflight_preserve_session();
@@ -4602,6 +4618,81 @@ void ProjectSessionTest::gold_region_roundtrip()
     QVERIFY(restored.gold.has_gold());
     QCOMPARE(restored.region.region()->begin().value(), std::int64_t{7});
     QCOMPARE(restored.region.region()->end().value(), std::int64_t{19});
+}
+
+void ProjectSessionTest::reference_region_and_independent_loop_project_roundtrip()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("source.wav"),0,48'000U,256U);
+    const auto reference=wav(dir,QStringLiteral("reference.wav"),1,44'100U,512U);
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    session.gold.selectGold(QUrl::fromLocalFile(reference));
+    QVERIFY(session.gold.has_gold());
+    const auto sourceRange=core::FrameRange::create(
+        core::FrameIndex{7},core::FrameIndex{19});
+    const auto referenceRange=core::FrameRange::create(
+        core::FrameIndex{123},core::FrameIndex{321});
+    QVERIFY(sourceRange &&referenceRange);
+    QVERIFY(session.region.set_region(*sourceRange.value()));
+    QVERIFY(session.region.set_loop_enabled(true));
+    QVERIFY(session.referenceRegion.set_region(*referenceRange.value()));
+    QVERIFY(session.selector.switch_to(app::AuditionTarget::GOLD));
+    QVERIFY(session.referenceRegion.set_loop_enabled(true));
+    QVERIFY(session.referenceRegion.loop_enabled());
+    QVERIFY(session.region.loop_enabled());
+    QCOMPARE(session.observed->loop,std::optional{*referenceRange.value()});
+
+    const auto path=dir.filePath(QStringLiteral("independent-loops.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(path));
+    QCOMPARE(session.project.error_message(),QString());
+    const auto snapshot=load_project(path);
+    QVERIFY(snapshot);
+    QCOMPARE(snapshot.value()->document().timeSelections.auditionRegions.size(),
+             std::size_t{2});
+    const auto& saved=snapshot.value()->document().timeSelections.auditionRegions;
+    QVERIFY(saved[0].frameDomain=="SOURCE");
+    QVERIFY(saved[1].frameDomain=="REFERENCE");
+    QVERIFY(saved[0].loopEnabled &&saved[1].loopEnabled);
+    QCOMPARE(saved[0].startFrame,std::int64_t{7});
+    QCOMPARE(saved[1].startFrame,std::int64_t{123});
+
+    Session reopened;
+    reopened.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(reopened.gold.has_gold());
+    QVERIFY(reopened.region.region() &&reopened.referenceRegion.region());
+    QCOMPARE(reopened.region.region()->begin().value(),std::int64_t{7});
+    QCOMPARE(reopened.referenceRegion.region()->begin().value(),std::int64_t{123});
+    QCOMPARE(reopened.referenceRegion.region()->end().value(),std::int64_t{321});
+    QVERIFY(reopened.region.loop_enabled());
+    QVERIFY(reopened.referenceRegion.loop_enabled());
+    // Restore never starts playback. Source/reference loops attach
+    // exclusively when their actual audio owner is selected.
+    QVERIFY(reopened.observed->state!=core::PlaybackState::PLAYING);
+    QVERIFY(reopened.selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(reopened.observed->loop,std::optional{*referenceRange.value()});
+    QVERIFY(reopened.selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(reopened.observed->loop,std::optional{*sourceRange.value()});
+    QCOMPARE(reopened.region.region()->begin().value(),std::int64_t{7});
+    QCOMPARE(reopened.referenceRegion.region()->begin().value(),std::int64_t{123});
+
+    // Wrong REFERENCE frame clock is refused before SOURCE/Project changes.
+    auto badDoc=snapshot.value()->document();
+    badDoc.timeSelections.auditionRegions[1].endFrameExclusive=9000;
+    auto badSnapshot=project::ProjectSnapshot::create(badDoc);
+    QVERIFY(badSnapshot);
+    const auto invalidPath=dir.filePath(QStringLiteral("invalid-reference.rgsml"));
+    QVERIFY(write_project(invalidPath,*badSnapshot.value()));
+    const auto priorSource=reopened.source.source_resource()->reference().locator();
+    const auto priorReference=reopened.gold.gold_resource()->reference().locator();
+    reopened.project.openProject(QUrl::fromLocalFile(invalidPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QCOMPARE(reopened.source.source_resource()->reference().locator(),priorSource);
+    QCOMPARE(reopened.gold.gold_resource()->reference().locator(),priorReference);
+    QCOMPARE(reopened.referenceRegion.region()->begin().value(),std::int64_t{123});
+    QVERIFY(reopened.referenceRegion.loop_enabled());
 }
 
 void ProjectSessionTest::missing_source_preflight_preserves_live_session()
