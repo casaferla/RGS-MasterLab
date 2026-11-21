@@ -1569,6 +1569,105 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
     return result;
 }
 
+std::optional<std::pair<C2ConsumedPrefix, C2SrcRetirementObservation>>
+PlaybackEngine::c2_research_p2_src_handoff_suffix(
+    std::optional<std::uint64_t> expectedGeneration) const noexcept
+{
+    // Opt-in P2 experiment only. Default Product, M17, loop, seeks and
+    // incomplete/retained mixed provenance continue to fail closed.
+    if (!researchP2SrcHandoffRecovery_ || !rateAdapter_
+        || !pendingHandoff_ || pendingHandoff_->awaitingReplay
+        || !pendingHandoff_->newRealizationId
+        || activeRealizationId_ != pendingHandoff_->newRealizationId
+        || !c2AcceptedContainsUnprovenHandoff_
+        || c2AcceptedLedgerOverflow_ || c2CoverageGenerationExhausted_
+        || loop_ || initialLoopEpoch_.loop
+        || !scheduledLoopEpochs_.empty() || terminalOutputDomain_
+        || !outputDuration_ || sourceBegin_.value() != 0)
+        return std::nullopt;
+
+    const auto probe = c2_processed_coverage_probe(expectedGeneration);
+    if (probe.reason != C2CoverageProbeReason::UNPROVEN_HANDOFF
+        || probe.processedWatermarkExclusive <= 0
+        || c2AcceptedRuns_.empty())
+        return std::nullopt;
+
+    // The only eligible segment is an actually sink-consumed interval
+    // produced AFTER the old/crossfade backlog. No old run or mixed gap
+    // may enter the returned suffix; preserve the originals unchanged.
+    const auto watermark = probe.processedWatermarkExclusive;
+    const C2AcceptedOutputRun* candidate = nullptr;
+    for (const auto& run : c2AcceptedRuns_) {
+        if (run.generation != probe.generation
+            || run.outputBegin < c2RetainedOutputBegin_
+            || run.outputEnd <= run.outputBegin)
+            return std::nullopt;
+        if (run.outputBegin < watermark && watermark <= run.outputEnd)
+            candidate = &run;
+    }
+    if (!candidate
+        || candidate->exactOneToOne || !candidate->handoffPureNewProven
+        || candidate->gapReason != C2CoverageProbeReason::UNPROVEN_SRC
+        || candidate->realizationId != activeRealizationId_
+        || !candidate->srcOutputBegin || !candidate->srcOutputEnd
+        || candidate->sourceBegin || candidate->sourceEnd
+        || *candidate->srcOutputBegin < 0
+        || *candidate->srcOutputEnd - *candidate->srcOutputBegin
+            != candidate->outputEnd - candidate->outputBegin
+        || candidate->loopTraversalProven
+        || candidate->loopWrapCount != 0)
+        return std::nullopt;
+
+    const auto relativeConsumed = watermark - candidate->outputBegin;
+    const auto absoluteEnd =
+        *candidate->srcOutputBegin + relativeConsumed;
+    if (relativeConsumed <= 0
+        || absoluteEnd > outputDuration_->value()
+        || *candidate->srcOutputBegin >= absoluteEnd)
+        return std::nullopt;
+
+    const auto first = rateAdapter_->map_output_frame_to_input_cursor(
+        core::FrameIndex{*candidate->srcOutputBegin});
+    const auto retired = rateAdapter_->no_future_dependency_source_prefix(
+        core::FrameIndex{absoluteEnd});
+    if (!first || !retired
+        || first.value()->value() < 0
+        || retired.value()->value() <= first.value()->value()
+        || retired.value()->value()
+            > rateAdapter_->input_frame_count().value())
+        return std::nullopt;
+
+    C2ConsumedPrefix suffix{};
+    suffix.generation = probe.generation;
+    suffix.reason = C2CoverageProbeReason::UNPROVEN_SRC;
+    suffix.retainedOutputBegin = candidate->outputBegin;
+    suffix.processedWatermarkExclusive = watermark;
+    suffix.size = 1;
+    suffix.partitionRepresented = true;
+    suffix.certifiedForLiveTruePeak = false;
+    auto& gap = suffix.slices[0];
+    gap.generation = probe.generation;
+    gap.outputBegin = candidate->outputBegin;
+    gap.outputEnd = watermark;
+    gap.kind = C2ConsumedSliceKind::GAP_UNPROVEN;
+    gap.reason = C2CoverageProbeReason::UNPROVEN_SRC;
+    // The SRC OUTPUT run remains GAP (never SOURCE_CANDIDATE);
+    // the separately checked immutable owner and FIR retirement form
+    // the observational witness carried below.
+
+    C2SrcRetirementObservation observation{};
+    observation.generation = probe.generation;
+    observation.reason = C2CoverageProbeReason::UNPROVEN_SRC;
+    observation.consumedOutputBegin = candidate->outputBegin;
+    observation.consumedOutputExclusive = watermark;
+    observation.firstSourceFrame = first.value()->value();
+    observation.noFutureSourcePrefixExclusive = retired.value()->value();
+    observation.realizationId = activeRealizationId_;
+    observation.sourceRateHz = rateAdapter_->input_rate().value();
+    observation.outputRateHz = rateAdapter_->output_rate().value();
+    return std::pair{std::move(suffix), std::move(observation)};
+}
+
 C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
     std::optional<std::uint64_t> expectedGeneration) const noexcept
 {
@@ -1888,9 +1987,14 @@ core::Status PlaybackEngine::pump_once()
     // Initial terminal installation has no legacy pendingHandoffPureNew:
     // the fresh owner is proven by the distinct sink install and epoch.
     // Do not confer that status on an ordinary SOURCE direct playback.
-    c2PendingHandoffPureNew_ = c2PendingExactMapping_
-        && (pureNewAfterHandoff || freshExactTerminal);
-    c2PendingGapReason_ = pendingHandoff_
+    c2PendingHandoffPureNew_ = (c2PendingExactMapping_
+        && (pureNewAfterHandoff || freshExactTerminal))
+        || (researchP2SrcHandoffRecovery_ && rateAdapter_
+            && pureNewAfterHandoff && c2PendingOwner_.has_value());
+    c2PendingGapReason_ = (researchP2SrcHandoffRecovery_
+        && rateAdapter_ && c2PendingHandoffPureNew_)
+        ? C2CoverageProbeReason::UNPROVEN_SRC
+        : pendingHandoff_
         ? C2CoverageProbeReason::UNPROVEN_HANDOFF
         : rateAdapter_ ? C2CoverageProbeReason::UNPROVEN_SRC
         : loop_ ? C2CoverageProbeReason::UNPROVEN_LOOP
@@ -1971,7 +2075,10 @@ void PlaybackEngine::c2_record_accepted_frames(
             + static_cast<std::int64_t>(oldComplete);
         run.sourceEnd = c2PendingSourceBegin_
             + static_cast<std::int64_t>(newComplete);
-    } else if (rateAdapter_ && !pendingHandoff_
+    } else if (rateAdapter_
+               && (!pendingHandoff_
+                   || (researchP2SrcHandoffRecovery_
+                       && c2PendingHandoffPureNew_))
                && c2PendingGapReason_ == C2CoverageProbeReason::UNPROVEN_SRC) {
         // Retain the OUTPUT_RATE SRC decoder origin for this accepted block.
         // This cannot be inferred from the GUI playhead or converted to
@@ -2010,8 +2117,11 @@ void PlaybackEngine::c2_record_accepted_frames(
                     && previous.srcOutputEnd && run.srcOutputBegin
                     && previous.srcOutputEnd == run.srcOutputBegin
                     && previous.loopWrapCount == run.loopWrapCount
-                    && !previous.handoffPureNewProven
-                    && !run.handoffPureNewProven))) {
+                    && ((!previous.handoffPureNewProven
+                        && !run.handoffPureNewProven)
+                        || (researchP2SrcHandoffRecovery_
+                            && previous.handoffPureNewProven
+                            && run.handoffPureNewProven))))) {
             const bool sameUninterruptedSrcOwner =
                 run.gapReason == C2CoverageProbeReason::UNPROVEN_SRC
                 && previous.realizationId.has_value()
@@ -2022,8 +2132,11 @@ void PlaybackEngine::c2_record_accepted_frames(
                 && !run.sourceBegin && !run.sourceEnd
                 && !previous.loopTraversalProven && !run.loopTraversalProven
                 && previous.loopWrapCount == run.loopWrapCount
-                && !previous.handoffPureNewProven
-                && !run.handoffPureNewProven;
+                && ((!previous.handoffPureNewProven
+                    && !run.handoffPureNewProven)
+                    || (researchP2SrcHandoffRecovery_
+                        && previous.handoffPureNewProven
+                        && run.handoffPureNewProven));
             previous.outputEnd = run.outputEnd;
             if (sameUninterruptedSrcOwner) {
                 previous.srcOutputEnd = run.srcOutputEnd;

@@ -16,6 +16,7 @@ qt_add_executable(rgsml_terminal_private_gr_projection_tests
 target_include_directories(rgsml_terminal_private_gr_projection_tests
     PRIVATE
         "${CMAKE_SOURCE_DIR}/app/src"
+        "${CMAKE_SOURCE_DIR}/audio/src"
         "${CMAKE_SOURCE_DIR}/analysis/src"
         "${CMAKE_SOURCE_DIR}/platform/windows/include")
 target_link_libraries(rgsml_terminal_private_gr_projection_tests

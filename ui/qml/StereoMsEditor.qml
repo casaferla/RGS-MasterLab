@@ -21,16 +21,30 @@ Item {
     // editable Stereo/M-S scalar controls, regardless of row or unit.
     readonly property int numericFieldWidth: 86
     readonly property color sliderFill: Qt.rgba(74 / 255, 154 / 255, 136 / 255, 0.38)
+    // The user-approved minimum-size top-left is immutable. The visual
+    // wells begin below a FIXED 23lp Spatial Control row and a FIXED 4lp
+    // gap, even if the graph and control areas grow towards the bottom.
+    // Only dimensions BELOW this invariant may interpolate. No scroll.
+    readonly property real verticalSpaceFactor:
+        Math.max(0, Math.min(1, (root.height - 300) / 110))
 
     // EQ-like top expansive region, but a separate near-square, strictly
     // observational M/S output well: its coordinates must never be stretched.
     ColumnLayout {
         anchors.fill: parent
-        spacing: root.height < 380 ? 4 : 7
+        spacing: 4
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.height < 380 ? 23 : 27
+            // The Reset StudioButton has 32lp implicit height, so a
+            // preferred-only 23lp RowLayout grew from 30 to 31lp as
+            // available window height increased. Lock the SAME actual
+            // 30lp compact-minimum geometry, and explicitly size Reset
+            // to that row. The 4lp gap keeps its bottom separate from
+            // the response graph; no clipping, scroll, or vertical drift.
+            Layout.minimumHeight: 30
+            Layout.preferredHeight: 30
+            Layout.maximumHeight: 30
             spacing: 8
             Text {
                 text: "SPATIAL CONTROL"
@@ -74,6 +88,9 @@ Item {
                 objectName: "stereoMsResetButton"
                 text: "Reset to Default"
                 minimumControlWidth: 140
+                Layout.minimumHeight: 30
+                Layout.preferredHeight: 30
+                Layout.maximumHeight: 30
                 enabled: root.viewModel && root.viewModel.available
                 accentColor: root.seaGreen
                 ToolTip.text: "Restore all Stereo/M-S parameters to defaults. This does not change the module bypass state."
@@ -93,7 +110,7 @@ Item {
             objectName: "stereoMsVisualWells"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: root.height < 380 ? 105 : 150
+            Layout.minimumHeight: 105 + 45 * root.verticalSpaceFactor
             spacing: 9
 
             StereoMsResponseGraph {
@@ -403,8 +420,21 @@ Item {
         Rectangle {
             objectName: "stereoMsControlsRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.height < 380 ? 133 : 166
-            Layout.minimumHeight: root.height < 380 ? 133 : 166
+            // At the real 680x338 compact host the stable 30lp top row
+            // leaves 129lp here (30+4+105+4+129=272). The previous
+            // 133lp hard MINIMUM forced this well 4lp below the editor.
+            // The graph owns its 105lp minimum and fills the surplus.
+            // Merely lowering this well's minimum did NOT shrink it:
+            // its preferred 133lp still yielded y=276 in a 272lp editor.
+            // Cap the PREFERRED value to the real residual height.
+            // Preserve 133lp when there is room and keep all numeric
+            // controls visible; never clip or scroll the editor.
+            Layout.preferredHeight: Math.min(
+                133 + 33 * root.verticalSpaceFactor,
+                Math.max(129 + 33 * root.verticalSpaceFactor,
+                    root.height - 30 - 4
+                        - (105 + 45 * root.verticalSpaceFactor) - 4))
+            Layout.minimumHeight: 129 + 33 * root.verticalSpaceFactor
             radius: 6
             color: "#12243F"
             border.color: "#2C5A78"
@@ -412,8 +442,8 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: root.height < 380 ? 5 : 9
-                spacing: root.height < 380 ? 3 : 6
+                anchors.margins: 5 + 4 * root.verticalSpaceFactor
+                spacing: 3 + 3 * root.verticalSpaceFactor
 
                 RowLayout {
                     Layout.fillWidth: true

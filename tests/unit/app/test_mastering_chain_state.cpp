@@ -1,4 +1,7 @@
 #include "mastering_chain_state.hpp"
+#include "internal/m18_product_controller_binding.hpp"
+#include "internal/m18_product_terminal_candidate_binding.hpp"
+#include "internal/m18_product_private_session_binding.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_playback_frame_map.hpp"
@@ -22,6 +25,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <thread>
+#include <stdexcept>
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -62,6 +67,15 @@ private slots:
     void defaultTopologyAndCanonicalOrder();
     void productStartupHasFourModulesWithStereoMsInitiallyBypassed();
     void stableInstanceIdsDuringEdits();
+    void m18OptInChainEpochBlocksAllFiveEdits();
+    void m18ChainRejectsForeignThreadAndProtectsGateRemoval();
+    void m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner();
+    void m18ActualChainAndTerminalShareOneProductWorkerBarrier();
+    void m18TerminalCandidateGateSharesActualProductExportCommitEpoch();
+    void m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch();
+    void m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority();
+void m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread();
+    void m18PrivateSessionCannotReenterOrEraseItsOwnProductGate();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
@@ -161,6 +175,676 @@ void MasteringChainStateTest::productStartupHasFourModulesWithStereoMsInitiallyB
     stereoBypass = state.value()->is_bypassed(stereoId);
     QVERIFY(stereoBypass);
     QVERIFY(!*stereoBypass.value());
+}
+
+void MasteringChainStateTest::m18OptInChainEpochBlocksAllFiveEdits()
+{
+    // No Product GUI integration: exercise every CENTRAL typed chain edit,
+    // including all four modules and generic bypass, with one BUSY gate.
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e0000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e0000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e0000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e0000000-0000-4000-8000-000000000030");
+    const auto stereoId=test_instance_id("e0000000-0000-4000-8000-000000000040");
+    auto state=MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
+    QVERIFY(state);
+    const auto originalGain=state.value()->gain_parameters();
+    const auto originalEq=state.value()->parametric_eq_parameters();
+    const auto originalComp=state.value()->compressor_parameters();
+    const auto originalStereo=state.value()->stereo_ms_parameters();
+    const auto originalRevision=state.value()->chain().revision();
+    auto originalBypass=state.value()->is_bypassed(stereoId);
+    QVERIFY(originalBypass);
+    // Snapshot the public authoritative DSP state: ProcessingChain has
+    // no operator==, so MasteringChainState's defaulted comparison is
+    // intentionally unavailable. The Product guard must never alter
+    // topology, identity, revisions or any accepted DSP parameters.
+    const auto originalChainId=state.value()->chain_id();
+    const auto originalModuleCount=state.value()->module_count();
+    std::size_t denied=0;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_MASTER_CHAIN_MUTATION_DURING_COMMIT"});
+        });
+    QCOMPARE(state.value()->chain_id(),originalChainId);
+    QCOMPARE(state.value()->module_count(),originalModuleCount);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    QCOMPARE(state.value()->gain_instance_id(),gainId);
+    QCOMPARE(state.value()->eq_instance_id(),eqId);
+    QCOMPARE(state.value()->compressor_instance_id(),compId);
+    QCOMPARE(state.value()->stereo_ms_instance_id(),
+             std::optional{stereoId});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->parametric_eq_parameters(),originalEq);
+    QCOMPARE(state.value()->compressor_parameters(),originalComp);
+    QCOMPARE(state.value()->stereo_ms_parameters(),originalStereo);
+    auto gain=GainParameters::create(2.5);
+    auto eq=ParametricEqParameters::create_legacy_default();
+    auto comp=CompressorParameters::create(
+        CompressorDetectorMode::PEAK,CompressorChannelLink::DUAL_MONO,
+        -18.0,3.0);
+    auto stereo=StereoMsParameters::create(2.0);
+    QVERIFY(gain&&eq&&comp&&stereo);
+    QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
+    QVERIFY(!state.value()->set_parametric_eq_parameters(*eq.value()));
+    QVERIFY(!state.value()->set_compressor_parameters(*comp.value()));
+    QVERIFY(!state.value()->set_stereo_ms_parameters(*stereo.value()));
+    QVERIFY(!state.value()->set_user_bypass(stereoId,
+                                         !*originalBypass.value()));
+    QCOMPARE(denied,std::size_t{5});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->parametric_eq_parameters(),originalEq);
+    QCOMPARE(state.value()->compressor_parameters(),originalComp);
+    QCOMPARE(state.value()->stereo_ms_parameters(),originalStereo);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    auto finalBypass=state.value()->is_bypassed(stereoId);
+    QVERIFY(finalBypass);
+    QCOMPARE(*finalBypass.value(),*originalBypass.value());
+
+    // When the lease has ended, the Product can explicitly remove the
+    // optional protection. All ordinary M11-15 behavior is untouched.
+    state.value()->set_private_m18_chain_mutation_admission({});
+    QVERIFY(state.value()->set_gain_parameters(*gain.value()));
+    QCOMPARE(state.value()->gain_parameters(),*gain.value());
+
+    // A previously admitted Project open may legitimately replace the
+    // full DSP chain. It must NOT erase the Product runtime epoch guard.
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++denied;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_CHAIN_EPOCH_STILL_BUSY"});
+        });
+    auto projectReplacement=MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
+    QVERIFY(projectReplacement);
+    state.value()->adopt_chain_after_authorized_project_open(
+        std::move(*projectReplacement.value()));
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
+    QCOMPARE(denied,std::size_t{6});
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    // Project-restored DSP state did not silently reset the Product
+    // thread affinity: a non-owner still cannot edit the new chain or
+    // erase its preserved runtime authority.
+    bool offThreadDenied=false;
+    std::thread foreign([&] {
+        const auto result=state.value()->set_gain_parameters(*gain.value());
+        offThreadDenied=!result&&result.error()->code()
+            ==core::ErrorCode::InvalidState;
+        state.value()->set_private_m18_chain_mutation_admission({});
+    });
+    foreign.join();
+    QVERIFY(offThreadDenied);
+    QCOMPARE(denied,std::size_t{6});
+    QVERIFY(!state.value()->set_gain_parameters(*gain.value()));
+    QCOMPARE(denied,std::size_t{7});
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    state.value()->set_private_m18_chain_mutation_admission({});
+}
+
+void MasteringChainStateTest::
+m18ChainRejectsForeignThreadAndProtectsGateRemoval()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e1000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e1000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e1000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e1000000-0000-4000-8000-000000000030");
+    auto state=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId,compId);
+    QVERIFY(state);
+    const auto originalGain=state.value()->gain_parameters();
+    const auto originalRevision=state.value()->chain().revision();
+    const auto newGain=GainParameters::create(2.5);
+    QVERIFY(newGain);
+    std::size_t admits=0;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char* operation)->core::Status {
+            if(!operation)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_NO_OPERATION"});
+            ++admits;
+            return core::Status::success();
+        });
+    bool foreignDenied=false;
+    std::thread illegal([&]{
+        const auto denied=state.value()->set_gain_parameters(*newGain.value());
+        foreignDenied=!denied &&denied.error()->code()
+            ==core::ErrorCode::InvalidState;
+        // Unauthorized worker cannot silently erase the Product gate.
+        state.value()->set_private_m18_chain_mutation_admission({});
+    });
+    illegal.join();
+    QVERIFY(foreignDenied);
+    QCOMPARE(admits,std::size_t{0});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    // The retained Product callback must still be the only authority.
+    QVERIFY(state.value()->set_gain_parameters(*newGain.value()));
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(state.value()->gain_parameters(),*newGain.value());
+
+    state.value()->set_private_m18_chain_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_CHAIN_EPOCH_THROW");
+        });
+    const auto reset=GainParameters::create(-1.0);
+    QVERIFY(reset);
+    const auto denied=state.value()->set_gain_parameters(*reset.value());
+    QVERIFY(!denied);
+    QCOMPARE(denied.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(state.value()->gain_parameters(),*newGain.value());
+    // Owner can retire the optional preproduction guard explicitly.
+    state.value()->set_private_m18_chain_mutation_admission({});
+    QVERIFY(state.value()->set_gain_parameters(*reset.value()));
+    QCOMPARE(state.value()->gain_parameters(),*reset.value());
+}
+
+void MasteringChainStateTest::
+m18ChainRejectsReentrantAdmissionWithoutLosingProductOwner()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e2000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e2000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e2000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e2000000-0000-4000-8000-000000000030");
+    auto state=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId,compId);
+    QVERIFY(state);
+    const auto originalBypass=state.value()->is_bypassed(compId);
+    QVERIFY(originalBypass);
+    const auto newGain=GainParameters::create(3.0);
+    const auto alternativeGain=GainParameters::create(-6.0);
+    QVERIFY(newGain&&alternativeGain);
+    std::size_t admits=0;
+    bool recursiveDenied=false;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admits;
+            if(admits==1) {
+                // The callback may itself be a synchronous Qt listener.
+                // It cannot edit a second DSP parameter while the
+                // original Product epoch admission has not completed.
+                const auto nested=state.value()->set_gain_parameters(
+                    *alternativeGain.value());
+                recursiveDenied=!nested &&nested.error()->code()
+                    ==core::ErrorCode::InvalidState;
+                // Likewise it cannot uninstall or replace its own
+                // Product-wide guard during the admission stack.
+                state.value()->set_private_m18_chain_mutation_admission({});
+            }
+            return core::Status::success();
+        });
+    const auto revised=CompressorParameters::create(
+        CompressorDetectorMode::PEAK,CompressorChannelLink::DUAL_MONO,
+        -15.0,2.0);
+    QVERIFY(revised);
+    QVERIFY(state.value()->set_compressor_parameters(*revised.value()));
+    QVERIFY(recursiveDenied);
+    QCOMPARE(admits,std::size_t{1});
+    QCOMPARE(state.value()->compressor_parameters(),*revised.value());
+    QCOMPARE(state.value()->gain_parameters().gain_db(),0.0);
+    // Successful outer mutation did not remove its Product guard.
+    QVERIFY(state.value()->set_gain_parameters(*newGain.value()));
+    QCOMPARE(admits,std::size_t{2});
+    QCOMPARE(state.value()->gain_parameters(),*newGain.value());
+    const auto bypass=state.value()->is_bypassed(compId);
+    QVERIFY(bypass);
+    QCOMPARE(*bypass.value(),*originalBypass.value());
+    state.value()->set_private_m18_chain_mutation_admission({});
+    QVERIFY(state.value()->set_gain_parameters(*alternativeGain.value()));
+}
+
+void MasteringChainStateTest::
+m18ActualChainAndTerminalShareOneProductWorkerBarrier()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("e3000000-0000-4000-8000-000000000001");
+    const auto gainId=test_instance_id("e3000000-0000-4000-8000-000000000010");
+    const auto eqId=test_instance_id("e3000000-0000-4000-8000-000000000020");
+    const auto compId=test_instance_id("e3000000-0000-4000-8000-000000000030");
+    const auto terminalId=test_instance_id(
+        "e3000000-0000-4000-8000-000000000040");
+    auto chain=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId,compId);
+    auto terminal=TerminalLimiterState::create_default(
+        *registry.value(),terminalId);
+    QVERIFY(chain&&terminal);
+    const auto updatedGain=GainParameters::create(2.5);
+    QVERIFY(updatedGain);
+    const M18ProductExportIdentity id{31U,32U,33U,0U,48000U,4U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        250U,id);
+    QVERIFY(owner->try_transition(250U,251U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout gate{owner,251U,id};
+    app::internal::M18ProductControllerBinding::bind_chain_and_terminal(
+        *chain.value(),*terminal.value(),gate);
+    auto held=ticket.value()->commit_lease_factory()();
+    QVERIFY(held);
+    const auto deniedChain=chain.value()->set_gain_parameters(
+        *updatedGain.value());
+    QVERIFY(!deniedChain);
+    const auto deniedLimiter=terminal.value()->set_ceiling_db_tp(-4.0);
+    QVERIFY(!deniedLimiter);
+    QCOMPARE(chain.value()->gain_parameters().gain_db(),0.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+    QVERIFY(chain.value()->set_gain_parameters(*updatedGain.value()));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(terminal.value()->set_ceiling_db_tp(-4.0));
+    QCOMPARE(chain.value()->gain_parameters().gain_db(),2.5);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-4.0);
+    QVERIFY(!owner->capture(id));
+}
+
+void MasteringChainStateTest::
+m18TerminalCandidateGateSharesActualProductExportCommitEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity id{91U,92U,93U,0U,48000U,8U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        330U,id);
+    QVERIFY(owner->try_transition(330U,331U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,331U,id};
+    TerminalCandidateGate candidates;
+    app::internal::M18ProductTerminalCandidateBinding::bind(
+        candidates,fanout);
+    auto committing=ticket.value()->commit_lease_factory()();
+    QVERIFY(committing);
+    // An actual M17 terminal state invalidation MUST NOT silently
+    // withdraw the exact checked stage during Windows file publication.
+    const auto blocked=candidates.try_invalidate_for_m18();
+    QVERIFY(!blocked);
+    QCOMPARE(blocked.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY((*committing.value())->revalidate_current());
+    committing.value()->reset();
+    QVERIFY(candidates.try_invalidate_for_m18());
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+}
+
+void MasteringChainStateTest::
+m18RendererLegacyVoidInvalidateCannotBypassWorkerEpoch()
+{
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=MasteringChainState::create_default(
+        *registry.value(),
+        test_uuid("ab000000-0000-4000-8000-000000000001"),
+        test_instance_id("ab000000-0000-4000-8000-000000000010"),
+        test_instance_id("ab000000-0000-4000-8000-000000000020"),
+        test_instance_id("ab000000-0000-4000-8000-000000000030"));
+    QVERIFY(chain);
+    auto limiter=TerminalLimiterState::create_default(
+        *registry.value(),
+        test_instance_id("ab000000-0000-4000-8000-000000000040"));
+    QVERIFY(limiter);
+    TerminalCandidateGate candidates;
+    TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&]{return chain.value()->chain();}};
+    QSignalSpy changed{&renderer,&TerminalPrivateRenderController::changed};
+    const M18ProductExportIdentity id{101U,102U,103U,0U,48000U,5U};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(
+        100U,id);
+    QVERIFY(owner->try_transition(100U,101U,id,true));
+    auto ticket=owner->capture(id);QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{owner,101U,id};
+    app::internal::M18ProductTerminalCandidateBinding::bind(
+        candidates,fanout);
+    auto worker=ticket.value()->commit_lease_factory()();
+    QVERIFY(worker);
+
+    // Both the legacy void renderer entrypoint and the new explicit
+    // status path must reject a commit-in-progress BEFORE mutating the
+    // local serial/status, pending jobs or Qt changed() notifications.
+    renderer.invalidate();
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(renderer.status(),QStringLiteral("IDLE"));
+    const auto busy=renderer.try_invalidate_for_m18();
+    QVERIFY(!busy);
+    QCOMPARE(busy.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(changed.count(),0);
+    QVERIFY((*worker.value())->revalidate_current());
+    // Even with a physically freed worker commit, a foreign-thread
+    // legacy void call must not touch QObject serial or signals.
+    auto requestedFs=core::SampleRate::create(48000);
+    QVERIFY(requestedFs);
+    bool foreignPrepareDenied=false;
+    std::thread foreign([&] {
+        renderer.invalidate();
+        const auto denied=renderer.request_private(*requestedFs.value());
+        foreignPrepareDenied=!denied
+            &&denied.error()->code()==core::ErrorCode::InvalidState;
+    });
+    foreign.join();
+    QVERIFY(foreignPrepareDenied);
+    QCOMPARE(changed.count(),0);
+    QVERIFY((*worker.value())->revalidate_current());
+
+    worker.value()->reset();
+    renderer.invalidate();
+    QCOMPARE(changed.count(),1);
+    QCOMPARE(renderer.status(),QStringLiteral("IDLE"));
+    QVERIFY(!ticket.value()->commit_lease_factory()());
+    QVERIFY(!owner->capture(id));
+
+    // An independently requested explicit invalidation uses the same
+    // Product authority and cannot resurrect obsolete M17 PCM.
+    QVERIFY(renderer.try_invalidate_for_m18());
+    QCOMPARE(changed.count(),2);
+}
+
+void MasteringChainStateTest::
+m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=test_instance_id("7e000000-0000-4000-8000-000000000017");
+    auto state=TerminalLimiterState::create_default(*registry.value(),id);
+    QVERIFY(state);
+    const auto oldRevision=state.value()->parameter_revision();
+    const auto oldBypass=state.value()->bypassed();
+    std::size_t calls=0,nestedRejected=0;
+    state.value()->set_private_m18_mutation_admission(
+        [&](const char*)->core::Status {
+            ++calls;
+            state.value()->set_private_m18_mutation_admission({});
+            const auto nested=state.value()->set_user_bypass(!oldBypass);
+            if(!nested)++nestedRejected;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_TERMINAL_WORKER_BUSY"});
+        });
+    std::thread foreign([&] {
+        state.value()->set_private_m18_mutation_admission({});
+    });
+    foreign.join();
+    QVERIFY(state.value()->m18_mutation_admission_installed());
+    QVERIFY(!state.value()->set_ceiling_db_tp(-2.0));
+    QVERIFY(!state.value()->set_ceiling_db_tp(-2.0));
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(nestedRejected,std::size_t{2});
+    QCOMPARE(state.value()->parameter_revision(),oldRevision);
+    QCOMPARE(state.value()->bypassed(),oldBypass);
+    state.value()->set_private_m18_mutation_admission({});
+    QVERIFY(state.value()->set_ceiling_db_tp(-2.0));
+    QCOMPARE(state.value()->parameter_revision(),oldRevision+1U);
+}
+
+void MasteringChainStateTest::
+m18CandidateAdmissionCannotEraseOrReenterItsOwnAuthority()
+{
+    TerminalCandidateGate gate;
+    std::size_t calls=0;
+    bool nestedDenied=false;
+    gate.set_private_m18_mutation_admission(
+        [&](const char* operation)->core::Status {
+            ++calls;
+            if(!operation)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_CANDIDATE_OPERATION_MISSING"});
+            // A malicious or inadvertent Qt/editor callback must not
+            // unregister the current owner and gain an unguarded reset.
+            gate.set_private_m18_mutation_admission({});
+            const auto nested=gate.try_invalidate_for_m18();
+            nestedDenied=!nested&&nested.error()->code()
+                ==core::ErrorCode::InvalidState;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_CANDIDATE_WRITER_BUSY"});
+        });
+    bool foreignDenied=false;
+    std::thread foreign([&] {
+        // The worker cannot race the owner's std::function, erase the
+        // shared commit authority, or mutate the M17 stage.
+        gate.set_private_m18_mutation_admission({});
+        const auto rejected=gate.try_invalidate_for_m18();
+        foreignDenied=!rejected&&rejected.error()->code()
+            ==core::ErrorCode::InvalidState;
+        gate.invalidate();
+    });
+    foreign.join();
+    QVERIFY(foreignDenied);
+    QVERIFY(gate.m18_mutation_admission_installed());
+    QCOMPARE(calls,std::size_t{0});
+    auto denied=gate.try_invalidate_for_m18();
+    QVERIFY(!denied);
+    QVERIFY(nestedDenied);
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(gate.m18_mutation_admission_installed());
+    // Legacy M17 void API may not bypass the still-installed owner.
+    gate.invalidate();
+    QCOMPARE(calls,std::size_t{1});
+    denied=gate.try_invalidate_for_m18();
+    QVERIFY(!denied);
+    QCOMPARE(calls,std::size_t{2});
+    gate.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_CANDIDATE_ADMISSION_THROWN");
+        });
+    QVERIFY(!gate.try_invalidate_for_m18());
+    // Exception-safe unwind releases the non-reentrant flag and keeps
+    // admission reconfigurable for a subsequent explicit owner write.
+    gate.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            return core::Status::success();
+        });
+    QVERIFY(gate.try_invalidate_for_m18());
+    gate.set_private_m18_mutation_admission({});
+    QVERIFY(!gate.m18_mutation_admission_installed());
+}
+
+void MasteringChainStateTest::
+m18PrivateSessionCannotReenterOrEraseItsOwnProductGate()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=MasteringChainState::create_default(
+        *registry.value(),
+        test_uuid("ac000000-0000-4000-8000-000000000001"),
+        test_instance_id("ac000000-0000-4000-8000-000000000010"),
+        test_instance_id("ac000000-0000-4000-8000-000000000020"),
+        test_instance_id("ac000000-0000-4000-8000-000000000030"));
+    QVERIFY(chain);
+    auto limiter=TerminalLimiterState::create_default(
+        *registry.value(),
+        test_instance_id("ac000000-0000-4000-8000-000000000040"));
+    QVERIFY(limiter);
+    TerminalCandidateGate candidates;
+    TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&]{return chain.value()->chain();}};
+    auto service=std::make_unique<FakePlaybackService>();
+    auto& fake=*service;
+    PlaybackTransportViewModel transport{std::move(service)};
+    TerminalAudioSessionGate device{
+        candidates,fake,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::success();
+        }};
+    TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_TEST_NO_TERMINAL_ID_ISSUED"});
+        }};
+    TerminalPrivateProductSession session{
+        renderer,publisher,candidates,transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+    QSignalSpy changed{&session,&TerminalPrivateProductSession::changed};
+    std::size_t calls=0;
+    bool nestedDenied=false;
+    session.set_private_m18_mutation_admission(
+        [&](const char* operation)->core::Status {
+            ++calls;
+            if(!operation)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRIVATE_SESSION_OPERATION_REQUIRED"});
+            session.set_private_m18_mutation_admission({});
+            const auto nested=session.cancel();
+            nestedDenied=!nested&&nested.error()->code()
+                ==core::ErrorCode::InvalidState;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PRIVATE_SESSION_WORKER_COMMIT_BUSY"});
+        });
+    // A real renderer notification while the M17 Product has NO
+    // pending render must never revoke a Product export generation:
+    // no operation was committed and no source owner changed.
+    renderer.invalidate();
+    QCOMPARE(calls,std::size_t{0});
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(session.status(),QStringLiteral("IDLE"));
+    // An invalid M17 Prepare from a SOURCE-less Product is a rejected
+    // read-only preflight, never an export-epoch transition or BUSY write.
+    auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto invalidPrepare=session.request_private(*rate.value(),false);
+    QVERIFY(!invalidPrepare);
+    QCOMPARE(calls,std::size_t{0});
+    QCOMPARE(changed.count(),0);
+    QVERIFY(!session.cancel());
+    QVERIFY(nestedDenied);
+    QCOMPARE(calls,std::size_t{1});
+    QCOMPARE(changed.count(),0);
+    QCOMPARE(session.status(),QStringLiteral("IDLE"));
+    // If the attempted self-uninstall had succeeded, the next Cancel
+    // would bypass Product and publish a changed() signal.
+    QVERIFY(!session.cancel());
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(changed.count(),0);
+    session.set_private_m18_mutation_admission(
+        [](const char*)->core::Status {
+            throw std::runtime_error("M18_PRIVATE_SESSION_ADMISSION_FAULT");
+        });
+    QVERIFY(!session.cancel());
+    QCOMPARE(changed.count(),0);
+    // Admission-unwind makes a subsequent external owner replacement legal.
+    session.set_private_m18_mutation_admission({});
+
+    // The real typed M18 Product binding must protect session AND
+    // renderer/candidate stage with one and the SAME revocable epoch.
+    // This remains isolated; no GUI export action is activated.
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    const M18ProductExportIdentity verifiedId{
+        71U,72U,73U,0U,48000U,5U};
+    auto authority=std::make_shared<M18ProductEpochTicketAuthority>(
+        100U,verifiedId);
+    QVERIFY(authority->try_transition(100U,101U,verifiedId,true));
+    auto ticket=authority->capture(verifiedId);
+    QVERIFY(ticket);
+    M18OwnerMutationFanout fanout{authority,101U,verifiedId};
+    QVERIFY(app::internal::M18ProductPrivateSessionBinding::can_bind(
+        session,candidates));
+    bool foreignBindingDenied=false;
+    bool foreignPreflightDenied=false;
+    std::thread foreignBinder([&] {
+        foreignPreflightDenied=
+            !app::internal::M18ProductPrivateSessionBinding::can_bind(
+                session,candidates);
+        const auto result=app::internal::M18ProductPrivateSessionBinding::bind(
+            session,candidates,fanout);
+        foreignBindingDenied=!result;
+    });
+    foreignBinder.join();
+    QVERIFY(foreignPreflightDenied);
+    QVERIFY(foreignBindingDenied);
+    QVERIFY(!session.m18_private_mutation_admission_installed());
+    QVERIFY(!candidates.m18_mutation_admission_installed());
+    // A candidate gate constructed on another thread must not lead to
+    // a half-installed Product authority on the Qt session. Roll back
+    // the first setter if the second refuses to bind its owner.
+    std::unique_ptr<TerminalCandidateGate> alienCandidate;
+    std::thread foreignCandidateOwner([&] {
+        alienCandidate=std::make_unique<TerminalCandidateGate>();
+    });
+    foreignCandidateOwner.join();
+    QVERIFY(alienCandidate);
+    QVERIFY(!app::internal::M18ProductPrivateSessionBinding::can_bind(
+        session,*alienCandidate));
+    const auto mismatchedOwner=app::internal::
+        M18ProductPrivateSessionBinding::bind(
+            session,*alienCandidate,fanout);
+    QVERIFY(!mismatchedOwner);
+    QVERIFY(!session.m18_private_mutation_admission_installed());
+    QVERIFY(!alienCandidate->m18_mutation_admission_installed());
+    QVERIFY(app::internal::M18ProductPrivateSessionBinding::bind(
+        session,candidates,fanout));
+    QVERIFY(session.m18_private_mutation_admission_installed());
+    QVERIFY(candidates.m18_mutation_admission_installed());
+    QVERIFY(!app::internal::M18ProductPrivateSessionBinding::can_bind(
+        session,candidates)); // cannot double-install shared epoch
+    QVERIFY(!app::internal::M18ProductPrivateSessionBinding::bind(
+        session,candidates,fanout)); // no silent independent rebind
+    auto held=ticket.value()->commit_lease_factory()();
+    QVERIFY(held);
+    const auto blockedProductCancel=session.cancel();
+    QVERIFY(!blockedProductCancel);
+    QVERIFY(!candidates.try_invalidate_for_m18());
+    QVERIFY(!renderer.try_invalidate_for_m18());
+    QCOMPARE(session.status(),QStringLiteral("IDLE"));
+    QCOMPARE(changed.count(),0);
+    QVERIFY((*held.value())->revalidate_current());
+    held.value()->reset();
+    QVERIFY(candidates.try_invalidate_for_m18());
+    QVERIFY(!authority->capture(verifiedId)); // consent irrevocably retired
+    session.set_private_m18_mutation_admission({});
+    candidates.set_private_m18_mutation_admission({});
+
+    // An ephemeral Product owner cannot leave callbacks that silently
+    // grant access after its fanout has been destroyed. Both independent
+    // M17 mutators must remain FAIL-CLOSED until an explicit rebind.
+    const M18ProductExportIdentity retiredId{
+        81U,82U,83U,0U,48000U,5U};
+    auto futureAuthority=std::make_shared<M18ProductEpochTicketAuthority>(
+        500U,retiredId);
+    {
+        M18OwnerMutationFanout retiredFanout{
+            futureAuthority,500U,retiredId};
+        QVERIFY(app::internal::M18ProductPrivateSessionBinding::bind(
+            session,candidates,retiredFanout));
+    }
+    QVERIFY(session.m18_private_mutation_admission_installed());
+    QVERIFY(candidates.m18_mutation_admission_installed());
+    QVERIFY(!session.cancel());
+    QVERIFY(!candidates.try_invalidate_for_m18());
+    QCOMPARE(changed.count(),0);
+    session.set_private_m18_mutation_admission({});
+    candidates.set_private_m18_mutation_admission({});
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
@@ -790,6 +1474,45 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     QVERIFY(activeStaged->rendered.terminal.checked.final_check.has_value());
     QCOMPARE(activeStaged->rendered.terminal.checked.terminal
         .applied_gain_frames.size(),std::size_t{480});
+    // M18 P0: the legacy void invalidate() must NEVER bypass an active
+    // worker commit. Only a separately authorized status-returning
+    // invalidation may retire exact verified M17 source ownership.
+    bool allowRetirement=false;
+    std::size_t retirementAttempts=0;
+    gate.set_private_m18_mutation_admission(
+        [&](const char* op)->core::Status {
+            if(!op)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_MISSING_OPERATION"});
+            ++retirementAttempts;
+            if(!allowRetirement)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_WORKER_COMMIT_BUSY"});
+            return core::Status::success();
+        });
+    gate.invalidate(); // legacy void must fail closed with NO callback
+    QVERIFY(gate.staged());
+    QCOMPARE(gate.staged().get(),activeStaged.get());
+    QCOMPARE(retirementAttempts,std::size_t{0});
+    const auto prematureCapture=gate.capture(
+        owner,owner,identity,*manual.value(),*terminal.value(),outputRate);
+    QVERIFY(!prematureCapture);
+    QVERIFY(gate.staged());
+    QCOMPARE(gate.staged().get(),activeStaged.get());
+    QCOMPARE(retirementAttempts,std::size_t{1});
+    // Malformed replacement also attempts an explicit Product retirement.
+    // BUSY must preserve the old exact M17 PCM, not silently discard it.
+    const auto malformedWhileWorkerBusy=gate.capture(
+        owner,{},identity,*manual.value(),*terminal.value(),outputRate);
+    QVERIFY(!malformedWhileWorkerBusy);
+    QCOMPARE(retirementAttempts,std::size_t{2});
+    QCOMPARE(gate.staged().get(),activeStaged.get());
+    QVERIFY(!gate.try_invalidate_for_m18());
+    QCOMPARE(retirementAttempts,std::size_t{3});
+    QVERIFY(gate.staged());
+    allowRetirement=true;
+    QVERIFY(gate.try_invalidate_for_m18());
+    QCOMPARE(retirementAttempts,std::size_t{4});
+    QVERIFY(!gate.staged());
+    gate.set_private_m18_mutation_admission({});
     gate.invalidate();
     QVERIFY(!gate.staged());
     // Even an invalid replacement request must withdraw a previously

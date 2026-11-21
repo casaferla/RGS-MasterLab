@@ -12,6 +12,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_module.hpp>
+#include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
 
 #include <algorithm>
 #include <array>
@@ -34,6 +35,7 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 constexpr auto kTruePeakLimiterTypeId = "rgsml.dsp.true-peak-limiter";
+constexpr auto kStreamingTruePeakTypeId = "rgsml.dsp.streaming-true-peak-limiter";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
@@ -614,7 +616,33 @@ rgsml::core::Result<RenderResult> render_preview(
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
             const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
             const bool is_stereo_ms = (instance.module_type_id() == kStereoMsTypeId);
-            const bool is_parameterized = is_gain || is_eq || is_compressor || is_stereo_ms;
+            const bool is_streaming_p2 = (instance.module_type_id() == kStreamingTruePeakTypeId);
+            const bool is_parameterized = is_gain || is_eq || is_compressor
+                || is_stereo_ms || is_streaming_p2;
+
+            if (!instance.active() && is_streaming_p2) {
+            const auto* binding = find_binding(request, instance.instance_id());
+            const auto* parameters = binding
+                ? std::get_if<rgsml::dsp::StreamingTruePeakLimiterParameters>(&binding->parameters)
+                : nullptr;
+            if (!parameters) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MISSING_P2_PARAMETER_BINDING",
+                    "Streaming True Peak Limiter must have an authentic typed P2 binding."));
+            }
+            signatures.push_back(ModuleExecutionSignature{
+                instance.instance_id(),
+                std::string{kStreamingTruePeakTypeId},
+                std::string{descriptor.value()->get().algorithm_version().value_or("0.1.0-preview")},
+                std::string{descriptor.value()->get().parameter_schema_id().value_or(
+                    "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0")},
+                ModuleExecutionDisposition::BYPASS_IDENTITY,
+                StreamingTruePeakLimiterExecutionSignaturePayload{
+                    parameters->ceiling_db_tp(),parameters->drive_db(),
+                    parameters->margin_percent()}});
+            continue;
+            }
 
             if (!instance.active()) {
                 if (is_parameterized) {
@@ -751,6 +779,28 @@ rgsml::core::Result<RenderResult> render_preview(
                 required.algorithmic_latency_frames.value(),
                 required.look_ahead_frames.value(),
                 required.effective_tail_frames.value()});
+
+
+            if (is_streaming_p2) {
+                const auto* parameters = binding
+                    ? std::get_if<rgsml::dsp::StreamingTruePeakLimiterParameters>(&binding->parameters)
+                    : nullptr;
+                if (!parameters) {
+                    return rgsml::core::Result<RenderResult>::failure(render_error(
+                        rgsml::core::ErrorCode::InvalidArgument,
+                        "MISSING_P2_PARAMETER_BINDING",
+                        "Active P2 lacks a typed source-bound parameter payload."));
+                }
+                signatures.push_back(ModuleExecutionSignature{
+                    instance.instance_id(),std::string{kStreamingTruePeakTypeId},
+                    std::string{descriptor.value()->get().algorithm_version().value_or("0.1.0-preview")},
+                    std::string{descriptor.value()->get().parameter_schema_id().value_or(
+                        "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0")},
+                    ModuleExecutionDisposition::PROCESSED,
+                    StreamingTruePeakLimiterExecutionSignaturePayload{
+                        parameters->ceiling_db_tp(),parameters->drive_db(),
+                        parameters->margin_percent()}});
+            }
 
             if (is_stereo_ms) {
                 const auto* parameters = std::get_if<rgsml::dsp::StereoMsParameters>(
@@ -1208,6 +1258,95 @@ rgsml::core::Result<RenderResult> render_preview(
             rgsml::core::ErrorCode::InvalidState,
             "RENDER_PREVIEW_FAILURE",
             "Render Preview contained an implementation failure at its public boundary."));
+    }
+}
+
+
+core::Result<RenderResult> render_preview_p2_cached_prefix(
+    const RenderRequest& full,
+    const RenderResult& prefix,
+    const dsp::ModuleRegistry& registry)
+{
+    using R = core::Result<RenderResult>;
+    const auto fail = []() -> R {
+        return R::failure(render_error(
+            core::ErrorCode::InvalidState,
+            "P2_INCREMENTAL_PREFIX_NOT_VERIFIED",
+            "Streaming P2 incremental render requires an exact owned "
+            "four-node full-programme prefix without upstream telemetry."));
+    };
+    try {
+        const auto instances = full.chain_instances();
+        const auto src = full.source();
+        const auto prior = prefix.view();
+        // Keep the first cache gate deliberately narrow: active Compressor
+        // or Stereo/M-S may carry latency, lookahead or source-bound M15/M14
+        // sidecars. Those configurations must render the full chain until
+        // their full telemetry rebase has independent qualification.
+        if (instances.size()!=5U || full.bindings().size()!=5U
+            || full.chain_context().stage!=dsp::ProcessingStage::MASTER
+            || full.chain_context().segment!=dsp::ChainSegment::MANUAL
+            || instances[0].module_type_id()!=kGainTypeId
+            || instances[1].module_type_id()!=kEqTypeId
+            || instances[2].module_type_id()!=kCompressorTypeId
+            || instances[3].module_type_id()!=kStereoMsTypeId
+            || instances[4].module_type_id()!=kStreamingTruePeakTypeId
+            || instances[2].active() || instances[3].active()
+            || src.absolute_range()!=full.render_window()
+            || prior.absolute_range()!=full.render_window()
+            || prior.format()!=src.format()
+            || prior.timebase().frame_domain_id()!=
+                audio::FrameDomainId::SOURCE_PROCESSING_RATE
+            || prefix.frame_domain_id()!=src.timebase().frame_domain_id()
+            || prefix.render_window()!=full.render_window()
+            || prefix.signatures().size()!=4U
+            || prefix.compressor_telemetry_sidecar()
+            || !prefix.stereo_ms_stage_output_sidecars().empty()
+            || full.realization_id()
+            || full.max_telemetry_bytes())
+            return fail();
+
+        for (std::size_t i=0;i<4U;++i) {
+            if (prefix.signatures()[i].instance_id!=instances[i].instance_id()
+                || prefix.signatures()[i].type_id!=instances[i].module_type_id())
+                return fail();
+        }
+        // These first four signatures were constructed by the canonical
+        // renderer from the exact upstream typed dependency key; the
+        // Product worker must pin that key to the immutable SOURCE owner.
+        std::vector<dsp::ModuleInstance> fifth{instances[4]};
+        auto suffixChain=dsp::ProcessingChain::restore(
+            registry,full.chain_context(),full.chain_revision(),std::move(fifth));
+        if(!suffixChain) return R::failure(*suffixChain.error());
+        const auto fifthBinding=std::find_if(
+            full.bindings().begin(),full.bindings().end(),
+            [&](const dsp::ModuleExecutionBinding& b) {
+                return b.instance_id==instances[4].instance_id();
+            });
+        if(fifthBinding==full.bindings().end())return fail();
+        auto suffixRequest=RenderRequest::create(
+            prior,full.render_window(),*suffixChain.value(),
+            {*fifthBinding},full.maximum_block_frames());
+        if(!suffixRequest)return R::failure(*suffixRequest.error());
+        auto suffix=render_preview(*suffixRequest.value(),registry);
+        if(!suffix)return suffix;
+        if(suffix.value()->signatures().size()!=1U
+            || suffix.value()->signatures()[0].instance_id
+                !=instances[4].instance_id()
+            || suffix.value()->compressor_telemetry_sidecar()
+            || !suffix.value()->stereo_ms_stage_output_sidecars().empty())
+            return fail();
+        std::vector<ModuleExecutionSignature> signatures=prefix.signatures();
+        signatures.push_back(suffix.value()->signatures()[0]);
+        return R::success(RenderResult{
+            std::move(suffix.value()->buffer_),
+            full.render_window(),src.timebase().frame_domain_id(),
+            full.chain_revision(),std::move(signatures)});
+    } catch (...) {
+        return R::failure(render_error(
+            core::ErrorCode::InvalidState,
+            "P2_INCREMENTAL_RENDER_EXCEPTION",
+            "P2 incremental render refused an invalid prefix or resource."));
     }
 }
 

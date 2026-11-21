@@ -124,7 +124,18 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
         return Result<TruePeakLimiterCheckedCandidate>::success({
             std::move(*rendered.value()),evidence});
 
-    const auto gain=std::nextafter(ceiling/before,0.0);
+    // The frozen M16 FIR is evaluated with binary64 multiply/add rounding.
+    // A trim aimed at exactly Ceiling can remeasure a few ULPs ABOVE it,
+    // even though both measurements were of the correct full-resource PCM.
+    // Give the existing SINGLE global verification trim a microscopic
+    // inward numerical guard (128 binary64 eps = ~2.84e-14 relative).
+    // This does NOT relax Ceiling or M16 remeasurement, introduce another
+    // trim, change the M17 DSP, or permit >0.10 dB verification gain.
+    // Genuine misses and invalid samples still fail closed as before.
+    constexpr double kTrimRoundoffSafety=
+        1.0-128.0*std::numeric_limits<double>::epsilon();
+    const auto gain=std::nextafter(
+        std::nextafter(ceiling/before,0.0)*kTrimRoundoffSafety,0.0);
     if(stage_timings)stage_timings->verification_trim_gain=gain;
     if(!allowed_gain(gain)) {
         if(nonconforming_out && !wasCancelled() && before>ceiling) {

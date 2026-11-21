@@ -28,13 +28,14 @@ Rectangle {
         if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
             return moduleAdapter.bypassSupported && moduleAdapter.bypass
                 ? "Bypass · " + state : state
-        if (state.startsWith("NEEDS PREPARATION")) return "Needs preparation"
+        if (state.startsWith("NEEDS PREPARATION")) return "Needs render"
         if (state.startsWith("READY")) return "Ready · Preview"
         if (state.startsWith("ERROR")) return "Error · Bypass"
         if (state.startsWith("ACTIVE")) return "Limiter active"
-        if (state.startsWith("Preparing ·")) return state
+        if (state.startsWith("Preparing ·"))
+            return "Rendering ·" + state.slice("Preparing ·".length)
         if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
-            return "Preparing audio"
+            return "Rendering Master"
         if (state.startsWith("BYPASS")) return "Meter · Bypass"
         return state
     }
@@ -49,11 +50,11 @@ Rectangle {
             return moduleAdapter.bypassSupported && moduleAdapter.bypass
                 ? "Processing bypassed · " + state : state
         if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
-            return state + " · Elapsed preparation time, not a countdown. "
+            return "Rendering Master · Elapsed render time, not a countdown. "
                 + "The current Meter still observes MANUAL PROCESSED audio; "
                 + "Ceiling is not yet applied to what you hear."
         if (state.startsWith("ACTIVE"))
-            return state + " · Limiter output installed. Live True Peak "
+            return state + " · Limiter output installed. Live TP "
                 + "comes from verified post-limiter audio when available."
         if (state.startsWith("BYPASS"))
             return state + " · Meter observes MANUAL PROCESSED audio; "
@@ -73,6 +74,10 @@ Rectangle {
         case "STEREO_MS": return "module-stereo"
         case "TRUE_PEAK_METER": return "module-peak-meter"
         case "TRUE_PEAK_LIMITER": return "module-limiter"
+        case "STREAMING_TRUE_PEAK_LIMITER": return "module-streaming-true-peak-limiter"
+        case "M19_ANALYSIS": return "analysis-levels"
+        case "M20_ANALYSIS": return "analysis-spectrum"
+        case "M21_ANALYSIS": return "analysis-delta"
         case "MASTER_MONITOR": return "module-headphones"
         default: return ""
         }
@@ -85,7 +90,8 @@ Rectangle {
         // title colors stay unchanged; only their pictograms use family hues.
         if(moduleAdapter.editorContentKey === "TRUE_PEAK_METER")
             return "#6683A1"  // ANALYSIS / METERING
-        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER")
+        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER"
+            || moduleAdapter.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER")
             return "#C4774A"  // DYNAMICS
         if(moduleAdapter.editorContentKey === "MASTER_MONITOR")
             return "#718092"  // WORKFLOW / UTILITY
@@ -311,6 +317,7 @@ Rectangle {
                         // One symbol REPLACES the previous configuration LED.
                         // Fixed 16px glyph slot, no extra 8px dot to its right.
                         // Family hue stays constant: DIM = Default, BRIGHT = Manual.
+                        // Extra glow intensity is drawn by each glyph renderer.
                         // Bypass separately mutes the ROW while retaining the
                         // true Default/Manual semantic and stable coordinates.
                         StudioIcon {
@@ -324,24 +331,34 @@ Rectangle {
                             Layout.maximumHeight: 16
                             kind: root.moduleIconKind(rowItem.moduleAdapter)
                             strokeWidth: rowItem.permanentlyLit || !rowItem.isDefaultState
-                                ? 2.1 : 1.65
+                                ? 2.3 : 1.65
                             strokeColor: root.moduleIconColor(rowItem.moduleAdapter)
                             // Approved LED semantics: Manual=lit, Default=dim.
                             // Analysis/service modules stay lit unless bypassed.
                             // Bypass dims the separate row and extinguishes halo.
                             glowEnabled: (rowItem.permanentlyLit
                                 || !rowItem.isDefaultState) && !rowItem.isBypassed
+                            // M19/M20/M21 now render directly in this
+                            // SAME StudioIcon Canvas as the TP Meter:
+                            // one glyph, one phosphor engine, one LED state.
                             opacity: (rowItem.permanentlyLit ? 1.0
                                 : rowItem.isDefaultState ? 0.58 : 1.0)
                                 * (rowItem.isBypassed ? 0.7 : 1.0)
+                            // M16/M19/M20/M21 are permanent observers.
+                            // A read-only service must NEVER claim Manual
+                            // settings just because it has no Default state.
                             Accessible.name: rowItem.moduleAdapter
                                 ? rowItem.moduleAdapter.displayName + " · "
-                                    + (rowItem.isDefaultState ? "Default" : "Manual")
+                                    + (rowItem.permanentlyLit
+                                        ? "Always on · Read-only"
+                                        : rowItem.isDefaultState ? "Default" : "Manual")
                                 : "Module icon"
                             ToolTip.text: rowItem.moduleAdapter
                                 ? rowItem.moduleAdapter.displayName + " · "
-                                    + (rowItem.isDefaultState
-                                        ? "Default settings" : "Manual non-default settings")
+                                    + (rowItem.permanentlyLit
+                                        ? "Always on · Read-only analysis / service"
+                                        : rowItem.isDefaultState
+                                            ? "Default settings" : "Manual non-default settings")
                                     + (rowItem.isBypassed ? " · Bypassed" : "")
                                 : "Module"
                             ToolTip.visible: moduleSymbolHover.hovered && moduleSymbolTooltipDwell.ready
@@ -353,16 +370,22 @@ Rectangle {
                             }
                         }
 
-                        ColumnLayout {
+                        // The shared 52 px chain row owns two independent text
+                        // tracks. Status may wrap to two lines without shifting
+                        // the module title: this rule applies to EVERY module.
+                        Item {
                             Layout.fillWidth: true
+                            Layout.fillHeight: true
                             Layout.minimumWidth: 0
-                            spacing: 2
 
                             Text {
                                 objectName: "dspChainModuleTitle_" + rowItem.modelIndex
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.alignment: Qt.AlignLeft
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                // Stable top baseline: independent from the
+                                // status track even when that track wraps.
+                                y: 8
+                                height: 16
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
                                 color: rowItem.isBypassed ? "#9FB1BF"
                                     : rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
@@ -370,23 +393,32 @@ Rectangle {
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
                                 elide: Text.ElideRight
+                                wrapMode: Text.NoWrap
+                                verticalAlignment: Text.AlignVCenter
                             }
 
                             Text {
                                 objectName: "dspChainStateText_" + rowItem.modelIndex
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.alignment: Qt.AlignLeft
-                                // Never show an ellipsis in the chain state.
-                                // A concise human label fits the canonical
-                                // 164px column; diagnostics remain discoverable.
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                // The former 21px well clipped the second
+                                // line of Streaming TP Limiter. Keep 52px rows:
+                                // title [8,24], status [25,51], 1px bottom.
+                                y: 25
+                                height: 26
+                                // TWO rendered lines fit at 9px without
+                                // forcing the title down or touching another
+                                // tile. Long diagnostics remain in Tooltip.
                                 wrapMode: Text.WordWrap
                                 elide: Text.ElideNone
+                                maximumLineCount: 2
+                                clip: true
                                 text: root.readableState(rowItem.moduleAdapter)
                                 color: rowItem.isBypassed ? "#8196A8" : "#7A8E9E"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
-                                visible: true
+                                lineHeight: 1.0
+                                verticalAlignment: Text.AlignTop
                                 ToolTip.text: root.stateHint(rowItem.moduleAdapter)
                                 ToolTip.visible: chainStateTooltipDwell.ready
                                 ToolTip.delay: 0
@@ -399,7 +431,7 @@ Rectangle {
                             }
                         }
 
-                        // Error indicator reserves its slot even when hidden.
+                                                // Error indicator reserves its slot even when hidden.
                         // FIX-UI-003: state/badge changes cannot move the title.
                         Item {
                             Layout.minimumWidth: 8

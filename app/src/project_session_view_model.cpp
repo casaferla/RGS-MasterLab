@@ -20,6 +20,7 @@
 #include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 #include <QUuid>
 
 #include <algorithm>
@@ -29,6 +30,19 @@
 
 namespace rgsml::app {
 namespace {
+
+// Only the Qt owner enters a Product-gated Project operation. The local
+// scope rejects nested Open/Save commands (including reentrant signals)
+// without blocking the event loop or leaking a held Product epoch.
+struct M18ScopedProjectOperation final {
+    explicit M18ScopedProjectOperation(bool* active) noexcept
+        :active_(active) {if(active_)*active_=true;}
+    M18ScopedProjectOperation(const M18ScopedProjectOperation&)=delete;
+    M18ScopedProjectOperation& operator=(const M18ScopedProjectOperation&)=delete;
+    ~M18ScopedProjectOperation() {if(active_)*active_=false;}
+private:
+    bool* active_;
+};
 
 [[nodiscard]] core::Error invalid(std::string_view field)
 {
@@ -112,7 +126,7 @@ namespace {
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
         doc.history.canonical_utf8() != "[]" ||
         doc.extensions.canonical_utf8() != "{}" ||
-        doc.timeSelections.auditionRegions.size() > 1U) {
+        doc.timeSelections.auditionRegions.size() > 2U) {
         return true;
     }
 
@@ -181,10 +195,10 @@ struct MasteringChainCandidate final {
     }
 
     if (chain.modules.size() != 2U && chain.modules.size() != 3U
-        && chain.modules.size() != 4U) {
+        && chain.modules.size() != 4U && chain.modules.size() != 5U) {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Supported mastering chain must contain 2, 3, or 4 modules",
+            "Supported mastering chain must contain 2/3/4 legacy modules or 5 with typed P2",
             {{"moduleCount", std::to_string(chain.modules.size())}}});
     }
 
@@ -342,8 +356,8 @@ struct MasteringChainCandidate final {
         *gainInst.value(), *eqInst.value(), *compInst.value()};
     std::optional<dsp::ModuleInstanceId> stereoMsId;
     std::optional<dsp::StereoMsParameters> decodedStereoMs;
-    if (chain.modules.size() == 4U) {
-        // A four-node document is supported ONLY with an exact typed
+    if (chain.modules.size() >= 4U) {
+        // A four/five-node document requires an exact typed
         // fourth Stereo/M-S node. Never silently drop or default its fields.
         const auto& ms = chain.modules[3];
         if (ms.typeId != "rgsml.dsp.stereo-ms") {
@@ -380,6 +394,52 @@ struct MasteringChainCandidate final {
         restoredModules.push_back(std::move(*msInstance.value()));
     }
 
+    // Additive opt-in P2 fifth module; no schema change to historical 2/3/4.
+    // All fields must pass preflight before changing SOURCE, audio or chain.
+    std::optional<dsp::ModuleInstanceId> p2Id;
+    std::optional<dsp::StreamingTruePeakLimiterParameters> decodedP2;
+    if (chain.modules.size() == 5U) {
+        const auto& p2 = chain.modules[4];
+        constexpr std::string_view kP2Type{"rgsml.dsp.streaming-true-peak-limiter"};
+        if (p2.typeId != kP2Type) {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module 4 must be the exact opt-in Streaming P2 type",
+                {{"typeId", p2.typeId}}});
+        }
+        const auto metadata = validate_module_metadata(p2,kP2Type);
+        if (!metadata) return core::Result<MasteringChainCandidate>::failure(
+            *metadata.error());
+        if (!registry.has_factory(kP2Type)) {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "P2 project requires explicitly installed I2 registry"});
+        }
+        auto decoded = dsp::decode_streaming_true_peak_limiter_parameters_json(
+            p2.parameters.canonical_utf8());
+        if (!decoded) return core::Result<MasteringChainCandidate>::failure(
+            *decoded.error());
+        p2Id = *dsp::ModuleInstanceId::from_uuid(p2.instanceId).value();
+        decodedP2 = *decoded.value();
+        dsp::ModuleInstanceSpec p2Spec{
+            .instance_id = *p2Id,
+            .module_type_id = p2.typeId,
+            .enabled = p2.enabled,
+            .user_bypass = p2.userBypass,
+            .controller_suspended = p2.controllerSuspended,
+            .domain_suspended = p2.domainSuspended,
+            .provenance = dsp::ModuleProvenance::MANUAL,
+            .owner = dsp::ModuleOwner::USER,
+            .link_state = dsp::ModuleLinkState::UNLINKED,
+            .semantic_node_id = std::nullopt,
+            .parameter_state = dsp::ModuleParameterState{}
+        };
+        auto p2Instance = dsp::ModuleInstance::create(std::move(p2Spec));
+        if (!p2Instance) return core::Result<MasteringChainCandidate>::failure(
+            *p2Instance.error());
+        restoredModules.push_back(std::move(*p2Instance.value()));
+    }
+
     auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
     auto chainRes = dsp::ProcessingChain::restore(*regPtr,
         {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL},
@@ -396,7 +456,9 @@ struct MasteringChainCandidate final {
         compInstanceId,
         decodedComp,
         std::move(stereoMsId),
-        std::move(decodedStereoMs));
+        std::move(decodedStereoMs),
+        std::move(p2Id),
+        std::move(decodedP2));
     if (!stateRes) return core::Result<MasteringChainCandidate>::failure(*stateRes.error());
 
     return core::Result<MasteringChainCandidate>::success(
@@ -449,8 +511,21 @@ ProjectSessionViewModel::ProjectSessionViewModel(
             this, &ProjectSessionViewModel::on_region_changed);
 }
 
+void ProjectSessionViewModel::set_reference_region_view_model(
+    AuditionRegionViewModel* region)
+{
+    if(!region ||referenceRegion_ ||QThread::currentThread()!=thread()
+       ||m18ProjectOperationActive_||isCommittingProjectOpen_)return;
+    referenceRegion_=region;
+    connect(referenceRegion_,&AuditionRegionViewModel::changed,
+            this,&ProjectSessionViewModel::on_reference_region_changed);
+}
+
 bool ProjectSessionViewModel::can_save_project() const noexcept
 {
+    // The I2 fifth MANUAL module now has a distinct typed JSON codec and
+    // opt-in restore path. SaveAs preflights the exact complete chain before
+    // any on-disk project publication; legacy sessions remain unchanged.
     return source_ && source_->source_resource();
 }
 
@@ -469,6 +544,25 @@ void ProjectSessionViewModel::clear_error()
     emit changed();
 }
 
+bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
+{
+    // A format change is an OUTPUT preference, not permission to write
+    // a file or to reuse an old M17 MASTER. Keep uint64 seed entirely
+    // in native C++; QML never conveys it as an imprecise JS Number.
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_
+       ||(index!=0 &&index!=1))return false;
+    project::M18MasterWavPreference next{
+        index==0?project::M18MasterWavEncoding::PCM24_TPDF
+                :project::M18MasterWavEncoding::IEEE_FLOAT32,
+        index==0
+            ?std::optional<std::uint64_t>{m18_pcm24_seed()}
+            :std::nullopt};
+    if(m18OutputPreference_&&*m18OutputPreference_==next)return true;
+    m18OutputPreference_=next;
+    emit changed();
+    return true;
+}
+
 void ProjectSessionViewModel::on_source_changed()
 {
     const auto* source = source_->source_resource();
@@ -481,10 +575,14 @@ void ProjectSessionViewModel::on_source_changed()
 void ProjectSessionViewModel::on_gold_changed()
 {
     const auto* gold = gold_->gold_resource();
-    if (!gold) { goldId_.reset(); referenceId_.reset(); lastGold_.reset(); }
+    if (!gold) {
+        goldId_.reset(); referenceId_.reset();
+        referenceRegionId_.reset(); lastGold_.reset();
+    }
     else {
         if (lastGold_ && !lastGold_->same_resource_identity(gold->reference())) {
             goldId_.reset(); referenceId_.reset();
+            referenceRegionId_.reset();
         }
         lastGold_ = gold->reference();
     }
@@ -497,6 +595,13 @@ void ProjectSessionViewModel::on_region_changed()
         clearedRegionId_ = regionId_;
         regionId_.reset();
     }
+    emit changed();
+}
+
+void ProjectSessionViewModel::on_reference_region_changed()
+{
+    if(referenceRegion_ &&!referenceRegion_->region())
+        referenceRegionId_.reset();
     emit changed();
 }
 
@@ -555,10 +660,26 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
             doc.timeSelections.auditionRegions.end(),
             [this](const project::AuditionRegion& item) { return item.regionId == *regionId_; });
         project::AuditionRegion value{*regionId_, *sourceId_, "SOURCE",
-            region->begin().value(), region->end().value()};
+            region->begin().value(), region->end().value(),
+            region_->loop_enabled()};
         if (found == doc.timeSelections.auditionRegions.end())
             doc.timeSelections.auditionRegions.push_back(std::move(value));
         else *found = std::move(value);
+    }
+
+    // REFERENCE is a distinct original file and frame clock. No recorded
+    // REFERENCE interval may survive a removed/replaced reference resource.
+    std::erase_if(doc.timeSelections.auditionRegions,
+        [](const project::AuditionRegion& item) {
+            return item.frameDomain=="REFERENCE";
+        });
+    if(gold &&goldId_ &&referenceRegion_ &&referenceRegion_->region()) {
+        const auto refRange=*referenceRegion_->region();
+        if(!referenceRegionId_)referenceRegionId_=next_id();
+        doc.timeSelections.auditionRegions.push_back({
+            *referenceRegionId_,*goldId_,"REFERENCE",
+            refRange.begin().value(),refRange.end().value(),
+            referenceRegion_->loop_enabled()});
     }
 
     if (masteringChainState_ && (!opened_ || sessionChainMaterialized_)) {
@@ -613,7 +734,9 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                     {{"typeId", std::string(typeId)}}});
             }
 
-            constexpr std::string_view expectedAlgorithmVersion{"1.0.0"};
+            const std::string_view expectedAlgorithmVersion =
+                typeId == "rgsml.dsp.streaming-true-peak-limiter"
+                    ? std::string_view{"0.1.0-preview"} : std::string_view{"1.0.0"};
             if (!desc.algorithm_version() || *desc.algorithm_version() != expectedAlgorithmVersion) {
                 return core::Result<project::Module>::failure(core::Error{
                     core::ErrorCode::InvalidArgument,
@@ -700,6 +823,28 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                 "Stereo/M-S parameters exist without a module instance"});
         }
 
+        // Persist P2 only when the actual Product chain has the fifth
+        // typed, executable MANUAL instance. Never serialize a decorative
+        // editor or silently drop opt-in DSP audio from a saved Project.
+        const auto& p2Id = masteringChainState_->streaming_p2_preview_instance_id();
+        const auto& p2Params = masteringChainState_->streaming_p2_preview_parameters();
+        if (p2Id || p2Params) {
+            if (!p2Id || !p2Params ||
+                !masteringChainState_->stereo_ms_instance_id() ||
+                masteringChainState_->module_count()!=5U) {
+                return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "Streaming P2 project state requires complete fifth-module identity"});
+            }
+            auto p2 = serialize_module("rgsml.dsp.streaming-true-peak-limiter",
+                "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0",
+                masteringChainState_->chain().find_instance(*p2Id),
+                dsp::encode_streaming_true_peak_limiter_parameters_json(*p2Params));
+            if (!p2) return core::Result<project::ProjectSnapshot>::failure(
+                *p2.error());
+            masteringChain.modules.push_back(std::move(*p2.value()));
+        }
+
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
             [chainId](const project::Chain& c) { return c.chainId == chainId; });
         if (chainIt == doc.chains.end()) {
@@ -724,11 +869,113 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                     invalid("output.targetMasterOutputRateHz/source"));
         }
     }
+    // User-chosen M18 WAV settings are a canonical Project OUTPUT
+    // preference, not proof of a completed WAV delivery. Legacy projects
+    // without an explicit choice remain unchanged on ordinary SaveAs.
+    if(m18OutputPreference_) {
+        auto updated=project::M18MasterWavPreferenceCodec::with_choice(
+            doc.output,*m18OutputPreference_);
+        if(!updated)
+            return core::Result<project::ProjectSnapshot>::failure(
+                *updated.error());
+        doc.output=std::move(*updated.value());
+    }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
+}
+
+core::Status ProjectSessionViewModel::admit_m18_project_mutation(
+    const char* operation) const
+{
+    if(!m18ProjectMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    try{return m18ProjectMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_PROJECT_MUTATION_ADMISSION_THROWN"});}
+}
+
+core::Result<std::shared_ptr<const void>>
+ProjectSessionViewModel::begin_m18_project_save() const
+{
+    using R=core::Result<std::shared_ptr<const void>>;
+    // The future Product must keep a real exclusive epoch through the
+    // entire .rgsml publication, not just grant a one-shot status.
+    if(m18ProjectSaveBatchBegin_) {
+        if(m18ProjectSaveAdmission_||m18ProjectMutationAdmission_)
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_ADMISSION_AMBIGUOUS"});
+        if(QThread::currentThread()!=thread())
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_WRONG_OWNER_THREAD"});
+        try {
+            auto lease=m18ProjectSaveBatchBegin_();
+            if(!lease)return lease;
+            if(!*lease.value())
+                return R::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PROJECT_SAVE_BATCH_NO_EXCLUSIVE_LEASE"});
+            return lease;
+        }catch(...){
+            return R::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_BATCH_ADMISSION_THROWN"});
+        }
+    }
+    // Installing a Product batch for Open forbids status-only SaveAs:
+    // the worker might commit after admission but before SaveAs finishes.
+    if(m18ProjectOpenBatchBegin_)
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_REQUIRES_EXCLUSIVE_BATCH"});
+    if(m18ProjectSaveAdmission_ &&m18ProjectMutationAdmission_)
+        return R::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_ADMISSION_MODES_AMBIGUOUS"});
+    const auto admit=[&]()->core::Status {
+        if(!m18ProjectSaveAdmission_)
+            return admit_m18_project_mutation("save_project_as");
+        if(QThread::currentThread()!=thread())
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_SAVE_REQUIRES_QT_OWNER_THREAD"});
+        try{return m18ProjectSaveAdmission_("save_project_as");}
+        catch(...){return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_SAVE_ADMISSION_THROWN"});}
+    }();
+    if(!admit)return R::failure(*admit.error());
+    // No M18 Product registration is installed today. Legacy M17 stays
+    // unchanged; this empty token is never permission for async export.
+    return R::success(std::shared_ptr<const void>{});
 }
 
 void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 {
+    // With any M18 Product policy, even invalid-file diagnostics must
+    // remain on the owning Qt thread. Never probe disk or emit errors
+    // from a foreign worker before an eventual epoch admission.
+    const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
+        ||m18ProjectMutationAdmission_||m18ProjectSaveAdmission_
+        ||m18ProjectSaveBatchBegin_);
+    if(m18Guarded &&QThread::currentThread()!=thread())return;
+    if(m18Guarded &&m18ProjectOperationActive_)return;
+    M18ScopedProjectOperation singleWriter{
+        m18Guarded?&m18ProjectOperationActive_:nullptr};
+    Q_UNUSED(singleWriter);
+    // A Product that installed only the SaveAs epoch cannot permit an
+    // unguarded Open Project to retire SOURCE/MASTER during M18 export.
+    if((m18ProjectSaveAdmission_||m18ProjectSaveBatchBegin_)
+       &&!m18ProjectOpenBatchBegin_&&!m18ProjectMutationAdmission_) {
+        publish_error(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PROJECT_OPEN_REQUIRES_OWN_MUTATION_ADMISSION"});
+        return;
+    }
     auto reference = read_reference(selectedFile);
     if (!reference) { publish_error(*reference.error()); return; }
     auto reader = platform::windows::WindowsResourceReader::open_read_only(*reference.value());
@@ -739,6 +986,10 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Fail-closed preflight before transport/Source/chain mutation.
     auto rate = project::MasterOutputRatePreference::read(doc.output);
     if (!rate) { publish_error(*rate.error()); return; }
+    // A malformed or partially persisted M18 format/seed is a Project
+    // preflight error, BEFORE any source, playback or DSP mutation.
+    auto m18Choice=project::M18MasterWavPreferenceCodec::read(doc.output);
+    if(!m18Choice) {publish_error(*m18Choice.error());return;}
     auto sourceRef = external_reference(doc, doc.sourceResourceId);
     if (!sourceRef) { publish_error(*sourceRef.error()); return; }
     auto sourceCandidate = probe(*sourceRef.value());
@@ -768,26 +1019,98 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         goldCandidate.emplace(std::move(*candidate.value()));
     }
     std::optional<core::FrameRange> regionCandidate;
+    std::optional<core::FrameRange> referenceRegionCandidate;
+    bool sourceLoop=false;
+    bool referenceLoop=false;
+    std::optional<core::Uuid> persistedSourceRegionId;
+    std::optional<core::Uuid> persistedReferenceRegionId;
+    // Resolve BOTH frame domains before the first destructive source or
+    // Product epoch mutation. Wrong clock, reference or missing controller
+    // rejects the entire open without touching the prior session.
     for (const auto& persisted : doc.timeSelections.auditionRegions) {
-        if (persisted.resourceId != doc.sourceResourceId ||
-            persisted.endFrameExclusive >
-                sourceCandidate.value()->wav_info().frame_count().value()) {
-            publish_error(invalid("timeSelections.auditionRegions")); return;
-        }
-    }
-    if (!doc.timeSelections.auditionRegions.empty()) {
-        const auto& persisted = doc.timeSelections.auditionRegions.front();
-        auto range = core::FrameRange::create(core::FrameIndex{persisted.startFrame},
+        const auto range = core::FrameRange::create(
+            core::FrameIndex{persisted.startFrame},
             core::FrameIndex{persisted.endFrameExclusive});
-        if (!range) { publish_error(*range.error()); return; }
-        regionCandidate = *range.value();
+        if(!range) {publish_error(*range.error());return;}
+        if(persisted.frameDomain=="SOURCE") {
+            if(persisted.resourceId!=doc.sourceResourceId
+               ||persisted.endFrameExclusive>
+                   sourceCandidate.value()->wav_info().frame_count().value()) {
+                publish_error(invalid("timeSelections.auditionRegions"));return;
+            }
+            regionCandidate=*range.value();
+            persistedSourceRegionId=persisted.regionId;
+            sourceLoop=persisted.loopEnabled;
+        } else if(persisted.frameDomain=="REFERENCE") {
+            if(!referenceRegion_ ||!goldCandidate ||!goldResourceId
+               ||persisted.resourceId!=*goldResourceId
+               ||persisted.endFrameExclusive>
+                   goldCandidate->wav_info().frame_count().value()) {
+                publish_error(invalid("timeSelections.auditionRegions"));return;
+            }
+            referenceRegionCandidate=*range.value();
+            persistedReferenceRegionId=persisted.regionId;
+            referenceLoop=persisted.loopEnabled;
+        } else {publish_error(invalid("timeSelections.auditionRegions"));return;}
     }
 
     auto registryRes = dsp::ModuleRegistry::create_dsp_package_v1();
     if (!registryRes) { publish_error(*registryRes.error()); return; }
-    auto chainCandidate = validate_mastering_chain(doc, *registryRes.value(), uuidFactory_);
+    // A saved P2 project can be opened only in an explicitly opted-in I2
+    // session. The original v1 registry never silently admits P2.
+    const dsp::ModuleRegistry* restoreRegistry = &*registryRes.value();
+    if (masteringChainState_ &&
+        masteringChainState_->streaming_p2_preview_instance_id()) {
+        const auto optInRegistry = masteringChainState_->registry_snapshot();
+        if (!optInRegistry ||
+            !optInRegistry->has_factory("rgsml.dsp.streaming-true-peak-limiter")) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "P2 restore requires the active opt-in Product registry"});
+            return;
+        }
+        restoreRegistry = optInRegistry.get();
+    }
+    auto chainCandidate = validate_mastering_chain(doc, *restoreRegistry, uuidFactory_);
     if (!chainCandidate) { publish_error(*chainCandidate.error()); return; }
 
+    // Source/Gold/MASTER/chain/project identity all change below this
+    // boundary. Product epoch admission must happen BEFORE stopping any
+    // current sink or adopting the newly opened Project.
+    // If a future Product supplies a genuine cross-controller batch,
+    // keep its RAII owner through ALL the source/rate/Gold/chain writes,
+    // including early error returns. A worker must not acquire commit
+    // authority halfway through the Project replacement.
+    std::shared_ptr<const void> projectMutationBatch;
+    if(m18ProjectOpenBatchBegin_) {
+        if(m18ProjectMutationAdmission_
+           ||QThread::currentThread()!=thread()) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_BATCH_AMBIGUOUS_OR_WRONG_OWNER_THREAD"});
+            return;
+        }
+        try {
+            auto token=m18ProjectOpenBatchBegin_();
+            if(!token) {publish_error(*token.error());return;}
+            if(!*token.value()) {
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_PROJECT_BATCH_MISSING_EXCLUSIVE_LEASE"});
+                return;
+            }
+            projectMutationBatch=std::move(*token.value());
+        } catch(...) {
+            publish_error(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_PROJECT_BATCH_ADMISSION_THROWN"});
+            return;
+        }
+    } else {
+        const auto admission=admit_m18_project_mutation("open_project");
+        if(!admission) {publish_error(*admission.error());return;}
+    }
+    Q_UNUSED(projectMutationBatch); // RAII lifetime extends to function exit.
     isCommittingProjectOpen_ = true;
 
     auto stopped = playback_->stop_and_clear();
@@ -797,17 +1120,51 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         return;
     }
 
-    source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    const auto adoptedSource=
+        source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    if(!adoptedSource) {
+        isCommittingProjectOpen_=false;
+        publish_error(*adoptedSource.error());
+        return;
+    }
     if (masterOutputRateState_) {
         // The production SOURCE callback reset the authority on commit.
         // Standalone ProjectSession clients may have no such callback.
-        if (masterOutputRateState_->source_rate_hz() != source_->sample_rate_hz())
-            masterOutputRateState_->source_committed(source_->sample_rate_hz());
+        if (masterOutputRateState_->source_rate_hz()
+            !=source_->sample_rate_hz()) {
+            // The old void SOURCE-rate setter deliberately fails closed
+            // once M18 admission is installed. Project Open already owns
+            // the shared exclusive mutation batch, so use the explicit
+            // status-bearing child API, never bypass the Product epoch.
+            const bool committed=
+                masterOutputRateState_->m18_rate_mutation_admission_installed()
+                ?masterOutputRateState_->try_source_committed_for_m18(
+                    source_->sample_rate_hz())
+                :(masterOutputRateState_->source_committed(
+                    source_->sample_rate_hz()),true);
+            if(!committed) {
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "PROJECT_SOURCE_RATE_EPOCH_MUTATION_REFUSED"});
+                return;
+            }
+        }
         if (rate.value()->has_value()) {
             const bool accepted = masterOutputRateState_->choose_master_rate(
                 rate.value()->value());
-            Q_ASSERT(accepted);
-            Q_UNUSED(accepted);
+            // M18 Product epoch admission is allowed to refuse the
+            // requested MASTER rate while a worker owns a commit lease.
+            // Never assert/crash in a debug build or silently continue a
+            // partially restored Project in a release build. The outer
+            // Project batch remains consent-revoked on every error path.
+            if(!accepted) {
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "PROJECT_MASTER_RATE_MUTATION_REFUSED"});
+                return;
+            }
         }
     }
     if (goldCandidate) {
@@ -828,10 +1185,34 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             publish_error(*accepted.error());
             return;
         }
+        accepted=region_->restore_project_loop_preference(sourceLoop);
+        if(!accepted) {
+            isCommittingProjectOpen_=false;
+            publish_error(*accepted.error());
+            return;
+        }
+    }
+    if(referenceRegionCandidate) {
+        auto accepted=referenceRegion_->set_region(*referenceRegionCandidate);
+        if(!accepted) {
+            isCommittingProjectOpen_=false;
+            publish_error(*accepted.error());
+            return;
+        }
+        accepted=referenceRegion_->restore_project_loop_preference(referenceLoop);
+        if(!accepted) {
+            isCommittingProjectOpen_=false;
+            publish_error(*accepted.error());
+            return;
+        }
     }
 
     if (masteringChainState_ && chainCandidate.value()->chainState) {
-        *masteringChainState_ = std::move(*chainCandidate.value()->chainState);
+        // This Project open was pre-admitted before all destructive changes.
+        // Retain the Product's M18 epoch gate; ordinary assignment would
+        // silently erase it with the newly deserialized chain snapshot.
+        masteringChainState_->adopt_chain_after_authorized_project_open(
+            std::move(*chainCandidate.value()->chainState));
     }
 
     if (adapterModel_) {
@@ -853,11 +1234,13 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     const auto persistedProjectId = doc.projectId;
     const auto persistedSourceId = doc.sourceResourceId;
     const auto persistedReferenceId = doc.references.activeReferenceId;
-    const auto persistedRegionId = doc.timeSelections.auditionRegions.empty() ?
-        std::optional<core::Uuid>{} :
-        std::optional<core::Uuid>{doc.timeSelections.auditionRegions.front().regionId};
+    // Exact IDs are captured by frame domain, not vector order.
+    const auto persistedRegionId=persistedSourceRegionId;
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
+    // Publish the validated WAV preference only after the entire
+    // Project/source/chain commit succeeded under the M18 physical lease.
+    m18OutputPreference_=std::move(*m18Choice.value());
     opened_.emplace(std::move(*opened.value()));
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
@@ -865,6 +1248,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     referenceId_ = persistedReferenceId;
     goldId_ = goldResourceId;
     regionId_ = persistedRegionId;
+    referenceRegionId_=persistedReferenceRegionId;
     clearedRegionId_.reset();
     lastSource_ = source_->source_resource()->reference();
     lastGold_ = gold_->gold_resource() ?
@@ -879,10 +1263,30 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
 {
+    const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
+        ||m18ProjectMutationAdmission_||m18ProjectSaveAdmission_
+        ||m18ProjectSaveBatchBegin_);
+    if(m18Guarded &&QThread::currentThread()!=thread())return;
+    if(m18Guarded &&m18ProjectOperationActive_)return;
+    M18ScopedProjectOperation singleWriter{
+        m18Guarded?&m18ProjectOperationActive_:nullptr};
+    Q_UNUSED(singleWriter);
+    // The fifth P2 DSP is now serialized by current_snapshot with strict
+    // typed algorithm/schema identity, under the existing M18 SaveAs batch.
+    // A malformed, absent or incoherent P2 module fails before file creation.
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
     }
+    // Before reading even the draft Project snapshot, refuse an M18
+    // worker-owned epoch. This also covers an Open-batch-only policy,
+    // which otherwise could allow an unguarded Project SaveAs.
+    auto saveBatch=begin_m18_project_save();
+    if(!saveBatch) {publish_error(*saveBatch.error());return;}
+    // The opaque Product lease remains alive across physical output write,
+    // checksum/readback and final in-memory Project metadata publication.
+    std::shared_ptr<const void> heldSaveBatch=std::move(*saveBatch.value());
+    Q_UNUSED(heldSaveBatch);
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }

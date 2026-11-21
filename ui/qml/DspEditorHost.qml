@@ -15,6 +15,7 @@ Rectangle {
     property var eqViewModel: null
     property var compressorViewModel: null
     property var spectrumViewModel: null
+    property var analysisStatusViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
@@ -58,6 +59,38 @@ Rectangle {
     // Main owns any RAM-caution consent dialog. The editor is a consumer,
     // not a second private-MASTER authority.
     property var masterListeningHandler: null
+    // M18 export is a Main-owned Product action. The editor may request an
+    // encoding, but cannot grant consent, choose a path or publish the WAV.
+    property var masterExportModel: null
+    property var masterExportHandler: null
+    // Informative click affordance; final consent remains in native M18.
+    property bool masterExportAutoReturnAvailable: false
+    property int masterExportFormatIndex: 0
+    // A result is retained by the native M18 transaction until explicit ACK.
+    // Track one actual active worker to reveal the inline receipt after it
+    // finishes, without opening any separate modal window.
+    property bool m18SawActiveExport: false
+    readonly property bool m18ReceiptReady: root.masterExportModel
+        && root.masterExportModel.canAcknowledge
+    readonly property bool m18ExportFailed: root.masterExportModel
+        && root.masterExportModel.errorText.length > 0
+    readonly property bool canExportVerifiedWav: root.isLimiterEditor
+        && !!root.masterExportModel && root.masterExportModel.canExport
+    readonly property bool m18ExportActive: root.isLimiterEditor
+        && !!root.masterExportModel && root.masterExportModel.exportInProgress
+    Connections {
+        target: root.masterExportModel
+        function onChanged() {
+            const model = root.masterExportModel
+            if (!model || !root.isLimiterEditor) return
+            if (model.exportInProgress) {
+                root.m18SawActiveExport = true
+            } else if (root.m18SawActiveExport && model.canAcknowledge) {
+                root.m18SawActiveExport = false
+                rateTimePopup.open()
+            }
+        }
+    }
     readonly property bool canListenPreparedMaster: root.isLimiterEditor
         && !root.monitorExclusive && !!root.terminalMonitorViewModel
         && root.terminalMonitorViewModel.canInstall
@@ -77,14 +110,27 @@ Rectangle {
     readonly property bool m17Preparing: root.terminalLimiterViewModel
         && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
             || root.terminalLimiterViewModel.nonconformingDevicePreparing)
+    // Presentation-only vocabulary. Native M17 state-machine strings,
+    // preparation* API names, readiness guards and the PREPARED audition
+    // identity remain unchanged. Prepare never means the M17 Master action.
+    function m17RenderCopy(value) {
+        if (value === null || value === undefined) return ""
+        return String(value)
+            .replace(/\bNEEDS PREPARATION\b/g, "NEEDS RENDER")
+            .replace(/\bPREPARATION\b/g, "RENDERING")
+            .replace(/\bPreparing\b/g, "Rendering")
+            .replace(/\bpreparation\b/g, "rendering")
+            .replace(/\bPrepare\b/g, "Render")
+    }
     function rateLabel(hz) {
         if (!hz || hz <= 0) return "—"
         return (hz / 1000).toFixed(1).replace(".0", "") + " kHz"
     }
-    property var limiterGrProvider: null
     // OFFLINE applied gain is immutable MASTER evidence, not a Windows
     // consumed-output LIVE witness. It remains visible during Master Audition.
     property var limiterOfflineGrProvider: null
+    property real m17GrTimelineFraction: -1
+    property string m17GrTimelineScope: ""
     property Item activeChainRow: null
     // Drag is only the user's tear-off INTENT. Parent/Main owns all window
     // creation and module identity; the live editor never clones itself.
@@ -113,6 +159,14 @@ Rectangle {
         ? root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER" : false
     readonly property bool isMeterEditor: root.activeModule
         ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
+    readonly property bool isM19AnalysisEditor: root.activeModule
+        ? root.activeModule.editorContentKey === "M19_ANALYSIS" : false
+    readonly property bool isM20AnalysisEditor: root.activeModule
+        ? root.activeModule.editorContentKey === "M20_ANALYSIS" : false
+    readonly property var activeAnalysisFrame: !root.analysisStatusViewModel
+        ? ({}) : root.isM19AnalysisEditor
+        ? root.analysisStatusViewModel.m19 : root.isM20AnalysisEditor
+        ? root.analysisStatusViewModel.m20 : ({})
     readonly property color activeFamilyAccent: root.isLimiterEditor
         ? (root.activeModule.bypass ? "#6CBCCF" : "#C4774A")
         : (root.activeModule ? root.activeModule.familyAccent : "#262A6C9F")
@@ -169,18 +223,31 @@ Rectangle {
         && (root.activeModule.editorContentKey === "STEREO_MS"
             || root.activeModule.editorContentKey === "TRUE_PEAK_METER"
             || root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER"
-            || root.activeModule.editorContentKey === "MASTER_MONITOR")
+            || root.activeModule.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER"
+            || root.activeModule.editorContentKey === "MASTER_MONITOR"
+            || root.activeModule.editorContentKey === "M19_ANALYSIS"
+            || root.activeModule.editorContentKey === "M20_ANALYSIS"
+            || root.activeModule.editorContentKey === "M21_ANALYSIS")
 
+    // PO physical replay: ALL editors share the exact Parametric-EQ
+    // 12lp inset and 40lp undock/title/context header at EVERY window
+    // height. At a genuinely compact 680x338 host that fixed header
+    // leaves 266lp for Stereo/M-S, whose graph+controls need 269lp
+    // with 8lp between header and body. Reclaim 6lp ONLY from the
+    // below-header gap, without resizing or moving the header itself.
+    // This selection depends on editor TYPE, never on window height:
+    // no vertical snap or moving title can recur on resize.
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: root.compactTallerEditor && root.height < 470 ? 8 : 12
-        spacing: root.compactTallerEditor && root.height < 470 ? 5 : 8
+        anchors.margins: 12
+        spacing: root.compactTallerEditor ? 2 : 8
 
-        // Host Header Strip (40 lp)
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactTallerEditor && root.height < 470 ? 34 : 40
+            Layout.minimumHeight: 40
+            Layout.preferredHeight: 40
+            Layout.maximumHeight: 40
             spacing: 12
 
             // Preserve the EXACT old 22px slot: the module title's X
@@ -241,6 +308,45 @@ Rectangle {
             }
 
             Item { Layout.fillWidth: true }
+
+            // M19/M20 are read-only modules: use the SAME top-right
+            // header slot that editable DSPs use for READY/Active/Bypass.
+            // M21 has all three columns simultaneously and intentionally
+            // has NO pointless source selector. The identical docked/
+            // floating host owns these controls; no duplicated popup.
+            RowLayout {
+                objectName: "analysisHeaderSourceChooser"
+                visible: root.isM19AnalysisEditor || root.isM20AnalysisEditor
+                spacing: 5
+                Repeater {
+                    model: ["PREPARED", "PROCESSED", "REFERENCE"]
+                    delegate: StudioButton {
+                        objectName: "analysisSourceOption_" + index
+                        text: modelData
+                        minimumControlWidth: 103
+                        selected: !!root.activeAnalysisFrame
+                            && root.activeAnalysisFrame.sourceRole === modelData
+                        accentColor: "#6CBCCF"
+                        enabled: !!root.analysisStatusViewModel
+                        onClicked: {
+                            if(root.analysisStatusViewModel)
+                                root.analysisStatusViewModel.selectPanelSource(
+                                    root.isM19AnalysisEditor ? 0 : 1,modelData)
+                        }
+                        ToolTip.text: modelData === "REFERENCE"
+                            ? "Show the independent REFERENCE WAV analysis."
+                            : modelData === "PREPARED"
+                            ? "Show the PREPARED source before manual DSP processing."
+                            : "Show the current rendered DSP output analysis."
+                        ToolTip.visible: headerAnalysisDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: headerAnalysisDwell
+                            anchors.fill: parent
+                        }
+                    }
+                }
+            }
 
             // Preview Status Badge
             Rectangle {
@@ -361,8 +467,8 @@ Rectangle {
                     enabled: root.isLimiterEditor && !root.monitorExclusive
                         && root.activeModule && root.activeModule.resetSupported
                     onClicked: if (root.activeModule) root.activeModule.resetToDefault()
-                    Accessible.name: "Reset True Peak Limiter Ceiling to -1.0 dBTP"
-                    ToolTip.text: "Restore Ceiling to -1.0 dBTP without changing Active or Bypass"
+                    Accessible.name: "Reset Export TP Limiter Ceiling to 0.0 dBTP"
+                    ToolTip.text: "Restore Export Ceiling to 0.0 dBTP without changing Active or Bypass"
                     ToolTip.visible: hovered && m17ResetTooltipDwell.ready
                     ToolTip.delay: 0
                     StudioTooltipDwell {
@@ -390,7 +496,7 @@ Rectangle {
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: root.isLimiterEditor && !enabled
-                        ? "True Peak Limiter processing is pending verified OUTPUT_RATE routing"
+                        ? "TP Limiter processing is pending verified OUTPUT_RATE routing"
                         : "Activate module processing"
                     ToolTip.visible: (hovered) && stationaryTooltipDwell3.ready
                     ToolTip.delay: 0
@@ -436,10 +542,32 @@ Rectangle {
             Layout.maximumHeight: 34
             spacing: 8
             StudioButton {
+                objectName: "m17RateAndTimesButton"
+                visible: root.isLimiterEditor
+                text: "WAV Export"
+                minimumControlWidth: 106
+                accentColor: root.activeFamilyAccent
+                selected: rateTimePopup.opened
+                selectedFamilyAccent: true
+                onClicked: {
+                    if (rateTimePopup.opened) rateTimePopup.close()
+                    else rateTimePopup.open()
+                }
+                Accessible.name: rateTimePopup.opened
+                    ? "Close WAV export settings" : "Open WAV export settings"
+                ToolTip.text: "Select the output sample rate before Render Master; view time/memory estimates. Export verified PCM24 or Float32 afterward."
+                ToolTip.visible: hovered && rateDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
+            }
+            StudioButton {
                 visible: root.isLimiterEditor && !root.m17Preparing
+                    && !root.m18ExportActive
                 objectName: "m17PrepareButton"
-                text: "Prepare"
-                minimumControlWidth: 86
+                // PREPARED is an audio pipeline role. This action renders
+                // and verifies M17's final Master, NOT PREPARED state.
+                text: "Render Master"
+                minimumControlWidth: 124
                 accentColor: "#C4774A"
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
@@ -447,19 +575,19 @@ Rectangle {
                     && !!root.masterRateState
                     && root.masterRateState.currentMasterRateAdmissible
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
-                Accessible.name: "Prepare offline true peak limiter"
+                Accessible.name: "Render and verify full Master with Export TP Limiter"
                 ToolTip.text: root.masterRateState
                     && !root.masterRateState.currentMasterRateAdmissible
                     ? root.masterRateState.final_src_path_status(
                         root.masterRateState.masterRateHz)
                     : root.terminalLimiterViewModel
                         && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
-                        ? "Master already verified: use Listen to Master or change parameters to prepare a different master."
+                        ? "Master already verified: use Listen to Master or change parameters to render another master."
                         : root.terminalLimiterViewModel
                             && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                                 || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE"))
-                            ? "A measured or active candidate is present. This button cannot override its verification; change a setting or return to normal preparation first."
-                            : "Render and verify the full master; Play never starts this job."
+                            ? "A measured or active candidate is present. This button cannot override its verification; change a setting and render the Master again."
+                            : "Render and verify the full Master; PREPARED audio is unaffected."
                 ToolTip.visible: hovered && m17PrepareTooltipDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -471,15 +599,15 @@ Rectangle {
                 visible: root.isLimiterEditor && root.m17Preparing
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
-                // Same fixed slot as Prepare: Rate & Time must never jump
-                // horizontally during an in-flight full-resource job.
-                minimumControlWidth: 86
+                // Same width as Render Master: WAV Export never jumps
+                // during an in-flight full-resource job.
+                minimumControlWidth: 124
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
                         || root.terminalLimiterViewModel.nonconformingDevicePreparing)
                 onClicked: root.terminalLimiterViewModel.cancelPreparation()
-                Accessible.name: "Cancel offline limiter preparation"
+                Accessible.name: "Cancel offline Master rendering"
             }
             StudioButton {
                 visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
@@ -499,7 +627,7 @@ Rectangle {
                         && !root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable)
                     ? "Device audition is unavailable until the measured PCM has an exact, current Windows playback endpoint."
                     : root.terminalLimiterViewModel.nonconformingDevicePreviewAvailable
-                        ? "Explicit NON-CONFORMING preview: prepare a separate DEVICE-rate FIR PCM asynchronously. MASTER stays unchanged; LIVE meter is not certified."
+                        ? "Explicit NON-CONFORMING preview: convert a separate DEVICE-rate FIR PCM asynchronously. MASTER stays unchanged; LIVE meter is not certified."
                         : "Measured result exceeds requested Ceiling. Direct preview is unverified and requires your explicit choice."
                 ToolTip.visible: hovered && m17NonconformingDwell.ready
                 ToolTip.delay: 0
@@ -511,33 +639,31 @@ Rectangle {
             StudioButton {
                 visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 objectName: "m17PreviewPreparedButton"
-                text: "Preview Prepared"
+                text: "Preview Master"
                 minimumControlWidth: 130
                 accentColor: "#C4774A"
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
-                Accessible.name: "Preview verified limiter audio"
+                Accessible.name: "Preview rendered Master audio"
             }
             StudioButton {
-                objectName: "m17RateAndTimesButton"
-                visible: root.isLimiterEditor
-                text: "Rate & Time"
-                minimumControlWidth: 106
+                objectName: "m17CancelExportButton"
+                visible: root.m18ExportActive
+                text: root.masterExportModel
+                    && root.masterExportModel.statusText === "CANCELLING"
+                    ? "Cancelling Export…" : "Cancel Export"
+                minimumControlWidth: 128
                 accentColor: root.activeFamilyAccent
-                selected: rateTimePopup.opened
-                selectedFamilyAccent: true
-                onClicked: {
-                    if (rateTimePopup.opened) rateTimePopup.close()
-                    else rateTimePopup.open()
-                }
-                Accessible.name: rateTimePopup.opened
-                    ? "Close master rate and time panel" : "Open master rate and time panel"
-                ToolTip.text: "Select a project MASTER rate and review memory; time estimates require local calibration."
-                ToolTip.visible: hovered && rateDwell.ready
+                enabled: root.m18ExportActive && root.masterExportModel.canCancel
+                onClicked: if (root.masterExportModel)
+                    root.masterExportModel.cancelExport()
+                Accessible.name: text
+                ToolTip.text: "Cancel WAV encoding or verification; no file is accepted before readback."
+                ToolTip.visible: hovered && m18CancelDwell.ready
                 ToolTip.delay: 0
-                StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
+                StudioTooltipDwell { id: m18CancelDwell; anchors.fill: parent }
             }
             StudioButton {
                 objectName: "m17ListenMasterButton"
@@ -561,7 +687,7 @@ Rectangle {
                         && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                             || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE · NON-CONFORMING"))
                         ? "Master is not Ceiling-verified. Preview Anyway is a separate unqualified audition, not Listen to Master."
-                        : "No verified Master is available for this source and rate; Prepare M17 first."
+                        : "No verified Master is available for this source and rate; Render Master first."
                 ToolTip.visible: hovered && m17MasterListenDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -573,7 +699,7 @@ Rectangle {
                 objectName: "m17ReturnSourceButton"
                 text: root.terminalMonitorViewModel
                         && root.terminalMonitorViewModel.monitorPreparing
-                    ? "Cancel Playback Prep"
+                    ? "Cancel Playback Conversion"
                     : root.terminalMonitorViewModel
                         && root.terminalMonitorViewModel.monitorCancelling
                         ? "Cancelling…"
@@ -623,7 +749,8 @@ Rectangle {
                     ? "#F0C87D" : "#B6CADA"
                 elide: Text.ElideRight
                 text: root.terminalLimiterViewModel
-                    ? root.terminalLimiterViewModel.audioStatus : "UNAVAILABLE"
+                    ? root.m17RenderCopy(root.terminalLimiterViewModel.audioStatus)
+                    : "UNAVAILABLE"
             }
         }
 
@@ -691,12 +818,63 @@ Rectangle {
             monitorLocked: root.monitorExclusive
             limiterViewModel: root.isLimiterEditor ? root.terminalLimiterViewModel : null
             monitorViewModel: root.terminalMonitorViewModel
-            limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
-                ? root.limiterGrProvider : null
+            exportModel: root.masterExportModel
             limiterOfflineGrProvider: root.isLimiterEditor
                 ? root.limiterOfflineGrProvider : null
+            grTimelineFraction: root.m17GrTimelineFraction
+            grTimelineScope: root.m17GrTimelineScope
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive
+        }
+
+        // M19–M21: three persistent read-only pages, like the qualified
+        // M16 TruePeakMeterEditor. The existing ColumnLayout is the only
+        // geometry owner: hidden pages are excluded from its allocation.
+        // Pages belong to the host throughout its dock/floating lifetime,
+        // preserving view state across navigation without create/destroy.
+        AnalysisStatusEditor {
+            id: m19LevelAnalysisEditor
+            objectName: "m19LevelProductAnalysisEditor"
+            panelIndex: 0
+            statusViewModel: root.analysisStatusViewModel
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "M19_ANALYSIS" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+        }
+
+        AnalysisStatusEditor {
+            id: m20TonalStereoAnalysisEditor
+            objectName: "m20TonalStereoProductAnalysisEditor"
+            panelIndex: 1
+            statusViewModel: root.analysisStatusViewModel
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "M20_ANALYSIS" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+        }
+
+        AnalysisStatusEditor {
+            id: m21MetricsDeltaAnalysisEditor
+            objectName: "m21MetricsDeltaProductAnalysisEditor"
+            panelIndex: 2
+            statusViewModel: root.analysisStatusViewModel
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "M21_ANALYSIS" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 0
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
         }
 
         MonitorEditor {
@@ -712,6 +890,18 @@ Rectangle {
             // The product MASTER rate has ONE authority across both editors.
             // Master Audition does not invent a second independent 48-kHz default.
             masterRateState: root.masterRateState
+        }
+
+        StreamingTruePeakLimiterEditor {
+            id: streamingTruePeakLimiterEditor
+            objectName: "streamingTruePeakLimiterEditor"
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER" : false
+            enabled: visible
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            limiterModule: visible ? root.activeModule : null
         }
 
         StereoMsEditor {
@@ -742,9 +932,11 @@ Rectangle {
         width: Math.min(458, root.width - 16)
         x: Math.max(8, root.width - width - 8)
         // The popup MUST sit below the action row, not over the Rate &
-        // Time button. The popup overlay must never consume its second click.
+        // WAV Export button. The popup overlay must never consume its second click.
         y: m17ControlsRow.mapToItem(root, 0, m17ControlsRow.height).y + 6
-        height: Math.max(120, Math.min(290, root.height - y - 8))
+        // Fixed fit at the 1184x688 Product minimum. No Flickable, scroll
+        // view, deferred button or increased editor minimum dimensions.
+        height: Math.max(120, Math.min(345, root.height - y - 8))
         // Button toggles open/closed; X and Escape are the other exits.
         // CloseOnPressOutside can consume the button click then re-open.
         closePolicy: Popup.CloseOnEscape
@@ -790,6 +982,7 @@ Rectangle {
             objectName: "m17RateTimePanel"
             clip: true
             ColumnLayout {
+                id: rateTimeContent
                 anchors.fill: parent
                 anchors.margins: 8
                 spacing: 2
@@ -797,7 +990,8 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 22
                     Text {
-                        text: "MASTER RATE & TIME"
+                        objectName: "m17WavExportPanelTitle"
+                        text: "WAV EXPORT · RATE & TIME"
                         color: "#F0F6FB"
                         font.family: "Segoe UI"
                         font.pixelSize: 12
@@ -811,8 +1005,8 @@ Rectangle {
                         implicitHeight: 22
                         padding: 0
                         onClicked: rateTimePopup.close()
-                        Accessible.name: "Close master rate and time panel"
-                        ToolTip.text: "Close the master rate and time panel."
+                        Accessible.name: "Close WAV export settings"
+                        ToolTip.text: "Close WAV export settings."
                         ToolTip.visible: hovered && panelCloseDwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {
@@ -899,7 +1093,7 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
-                            property string interactionHint: "HOST ~range is an indicative future total Prepare estimate from three or more accepted full runs. ACT is only a past completed Prepare. DSP estimates are M17/M16 compute projections only, NOT total Prepare. SRC N/A is blocked."
+                            property string interactionHint: "HOST ~range is an indicative future total Render Master estimate from three or more accepted full runs. ACT is only a past completed render. DSP estimates are M17/M16 compute projections only, NOT the total Master render. SRC N/A is blocked."
                             text: "TIME"
                             HoverHandler { id: timeHeaderHover }
                             ToolTip.text: interactionHint
@@ -936,7 +1130,13 @@ Rectangle {
                             && admissions.length === 6
                             && admissions[rateRow.index] === true
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 27
+                        // Six compact 23lp rows reclaim 12lp BELOW
+                        // the now-common 40lp EQ header. The radio itself
+                        // is 23lp; the popup stays wholly onscreen at min
+                        // 1184x688 without changing the header or scrolling.
+                        Layout.preferredHeight: 23
+                        Layout.minimumHeight: 23
+                        Layout.maximumHeight: 23
                         radius: 3
                         color: chosen ? Qt.alpha(root.activeFamilyAccent, 0.15) : "#142B3C"
                         border.width: chosen ? 1 : 0
@@ -1006,13 +1206,13 @@ Rectangle {
                                 id: rateMemoryText
                                 objectName: "m17RateMemory_" + rateRow.index
                                 property string interactionHint: !rateRow.admissible
-                                    ? "Final SRC BLOCKED: this SOURCE/MASTER pair cannot Prepare. "
+                                    ? "Final SRC BLOCKED: this SOURCE/MASTER pair cannot render. "
                                         + (rateRow.advice && rateRow.advice.details
-                                            ? rateRow.advice.details
+                                            ? root.m17RenderCopy(rateRow.advice.details)
                                             : root.masterRateState
                                                 ? root.masterRateState.final_src_path_status(
                                                     rateRow.modelData) : "")
-                                    : rateRow.advice ? rateRow.advice.details
+                                    : rateRow.advice ? root.m17RenderCopy(rateRow.advice.details)
                                     : "No Windows memory observation is available for this rate."
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
@@ -1048,11 +1248,11 @@ Rectangle {
                                     ? root.memoryAdvisor.prepareTimeRows[rateRow.index]
                                     : null
                                 property string interactionHint: forecast && forecast.details
-                                    ? forecast.details
-                                    : "Complete future Prepare ETA N/A."
+                                    ? root.m17RenderCopy(forecast.details)
+                                    : "Complete future Master render ETA N/A."
                                 Layout.preferredWidth: 62
                                 text: forecast && forecast.label
-                                    ? (forecast.kind === "historical_actual"
+                                    ? root.m17RenderCopy(forecast.kind === "historical_actual"
                                         ? "Last " + forecast.label.replace(/^ACT /, "")
                                         : forecast.label) : "N/A"
                                 elide: Text.ElideRight
@@ -1072,15 +1272,20 @@ Rectangle {
                                 font.pixelSize: 10
                                 Accessible.name: text + (forecast
                                     && forecast.isFutureWholePrepare
-                                    ? ". Indicative host full-Prepare future range."
-                                    : ". Not a whole-Prepare future ETA.")
+                                    ? ". Indicative host full-Master-render future range."
+                                    : ". Not a whole-Master-render future ETA.")
                             }
                         }
                     }
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    // Reserve a fixed slot rather than letting the dynamic
+                    // memory sentence steal the bottom WAV controls at the
+                    // real 1184x688 Product minimum.
+                    Layout.minimumHeight: 32
+                    Layout.preferredHeight: 32
+                    Layout.maximumHeight: 32
                     spacing: 6
                     Text {
                         objectName: "m17RateMemorySummary"
@@ -1094,17 +1299,20 @@ Rectangle {
                             anchors.fill: parent
                         }
                         Layout.fillWidth: true
+                        Layout.maximumHeight: 32
                         wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
                         color: "#A4B9C8"
                         font.family: "Segoe UI"
                         font.pixelSize: 9
                         text: root.memoryAdvisor
                             && root.memoryAdvisor.calibrationRunning
-                            ? root.memoryAdvisor.calibrationStatus
+                            ? root.m17RenderCopy(root.memoryAdvisor.calibrationStatus)
                             : rateTimePopup.selectedAdvice
                                 && rateTimePopup.selectedAdvice.summary
-                                ? rateTimePopup.selectedAdvice.summary
-                                : "Memory N/A · Total Prepare ETA N/A"
+                                ? root.m17RenderCopy(rateTimePopup.selectedAdvice.summary)
+                                : "Memory N/A · Total Master Render ETA N/A"
                     }
                     // Real, explicitly triggered offline M17+M16 probes run
                     // only in a cancellable non-audio worker. The resulting
@@ -1153,7 +1361,242 @@ Rectangle {
                                     root.memoryAdvisor.calibrate(
                                         root.terminalLimiterViewModel.ceilingDbTp)
                             }
-                            Accessible.name: text + " local M17/M16 only; total Prepare ETA unavailable"
+                            Accessible.name: text + " local M17/M16 only; total Master Render ETA unavailable"
+                        }
+                    }
+                }
+                // The two independently labeled format actions are a view
+                // over the EXISTING M18 verified-Master export transaction.
+                // They neither recalculate M17 nor create a new WAV writer.
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: "#27465F"
+                }
+                RowLayout {
+                    objectName: "m17WavExportActions"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    Layout.minimumHeight: 32
+                    Layout.maximumHeight: 32
+                    spacing: 6
+                    // The SAME fixed 120px slot conveys status, SHA and
+                    // ACK. It never adds a row, scroll or moves WAV buttons.
+                    RowLayout {
+                        objectName: "m18WavInlineReceipt"
+                        Layout.minimumWidth: 120
+                        Layout.preferredWidth: 120
+                        Layout.maximumWidth: 120
+                        spacing: 2
+                        Text {
+                            objectName: "m18WavInlineResult"
+                            Layout.fillWidth: true
+                            elide: Text.ElideNone
+                            color: root.m18ExportFailed ? "#F0A5A5"
+                                : !root.m18ExportActive && !root.m18ReceiptReady
+                                  && (!root.canExportVerifiedWav || !root.masterExportHandler)
+                                  ? "#F0C87D"
+                                : root.m18ReceiptReady
+                                  && root.masterExportModel.statusText === "VERIFIED DELIVERED"
+                                  ? "#B6D6CA" : "#D1E0EB"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                            text: {
+                                const m = root.masterExportModel
+                                if (!m) return "WAV OUTPUT"
+                                if (root.m18ExportActive) return "EXPORTING"
+                                if (m.canAcknowledge) {
+                                    if (m.statusText === "VERIFIED DELIVERED")
+                                        return root.masterExportFormatIndex === 0
+                                            ? "PCM24 ✓" : "FLOAT32 ✓"
+                                    return m.statusText === "CANCELLED"
+                                        ? "CANCEL" : "FAILED"
+                                }
+                                if (root.m18ExportFailed) return "ERROR"
+                                if (root.masterExportAutoReturnAvailable
+                                    && root.masterExportHandler)
+                                    return "RETURN + EXPORT"
+                                if (!root.canExportVerifiedWav || !root.masterExportHandler) {
+                                    // A fixed 120px receipt cannot contain diagnostic
+                                    // identifiers. Show a COMPLETE short human label;
+                                    // the full native reason remains in the tooltip.
+                                    const reason = String(m.exportReadinessReason || "")
+                                    if (!root.masterExportHandler) return "EXPORT UNAVAILABLE"
+                                    if (reason.indexOf("M17 VERIFIED EPOCH") !== -1)
+                                        return "M17 NOT CURRENT"
+                                    if (reason.indexOf("STAGE MISSING") !== -1)
+                                        return "RENDER REQUIRED"
+                                    if (reason.indexOf("BYPASS") !== -1)
+                                        return "M17 BYPASSED"
+                                    if (reason.indexOf("STALE") !== -1)
+                                        return "MASTER STALE"
+                                    return "EXPORT BLOCKED"
+                                }
+                                return "WAV OUTPUT"
+                            }
+                            HoverHandler { id: m18ResultHover }
+                            ToolTip.text: {
+                                const m = root.masterExportModel
+                                if (!m) return "No verified WAV delivered."
+                                if (m.errorText.length > 0) return m.errorText
+                                if (m.verifiedSha256.length === 64)
+                                    return "Verified WAV SHA-256: " + m.verifiedSha256
+                                if (root.masterExportAutoReturnAvailable
+                                    && root.masterExportHandler)
+                                    return "Export will return to Source and reverify the Master before Save WAV."
+                                if (!root.canExportVerifiedWav || !root.masterExportHandler)
+                                    return "Export unavailable · " + (!root.masterExportHandler
+                                        ? "EXPORT HANDLER UNAVAILABLE"
+                                        : m.exportReadinessReason)
+                                return "Delivery requires independent WAV readback."
+                            }
+                            ToolTip.visible: m18ResultHover.hovered
+                                && m18ResultDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m18ResultDwell
+                                anchors.fill: parent
+                            }
+                            Accessible.name: text + " · " + ToolTip.text
+                        }
+                        // Both receipt actions MUST share the StudioButton
+                        // visual grammar and the same 1-second stationary hover
+                        // policy as the other RGS controls. No native Basic
+                        // Button / immediate tooltip exceptions in M18.
+                        StudioButton {
+                            objectName: "m18CopyVerifiedSha"
+                            visible: !!root.masterExportModel
+                                && root.masterExportModel.verifiedSha256.length === 64
+                                && root.m18ReceiptReady
+                            Layout.minimumWidth: visible ? 36 : 0
+                            Layout.preferredWidth: visible ? 36 : 0
+                            Layout.maximumWidth: visible ? 36 : 0
+                            Layout.minimumHeight: 24
+                            Layout.preferredHeight: 24
+                            Layout.maximumHeight: 24
+                            minimumControlWidth: 36
+                            contentPadding: 3
+                            accentColor: root.activeFamilyAccent
+                            text: "SHA"
+                            onClicked: root.masterExportModel.copyVerifiedSha256()
+                            Accessible.name: "Copy verified WAV SHA-256 to clipboard"
+                            ToolTip.text: "Copy full SHA-256 of the verified delivered WAV"
+                            ToolTip.visible: hovered && m18ShaTooltipDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m18ShaTooltipDwell
+                                anchors.fill: parent
+                            }
+                        }
+                        StudioButton {
+                            objectName: "m18AcknowledgeExport"
+                            visible: root.m18ReceiptReady
+                            Layout.minimumWidth: visible ? 32 : 0
+                            Layout.preferredWidth: visible ? 32 : 0
+                            Layout.maximumWidth: visible ? 32 : 0
+                            Layout.minimumHeight: 24
+                            Layout.preferredHeight: 24
+                            Layout.maximumHeight: 24
+                            minimumControlWidth: 32
+                            contentPadding: 3
+                            accentColor: root.activeFamilyAccent
+                            selectedFamilyAccent: true
+                            selected: true
+                            text: "OK"
+                            onClicked: {
+                                if (root.masterExportModel
+                                    && root.masterExportModel.acknowledgeExport())
+                                    root.m18SawActiveExport = false
+                            }
+                            Accessible.name: "Acknowledge M18 WAV delivery result"
+                            ToolTip.text: "Acknowledge the current WAV result to enable another export."
+                            ToolTip.visible: hovered && m18AckTooltipDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: m18AckTooltipDwell
+                                anchors.fill: parent
+                            }
+                        }
+                    }
+                    // Consume all spare width BEFORE both export actions:
+                    // FLOAT32's right edge now aligns exactly with CALIBRATE.
+                    // This flexible spacer adds no height and no scrolling.
+                    Item {
+                        objectName: "m18WavOutputRightAlignSpacer"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                    }
+                    StudioButton {
+                        objectName: "m17ExportPcm24"
+                        text: "EXPORT PCM24"
+                        minimumControlWidth: 130
+                        contentPadding: 9
+                        accentColor: root.activeFamilyAccent
+                        showDisabledAccent: true
+                        enabled: root.canExportVerifiedWav
+                            ? !!root.masterExportHandler
+                            : root.masterExportAutoReturnAvailable
+                              && !!root.masterExportHandler
+                        onClicked: {
+                            if (!root.masterExportHandler
+                                || (!root.canExportVerifiedWav
+                                    && !root.masterExportAutoReturnAvailable))
+                                return
+                            // Main returns true only after synchronous,
+                            // exact-owner Return and fresh Product eligibility.
+                            if (root.masterExportHandler(0))
+                                rateTimePopup.close()
+                        }
+                        Accessible.name: "Export verified Master as 24-bit PCM WAV with TPDF dither"
+                        ToolTip.text: "24-bit PCM with TPDF dither. "
+                            + (enabled ? "Choose a NEW WAV filename."
+                                       : root.masterExportAutoReturnAvailable
+                                         ? "Click to return to Source and verify the Master before choosing a WAV filename."
+                                         : "Export unavailable: " + (root.masterExportModel
+                                             ? root.masterExportModel.exportReadinessReason
+                                             : "M18 model missing"))
+                        ToolTip.visible: hovered && exportPcm24Dwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: exportPcm24Dwell
+                            anchors.fill: parent
+                        }
+                    }
+                    StudioButton {
+                        objectName: "m17ExportFloat32"
+                        text: "EXPORT FLOAT32"
+                        minimumControlWidth: 135
+                        contentPadding: 9
+                        accentColor: root.activeFamilyAccent
+                        showDisabledAccent: true
+                        enabled: root.canExportVerifiedWav
+                            ? !!root.masterExportHandler
+                            : root.masterExportAutoReturnAvailable
+                              && !!root.masterExportHandler
+                        onClicked: {
+                            if (!root.masterExportHandler
+                                || (!root.canExportVerifiedWav
+                                    && !root.masterExportAutoReturnAvailable))
+                                return
+                            // Main returns true only after synchronous,
+                            // exact-owner Return and fresh Product eligibility.
+                            if (root.masterExportHandler(1))
+                                rateTimePopup.close()
+                        }
+                        Accessible.name: "Export verified Master as IEEE 32-bit floating-point WAV without dither"
+                        ToolTip.text: "IEEE Float32, no dither. "
+                            + (enabled ? "Choose a NEW WAV filename."
+                                       : root.masterExportAutoReturnAvailable
+                                         ? "Click to return to Source and verify the Master before choosing a WAV filename."
+                                         : "Export unavailable: " + (root.masterExportModel
+                                             ? root.masterExportModel.exportReadinessReason
+                                             : "M18 model missing"))
+                        ToolTip.visible: hovered && exportFloat32Dwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: exportFloat32Dwell
+                            anchors.fill: parent
                         }
                     }
                 }

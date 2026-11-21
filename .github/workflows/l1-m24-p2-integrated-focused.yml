@@ -1,0 +1,32 @@
+name: L1 M17-M24 plus P2 Integrated Focused (nonrelease)
+on:
+  push:
+    branches:
+      - staging/l1-m24-p2-integration-focused-ci-20261114
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: l1-m24-p2-integration-one-candidate-20261114
+  cancel-in-progress: false
+
+# All four real predecessor gates execute on the SAME integrated merge SHA.
+# Existing workflows are reused intact; no duplicate DSP or frozen math.
+# Results are nonrelease and do not imply Gate G, Gate M, M24, FQ or main merge.
+jobs:
+  p2-real-dsp:
+    name: P2 genuine DSP + registry Windows and Linux
+    uses: ./.github/workflows/r1d-p2-i2-optin-focused.yml
+
+  p2-real-gui:
+    name: P2 genuine Qt GUI and standalone Windows
+    uses: ./.github/workflows/r1d-p2-i2-product-gui-smoke.yml
+
+  m17-m18:
+    name: M17 strict ceiling and M18 faithful export Windows and Linux
+    uses: ./.github/workflows/m17-ceiling-numerical-po-bundle.yml
+
+  m19-m23:
+    name: M19-M23 genuine analyzers, FQ99 geometry, M23 matrix
+    uses: ./.github/workflows/m23-failure-matrix-focused.yml

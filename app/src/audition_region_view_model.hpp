@@ -4,13 +4,17 @@
 #include <rgsml/core/result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <optional>
+#include <functional>
+#include <utility>
 
 namespace rgsml::app {
 
 class PlaybackTransportViewModel;
+class ProjectSessionViewModel;
 
 class AuditionRegionViewModel final : public QObject {
     Q_OBJECT
@@ -34,7 +38,8 @@ class AuditionRegionViewModel final : public QObject {
 public:
     explicit AuditionRegionViewModel(
         PlaybackTransportViewModel* playback,
-        QObject* parent = nullptr);
+        QObject* parent = nullptr,
+        bool referenceMode = false);
 
     [[nodiscard]] bool has_region() const noexcept;
     [[nodiscard]] std::optional<core::FrameRange> region() const noexcept;
@@ -54,6 +59,21 @@ public:
     [[nodiscard]] QString end_frame_text() const;
     [[nodiscard]] QString error_message() const;
 
+    // M18 PREPRODUCTION: SOURCE and Project changes must own one
+    // Product epoch across all Region/Loop mutations. Do not install
+    // this callback until the common cross-controller authority is wired.
+    using M18RegionMutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_region_mutation_admission(
+        M18RegionMutationAdmission gate)
+    {
+        // The current callback and synchronous Qt publication own this
+        // Region/Loop epoch. Worker or listener disarm is refused.
+        if(QThread::currentThread()!=thread())return;
+        if(m18RegionAdmitting_||m18RegionOperationActive_)return;
+        m18RegionMutationAdmission_=std::move(gate);
+    }
+    [[nodiscard]] bool m18_region_admission_installed() const noexcept
+    {return static_cast<bool>(m18RegionMutationAdmission_);}
     [[nodiscard]] core::Status set_region(core::FrameRange candidate);
     [[nodiscard]] core::Status set_start(core::FrameIndex start);
     [[nodiscard]] core::Status set_end_exclusive(core::FrameIndex end);
@@ -63,6 +83,8 @@ public:
 
     void source_committed(core::FrameCount frameCount, core::SampleRate sampleRate);
     void set_waveform_ready(bool ready);
+    // Called only for the independent REFERENCE object upon Clear.
+    void clear_independent_reference();
     void synchronize_playback();
 
     Q_INVOKABLE void commitStartSegments(
@@ -87,6 +109,12 @@ signals:
     void changed();
 
 private:
+    friend class ProjectSessionViewModel;
+    // Project Open owns the exclusive Source/Reference mutation transaction.
+    // Restore only the saved preference; never start playback. SOURCE can
+    // install the loop on its STOPPED owner; REFERENCE is rearmed by the
+    // existing selector only when that audio owner is selected.
+    [[nodiscard]] core::Status restore_project_loop_preference(bool enabled);
     struct TimeSegments final {
         QString hours;
         QString minutes;
@@ -94,6 +122,9 @@ private:
         QString fraction;
     };
 
+    [[nodiscard]] core::Status admit_m18_region_mutation(
+        const char* operation) const;
+    [[nodiscard]] bool m18_foreign_owner_thread() const noexcept;
     [[nodiscard]] core::Status validate(core::FrameRange candidate) const;
     [[nodiscard]] core::Status reposition_if_outside(
         core::FrameRange activeLoop,
@@ -111,6 +142,14 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_{nullptr};
+    // Separate non-DSP timeline. Never registers the SOURCE/M18 region admission.
+    bool referenceMode_{false};
+    M18RegionMutationAdmission m18RegionMutationAdmission_;
+    mutable bool m18RegionAdmitting_{false};
+    // Scoped across playback I/O and synchronous changed() notifications.
+    // A callback may not recursively commit a second Region/Loop edit
+    // while the first Product-authorized edit is still publishing.
+    bool m18RegionOperationActive_{false};
     std::optional<core::FrameRange> region_;
     std::int64_t sourceFrames_{0};
     std::int64_t sampleRate_{0};

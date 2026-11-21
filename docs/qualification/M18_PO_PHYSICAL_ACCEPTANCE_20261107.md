@@ -1,0 +1,524 @@
+# RGS MasterLab — M18 Windows Product acceptance (PO, non-FQ)
+_Date: 2026-11-07. Isolated staging only; not evidence of PASS._
+
+## Decision boundary
+
+M18 is **not closed** when Focused Windows/Linux is green. The candidate
+must also start as a **deployed Windows application**, preserve M17, export
+real PCM24/TPDF and IEEE Float32 from an exact **verified M17 full Master**,
+verify the delivered WAV, refuse destructive operations, and pass the
+Product Owner's physical gate. No main merge or Full Qualification is
+authorized by this document.
+
+## Candidate & environment
+
+- Use the **latest** successful Draft PR #84 Focused Windows artifact
+  `RGS-M18-Windows-PO-<run>-<sha>`; keep its exact SHA beside test notes.
+- Unzip the **entire** installer/staged directory, including
+  `plugins/platforms/qwindows.dll` and `bin/resources/fir` with the
+  verified 14 Final SRC FIR plus 2 playback FIR. Do not launch a lone EXE.
+- Start `bin/RGSMasterLab.exe` normally on Windows 10/11. A green
+  `--rgsml-deploy-smoke` alone does not count as normal GUI acceptance.
+- Preserve a copy of a known-good M17 installation/project for rollback;
+  use separate temporary OUTPUT files, never the selected SOURCE.
+
+## Functional gate — required physical observations
+
+| ID | Exact operation | PASS evidence |
+|---|---|---|
+| A01 | Launch with no SOURCE selected; inspect File > Export verified Master | Disabled; no phantom Master, no QML error |
+| A02 | Load a real 44.1 kHz stereo SOURCE; select 48 kHz MASTER; run M17 Prepare | Export disabled until an exact final M16 checked M17 Master is ready; no playback-device rate substitution |
+| A03 | Export 24-bit PCM/TPDF to a NEW `.wav` path | Completion is **VERIFIED DELIVERED**, full 64-character SHA-256 visible, verified nonzero file size; WAV readable in independent editor |
+| A04 | Export the same verified Master as 32-bit IEEE Float WAV to a second NEW path | Both files report 48 kHz stereo and correct encoding; Float32 has no dither; original M17 audition remains available |
+| A05 | Attempt to export to an already existing WAV filename | Existing bytes unchanged; no success claim; a useful failure and dismiss/ACK path |
+| A06 | Attempt to export directly over the selected SOURCE | Refused before writing; SOURCE retains original bytes and selection |
+| A07 | After a verified M17 Master, modify Gain, EQ or terminal Ceiling and attempt export without fresh Prepare | Export disabled/refused; no stale Master published. Re-Prepare to re-enable |
+| A08 | Replace SOURCE, including same-rate replacement | Old M17 stage cannot be exported; new source is usable and new Prepare succeeds |
+| A09 | Load an existing Project and SaveAs while no export runs | Correct SOURCE, rate and chain restored; no broken Source/Project controls from M18 mutation guards |
+| A10 | While exporting a long real master, press Cancel | UI remains responsive, settles to CANCELLED or genuine failure, no false verified delivery; no orphan temp files |
+| A11 | While encoding/verification is active, use Alt+F4/window X | App does not exit before worker transaction has settled; Cancel/ACK remain usable |
+| A12 | After Cancel/FAIL/VERIFIED, acknowledge the result, then export again to a NEW filename | New independent consent accepted; no stuck Export lock or reused previous result |
+| A13 | Test one 192 kHz mono or stereo Master and one 44.1 kHz output | No unintended SRC, WAV Fs/channel count match selected MASTER; packaged original FIR assets are available |
+| A14 | Listen to the PCM24 and Float32 files in an independent player/editor | No clicks, cut ends, silence, channel reversal or incorrect duration; compare to M17 Master audition at matched level |
+| A15 | Choose Float32, SaveAs, reopen the Project, then select PCM24 and SaveAs again | ComboBox restores Float32 on open; subsequent file uses PCM24 TPDF. Exact uint64 seed is serialized without numeric rounding; old output keys are preserved |
+
+## SOURCE changes and future DSP presets — scope boundary
+
+L1-M18 MUST keep the existing SOURCE-selection transaction consistent:
+the current product can reset MANUAL module controls to defaults on a
+new SOURCE, so all nested parameter/bypass writes must either complete
+under the same SOURCE epoch or fail closed. M18 does NOT introduce a
+new DSP preset file format, and cannot claim that the user can already
+save/reload independent presets to protect edits before replacing SOURCE.
+
+The previously agreed independent feature is **L2-M08 — Module
+Compact/Expanded States + Basic Presets**, after L1-M24:
+(1) reusable, named presets of one Mastering DSP module from its
+expanded chain card, and (2) reusable presets of the entire Mastering
+DSP Chain from its chain-level header. These are separate from
+`.rgsml` Project persistence; neither exact file extension nor file
+format/name was frozen. This M18 test deliberately protects legacy
+SOURCE-reset consistency, not a future decision on retaining DSP
+parameters automatically across SOURCE replacement.
+
+## PO decision update — 2026-11-14 (supersedes the prior M18 TP veto)
+
+The additional M18 post-quantization True Peak qualification and the
+conditional "Apply Micro Trim & Export" research route were explicitly
+reconsidered and rejected for L1. The earlier 31-commit staging experiment
+is retained only as historical evidence; no micro-trim, second export
+authorization, hidden gain processing, second M16 4x FIR pass, or
+post-quant True Peak ceiling veto enters the deliverable Product.
+
+**Division of authority:** M17 verifies the full Master and True Peak
+Ceiling after Final SRC. M18 only performs deterministic format conversion,
+exact decoded-file codec verification, integrity and safe delivery.
+Format quantization may create microscopically different instantaneous
+peaks; such codec-correct deviations do not invalidate the M17 Master's
+previous certificate. No extra statement of WAV post-quant TP compliance
+may be inferred from "VERIFIED DELIVERED".
+
+This change does NOT relax the SOURCE/Project/M17 ownership, immutable
+Master proof, final SHA/file readback, no-overwrite, cancellation or
+single-writer epoch guarantees. Physical acceptance remains mandatory.
+
+## Non-negotiable engineering gate
+
+1. Focused CI on the **exact candidate SHA**: Windows and Linux SUCCESS.
+   The Windows job must complete **native app build**, ProjectSession M18
+   positive path, M18 Windows transactional test, UI smoke and deployed
+   standalone-package verification (not just DSP unit tests).
+2. The M17 owner must supply a currently verified full Master and its
+   accepted Ceiling. M18 must prove the exported WAV is the **exact**
+   deterministic PCM24/TPDF or Float32 encoding of that unchanged Master,
+   including decoded sample/format/rate/frame checks, encoded and decoded
+   SHA-256, atomic no-overwrite publication and final filesystem readback.
+   M18 must **not** remeasure the delivered True Peak or reject tiny TP
+   shifts inherent to correctly quantizing the already verified M17 PCM.
+   `VERIFIED DELIVERED` certifies the WAV conversion and delivery, NOT a
+   second independent WAV True Peak qualification.
+3. Physical SOURCE/Project/MASTER/chain mutations and file publication
+   must share the Product Single-Writer epoch; no stale ticket, partial
+   filename overwrite, second concurrent export or Qt worker-object access.
+4. Keep 24-bit TPDF with exact `uint64` seed; Float32 **without** dither;
+   no noise shaping. Staging proposes the final Project OUTPUT keys
+   `finalMasterWavEncoding` and `finalMasterPcm24TpdfSeed`
+   (see `docs/architecture/M18_FINAL_WAV_OUTPUT_PREFERENCE_V1_20261107.md`).
+   Their exact spelling requires PO acceptance before main merge.
+5. Do not change accepted M16 B2i math/FIR evidence or M17 qualified DSP
+   solely to make a red test pass.
+6. Reserve **one overall Full Qualification after M18–M22 integration**,
+   per PO decision. M18 integration needs explicit PO authorization,
+   not this checklist alone.
+
+## Recording results
+
+Record: tested SHA, artifact name, Windows version, SOURCE Fs/channels,
+selected MASTER Fs, PCM format, destination path class (not private path),
+outcome, verified bytes and SHA-256, audible result, screenshots for any
+failure, and the exact first failing checklist ID. Never upload full CI
+job logs; use bounded CI diagnostics.
+
+## Physical replay record — 2026-11-14, PO screenshots
+
+**Narrow regression: PASS** for the previously failing M17 Ceiling
+at **-2.70 dBTP**, and for subsequent M18 WAV publication, on the
+standalone Windows x64 NON-FQ candidate at commit
+`64cb0f5529fef76df3444182b0a7f325885db948`.
+Qualification CI: https://github.com/casaferla/RGS-MasterLab/actions/runs/43597820523
+(Windows and Linux successful; separate from physical replay).
+
+Evidence provided directly by the PO: screenshots timestamped
+`20261114-133242`, `20261114-133252`, `20261114-133320`,
+`20261114-133338`. SOURCE is `Reati universali (Remastered) (Edit) 44.wav`,
+44,100 Hz, PCM32, stereo, duration 03:19.184. The screenshot exposes
+44,100 Hz status but does not independently prove a cross-rate 48-kHz
+MASTER: do not claim the A02 cross-rate gate from this evidence.
+
+- M17 enabled at requested -2.70 dBTP; status: `MASTER VERIFIED ·
+  LISTEN TO MASTER`; `VERIFICATION TRIM <0.01 dB · M16 CHECK`.
+  Previously the identical target presented measured `NON-CONFORMING`
+  / over <0.01 dB and withheld export.
+- 24-bit PCM/TPDF WAV: `VERIFIED DELIVERED`, 52,704,038 bytes,
+  displayed post-delivery SHA-256:
+  `9309155d39365fbe9cd8ddfe26dd7331e963d29ce1e822edce659ab9667fe2ae`.
+- 32-bit Float WAV: `VERIFIED DELIVERED`, 70,272,050 bytes,
+  displayed post-delivery SHA-256:
+  `87f400eb6b45be19ac75cd51b16c38ecdf25c57479a9519501071fc8b3aa0669`.
+- Both delivery receipts explicitly state filesystem readback. No
+  M18 micro-trim path was used. M17's existing single verified trim
+  remains distinct from M18 conversion.
+- This record is **screenshot-based**; the new exported WAV bytes were
+  not attached in this turn. No independent playback/editing, external
+  WAV inspection, A02 cross-rate gate, SOURCE/Project mutation, cancel
+  or no-overwrite physical tests are claimed.
+
+**Disposition:** M17 -2.70 dBTP field regression CLOSED ON THIS
+SOURCE/CONFIGURATION; M18 PCM24 + Float32 delivery field replay PASS.
+The larger A01–A15 physical acceptance matrix remains PARTIAL;
+overall L1 Full Qualification and `main` merge remain NOT AUTHORIZED.
+
+**Status: PARTIAL PHYSICAL ACCEPTANCE.** Remaining checklist items
+are not evidenced by the screenshots and must not be marked PASS.
+
+
+## 15 November 2026 — M17 Rate & Time direct WAV export controls (non-FQ candidate)
+
+Before the next physical M24 replay, the PO's chosen UX is a compact
+`WAV OUTPUT` footer in the existing M17 `Rate & Time` popup rather than
+a new DSP/editor window or an additional format wizard. The view offers
+two explicit actions: `EXPORT PCM24` (TPDF dither) and `EXPORT FLOAT32`
+(IEEE floating point, no dither). They share the existing single Product
+`M18ProductExportViewModel::beginExport(destination, formatIndex)`,
+one SaveFile dialog, worker progress/Cancel/ACK, readback SHA receipt,
+no-overwrite, SOURCE/Project/MASTER epoch guards and the existing M17
+certificate. No M18 post-quantization TP veto is reintroduced.
+
+The buttons are disabled until `canExport` is genuinely true for an
+exact M17 verified full Master. Only the format selected by the button
+is handed to M18; cancelling the destination dialog does **not** change
+the persisted Project output preference. On successful choice, M18
+writes the canonical preference itself through `chooseM18WavEncoding`;
+no QML code handles or rounds the uint64 dither seed. The File menu's
+pre-existing export modal remains available as a backward-compatible
+secondary route.
+
+Physical checks in addition to the above A01–A15, on the **new exact SHA**:
+
+- B01: At no SOURCE and after M17 becomes stale, both popup buttons are
+  disabled, without changing `canExport` or the old M18 model.
+- B02: With M17 verified, `EXPORT PCM24` directly opens SaveFile; 
+  verified receipt is 24-bit PCM with TPDF, no prior encoding modal.
+- B03: `EXPORT FLOAT32` does the same for Float32 with no dither.
+  Each format requires a NEW destination, preserving the other WAV.
+- B04: Cancel SaveFile: no worker begins, no WAV delivered, the
+  Project's previously persisted WAV choice is unchanged.
+- B05: Docked and floating M17 windows both invoke the same Main-owned
+  M18 transaction. At the 1184x688 Windows minimum, no scrollbar, clipped
+  action, overlapping footer or offscreen popup is allowed. All six
+  MASTER rate choices, TIME, memory, CALIBRATE and both WAV actions must
+  remain visible simultaneously.
+- B06: While a delivery is running, second export is disabled, existing
+  files are not overwritten, and Cancel/ACK/Source invalidation behave
+  exactly as in A05–A12.
+- B07: During M18 encoding/verification the EXISTING copper ProgressBar
+  in the M17 GR HISTORY lower bay shows the actual encoded fraction
+  with an explicit readback-pending label, not an invented delivered WAV
+  percentage. No second progress window, no additional permanent row,
+  no new progress timer. The existing M17 control row exposes Cancel
+  Export. On terminal VERIFIED/FAILED/CANCELLED, the lower bay restores
+  authentic GR HISTORY (or a genuinely concurrently owned preparation
+  if one exists); the SAME fixed WAV OUTPUT row shows inline status,
+  full-sha tooltip/copy affordance (only for readback-verified results)
+  and a real native M18 ACK button. No independent result dialog may open.
+  The M16 independent meter is unchanged.
+- B08: The Rate & Time window is strictly NONSCROLLING, including at
+  physical minimum size and while M17 is floating. No modification of
+  FQ99 geometry, app min 1184x688, M19–M21 layout or frozen M16/M17 DSP
+  output. The existing M19–M21 scrolling is a separately tracked future
+  GUI closeout item, not a reason to rewrite analyzer code now.
+- B09: Reopen Rate & Time after File dialog Cancel and after normal
+  completion; do not show a synthetic result or commit an output format
+  without accepted WAV. After an actual encoding run, reopen Rate & Time
+  automatically only once on terminal receipt; keep it accessible there
+  until explicit OK, and keep the original error details accessible from
+  the compact failure status. A second export is blocked while ACK is owed.
+- B10: The previous separate M18 result dialog is absent. At 1184x688,
+  inline result controls do not move the two format buttons, increase
+  the popup height, scroll or obscure six rate rows, CALIBRATE or memory
+  summary. Native clipboard copy must expose only the independently
+  SHA-verified 64-character result, never a guessed output path.
+
+These additions require Qt native UI inspection, not a CI-only PASS.
+
+
+## Physical PO replay — 2026-11-15, CI #18 / SHA 8b2197e9
+
+The PO physically launched `RGS-P2-I2-Win64-RESEARCH-ONLY-18`,
+commit `8b2197e961ac98f427b126da022c8d554dbbcfdc`,
+[7/7 focused CI #43705272715](https://github.com/casaferla/RGS-MasterLab/actions/runs/43705272715),
+and supplied Windows screenshots of the ACTUAL Product WAV progress at
+60%/100%, return to authentic GR HISTORY, inline PCM24 and Float32
+receipts, SHA and ACK hover/tooltips and the unchanged non-scrolling
+Rate & Time panel. SOURCE displayed: `Reati universali (Remastered)
+(Edit) 44.wav` (44.1 kHz, stereo); MASTER selected 48 kHz; M17
+Ceiling -2.70 dBTP and Verification Trim 0.00 dB / NO TRIM. P2 row
+visible/bypassed in this case. These screenshots are a genuine physical
+replay, NOT merely Qt CI mockups.
+
+The two **actual WAV bytes were provided by the PO** and independently
+inspected (not merely trusting UI receipts):
+
+| Output | Exact verified SHA-256 | WAV encoding | Rate/channels | Frames | Duration | Size |
+|---|---|---|---|---:|---:|---:|
+| `24(1).wav` | `eee19b50715160eec33ef5eabb461d16ce8a0688dd0b1bd642f819afceb25da7` | PCM24 | 48000 Hz stereo | 9,560,816 | 03:19.184 | 57,364,940 bytes |
+| `32(1).wav` | `f5b5dbacacab8c2d1278a9ad61f94d7c737a7dcd5401363834927842c2a7de75` | IEEE Float32 | 48000 Hz stereo | 9,560,816 | 03:19.184 | 76,486,586 bytes |
+
+Both SHA-256 values matched those independently copied from the app
+through its inline SHA control. The WAV headers were valid, samples
+checked from multiple positions were finite, levels matched, and
+sampled PCM24-vs-Float32 maximum absolute delta was approximately
+1.79e-7 (quantization/dither-scale). No claim is made of independent
+full-song audition, bit-exact reconstruction from private M17 PCM,
+standalone True Peak after quantization, or completion of the full
+A01–A15/B01–B10 test matrix.
+
+**Field findings:** The SHA and OK receipt controls were using native
+Qt Basic `Button` chrome instead of RGS `StudioButton`, and their
+tooltips were immediate rather than the established stationary
+`StudioTooltipDwell` 1000-ms policy. This is a local GUI consistency
+defect, NOT an M18 codec/sha/ceiling failure. Corrected on the active
+writer with exactly the existing RGS control component and hover policy;
+re-qualification of that updated UI still requires new exact-SHA CI
+and subsequent physical visual confirmation.
+
+**Disposition:** M18 PCM24 and Float32 physical cross-rate encoding,
+SHA match and core in-place progress/receipt interaction are supported.
+Remaining destructive, cancellation, stale-epoch, Project SaveAs and
+whole-M24 physical gates remain open. No FQ or release claim.
+
+
+## Physical PO UI replay — 2026-11-15, vertical resize / Audacity
+
+Seven more actual Windows screenshots supplied by the PO show that the
+`EXPORT PCM24` and `EXPORT FLOAT32` actions must be **right-aligned** in
+the already fixed-height WAV OUTPUT footer; the right edge of Float32 must
+coincide with the right edge of CALIBRATE. No wider popup, new row,
+scrolling or shifted SHA/OK result slot is authorized.
+
+The PO also demonstrated two discrete vertical-layout jumps as the
+Product window is resized:
+
+1. In the shared `DspEditorHost.qml`, the `compactTallerEditor &&
+   root.height < 470` ternaries changed top/bottom padding, spacing and
+   **header height** in one frame. This affects Stereo/M-S and later
+   editor keys; it is NOT a reason to change earlier FQ99 Gain/EQ/
+   Compressor layout.
+2. In `StereoMsEditor.qml`, a separate hard `root.height < 380`
+   threshold abruptly changed its header row, graph minimum and lower
+   control well height/margins. This explains Stereo/M-S's two jumps.
+
+The nonrelease candidate removes these discrete breakpoint rules,
+retains the already physically proven compact 34lp header for *only*
+the affected editor-key group across supported heights, continuously
+interpolates compact-group outer padding, and continuously interpolates
+Stereo/M-S inner geometry through a bounded height range. Earlier
+Input Gain / Parametric EQ / Compressor header and padding remain
+untouched. The existing minimum-size Qt gate now also verifies real
+Float32/CALIBRATE right-edge coincidence (<=2px) and compact M17
+34lp header at 1184x688. No FQ/physical PASS is inferred until
+the new exact-SHA green and PO resize replay.
+
+**Independent format investigation:** The supplied
+`24(1).wav` actually has RIFF WAVE format tag `1`, 24 bits,
+48000 Hz, stereo, matching SHA
+`eee19b50715160eec33ef5eabb461d16ce8a0688dd0b1bd642f819afceb25da7`.
+The companion `32(1).wav` has format tag `3`, IEEE Float32,
+48000 Hz stereo, SHA
+`f5b5dbacacab8c2d1278a9ad61f94d7c737a7dcd5401363834927842c2a7de75`.
+Audacity's 32-bit floating-point internal sample representation on import
+does NOT imply that the on-disk PCM24 file is Float32; see
+https://manual.audacityteam.org/man/importing_audio.html.
+Neither the M18 codec nor the already delivered WAV bytes requires a fix.
+
+
+## 15 November 2026 — PO physical replay #20 disproves smooth common-header fix
+
+The PO physically tested
+`RGS-P2-I2-Win64-RESEARCH-ONLY-20`
+(commit `be0b2ace3f1fbe8eb7685f39db1876fd087c22df`;
+CI #43738282605 green 7/7), using ten actual Windows screenshots
+through vertical window resize with **no SOURCE**. Independent
+comparison against the Parametric EQ panel shows:
+
+- The undock glyph, title and `Mastering` context in ALL editors from
+  Stereo/M-S to M21 STILL move with window height, even though the
+  previous binary 470px switch was replaced by smooth interpolation.
+  This is a FAILED PO physical geometry gate, not a pass or cosmetic
+  rounding issue. Stereo/M-S is not aligned with Input Gain/Parametric
+  EQ even at the minimum.
+- Streaming TP Limiter has an additional discontinuity in its own
+  `StreamingTruePeakLimiterEditor.qml` at `height < 390`; its
+  already-integrated streaming-audio engine is NOT under test here.
+- Only the M18 WAV footer's right alignment is geometrically CI-proved
+  so far; it is not evidence that shared host title geometry matches.
+
+**Corrected root-cause strategy:** Restore the exact ORIGINAL common
+Parametric EQ `DspEditorHost` header geometry for EVERY editor:
+`ColumnLayout.anchors.margins=12`, `spacing=8` and a fixed 40lp
+`dspHostHeaderRegion` height, no module-specific or height-dependent
+inset/spacing/header. The surviving 40lp Input Gain/EQ/Compressor
+qualified layout must remain byte-semantically identical. Only child
+editor bodies may adapt to their available space. Remove P2's private
+binary 390px compact toggle and interpolate ONLY its interior layout,
+without changing the 36px Consolas readouts, slider/wheel/track/thumb
+contracts, user parameter/engine state or save/export semantics.
+
+**NEW true geometry gate (not mere static-source PASS):** CI runs the
+actual Windows Qt Product at 1184x688 and 1184x735. For every genuine
+DSP-chain adapter, it switches the selected editor and compares actual
+`mapToScene` positions of the Undock grip, title and context text
+against Parametric EQ at the SAME window geometry (maximum tolerance
+0.55lp). It additionally enforces the 40lp header, all six M17 rate
+controls, no scrolling, exact WAV/Calibrate right edge (<=2lp) and
+real screenshot capture. If restoring the common geometry reduces
+Rate & Time interior clearance, only compact its contents; never
+reintroduce a special M17 header.
+
+This new exact-SHA patch is not yet physically accepted. All earlier
+PO PCM24/Float32 bytes and M18 SHA checks remain valid; no audio/DSP
+code was touched.
+
+
+## 2026-11-15 — M23 Windows real compact geometry gate blocked after EQ header fix
+
+Focused CI [#43741114445](https://github.com/casaferla/RGS-MasterLab/actions/runs/43741114445),
+exact SHA `ea07cd100a99316c461e0d5f30a43cdfe48b6cdf`,
+completed **6/7 PASS, 1 FAIL**. The standalone Windows Product Qt
+GUI job PASSED, including the EQ-relative undock/title/context
+alignment checks at 1184×688 and 1184×735. The single failing job was
+the *separate* M19–M23 Windows test matrix, which correctly rejected
+the real no-scroll compact fixture:
+
+```
+rgsml_source_metadata_panel_smoke /
+sevenRealAdaptersDockedChainVisualEvidence()
+PO no-scroll: stereoMsEditor control bottom=269 editor height=266
+tests/ui_smoke/test_source_metadata_panel.cpp:1307
+```
+
+The native 680×338 host's common 40lp header + 12lp inset left
+Stereo/M-S 3lp too little room compared to its existing minimum graph
+and controls. This is **not** permission to relax the no-scroll test,
+reduce the header or change the source/DSP engine. The next candidate
+recovers 6lp from the fixed **below-header** gap for compact editors
+only (`ColumnLayout.spacing = compactTallerEditor ? 2 : 8`).
+Header position, 40lp size, 12lp top/side inset and Parametric EQ
+geometry remain identical. The gap depends on the module type rather
+than the window height, so cannot recreate an animated/stepped header
+drift. Both original Windows M23 CTest and Windows Qt Product
+geometry gates remain mandatory. Requalification pending exact SHA CI.
+
+
+## 2026-11-15 — PO physical #22: main well top-left drift at larger windows
+
+PO physically tested `RGS-P2-I2-Win64-RESEARCH-ONLY-22`
+(commit `2934cfcf0649ea62f5dc09cfcea2f08347df2dde`;
+focused CI #43742913524 7/7 green) and supplied **seven Windows
+screenshots** at several real window dimensions. Shared Undock/title/
+context now remain correctly aligned (the original header regression
+is resolved). However, the PO identified TWO further local layout
+regressions **below** the unchanged module headers:
+
+- `StereoMsEditor.qml` enlarged the first `ColumnLayout.spacing`
+  from 4 toward 7lp, and its `SPATIAL CONTROL` row's preferred
+  height from 23 toward 27lp as the editor grows. This moved the
+  **top-left of the rounded STEREO WIDTH RESPONSE well downward**
+  with vertical window expansion. The rounded output goniometer
+  shares that upper visual row.
+- `StreamingTruePeakLimiterEditor.qml` increased the OUTER
+  `ColumnLayout.anchors.margins` from 8 toward 14lp with height,
+  translating the **rounded CEILING/DRIVE main panel both right and
+  down**. Its nested `ColumnLayout.anchors.margins` increased from
+  9 toward 20lp as well, causing unnecessary inner control drift.
+
+**PO rule:** The top-left coordinates of each resizable primary
+container relative to its owning editor are exactly its
+minimum-window coordinates and MUST NOT change with increased
+window width or height. Its size may grow rightward and downward.
+No scrolling or increase of the 1184×688 Product minimum, no
+changes to the Parametric EQ 40lp shared title/Undock header, P2
+streaming math, DSP parameters, WAV export, or existing validated
+M18 verification contracts.
+
+The nonrelease focused patch pins Stereo/M-S's upper header preferred
+height at 23lp and root spacing at 4lp, preserving the natural
+StudioButton minimum so Reset cannot be clipped. P2 pins the outer
+8lp margin and outer 5lp spacing, and its inner 9lp margin, keeping
+the proven native 36px Consolas readouts / sliders. Continuous
+interior height allocation remains allowed, never at the cost of
+an externally translated primary panel. The Windows Product Qt CI
+now compares real `mapToItem(editor)` (x,y) for
+`stereoMsActiveSurface` and `streamingP2MainPanel` against
+1184×688 at four window sizes (1184×688, 1184×735,
+1350×688, 1350×735), tolerance 0.55lp. Existing compact
+680×338 M23 no-scroll Qt fixtures remain mandatory.
+
+**Status:** patch not yet physically accepted. If the CI fails,
+inspect the exact well coordinates and real Qt geometry; do not
+weaken the bounds or exempt these modules. Review adjacent
+goniometer, Stereo/M-S bottom control and P2 inner control groups
+during the PO replay as a separate follow-up—avoid inventing an
+overlapping fixed top-left arrangement for stacked/side-by-side
+children whose upstream sibling expands.
+
+
+## Focused CI #43746193669: last 1lp Stereo/M-S anchor defect
+
+Full run on exact SHA `9b52ca7df8f767711b79145c3884c44c6af06be7`:
+**6/7 SUCCESS**, **Windows Qt Product UI FAIL** on the NEW strict
+top-left anchoring gate. M23 Windows compact fixture, P2 DSP, M17/M18
+and Linux all green. Actual Qt coordinates, relative to own editor:
+
+| Effective window | Stereo width-response (x,y) | P2 main well (x,y) |
+|---|---|---|
+| 1184×688 | 0,34 | 8,8 |
+| 1184×735 | 0,35 **FAIL** | 8,8 PASS |
+| requested 1350×688 | 0,34 | 8,8 |
+| requested 1350×735 | 0,35 **FAIL** | 8,8 PASS |
+
+Windows runner **clamped requested 1350lp width back to 1184lp**,
+so the 1350 results do not physically qualify horizontal expansion;
+the actual PO Windows machine is still needed for that. Do not call
+the width gate independently qualified based on this runner.
+
+Root cause: The `SPATIAL CONTROL` QML `RowLayout` had only
+`Layout.preferredHeight: 23` yet contained a `StudioButton` with
+32lp implicit height. Qt resolved the row as 30lp at minimum, 31lp
+at 735 high. The 4lp gap was already constant; the source of the
+remaining 1lp drift was the **unconstrained row height**, not the
+primary rounded graph nor the Streaming TP panel.
+
+The next surgical candidate pins the upper Stereo/M-S RowLayout
+and `stereoMsResetButton` at exactly 30lp, the physically verified
+minimum-row value, preserving the existing 4lp separation from both
+upper rounded wells. It does not touch M16/M17, EQ header,
+algorithms or audio. Physical and focused-Qt requalification pending.
+
+
+## 2026-11-15 — Focused CI #43748214192, two reds: exact diagnoses
+
+At SHA `8f523734cb140ee59526fe2e024c973e6cd68c32`, focused CI
+#43748214192 completed **5/7 success, 2/7 failure**.
+
+- **Real Windows Qt Product smoke**: both the minimum-window
+  Stereo/M-S upper graph origin and Streaming P2 rounded-panel origin
+  were fixed across all vertical requests:
+  `Stereo (0,34)`, `P2 (8,8)`, even at 735lp height.
+  `RGS_GUI_ALL_PRIMARY_WELLS_KEEP_MIN_TOP_LEFT=PASS`,
+  `RGS_GUI_ALL_DSP_HEADERS_MATCH_PARAMETRIC_EQ=PASS`, and
+  `M18_WAV_RATE_TIME_MINIMUM_1184x688=PASS`. However the process
+  exited nonzero because the test requested 1350lp-wide Windows
+  geometry on HyperVMonitor with only 1200lp desktop width; the
+  resulting `QWindowsWindow::setGeometry` warnings triggered the
+  existing strict native smoke warning guard. The runner in fact
+  clamped its width back to 1184lp. **Horizontal resizing was NOT
+  physically tested there.** Next candidate explicitly checks screen
+  capacity and reports `NOT_TESTABLE_ON_RUNNER` rather than requesting
+  an impossible window or claiming a horizontal PASS.
+- **M23 native Windows full compact CTest**: after the corrected 30lp
+  fixed Stereo top row, the bottom of `stereoMsControlsRegion` landed
+  at y=276 on a y=272 editor in the real 680×338 constrained host
+  (4lp overflow; 91% / 10 of 11 native CTests passed). The fixed
+  upper row MUST remain 30lp: the exact Qt Product gate demonstrated
+  its origin parity. Compact height arithmetic is now
+  `30 upper row + 4 gap + 105 visual row + 4 gap + 129 controls = 272lp`.
+  Reduce ONLY control-well `Layout.minimumHeight` from 133 to
+  129lp, preserving 133lp preferred height and the outer border.
+  The M23 CTest now verifies the positions of all **five actual
+  numeric slider/field pairs** inside that region, so a green outer
+  rectangle cannot camouflage clipped inner controls.
+
+The updated source-level blob integrity guard remains exact and
+prior FQ99/P2 GUI pins remain protected. Both previously failing jobs
+MUST become green at the next exact SHA. No release/FQ claim.

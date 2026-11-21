@@ -34,9 +34,23 @@ public:
     ~TerminalProductActivationCoordinator() override;
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
     [[nodiscard]] bool direct_return_available() const noexcept;
+    // Park a previously rendered exact M17 candidate before switching
+    // the DEVICE from PROCESSED to PREPARED or REFERENCE. A pending M17
+    // render is deliberately NOT sacrificed to a normal audition click.
+    // Pure, owner-thread-only read gate. Must be called before consuming
+    // an M18 switch_target epoch: refusing an in-flight M17 render must
+    // leave both Product epochs and audible DEVICE ownership unchanged.
+    [[nodiscard]] core::Status can_begin_independent_audition(
+        AuditionTarget target) const;
+    [[nodiscard]] core::Status before_independent_audition(
+        AuditionTarget target);
     // Explicit UI Return from current exact M17 direct OUTPUT_RATE owner.
     // Never route to anonymous MASTER->DEVICE monitor or issue new Prepare.
     Q_INVOKABLE bool returnToSource();
+    // Explicit A/B return only: reinstall the retained, verified Preview
+    // after a successful independent REFERENCE/PREPARED comparison.
+    // No Render Master, no foreign sink replacement, no M16 certificate.
+    Q_INVOKABLE bool resumeParkedPreview();
     // Explicit user handoff from an already installed M17 Preview Prepared
     // to Master Audition. Retires the exact M17 DEVICE owner, restores
     // MANUAL and keeps the SAME verified MASTER; never runs Prepare.
@@ -82,6 +96,7 @@ private:
     void master_rate_changed();
     void private_session_changed();
     void external_context_changed();
+    void maybe_rearm_parked_master();
     void begin_activation();
     void prepare_requested();
     void cancel_requested();

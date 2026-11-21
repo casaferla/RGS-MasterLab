@@ -39,6 +39,8 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::preview_nonconforming_requested);
     connect(selector_,&AuditionSourceSelector::changed,
             this,&TerminalProductActivationCoordinator::external_context_changed);
+    connect(transport_,&PlaybackTransportViewModel::playbackChanged,
+            this,&TerminalProductActivationCoordinator::maybe_rearm_parked_master);
     // Render latency is observational. This timer never asserts that M17
     // owns the sink or shortens any protected FP/verification deadline.
     measuredProgressTimer_.setInterval(300);
@@ -201,10 +203,11 @@ void TerminalProductActivationCoordinator::begin_activation()
     }
     readyToPreview_=false;
     view_->clearVerificationTrim();
-    // M17 belongs to PROCESSED. A normal PREPARED audition is a UI
-    // selection, not a DSP failure: select current accepted PROCESSED
-    // before capturing the exact MANUAL owner. Do not fabricate it.
-    if(selector_->active_target()==AuditionTarget::PREPARED) {
+    // PREPARED and REFERENCE are comparison targets, not M17 failures.
+    // Render Master requests an exact PROCESSED owner first. The existing
+    // sink and M18 admission guards remain authoritative.
+    if(selector_->active_target()==AuditionTarget::PREPARED
+       ||selector_->active_target()==AuditionTarget::GOLD) {
         if(!selector_->processed_available()) {
             view_->clearAudioError();
             view_->setAudioStatus(QStringLiteral(
@@ -851,6 +854,125 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
     emit directReturnChanged();
 }
 
+core::Status TerminalProductActivationCoordinator::can_begin_independent_audition(
+    AuditionTarget target) const
+{
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_INDEPENDENT_AUDITION_REQUIRES_OWNER_THREAD"});
+    if(target==AuditionTarget::PROCESSED)
+        return core::Status::success();
+    if(session_->monitoring_transaction_active())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REFERENCE_SWITCH_REQUIRES_EXPLICIT_MASTER_RETURN"});
+    if(transitioning_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REFERENCE_SWITCH_TRANSITION_IN_PROGRESS"});
+    if(!intent_)return core::Status::success();
+    // An active M17 full-resource computation cannot be silently
+    // discarded simply because the listener clicks on REFERENCE.
+    const auto status=session_->status();
+    if(status!=QStringLiteral("READY_TO_INSTALL")
+       &&status!=QStringLiteral("PRIVATE_INSTALLED")
+       &&status!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       &&status!=QStringLiteral("NONCONFORMING_INSTALLED"))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_RENDER_IN_PROGRESS_FINISH_OR_CANCEL_BEFORE_AUDITION_SWITCH"});
+    return core::Status::success();
+}
+
+core::Status TerminalProductActivationCoordinator::before_independent_audition(
+    AuditionTarget target)
+{
+    // Repeat the pure gate at the actual parking boundary: SOURCE/M17
+    // ownership may have changed between the preflight and M18 admission.
+    const auto allowed=can_begin_independent_audition(target);
+    if(!allowed)return allowed;
+    if(target==AuditionTarget::PROCESSED||!intent_)
+        return core::Status::success();
+    const auto exactManual=intent_->manualOwner;
+    const auto exactId=intent_->manualId;
+    deactivate(true);
+    if(state_->bypassed()||intent_||!session_->comparison_cached()
+       ||!session_->comparison_pcm_still_valid()
+       ||selector_->processed_realization_snapshot()!=exactManual
+       ||selector_->processed_realization_id()!=std::optional{exactId})
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REFERENCE_SWITCH_COULD_NOT_PARK_VERIFIED_MASTER"});
+    view_->setAudioStatus(QStringLiteral("MASTER RETAINED · SELECT PROCESSED"));
+    return core::Status::success();
+}
+
+bool TerminalProductActivationCoordinator::resumeParkedPreview()
+{
+    if(QThread::currentThread()!=thread() ||transitioning_
+       ||state_->bypassed() ||session_->monitoring_transaction_active()
+       ||selector_->active_target()!=AuditionTarget::PROCESSED)
+        return false;
+    // selector.changed() may already have executed maybe_rearm_parked_master
+    // synchronously. In that case comparison_cached() is correctly FALSE:
+    // the verified cache has become an exact READY_TO_INSTALL ticket.
+    const bool alreadyRearmed=intent_ &&readyToPreview_
+        &&session_->status()==QStringLiteral("READY_TO_INSTALL");
+    const bool stillParked=!intent_ &&session_->comparison_cached()
+        &&session_->comparison_pcm_still_valid()
+        &&session_->comparison_owners_current();
+    if(!alreadyRearmed &&!stillParked)return false;
+    // The current sink must still be the accepted MANUAL realization.
+    // STOPPED is required by the native immutable M17 re-arm contract;
+    // stop only that exact source before restoring the cached Preview.
+    const auto before=transport_->playback_snapshot();
+    if(!before ||before.value()->audibleRealization.realizationId
+            !=selector_->processed_realization_id()
+       ||before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW)
+        return false;
+    const bool wasPlaying=before.value()->state==core::PlaybackState::PLAYING;
+    if(before.value()->state!=core::PlaybackState::STOPPED) {
+        transport_->stop();
+        const auto stopped=transport_->playback_snapshot();
+        if(!stopped ||stopped.value()->state!=core::PlaybackState::STOPPED
+           ||stopped.value()->audibleRealization.realizationId
+                !=selector_->processed_realization_id())
+            return false;
+        // Stop may reset a Windows stream to frame zero. Restore the
+        // independently remembered MANUAL cue before the M17 epoch capture.
+        // SEEK is navigation-only; a failure cannot borrow another owner.
+        if(stopped.value()->position!=before.value()->position
+           &&!transport_->seek_source_frame(before.value()->position))
+            return false;
+    }
+    if(stillParked)maybe_rearm_parked_master();
+    if(!intent_ ||!readyToPreview_
+       ||session_->status()!=QStringLiteral("READY_TO_INSTALL"))
+        return false;
+    preview_requested();
+    if(!deviceActive_ ||session_->status()!=QStringLiteral("PRIVATE_INSTALLED"))
+        return false;
+    // Preserve an in-progress A/B audition only after the exact M17
+    // DEVICE owner is installed. This is playback, never a new render.
+    if(wasPlaying) {
+        const auto exact=session_->private_installed_output_identity();
+        const auto installed=transport_->playback_snapshot();
+        if(!exact ||!installed
+           ||installed.value()->audibleRealization.realizationId
+                !=std::optional{exact.value()->realizationId})
+            return false;
+        transport_->playOrResume();
+        const auto playing=transport_->playback_snapshot();
+        if(!playing ||playing.value()->state!=core::PlaybackState::PLAYING
+           ||playing.value()->audibleRealization.realizationId
+                !=std::optional{exact.value()->realizationId})
+            return false;
+    }
+    return true;
+}
+
 bool TerminalProductActivationCoordinator::direct_return_available() const noexcept
 {
     if(transitioning_||!deviceActive_||!intent_||state_->bypassed()
@@ -1093,16 +1215,38 @@ void TerminalProductActivationCoordinator::limiter_accepted()
         return;
     }
     if(session_->comparison_cached()) {
-        // ON does not re-render or auto-play M17. Re-establish the exact
-        // currently audible MANUAL owner; the user must click Preview
-        // Prepared / Preview Anyway, respectively, to hear cached PCM.
-        auto captured=selector_->capture_terminal_activation_intent();
-        if(captured && session_->comparison_owners_current()) {
-            intent_=*captured.value();
-            auto resumed=session_->resume_comparison();
-            if(resumed)return; // private_session_changed publishes READY.
-            intent_.reset();
+        // BYPASS -> ON is not a new Ceiling, SOURCE or MASTER generation.
+        // Reconcile through the SAME exact-owner parked-Master path used
+        // after PREPARED / REFERENCE navigation. A verified cross-rate
+        // MASTER must remain MONITOR-only, never call resume_comparison()
+        // (which rightly requires MASTER == DEVICE for direct Preview).
+        // Same-rate, stopped/playing cue races and other independent
+        // targets also retain the immutable PCM until a true invalidation.
+        const bool currentTarget=selector_->active_target()
+            ==AuditionTarget::PROCESSED;
+        if(session_->comparison_pcm_still_valid()
+           &&(!currentTarget||session_->comparison_owners_current())) {
+            maybe_rearm_parked_master();
+            // Successful same-rate rearm CONSUMES the comparison-cache
+            // state and publishes READY_TO_INSTALL (or the separately
+            // consent-gated measured candidate). A vanished cache is
+            // therefore NOT evidence that the MASTER went stale:
+            // cancelling here discarded the verified PCM after success.
+            const auto rearmed=session_->status();
+            if(rearmed==QStringLiteral("READY_TO_INSTALL")
+               ||rearmed==QStringLiteral("MEASURED_NONCONFORMING_READY"))
+                return;
+            // Cross-rate monitoring and independent REFERENCE/PREPARED
+            // navigation deliberately leave the exact cache parked.
+            // A transient cue/owner refusal may likewise leave it parked,
+            // with its real error visible, never silently destroy it.
+            if(session_->comparison_cached()
+               &&session_->comparison_pcm_still_valid()
+               &&(!currentTarget||session_->comparison_owners_current()))
+                return;
         }
+        // Alien MANUAL owner or genuinely invalidated staged PCM cannot
+        // be promoted merely by toggling the limiter switch back ON.
         static_cast<void>(session_->cancel());
     }
     if(intent_)deactivate(false);
@@ -1136,9 +1280,26 @@ void TerminalProductActivationCoordinator::manual_preview_changed(
               ||previewStatus==QStringLiteral("IDLE")) {
         manualPreviewInProgress_=false;
         waitingForManualPreview_=false;
-        // Upstream completion never triggers Prepare.
-        if(!state_->bypassed()&&!intent_)
-            view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+        // An upstream completion never schedules another M17 Render.
+        // In particular, the ordinary Preview READY notification may
+        // arrive AFTER a cross-rate, exact-owner M17 rearm has already
+        // published a valid "MASTER VERIFIED" monitoring status. Do not
+        // overwrite that evidence with "NEEDS PREPARATION". Conversely,
+        // an actually changed MANUAL or selected Project MASTER rate must
+        // continue to request rendering; never revive stale PCM by text.
+        if(!state_->bypassed()&&!intent_) {
+            const auto verified=session_->verified_master_rate_for_monitoring();
+            const bool projectRateCurrent=verified
+                &&(!masterRateState_
+                   ||masterRateState_->master_rate_hz()==verified->value());
+            if(projectRateCurrent) {
+                view_->clearAudioError();
+                view_->setAudioStatus(QStringLiteral(
+                    "MASTER VERIFIED · LISTEN TO MASTER"));
+            } else {
+                view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+            }
+        }
     }
 }
 
@@ -1297,21 +1458,71 @@ void TerminalProductActivationCoordinator::source_committed_successfully()
     view_->setAudioStatus(QStringLiteral("BYPASS · NEW SOURCE"));
 }
 
+void TerminalProductActivationCoordinator::maybe_rearm_parked_master()
+{
+    if(transitioning_||intent_||state_->bypassed()
+       ||session_->monitoring_transaction_active()
+       ||!session_->comparison_cached())
+        return;
+    if(!session_->comparison_pcm_still_valid()) {
+        static_cast<void>(session_->cancel());
+        view_->clearVerificationTrim();
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+        return;
+    }
+    if(selector_->active_target()!=AuditionTarget::PROCESSED) {
+        view_->setAudioStatus(QStringLiteral("MASTER RETAINED · SELECT PROCESSED"));
+        return;
+    }
+    if(!session_->comparison_owners_current())return;
+    // Verify the *actual* current immutable MASTER and MANUAL device
+    // owner, not only cached SOURCE-side provenance. A cross-rate stage
+    // has a legal monitor-only path while PLAYING, even when a transient
+    // cue/Loop-wrap snapshot cannot be captured for direct Preview.
+    // Never substitute a missing/alien DEVICE owner with a fictitious
+    // "MASTER VERIFIED" status.
+    if(session_->status()==QStringLiteral("COMPARISON_VERIFIED")
+       &&session_->verified_master_rate_for_monitoring()
+       &&!session_->current_master_matches_device_for_preview()) {
+        readyToPreview_=false;
+        view_->clearAudioError();
+        view_->setAudioStatus(QStringLiteral(
+            "MASTER VERIFIED · LISTEN TO MASTER"));
+        emit directReturnChanged();
+        return;
+    }
+    // Same-rate direct Preview still requires the separately captured
+    // exact MANUAL owner, stable cue, Loop and current playback lease.
+    // A valid monitor-only MASTER does not borrow this direct install.
+    const auto captured=selector_->capture_terminal_activation_intent();
+    if(!captured) {
+        view_->setAudioStatus(QStringLiteral(
+            "MASTER RETAINED · STOP TO PREVIEW"));
+        return;
+    }
+    transitioning_=true;
+    intent_=*captured.value();
+    const auto resumed=session_->resume_comparison();
+    transitioning_=false;
+    if(!resumed) {
+        intent_.reset();
+        view_->reportAudioError(QString::fromStdString(
+            resumed.error()->message()));
+        return;
+    }
+    private_session_changed(); // status READY, no new PCM or DSP work
+    emit directReturnChanged();
+}
+
 void TerminalProductActivationCoordinator::external_context_changed()
 {
     if(measuredPreparing_
        &&session_->capture_measured_master_for_device_conversion()
             !=pendingMeasured_)
         cancel_measured_crossrate_audition();
-    // Selector signals during MANUAL restoration cannot re-enter bypass.
-    if(session_->monitoring_transaction_active())return;
-    if(transitioning_)return;
+    if(session_->monitoring_transaction_active()||transitioning_)return;
     if(!intent_) {
-        if(session_->comparison_cached()
-           &&!session_->comparison_owners_current()) {
-            static_cast<void>(session_->cancel());
-            view_->clearVerificationTrim();
-        }
+        maybe_rearm_parked_master();
         return;
     }
     // A new manual owner or selected target invalidates any terminal

@@ -6,6 +6,8 @@ Item {
     objectName: "auditionSourceSelectorPanel"
 
     property Item previousTabItem
+    // Main coordinates safe terminal Return before target selection.
+    property var targetSwitchHandler: null
     property Item nextTabItem
     property alias firstTarget: preparedButton
     property alias lastTarget: goldButton
@@ -38,7 +40,7 @@ Item {
                 enabled: auditionSelector.preparedAvailable
                 selected: auditionSelector.activeTarget === "PREPARED"
                 accentColor: "#00C8FF"
-                onClicked: auditionSelector.selectPrepared()
+                onClicked: root.targetSwitchHandler ? root.targetSwitchHandler("PREPARED") : auditionSelector.selectPrepared()
                 KeyNavigation.backtab: root.previousTabItem
                 KeyNavigation.tab: processedButton
                 Accessible.name: "Audition Prepared realization"
@@ -53,7 +55,7 @@ Item {
                 enabled: auditionSelector.processedAvailable
                 selected: auditionSelector.activeTarget === "PROCESSED"
                 accentColor: "#9A73FF"
-                onClicked: auditionSelector.selectProcessed()
+                onClicked: root.targetSwitchHandler ? root.targetSwitchHandler("PROCESSED") : auditionSelector.selectProcessed()
                 KeyNavigation.backtab: preparedButton
                 KeyNavigation.tab: goldButton
                 Accessible.name: "Audition Processed realization"
@@ -62,17 +64,17 @@ Item {
             StudioButton {
                 id: goldButton
                 objectName: "auditionGoldButton"
-                text: "GOLD"
+                text: "REFERENCE"
                 tone: "gold"
-                minimumControlWidth: 70
+                minimumControlWidth: 112
                 contentPadding: 10
                 enabled: auditionSelector.goldAvailable
                 selected: auditionSelector.activeTarget === "GOLD"
                 accentColor: "#F2B632"
-                onClicked: auditionSelector.selectGold()
+                onClicked: root.targetSwitchHandler ? root.targetSwitchHandler("GOLD") : auditionSelector.selectGold()
                 KeyNavigation.backtab: processedButton
                 KeyNavigation.tab: root.nextTabItem
-                Accessible.name: "Audition Gold Reference"
+                Accessible.name: "Audition Reference"
                 Accessible.description: enabled ? (selected ? "Selected" : "Available audition target") : "Unavailable audition target"
             }
         }
@@ -81,7 +83,8 @@ Item {
     Label {
         objectName: "activeAuditionTargetLabel"
         visible: false
-        text: "Active: " + auditionSelector.activeTarget
+        text: "Active: " + (auditionSelector.activeTarget === "GOLD"
+                            ? "REFERENCE" : auditionSelector.activeTarget)
         Accessible.role: Accessible.StaticText
         Accessible.name: text
     }

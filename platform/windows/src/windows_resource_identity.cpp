@@ -29,7 +29,7 @@ struct FileIdentity final {
         || reference.permissions().can_write()) {
         return core::Result<FileIdentity>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Gold identity requires a read-only Windows local-file reference."});
+            "Reference identity requires a read-only Windows local-file reference."});
     }
 
     const auto& locator = reference.locator();
@@ -44,7 +44,7 @@ struct FileIdentity final {
         || decoded != QDir::cleanPath(decoded)) {
         return core::Result<FileIdentity>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Gold identity requires a canonical absolute local drive path."});
+            "Reference identity requires a canonical absolute local drive path."});
     }
 
     const auto native = QDir::toNativeSeparators(decoded);
@@ -64,7 +64,7 @@ struct FileIdentity final {
                 ? core::ErrorCode::AccessDenied
                 : core::ErrorCode::InvalidState);
         return core::Result<FileIdentity>::failure(core::Error{
-            code, "Gold identity could not be established; selection rejected."});
+            code, "Reference identity could not be established; selection rejected."});
     }
 
     BY_HANDLE_FILE_INFORMATION info{};
@@ -73,7 +73,7 @@ struct FileIdentity final {
     if (queried == FALSE) {
         return core::Result<FileIdentity>::failure(core::Error{
             core::ErrorCode::InvalidState,
-            "Gold identity query failed closed."});
+            "Reference identity query failed closed."});
     }
     return core::Result<FileIdentity>::success(FileIdentity{
         static_cast<std::uint64_t>(info.dwVolumeSerialNumber),

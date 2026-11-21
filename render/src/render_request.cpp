@@ -5,6 +5,7 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
 
 #include <algorithm>
 #include <string>
@@ -17,6 +18,7 @@ constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
+constexpr auto kStreamingTruePeakTypeId = "rgsml.dsp.streaming-true-peak-limiter";
 
 [[nodiscard]] rgsml::core::Error request_error(
     rgsml::core::ErrorCode code,
@@ -30,7 +32,8 @@ constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 [[nodiscard]] bool is_supported_parameterized_builtin(std::string_view type_id) noexcept
 {
     return type_id == kGainTypeId || type_id == kEqTypeId
-        || type_id == kCompressorTypeId || type_id == kStereoMsTypeId;
+        || type_id == kCompressorTypeId || type_id == kStereoMsTypeId
+        || type_id == kStreamingTruePeakTypeId;
 }
 
 }  // namespace
@@ -126,6 +129,14 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
                     rgsml::core::ErrorCode::InvalidArgument,
                     "MODULE_PARAMETER_PAYLOAD_MISMATCH",
                     "A Stereo/M-S binding contained a non-StereoMsParameters payload."));
+            }
+        } else if (type_id == kStreamingTruePeakTypeId) {
+            if (!std::holds_alternative<rgsml::dsp::StreamingTruePeakLimiterParameters>(
+                    binding.parameters)) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "A Streaming True Peak Limiter binding requires its own typed P2 parameters."));
             }
         }
     }

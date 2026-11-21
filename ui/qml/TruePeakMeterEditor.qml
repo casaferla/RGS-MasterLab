@@ -17,21 +17,29 @@ Item {
     property bool showLimiterControls: false
     property bool limiterBypassed: true
     property bool limiterSonicControlsEnabled: false
-    property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
+    property real grTimelineFraction: -1
+    property string grTimelineScope: ""
     property var limiterViewModel: null
     property var monitorViewModel: null
+    // The Product M18 ViewModel is a read-only UI source. Export does not
+    // gain DSP authority by appearing in M17's existing GR well.
+    property var exportModel: null
+    readonly property bool exportActive: root.showLimiterGrHistory
+        && !!root.exportModel && root.exportModel.exportInProgress
     readonly property bool devicePreparing: root.showLimiterGrHistory
         && root.monitorViewModel && root.monitorViewModel.monitorPreparing
-    // The lower bay is stable: show PREPARATION only for an actual job.
+    // The lower bay is stable: show RENDERING only for an actual Master job.
     // READY, MONITOR, Return to Source, ERROR, BYPASS and NEEDS PREPARATION
-    // all show the GR HISTORY chrome. In those states the graph is EMPTY
-    // unless its independently authenticated OUTPUT-consumption witness
-    // exists; a prepared MASTER is not itself proof of audible GR.
+    // all show the GR HISTORY chrome. A current source-bound MASTER may
+    // show its immutable OFFLINE SAMPLED GR without asserting a device
+    // consumed-output LIVE measurement. No current MASTER means EMPTY.
     readonly property string terminalAudioStatus: root.limiterViewModel
         ? root.limiterViewModel.audioStatus : ""
+    // MASTER rendering and WAV export share the SAME copper progress rail and
+    // physical lower-band geometry. Once export terminates, restore GR.
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
-        && (root.devicePreparing
+        && (root.exportActive || root.devicePreparing
             || (root.limiterViewModel
                 && root.terminalAudioStatus.startsWith("Preparing")))
     // The entire lower band is fixed. In this combined layout,
@@ -88,11 +96,11 @@ Item {
     // output M16 observer admits VERIFIED-only private ownership. Refuse
     // fake pre-limiter LIVE readings and label the unavailable scope.
     readonly property string liveScopeHeading: !root.showLimiterControls
-        ? "LIVE PROCESSED TRUE PEAK"
+        ? "LIVE PROCESSED TP"
         : root.nonconformingAudition
             ? "POST-LIMITER LIVE TP · NOT CERTIFIED"
-        : root.postLimiterInstalled ? "LIVE POST-LIMITER TRUE PEAK"
-        : "LIVE PRE-LIMITER TRUE PEAK"
+        : root.postLimiterInstalled ? "LIVE POST-LIMITER TP"
+        : "LIVE PRE-LIMITER TP"
 
     // Canonical minimum window is a fully visible editor, never a scroller.
     // The Qt layout itself distributes the available pixel height.
@@ -231,7 +239,8 @@ Item {
                         Layout.preferredHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
                         Layout.maximumHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
                         spacing: 2
-                        opacity: root.limiterBypassed ? 0.5 : 1.0
+                        opacity: root.exportActive ? 1.0
+                            : root.limiterBypassed ? 0.5 : 1.0
                         Item {
                             Layout.fillHeight: root.showLimiterControls
                             Layout.minimumHeight: 0
@@ -241,8 +250,9 @@ Item {
                             Layout.fillWidth: true
                             Text {
                                 objectName: "m17GrHistoryHeading"
-                                text: root.devicePreparing ? "PREPARING PLAYBACK"
-                                    : root.limiterPreparationVisible ? "PREPARATION" : "GR HISTORY"
+                                text: root.exportActive ? "EXPORTING MASTER WAV"
+                                    : root.devicePreparing ? "CONVERTING PLAYBACK"
+                                    : root.limiterPreparationVisible ? "RENDERING" : "GR HISTORY"
                                 color: "#B3C9D9"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -251,30 +261,22 @@ Item {
                             Item { Layout.fillWidth: true }
                             Text {
                                 objectName: "m17GrProvenanceStatus"
-                                text: root.devicePreparing ? "MASTER → DEVICE"
+                                text: root.exportActive ? "M18 · PCM DELIVERY"
+                                    : root.devicePreparing ? "MASTER → DEVICE"
                                     : root.limiterPreparationVisible
                                     ? root.limiterBypassed ? "BYPASS · NOT RUNNING"
                                       : root.limiterViewModel
                                         && root.limiterViewModel.audioStatus.startsWith("Preparing")
                                           ? "OFFLINE · IN PROGRESS" : "OFFLINE · NOT RUNNING"
                                     : root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
-                                    : grHistoryGraph.verifiedSeriesAvailable
-                                        ? "LIVE · CONSUMED GR"
-                                        : grHistoryGraph.offlineSeriesAvailable
-                                          ? root.limiterOfflineGrProvider.offlineStatus
-                                          : "NOT PREPARED · NO GR DATA"
+                                    : grHistoryGraph.offlineSeriesAvailable
+                                        ? root.limiterOfflineGrProvider.offlineStatus.indexOf("NON-CONFORMING") >= 0
+                                            ? "NON-CONFORMING" : "OFFLINE · SAMPLED"
+                                        : "NO GR DATA"
                                 color: "#91A8B7"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
                                 font.weight: Font.Bold
-                                HoverHandler { id: grStatusHover }
-                                ToolTip.text: "OFFLINE shows sampled actual M17 gain applied to this MASTER; LIVE requires independently witnessed consumed device output. No source, bypass or stale owner means no curve."
-                                ToolTip.visible: (grStatusHover.hovered) && stationaryTooltipDwell1.ready
-                                ToolTip.delay: 0
-                                StudioTooltipDwell {
-                                    id: stationaryTooltipDwell1
-                                    anchors.fill: parent
-                                }
                             }
                         }
                         ColumnLayout {
@@ -299,21 +301,27 @@ Item {
                                 Layout.preferredHeight: 14
                                 from: 0
                                 to: 1
-                                value: root.devicePreparing
+                                value: root.exportActive
+                                    ? root.exportModel.encodedProgress
+                                    : root.devicePreparing
                                     ? root.monitorViewModel.devicePreparationFraction
                                     : root.limiterViewModel
                                         ? root.limiterViewModel.preparationFraction : 0
-                                indeterminate: root.devicePreparing
+                                indeterminate: root.exportActive ? false
+                                    : root.devicePreparing
                                     ? !root.monitorViewModel.devicePreparationDeterminate
                                     : root.limiterViewModel
                                         && root.limiterViewModel.audioStatus.startsWith("Preparing")
                                         && !root.limiterViewModel.preparationDeterminate
-                                opacity: root.devicePreparing || (root.limiterViewModel
-                                    && root.limiterViewModel.audioStatus.startsWith("Preparing"))
+                                opacity: root.exportActive || root.devicePreparing
+                                    || (root.limiterViewModel
+                                        && root.limiterViewModel.audioStatus.startsWith("Preparing"))
                                         ? 1.0 : 0.28
-                                Accessible.name: root.devicePreparing
+                                Accessible.name: root.exportActive
+                                    ? "M18 WAV encoding progress, not delivery confirmation"
+                                    : root.devicePreparing
                                     ? "Master to playback device conversion progress"
-                                    : "Offline limiter preparation progress"
+                                    : "Offline Master rendering progress"
                                 // Dynamics copper, the same rounded geometry as Studio controls.
                                 background: Rectangle {
                                     radius: 5
@@ -363,8 +371,21 @@ Item {
                                 // The backend owns all timings. QML only lays
                                 // out the exact observed phase / elapsed /
                                 // central estimate / interval on separate
-                                // visible lines, including the FIRST Prepare.
+                                // visible lines, including the FIRST render.
                                 text: {
+                                    if (root.exportActive) {
+                                        const v = root.exportModel
+                                        const pct = Math.floor(100 * Math.max(0,
+                                            Math.min(1, v.encodedProgress)))
+                                        const label = v.statusText === "CANCELLING"
+                                            ? "CANCELLING WAV EXPORT"
+                                            : "WAV ENCODING / VERIFYING"
+                                        // Encoded frames are NOT a verified delivery
+                                        // certificate. Even at 100%, filesystem
+                                        // readback and ACK remain pending.
+                                        return label + " · encoded " + pct + "%"
+                                            + "\nAwaiting verified filesystem delivery"
+                                    }
                                     if (root.devicePreparing) {
                                         const v = root.monitorViewModel
                                         const rate = hz => (hz / 1000).toFixed(1)
@@ -379,7 +400,7 @@ Item {
                                                ? "\n" + v.devicePreparationEta : "")
                                     }
                                     const v = root.limiterViewModel
-                                    if (!v) return "PREPARATION UNAVAILABLE"
+                                    if (!v) return "RENDERING UNAVAILABLE"
                                     if (!v.audioStatus.startsWith("Preparing"))
                                         return v.audioStatus
                                     const pct = v.preparationDeterminate
@@ -420,14 +441,12 @@ Item {
                             Layout.preferredHeight: root.height < 420 ? 42 : 54
                             Layout.maximumHeight: root.height < 420 ? 42 : 54
                             familyAccent: root.familyAccent
-                            backendVerified: root.limiterGrProvider
-                                ? root.limiterGrProvider.verified : false
-                            verifiedHistory: root.limiterGrProvider
-                                ? root.limiterGrProvider.verifiedSeries : []
                             backendOfflineAvailable: root.limiterOfflineGrProvider
                                 ? root.limiterOfflineGrProvider.offlineAvailable : false
                             offlineHistory: root.limiterOfflineGrProvider
                                 ? root.limiterOfflineGrProvider.offlineSeries : []
+                            timelineFraction: root.grTimelineFraction
+                            timelineScope: root.grTimelineScope
                             bypassed: root.limiterBypassed
                         }
                     }

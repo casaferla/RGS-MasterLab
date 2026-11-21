@@ -16,12 +16,34 @@ file(REMOVE "${_qt_log}")
 
 # Qt emits individual assertion outcomes to an explicit file; keep CTest
 # status equal to the real Qt executable status, never conceal failures.
-execute_process(
-    COMMAND "${RGSML_SMOKE_EXE}" -v2 -o "${_qt_log},txt"
-    RESULT_VARIABLE _smoke_status
-    OUTPUT_VARIABLE _smoke_stdout
-    ERROR_VARIABLE _smoke_stderr
-)
+# Windows native GUI QTest launcher parity with FQ99: in the controlled
+# same-runner #31 matrix the EXACT FQ99 and candidate binaries fail the
+# strict EQ containment test ONLY as direct CMake children; both PASS all
+# 16 cases through CMake -> PowerShell -> unchanged QtTest executable.
+# Keep the 16-case suite and exact exit code. Do not change QTest assertions.
+# Other platforms retain the historical direct execution unchanged.
+if(WIN32)
+    find_program(_rgsml_native_gui_pwsh NAMES pwsh)
+    if(NOT _rgsml_native_gui_pwsh)
+        message(FATAL_ERROR "M16_C2_NATIVE_QT_PWSH_REQUIRED")
+    endif()
+    execute_process(
+        COMMAND "${_rgsml_native_gui_pwsh}" -NoProfile -NonInteractive
+            -File "${CMAKE_CURRENT_LIST_DIR}/qt_smoke_native_windows_launcher.ps1"
+            -QtExe "${RGSML_SMOKE_EXE}"
+            -QtLog "${_qt_log}"
+        RESULT_VARIABLE _smoke_status
+        OUTPUT_VARIABLE _smoke_stdout
+        ERROR_VARIABLE _smoke_stderr
+    )
+else()
+    execute_process(
+        COMMAND "${RGSML_SMOKE_EXE}" -v2 -o "${_qt_log},txt"
+        RESULT_VARIABLE _smoke_status
+        OUTPUT_VARIABLE _smoke_stdout
+        ERROR_VARIABLE _smoke_stderr
+    )
+endif()
 message(STATUS "M16_C2_CTEST_SMOKE_PROCESS_STATUS=${_smoke_status}")
 message(STATUS "M16_C2_CTEST_SMOKE_QT_LOG=${_qt_log}")
 

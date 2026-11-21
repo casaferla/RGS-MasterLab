@@ -25,6 +25,13 @@ ApplicationWindow {
     readonly property color textSecondary: "#8A97A3"
     readonly property color accent: "#00C8FF"
     readonly property color warning: "#F2B632"
+    // The reference waveform is an independently cached WAV summary.
+    readonly property bool referenceWaveformActive:
+        !root.monitorExclusive && auditionSelector.goldActive
+    readonly property var displayedWaveform:
+        root.referenceWaveformActive ? referenceWaveform : sourceWaveform
+    readonly property var activeAuditionRegion:
+        root.referenceWaveformActive ? referenceRegion : auditionRegion
     readonly property color error: "#F27683"
     // Explicitly confirmed in-RAM MASTER loss alone permits exiting a
     // recovery state without reinstalling the original Windows DEVICE.
@@ -58,6 +65,59 @@ ApplicationWindow {
         ? terminalProductActivation : null
     readonly property var appMasterRateState: typeof masterOutputRateState !== "undefined"
         ? masterOutputRateState : null
+    // M18 Export becomes available only when the native Product owner
+    // has installed all epoch guards and retained an exact verified M17 Master.
+    readonly property var appM18ExportModel: typeof m18ProductExportViewModel !== "undefined"
+        ? m18ProductExportViewModel : null
+    // Native Project owns the current explicit WAV encoding preference.
+    // Loading another project restores the combo without a sticky
+    // QML-only choice; TPDF uint64 seed never traverses QML Number.
+    readonly property var appM18ProjectSession: typeof projectSession !== "undefined"
+        ? projectSession : null
+    readonly property int m18ExportFormatIndex: root.appM18ProjectSession
+        ? root.appM18ProjectSession.m18WavEncodingIndex : 0
+    // Transport-only convenience, NOT M18 authorization: on a verified
+    // M17 preview/listen, an Export click may first return the original
+    // MANUAL SOURCE. Recovery, unqualified audition, in-flight export
+    // and unacknowledged receipts cannot invoke this shortcut.
+    readonly property bool m18AutoReturnForExportAvailable:
+        !!root.appM18ExportModel
+        && !root.appM18ExportModel.exportInProgress
+        && !root.appM18ExportModel.canAcknowledge
+        && ((root.directM17ReturnAvailable
+             && root.appTerminalLimiterViewModel
+             && root.appTerminalLimiterViewModel.audioStatus
+                 === "ACTIVE · AUDITION UNQUALIFIED")
+            || (root.monitorExclusive
+                // The recovery-only guard must stay distinct from
+                // monitorExclusive. A monitor with RECOVERY REQUIRED must
+                // use explicit DEVICE-owner recovery, never the ordinary
+                // return-for-export convenience path.
+                && !root.m17RecoveryExitRequired
+                && root.appTerminalMonitorViewModel
+                && root.appTerminalMonitorViewModel.monitorInstalled
+                && !root.appTerminalMonitorViewModel.monitorPreparing
+                && !root.appTerminalMonitorViewModel.monitorCancelling
+                && root.appTerminalLimiterViewModel
+                && root.appTerminalLimiterViewModel.audioStatus
+                    === "MONITOR · PRIVATE PCM (NOT LIVE)"))
+    // QML never mints an export Ticket. Exact Return must succeed, and
+    // native M18 canExport must become true BEFORE opening OS SaveFile.
+    // The real worker gate checks it again after the filename is chosen.
+    property int m18PendingExportFormatIndex: -1
+    function requestVerifiedWavExport(formatIndex) {
+        if ((formatIndex !== 0 && formatIndex !== 1)
+            || !root.appM18ExportModel) return false
+        if (!root.appM18ExportModel.canExport) {
+            if (!root.m18AutoReturnForExportAvailable) return false
+            if (!root.returnFromM17Audition()) return false
+            root.appM18ExportModel.refresh()
+            if (!root.appM18ExportModel.canExport) return false
+        }
+        root.m18PendingExportFormatIndex = formatIndex
+        m18ExportFileDialog.open()
+        return true
+    }
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
     readonly property var appPrivateFirLibrary:
@@ -65,6 +125,19 @@ ApplicationWindow {
         ? privateOriginalFirLibrary : null
     readonly property bool monitorExclusive: root.appTerminalMonitorViewModel
         ? root.appTerminalMonitorViewModel.monitorExclusive : false
+    // A read-only navigation clock shared with the main full-track waveform.
+    // MASTER during anonymous Master Audition; SOURCE when its playhead is
+    // visible. This is NOT a Windows-consumed GR witness or second timer.
+    readonly property real m17GrTimelineFraction:
+        waveformOverview.visible
+        && (root.monitorExclusive || auditionSelector.sourcePlayheadVisible)
+        && waveformOverview.durationFrames > 0
+        ? Math.max(0, Math.min(1,
+            waveformOverview.positionFrames / waveformOverview.durationFrames))
+        : -1
+    readonly property string m17GrTimelineScope:
+        root.monitorExclusive ? "MASTER"
+        : auditionSelector.sourcePlayheadVisible ? "SOURCE" : ""
     // PO 2026-10-27 §12: Master listening belongs to MAIN transport.
     // The historic service editor remains temporarily for PO parity/FQ,
     // not as a second DSP or a second MASTER Prepare authority.
@@ -76,6 +149,43 @@ ApplicationWindow {
         && root.appTerminalProductActivation.directReturnAvailable
     readonly property bool m17ReturnAvailable: root.monitorExclusive
         || root.directM17ReturnAvailable
+    // The user may A/B a verified M17 Preview with independent
+    // REFERENCE/PREPARED, then restore that same PCM without a new render.
+    property bool restorePreviewAfterComparison: false
+    function requestAuditionTarget(target) {
+        if (root.monitorExclusive) {
+            // An anonymous Master monitor is a DIFFERENT device owner;
+            // never carry a pending direct-Preview A/B restore across it.
+            root.restorePreviewAfterComparison=false
+            if (!root.returnFromM17Audition() || root.monitorExclusive)
+                return false
+        }
+        const original=auditionSelector.activeTarget
+        if(original==="PROCESSED" &&target!=="PROCESSED"
+           &&root.directM17ReturnAvailable
+           &&root.appTerminalLimiterViewModel
+           &&root.appTerminalLimiterViewModel.audioStatus
+                ==="ACTIVE · AUDITION UNQUALIFIED")
+            root.restorePreviewAfterComparison=true
+        if(target==="PREPARED") auditionSelector.selectPrepared()
+        else if(target==="PROCESSED") auditionSelector.selectProcessed()
+        else if(target==="GOLD") auditionSelector.selectGold()
+        else return false
+        if(auditionSelector.activeTarget!==target) {
+            // A refused target switch must never arm a later unrelated
+            // auto-install, even if the original Preview PCM still exists.
+            root.restorePreviewAfterComparison=false
+            return false
+        }
+        if(target==="PROCESSED" &&root.restorePreviewAfterComparison) {
+            root.restorePreviewAfterComparison=false
+            // Reinstall only an exact already-cached, verified M17 Master.
+            // The native method checks DEVICE ID and comparison epoch.
+            if(root.appTerminalProductActivation)
+                root.appTerminalProductActivation.resumeParkedPreview()
+        }
+        return true
+    }
     function returnFromM17Audition() {
         // The monitor owns anonymous MASTER->DEVICE PCM. Direct M17
         // (including measured NON-CONFORMING Preview Anyway) owns a
@@ -90,11 +200,29 @@ ApplicationWindow {
     readonly property bool masterTransportPlaying: root.monitorExclusive
         && !!root.appTerminalMonitorViewModel
         && root.appTerminalMonitorViewModel.transportState === "PLAYING"
-    function listenToPreparedMaster() {
+    function listenToPreparedMaster(explicitlyAllowCaution) {
         if (!root.canListenMaster || !root.appTerminalMonitorViewModel)
             return false
-        const success = root.appTerminalMonitorViewModel.installMonitor(false)
-        if (!success && root.appTerminalMonitorViewModel.errorText.indexOf(
+        // Listen to Master plays an already verified ACTIVE M17 Master.
+        // If the UI is in BYPASS, restore the actual native M17 Active
+        // state BEFORE taking a separate anonymous DEVICE-monitor lease.
+        // The native BYPASS->ON path preserves the exact cross-rate Master
+        // and rejects stale SOURCE/owner/parameter revisions. A refused
+        // mutation must not leave blue BYPASS controls while monitoring.
+        if (root.appTerminalLimiterViewModel
+                && root.appTerminalLimiterViewModel.bypass) {
+            root.appTerminalLimiterViewModel.setBypass(false)
+            if (root.appTerminalLimiterViewModel.bypass)
+                return false
+        }
+        // The accepted ON transition must still expose the SAME verified
+        // Master. Never use Play or an empty status to bypass owner gates.
+        if (!root.canListenMaster)
+            return false
+        const approvedCaution = explicitlyAllowCaution === true
+        const success = root.appTerminalMonitorViewModel.installMonitor(approvedCaution)
+        if (!success && !approvedCaution
+                && root.appTerminalMonitorViewModel.errorText.indexOf(
                 "MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE") !== -1)
             limitedMemoryConfirmation.open()
         return success
@@ -424,7 +552,8 @@ ApplicationWindow {
         if (goldSelection.errorMessage.length > 0) return goldSelection.errorMessage
         if (auditionSelector.statusText.length > 0) return auditionSelector.statusText
         if (playbackTransport.errorMessage.length > 0) return playbackTransport.errorMessage
-        if (auditionRegion.errorMessage.length > 0) return auditionRegion.errorMessage
+        if (root.activeAuditionRegion.errorMessage.length > 0)
+            return root.activeAuditionRegion.errorMessage
         return ""
     }
     readonly property string statusSeverity: {
@@ -456,7 +585,7 @@ ApplicationWindow {
     FileDialog {
         id: sourceDialog
         objectName: "sourceFileDialog"
-        title: "Open Source WAV"
+        title: sourceSelection.hasSource ? "Replace Source WAV" : "Open Source WAV"
         fileMode: FileDialog.OpenFile
         nameFilters: ["WAV audio (*.wav *.wave)"]
         onAccepted: {
@@ -469,7 +598,7 @@ ApplicationWindow {
     FileDialog {
         id: goldDialog
         objectName: "goldFileDialog"
-        title: "Open Gold Reference WAV"
+        title: goldSelection.hasGold ? "Replace Reference WAV" : "Open Reference WAV"
         fileMode: FileDialog.OpenFile
         nameFilters: ["WAV audio (*.wav *.wave)"]
         onAccepted: {
@@ -505,6 +634,64 @@ ApplicationWindow {
         }
         onRejected: projectSession.cancelProjectSave()
     }
+
+    // M18 Product-authorized output choice. The File menu remains
+    // disabled until the application owns the complete M18 gate bundle.
+    // No QML surface can mint a Ticket or invoke a detached worker.
+    FileDialog {
+        id: m18ExportFileDialog
+        objectName: "m18ExportFileDialog"
+        title: "Export verified Master WAV"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["WAV audio (*.wav *.wave)"]
+        onAccepted: {
+            const formatIndex = root.m18PendingExportFormatIndex >= 0
+                ? root.m18PendingExportFormatIndex : root.m18ExportFormatIndex
+            root.m18PendingExportFormatIndex = -1
+            const model = root.appM18ExportModel
+            if (!model) return
+            // Real native Product beginExport owns the exact WAV format,
+            // post-readback verification, ACK and privacy-safe diagnostics.
+            // Both SUCCESS and FAIL appear in the permanent M17 footer.
+            model.beginExport(selectedFile, formatIndex)
+        }
+        onRejected: root.m18PendingExportFormatIndex = -1
+    }
+    Dialog {
+        id: m18ExportFormatDialog
+        objectName: "m18ExportFormatDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        title: "Export Master · WAV format"
+        modal: true
+        width: Math.min(420, root.width - 48)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                text: "Choose the final WAV encoding. The verified M17 Ceiling is unchanged. "
+                    + "Existing files are never overwritten; use a new filename."
+                color: root.textPrimary
+                wrapMode: Text.Wrap
+            }
+            ComboBox {
+                id: m18FormatChoice
+                objectName: "m18ExportEncoding"
+                Layout.fillWidth: true
+                model: ["24-bit PCM · TPDF dither", "32-bit Float · no dither"]
+                currentIndex: root.m18ExportFormatIndex
+                onActivated: {
+                    if (root.appM18ProjectSession)
+                        root.appM18ProjectSession.chooseM18WavEncoding(currentIndex)
+                }
+            }
+        }
+        onAccepted: root.requestVerifiedWavExport(root.m18ExportFormatIndex)
+    }
+
+    // No M18 result dialog or independent progress window. The existing
+    // Product M18 ViewModel drives M17's copper progress / inline receipt.
 
     // X/Alt+F4 is NOT permission to retry an absent Windows DEVICE.
     // Keep the in-RAM M17 MASTER or explicitly discard on shutdown.
@@ -549,6 +736,17 @@ ApplicationWindow {
         }
     }
 
+    // File-menu text is only a caption; it does NOT create a native
+    // keyboard accelerator. Install the real application-wide binding.
+    // Reusing Ctrl+O for Replace Source is intentional: it always opens
+    // the same source WAV chooser, preserving SOURCE admission checks.
+    Shortcut {
+        objectName: "sourceLoadShortcut"
+        sequence: "Ctrl+O"
+        context: Qt.ApplicationShortcut
+        enabled: !root.monitorExclusive
+        onActivated: sourceDialog.open()
+    }
     Shortcut {
         sequence: "F10"
         context: Qt.ApplicationShortcut
@@ -556,6 +754,17 @@ ApplicationWindow {
     }
 
     onClosing: function(close) {
+        // An async WAV candidate must never outlive a normal Product exit.
+        // Cancel is nonblocking; keep the UI alive until the worker is
+        // terminal and its transactional writer has finished rollback.
+        // This takes precedence over the M17 discard-recovery exit.
+        if (root.appM18ExportModel && root.appM18ExportModel.exportInProgress) {
+            close.accepted = false
+            root.appM18ExportModel.cancelExport()
+            // M17's copper progress rail continues to show CANCELLING.
+            // No modal dialog may be raised by the close guard.
+            return
+        }
         if (root.m17ConfirmedDiscardExit) {
             close.accepted = true
             Qt.quit()
@@ -598,19 +807,24 @@ ApplicationWindow {
                 height: 20; color: "#0A151D"
                 RowLayout {
                     anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
-                    Label { text: "SOURCE WAVEFORM"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
+                    Label {
+                        objectName: "activeWaveformScopeLabel"
+                        text: root.referenceWaveformActive ? "REFERENCE WAVEFORM" : "SOURCE WAVEFORM"
+                        color: root.referenceWaveformActive ? root.warning : root.textSecondary
+                        font.pixelSize: 9; font.weight: Font.DemiBold
+                    }
                     Item { Layout.fillWidth: true }
                     Label {
                         objectName: "sourceWaveformVisibleClock"
-                        visible: sourceWaveform.canNavigate
+                        visible: root.displayedWaveform.canNavigate
                         Layout.maximumWidth: Math.max(0, waveformRuler.width - 130)
                         elide: Text.ElideRight
-                        text: sourceWaveform.viewportStartText.slice(0,8)
-                            + " · " + sourceWaveform.viewportEndText.slice(0,8)
+                        text: root.displayedWaveform.viewportStartText.slice(0,8)
+                            + " · " + root.displayedWaveform.viewportEndText.slice(0,8)
                         color: "#647682"; font.family: "Consolas"; font.pixelSize: 9
                         HoverHandler { id: waveformClockHover }
-                        ToolTip.text: sourceWaveform.viewportStartText
-                            + " — " + sourceWaveform.viewportEndText
+                        ToolTip.text: root.displayedWaveform.viewportStartText
+                            + " — " + root.displayedWaveform.viewportEndText
                         ToolTip.visible: (waveformClockHover.hovered && waveformClockDwell.ready)
                         ToolTip.delay: 0
                         StudioTooltipDwell {
@@ -625,7 +839,7 @@ ApplicationWindow {
                 objectName: "sourceWaveformOverview"
                 anchors.left: parent.left; anchors.right: parent.right; anchors.top: waveformRuler.bottom; anchors.bottom: parent.bottom
                 anchors.leftMargin: 12; anchors.rightMargin: 12; anchors.topMargin: 6; anchors.bottomMargin: 6
-                presentation: sourceWaveform
+                presentation: root.displayedWaveform
                 positionFrames: root.monitorExclusive
                     && root.appTerminalMonitorViewModel
                     && root.appTerminalMonitorViewModel.masterDurationFrames > 0
@@ -634,25 +848,33 @@ ApplicationWindow {
                         Math.floor(root.appTerminalMonitorViewModel.masterPositionFrames
                             * sourceWaveform.sourceFrameCount
                             / root.appTerminalMonitorViewModel.masterDurationFrames))
-                    : auditionSelector.sourcePlayheadVisible
+                    : (auditionSelector.sourcePlayheadVisible || root.referenceWaveformActive)
                         ? playbackTransport.positionFrames : 0
                 durationFrames: root.monitorExclusive
-                    ? sourceWaveform.sourceFrameCount : playbackTransport.durationFrames
-                waveformColor: root.accent
+                    ? sourceWaveform.sourceFrameCount
+                    : root.displayedWaveform.sourceFrameCount
+                waveformColor: root.referenceWaveformActive ? root.warning : root.accent
                 zeroLineColor: "#29414F"
-                playheadColor: root.monitorExclusive || auditionSelector.sourcePlayheadVisible
-                    ? root.warning : "transparent"
+                // White cue over amber REFERENCE is discernible even in
+                // dense peaks; original SOURCE and MASTER keep amber cue.
+                playheadColor: root.referenceWaveformActive ? root.textPrimary
+                    : (root.monitorExclusive || auditionSelector.sourcePlayheadVisible
+                        ? root.warning : "transparent")
                 overrangeColor: root.error
                 regionColor: "#2A87A95C"
                 regionHandleColor: "#E6EEF0"
-                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                visible: root.displayedWaveform.ready && root.displayedWaveform.sourceFrameCount > 0
                 activeFocusOnTab: visible
                 enabled: !root.monitorExclusive
                 KeyNavigation.backtab: sourceOpenButton
                 KeyNavigation.tab: zoomOutButton
                 Accessible.role: Accessible.Pane
-                Accessible.name: sourceWaveform.channelCount === 2 ? "Source waveform, separate left and right lanes" : "Source waveform, mono lane"
-                Accessible.description: "Click to seek, drag to pan, Shift drag to create an Audition Region"
+                Accessible.name: (root.referenceWaveformActive ? "Reference" : "Source")
+                    + (root.displayedWaveform.channelCount === 2
+                        ? " waveform, separate left and right lanes" : " waveform, mono lane")
+                Accessible.description: root.referenceWaveformActive
+                    ? "Click to seek within Reference, drag to pan and zoom independently"
+                    : "Click to seek, drag to pan, Shift drag to create an Audition Region"
             }
             // MASTER sees the same waveform timeline, but click-to-seek
             // addresses only the anonymous DEVICE monitor's MASTER frames.
@@ -680,18 +902,18 @@ ApplicationWindow {
                 }
             }
             Rectangle {
-                visible: waveformOverview.visible && sourceWaveform.channelCount === 2
+                visible: waveformOverview.visible && root.displayedWaveform.channelCount === 2
                 anchors.left: waveformOverview.left; anchors.right: waveformOverview.right; anchors.verticalCenter: waveformOverview.verticalCenter
                 height: 12; color: "#071117"
                 Rectangle { anchors.verticalCenter: parent.verticalCenter; width: parent.width; height: 1; color: "#20313D" }
             }
-            Label { objectName: "sourceWaveformLeftLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.top: waveformOverview.top; anchors.topMargin: 2; visible: waveformOverview.visible && sourceWaveform.channelCount === 2; text: "L"; color: root.textSecondary; font.pixelSize: 10 }
-            Label { objectName: "sourceWaveformRightLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.bottom: waveformOverview.bottom; anchors.bottomMargin: 2; visible: waveformOverview.visible && sourceWaveform.channelCount === 2; text: "R"; color: root.textSecondary; font.pixelSize: 10 }
-            Label { objectName: "sourceWaveformMonoLane"; anchors.left: waveformOverview.left; anchors.verticalCenter: waveformOverview.verticalCenter; visible: waveformOverview.visible && sourceWaveform.channelCount === 1; text: "C"; color: root.textSecondary; font.pixelSize: 10 }
-            Label { id: sourceWaveformStatus; objectName: "sourceWaveformStatus"; anchors.centerIn: waveformOverview; width: waveformOverview.width - 40; visible: !sourceWaveform.ready || sourceWaveform.sourceFrameCount === 0; text: sourceWaveform.statusText; color: sourceWaveform.state === "FAILED" ? root.error : root.textSecondary; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; font.pixelSize: 12 }
-            BusyIndicator { objectName: "sourceWaveformBuildingIndicator"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.bottom: sourceWaveformStatus.top; running: sourceWaveform.state === "BUILDING"; visible: running }
-            StudioButton { objectName: "sourceWaveformRetryButton"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.top: sourceWaveformStatus.bottom; anchors.topMargin: 8; text: "Retry waveform analysis"; visible: sourceWaveform.state === "FAILED"; onClicked: sourceWaveform.requestRetry() }
-            Label { anchors.right: waveformOverview.right; anchors.bottom: waveformOverview.bottom; visible: waveformOverview.visible && sourceWaveform.hasOverrange; text: "Source peaks exceed 1.0"; color: root.error; font.pixelSize: 10 }
+            Label { objectName: "sourceWaveformLeftLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.top: waveformOverview.top; anchors.topMargin: 2; visible: waveformOverview.visible && root.displayedWaveform.channelCount === 2; text: "L"; color: root.textSecondary; font.pixelSize: 10 }
+            Label { objectName: "sourceWaveformRightLane"; anchors.left: waveformOverview.left; anchors.leftMargin: 4; anchors.bottom: waveformOverview.bottom; anchors.bottomMargin: 2; visible: waveformOverview.visible && root.displayedWaveform.channelCount === 2; text: "R"; color: root.textSecondary; font.pixelSize: 10 }
+            Label { objectName: "sourceWaveformMonoLane"; anchors.left: waveformOverview.left; anchors.verticalCenter: waveformOverview.verticalCenter; visible: waveformOverview.visible && root.displayedWaveform.channelCount === 1; text: "C"; color: root.textSecondary; font.pixelSize: 10 }
+            Label { id: sourceWaveformStatus; objectName: "sourceWaveformStatus"; anchors.centerIn: waveformOverview; width: waveformOverview.width - 40; visible: !root.displayedWaveform.ready || root.displayedWaveform.sourceFrameCount === 0; text: root.displayedWaveform.statusText; color: root.displayedWaveform.state === "FAILED" ? root.error : root.textSecondary; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; font.pixelSize: 12 }
+            BusyIndicator { objectName: "sourceWaveformBuildingIndicator"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.bottom: sourceWaveformStatus.top; running: root.displayedWaveform.state === "BUILDING"; visible: running }
+            StudioButton { objectName: "sourceWaveformRetryButton"; anchors.horizontalCenter: sourceWaveformStatus.horizontalCenter; anchors.top: sourceWaveformStatus.bottom; anchors.topMargin: 8; text: "Retry waveform analysis"; visible: root.displayedWaveform.state === "FAILED"; onClicked: root.displayedWaveform.requestRetry() }
+            Label { anchors.right: waveformOverview.right; anchors.bottom: waveformOverview.bottom; visible: waveformOverview.visible && root.displayedWaveform.hasOverrange; text: root.referenceWaveformActive ? "Reference peaks exceed 1.0" : "Source peaks exceed 1.0"; color: root.error; font.pixelSize: 10 }
         }
 
         Rectangle {
@@ -706,24 +928,24 @@ ApplicationWindow {
                 anchors.leftMargin: root.upperStripHorizontalPadding
                 anchors.rightMargin: root.upperStripHorizontalPadding
                 spacing: 8
-                StudioIconButton { id: zoomOutButton; objectName: "waveformZoomOutButton"; iconKind: "zoom-out"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: waveformOverview; KeyNavigation.tab: zoomControl; onClicked: sourceWaveform.zoomOut(); Accessible.name: "Zoom out Source waveform" }
+                StudioIconButton { id: zoomOutButton; objectName: "waveformZoomOutButton"; iconKind: "zoom-out"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; KeyNavigation.backtab: waveformOverview; KeyNavigation.tab: zoomControl; onClicked: root.displayedWaveform.zoomOut(); Accessible.name: "Zoom out Source waveform" }
                 Slider {
                     id: zoomControl
                     objectName: "waveformZoomControl"
                     Layout.preferredWidth: 160
                     from: 0.0; to: 1.0; stepSize: 0.001
-                    enabled: sourceWaveform.canNavigate
+                    enabled: root.displayedWaveform.canNavigate
                     activeFocusOnTab: true
                     KeyNavigation.backtab: zoomOutButton
                     KeyNavigation.tab: zoomInButton
-                    onMoved: sourceWaveform.setZoomPosition(value)
+                    onMoved: root.displayedWaveform.setZoomPosition(value)
                     Accessible.name: "Continuous Source waveform zoom"
-                    Binding { target: zoomControl; property: "value"; value: sourceWaveform.zoomPosition; when: !zoomControl.pressed }
+                    Binding { target: zoomControl; property: "value"; value: root.displayedWaveform.zoomPosition; when: !zoomControl.pressed }
                     background: Rectangle { x: zoomControl.leftPadding; y: zoomControl.topPadding + zoomControl.availableHeight / 2 - height / 2; width: zoomControl.availableWidth; height: 6; radius: 3; color: "#253642" }
                     handle: Rectangle { x: zoomControl.leftPadding + zoomControl.visualPosition * (zoomControl.availableWidth - width); y: zoomControl.topPadding + zoomControl.availableHeight / 2 - height / 2; width: 14; height: 14; radius: 7; color: zoomControl.enabled ? "#DDE6F3" : "#586773"; border.color: zoomControl.activeFocus ? root.accent : "#253642"; border.width: zoomControl.activeFocus ? 2 : 1 }
                 }
-                StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
-                StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
+                StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: root.displayedWaveform.canNavigate && root.displayedWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: root.displayedWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
+                StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: root.displayedWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 // Master-specific commands are in True Peak Limiter.
                 // The ordinary transport retains only shared Play/Pause/Stop.
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
@@ -818,20 +1040,21 @@ ApplicationWindow {
                     SegmentedTimeEditor {
                         id: auditionStartEditor; objectName: "auditionRegionStartEditor"; objectPrefix: "auditionRegionStart"; endpointName: root.monitorExclusive ? "Master Region start" : "Audition Region start"
                         enabled: !root.monitorExclusive
-                            && auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                            && root.activeAuditionRegion.controlsEnabled
+                            && root.activeAuditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionStartFrames : 0)
-                        hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.startHours
-                        minutesText: root.monitorExclusive ? masterParts[1] : auditionRegion.startMinutes
-                        secondsText: root.monitorExclusive ? masterParts[2] : auditionRegion.startSeconds
-                        fractionText: root.monitorExclusive ? masterParts[3] : auditionRegion.startFraction
+                        hoursText: root.monitorExclusive ? masterParts[0] : root.activeAuditionRegion.startHours
+                        minutesText: root.monitorExclusive ? masterParts[1] : root.activeAuditionRegion.startMinutes
+                        secondsText: root.monitorExclusive ? masterParts[2] : root.activeAuditionRegion.startSeconds
+                        fractionText: root.monitorExclusive ? masterParts[3] : root.activeAuditionRegion.startFraction
                         previousTabItem: playPauseButton; nextTabItem: auditionEndEditor.firstField
                         onCommitRequested: function(hours, minutes, seconds, fraction) {
                             if(root.monitorExclusive)root.updateSharedMasterRegion("start",hours,minutes,seconds,fraction)
-                            else auditionRegion.commitStartSegments(hours,minutes,seconds,fraction)
+                            else root.activeAuditionRegion.commitStartSegments(hours,minutes,seconds,fraction)
                         }
-                        onEscapeRequested: if(!root.monitorExclusive)auditionRegion.clearError()
-                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",-1); else auditionRegion.nudgeStartBackward()
-                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",1); else auditionRegion.nudgeStartForward()
+                        onEscapeRequested: if(!root.monitorExclusive)root.activeAuditionRegion.clearError()
+                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",-1); else root.activeAuditionRegion.nudgeStartBackward()
+                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("start",1); else root.activeAuditionRegion.nudgeStartForward()
                     }
                 }
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 28; color: root.border }
@@ -841,36 +1064,38 @@ ApplicationWindow {
                     SegmentedTimeEditor {
                         id: auditionEndEditor; objectName: "auditionRegionEndEditor"; objectPrefix: "auditionRegionEnd"; endpointName: root.monitorExclusive ? "Master Region end exclusive" : "Audition Region end exclusive"
                         enabled: !root.monitorExclusive
-                            && auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                            && root.activeAuditionRegion.controlsEnabled
+                            && root.activeAuditionRegion.hasRegion
                         readonly property var masterParts: root.masterRegionSegments(root.appTerminalMonitorViewModel ? root.appTerminalMonitorViewModel.masterRegionEndFrames : 0)
-                        hoursText: root.monitorExclusive ? masterParts[0] : auditionRegion.endHours
-                        minutesText: root.monitorExclusive ? masterParts[1] : auditionRegion.endMinutes
-                        secondsText: root.monitorExclusive ? masterParts[2] : auditionRegion.endSeconds
-                        fractionText: root.monitorExclusive ? masterParts[3] : auditionRegion.endFraction
+                        hoursText: root.monitorExclusive ? masterParts[0] : root.activeAuditionRegion.endHours
+                        minutesText: root.monitorExclusive ? masterParts[1] : root.activeAuditionRegion.endMinutes
+                        secondsText: root.monitorExclusive ? masterParts[2] : root.activeAuditionRegion.endSeconds
+                        fractionText: root.monitorExclusive ? masterParts[3] : root.activeAuditionRegion.endFraction
                         previousTabItem: auditionStartEditor.lastField; nextTabItem: fitRegionButton
                         onCommitRequested: function(hours, minutes, seconds, fraction) {
                             if(root.monitorExclusive)root.updateSharedMasterRegion("end",hours,minutes,seconds,fraction)
-                            else auditionRegion.commitEndSegments(hours,minutes,seconds,fraction)
+                            else root.activeAuditionRegion.commitEndSegments(hours,minutes,seconds,fraction)
                         }
-                        onEscapeRequested: if(!root.monitorExclusive)auditionRegion.clearError()
-                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",-1); else auditionRegion.nudgeEndBackward()
-                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",1); else auditionRegion.nudgeEndForward()
+                        onEscapeRequested: if(!root.monitorExclusive)root.activeAuditionRegion.clearError()
+                        onNudgeBackwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",-1); else root.activeAuditionRegion.nudgeEndBackward()
+                        onNudgeForwardRequested: if(root.monitorExclusive)root.nudgeSharedMasterRegion("end",1); else root.activeAuditionRegion.nudgeEndForward()
                     }
                 }
                 Item { Layout.fillWidth: true }
-                StudioButton { id: fitRegionButton; objectName: "waveformFitRegionButton"; text: "Fit Region"; iconKind: "fit-region"; minimumControlWidth: 80; enabled: !root.monitorExclusive && auditionRegion.controlsEnabled && auditionRegion.hasRegion; KeyNavigation.backtab: auditionEndEditor.lastField; KeyNavigation.tab: loopRegionCheckBox; onClicked: sourceWaveform.fitRegion(); Accessible.name: "Fit Audition Region in waveform" }
+                StudioButton { id: fitRegionButton; objectName: "waveformFitRegionButton"; text: "Fit Region"; iconKind: "fit-region"; minimumControlWidth: 80; enabled: !root.monitorExclusive && root.activeAuditionRegion.controlsEnabled && root.activeAuditionRegion.hasRegion; KeyNavigation.backtab: auditionEndEditor.lastField; KeyNavigation.tab: loopRegionCheckBox; onClicked: root.displayedWaveform.fitRegion(); Accessible.name: "Fit Audition Region in waveform" }
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: root.border }
                 StudioToggle {
                     id: loopRegionCheckBox; objectName: "auditionRegionLoopCheckBox"
                     text: "Loop Region"
-                    checked: !root.monitorExclusive && auditionRegion.loopEnabled
+                    checked: !root.monitorExclusive
+                        && root.activeAuditionRegion.loopEnabled
                     enabled: !root.monitorExclusive
-                        && (auditionRegion.canLoop || auditionRegion.loopEnabled)
+                        && (root.activeAuditionRegion.canLoop || root.activeAuditionRegion.loopEnabled)
                     KeyNavigation.backtab: fitRegionButton
                     KeyNavigation.tab: clearRegionButton
                     onClicked: {
                         if (!root.monitorExclusive)
-                            auditionRegion.requestLoopEnabled(checked)
+                            root.activeAuditionRegion.requestLoopEnabled(checked)
                     }
                     Accessible.name: root.monitorExclusive ? "Loop Master Region" : "Loop Audition Region"
                 }
@@ -879,11 +1104,12 @@ ApplicationWindow {
                     id: clearRegionButton; objectName: "auditionRegionClearButton"
                     text: "Clear Region"; iconKind: "clear-region"; minimumControlWidth: 80
                     enabled: !root.monitorExclusive
-                        && auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                        && root.activeAuditionRegion.controlsEnabled
+                        && root.activeAuditionRegion.hasRegion
                     KeyNavigation.backtab: loopRegionCheckBox
                     KeyNavigation.tab: sourceOpenButton
                     onClicked: {
-                        if(!root.monitorExclusive)auditionRegion.requestClearRegion()
+                        if(!root.monitorExclusive)root.activeAuditionRegion.requestClearRegion()
                     }
                     Accessible.name: root.monitorExclusive ? "Clear Master Region" : "Clear Audition Region"
                 }
@@ -911,6 +1137,8 @@ ApplicationWindow {
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
+            analysisStatusViewModel: typeof m21ProductStatusViewModel !== "undefined"
+                ? m21ProductStatusViewModel : null
             errorsInGlobalStatusBar: true
             truePeakStaticViewModel: typeof truePeakStatic !== "undefined"
                 ? truePeakStatic : null
@@ -923,12 +1151,18 @@ ApplicationWindow {
             terminalMonitorViewModel: root.appTerminalMonitorViewModel
             terminalProductActivation: root.appTerminalProductActivation
             masterListeningHandler: function() { return root.listenToPreparedMaster() }
+            masterExportModel: root.appM18ExportModel
+            masterExportHandler: function(formatIndex) {
+                return root.requestVerifiedWavExport(formatIndex)
+            }
+            masterExportAutoReturnAvailable: root.m18AutoReturnForExportAvailable
+            masterExportFormatIndex: root.m18ExportFormatIndex
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
-            limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
-                ? terminalPrivateGrViewModel : null
             limiterOfflineGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
+            m17GrTimelineFraction: root.m17GrTimelineFraction
+            m17GrTimelineScope: root.m17GrTimelineScope
         }
     }
 
@@ -1056,12 +1290,19 @@ ApplicationWindow {
                         StudioMenuItem { text: "New Project"; enabled: false }
                         StudioMenuItem { objectName: "menuOpenProject"; text: "Open Project…"; enabled: !root.monitorExclusive; onTriggered: projectOpenDialog.open() }
                         MenuSeparator { }
-                        StudioMenuItem { objectName: "menuOpenSource"; text: "Open Source\tCtrl+O"; enabled: !root.monitorExclusive; onTriggered: sourceDialog.open() }
-                        StudioMenuItem { objectName: "menuOpenGold"; text: "Open Gold Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
-                        StudioMenuItem { objectName: "menuClearGold"; text: "Clear Gold Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
+                        StudioMenuItem { objectName: "menuOpenSource"; text: (sourceSelection.hasSource ? "Replace Source" : "Open Source") + "\tCtrl+O"; enabled: !root.monitorExclusive; onTriggered: sourceDialog.open() }
+                        StudioMenuItem { objectName: "menuOpenGold"; text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"; enabled: !root.monitorExclusive; onTriggered: goldDialog.open() }
+                        StudioMenuItem { objectName: "menuClearGold"; text: "Clear Reference"; enabled: !root.monitorExclusive && goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuSaveProjectAs"; text: "Save Project As…"; enabled: projectSession.canSaveProject; onTriggered: projectSaveDialog.open() }
-                        StudioMenuItem { text: "Export"; enabled: false }
+                        StudioMenuItem {
+                            objectName: "menuExportMaster"
+                            text: "Export verified Master…"
+                            enabled: !!root.appM18ExportModel
+                                && (root.appM18ExportModel.canExport
+                                    || root.m18AutoReturnForExportAvailable)
+                            onTriggered: m18ExportFormatDialog.open()
+                        }
                         MenuSeparator { }
                         StudioMenuItem { text: "Exit"; onTriggered: root.close() }
                     }
@@ -1140,10 +1381,10 @@ ApplicationWindow {
                             }
                         }
                         MenuSeparator { }
-                        StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
-                        StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
-                        StudioMenuItem { text: "Fit Source\tHome"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
-                        StudioMenuItem { text: "Fit Region"; enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion; onTriggered: sourceWaveform.fitRegion() }
+                        StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: root.displayedWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
+                        StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
+                        StudioMenuItem { text: "Fit Source\tHome"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
+                        StudioMenuItem { text: "Fit Region"; enabled: !root.monitorExclusive && root.activeAuditionRegion.controlsEnabled && root.activeAuditionRegion.hasRegion; onTriggered: root.displayedWaveform.fitRegion() }
                     }
                     Menu {
                         title: "&Transport"
@@ -1165,13 +1406,13 @@ ApplicationWindow {
                             onTriggered: root.returnFromM17Audition() }
                         MenuSeparator { }
                         StudioMenuItem {
-                            text: !root.monitorExclusive && auditionRegion.loopEnabled
+                            text: !root.monitorExclusive && root.activeAuditionRegion.loopEnabled
                                 ? "Disable Loop Region" : "Enable Loop Region"
                             enabled: !root.monitorExclusive
-                                && (auditionRegion.canLoop || auditionRegion.loopEnabled)
+                                && (root.activeAuditionRegion.canLoop || root.activeAuditionRegion.loopEnabled)
                             onTriggered: {
                                 if (!root.monitorExclusive)
-                                    auditionRegion.requestLoopEnabled(!auditionRegion.loopEnabled)
+                                    root.activeAuditionRegion.requestLoopEnabled(!root.activeAuditionRegion.loopEnabled)
                             }
                         }
                     }
@@ -1184,7 +1425,7 @@ ApplicationWindow {
                 }
 
                 Item { Layout.fillWidth: true }
-                AuditionSourceSelector { id: auditionTargetSelector; enabled: !root.monitorExclusive; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
+                AuditionSourceSelector { id: auditionTargetSelector; enabled: true; targetSwitchHandler: function(target) { return root.requestAuditionTarget(target) }; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
             }
         }
 
@@ -1232,8 +1473,23 @@ ApplicationWindow {
                         }
                     }
                     StudioButton {
-                        text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110
-                        onClicked: sourceDialog.open(); Accessible.name: text
+                        text: sourceSelection.hasSource ? "Replace Source" : "Open Source"
+                        iconKind: "source-import"; tone: "primary"
+                        Layout.preferredWidth: 110
+                        onClicked: sourceDialog.open()
+                        Accessible.name: text
+                    }
+                    StudioButton {
+                        objectName: "referenceOpenButtonStandard"
+                        enabled: !root.monitorExclusive
+                        text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"
+                        iconKind: "reference-import"
+                        iconStrokeColor: root.warning
+                        tone: "secondary"
+                        contentPadding: 8
+                        Layout.preferredWidth: 154
+                        onClicked: goldDialog.open()
+                        Accessible.name: text
                     }
                 }
             }
@@ -1389,9 +1645,29 @@ ApplicationWindow {
                             }
                         }
                         StudioButton {
-                            id: sourceOpenButton; objectName: "sourceOpenButton"; enabled: !root.monitorExclusive; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110; Layout.preferredHeight: 32
-                            KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
-                            onClicked: sourceDialog.open(); Accessible.name: text
+                            id: sourceOpenButton; objectName: "sourceOpenButton"
+                            enabled: !root.monitorExclusive
+                            text: sourceSelection.hasSource ? "Replace Source" : "Open Source"
+                            iconKind: "source-import"; tone: "primary"
+                            Layout.preferredWidth: 110; Layout.preferredHeight: 32
+                            KeyNavigation.backtab: clearRegionButton
+                            KeyNavigation.tab: referenceOpenButton
+                            onClicked: sourceDialog.open()
+                            Accessible.name: text
+                        }
+                        StudioButton {
+                            id: referenceOpenButton; objectName: "referenceOpenButton"
+                            enabled: !root.monitorExclusive
+                            text: goldSelection.hasGold ? "Replace Reference" : "Open Reference"
+                            iconKind: "reference-import"
+                            iconStrokeColor: root.warning
+                            tone: "secondary"
+                            contentPadding: 8
+                            Layout.preferredWidth: 154; Layout.preferredHeight: 32
+                            KeyNavigation.backtab: sourceOpenButton
+                            KeyNavigation.tab: waveformOverview
+                            onClicked: goldDialog.open()
+                            Accessible.name: text
                         }
                     }
 
@@ -1494,9 +1770,9 @@ ApplicationWindow {
 
                                         StudioSegmentButton {
                                             objectName: "adaptiveModeToggle_Gold"
-                                            text: "Gold / Automatch"
+                                            text: "Reference / AutoMatch"
                                             selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            minimumControlWidth: 105
+                                            minimumControlWidth: 166
                                             contentPadding: 3
                                             onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
                                         }
@@ -1562,12 +1838,14 @@ ApplicationWindow {
                                                     Text {
                                                         id: goldReferenceStatus
                                                         objectName: "goldReferenceStatus"
-                                                        text: goldSelection.hasGold ? ("GOLD  " + goldSelection.displayName) : "NO GOLD REFERENCE LOADED"
+                                                        text: goldSelection.hasGold ? ("REFERENCE  " + goldSelection.displayName) : "NO REFERENCE LOADED"
                                                         color: goldSelection.hasGold ? root.textPrimary : "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 10
                                                         font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
+                                                        elide: Text.ElideNone
+                                                        wrapMode: Text.WrapAnywhere
+                                                        Layout.fillHeight: true
                                                         Layout.fillWidth: true
                                                     }
                                                 }
@@ -2118,15 +2396,12 @@ ApplicationWindow {
                 + "Retry only if the memory policy permits limited headroom? "
                 + "Unknown or insufficient memory remains blocked."
         }
-        onAccepted: {
-            if (root.canListenMaster && root.appTerminalMonitorViewModel)
-                root.appTerminalMonitorViewModel.installMonitor(true)
-        }
+        onAccepted: root.listenToPreparedMaster(true)
     }
     Label { objectName: "playbackErrorMessage"; visible: false; text: playbackTransport.errorMessage }
     Label { objectName: "goldErrorLabel"; visible: false; text: goldSelection.errorMessage }
     Label { objectName: "auditionRoutingStatus"; visible: false; text: auditionSelector.statusText }
-    Label { objectName: "goldStateLabel"; visible: false; text: goldSelection.hasGold ? "Gold: " + goldSelection.displayName : "Gold: not loaded" }
+    Label { objectName: "goldStateLabel"; visible: false; text: goldSelection.hasGold ? "Reference: " + goldSelection.displayName : "Reference: not loaded" }
     Label { objectName: "sourceEmptyState"; visible: !sourceSelection.hasSource; opacity: 0; width: 0; height: 0; text: "No Source selected" }
     Label { objectName: "sourceReadOnlyBadge"; visible: sourceSelection.hasSource; opacity: 0; width: 0; height: 0; text: "Read-only" }
     Label { objectName: "sourceErrorMessage"; visible: sourceSelection.errorMessage.length > 0; opacity: 0; width: 0; height: 0; text: sourceSelection.errorMessage }

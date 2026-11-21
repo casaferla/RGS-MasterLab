@@ -7,10 +7,11 @@ Canvas {
     property color strokeColor: "#DDE6F3"
     property color fillColor: strokeColor
     property real strokeWidth: 1.8
-    // Real, same-hue phosphor glow follows the silhouette, not a second LED.
+    // Brighter same-hue phosphor glow follows the silhouette, not a second LED.
     // Default/unconfigured icons and non-chain controls remain unlit.
     property bool glowEnabled: false
-    readonly property real glowBlur: glowEnabled ? 6.5 : 0.0
+    readonly property real glowBlur: glowEnabled ? 10.0 : 0.0
+    readonly property color glowTint: Qt.lighter(strokeColor, 1.65)
 
     implicitWidth: 18
     implicitHeight: 18
@@ -41,7 +42,7 @@ Canvas {
         // One path emits a crisp core plus an integrated colored halo; no
         // extra item, dot, size change, new import or glow under Bypass.
         ctx.shadowBlur = icon.glowBlur
-        ctx.shadowColor = icon.glowEnabled ? icon.strokeColor : "transparent"
+        ctx.shadowColor = icon.glowEnabled ? icon.glowTint : "transparent"
         ctx.shadowOffsetX = 0
         ctx.shadowOffsetY = 0
 
@@ -66,16 +67,14 @@ Canvas {
         // Keep the family hue, opacity and fixed 16px row slot in
         // DspChainSelector; these are semantic glyphs, never LED dots.
         if (kind === "module-gain") {
-            // Three HORIZONTAL slider tracks; never the old single fader.
-            line(2.5, 3.6, 10.2, 3.6)
-            line(13.0, 3.6, 15.5, 3.6)
-            line(11.6, 1.9, 11.6, 5.2)
-            line(2.5, 9.0, 4.6, 9.0)
-            line(7.4, 9.0, 15.5, 9.0)
-            line(6.0, 7.3, 6.0, 10.7)
-            line(2.5, 14.5, 10.8, 14.5)
-            line(13.6, 14.5, 15.5, 14.5)
-            line(12.2, 12.8, 12.2, 16.2)
+            // ONE luminous horizontal GAIN fader, distinct from EQ's
+            // three vertical sliders. Preserve 18x18 scale, single-track
+            // phosphor halo and caller-owned dim/glow/bypass semantics.
+            line(2.4, 9.0, 15.6, 9.0)
+            ctx.save()
+            ctx.lineWidth = 2.2
+            line(10.5, 5.2, 10.5, 12.8)
+            ctx.restore()
         } else if (kind === "module-eq") {
             // Three VERTICAL mixing faders, staggered per source artwork.
             line(3.5, 2.0, 3.5, 9.2)
@@ -114,6 +113,71 @@ Canvas {
             line(9.0, 4.3, 9.0, 15.1)
             line(14.4, 8.0, 14.4, 15.1)
             ctx.restore()
+        } else if (kind === "analysis-levels"
+                   || kind === "analysis-spectrum"
+                   || kind === "analysis-delta"
+                   || kind === "module-output-dither") {
+            // M19-M21 use the EXACT same Canvas painter and phosphor
+            // shadow as TP Meter, not a second Shapes/PathSvg overlay.
+            // Approved compact 24-unit vector geometry is mapped onto
+            // StudioIcon's 18-unit grid (and its fixed 16px Chain slot).
+            ctx.save()
+            ctx.scale(0.75, 0.75)
+            ctx.lineWidth = 2.55
+            ctx.beginPath()
+            if (kind === "analysis-levels") {
+                // M19: measured-level trace between fixed upper/lower rails.
+                ctx.moveTo(2.5, 5); ctx.lineTo(21.5, 5)
+                ctx.moveTo(2.5, 19); ctx.lineTo(21.5, 19)
+                ctx.moveTo(3, 12); ctx.lineTo(6, 12)
+                ctx.lineTo(8, 15); ctx.lineTo(11, 7)
+                ctx.lineTo(13.2, 13); ctx.lineTo(15.5, 10)
+                ctx.lineTo(18, 12); ctx.lineTo(21, 12)
+            } else if (kind === "analysis-spectrum") {
+                // M20: two independent spectrum contours.
+                ctx.moveTo(2.5, 10.5); ctx.lineTo(5, 8.5)
+                ctx.lineTo(7.5, 10); ctx.lineTo(10.7, 4)
+                ctx.lineTo(13.2, 9); ctx.lineTo(16, 7)
+                ctx.lineTo(19, 10.5); ctx.lineTo(21.5, 10.5)
+                ctx.moveTo(2.5, 15.5); ctx.lineTo(5, 13.5)
+                ctx.lineTo(7.5, 15); ctx.lineTo(10.7, 9)
+                ctx.lineTo(13.2, 14); ctx.lineTo(16, 12)
+                ctx.lineTo(19, 15.5); ctx.lineTo(21.5, 15.5)
+            } else if (kind === "analysis-delta") {
+                // M21: two readouts and a bidirectional delta bracket.
+                ctx.moveTo(3, 6); ctx.lineTo(12.3, 6)
+                ctx.moveTo(3, 18); ctx.lineTo(12.3, 18)
+                ctx.moveTo(17.1, 5); ctx.lineTo(17.1, 19)
+                ctx.moveTo(14.6, 7.6); ctx.lineTo(17.1, 5)
+                ctx.lineTo(19.6, 7.6)
+                ctx.moveTo(14.6, 16.4); ctx.lineTo(17.1, 19)
+                ctx.lineTo(19.6, 16.4)
+            } else {
+                // Reserved M18 Export Dither symbol, not a Chain row.
+                ctx.moveTo(3, 20); ctx.lineTo(3, 16.5)
+                ctx.moveTo(7, 20); ctx.lineTo(7, 12)
+                ctx.moveTo(11, 20); ctx.lineTo(11, 8)
+                ctx.moveTo(15, 7); ctx.lineTo(15, 7.2)
+                ctx.moveTo(19, 9); ctx.lineTo(19, 9.2)
+                ctx.moveTo(16, 12.5); ctx.lineTo(16, 12.7)
+                ctx.moveTo(20, 14); ctx.lineTo(20, 14.2)
+                ctx.moveTo(15, 18); ctx.lineTo(15, 18.2)
+                ctx.moveTo(20, 19); ctx.lineTo(20, 19.2)
+            }
+            // One combined path/stroke -> one identical halo pass,
+            // avoiding multiplied glow from separately drawn segments.
+            ctx.stroke()
+            ctx.restore()
+        } else if (kind === "module-streaming-true-peak-limiter") {
+            // Copper live waveform controlled below ceiling, not M17 shield.
+            line(2.0,4.8,16.0,4.8)
+            ctx.beginPath()
+            ctx.moveTo(2.0,13.0); ctx.lineTo(4.1,10.5)
+            ctx.lineTo(6.2,13.0); ctx.lineTo(8.7,7.4)
+            ctx.quadraticCurveTo(9.4,5.9,10.2,7.4)
+            ctx.lineTo(12.4,12.7); ctx.lineTo(14.0,8.1)
+            ctx.quadraticCurveTo(14.8,6.9,16.0,8.2)
+            ctx.stroke()
         } else if (kind === "module-limiter") {
             // Verified-terminal shield/check mark, not a ceiling curve.
             ctx.beginPath()
@@ -254,12 +318,74 @@ Canvas {
             ctx.stroke()
             ctx.restore()
         } else if (kind === "fit-region") {
-            line(2.0, 3.0, 2.0, 15.0); line(16.0, 3.0, 16.0, 15.0)
-            dashRect(5.0, 5.0, 8.0, 8.0, 2.0, 2.0)
-            line(4.0, 9.0, 7.0, 9.0); line(4.0, 9.0, 6.0, 7.0); line(4.0, 9.0, 6.0, 11.0)
-            line(14.0, 9.0, 11.0, 9.0); line(14.0, 9.0, 12.0, 7.0); line(14.0, 9.0, 12.0, 11.0)
+            // Transport/Region v2: selected-span brackets and inward
+            // arrows, on the same 24px optical grid as Zoom v2.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.scale(0.75, 0.75)
+            ctx.globalAlpha = 0.82
+            ctx.lineWidth = 2.1
+            line(4.5, 5.0, 4.5, 19.0)
+            line(19.5, 5.0, 19.5, 19.0)
+            ctx.globalAlpha = 1.0
+            ctx.lineWidth = 2.4
+            line(7.3, 12, 11.0, 12)
+            line(8.7, 9.9, 11.0, 12)
+            line(8.7, 14.1, 11.0, 12)
+            line(16.7, 12, 13.0, 12)
+            line(15.3, 9.9, 13.0, 12)
+            line(15.3, 14.1, 13.0, 12)
+            ctx.restore()
         } else if (kind === "clear-region") {
-            dashRect(3.0, 4.0, 12.0, 10.0, 3.0, 3.0)
+            // Selection release, NOT deleting audio: interrupted region
+            // frame with a narrow diagonal release stroke, never a trash X.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.scale(0.75, 0.75)
+            ctx.lineWidth = 2.1
+            ctx.globalAlpha = 0.82
+            ctx.setLineDash([3.5, 2.6])
+            ctx.strokeRect(4.7, 5.2, 14.6, 13.6)
+            ctx.setLineDash([])
+            ctx.globalAlpha = 1.0
+            ctx.lineWidth = 2.5
+            line(7.4, 16.5, 16.6, 7.5)
+            ctx.restore()
+        } else if (kind === "source-import" || kind === "reference-import") {
+            // Source/Reference load family: a precision audio-page glyph
+            // with the SAME waveform core; a stacked page marks Reference.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.lineWidth = 1.7
+            if (kind === "reference-import") {
+                ctx.globalAlpha = 0.52
+                line(5, 1.6, 14, 1.6)
+                line(16.4, 4.1, 16.4, 14.6)
+                ctx.globalAlpha = 1.0
+            }
+            ctx.beginPath()
+            ctx.moveTo(3.0, 3.3)
+            ctx.lineTo(10.8, 3.3)
+            ctx.lineTo(14.6, 7.1)
+            ctx.lineTo(14.6, 15.0)
+            ctx.quadraticCurveTo(14.6, 15.8, 13.8, 15.8)
+            ctx.lineTo(3.8, 15.8)
+            ctx.quadraticCurveTo(3.0, 15.8, 3.0, 15.0)
+            ctx.closePath()
+            ctx.stroke()
+            line(10.8, 3.3, 10.8, 7.1)
+            line(10.8, 7.1, 14.6, 7.1)
+            ctx.lineWidth = 1.65
+            ctx.beginPath()
+            ctx.moveTo(4.6, 11.1)
+            ctx.lineTo(6.0, 11.1)
+            ctx.lineTo(7.15, 8.7)
+            ctx.lineTo(8.5, 13.0)
+            ctx.lineTo(9.8, 10.0)
+            ctx.lineTo(10.9, 11.1)
+            ctx.lineTo(12.5, 11.1)
+            ctx.stroke()
+            ctx.restore()
         } else if (kind === "source") {
             ctx.beginPath(); ctx.moveTo(4.0, 2.0); ctx.lineTo(11.5, 2.0); ctx.lineTo(15.0, 5.5); ctx.lineTo(15.0, 16.0); ctx.lineTo(4.0, 16.0); ctx.closePath(); ctx.stroke()
             line(11.5, 2.0, 11.5, 5.5); line(11.5, 5.5, 15.0, 5.5)

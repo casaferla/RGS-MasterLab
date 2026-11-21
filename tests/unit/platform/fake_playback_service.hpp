@@ -3,13 +3,14 @@
 #include <rgsml/core/audio_playback_service.hpp>
 
 #include <optional>
+#include <string>
 
 namespace rgsml::tests {
 
 class FakePlaybackService final : public core::IAudioPlaybackService {
 public:
     [[nodiscard]] core::Status prepare(
-        const core::ResourceReference&) override
+        const core::ResourceReference& resource) override
     {
         ++prepareCalls;
         if (failPrepare) {
@@ -17,6 +18,7 @@ public:
                 core::ErrorCode::UnsupportedOperation,
                 "Injected playback prepare failure."});
         }
+        lastPreparedLocator=std::string(resource.locator());
         state = core::PlaybackState::STOPPED;
         position = core::FrameIndex{0};
         duration = *core::FrameCount::create(preparedDurationFrames).value();
@@ -100,6 +102,7 @@ public:
                 traversalSerial, seekSerial, loopWrapCount});
     }
 
+    std::string lastPreparedLocator;
     bool failPrepare{false};
     bool failSnapshot{false};
     std::int64_t preparedDurationFrames{48000};

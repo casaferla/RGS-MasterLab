@@ -4,6 +4,7 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QFileInfo>
+#include <QThread>
 
 #include <cstdint>
 #include <string>
@@ -11,6 +12,19 @@
 
 namespace rgsml::app {
 namespace {
+
+// M18 opt-in owner-thread scope. One SOURCE adoption includes the
+// committed-handler cascade, playback rebinding and synchronous Qt signals.
+struct M18ScopedSourcePublication final {
+    explicit M18ScopedSourcePublication(bool* flag) noexcept
+        :flag_(flag) {if(flag_)*flag_=true;}
+    M18ScopedSourcePublication(const M18ScopedSourcePublication&)=delete;
+    M18ScopedSourcePublication&
+    operator=(const M18ScopedSourcePublication&)=delete;
+    ~M18ScopedSourcePublication(){if(flag_)*flag_=false;}
+private:
+    bool* flag_;
+};
 
 [[nodiscard]] QString container_label_for(audio::WavContainerKind kind)
 {
@@ -179,17 +193,72 @@ const audio::SourceResource* SourceSelectionViewModel::source_resource() const n
 void SourceSelectionViewModel::set_playback_transport(
     PlaybackTransportViewModel* playback) noexcept
 {
+    // The callback publisher must not retarget its transport while
+    // the preceding SOURCE's entire M18 epoch remains in publication.
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
+       &&(m18SourcePublishing_||m18SourceAdmitting_
+          ||QThread::currentThread()!=thread()))return;
     playbackTransport_ = playback;
 }
 
 void SourceSelectionViewModel::set_source_committed_handler(
     SourceCommittedHandler handler)
 {
+    // Mutating a std::function while it is being invoked would also
+    // destroy the active callback closure. Keep the Product handler
+    // constant from admission through all synchronous Qt observers.
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
+       &&(m18SourcePublishing_||m18SourceAdmitting_
+          ||QThread::currentThread()!=thread()))return;
     sourceCommittedHandler_ = std::move(handler);
+}
+
+void SourceSelectionViewModel::
+set_private_m18_checked_source_committed_handler(
+    M18CheckedSourceCommittedHandler handler)
+{
+    // The private M18 dispatcher is QObject-owned even while inert.
+    // Check affinity FIRST; a worker must not race its guard flags or
+    // destroy the std::function during a Product callback.
+    if(QThread::currentThread()!=thread())return;
+    if(m18SourcePublishing_||m18SourceAdmitting_)return;
+    m18CheckedSourceCommittedHandler_=std::move(handler);
+}
+
+core::Status SourceSelectionViewModel::admit_m18_source_mutation(
+    const char* operation) const
+{
+    if(!m18SourceMutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18SourceAdmitting_||m18SourcePublishing_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REENTRANT_EPOCH_DENIED"});
+    m18SourceAdmitting_=true;
+    struct AdmissionUnwind final {
+        bool* active;
+        ~AdmissionUnwind(){*active=false;}
+    } unwind{&m18SourceAdmitting_};
+    try{return m18SourceMutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_SOURCE_ADOPTION_ADMISSION_THROWN"});}
 }
 
 void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
 {
+    // M18 opt-in gate: never let a foreign worker enter Qt path parsing
+    // or publish an error before the real SOURCE admission is checked.
+    // Legacy M17 behavior remains unchanged when no guard is installed.
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
+       &&QThread::currentThread()!=thread())return;
+    // Never start a second QFile/Qt notification path from an admission
+    // callback or from the outer SOURCE commit's changed() listener.
+    if((m18SourceMutationAdmission_||m18SourceBatchBegin_)
+       &&(m18SourceAdmitting_||m18SourcePublishing_))return;
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
         publish_error(QStringLiteral("Choose one local WAV file."));
         return;
@@ -224,11 +293,63 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
         return;
     }
 
-    adopt_probed_source(std::move(*candidate.value()));
+    auto accepted=adopt_probed_source(std::move(*candidate.value()));
+    if(!accepted)publish_error(*accepted.error());
 }
 
-void SourceSelectionViewModel::adopt_probed_source(audio::SourceResource candidate)
+core::Status SourceSelectionViewModel::adopt_probed_source(
+    audio::SourceResource candidate)
 {
+    // The direct Project-open path must not bypass owner-thread or
+    // publication-level exclusion provided to the native SOURCE picker.
+    const bool guarded=static_cast<bool>(
+        m18SourceMutationAdmission_||m18SourceBatchBegin_);
+    if(guarded &&QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18SourceMutationAdmission_&&m18SourceBatchBegin_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_TWO_ADMISSION_MODES_AMBIGUOUS"});
+    if(guarded&&(m18SourceAdmitting_||m18SourcePublishing_))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_ADOPTION_REENTRANT_EPOCH_DENIED"});
+    if(m18SourceBatchBegin_&&!m18CheckedSourceCommittedHandler_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_BATCH_REQUIRES_STATUS_PRODUCT_DISPATCHER"});
+    std::shared_ptr<const void> heldSourceBatch;
+    if(m18SourceBatchBegin_) {
+        // Also guard the *begin callback*, before the exclusive physical
+        // lease exists. Otherwise an injected Qt listener could recurse
+        // into another selection or erase the batch while it executes.
+        M18ScopedSourcePublication admitting{&m18SourceAdmitting_};
+        (void)admitting;
+        try {
+            auto accepted=m18SourceBatchBegin_();
+            if(!accepted)return core::Status::failure(*accepted.error());
+            if(!*accepted.value())
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M18_SOURCE_BATCH_MISSING_EXCLUSIVE_LEASE"});
+            heldSourceBatch=std::move(*accepted.value());
+        }catch(...) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_SOURCE_BATCH_BEGIN_THROWN"});
+        }
+    } else {
+        const auto gate=admit_m18_source_mutation("source_adopt_probed");
+        if(!gate)return gate;
+    }
+    // Both full batch and legacy opt-in status gate hold publication
+    // until all nested application callbacks and Qt observers return.
+    M18ScopedSourcePublication publication{
+        guarded?&m18SourcePublishing_:nullptr};
+    (void)publication;
+    (void)heldSourceBatch;
     const auto& info = candidate.wav_info();
     const auto sampleRate = info.audio_format().sample_rate().value();
     const auto frames = info.frame_count().value();
@@ -245,7 +366,22 @@ void SourceSelectionViewModel::adopt_probed_source(audio::SourceResource candida
     durationLabel_ = format_duration(frames, sampleRate);
     source_ = std::move(candidate);
 
-    if (sourceCommittedHandler_) {
+    if(m18SourceBatchBegin_) {
+        // The same Product lease remains alive during the entire checked
+        // controller cascade. An error withdraws the selected SOURCE
+        // instead of publishing a falsely READY/verified stage.
+        core::Status dispatched=core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_SOURCE_PRODUCT_DISPATCHER_THROWN"});
+        try {
+            dispatched=m18CheckedSourceCommittedHandler_(
+                source_->reference());
+        }catch(...) {}
+        if(!dispatched) {
+            fail_closed_checked_source_commit(*dispatched.error());
+            return dispatched;
+        }
+    } else if(sourceCommittedHandler_) {
         sourceCommittedHandler_(source_->reference());
     }
 
@@ -260,11 +396,39 @@ void SourceSelectionViewModel::adopt_probed_source(audio::SourceResource candida
     if (hadError) {
         emit errorChanged();
     }
+    return core::Status::success();
 }
 
 void SourceSelectionViewModel::cancelSourceSelection() noexcept
 {
     // A native picker cancellation is intentionally a complete no-op.
+}
+
+void SourceSelectionViewModel::fail_closed_checked_source_commit(
+    const core::Error& error)
+{
+    // A downstream Product rejection can occur after the probed SOURCE
+    // has been accepted into this VM but before any READY Qt publication.
+    // The prior M17 audio and Product revisions must not be presented as
+    // still-current. The outer physical M18 epoch has already withdrawn
+    // verified-M17 export consent; never restore it on an error.
+    if(playbackTransport_!=nullptr)
+        static_cast<void>(playbackTransport_->stop_and_clear());
+    source_.reset();
+    displayName_.clear();
+    containerLabel_.clear();
+    sampleFormatLabel_.clear();
+    sampleRateHz_=0;
+    channelLayoutLabel_.clear();
+    channelCount_=0;
+    frameCount_=0;
+    durationLabel_.clear();
+    const auto message=user_message(error.code());
+    const bool hadDifferentError=errorMessage_!=message;
+    errorMessage_=message;
+    emit sourceChanged();
+    emit sourceStateChanged();
+    if(hadDifferentError)emit errorChanged();
 }
 
 void SourceSelectionViewModel::publish_error(const QString& message)

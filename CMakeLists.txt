@@ -73,6 +73,24 @@ set_source_files_properties("${_rgsml_c2d5_chrono_source}"
     PROPERTIES COMPILE_OPTIONS "${_rgsml_c2d5_chrono_strict_fp_options}")
 unset(_rgsml_c2d5_chrono_strict_fp_options)
 unset(_rgsml_c2d5_chrono_source)
+# M18 delivery TP source is OUTSIDE the SHA-locked M16 analysis CMake.
+# Reuses M16 FIR, remains UNQUALIFIED; do not weaken B2i/B3 identity.
+set(_rgsml_m18_delivered_tp_source
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/src/m18_delivered_true_peak_candidate.cpp")
+target_sources(rgsml_analysis PRIVATE "${_rgsml_m18_delivered_tp_source}")
+if(MSVC)
+    set(_rgsml_m18_delivered_tp_strict_fp "/fp:strict")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    set(_rgsml_m18_delivered_tp_strict_fp "-fno-fast-math;-ffp-contract=off")
+else()
+    message(FATAL_ERROR "M18 delivered True Peak requires strict FP support.")
+endif()
+set_source_files_properties("${_rgsml_m18_delivered_tp_source}"
+    TARGET_DIRECTORY rgsml_analysis
+    PROPERTIES COMPILE_OPTIONS "${_rgsml_m18_delivered_tp_strict_fp}")
+unset(_rgsml_m18_delivered_tp_strict_fp)
+unset(_rgsml_m18_delivered_tp_source)
+
 add_subdirectory(render)
 add_subdirectory(platform)
 add_subdirectory(ui)

@@ -18,6 +18,7 @@ Rectangle {
     property var gainViewModel: null
     property var eqViewModel: null
     property var spectrumViewModel: null
+    property var analysisStatusViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
@@ -25,10 +26,17 @@ Rectangle {
     property var terminalMonitorViewModel: null
     property var terminalProductActivation: null
     property var masterListeningHandler: null
+    property var masterExportModel: null
+    property var masterExportHandler: null
+    // Forward Main-owned UI affordance through the workspace to BOTH
+    // docked and detached editor hosts. Real M18 authorization unchanged.
+    property bool masterExportAutoReturnAvailable: false
+    property int masterExportFormatIndex: 0
     property var masterRateState: null
     property var memoryAdvisor: null
-    property var limiterGrProvider: null
     property var limiterOfflineGrProvider: null
+    property real m17GrTimelineFraction: -1
+    property string m17GrTimelineScope: ""
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
     property alias viewModel: root.eqViewModel
@@ -54,6 +62,7 @@ Rectangle {
             eqViewModel: root.eqViewModel
             errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
+            analysisStatusViewModel: root.analysisStatusViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
             truePeakLiveViewModel: root.truePeakLiveViewModel
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
@@ -61,10 +70,15 @@ Rectangle {
             terminalMonitorViewModel: root.terminalMonitorViewModel
             terminalProductActivation: root.terminalProductActivation
             masterListeningHandler: root.masterListeningHandler
+            masterExportModel: root.masterExportModel
+            masterExportHandler: root.masterExportHandler
+            masterExportAutoReturnAvailable: root.masterExportAutoReturnAvailable
+            masterExportFormatIndex: root.masterExportFormatIndex
             masterRateState: root.masterRateState
             memoryAdvisor: root.memoryAdvisor
-            limiterGrProvider: root.limiterGrProvider
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
+            m17GrTimelineFraction: root.m17GrTimelineFraction
+            m17GrTimelineScope: root.m17GrTimelineScope
             activeChainRow: realChainSelector.activeRow
             onDockToggleRequested: {
                 if (root.dockToggleHandler) root.dockToggleHandler(additionalEditorHost)
@@ -109,6 +123,7 @@ Rectangle {
             eqViewModel: root.eqViewModel
             errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
+            analysisStatusViewModel: root.analysisStatusViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
             truePeakLiveViewModel: root.truePeakLiveViewModel
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
@@ -116,10 +131,15 @@ Rectangle {
         terminalMonitorViewModel: root.terminalMonitorViewModel
         terminalProductActivation: root.terminalProductActivation
         masterListeningHandler: root.masterListeningHandler
+        masterExportModel: root.masterExportModel
+        masterExportHandler: root.masterExportHandler
+        masterExportAutoReturnAvailable: root.masterExportAutoReturnAvailable
+        masterExportFormatIndex: root.masterExportFormatIndex
         masterRateState: root.masterRateState
         memoryAdvisor: root.memoryAdvisor
-            limiterGrProvider: root.limiterGrProvider
             limiterOfflineGrProvider: root.limiterOfflineGrProvider
+            m17GrTimelineFraction: root.m17GrTimelineFraction
+            m17GrTimelineScope: root.m17GrTimelineScope
             activeChainRow: realChainSelector.activeRow
             detachedWindow: root.hostDetached
             onDockToggleRequested: {

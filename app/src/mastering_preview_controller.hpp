@@ -31,12 +31,17 @@ class MasteringPreviewController final : public QObject {
 public:
     using PreparedSnapshotProvider = std::function<std::shared_ptr<const render::RenderResult>()>;
     using ProcessedRealizationPublisher = std::function<core::Status(render::RenderResult)>;
+    using AcceptedProcessedProvider =
+        std::function<std::shared_ptr<const render::RenderResult>()>;
 
     struct PreviewJob final {
         std::uint64_t generation{0};
         std::shared_ptr<const render::RenderResult> preparedSnapshot;
         dsp::ProcessingChain chain;
         std::vector<dsp::ModuleExecutionBinding> bindings;
+        // Immutable registry snapshot corresponding to this exact chain.
+        // Keeps the P2 opt-in factory alive through the worker lifetime.
+        std::shared_ptr<const dsp::ModuleRegistry> registry;
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob& job)>;
@@ -54,13 +59,23 @@ public:
     void set_chain_state(MasteringChainState* chainState) noexcept;
     void set_snapshot_provider(PreparedSnapshotProvider snapshotProvider);
     void set_publisher(ProcessedRealizationPublisher publisher);
+    // The exact accepted immutable PCM is read ONLY after a successful
+    // Product publisher callback, on the Qt owner thread. No copy of PCM.
+    void set_accepted_processed_provider(AcceptedProcessedProvider provider);
     void set_preview_executor(PreviewExecutor executor);
+    // Research-only timing evidence, never used in ordinary Product builds.
+    // Call once on the owner thread before scheduling any preview jobs.
+    void set_research_p2_timing_log_path(QString path);
 
     [[nodiscard]] const PreparedSnapshotProvider& snapshot_provider() const noexcept { return snapshotProvider_; }
     [[nodiscard]] std::uint64_t preview_generation() const noexcept;
     [[nodiscard]] QString preview_status() const;
     [[nodiscard]] QString preview_error() const;
     [[nodiscard]] std::uint64_t stale_results_discarded() const noexcept;
+    // Exact Product MANUAL owner proof for M21: an old PROCESSED PCM
+    // cannot be analyzed under new parameter-only DSP settings merely
+    // because ProcessingChain::revision() remains unchanged.
+    [[nodiscard]] bool published_preview_matches_current_bindings() const;
 
     Q_INVOKABLE void request_preview();
 
@@ -76,6 +91,7 @@ private:
     MasteringChainState* chainState_{nullptr};
     PreparedSnapshotProvider snapshotProvider_;
     ProcessedRealizationPublisher publisher_;
+    AcceptedProcessedProvider acceptedProcessedProvider_;
     PreviewExecutor previewExecutor_;
     dsp::ModuleRegistry registry_{*dsp::ModuleRegistry::create_dsp_package_v1().value()};
 
@@ -83,12 +99,17 @@ private:
     std::uint64_t staleResultsDiscarded_{0};
     QString previewStatus_{QStringLiteral("IDLE")};
     QString previewError_;
+    std::uint64_t acceptedPreviewGeneration_{0};
+    std::vector<dsp::ModuleExecutionBinding> pendingPreviewBindings_{};
+    std::vector<dsp::ModuleExecutionBinding> acceptedPreviewBindings_{};
+    std::weak_ptr<const render::RenderResult> acceptedPreviewOwner_{};
 
     std::mutex workerMutex_;
     std::condition_variable workerCond_;
     std::optional<PreviewJob> pendingJob_;
     bool workerStopping_{false};
     std::jthread workerThread_;
+    QString researchP2TimingLogPath_;
 };
 
 }  // namespace rgsml::app

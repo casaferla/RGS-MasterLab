@@ -8,6 +8,7 @@
 #include <rgsml/render/render_result.hpp>
 
 #include <QObject>
+#include <QThread>
 #include <QString>
 
 #include <cstdint>
@@ -37,6 +38,10 @@ class AuditionSourceSelector final : public QObject {
 
 public:
     using SourceLoopProvider = std::function<std::optional<core::FrameRange>()>;
+    // Product coordinator can park an already-verified M17 output BEFORE
+    // changing from PROCESSED to an independent PREPARED/REFERENCE target.
+    // No callback is installed in legacy/frozen selector tests.
+    using BeforeIndependentAudition=std::function<core::Status(AuditionTarget)>;
 
     explicit AuditionSourceSelector(
         PlaybackTransportViewModel* playback,
@@ -50,6 +55,11 @@ public:
     [[nodiscard]] bool gold_active() const noexcept;
     [[nodiscard]] bool source_playhead_visible() const noexcept;
     [[nodiscard]] QString status_text() const;
+    // Clear ONLY the transient refusal issued when the user tried to
+    // change audition targets during an unfinished M17 whole-Master render.
+    // Called after that render has ended, not during an active render;
+    // unrelated SOURCE/REFERENCE/M18/transport faults remain visible.
+    void clear_completed_m17_render_switch_refusal();
     [[nodiscard]] std::optional<AuditionTarget> active_target() const noexcept;
     [[nodiscard]] core::FrameIndex source_derived_cue() const noexcept;
     [[nodiscard]] core::FrameIndex gold_cue() const noexcept;
@@ -97,7 +107,39 @@ public:
         std::shared_ptr<const render::RenderResult> manual_owner,
         std::optional<core::RealizationId> manual_id);
 
+    // PREPRODUCTION M18. The actual Product has NOT installed this
+    // admission and must coordinate the SAME epoch across selectors,
+    // chain, output rate, terminal gate and every other Source mutator.
+    using M18MutationAdmission=std::function<core::Status(const char*)>;
+    void set_private_m18_mutation_admission(M18MutationAdmission guard)
+    {
+        // Guard installation/removal is an owner-thread Product mutation.
+        // A callback or Qt observer must never erase its active closure.
+        if(QThread::currentThread()!=thread())return;
+        if(m18SourceAdmissionActive_||m18SourcePublicationActive_)return;
+        m18MutationAdmission_=std::move(guard);
+    }
+    [[nodiscard]] bool m18_mutation_admission_installed() const noexcept
+    {return static_cast<bool>(m18MutationAdmission_);}
     void set_source_loop_provider(SourceLoopProvider provider);
+    // Own REFERENCE loop provider: independent of the SOURCE/M18 loop epoch.
+    void set_reference_loop_provider(SourceLoopProvider provider);
+    // True only inside the verified GOLD file->DEVICE installation and
+    // loop reinstatement interval. Never exposed as an audition target,
+    // and never grants an M17/M18 ownership or rendering certificate.
+    [[nodiscard]] bool reference_device_installing() const noexcept
+    {return referenceDeviceInstalling_;}
+    // Pure preflight for the same coordinator: a rejected M17 switch
+    // must not consume an M18 epoch, while an M18 denial must not park
+    // a live M17 DEVICE owner. The real parking callback stays separate.
+    void set_independent_audition_preflight(BeforeIndependentAudition callback)
+    { independentAuditionPreflight_=std::move(callback); }
+    void set_before_independent_audition(BeforeIndependentAudition callback)
+    { beforeIndependentAudition_=std::move(callback); }
+    // Experimental P2-only SOURCE/SOURCE A-B handoff. Disabled by default,
+    // never enabled by saved Product projects or M17 terminal sessions.
+    void set_research_p2_seamless_target_switch(bool enabled) noexcept
+    { researchP2SeamlessTargetSwitch_ = enabled; }
     [[nodiscard]] core::Status source_committed(
         const core::ResourceReference& source);
     [[nodiscard]] core::Status set_prepared_realization(
@@ -130,6 +172,12 @@ signals:
     void changed();
 
 private:
+    // A GOLD clear is one Product epoch; its fallback to PREPARED or
+    // PROCESSED must not request a second independent admission.
+    [[nodiscard]] core::Status switch_to_after_authorized_mutation(
+        AuditionTarget target);
+    [[nodiscard]] core::Status admit_m18_source_mutation(
+        const char* operation) const;
     [[nodiscard]] core::Status store_active_cue();
     [[nodiscard]] core::Status prepare_realization(
         const render::RenderResult& realization,
@@ -141,7 +189,19 @@ private:
     void publish_error(QString message);
 
     PlaybackTransportViewModel* playback_;
+    bool researchP2SeamlessTargetSwitch_{false};
+    M18MutationAdmission m18MutationAdmission_;
+    // Owner-thread scoped: every public selector mutation must complete
+    // playback handoff and changed() callbacks before reentry is allowed.
+    mutable bool m18SourceAdmissionActive_{false};
+    bool m18SourcePublicationActive_{false};
     SourceLoopProvider sourceLoopProvider_;
+    SourceLoopProvider referenceLoopProvider_;
+    // Qt-owner scoped activation guard; restores false before target
+    // publication, failure reporting or returning to event loop.
+    bool referenceDeviceInstalling_{false};
+    BeforeIndependentAudition independentAuditionPreflight_;
+    BeforeIndependentAudition beforeIndependentAudition_;
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
     std::shared_ptr<const render::RenderResult> processed_;

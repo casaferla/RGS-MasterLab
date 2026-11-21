@@ -15,12 +15,14 @@ DspChainAdapterModel::DspChainAdapterModel(
     bool includeTruePeakAnalysis,
     TerminalLimiterState* terminalLimiterState,
     TerminalLimiterViewModel* terminalLimiterViewModel,
-    QObject* terminalMonitorViewModel)
+    QObject* terminalMonitorViewModel,
+    MasteringPreviewController* p2PreviewController)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
     , compressorViewModel_(compressorViewModel)
     , stereoMsViewModel_(stereoMsViewModel)
+    , p2PreviewController_(p2PreviewController)
     , includeTruePeakAnalysis_(includeTruePeakAnalysis)
     , terminalLimiterState_(terminalLimiterState)
     , terminalLimiterViewModel_(terminalLimiterViewModel)
@@ -56,6 +58,13 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                     stereoMsViewModel_, chainState_, workflowContext_);
                 connect(adapter.get(), &DspModuleAdapter::changed,
                         this, &DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(adapter));
+            } else if (typeId=="rgsml.dsp.streaming-true-peak-limiter") {
+                // Real fifth MANUAL instance only; no presentation-only fake.
+                auto adapter=std::make_unique<StreamingTruePeakPreviewModuleAdapter>(
+                    chainState_,p2PreviewController_,workflowContext_);
+                connect(adapter.get(),&DspModuleAdapter::changed,
+                        this,&DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(adapter));
             }
         }
@@ -95,6 +104,18 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         connect(limiter.get(),&DspModuleAdapter::changed,this,
                 &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(limiter));
+    }
+
+    // Visual order: M17, M19 Levels, M20 Tonal/Stereo, M21 Delta,
+    // Master Audition. These observers are not ProcessingChain modules.
+    if(analysisStatusViewModel_) {
+        for(const int milestone:{19,20,21}) {
+            auto panel=std::make_unique<ProductAnalysisModuleAdapter>(
+                milestone,analysisStatusViewModel_,workflowContext_);
+            connect(panel.get(),&DspModuleAdapter::changed,
+                    this,&DspChainAdapterModel::changed);
+            moduleAdapters_.push_back(std::move(panel));
+        }
     }
 
     // The utility comes after M17 in the VISUAL chain only.
@@ -199,6 +220,14 @@ void DspChainAdapterModel::selectModuleByInstanceId(const QString& instanceId)
             return;
         }
     }
+}
+
+void DspChainAdapterModel::bindAnalysisStatusViewModel(QObject* statusVm)
+{
+    if(analysisStatusViewModel_==statusVm)return;
+    analysisStatusViewModel_=statusVm;
+    rebuild_adapters_from_authority();
+    emit changed();
 }
 
 void DspChainAdapterModel::refreshFromAuthority()
