@@ -36,6 +36,7 @@ private slots:
     void exhaustedBudgetRetainsBestAndAllowsExactCache();
     void malformedEvidenceAndCancellation();
     void maximum48CoordinatesDeterministicOrder();
+    void invalidDirectionsNeverSpendBudgetAndExactCacheIsFree();
 };
 void FrozenM10RefinerTest::exactP01TransformsAndNoClamps() {
     const std::array<std::tuple<Transform,double,double>,5> specs{{
@@ -187,6 +188,36 @@ void FrozenM10RefinerTest::malformedEvidenceAndCancellation() {
     QVERIFY(out->end==End::cancelled);
     QCOMPARE(out->attempted_total,1U);
     QCOMPARE(out->winner.total_j,1.0);
+}
+void FrozenM10RefinerTest::
+invalidDirectionsNeverSpendBudgetAndExactCacheIsFree() {
+    const auto preflight=[](const std::vector<double>&,bool) {
+        return Evaluation{EvaluationKind::preflight_rejected,{}};
+    };
+    auto p=CoordinateRefiner::run({coord(4,1,0.95)},
+                                   score(1.0),17,preflight);
+    QVERIFY(p);
+    QVERIFY(p->end==End::complete);
+    QCOMPARE(p->attempted_total,17U);
+    QCOMPARE(p->preflight_rejections,5U);
+    QCOMPARE(p->discarded_out_of_bounds,3U);
+    QCOMPARE(p->coordinates[0].normalized_u,0.95);
+    QCOMPARE(p->winner.total_j,1.0);
+
+    // Even with no remaining attempted-render budget, the executor can
+    // legally reuse fresh exact complete evidence across all four steps.
+    const auto cached=[](const std::vector<double>&,bool allowed) {
+        if(allowed)return Evaluation{EvaluationKind::preflight_rejected,{}};
+        return Evaluation{EvaluationKind::completed_cache_hit,score(0.0)};
+    };
+    auto c=CoordinateRefiner::run({coord(5,1)},score(1.0),800,cached);
+    QVERIFY(c);
+    QCOMPARE(c->end,End::complete);
+    QCOMPARE(c->attempted_total,800U);
+    QCOMPARE(c->completed_cache_hits,8U);
+    QCOMPARE(c->evaluated_complete,8U);
+    QCOMPARE(c->winner.total_j,0.0);
+    QCOMPARE(c->coordinates[0].normalized_u,0.25);
 }
 void FrozenM10RefinerTest::maximum48CoordinatesDeterministicOrder() {
     std::vector<Coordinate> coordinates;
