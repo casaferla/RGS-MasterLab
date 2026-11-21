@@ -5,6 +5,7 @@ add_library(rgsml_dsp STATIC
     src/parametric_eq_parameters.cpp
     src/dynamic_eq_parameters.cpp
     src/internal/dynamic_eq_c01_coefficients.cpp
+    src/internal/dynamic_eq_c01_engine.cpp
     src/parametric_eq_module.cpp
     src/parametric_eq_response.cpp
     src/compressor_parameters.cpp
