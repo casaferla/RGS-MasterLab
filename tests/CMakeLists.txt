@@ -2575,3 +2575,16 @@ add_test(NAME rgsml_l3_m09_p02_micro_seed_tests
 set_tests_properties(rgsml_l3_m09_p02_micro_seed_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m09;micro;nonrelease")
+
+# L3-M09 P02 D10/D11/D12 cluster seed and exact native E[t,b] Type7.
+qt_add_executable(rgsml_l3_m09_p02_spectral_seed_tests
+    unit/app/test_l3_m09_p02_spectral_seed.cpp)
+target_include_directories(rgsml_l3_m09_p02_spectral_seed_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m09_p02_spectral_seed_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m09_p02_spectral_seed_tests)
+add_test(NAME rgsml_l3_m09_p02_spectral_seed_tests
+    COMMAND rgsml_l3_m09_p02_spectral_seed_tests)
+set_tests_properties(rgsml_l3_m09_p02_spectral_seed_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m09;spectral;nonrelease")
