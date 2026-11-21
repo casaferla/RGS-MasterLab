@@ -9,6 +9,7 @@
 #include "l3_automatch_typed_dynamic_eq_trial.hpp"
 #include "l3_automatch_typed_transient_trial.hpp"
 #include "l3_m05m06_real_analysis_port.hpp"
+#include "l3_m05_real_tonal_statistics.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -67,6 +68,15 @@ struct OfflineProductCandidateMeasurement final {
     {
         return m05m06_real::import_actual_full_source(
             levels,tonal,std::move(verified_by_caller));
+    }
+    // The M07 owner must provide an EXACT shared common bandwidth and
+    // accepted spectral floor. No additional audio pass or FFT occurs.
+    [[nodiscard]] m05m06_real::TonalObservationBundle
+    observed_m05_tonal(m05m06_real::CommonTonalBandwidth shared_common,
+                      double accepted_density_floor) const
+    {
+        return m05m06_real::observe_m05_tonal_bundle(
+            tonal,shared_common,accepted_density_floor);
     }
 };
 
