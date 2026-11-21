@@ -95,6 +95,11 @@ actualM19M16M20FullResourceAndFrozenFeatureReadiness() {
     QVERIFY(paired.pair);
     QVERIFY(paired.pair->integrated_lufs.ready());
     QVERIFY(paired.pair->broadband_width.ready());
+    QVERIFY(paired.pair->broadband_width_z.ready());
+    QVERIFY(paired.pair->global_crest_db.ready());
+    QVERIFY(paired.pair->correlation_pair_support);
+    QVERIFY(*paired.pair->correlation_pair_support>=0.0);
+    QVERIFY(*paired.pair->correlation_pair_support<=1.0);
     QVERIFY(!paired.pair->full_m05m06_objective_ready());
     // Without externally supplied Phase6 eligibility, M20 correctly
     // refuses all T1 normalized fractions. No percentage synthesis.
@@ -185,6 +190,40 @@ malformedOwnerScopeAndUnavailableCannotFabricateM10() {
     const analysis::TonalStereoValue tenPercent{
         0.1,analysis::TonalStereoMetricState::AVAILABLE};
     const auto transformed=real::power_fraction_to_db(tenPercent);
+    const auto zeroWidth=real::width_mono_endpoint_log2(
+        {0.0,Readiness::measured});
+    QVERIFY(zeroWidth.ready());
+    QCOMPARE(*zeroWidth.unrounded,-24.0);
+    QVERIFY(real::width_mono_endpoint_log2({
+        std::exp2(-25.0),Readiness::measured}).state==
+        Readiness::invalid);
+    const auto wide=real::width_mono_endpoint_log2({
+        2.0,Readiness::measured});
+    QVERIFY(wide.ready());
+    QCOMPARE(*wide.unrounded,1.0);
+    const auto rhoZero=real::correlation_fisher_z({
+        0.0,Readiness::measured});
+    QVERIFY(rhoZero.ready());
+    QCOMPARE(*rhoZero.unrounded,0.0);
+    const auto rhoPlus=real::correlation_fisher_z({
+        1.0,Readiness::measured});
+    const auto rhoMinus=real::correlation_fisher_z({
+        -1.0,Readiness::measured});
+    QVERIFY(rhoPlus.ready()&&rhoMinus.ready());
+    QVERIFY(std::abs(*rhoPlus.unrounded+
+                     *rhoMinus.unrounded)<1e-12);
+    QVERIFY(std::abs(*rhoPlus.unrounded-
+                     std::atanh(1.0-1e-6))<1e-12);
+    QVERIFY(real::correlation_fisher_z({
+        1.001,Readiness::measured}).state==Readiness::invalid);
+    const auto emptyPlr=real::plr_from_existing_m19(
+        {{},Readiness::unqualified},{-12.0,Readiness::measured});
+    QVERIFY(emptyPlr.state==Readiness::unqualified);
+    QVERIFY(!emptyPlr.unrounded);
+    const auto realPlr=real::plr_from_existing_m19(
+        {-1.0,Readiness::measured},{-12.0,Readiness::measured});
+    QVERIFY(realPlr.ready());
+    QCOMPARE(*realPlr.unrounded,11.0);
     QVERIFY(transformed.ready());
     QVERIFY(std::abs(*transformed.unrounded+10.0)<1e-12);
     QVERIFY(real::power_fraction_to_db({0.0,
