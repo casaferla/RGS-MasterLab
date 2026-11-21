@@ -55,6 +55,7 @@ struct PreRenderTopologyProxy final {
         return result;
     if(source.canonical_unsigned_topology_key.empty()||
        source.active_owned_modules>8U||
+       source.enabled_artistic_bands>12U||
        !std::isfinite(*source.frozen_covered_target_loss)||
        *source.frozen_covered_target_loss<0.0||
        !std::isfinite(*source.m10_seed_normalized_parameter_displacement)||

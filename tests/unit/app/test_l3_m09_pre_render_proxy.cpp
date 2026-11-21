@@ -44,6 +44,9 @@ void M09ProxyTest::missingOperandsStayUnboundNotZero() {
     in=bound(0.75,0.5,1,1,2,{});
     QCOMPARE(m09::make_pre_render_proxy(in).reason,
              m09::ProxyReason::invalid_numeric_or_canonical_identity);
+    in=bound(0.75,0.5,1,1,13,{0x01});
+    QCOMPARE(m09::make_pre_render_proxy(in).reason,
+             m09::ProxyReason::invalid_numeric_or_canonical_identity);
 }
 void M09ProxyTest::deterministicTieOrderAndUnsignedKey() {
     std::vector<m09::PreRenderTopologyProxy> p;
