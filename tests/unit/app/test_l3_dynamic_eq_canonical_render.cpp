@@ -16,6 +16,7 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <QtTest/QTest>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
