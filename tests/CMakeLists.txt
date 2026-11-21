@@ -2760,3 +2760,17 @@ add_test(NAME rgsml_l3_m06_native_rms_crest_tests
 set_tests_properties(rgsml_l3_m06_native_rms_crest_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;native_rms;native_crest;nonrelease")
+
+# L3 M06 D03/D04 authentic native PCM to frozen M07/M08 feature slots.
+qt_add_executable(rgsml_l3_m06_d03d04_binding_tests
+    unit/app/test_l3_m06_d03d04_to_m07_m08.cpp)
+target_include_directories(rgsml_l3_m06_d03d04_binding_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_d03d04_binding_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_d03d04_binding_tests)
+add_test(NAME rgsml_l3_m06_d03d04_binding_tests
+    COMMAND rgsml_l3_m06_d03d04_binding_tests)
+set_tests_properties(rgsml_l3_m06_d03d04_binding_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;m07;m08;native_pcm;nonrelease")
