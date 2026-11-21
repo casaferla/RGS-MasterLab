@@ -193,6 +193,14 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(!actual.source->integrated_lufs.ready());
     QVERIFY(!calculated.value()->observed_m05m06(
         {"unverified",54,false}).source);
+    // D03/D04 now read this SAME physically rendered candidate PCM;
+    // short 4096-frame fixtures have zero complete 400-ms windows.
+    const auto native=calculated.value()->observed_m06_native_rms_crest();
+    QCOMPARE(native.problem,
+             a::m05m06_real::NativeWindowProblem::none);
+    QVERIFY(native.complete_native_windows.empty());
+    QCOMPARE(native.valid_rms_windows,std::uint64_t{0});
+    QVERIFY(!native.authorizes_solver_objective());
     // Additional named T2–T6 observations reuse the real Product M20
     // PSD. Unqualified reference-grade status remains a separate gate.
     const auto tonalFacts=calculated.value()->observed_m05_tonal(
