@@ -8,6 +8,7 @@
 #include <rgsml/dsp/compressor_module.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -34,6 +35,7 @@ namespace {
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kDynamicEqTypeId = "rgsml.dsp.dynamic-eq";
+constexpr auto kTransientTypeId = "rgsml.dsp.transient-shaper";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 constexpr auto kTruePeakLimiterTypeId = "rgsml.dsp.true-peak-limiter";
@@ -92,6 +94,23 @@ struct PreparedModule final {
         bypass?ModuleExecutionDisposition::BYPASS_IDENTITY:
                ModuleExecutionDisposition::PROCESSED,
         DynamicEqExecutionSignaturePayload{std::move(active)}};
+}
+
+[[nodiscard]] ModuleExecutionSignature make_transient_shaper_signature(
+    const rgsml::dsp::ModuleDescriptor& descriptor,
+    const rgsml::dsp::ModuleInstanceId& id,
+    const rgsml::dsp::TransientShaperParameters& p,bool bypass)
+{
+    return ModuleExecutionSignature{
+        id,std::string{kTransientTypeId},
+        std::string{descriptor.algorithm_version().value_or("1.0.0")},
+        std::string{descriptor.parameter_schema_id().value_or(
+            "rgsml.dsp.transient-shaper.parameters/1.0.0")},
+        bypass?ModuleExecutionDisposition::BYPASS_IDENTITY:
+               ModuleExecutionDisposition::PROCESSED,
+        TransientShaperExecutionSignaturePayload{
+            p.attack_amount_db()==0.0?0.0:p.attack_amount_db(),
+            p.sustain_amount_db()==0.0?0.0:p.sustain_amount_db()}};
 }
 
 // Direct, integer Grid100 evaluation avoids cumulative rounding drift at
@@ -640,10 +659,11 @@ rgsml::core::Result<RenderResult> render_preview(
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
             const bool is_dynamic_eq = (instance.module_type_id() == kDynamicEqTypeId);
+            const bool is_transient = (instance.module_type_id() == kTransientTypeId);
             const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
             const bool is_stereo_ms = (instance.module_type_id() == kStereoMsTypeId);
             const bool is_streaming_p2 = (instance.module_type_id() == kStreamingTruePeakTypeId);
-            const bool is_parameterized = is_gain || is_eq || is_dynamic_eq || is_compressor
+            const bool is_parameterized = is_gain || is_eq || is_dynamic_eq || is_transient || is_compressor
                 || is_stereo_ms || is_streaming_p2;
 
             if (!instance.active() && is_streaming_p2) {
@@ -733,6 +753,16 @@ rgsml::core::Result<RenderResult> render_preview(
                         signatures.push_back(make_dynamic_eq_signature(
                             descriptor.value()->get(),instance.instance_id(),
                             *parameters,true));
+                    } else if (is_transient) {
+                        const auto* params=std::get_if<rgsml::dsp::TransientShaperParameters>(
+                            &binding->parameters);
+                        if(!params)return rgsml::core::Result<RenderResult>::failure(
+                            render_error(rgsml::core::ErrorCode::InvalidArgument,
+                                "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                                "Bypassed Transient Shaper needs two-control typed binding."));
+                        signatures.push_back(make_transient_shaper_signature(
+                            descriptor.value()->get(),instance.instance_id(),
+                            *params,true));
                     } else if (is_compressor) {
                         const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters);
                         const bool is_mono = (source.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C);
@@ -794,6 +824,13 @@ rgsml::core::Result<RenderResult> render_preview(
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "DYNAMIC_EQ_FULL_PREFIX_REQUIRED",
                     "Active C01 RenderPreview requires exact full-programme source from frame zero; arbitrary partial-region context is not certified."));
+            }
+            if(is_transient &&(source.absolute_start_frame().value()!=0
+                ||window!=source.absolute_range())) {
+                return rgsml::core::Result<RenderResult>::failure(
+                    render_error(rgsml::core::ErrorCode::UnsupportedOperation,
+                        "TRANSIENT_SHAPER_EXACT_PREFIX_REQUIRED",
+                        "M03 causal modulation requires the real source prefix; this offline adapter only accepts whole-programme replay."));
             }
             // Local full-prefix scheduler bounds. These are NOT module
             // DYN_EQ_EFFECTIVE_MEMORY_V1 certificate values and MUST NOT
@@ -915,6 +952,16 @@ rgsml::core::Result<RenderResult> render_preview(
                 signatures.push_back(make_dynamic_eq_signature(
                     descriptor.value()->get(),instance.instance_id(),
                     *parameters,false));
+            } else if (is_transient) {
+                const auto* params=std::get_if<rgsml::dsp::TransientShaperParameters>(
+                    &binding->parameters);
+                if(!params)return rgsml::core::Result<RenderResult>::failure(
+                    render_error(rgsml::core::ErrorCode::InvalidArgument,
+                        "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                        "Active Transient Shaper needs typed two-control binding."));
+                signatures.push_back(make_transient_shaper_signature(
+                    descriptor.value()->get(),instance.instance_id(),
+                    *params,false));
             } else if (is_compressor) {
                 const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters);
                 const bool is_mono = (source.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C);
