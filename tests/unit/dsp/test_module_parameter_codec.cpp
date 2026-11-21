@@ -2,6 +2,7 @@
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
@@ -307,6 +308,12 @@ void ModuleParameterCodecTest::dynamicEqOfflineCodecFailClosed()
     QVERIFY(!result); // no invented .rgsml Dynamic EQ schema
     QVERIFY(!decode_module_parameters_json(
         "rgsml.dsp.dynamic-eq.parameters/1.0.0","{}"));
+    const auto transient=TransientShaperParameters::create_default();
+    QVERIFY(transient);
+    const ModuleParameterPayload payloadM03{*transient.value()};
+    QVERIFY(!encode_module_parameters_json(payloadM03));
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.transient-shaper.parameters/1.0.0","{}"));
 }
 
 }  // namespace

@@ -651,14 +651,13 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
             } else if constexpr (std::is_same_v<T, StreamingTruePeakLimiterParameters>) {
                 return encode_streaming_true_peak_limiter_parameters_json(params);
             } else {
-                // Dynamic EQ is currently an explicit offline-only L3
-                // module. A fake or legacy-schema JSON write would corrupt
-                // .rgsml persistence and violate the project freeze.
-                // Do not silently serialize as Parametric EQ.
+                // Dynamic EQ and Transient Shaper are currently L3
+                // offline-only modules. No new approved .rgsml codec exists;
+                // never serialize under a legacy schema or coerce controls.
                 return Result<std::string>::failure(codec_error(
                     ErrorCode::UnsupportedOperation,
-                    "DYNAMIC_EQ_PERSISTENCE_NOT_AUTHORIZED",
-                    "Dynamic EQ has no authorized saved-project parameter codec yet."));
+                    "L3_DSP_PERSISTENCE_NOT_AUTHORIZED",
+                    "L3 offline DSP has no authorized saved-project parameter codec yet."));
             }
         },
         payload);
