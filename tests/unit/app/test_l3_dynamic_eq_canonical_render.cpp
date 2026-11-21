@@ -4,6 +4,7 @@
 #include "internal/l3_automatch_typed_gain_trial.hpp"
 #include "internal/l3_product_offline_trial_job.hpp"
 #include "internal/l3_offline_private_metric_probe.hpp"
+#include "internal/l3_private_scalar_candidate_batch.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -451,6 +452,75 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     staleReference.lifecycle=app::m21_private::Lifecycle::stale;
     QVERIFY(!probe_unpublished_candidate(
         *candidate.value(),staleReference,rms));
+    // Three genuine, sequential C01 RenderPreview/M19/M20 attempts.
+    // No Product/Qt mutation or recycled fake M21 PROCESSED publication.
+    std::vector<OfflineProductTrialJob> batchJobs;
+    for(const double db:{3.0,6.0,-3.0}) {
+        const auto ticket="typed-real-gain-"+std::to_string(db);
+        auto trial=make_gain_trial(
+            *manual.value(),baseline,gainId,db,ticket);
+        QVERIFY(trial);
+        auto newJob=OfflineProductTrialJob::create(
+            stamp,prepared,product,*manual.value(),baseline,
+            *trial,*block.value());
+        QVERIFY(newJob);
+        batchJobs.push_back(std::move(*newJob.value()));
+    }
+    auto progress=std::make_shared<PrivateBatchProgress>();
+    const auto report=PrivateScalarCandidateBatch::run(
+        batchJobs,*imported.snapshot,rms,progress);
+    QVERIFY(report);
+    QVERIFY(report.value()->end==PrivateBatchEnd::all_attempted);
+    QCOMPARE(report.value()->attempted,3U);
+    QCOMPARE(report.value()->completed,3U);
+    QCOMPARE(report.value()->failed,0U);
+    QVERIFY(report.value()->best);
+    QVERIFY(report.value()->best->ordinal<3U);
+    QVERIFY(std::isfinite(report.value()->best->measured_scalar_error));
+    QVERIFY(!report.value()->authorizes_product_publication());
+    QCOMPARE(progress->attempted(),3U);
+    QCOMPARE(progress->completed(),3U);
+    QVERIFY(progress->finished());
+    QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
+
+    // Cancellation before dispatch consumes no render or analyzer work.
+    auto cancelled=std::make_shared<PrivateBatchProgress>();
+    cancelled->request_cancel();
+    const auto stopped=PrivateScalarCandidateBatch::run(
+        batchJobs,*imported.snapshot,rms,cancelled);
+    QVERIFY(stopped);
+    QVERIFY(stopped.value()->end==PrivateBatchEnd::cancelled);
+    QCOMPARE(stopped.value()->attempted,0U);
+    QVERIFY(!stopped.value()->best);
+    QVERIFY(cancelled->finished());
+
+    // Low-confidence M16 TP is never coerced into a successful trial;
+    // each actual render+analyzer attempt is charged as a failure.
+    auto unusable=std::make_shared<PrivateBatchProgress>();
+    const auto noTp=PrivateScalarCandidateBatch::run(
+        batchJobs,*imported.snapshot,m16tp,unusable);
+    QVERIFY(noTp);
+    QCOMPARE(noTp.value()->attempted,3U);
+    QCOMPARE(noTp.value()->failed,3U);
+    QCOMPARE(noTp.value()->completed,0U);
+    QVERIFY(!noTp.value()->best);
+
+    // Two identical tickets are not two unambiguous candidates.
+    auto duplicates=batchJobs;
+    duplicates.push_back(batchJobs.front());
+    auto rejects=std::make_shared<PrivateBatchProgress>();
+    QVERIFY(!PrivateScalarCandidateBatch::run(
+        duplicates,*imported.snapshot,rms,rejects));
+    QCOMPARE(rejects->attempted(),0U);
+    QVERIFY(!rejects->finished());
+    // The 801st entry is rejected before the first DSP dispatch.
+    auto oversized=batchJobs;
+    for(std::size_t i=3;i<801;++i)oversized.push_back(batchJobs.front());
+    auto limit=std::make_shared<PrivateBatchProgress>();
+    QVERIFY(!PrivateScalarCandidateBatch::run(
+        oversized,*imported.snapshot,rms,limit));
+    QCOMPARE(limit->attempted(),0U);
+
     QCOMPARE(candidate.value()->rendered.signatures().size(),std::size_t{2});
     QVERIFY(std::holds_alternative<render::DynamicEqExecutionSignaturePayload>(
         candidate.value()->rendered.signatures()[1].payload));

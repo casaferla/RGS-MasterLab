@@ -7,6 +7,7 @@
 // Cancellation cannot interrupt a synchronous DSP block, but it prevents
 // the next candidate and never publishes partial PCM.
 #include "l3_offline_private_metric_probe.hpp"
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
