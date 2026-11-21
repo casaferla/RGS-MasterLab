@@ -201,6 +201,13 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(native.complete_native_windows.empty());
     QCOMPARE(native.valid_rms_windows,std::uint64_t{0});
     QVERIFY(!native.authorizes_solver_objective());
+    // The 4096-frame Product PCM has no authentic 3-second M19
+    // windows and cannot claim reference-grade EBU LRA.
+    const auto lra=calculated.value()->observed_m06_native_lra(
+        {"owner-proved-candidate",54,true},4096,true);
+    QVERIFY(!lra.is_reference_grade());
+    QVERIFY(!lra.lra_lu);
+    QVERIFY(!lra.authorizes_m10());
     // Additional named T2–T6 observations reuse the real Product M20
     // PSD. Unqualified reference-grade status remains a separate gate.
     const auto tonalFacts=calculated.value()->observed_m05_tonal(
