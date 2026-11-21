@@ -1,6 +1,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
@@ -30,6 +31,7 @@ private slots:
     void stereoMsRoundTripAndNonEffectivePersistence();
     void stereoMsStrictSchemaAndBoundaryRejections();
     void stereoMsGenericCodecDispatch();
+    void dynamicEqOfflineCodecFailClosed();
 };
 
 void ModuleParameterCodecTest::gainRoundTripAndBoundaries()
@@ -292,6 +294,19 @@ void ModuleParameterCodecTest::genericModuleParameterCodecApi()
 
     // Invalid schema ID rejection
     QVERIFY(!decode_module_parameters_json("rgsml.dsp.unknown.schema/1.0.0", "{}"));
+}
+
+void ModuleParameterCodecTest::dynamicEqOfflineCodecFailClosed()
+{
+    const auto id=*Uuid::parse(
+        "77777777-7777-4777-8777-777777777777").value();
+    const auto params=DynamicEqParameters::create_default(id);
+    QVERIFY(params);
+    const ModuleParameterPayload payload{*params.value()};
+    const auto result=encode_module_parameters_json(payload);
+    QVERIFY(!result); // no invented .rgsml Dynamic EQ schema
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.dynamic-eq.parameters/1.0.0","{}"));
 }
 
 }  // namespace
