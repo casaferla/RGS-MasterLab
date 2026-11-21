@@ -44,6 +44,15 @@ struct SourceReadings final {
     std::string k_weighting_bank_member_id;
     std::string k_weighting_bank_sha256;
     Value integrated_lufs;    // L1
+    Value short_term_p50_lufs; // L2, same original M19 K bank
+    struct ShortTermWindow final {
+        std::int64_t absolute_start_frame{};
+        Value lufs;
+    };
+    std::vector<ShortTermWindow> short_term_3s_grid100;
+    std::uint64_t short_term_complete_windows{};
+    std::uint64_t short_term_valid_windows{};
+    std::optional<double> short_term_native_support;
     Value true_peak_db_tp;    // L3; M16 must be QUALIFIED
     Value plr;                // D05 = true peak - Integrated (same scope)
     Value global_crest_db;    // D06, exact M19 public producer
@@ -184,6 +193,44 @@ struct Import final {
         std::string{levels.k_weighting_bank_member_id};
     value.k_weighting_bank_sha256=
         std::string{levels.k_weighting_bank_sha256};
+    value.short_term_p50_lufs=
+        from_m19(levels.short_term_3s_p50_lufs);
+    value.short_term_complete_windows=
+        levels.short_term_3s_complete_windows;
+    if(levels.short_term_3s_observation_complete) {
+        if(levels.short_term_3s_grid100.size()!=
+           levels.short_term_3s_complete_windows)
+            return fail(ImportProblem::scope_mismatch);
+        value.short_term_3s_grid100.reserve(
+            levels.short_term_3s_grid100.size());
+        const std::int64_t quarter=levels.sample_rate_hz/10;
+        for(std::size_t i=0;i<levels.short_term_3s_grid100.size();++i) {
+            const auto& reading=levels.short_term_3s_grid100[i];
+            if(reading.absolute_start_frame!=
+               static_cast<std::int64_t>(i)*quarter
+               ||reading.absolute_start_frame<0
+               ||reading.absolute_start_frame+3*levels.sample_rate_hz>
+                   levels.scope_frame_count
+               ||(reading.lufs&&!std::isfinite(*reading.lufs)))
+                return fail(ImportProblem::scope_mismatch);
+            const Value observed=reading.lufs?
+                Value{reading.lufs,Readiness::measured}:
+                Value{{},Readiness::missing};
+            if(observed.ready())++value.short_term_valid_windows;
+            value.short_term_3s_grid100.push_back({
+                reading.absolute_start_frame,observed});
+        }
+        if(value.short_term_complete_windows>0)
+            value.short_term_native_support=
+                static_cast<double>(value.short_term_valid_windows)/
+                static_cast<double>(value.short_term_complete_windows);
+        if(value.short_term_p50_lufs.ready() !=
+           (value.short_term_valid_windows>0))
+            return fail(ImportProblem::scope_mismatch);
+    }else if(value.short_term_complete_windows>0
+             ||!levels.short_term_3s_grid100.empty()
+             ||value.short_term_p50_lufs.ready())
+        return fail(ImportProblem::scope_mismatch);
     value.integrated_lufs=from_m19(levels.integrated_lufs);
     value.true_peak_db_tp=from_m19(levels.true_peak_db_tp);
     value.plr=plr_from_existing_m19(
@@ -248,6 +295,8 @@ enum class PairProblem:std::uint8_t {
 };
 struct Pair final {
     PairedValue integrated_lufs;    // M05 L1 measured; M08 target separate
+    PairedValue short_term_p50_lufs; // M05 L2 measured, not reference-grade
+    std::optional<double> short_term_pair_support; // min native valid/complete
     PairedValue true_peak_db_tp;    // M05 L3 qualified only
     PairedValue plr;                // M06 D05
     PairedValue global_crest_db;    // M06 D06
@@ -291,6 +340,13 @@ struct PairedImport final {
     Pair result;
     result.integrated_lufs={
         candidate.integrated_lufs,reference.integrated_lufs};
+    result.short_term_p50_lufs={
+        candidate.short_term_p50_lufs,reference.short_term_p50_lufs};
+    if(candidate.short_term_native_support
+       &&reference.short_term_native_support)
+        result.short_term_pair_support=std::min(
+            *candidate.short_term_native_support,
+            *reference.short_term_native_support);
     result.true_peak_db_tp={
         candidate.true_peak_db_tp,reference.true_peak_db_tp};
     result.plr={candidate.plr,reference.plr};
