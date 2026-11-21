@@ -17,7 +17,7 @@ namespace real=rgsml::app::l3_automatch::m05m06_real;
     auto fs=core::SampleRate::create(48000);
     auto fmt=audio::AudioFormat::create(
         *fs.value(),stereo?audio::ChannelLayout::STEREO_LR:
-                           audio::ChannelLayout::MONO);
+                           audio::ChannelLayout::MONO_C);
     const auto fc=core::FrameCount::create(
         static_cast<std::int64_t>(frames));
     return audio::AudioBuffer::create(
@@ -76,14 +76,14 @@ belowFloorAndNonfiniteKeepCompleteNativeDenominator() {
     const auto observed=real::observe_d03_d04_real_pcm(
         source.value()->view());
     QCOMPARE(observed.complete_native_windows.size(),std::size_t{7});
-    QCOMPARE(observed.valid_rms_windows,std::uint64_t{4});
-    QCOMPARE(observed.valid_crest_windows,std::uint64_t{4});
+    QCOMPARE(observed.valid_rms_windows,std::uint64_t{5});
+    QCOMPARE(observed.valid_crest_windows,std::uint64_t{5});
     QVERIFY(!observed.complete_native_windows[0].rms_dbfs);
-    QVERIFY(!observed.complete_native_windows[5].rms_dbfs);
+    QVERIFY(observed.complete_native_windows[5].rms_dbfs);
     QVERIFY(!observed.complete_native_windows[6].rms_dbfs);
     const auto selectors=real::extract_d03_d04_type7(observed);
-    QCOMPARE(*selectors.rms_native_support,4.0/7.0);
-    QCOMPARE(*selectors.crest_native_support,4.0/7.0);
+    QCOMPARE(*selectors.rms_native_support,5.0/7.0);
+    QCOMPARE(*selectors.crest_native_support,5.0/7.0);
     QVERIFY(selectors.d03_type7_rms_p95_minus_p10_db);
 }
 void RealWindowedRmsCrestTest::
