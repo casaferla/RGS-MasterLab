@@ -399,12 +399,14 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(job.value()->still_current(stamp,prepared,*manual.value(),baseline));
     QCOMPARE(job.value()->ticket_identity(),
              std::string("product-gain-and-c01-epoch-1"));
-    const auto candidate=job.value()->execute();
+    const auto candidate=job.value()->evaluate();
     QVERIFY(candidate);
-    QVERIFY(job.value()->result_has_expected_scope(*candidate.value()));
-    QCOMPARE(candidate.value()->signatures().size(),std::size_t{2});
+    QVERIFY(job.value()->result_has_expected_scope(candidate.value()->rendered));
+    QVERIFY(candidate.value()->levels.scope_frame_count==4096);
+    QVERIFY(candidate.value()->tonal.scope_frame_count==4096);
+    QCOMPARE(candidate.value()->rendered.signatures().size(),std::size_t{2});
     QVERIFY(std::holds_alternative<render::DynamicEqExecutionSignaturePayload>(
-        candidate.value()->signatures()[1].payload));
+        candidate.value()->rendered.signatures()[1].payload));
     QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
     QCOMPARE(manual.value()->instances().size(),std::size_t{2});
 

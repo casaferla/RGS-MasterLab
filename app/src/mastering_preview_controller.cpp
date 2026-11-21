@@ -1,4 +1,7 @@
 #include "mastering_preview_controller.hpp"
+// Compile-check Qt Product admission on the Windows app build. No UI
+// activation, background work or automatic AutoMatch launch here.
+#include "internal/l3_product_qt_owner_admission.hpp"
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/error.hpp>
