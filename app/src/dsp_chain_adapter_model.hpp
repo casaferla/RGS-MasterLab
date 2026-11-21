@@ -37,7 +37,8 @@ public:
         bool includeTruePeakAnalysis = false,
         TerminalLimiterState* terminalLimiterState = nullptr,
         TerminalLimiterViewModel* terminalLimiterViewModel = nullptr,
-        QObject* terminalMonitorViewModel = nullptr);
+        QObject* terminalMonitorViewModel = nullptr,
+        MasteringPreviewController* p2PreviewController = nullptr);
 
     explicit DspChainAdapterModel(
         GainViewModel* gainViewModel,
@@ -58,6 +59,10 @@ public:
     Q_INVOKABLE void setSelectedIndex(int index);
     Q_INVOKABLE void selectModuleByInstanceId(const QString& instanceId);
 
+    // Call after canonical Product owner is constructed, before Main QML.
+    // Three independent non-processing GUI rows, never project DSP instances.
+    void bindAnalysisStatusViewModel(QObject* statusVm);
+
     void refreshFromAuthority();
     void resetForNewSource();
 
@@ -71,10 +76,12 @@ private:
     EqViewModel* eqViewModel_{nullptr};
     CompressorViewModel* compressorViewModel_{nullptr};
     StereoMsViewModel* stereoMsViewModel_{nullptr};
+    MasteringPreviewController* p2PreviewController_{nullptr};
     bool includeTruePeakAnalysis_{false};
     TerminalLimiterState* terminalLimiterState_{nullptr};
     TerminalLimiterViewModel* terminalLimiterViewModel_{nullptr};
     QObject* terminalMonitorViewModel_{nullptr};
+    QObject* analysisStatusViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
 

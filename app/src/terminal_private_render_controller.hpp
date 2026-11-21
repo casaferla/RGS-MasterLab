@@ -85,6 +85,10 @@ public:
         return privateOriginalFirFamilyReady_;
     }
     [[nodiscard]] core::Status request_private(core::SampleRate outputRate);
+    // M18 PREPRODUCTION ONLY: refuse render-epoch withdrawal if a worker
+    // holds an authorized file commit. Does not replace the legacy M17
+    // no-throw invalidate path; caller migration remains a hard blocker.
+    [[nodiscard]] core::Status try_invalidate_for_m18();
     void invalidate();
     [[nodiscard]] QString status() const {return status_;}
     [[nodiscard]] QString error() const {return error_;}
@@ -129,6 +133,7 @@ signals:
     void changed();
     void originalQ0FamilyChanged();
 private:
+    void invalidate_local_after_candidate_gate(bool gateAlreadyInvalidated);
     struct Job {
         std::uint64_t serial;
         TerminalCandidateGate::Capture capture;

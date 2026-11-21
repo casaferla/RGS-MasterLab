@@ -35,6 +35,7 @@ class ProjectJsonTest final : public QObject {
 private slots:
     void source_roundtrip();
     void region_gold_chain_roundtrip();
+    void independent_reference_region_and_loop_legacy_compatibility();
     void strict_rejections();
     void numeric_exactness();
     void future_sections_and_gain_flags_roundtrip();
@@ -95,6 +96,80 @@ void ProjectJsonTest::region_gold_chain_roundtrip()
     QCOMPARE(parsed.value()->chains.front().modules.front().parameters.canonical_utf8(),
              module.parameters.canonical_utf8());
     QCOMPARE(parsed.value()->extensions.canonical_utf8(), doc.extensions.canonical_utf8());
+}
+
+
+void ProjectJsonTest::independent_reference_region_and_loop_legacy_compatibility()
+{
+    auto doc=sample();
+    const auto referenceResource=id("a3333333-3333-4333-8333-333333333333");
+    const auto referenceId=id("a4444444-4444-4444-8444-444444444444");
+    doc.resources.push_back({referenceResource,"AUDIO",
+        {{"rgsml.windows.local-file","C:/test/reference.wav","reference.wav"}},std::nullopt});
+    doc.references.activeReferenceId=referenceId;
+    doc.references.items.push_back({referenceId,"GOLD",referenceResource});
+    doc.timeSelections.auditionRegions.push_back({
+        id("a5555555-5555-4555-8555-555555555555"),
+        doc.sourceResourceId,"SOURCE",7,19});
+    // V1 original key shape and bytes survive reserialization; Loop OFF.
+    auto old=project::internal::write_project_json(doc);
+    QVERIFY(old);
+    QVERIFY(old.value()->find("loopEnabled")==std::string::npos);
+    auto parsedOld=project::internal::parse_project_json(*old.value());
+    QVERIFY(parsedOld);
+    QVERIFY(!parsedOld.value()->timeSelections.auditionRegions[0].loopEnabled);
+    auto oldAgain=project::internal::write_project_json(*parsedOld.value());
+    QVERIFY(oldAgain);
+    QCOMPARE(*oldAgain.value(),*old.value());
+
+    doc.timeSelections.auditionRegions[0].loopEnabled=true;
+    doc.timeSelections.auditionRegions.push_back({
+        id("a6666666-6666-4666-8666-666666666666"),
+        referenceResource,"REFERENCE",23,41,true});
+    QVERIFY(project::ProjectSnapshot::create(doc));
+    auto modern=project::internal::write_project_json(doc);
+    QVERIFY(modern);
+    auto parsed=project::internal::parse_project_json(*modern.value());
+    QVERIFY(parsed);
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions.size(),std::size_t{2});
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions[0].loopEnabled,true);
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions[1].frameDomain,
+             std::string("REFERENCE"));
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions[1].resourceId.to_string(),
+             referenceResource.to_string());
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions[1].startFrame,23);
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions[1].endFrameExclusive,41);
+    QCOMPARE(parsed.value()->timeSelections.auditionRegions[1].loopEnabled,true);
+    auto modernAgain=project::internal::write_project_json(*parsed.value());
+    QVERIFY(modernAgain);
+    QCOMPARE(*modernAgain.value(),*modern.value());
+
+    auto malformed=*modern.value();
+    const auto loopToken=malformed.find("\"loopEnabled\":true");
+    QVERIFY(loopToken!=std::string::npos);
+    malformed.replace(loopToken,std::string("\"loopEnabled\":true").size(),
+                      "\"loopEnabled\":1");
+    QVERIFY(!project::internal::parse_project_json(malformed));
+    auto unknown=*modern.value();
+    const auto extra=unknown.find("\"loopEnabled\":true");
+    QVERIFY(extra!=std::string::npos);
+    unknown.insert(extra,"\"unknownFlag\":true,");
+    QVERIFY(!project::internal::parse_project_json(unknown));
+
+    auto wrong=doc;
+    wrong.timeSelections.auditionRegions[1].resourceId=doc.sourceResourceId;
+    QVERIFY(!project::ProjectSnapshot::create(wrong));
+    wrong=doc;
+    wrong.timeSelections.auditionRegions[1].frameDomain="SOURCE";
+    QVERIFY(!project::ProjectSnapshot::create(wrong));
+    wrong=doc;
+    wrong.references.activeReferenceId.reset();
+    QVERIFY(!project::ProjectSnapshot::create(wrong));
+    wrong=doc;
+    wrong.timeSelections.auditionRegions.push_back(
+        {id("a7777777-7777-4777-8777-777777777777"),
+         referenceResource,"REFERENCE",50,60,false});
+    QVERIFY(!project::ProjectSnapshot::create(wrong));
 }
 
 void ProjectJsonTest::strict_rejections()

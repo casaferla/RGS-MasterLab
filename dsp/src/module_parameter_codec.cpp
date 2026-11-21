@@ -25,6 +25,7 @@ constexpr auto kEqSchemaId = "rgsml.dsp.parametric-eq.parameters/1.0.0";
 constexpr auto kCompressorSchemaId = "rgsml.dsp.compressor.parameters/1.0.0";
 constexpr auto kStereoMsSchemaId = "rgsml.dsp.stereo-ms.parameters/1.0.0";
 constexpr auto kTruePeakLimiterSchemaId = "rgsml.dsp.true-peak-limiter.parameters/1.0.0";
+constexpr auto kStreamingP2SchemaId = "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0";
 
 [[nodiscard]] Error codec_error(ErrorCode code, std::string category, std::string message)
 {
@@ -592,6 +593,46 @@ Result<TruePeakLimiterParameters> decode_true_peak_limiter_parameters_json(
     return TruePeakLimiterParameters::create(value.get<double>());
 }
 
+
+Result<std::string> encode_streaming_true_peak_limiter_parameters_json(
+    const StreamingTruePeakLimiterParameters& p)
+{
+    json j = json::object();
+    j["ceilingDbTp"] = p.ceiling_db_tp();
+    j["driveDb"] = p.drive_db();
+    j["marginPercent"] = p.margin_percent();
+    return Result<std::string>::success(j.dump());
+}
+
+Result<StreamingTruePeakLimiterParameters>
+decode_streaming_true_peak_limiter_parameters_json(std::string_view source)
+{
+    std::size_t keys = 0;
+    const auto key_count = [&keys](int, json::parse_event_t e, json&) -> bool {
+        if (e == json::parse_event_t::key) ++keys;
+        return true;
+    };
+    json j = json::parse(source.begin(),source.end(),key_count,false);
+    if (j.is_discarded())
+        return Result<StreamingTruePeakLimiterParameters>::failure(
+            codec_error(ErrorCode::InvalidArgument,"INVALID_JSON_SYNTAX",
+                        "Streaming P2 JSON is malformed."));
+    if (!j.is_object() || j.size()!=3U || keys!=3U ||
+        !j.contains("ceilingDbTp") || !j.contains("driveDb") ||
+        !j.contains("marginPercent"))
+        return Result<StreamingTruePeakLimiterParameters>::failure(
+            codec_error(ErrorCode::InvalidArgument,"STRICT_SCHEMA_VIOLATION",
+                        "Streaming P2 requires three distinct keys."));
+    if (!j["ceilingDbTp"].is_number() || !j["driveDb"].is_number() ||
+        !j["marginPercent"].is_number_integer())
+        return Result<StreamingTruePeakLimiterParameters>::failure(
+            codec_error(ErrorCode::InvalidArgument,"INVALID_PARAMETER_TYPE",
+                        "Streaming P2 JSON values have incorrect types."));
+    return StreamingTruePeakLimiterParameters::create(
+        j["ceilingDbTp"].get<double>(),j["driveDb"].get<double>(),
+        j["marginPercent"].get<int>());
+}
+
 Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& payload)
 {
     return std::visit(
@@ -607,6 +648,8 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
                 return encode_stereo_ms_parameters_json(params);
             } else if constexpr (std::is_same_v<T, TruePeakLimiterParameters>) {
                 return encode_true_peak_limiter_parameters_json(params);
+            } else if constexpr (std::is_same_v<T, StreamingTruePeakLimiterParameters>) {
+                return encode_streaming_true_peak_limiter_parameters_json(params);
             }
         },
         payload);
@@ -647,6 +690,12 @@ Result<ModuleParameterPayload> decode_module_parameters_json(
             ModuleParameterPayload{std::move(*ms_res.value())});
     }
 
+    if (schema_id == kStreamingP2SchemaId) {
+        auto p = decode_streaming_true_peak_limiter_parameters_json(json_text);
+        if (!p) return Result<ModuleParameterPayload>::failure(*p.error());
+        return Result<ModuleParameterPayload>::success(
+            ModuleParameterPayload{std::move(*p.value())});
+    }
     if (schema_id == kTruePeakLimiterSchemaId) {
         auto limiter = decode_true_peak_limiter_parameters_json(json_text);
         if (!limiter) {

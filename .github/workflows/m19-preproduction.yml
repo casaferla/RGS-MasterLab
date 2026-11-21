@@ -1,0 +1,340 @@
+# M19-only quick preproduction checks. No Qt, M17/M18, FIR, MPFR, FQ.
+name: M19 Independent Preproduction CI
+
+on:
+  push:
+    branches:
+      - experimental/m19-basic-level-20261103
+    paths:
+      - 'analysis/src/internal/m19_*.hpp'
+      - 'tools/qualification/m19/**'
+      - 'docs/architecture/M19_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261103.md'
+      - '.github/workflows/m19-preproduction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m19-preproduction-only
+  cancel-in-progress: false
+
+jobs:
+  linux-m19:
+    name: M19 only · Linux GCC C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independent Python frozen mathematics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m19/test_m19_independent_reference.py
+          python3 tools/qualification/m19/test_m19_scope_grid_reference.py
+          python3 tools/qualification/m19/test_m19_f07_decimal_reference.py
+          python3 tools/qualification/m19/test_m19_f07_gate_decimal_reference.py
+          python3 tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py
+          python3 tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py
+      - name: C++20 strict-fp source-scope candidate · Linux Debug and Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -I analysis/src tools/qualification/m19/m19_portable_selftest.cpp -o "$RUNNER_TEMP/m19-level-selftest"
+            "$RUNNER_TEMP/m19-level-selftest"
+          done
+          echo M19_LINUX_NATIVE_PREPRODUCTION_PASS_NOT_GATE_G
+
+      - name: M19 F07 exact dyadic RMS and range · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/src tools/qualification/m19/m19_f07_range_selftest.cpp \
+              -o "$RUNNER_TEMP/m19-f07"
+            "$RUNNER_TEMP/m19-f07"
+          done
+          echo M19_F07_INDEPENDENT_RANGE_CANDIDATE_PASS_NOT_QTP
+
+      - name: M19 F07 power-gate overflow and threshold matrix · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/src tools/qualification/m19/m19_f07_gate_range_selftest.cpp \
+              -o "$RUNNER_TEMP/m19-gate-range"
+            "$RUNNER_TEMP/m19-gate-range"
+          done
+          echo M19_F07_GATE_MEAN_OVERFLOW_PREPRODUCTION_PASS_NOT_QTP
+
+      - name: M19 48k physical K/PCM range and absolute gate · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/src tools/qualification/m19/m19_f07_k48_range_selftest.cpp \
+              -o "$RUNNER_TEMP/m19-k48-range"
+            "$RUNNER_TEMP/m19-k48-range"
+          done
+          echo M19_F07_48K_PHYSICAL_K_RANGE_PREPRODUCTION_PASS_NOT_QTP
+
+      - name: M19 P01 six exact frozen K banks · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/src tools/qualification/m19/m19_p01_frozen_bank_selftest.cpp \
+              -o "$RUNNER_TEMP/m19-p01-banks"
+            "$RUNNER_TEMP/m19-p01-banks"
+          done
+          echo M19_P01_SIX_FROZEN_BANKS_PREPRODUCTION_PASS_NOT_GATE_G
+
+      - name: M19 P01 six-rate streaming K/PCM vs independent oracles · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/src tools/qualification/m19/m19_p01_six_rate_k_pcm_selftest.cpp \
+              -o "$RUNNER_TEMP/m19-six-rate-k-pcm"
+            "$RUNNER_TEMP/m19-six-rate-k-pcm"
+          done
+          echo M19_P01_SIX_RATE_K_PCM_DIAGNOSTICS_PASS_NOT_PRODUCT_GATE_G
+
+      - name: M19 final six-rate multi-block and feeder invariants · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/src tools/qualification/m19/m19_final_six_rate_multiblock_selftest.cpp \
+              -o "$RUNNER_TEMP/m19-final-premerge"
+            "$RUNNER_TEMP/m19-final-premerge"
+          done
+          echo M19_FINAL_SIX_RATE_PREMERGE_INVARIANTS_PASS_NOT_GATE_G
+
+      - name: M19 exact-rational temporal geometry · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -I analysis/src tools/qualification/m19/m19_scope_grid_selftest.cpp -o "$RUNNER_TEMP/m19-grid"
+            "$RUNNER_TEMP/m19-grid"
+          done
+      - name: Compile and exercise the UNMODIFIED M16 public TP API · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off \
+              -I analysis/include -I analysis/src -I audio/include -I core/include \
+              tools/qualification/m19/m19_actual_m16_dependency_selftest.cpp \
+              analysis/src/true_peak_measurement.cpp \
+              analysis/src/true_peak_full_resource.cpp \
+              analysis/src/true_peak_itu4x_channel_stream.cpp \
+              audio/src/audio_buffer.cpp audio/src/audio_format.cpp \
+              core/src/checked_integer.cpp core/src/frame_time.cpp \
+              core/src/rational.cpp core/src/error.cpp \
+              -o "$RUNNER_TEMP/m19-m16-public"
+            "$RUNNER_TEMP/m19-m16-public"
+          done
+          echo M19_REUSED_UNQUALIFIED_M16_API_SEAM_PASS_NOT_PRODUCT_GATE
+
+
+  windows-m19:
+    name: M19 only · Windows MSVC C++20 Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Independent Python frozen mathematics · Windows
+        shell: pwsh
+        run: |
+          python tools/qualification/m19/test_m19_independent_reference.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_INDEPENDENT_REFERENCE_FAILED" }
+          python tools/qualification/m19/test_m19_scope_grid_reference.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_INDEPENDENT_REFERENCE_FAILED" }
+          python tools/qualification/m19/test_m19_f07_decimal_reference.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_INDEPENDENT_F07_DECIMAL_FAILED" }
+          python tools/qualification/m19/test_m19_f07_gate_decimal_reference.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_INDEPENDENT_F07_GATE_DECIMAL_FAILED" }
+          python tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_P01_FROZEN_K_BANK_SHA_OR_DERIVATION_FAILED" }
+          python tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py
+          if ($LASTEXITCODE -ne 0) { throw "M19_P01_SIX_RATE_K_REFERENCE_FAILED" }
+      - name: C++20 strict-fp source-scope candidate · Windows Debug and Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-$mode-msvc.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src tools/qualification/m19/m19_portable_selftest.cpp "/Fe:$env:RUNNER_TEMP/m19-level-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 70
+              throw "M19_WINDOWS_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-level-$mode.exe"
+            if ($LASTEXITCODE -ne 0) {
+              throw "M19_WINDOWS_SELFTEST_FAILED_$mode"
+            }
+          }
+          Write-Output M19_WINDOWS_NATIVE_PREPRODUCTION_PASS_NOT_GATE_G
+
+      - name: M19 F07 exact dyadic RMS and range · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-f07-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src `
+              tools/qualification/m19/m19_f07_range_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-f07-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 80
+              throw "M19_WINDOWS_F07_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-f07-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_F07_NUMERICAL_FAILED_$mode" }
+          }
+          Write-Output M19_F07_INDEPENDENT_RANGE_CANDIDATE_PASS_NOT_QTP
+
+      - name: M19 F07 power-gate overflow and threshold matrix · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-gate-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src `
+              tools/qualification/m19/m19_f07_gate_range_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-gate-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 80
+              throw "M19_WINDOWS_F07_GATE_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-gate-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_F07_GATE_NUMERICAL_FAILED_$mode" }
+          }
+          Write-Output M19_F07_GATE_MEAN_OVERFLOW_PREPRODUCTION_PASS_NOT_QTP
+
+      - name: M19 48k physical K/PCM range and absolute gate · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-k48-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src `
+              tools/qualification/m19/m19_f07_k48_range_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-k48-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 80
+              throw "M19_WINDOWS_F07_K48_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-k48-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_F07_K48_NUMERICAL_FAILED_$mode" }
+          }
+          Write-Output M19_F07_48K_PHYSICAL_K_RANGE_PREPRODUCTION_PASS_NOT_QTP
+
+      - name: M19 P01 six exact frozen K banks · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-p01-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src `
+              tools/qualification/m19/m19_p01_frozen_bank_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-p01-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 80
+              throw "M19_WINDOWS_P01_BANK_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-p01-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_P01_BANK_RUNTIME_FAILED_$mode" }
+          }
+          Write-Output M19_P01_SIX_FROZEN_BANKS_PREPRODUCTION_PASS_NOT_GATE_G
+
+      - name: M19 P01 six-rate streaming K/PCM vs independent oracles · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-p01-k-pcm-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src `
+              tools/qualification/m19/m19_p01_six_rate_k_pcm_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-p01-k-pcm-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 90
+              throw "M19_WINDOWS_P01_K_PCM_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-p01-k-pcm-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_P01_K_PCM_RUNTIME_FAILED_$mode" }
+          }
+          Write-Output M19_P01_SIX_RATE_K_PCM_DIAGNOSTICS_PASS_NOT_PRODUCT_GATE_G
+
+      - name: M19 final six-rate multi-block and feeder invariants · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-final-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src `
+              tools/qualification/m19/m19_final_six_rate_multiblock_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-final-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 90
+              throw "M19_WINDOWS_FINAL_PREMERGE_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-final-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_FINAL_PREMERGE_RUNTIME_FAILED_$mode" }
+          }
+          Write-Output M19_FINAL_SIX_RATE_PREMERGE_INVARIANTS_PASS_NOT_GATE_G
+
+      - name: M19 exact-rational temporal geometry · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-grid-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /Zc:__cplusplus /Ianalysis/src tools/qualification/m19/m19_scope_grid_selftest.cpp "/Fe:$env:RUNNER_TEMP/m19-grid-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 70
+              throw "M19_WINDOWS_GRID_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-grid-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_GRID_FAILED_$mode" }
+          }
+      - name: Compile and exercise the UNMODIFIED M16 public TP API · Windows Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m19-m16-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/include /Ianalysis/src /Iaudio/include /Icore/include `
+              tools/qualification/m19/m19_actual_m16_dependency_selftest.cpp `
+              analysis/src/true_peak_measurement.cpp `
+              analysis/src/true_peak_full_resource.cpp `
+              analysis/src/true_peak_itu4x_channel_stream.cpp `
+              audio/src/audio_buffer.cpp audio/src/audio_format.cpp `
+              core/src/checked_integer.cpp core/src/frame_time.cpp `
+              core/src/rational.cpp core/src/error.cpp `
+              "/Fe:$env:RUNNER_TEMP/m19-m16-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 80
+              throw "M19_WINDOWS_REAL_M16_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m19-m16-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M19_WINDOWS_REAL_M16_BOUNDARY_FAILED_$mode" }
+          }
+          Write-Output M19_REUSED_UNQUALIFIED_M16_API_SEAM_PASS_NOT_PRODUCT_GATE
+

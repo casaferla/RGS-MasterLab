@@ -143,6 +143,9 @@ public:
     Q_INVOKABLE bool setMasterRegion(qint64 begin,qint64 end);
     Q_INVOKABLE bool clearMasterRegion();
     Q_INVOKABLE void refresh();
+    // Recompute the actual verified Master audition affordance after an
+    // accepted target switch, even when the transport state/clock is unchanged.
+    void refresh_install_availability();
 signals:
     void changed();
 private:

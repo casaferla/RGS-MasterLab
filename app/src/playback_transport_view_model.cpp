@@ -1,5 +1,7 @@
 #include "playback_transport_view_model.hpp"
 
+#include <QThread>
+
 #include <algorithm>
 #include <utility>
 
@@ -369,7 +371,7 @@ core::Status PlaybackTransportViewModel::seek_source_frame(
     if (!sourceDerivedActive_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
-            "Source waveform seek is unavailable during Gold audition."});
+            "Source waveform seek is unavailable during Reference audition."});
     }
     return seek_target_frame(position);
 }
@@ -400,6 +402,37 @@ core::Status PlaybackTransportViewModel::set_loop_source_range(
         refresh();
         return result;
     }
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+core::Status PlaybackTransportViewModel::set_loop_reference_range(
+    std::optional<core::FrameRange> loop)
+{
+    // Owner predicates capture Qt source selector and monitor objects.
+    // Never read those from a worker or issue a foreign-thread loop write.
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "REFERENCE_LOOP_REQUIRES_QT_OWNER_THREAD"});
+    // No SOURCE loop may be redirected to an independent REFERENCE file.
+    // In particular, a terminal M17 OUTPUT_RATE owner must not be touched.
+    if(!service_ ||terminalGate_ ||sourceDerivedActive_
+       ||(referenceAuditionChecker_ &&!referenceAuditionChecker_()))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "REFERENCE_LOOP_REQUIRES_REFERENCE_DEVICE_OWNER"});
+    const auto before=service_->snapshot();
+    if(!before ||before.value()->state==core::PlaybackState::NO_SOURCE
+       ||!before.value()->duration
+       ||(loop &&(loop->begin().value()<0
+           ||loop->end().value()>before.value()->duration->value())))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "REFERENCE_LOOP_REQUIRES_READY_FILE_AND_VALID_TIMEBASE"});
+    const auto result=service_->set_loop(std::move(loop));
+    if(!result){publish_failure(*result.error());refresh();return result;}
     errorMessage_.clear();
     refresh();
     return core::Status::success();

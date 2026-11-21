@@ -6,7 +6,11 @@ namespace rgsml::app {
 core::Result<TerminalLimiterState> TerminalLimiterState::create_default(
     const dsp::ModuleRegistry& registry, dsp::ModuleInstanceId id)
 {
-    auto params=dsp::TruePeakLimiterParameters::create_default();
+    // Product Export TP Limiter policy (PO 2026-11-16):
+    // no implicit -1 dBTP mastering attenuation on a fresh launch.
+    // Preserve the frozen DSP-package create_default() contract (-1 dBTP)
+    // for other callers; only the terminal Export Product starts at 0.
+    auto params=dsp::TruePeakLimiterParameters::create(0.0);
     if(!params)return core::Result<TerminalLimiterState>::failure(*params.error());
     return create(registry,id,*params.value(),true);
 }
@@ -29,7 +33,32 @@ core::Result<TerminalLimiterState> TerminalLimiterState::create(
 TerminalLimiterState::TerminalLimiterState(
     dsp::ProcessingChain chain,dsp::ModuleInstanceId id,
     dsp::TruePeakLimiterParameters params) noexcept
-    : chain_(std::move(chain)),id_(std::move(id)),params_(params) {}
+    : chain_(std::move(chain)),id_(std::move(id)),params_(params),
+      ownerThread_(std::this_thread::get_id()) {}
+core::Status TerminalLimiterState::admit_m18_mutation(
+    const char* operation) const
+{
+    if(!m18MutationAdmission_)return core::Status::success();
+    if(std::this_thread::get_id()!=ownerThread_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_TERMINAL_MUTATION_WRONG_OWNER_THREAD"});
+    if(m18MutationAdmitting_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_TERMINAL_MUTATION_REENTRANT_ADMISSION_DENIED"});
+    // One stack-only flag, no worker wait or GUI event-loop pumping.
+    // Reentrant state edits are rejected before they can change revisions.
+    m18MutationAdmitting_=true;
+    struct Reset final {
+        bool* flag;
+        ~Reset(){*flag=false;}
+    } reset{&m18MutationAdmitting_};
+    try{return m18MutationAdmission_(operation);}
+    catch(...) {return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_TERMINAL_MUTATION_ADMISSION_THROWN"});}
+}
 core::Status TerminalLimiterState::set_ceiling_db_tp(double value)
 {
     auto validated=dsp::TruePeakLimiterParameters::create(value);
@@ -40,12 +69,21 @@ core::Status TerminalLimiterState::set_ceiling_db_tp(double value)
         return core::Status::failure(core::Error{
             core::ErrorCode::IntegerOverflow,
             "M17 Ceiling parameter revision sequence exhausted."});
+    const auto allowed=admit_m18_mutation("terminal_ceiling");
+    if(!allowed)return allowed;
     params_=*validated.value();
     ++parameterRevision_;
     return core::Status::success();
 }
 core::Status TerminalLimiterState::set_user_bypass(bool bypass)
 {
+    if(m18MutationAdmission_) {
+        // A true no-op is not a new Product generation. Preserve legacy
+        // M17 behavior when the optional Product epoch is not installed.
+        if(bypassed()==bypass)return core::Status::success();
+        const auto allowed=admit_m18_mutation("terminal_bypass");
+        if(!allowed)return allowed;
+    }
     return chain_.set_user_bypass(id_,bypass);
 }
 std::vector<dsp::ModuleExecutionBinding>

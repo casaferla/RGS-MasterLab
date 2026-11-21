@@ -5,6 +5,7 @@
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 
 #include <rgsml/dsp/module_registry.hpp>
 
@@ -24,6 +25,8 @@ private slots:
     void testReadOnlyTruePeakAnalysisDoesNotEnterProcessingChain();
     void testRealTerminalLimiterInInventoryButNotAudible();
     void testMonitorUtilityHasNoDSPBypassOrAudioStage();
+    void testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMonitor();
+    void testP2DuplicateCommandsDoNotScheduleRendering();
     void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
@@ -41,6 +44,192 @@ private slots:
     void testIndependentModuleHistories();
     void testWorkflowContextLabel();
 };
+
+void DspModuleAdapterTest::testP2DuplicateCommandsDoNotScheduleRendering()
+{
+    // Real fifth DSP and real preview controller. Duplicate accepted Qt
+    // controls must not consume a Product epoch or request a full-chain
+    // render. A genuine parameter or bypass edit still requests one.
+    auto base = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry = dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*base.value()));
+    QVERIFY(registry);
+    const auto uuid=[](const char* value) {
+        return *core::Uuid::parse(value).value();
+    };
+    const auto module=[](const char* value) {
+        return *dsp::ModuleInstanceId::from_uuid(
+            *core::Uuid::parse(value).value()).value();
+    };
+    auto four=MasteringChainState::create_product_default(
+        *registry.value(),uuid("72900000-0000-4000-8000-000000000001"),
+        module("72900000-0000-4000-8000-000000000011"),
+        module("72900000-0000-4000-8000-000000000012"),
+        module("72900000-0000-4000-8000-000000000013"),
+        module("72900000-0000-4000-8000-000000000014"));
+    QVERIFY(four);
+    const auto p2Id=module("72900000-0000-4000-8000-000000000019");
+    auto defaults=dsp::StreamingTruePeakLimiterParameters::create_default();
+    QVERIFY(defaults);
+    auto five=MasteringChainState::with_streaming_true_peak_preview(
+        std::move(*four.value()),p2Id,*defaults.value(),false);
+    QVERIFY(five);
+    auto state=std::move(*five.value());
+    MasteringPreviewController preview{&state};
+    StreamingTruePeakPreviewModuleAdapter adapter{
+        &state,&preview,QStringLiteral("Mastering")};
+    QSignalSpy previewNotifications{&preview,&MasteringPreviewController::changed};
+    QVERIFY(previewNotifications.isValid());
+    const auto revision=state.chain().revision();
+    QCOMPARE(state.module_count(),std::size_t{5});
+    QVERIFY(!adapter.bypass());
+
+    // Exactly equal typed values, including a RESET to defaults, must not
+    // enqueue rendering or change authoritative parameters/chain revision.
+    adapter.setCeilingDbTp(-1.0);
+    adapter.setDriveDb(0.0);
+    adapter.setMarginPercent(2);
+    adapter.resetToDefault();
+    adapter.setBypass(false);
+    QCOMPARE(previewNotifications.count(),0);
+    QCOMPARE(state.chain().revision(),revision);
+    QCOMPARE(state.streaming_p2_preview_parameters(),
+             std::optional{*defaults.value()});
+
+    adapter.setDriveDb(3.0);
+    QCOMPARE(previewNotifications.count(),1);
+    const auto changed=dsp::StreamingTruePeakLimiterParameters::create(-1.0,3.0,2);
+    QVERIFY(changed);
+    QCOMPARE(state.streaming_p2_preview_parameters(),
+             std::optional{*changed.value()});
+    adapter.setDriveDb(3.0);
+    adapter.setCeilingDbTp(-1.0);
+    adapter.setMarginPercent(2);
+    QCOMPARE(previewNotifications.count(),1);
+
+    adapter.setBypass(true);
+    QCOMPARE(previewNotifications.count(),2);
+    QVERIFY(adapter.bypass());
+    adapter.setBypass(true);
+    QCOMPARE(previewNotifications.count(),2);
+    adapter.resetToDefault();
+    QCOMPARE(previewNotifications.count(),3);
+    QCOMPARE(state.streaming_p2_preview_parameters(),
+             std::optional{*defaults.value()});
+    adapter.resetToDefault();
+    QCOMPARE(previewNotifications.count(),3);
+    // Restore audible P2 ON, then ensure duplicate ON is non-mutating.
+    adapter.setBypass(false);
+    QCOMPARE(previewNotifications.count(),4);
+    adapter.setBypass(false);
+    QCOMPARE(previewNotifications.count(),4);
+    QVERIFY(!adapter.bypass());
+    QVERIFY(state.chain().revision()>revision);
+}
+
+void DspModuleAdapterTest::testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMonitor()
+{
+    // Physical PO gate: M19/M20/M21 belong between M17 and Master Audition
+    // in the visual navigation; no extra DSP node or persisted module.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto uuid=[](const char* id) {
+        return *core::Uuid::parse(id).value();
+    };
+    const auto chainId=uuid("79100000-0000-4000-8000-000000000001");
+    const auto gainId=*dsp::ModuleInstanceId::from_uuid(
+        uuid("79100000-0000-4000-8000-000000000011")).value();
+    const auto eqId=*dsp::ModuleInstanceId::from_uuid(
+        uuid("79100000-0000-4000-8000-000000000012")).value();
+    const auto compId=*dsp::ModuleInstanceId::from_uuid(
+        uuid("79100000-0000-4000-8000-000000000013")).value();
+    const auto stereoId=*dsp::ModuleInstanceId::from_uuid(
+        uuid("79100000-0000-4000-8000-000000000014")).value();
+    const auto limiterId=*dsp::ModuleInstanceId::from_uuid(
+        uuid("79100000-0000-4000-8000-000000000017")).value();
+    auto manual=MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
+    QVERIFY(manual);
+    auto terminal=TerminalLimiterState::create_default(*registry.value(),limiterId);
+    QVERIFY(terminal);
+    GainViewModel gain(manual.value());
+    EqViewModel eq(manual.value());
+    CompressorViewModel comp(manual.value());
+    StereoMsViewModel stereo(manual.value());
+    TerminalLimiterViewModel limiter(terminal.value());
+    QObject monitoring;
+    QObject genuineReadinessSlot;
+    DspChainAdapterModel model{
+        &gain,&eq,&comp,manual.value(),QStringLiteral("Mastering"),
+        nullptr,&stereo,true,terminal.value(),&limiter,&monitoring};
+    QCOMPARE(model.modules().size(),qsizetype{7});
+    model.bindAnalysisStatusViewModel(&genuineReadinessSlot);
+    QCOMPARE(model.modules().size(),qsizetype{10});
+    const QStringList order{
+        QStringLiteral("INPUT_GAIN"),QStringLiteral("PARAMETRIC_EQ"),
+        QStringLiteral("COMPRESSOR"),QStringLiteral("STEREO_MS"),
+        QStringLiteral("TRUE_PEAK_METER"),QStringLiteral("TRUE_PEAK_LIMITER"),
+        QStringLiteral("M19_ANALYSIS"),QStringLiteral("M20_ANALYSIS"),
+        QStringLiteral("M21_ANALYSIS"),QStringLiteral("MASTER_MONITOR")};
+    QStringList stableIds;
+    for(qsizetype i=0;i<order.size();++i) {
+        auto* item=qobject_cast<DspModuleAdapter*>(
+            model.modules().at(i).value<QObject*>());
+        QVERIFY(item);
+        QCOMPARE(item->editor_content_key(),order[i]);
+        stableIds.append(item->instance_id());
+        if(i>=6 && i<=8) {
+            QVERIFY(item->non_processing_service());
+            QVERIFY(!item->bypass_supported());
+            QVERIFY(!item->bypass());
+            QVERIFY(!item->preview_supported());
+            QVERIFY(!item->reset_supported());
+            QVERIFY(!item->history_supported());
+            QVERIFY(!item->gain_view_model());
+            QVERIFY(!item->eq_view_model());
+            QVERIFY(!item->compressor_view_model());
+            // Read-only analyzer rows are permanent non-DSP observers;
+            // a missing measurement must not imply a qualification badge.
+            QCOMPARE(item->state_text(),QStringLiteral("Read-only analysis"));
+            item->setBypass(false);
+            item->setBypass(true);
+            item->resetToDefault();
+            QVERIFY(!item->bypass());
+        }
+    }
+    // M16 and M19-M21 are all permanent non-processing observers.
+    // A missing or unqualified metric never creates a sonic bypass.
+    const auto* m16=qobject_cast<DspModuleAdapter*>(
+        model.modules().at(4).value<QObject*>());
+    QVERIFY(m16);
+    QVERIFY(m16->non_processing_service());
+    QVERIFY(!m16->bypass_supported());
+    QVERIFY(!m16->bypass());
+    for(qsizetype n=6;n<=8;++n) {
+        auto* observer=qobject_cast<DspModuleAdapter*>(
+            model.modules().at(n).value<QObject*>());
+        QVERIFY(observer);
+        QCOMPARE(observer->non_processing_service(),
+                 m16->non_processing_service());
+        QCOMPARE(observer->bypass_supported(),m16->bypass_supported());
+        QCOMPARE(observer->bypass(),m16->bypass());
+        QCOMPARE(observer->configuration_state(),QStringLiteral("Read-only"));
+        observer->setBypass(true);
+        QVERIFY(!observer->bypass());
+    }
+    QCOMPARE(stableIds.at(6),QStringLiteral("analysis:rgsml.m19"));
+    QCOMPARE(stableIds.at(7),QStringLiteral("analysis:rgsml.m20"));
+    QCOMPARE(stableIds.at(8),QStringLiteral("analysis:rgsml.m21"));
+    QCOMPARE(stableIds.at(9),QStringLiteral("utility:rgsml.monitor.master-device"));
+    model.selectModuleByInstanceId(stableIds.at(8));
+    QCOMPARE(model.selected_index(),8);
+    model.refreshFromAuthority();
+    QCOMPARE(model.selected_index(),8);
+    QCOMPARE(model.selected_instance_id(),stableIds.at(8));
+    QCOMPARE(manual.value()->instances().size(),std::size_t{4});
+    QCOMPARE(terminal.value()->chain().instances().size(),std::size_t{1});
+}
 
 void DspModuleAdapterTest::testMonitorUtilityHasNoDSPBypassOrAudioStage()
 {
@@ -246,7 +435,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QCOMPARE(limiter->instance_id(),QString::fromStdString(limiterId.to_string()));
     QCOMPARE(limiter->type_id(),QStringLiteral("rgsml.dsp.true-peak-limiter"));
     QCOMPARE(limiter->editor_content_key(),QStringLiteral("TRUE_PEAK_LIMITER"));
-    QCOMPARE(limiter->display_name(),QStringLiteral("True Peak Limiter"));
+    QCOMPARE(limiter->display_name(),QStringLiteral("Export TP Limiter"));
     QCOMPARE(limiter->live_change_policy(),
         QStringLiteral("OFFLINE_TERMINAL_RENDER_ON_ACCEPTED_CHANGE"));
     QCOMPARE(limiter->family_accent(),QStringLiteral("#6CBCCF"));
@@ -256,7 +445,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QVERIFY(limiter->reset_supported());
     QVERIFY(!limiter->can_undo());
     QVERIFY(!limiter->can_redo());
-    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
     const auto oldRevision=terminal.value()->chain().revision();
     QSignalSpy commits(&vm,&TerminalLimiterViewModel::acceptedStateChanged);
     QVERIFY(commits.isValid());
@@ -277,7 +466,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QCOMPARE(commits.size(),2);
     const auto revisionBeforeReset=terminal.value()->parameter_revision();
     limiter->resetToDefault();
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
     QCOMPARE(terminal.value()->parameter_revision(),revisionBeforeReset+1);
     QVERIFY(!limiter->bypass());
     QCOMPARE(limiter->configuration_state(),QStringLiteral("Default"));
@@ -294,13 +483,13 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     limiter->resetToDefault();
     QCOMPARE(commits.size(),6);
     QVERIFY(limiter->bypass());
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
     QVERIFY(!vm.setDraftFieldText(QStringLiteral("ceilingDbTp"),
         QStringLiteral("not-a-number")));
     QVERIFY(!vm.validation_message().isEmpty());
     limiter->resetToDefault(); // Also cancels an invalid uncommitted draft.
     QCOMPARE(vm.validation_message(),QString{});
-    QCOMPARE(vm.draft_ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.draft_ceiling_db_tp(),0.0);
     QCOMPARE(commits.size(),6);
     limiter->undo();
     limiter->redo();
@@ -319,7 +508,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     // The typed limiter adapter now forwards only the accepted DSP state.
     // Production must also pass the exact owned audio session coordinator;
     // this isolated adapter fixture does not install or claim audio.
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
 }
 
 void DspModuleAdapterTest::testReadOnlyTruePeakAnalysisDoesNotEnterProcessingChain()

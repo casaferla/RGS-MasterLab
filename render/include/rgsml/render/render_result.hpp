@@ -254,11 +254,21 @@ struct StereoMsExecutionSignaturePayload final {
                            const StereoMsExecutionSignaturePayload&) = default;
 };
 
+
+struct StreamingTruePeakLimiterExecutionSignaturePayload final {
+    double ceiling_db_tp;
+    double drive_db;
+    int margin_percent;
+    friend bool operator==(const StreamingTruePeakLimiterExecutionSignaturePayload&,
+                           const StreamingTruePeakLimiterExecutionSignaturePayload&) = default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
     ParametricEqExecutionSignaturePayload,
     CompressorExecutionSignaturePayload,
-    StereoMsExecutionSignaturePayload>;
+    StereoMsExecutionSignaturePayload,
+    StreamingTruePeakLimiterExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;
@@ -300,6 +310,10 @@ public:
 private:
     friend rgsml::core::Result<RenderResult> render_preview(
         const RenderRequest& request,
+        const rgsml::dsp::ModuleRegistry& registry);
+    friend rgsml::core::Result<RenderResult> render_preview_p2_cached_prefix(
+        const RenderRequest& full_request,
+        const RenderResult& exact_four_stage_prefix,
         const rgsml::dsp::ModuleRegistry& registry);
 
     RenderResult(

@@ -282,14 +282,23 @@ void keys(const Json& value, std::initializer_list<std::string_view> expected,
     const auto& regions = at(time, "auditionRegions", "auditionRegions");
     if (!regions.is_array()) bad("auditionRegions");
     for (const auto& r : regions) {
-        keys(r, {"regionId", "resourceId", "frameDomain", "startFrame", "endFrameExclusive"},
-             "auditionRegions[]");
+        // Backward compatible: the original five-key SOURCE entry has no
+        // loopEnabled. New entries may have exactly one extra boolean key.
+        const bool hasLoop=r.is_object() &&r.contains("loopEnabled");
+        if(hasLoop)
+            keys(r, {"regionId", "resourceId", "frameDomain", "startFrame",
+                     "endFrameExclusive", "loopEnabled"}, "auditionRegions[]");
+        else
+            keys(r, {"regionId", "resourceId", "frameDomain", "startFrame",
+                     "endFrameExclusive"}, "auditionRegions[]");
+        if(hasLoop &&!r.at("loopEnabled").is_boolean())bad("auditionRegions[].loopEnabled");
         doc.timeSelections.auditionRegions.push_back({
             uuid(at(r, "regionId", "regionId"), "regionId"),
             uuid(at(r, "resourceId", "resourceId"), "resourceId"),
-            token(at(r, "frameDomain", "frameDomain"), "SOURCE", "frameDomain"),
+            str(at(r, "frameDomain", "frameDomain"), "frameDomain"),
             i64(at(r, "startFrame", "startFrame"), "startFrame"),
-            i64(at(r, "endFrameExclusive", "endFrameExclusive"), "endFrameExclusive")});
+            i64(at(r, "endFrameExclusive", "endFrameExclusive"), "endFrameExclusive"),
+            hasLoop &&r.at("loopEnabled").get<bool>()});
     }
     if (!at(time, "analysisScopes", "analysisScopes").is_array() ||
         !at(time, "processingRegions", "processingRegions").is_array()) bad("timeSelections");
@@ -388,11 +397,14 @@ void keys(const Json& value, std::initializer_list<std::string_view> expected,
     }
     Json regions = Json::array();
     for (const auto& r : doc.timeSelections.auditionRegions) {
-        regions.push_back({{"regionId", r.regionId.to_string()},
-                           {"resourceId", r.resourceId.to_string()},
-                           {"frameDomain", r.frameDomain},
-                           {"startFrame", r.startFrame},
-                           {"endFrameExclusive", r.endFrameExclusive}});
+        Json item={{"regionId", r.regionId.to_string()},
+                   {"resourceId", r.resourceId.to_string()},
+                   {"frameDomain", r.frameDomain},
+                   {"startFrame", r.startFrame},
+                   {"endFrameExclusive", r.endFrameExclusive}};
+        // Omit false, preserving exact canonical bytes for legacy documents.
+        if(r.loopEnabled)item["loopEnabled"]=true;
+        regions.push_back(std::move(item));
     }
     Json chains = Json::array();
     for (const auto& c : doc.chains) {

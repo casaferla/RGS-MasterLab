@@ -36,6 +36,12 @@ public:
     [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
     create_dsp_package_v1();
 
+
+    // Explicit I2 PREVIEW opt-in: add independent P2 streaming to a caller-owned
+    // registry. Never mutate the frozen package v1/M17 terminal registration.
+    [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
+    with_streaming_true_peak_preview(ModuleRegistry baseline);
+
     [[nodiscard]] std::span<const ModuleDescriptor> descriptors() const noexcept;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const ModuleDescriptor>>
     find_descriptor(std::string_view type_id) const;

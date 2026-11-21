@@ -15,6 +15,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace rgsml::analysis {
@@ -377,6 +378,14 @@ public:
     // and one explicit missing-provenance tail. Does not certify target owner.
     [[nodiscard]] C2ConsumedPrefix c2_consumed_prefix(
         std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept;
+    // R1d-P2 RESEARCH ONLY, default OFF. The normal M16/terminal proof path
+    // remains frozen. No callback or realtime API invokes this observation.
+    void set_research_p2_src_handoff_recovery(bool enabled) noexcept
+    { researchP2SrcHandoffRecovery_ = enabled; }
+    [[nodiscard]] std::optional<std::pair<C2ConsumedPrefix,
+        C2SrcRetirementObservation>> c2_research_p2_src_handoff_suffix(
+            std::optional<std::uint64_t> expectedGeneration =
+                std::nullopt) const noexcept;
 
     // Called by a bounded owner-thread timer, never by the audio callback.
     void tick();
@@ -473,6 +482,7 @@ private:
     std::int64_t c2RetainedOutputBegin_{0};
     bool c2AcceptedLedgerOverflow_{false};
     bool c2AcceptedContainsUnprovenHandoff_{false};
+    bool researchP2SrcHandoffRecovery_{false}; // OFF in all Product builds
     std::int64_t c2PendingSourceBegin_{0};
     std::optional<core::RealizationId> c2PendingOwner_;
     bool c2PendingExactMapping_{false};

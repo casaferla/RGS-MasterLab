@@ -612,7 +612,7 @@ void TruePeakLimiterVerificationTest::acceleratedOfflinePrepareMatchesFrozenChec
                     (*lane.value())[static_cast<std::size_t>(n)]=sample;
                 }
             }
-            for(const double ceiling:{-1.0,-12.0}) {
+            for(const double ceiling:{-1.0,-2.7,-4.3,-12.0}) {
                 const auto params=dsp::TruePeakLimiterParameters::create(ceiling);
                 QVERIFY(params);
                 auto baseline=render::render_true_peak_limiter_checked_candidate(
@@ -657,6 +657,15 @@ void TruePeakLimiterVerificationTest::acceleratedOfflinePrepareMatchesFrozenChec
                 }
                 const auto& proofA=*baseline.value()->final_check;
                 const auto& proofB=*accelerated.value()->final_check;
+                // The 2026-11-14 physical -2.70 dBTP regression concerns
+                // M17 itself: final checked full-resource peak must be
+                // strictly within Ceiling, not merely rounded for display.
+                // M18 never grants permission to repair an M17 failure.
+                const double targetLinear=std::pow(10.0,ceiling/20.0);
+                QVERIFY2(proofA.after_linear_peak<=targetLinear,
+                         "M17 unqualified post-trim numerical overshoot");
+                QVERIFY2(proofB.after_linear_peak<=targetLinear,
+                         "M17 accelerated post-trim numerical overshoot");
                 QCOMPARE(proofA.trim_used,proofB.trim_used);
                 QCOMPARE(proofA.qualification_status,proofB.qualification_status);
                 QCOMPARE(std::bit_cast<std::uint64_t>(proofA.before_linear_peak),

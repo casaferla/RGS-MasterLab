@@ -161,6 +161,10 @@ public:
     // coordinates and must not be republished as master/audible proof.
     [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
     monitoring_master_snapshot() const;
+    // Research-only P2 owner-stamped SRC handoff witness. OFF by default,
+    // and does not modify M16 mathematical/frozen contracts or M17 output.
+    [[nodiscard]] core::Status set_research_p2_src_handoff_recovery(
+        bool enabled);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,

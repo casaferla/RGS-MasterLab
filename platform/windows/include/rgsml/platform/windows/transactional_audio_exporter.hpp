@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/audio/audio_buffer_view.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/audio/wav_format.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -8,7 +9,11 @@
 #include <rgsml/core/result.hpp>
 
 #include <cstdint>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace rgsml::platform::windows {
 
@@ -50,6 +55,73 @@ private:
     ExportCollisionPolicy collision_policy_;
 };
 
+// PREPRODUCTION M18 only. The product owner of M17 must supply an
+// authorization object which keeps source/project/output ownership and
+// epoch stable across the atomic Windows commit AND final readback.
+// No default implementation, and no implicit GUI or Export Anyway access.
+class M18ExportCommitLease {
+public:
+    virtual ~M18ExportCommitLease() = default;
+    // Called with lease held immediately before publishing the candidate.
+    [[nodiscard]] virtual core::Status revalidate_current() const = 0;
+};
+
+using M18AcquireCommitLease = std::function<
+    core::Result<std::unique_ptr<M18ExportCommitLease>>()>;
+
+class M18TransactionalAudioExportRequest final {
+public:
+    [[nodiscard]] static core::Result<M18TransactionalAudioExportRequest> create(
+        core::ResourceReference source,
+        std::shared_ptr<const audio::AudioBuffer> immutableVerifiedMaster,
+        core::ResourceReference destination,
+        audio::WavSampleFormat sampleFormat,
+        std::optional<std::uint64_t> pcm24DitherSeed,
+        double ceilingDbTp,
+        ExportCollisionPolicy collisionPolicy,
+        M18AcquireCommitLease acquireCommitLease);
+
+    [[nodiscard]] const core::ResourceReference& source() const noexcept
+    {return source_;}
+    [[nodiscard]] const core::ResourceReference& destination() const noexcept
+    {return destination_;}
+    [[nodiscard]] audio::AudioBufferView payload() const noexcept
+    {return verified_master_->view();}
+    [[nodiscard]] audio::WavSampleFormat sample_format() const noexcept
+    {return sample_format_;}
+    [[nodiscard]] std::optional<std::uint64_t> dither_seed() const noexcept
+    {return dither_seed_;}
+    [[nodiscard]] double ceiling_db_tp() const noexcept
+    {return ceiling_db_tp_;}
+    [[nodiscard]] ExportCollisionPolicy collision_policy() const noexcept
+    {return collision_policy_;}
+    [[nodiscard]] const M18AcquireCommitLease& commit_lease_factory() const noexcept
+    {return commit_lease_factory_;}
+
+private:
+    M18TransactionalAudioExportRequest(
+        core::ResourceReference source,
+        std::shared_ptr<const audio::AudioBuffer> master,
+        core::ResourceReference destination,
+        audio::WavSampleFormat format,
+        std::optional<std::uint64_t> seed,
+        double ceilingDbTp,ExportCollisionPolicy policy,
+        M18AcquireCommitLease factory) noexcept
+        :source_(std::move(source)),verified_master_(std::move(master)),
+         destination_(std::move(destination)),sample_format_(format),
+         dither_seed_(seed),ceiling_db_tp_(ceilingDbTp),
+         collision_policy_(policy),commit_lease_factory_(std::move(factory)) {}
+
+    core::ResourceReference source_;
+    std::shared_ptr<const audio::AudioBuffer> verified_master_;
+    core::ResourceReference destination_;
+    audio::WavSampleFormat sample_format_;
+    std::optional<std::uint64_t> dither_seed_;
+    double ceiling_db_tp_;
+    ExportCollisionPolicy collision_policy_;
+    M18AcquireCommitLease commit_lease_factory_;
+};
+
 class TransactionalAudioExportResult final {
 public:
     [[nodiscard]] const core::ResourceReference& destination() const noexcept;
@@ -89,6 +161,35 @@ class TransactionalAudioExporter final {
 public:
     [[nodiscard]] static core::Result<TransactionalAudioExportResult>
     export_new_file(const TransactionalAudioExportRequest& request);
+
+    // Explicit M18-only transaction. The app has NO caller for this API:
+    // first establish a genuine M17 owner + epoch locking commit lease.
+    [[nodiscard]] static core::Result<TransactionalAudioExportResult>
+    export_new_file(
+        const M18TransactionalAudioExportRequest& request,
+        // Optional worker-only cooperative cancellation. Checked during
+        // PCM streaming, before publish and after final readback; never
+        // used by the existing synchronous M17/F64 export contract.
+        const std::function<bool()>& cancellationRequested = {},
+        // Reports encoded frames, not published/verified audio. Even when
+        // written==total, success is false until readback and final lease.
+        const std::function<void(std::uint64_t,std::uint64_t)>&
+            onEncodedFrames = {});
+
+private:
+    [[nodiscard]] static core::Result<TransactionalAudioExportResult>
+    export_impl(
+        const core::ResourceReference& source,
+        audio::AudioBufferView payload,
+        const core::ResourceReference& destination,
+        audio::WavSampleFormat format,
+        ExportCollisionPolicy policy,
+        std::optional<std::uint64_t> ditherSeed,
+        std::optional<double> ceilingDbTp,
+        const M18AcquireCommitLease* commitLeaseFactory,
+        const std::function<bool()>* cancellationRequested,
+        const std::function<void(std::uint64_t,std::uint64_t)>*
+            onEncodedFrames);
 };
 
 }  // namespace rgsml::platform::windows

@@ -1,0 +1,209 @@
+name: M22 Post-M21 Whole-Master Preview Parity Focused (non-FQ)
+
+on:
+  push:
+    branches:
+      - staging/m22-post-m21-focused-candidate-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m22-post-m21-product-focused
+  cancel-in-progress: false
+
+jobs:
+  linux-m22-product:
+    name: Linux · M22 checked M17 full/preview + M21–M19
+    runs-on: ubuntu-latest
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Independent M19 P01/F07 numerical reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m19/test_m19_independent_reference.py
+          python3 tools/qualification/m19/test_m19_scope_grid_reference.py
+          python3 tools/qualification/m19/test_m19_f07_decimal_reference.py
+          python3 tools/qualification/m19/test_m19_f07_gate_decimal_reference.py
+          python3 tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py
+          python3 tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py
+      - name: Independent M20 tonal/profile/stereo oracles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m20/test_m20_independent_reference.py
+          python3 tools/qualification/m20/test_m20_profile_reference.py
+          python3 tools/qualification/m20/test_m20_stereo_reference.py
+          python3 tools/qualification/m20/test_m20_u_g_preflight.py
+      - name: Independent M21 comparison/owner scope guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m21/test_m21_scope_guard.py
+          python3 tools/qualification/m21/test_m21_qml_guard.py
+      - name: M22 frozen scope invariants (not FQ)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m22/test_m22_post_m21_product_guard.py
+      - name: Install canonical Qt toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
+      - name: Configure and build actual Product M19/unchanged M16
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/m22-product -G Ninja \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/6.8.3/gcc_64" \
+            -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON
+          # Do not upload the full compiler trace: reduce it on the
+          # runner to a bounded first-error artifact in case of red.
+          # rgsml_project_session_tests links the Windows-only
+          # rgsml_platform/transactional_audio_exporter.cpp (Win32 HANDLE,
+          # CreateFileW). Never compile that target on Linux: Windows
+          # continues to run its complete real M22 ProductSession gate.
+          # Linux runs the real portable M19/M20/M21 analyzers and M22
+          # independent scope oracle; this is NOT Linux ProductSession PASS.
+          if cmake --build build/m22-product --parallel 4 --target \
+            rgsml_m21_real_product_metrics_port_tests \
+            rgsml_tonal_stereo_analyzer_tests \
+            rgsml_basic_level_analyzer_tests \
+            rgsml_true_peak_measurement_tests \
+            > "$RUNNER_TEMP/m22-linux-build-local.log" 2>&1; then
+            echo "M22_LINUX_PRODUCT_BUILD_PASS"
+          else
+            python3 tools/ci/summarize_focused_build.py \
+              --input "$RUNNER_TEMP/m22-linux-build-local.log" \
+              --output "$RUNNER_TEMP/m22-linux-build-bounded.txt" \
+              --platform linux
+            cat "$RUNNER_TEMP/m22-linux-build-bounded.txt"
+            exit 1
+          fi
+      - name: Upload bounded M22 Linux build failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M22-Product-Compile-Linux-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/m22-linux-build-bounded.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Focused portable M21/M20/M19 + existing M16 (Windows ProductSession separate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'M22_LINUX_SCOPE=PORTABLE_M21_M20_M19_M16_PLUS_M22_PY_GUARD;WINDOWS_ONLY_PRODUCT_SESSION=NOT_RUN_ON_LINUX'
+          ctest --test-dir build/m22-product --output-on-failure \
+            -R '^(rgsml_m21_real_product_metrics_port_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests)$'
+
+  windows-m22-product:
+    name: Windows · M22 checked M17 full/preview + M21–M19
+    runs-on: windows-2022
+    timeout-minutes: 42
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Independent six-rate M19 oracle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($script in @(
+            'test_m19_independent_reference.py',
+            'test_m19_scope_grid_reference.py',
+            'test_m19_f07_decimal_reference.py',
+            'test_m19_f07_gate_decimal_reference.py',
+            'test_m19_p01_kbank_frozen_authority.py',
+            'test_m19_p01_six_rate_k_pcm_reference.py'
+          )) {
+            python "tools/qualification/m19/$script"
+            if ($LASTEXITCODE -ne 0) { throw "M19_ORACLE_FAILURE_$script" }
+          }
+      - name: Independent M20 tonal/profile/stereo oracles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($script in @(
+            'test_m20_independent_reference.py',
+            'test_m20_profile_reference.py',
+            'test_m20_stereo_reference.py',
+            'test_m20_u_g_preflight.py'
+          )) {
+            python "tools/qualification/m20/$script"
+            if ($LASTEXITCODE -ne 0) { throw "M20_ORACLE_FAILURE_$script" }
+          }
+      - name: Independent M21 comparison/owner scope guards
+        shell: pwsh
+        run: |
+          python tools/qualification/m21/test_m21_scope_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'M21_SCOPE_GUARD_FAILED' }
+          python tools/qualification/m21/test_m21_qml_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'M21_QML_GUARD_FAILED' }
+      - name: M22 frozen scope invariants (not FQ)
+        shell: pwsh
+        run: |
+          python tools/qualification/m22/test_m22_post_m21_product_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'M22_SCOPE_GUARD_FAILED' }
+      - name: Install canonical Qt MSVC toolchain
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'M22_WINDOWS_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'M22_WINDOWS_QT_INSTALL_FAILED' }
+      - name: Configure Product M22 real M17/M18 parity, M21, M20, M19
+        shell: pwsh
+        run: |
+          cmake -S . -B build/m22-product -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'M22_WINDOWS_CONFIGURE_FAILED' }
+          $buildLog = Join-Path $env:RUNNER_TEMP 'm22-windows-build-local.log'
+          & cmake --build build/m22-product --config Release --parallel 4 --target `
+            rgsml_project_session_tests `
+            rgsml_m21_real_product_metrics_port_tests `
+            rgsml_tonal_stereo_analyzer_tests `
+            rgsml_basic_level_analyzer_tests rgsml_true_peak_measurement_tests *> $buildLog
+          if ($LASTEXITCODE -ne 0) {
+            $summary = Join-Path $env:RUNNER_TEMP 'm22-windows-build-bounded.txt'
+            python tools/ci/summarize_focused_build.py --input "$buildLog" `
+              --output "$summary" --platform windows
+            Get-Content $summary
+            throw 'M22_WINDOWS_BUILD_FAILED'
+          }
+          Write-Host M22_WINDOWS_PRODUCT_BUILD_PASS
+      - name: Upload bounded M22 Windows build failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M22-Product-Compile-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/m22-windows-build-bounded.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Focused M22 real ProductSession, M21–M19 and M16 CTest
+        shell: pwsh
+        run: |
+          ctest --test-dir build/m22-product -C Release --output-on-failure `
+            -R '^(rgsml_project_session_tests|rgsml_m21_real_product_metrics_port_tests|rgsml_tonal_stereo_analyzer_tests|rgsml_basic_level_analyzer_tests|rgsml_true_peak_measurement_tests)$'
+          if ($LASTEXITCODE -ne 0) { throw 'M22_WINDOWS_CTEST_FAILED' }

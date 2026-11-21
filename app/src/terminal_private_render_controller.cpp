@@ -29,12 +29,42 @@ TerminalPrivateRenderController::~TerminalPrivateRenderController() {
     if(worker_.joinable())worker_.join();
 }
 void TerminalPrivateRenderController::invalidate() {
+    // This is a QObject-owned mutation. Check affinity BEFORE reading the
+    // candidate's non-atomic M18 std::function installation state; a
+    // detached worker may not race guard changes or retire M17 PCM.
+    if(QThread::currentThread()!=thread())return;
+    // A legacy void caller cannot report BUSY. Once the M18 Product
+    // candidate authority is installed, the entire renderer withdrawal
+    // must be admitted FIRST. Silently changing the render serial while
+    // the candidate gate refuses to retire a worker-owned PCM would
+    // break the verified-M17/worker single-writer invariant.
+    if(gate_->m18_mutation_admission_installed()) {
+        static_cast<void>(try_invalidate_for_m18());
+        return;
+    }
+    // Without M18 enrollment, preserve all M17 cancel/return behavior.
+    invalidate_local_after_candidate_gate(false);
+}
+core::Status TerminalPrivateRenderController::try_invalidate_for_m18() {
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_RENDER_INVALIDATION_REQUIRES_QT_OWNER_THREAD"});
+    // Admission MUST precede serial, progress, M17 candidate, and pending
+    // worker changes. A BUSY rejection leaves all these exactly untouched.
+    const auto allowed=gate_->try_invalidate_for_m18();
+    if(!allowed)return allowed;
+    invalidate_local_after_candidate_gate(true);
+    return core::Status::success();
+}
+void TerminalPrivateRenderController::invalidate_local_after_candidate_gate(
+    bool gateAlreadyInvalidated) {
     ++serial_;
     activeSerial_.store(serial_,std::memory_order_release);
     progressPhase_.store(0,std::memory_order_release);
     progressFrames_.store(0,std::memory_order_relaxed);
     progressTotal_.store(0,std::memory_order_relaxed);
-    gate_->invalidate();
+    if(!gateAlreadyInvalidated)gate_->invalidate();
     lastApprovedPrepareTiming_.reset(); // Revoked PCM can never calibrate ETA.
     {std::lock_guard lock(mutex_);pending_.reset();}
     status_=QStringLiteral("IDLE");error_.clear();lastError_.reset();emit changed();
@@ -101,7 +131,22 @@ bool TerminalPrivateRenderController::remember_existing_original_q0_folder(
     return privateOriginalFirFamilyReady_;
 }
 core::Status TerminalPrivateRenderController::request_private(core::SampleRate rate) {
-    invalidate();
+    // The worker never starts a new M17 prepare nor reads gate internals.
+    // Check QObject affinity before querying non-atomic Product guard.
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_RENDER_PREPARE_REQUIRES_QT_OWNER_THREAD"});
+    // First authorization BEFORE clearing the M17 stage, advancing the
+    // renderer serial or touching any pending job. In an M18-aware Product,
+    // BUSY means no mutation whatsoever. Unconfigured M17 keeps the exact
+    // legacy invalidation sequence.
+    if(gate_->m18_mutation_admission_installed()) {
+        const auto authorized=try_invalidate_for_m18();
+        if(!authorized)return authorized;
+    }else {
+        invalidate();
+    }
     if(!prepared_||!manual_||!id_||!chain_)
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,"Private M17 render owner providers missing."});
@@ -115,6 +160,16 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
         emit changed();
         return core::Status::failure(*captured.error());
     }
+    // A verified-M17 candidate must not be silently retained when
+    // authentication of the selected original Q0 bank fails. If an
+    // M18 file commit acquired the exact epoch, report BUSY rather than
+    // cancelling the renderer locally and leaving stage provenance split.
+    const auto retire_q0_failed_candidate=[this]()->core::Status {
+        if(gate_->m18_mutation_admission_installed())
+            return try_invalidate_for_m18();
+        invalidate();
+        return core::Status::success();
+    };
     std::vector<std::uint8_t> originalFir;
     const auto fin=captured.value()->manual_owner->view()
         .format().sample_rate().value();
@@ -125,7 +180,8 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
             static_cast<std::uint32_t>(fout/g),
             static_cast<std::uint32_t>(fin/g));
         if(!pin) {
-            invalidate();
+            if(const auto retired=retire_q0_failed_candidate();!retired)
+                return retired;
             return core::Status::failure(core::Error{
                 core::ErrorCode::UnsupportedOperation,
                 "M17_FINAL_SRC_Q0_RATIO_NOT_FROZEN"});
@@ -135,7 +191,8 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
         if(!loaded) {
             // Re-authenticate the actual file per render. A changed/unsafe
             // asset never falls back to experimental or the legacy path.
-            invalidate();
+            if(const auto retired=retire_q0_failed_candidate();!retired)
+                return retired;
             return core::Status::failure(*loaded.error());
         }
         originalFir=std::move(*loaded.value());

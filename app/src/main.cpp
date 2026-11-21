@@ -28,6 +28,10 @@
 #include "terminal_post_limiter_true_peak_coordinator.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
+#include "m18_product_export_view_model.hpp"
+#include "m21_product_status_view_model.hpp"
+#include "internal/m21_private_product_analysis_coordinator.hpp"
+#include "internal/m18_product_complete_binding.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -39,23 +43,33 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QGuiApplication>
+#include <QFile>
+#include <QDateTime>
+#include <QStringList>
 #include <filesystem>
+#include <functional>
 #include <QIcon>
 #include <QLibraryInfo>
 #include <QUuid>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QScreen>
+#include <QQuickItem>
 #include <QImage>
+#include <QFont>
+#include <QPainter>
 #include <QMetaObject>
 #include <cmath>
 #include <QQuickStyle>
 #include <QSettings>
 #include <QUrl>
 
+#include <array>
 #include <optional>
 #include <variant>
 #include <QTimer>
+#include <QEventLoop>
 
 #include <cstdio>
 #include <cstdlib>
@@ -97,6 +111,26 @@ int main(int argc, char* argv[])
     application.setWindowIcon(QIcon(QStringLiteral(
         ":/rgsml/resources/RGS_MasterLab_optimized.ico")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
+    // Strict research-only opt-in, NEVER a Product default. The CI-installed
+    // research-only ZIP carries this explicit opt-in marker BESIDE its EXE,
+    // so Windows double-click of bin/RGSMasterLab.exe exposes P2 without
+    // asking a nontechnical tester to provide CLI arguments. Ordinary builds
+    // do not install this marker; they retain the four-module chain.
+    // The exact contents avoid accidental enablement from a stray filename.
+    QFile researchMarker(QCoreApplication::applicationDirPath()
+        + QStringLiteral("/P2_I2_RESEARCH_ONLY.enabled"));
+    const bool researchBundleOptIn = researchMarker.open(QIODevice::ReadOnly)
+        && researchMarker.readAll().trimmed()
+            == QByteArrayLiteral("RGSML_R1D_P2_I2_STANDALONE_RESEARCH_ONLY");
+    const bool p2PreviewOptIn = researchBundleOptIn
+        || application.arguments().contains(
+            QStringLiteral("--rgsml-p2-i2-preview"));
+    const bool p2GuiSmoke = application.arguments().contains(
+        QStringLiteral("--rgsml-p2-i2-gui-smoke"));
+    if (p2GuiSmoke && !p2PreviewOptIn) {
+        std::fprintf(stderr, "P2_I2_GUI_SMOKE_REQUIRES_OPT_IN\n");
+        return EXIT_FAILURE;
+    }
     // Opt-in CI-only REAL product Main Qt screenshot; never a user render path.
     const bool m17MainEvidence = application.arguments().contains(
         QStringLiteral("--rgsml-m17-ui-evidence"));
@@ -110,6 +144,17 @@ int main(int argc, char* argv[])
     auto playbackService = std::make_unique<
         rgsml::platform::windows::WindowsAudioPlaybackService>();
     auto* windowsPlayback = playbackService.get();
+    if (p2PreviewOptIn) {
+        const auto proofMode =
+            windowsPlayback->set_research_p2_src_handoff_recovery(true);
+        if (!proofMode) {
+            std::fprintf(stderr,
+                "P2_I2_RESEARCH_SRC_HANDOFF_RECOVERY_ENABLE=FAIL\n");
+            return EXIT_FAILURE;
+        }
+        std::fprintf(stderr,
+            "P2_I2_RESEARCH_SRC_HANDOFF_RECOVERY_ENABLE=PASS\n");
+    }
     windowsPlayback->attach_analyzer(&spectrumAnalyzer);
 
     rgsml::app::LiveSpectrumViewModel liveSpectrumViewModel{&spectrumAnalyzer};
@@ -135,11 +180,23 @@ int main(int argc, char* argv[])
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     rgsml::app::SourceWaveformViewModel sourceWaveform{
         &waveformPresentation};
+    // Independent visual evidence: REFERENCE is not the SOURCE waveform.
+    // A separate cancellable worker and viewport keep both WAVs cached
+    // through A/B switches; this never touches M19–M21 or the audio DSP.
+    rgsml::ui::WaveformPresentation referenceWaveformPresentation;
+    rgsml::app::SourceWaveformViewModel referenceWaveform{
+        &referenceWaveformPresentation};
+    // Independent REFERENCE region: no M18 SOURCE/Product epoch admission,
+    // no DSP processing, no effect on the immutable full-file M16 analysis.
+    rgsml::app::AuditionRegionViewModel referenceRegion{
+        &playbackTransport,nullptr,true};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::MasterOutputRateState masterOutputRate;
     rgsml::app::PrepareMemoryAdviceViewModel prepareRateAdvisor{
         &sourceSelection, windowsPlayback};
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    if (p2PreviewOptIn)
+        auditionSelector.set_research_p2_seamless_target_switch(true);
     rgsml::app::TruePeakStaticCoordinator staticTruePeak;
     // C2D7: audio device callback untouched; only independently bound
     // PROCESSED sink-consumed samples reach the off-thread M16 FIR worker.
@@ -188,7 +245,125 @@ int main(int argc, char* argv[])
             ? auditionRegion.region()
             : std::nullopt;
     });
+    auditionSelector.set_reference_loop_provider([&referenceRegion] {
+        return referenceRegion.loop_enabled()
+            ? referenceRegion.region()
+            : std::nullopt;
+    });
+    if (p2PreviewOptIn) {
+        // Research-only M16 observation. Source/PCM/callback processing and
+        // frozen provenance contract remain untouched. One 1-Hz GUI-owner
+        // sample explains the exact rejected proof; never invent a peak.
+        const QString tracePath =
+            QCoreApplication::applicationDirPath()
+                + QStringLiteral("/P2_I2_M16_DIAGNOSTIC.tsv");
+        auto collectM16 = [&auditionSelector, &playbackTransport,
+                           &sourceSelection, &liveTruePeak,
+                           windowsPlayback, tracePath]() {
+            const auto playback = playbackTransport.playback_snapshot();
+            const auto consumed = windowsPlayback->consumed_output_prefix();
+            const auto selected = auditionSelector.active_target();
+            const bool processed = selected
+                && *selected == rgsml::app::AuditionTarget::PROCESSED;
+            const auto owner = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            const auto sourceCount = rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            const auto sourceRate = rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            const int channels = sourceSelection.channel_count();
+            QString binding = QStringLiteral("NO_PROCESSED_TARGET");
+            if (processed && !owner) binding = QStringLiteral("NO_PROCESSED_OWNER");
+            else if (processed && !id) binding = QStringLiteral("NO_PROCESSED_ID");
+            else if (processed && !playback) binding = QStringLiteral("NO_PLAYBACK_SNAPSHOT");
+            else if (processed && !consumed) binding = QStringLiteral("NO_CONSUMED_PREFIX");
+            else if (processed && (!sourceCount || !sourceRate
+                                  || (channels != 1 && channels != 2)))
+                binding = QStringLiteral("SOURCE_METADATA_INVALID");
+            else if (processed && owner && id && playback && consumed
+                     && sourceCount && sourceRate) {
+                const auto source = rgsml::app::TruePeakExpectedSource{
+                    *sourceCount.value(), *sourceRate.value(),
+                    channels == 1 ? rgsml::audio::ChannelLayout::MONO_C
+                                  : rgsml::audio::ChannelLayout::STEREO_LR};
+                const auto proof = rgsml::app::bind_processed_live_input(
+                    owner, *id, source, *playback.value(), *consumed.value());
+                binding = proof ? QStringLiteral("PROVEN")
+                    : QString::fromStdString(
+                        std::string(proof.error()->message()));
+            }
+            const auto audible = playback
+                ? playback.value()->audibleRealization.realizationId
+                : std::optional<rgsml::core::RealizationId>{};
+            const QStringList cols{
+                QDateTime::currentDateTimeUtc().toString(
+                    Qt::ISODateWithMs),
+                selected ? QString::number(static_cast<int>(*selected))
+                         : QStringLiteral("-1"),
+                QString::number(sourceSelection.sample_rate_hz()),
+                QString::number(channels),
+                id ? QString::number(id->value) : QStringLiteral("0"),
+                audible ? QString::number(audible->value) : QStringLiteral("0"),
+                playback ? QString::number(
+                    static_cast<int>(playback.value()->state))
+                    : QStringLiteral("-1"),
+                playback ? QString::number(
+                    static_cast<int>(
+                        playback.value()->audibleRealization.phase))
+                    : QStringLiteral("-1"),
+                consumed ? QString::number(
+                    static_cast<int>(consumed.value()->reason))
+                    : QStringLiteral("-1"),
+                consumed ? QString::number(
+                    consumed.value()->processedWatermarkExclusive)
+                    : QStringLiteral("-1"),
+                consumed ? QString::number(consumed.value()->srcInputRateHz)
+                    : QStringLiteral("0"),
+                consumed ? QString::number(consumed.value()->srcOutputRateHz)
+                    : QStringLiteral("0"),
+                consumed && consumed.value()->srcRetiredSourceEnd
+                    ? QString::number(*consumed.value()->srcRetiredSourceEnd)
+                    : QStringLiteral("-1"),
+                binding.replace('\t', ' ').replace('\n', ' '),
+                liveTruePeak.status_text()
+            };
+            QFile file(tracePath);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Append
+                           | QIODevice::Text)) return;
+            if (file.size() == 0) {
+                file.write(
+                    "utc\ttarget\tsource_hz\tchannels\tprocessed_id"
+                    "\taudible_id\tplay_state\taudible_phase"
+                    "\tcoverage_reason\tconsumed_output_exclusive"
+                    "\tsrc_input_hz\tsrc_output_hz\tsrc_retired_end"
+                    "\tbinding_result\tmeter_status\n");
+            }
+            file.write(cols.join(QChar('\t')).toUtf8());
+            file.write("\n");
+        };
+        // Bootstrap evidence even in a short Windows Qt cold smoke.
+        collectM16();
+        auto* m16DiagnosticTimer = new QTimer(&application);
+        m16DiagnosticTimer->setInterval(1000);
+        QObject::connect(m16DiagnosticTimer, &QTimer::timeout,
+            &application, collectM16);
+        m16DiagnosticTimer->start();
+    }
     auto moduleRegistry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    if (!moduleRegistry) {
+        std::fprintf(stderr, "DSP registry bootstrap refused: %s\n",
+                     moduleRegistry.error()->message().c_str());
+        return EXIT_FAILURE;
+    }
+    if (p2PreviewOptIn) {
+        moduleRegistry = rgsml::dsp::ModuleRegistry::with_streaming_true_peak_preview(
+            std::move(*moduleRegistry.value()));
+        if (!moduleRegistry) {
+            std::fprintf(stderr, "Research P2 registry opt-in refused: %s\n",
+                         moduleRegistry.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+    }
     const auto chainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
@@ -196,17 +371,47 @@ int main(int argc, char* argv[])
     const auto stereoMsUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto terminalLimiterUuid = *rgsml::core::Uuid::parse(
         QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto p2Uuid = *rgsml::core::Uuid::parse(
+        QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
     const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(compUuid).value();
     const auto stereoMsInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(stereoMsUuid).value();
     const auto terminalLimiterInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
         terminalLimiterUuid).value();
+    const auto p2InstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
+        p2Uuid).value();
     // Product startup: four real DSP nodes, milestone order, M15 safely
     // bypassed. Historic saved three-node projects restore unchanged.
     auto masteringChainStateRes = rgsml::app::MasteringChainState::create_product_default(
         *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId,
         compInstanceId, stereoMsInstanceId);
+    if (!masteringChainStateRes) {
+        std::fprintf(stderr, "Manual chain bootstrap refused: %s\n",
+                     masteringChainStateRes.error()->message().c_str());
+        return EXIT_FAILURE;
+    }
+    // Install the fifth real MANUAL module before the M18 single-writer
+    // admission is installed, never as an artificial presentation row.
+    // The immutable registry snapshot and typed bindings travel into each
+    // MasteringPreviewController job and the actual PCM renderer.
+    if (p2PreviewOptIn) {
+        auto parameters = rgsml::dsp::StreamingTruePeakLimiterParameters::create_default();
+        if (!parameters) {
+            std::fprintf(stderr, "Research P2 defaults refused: %s\n",
+                         parameters.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+        masteringChainStateRes =
+            rgsml::app::MasteringChainState::with_streaming_true_peak_preview(
+                std::move(*masteringChainStateRes.value()), p2InstanceId,
+                *parameters.value(), false);
+        if (!masteringChainStateRes) {
+            std::fprintf(stderr, "Research P2 MANUAL chain refused: %s\n",
+                         masteringChainStateRes.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+    }
     auto masteringChainState = std::move(*masteringChainStateRes.value());
     // M17 has its own real MASTER/TERMINAL DSP segment, distinct from
     // manual Gain/EQ/Compressor/Stereo-M/S and the M16 analysis-only meter.
@@ -320,6 +525,21 @@ int main(int argc, char* argv[])
             return auditionSelector.set_processed_realization(std::move(result));
         }
     };
+    // The Product's accepted immutable PROCESSED owner is the only
+    // legitimate provenance of a ready preview. Merely matching DSP
+    // parameter values does not prove that playback/analysis still
+    // refers to the accepted PCM after a SOURCE or Project handoff.
+    previewController.set_accepted_processed_provider(
+        [&auditionSelector] {
+            return auditionSelector.processed_realization_snapshot();
+        });
+    // The opt-in research bundle writes timing evidence next to its EXE.
+    // No file I/O occurs in the audio callback or on the Qt GUI thread.
+    if (p2PreviewOptIn) {
+        previewController.set_research_p2_timing_log_path(
+            QCoreApplication::applicationDirPath()
+                + QStringLiteral("/P2_I2_RENDER_TIMINGS.tsv"));
+    }
 
     // All invalidations atomically revoke terminal device ownership and
     // discard pending OUTPUT_RATE renders before any future publication.
@@ -433,6 +653,31 @@ int main(int argc, char* argv[])
     // Explicit user-only Windows MASTER->DEVICE monitor, with no LIVE identity.
     rgsml::app::TerminalMonitorViewModel terminalMonitorViewModel{
         privateProductSession,playbackTransport};
+    // PO physical #89: a denied target switch while M17 is RENDERING
+    // must protect the running worker, but its precise error may not
+    // remain red after the final M17 outcome. Dispatch AFTER the session
+    // has notified all its native owners, avoiding reentrant target
+    // callbacks; never clear unrelated SOURCE/REFERENCE/transport faults.
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &auditionSelector,
+        [&privateProductSession,&auditionSelector] {
+            const auto status=privateProductSession.status();
+            if(status==QStringLiteral("READY_TO_INSTALL")
+               ||status==QStringLiteral("MEASURED_NONCONFORMING_READY")
+               ||status==QStringLiteral("ERROR")
+               ||status==QStringLiteral("STALE")
+               ||status==QStringLiteral("IDLE"))
+                auditionSelector.clear_completed_m17_render_switch_refusal();
+        },Qt::QueuedConnection);
+    // PREPARED/REFERENCE->PROCESSED can change Master eligibility while
+    // preserving STOPPED state, duration and cue. No playbackChanged()
+    // occurs in that case; publish the verified Listen affordance now,
+    // without a fake Play action or additional M17 render.
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &terminalMonitorViewModel,
+        &rgsml::app::TerminalMonitorViewModel::refresh_install_availability);
     // The Qt-facing Windows service probes endpoint, negotiated rate and
     // fresh OS headroom BEFORE and AFTER the off-thread FIR. No Qt device
     // objects or memory probes ever run on the background DSP worker.
@@ -526,6 +771,30 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    // The selector must ask the established M17 coordinator to park an
+    // accepted Master BEFORE an independent target switch retires DEVICE
+    // playback. SOURCE/REFERENCE waveform navigation never rerenders M17.
+    auditionSelector.set_independent_audition_preflight(
+        [&terminalProductActivation](rgsml::app::AuditionTarget target) {
+            return terminalProductActivation.can_begin_independent_audition(target);
+        });
+    auditionSelector.set_before_independent_audition(
+        [&terminalProductActivation](rgsml::app::AuditionTarget target) {
+            return terminalProductActivation.before_independent_audition(target);
+        });
+    // Separate from sourceDerivedActive_: the M17 monitor can own an
+    // anonymous DEVICE while SOURCE routing is suspended. REFERENCE
+    // Region must never send set_loop to that foreign audio owner.
+    playbackTransport.set_reference_audition_checker(
+        [&auditionSelector,&terminalMonitorViewModel] {
+            // A newly installed GOLD file owns the playback service
+            // before AuditionSourceSelector publishes activeTarget=GOLD.
+            // Permit only its synchronous loop rearm interval as well as
+            // steady-state GOLD. Anonymous M17 monitor stays excluded.
+            return (auditionSelector.gold_active()
+                    ||auditionSelector.reference_device_installing())
+                &&!terminalMonitorViewModel.monitor_exclusive();
+        });
     // Cross-rate measured NON-CONFORMING preview uses the same Windows
     // endpoint/RAM evidence as verified Master Audition, but NOT its
     // verified master transport ticket. Caution is denied unless a separate
@@ -758,14 +1027,37 @@ int main(int argc, char* argv[])
         &masteringChainState, QStringLiteral("Mastering"),
         nullptr, &stereoMsViewModel, true,
         &terminalLimiterState, &terminalLimiterViewModel,
-        &terminalMonitorViewModel};
+        &terminalMonitorViewModel, &previewController};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
+    // The Gold picker is the ONLY owner of the REFERENCE resource and
+    // selection revision. Redundant Qt changed signals must never cause
+    // the 3-minute REFERENCE waveform to be rebuilt or re-read.
+    QObject::connect(&goldSelection,
+        &rgsml::app::GoldSelectionViewModel::changed,
+        &referenceWaveformPresentation,
+        [&goldSelection,&referenceWaveform,&referenceRegion,
+         lastRevision=std::uint64_t{0}]() mutable {
+            const auto selected=goldSelection.selection_revision();
+            if(selected==lastRevision)return;
+            lastRevision=selected;
+            const auto* resource=goldSelection.gold_resource();
+            if(resource) {
+                const auto& info=resource->wav_info();
+                referenceRegion.source_committed(
+                    info.frame_count(),info.audio_format().sample_rate());
+                referenceWaveform.source_committed(resource->reference());
+            } else {
+                referenceRegion.clear_independent_reference();
+                referenceWaveform.clear();
+            }
+        });
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
     projectSession.set_master_output_rate_state(&masterOutputRate);
+    projectSession.set_reference_region_view_model(&referenceRegion);
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
@@ -825,13 +1117,277 @@ int main(int argc, char* argv[])
                 static_cast<double>(sourceSelection.sample_rate_hz()),
                 sourceSelection.channel_count());
         });
+    // M18 active Product wiring. The M17 legacy void SOURCE callback above
+    // remains for compatibility with unguarded tests and historical paths;
+    // after the complete M18 binder is installed below, this checked
+    // status-returning route exclusively handles real SOURCE commits.
+    // The physical SOURCE batch spans all nested Product resets, including
+    // M17 terminal retirement and M11–15 reset-to-default operations.
+    sourceSelection.set_private_m18_checked_source_committed_handler(
+        [&sourceWaveform, &sourceSelection, &auditionRegion,
+         &auditionSelector, &goldSelection, &dspChainAdapterModel,
+         &projectSession, &stereoMsViewModel, &compressorViewModel,
+         &staticTruePeak, &liveTruePeak, &terminalProductActivation,
+         &masterOutputRate](
+            const rgsml::core::ResourceReference& source)
+                ->rgsml::core::Status {
+            liveTruePeak.invalidate();
+            staticTruePeak.invalidate_source();
+            const auto frameCount=rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            if(!frameCount)
+                return rgsml::core::Status::failure(*frameCount.error());
+            const auto rate=rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            if(!rate)
+                return rgsml::core::Status::failure(*rate.error());
+            // The old void rate reset would be silently ignored under an
+            // installed M18 gate. The bool child admission shares SOURCE's
+            // already-held physical epoch and must fail closed on BUSY.
+            if(!masterOutputRate.try_source_committed_for_m18(
+                    sourceSelection.sample_rate_hz()))
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "M18_PRODUCT_SOURCE_RATE_MUTATION_REFUSED"});
+            auditionRegion.source_committed(*frameCount.value(),*rate.value());
+            auto prepared=auditionSelector.source_committed(source);
+            if(!prepared)return prepared;
+            // The terminal M17 device handoff and QML displays may only
+            // observe an accepted fresh SOURCE. Consent is never minted here.
+            terminalProductActivation.source_committed_successfully();
+            const int channels=sourceSelection.channel_count();
+            if(channels==1 ||channels==2) {
+                staticTruePeak.source_committed(
+                    source,rgsml::app::TruePeakExpectedSource{
+                        *frameCount.value(),*rate.value(),
+                        channels==1?rgsml::audio::ChannelLayout::MONO_C
+                                   :rgsml::audio::ChannelLayout::STEREO_LR});
+                staticTruePeak.processed_changed(
+                    auditionSelector.processed_realization_snapshot(),
+                    auditionSelector.processed_realization_id());
+            }
+            compressorViewModel.resetTelemetryForNewSource();
+            const auto switched=auditionSelector.switch_to(
+                rgsml::app::AuditionTarget::PREPARED);
+            if(!switched)return switched;
+            if(!projectSession.is_committing_project_open())
+                dspChainAdapterModel.resetForNewSource();
+            goldSelection.sourceChanged();
+            sourceWaveform.source_committed(source);
+            stereoMsViewModel.setSignalFormat(
+                static_cast<double>(sourceSelection.sample_rate_hz()),
+                sourceSelection.channel_count());
+            return rgsml::core::Status::success();
+        });
+    // M18 Product authority: install once, before QML can issue Export.
+    // No SOURCE is selected at startup. The supported seed rate below is
+    // only a valid, UNCONSENTED identity; it grants NO right to export.
+    // The first physical SOURCE batch advances its generation, and the
+    // queued post-publication reconciliation records the real rate/revision.
+    using M18Binding=rgsml::app::internal::M18ProductCompleteBinding;
+    using M18Identity=rgsml::platform::windows::internal::M18ProductExportIdentity;
+    using M18TicketAuthority=rgsml::platform::windows::internal::
+        M18ProductEpochTicketAuthority;
+    const auto m18StartupRate=masterOutputRate.has_supported_master_rate()
+        ?static_cast<std::uint32_t>(masterOutputRate.master_rate_hz())
+        :std::uint32_t{48000};
+    const M18Identity m18InitialIdentity{
+        1U,1U,1U,masteringChainState.chain().revision(),
+        m18StartupRate,masterOutputRate.rate_revision()};
+    auto m18TicketAuthority=std::make_shared<M18TicketAuthority>(
+        1U,m18InitialIdentity);
+    rgsml::platform::windows::internal::M18OwnerMutationFanout m18Fanout{
+        m18TicketAuthority,1U,m18InitialIdentity};
+    M18Binding::Controllers m18Controllers{{
+        projectSession,sourceSelection,masterOutputRate,
+        masteringChainState,auditionSelector,auditionRegion,
+        goldSelection,terminalLimiterState},
+        privateProductSession,terminalCandidateGate};
+    const auto m18Bound=M18Binding::bind(m18Controllers,m18Fanout);
+    if(!m18Bound) {
+        std::fprintf(stderr,"M18 Product guard bootstrap refused: %s\\n",
+            m18Bound.error()->message().c_str());
+        return EXIT_FAILURE; // Fail closed: never expose an unguarded Export.
+    }
+    // A single Product action owns consent, worker and acknowledgement.
+    // Destruction order is UI -> action/cancel -> fanout -> ticket authority;
+    // the detached worker sees only immutable PCM and a revocable Qt-free
+    // lease, never the QObject or its controller references.
+    rgsml::app::internal::M18PrivateProductExportAction m18ExportAction{
+        m18Controllers,m18Fanout};
+    rgsml::app::M18ProductExportViewModel m18ExportViewModel{
+        m18ExportAction,m18Controllers};
+
+    // M19-M21 use the real M18 Product authority and independent
+    // SOURCE / REFERENCE owners. The status envelope remains strictly
+    // readiness-only; a separate PO-authorized DEVELOPMENT readout
+    // exposes genuine current numerical evidence without granting
+    // Phase-6 certified publication or export consent.
+    rgsml::app::internal::M21ProductPublicationInbox m21ProductInbox;
+    rgsml::app::M21ProductStatusViewModel m21ProductStatusViewModel{
+        m18Controllers,m18Fanout,auditionSelector,goldSelection,
+        m21ProductInbox};
+    // Private Product evidence only: a single Qt-free worker analyzes
+    // immutable PREPARED, independent REFERENCE, or genuine PROCESSED.
+    // The 250ms owner loop never performs PCM I/O or numerical DSP;
+    // each completion is reauthenticated under the current M18 owner.
+    // AnalysisReadouts is DEVELOPMENT-only; Phase-6 release stays gated.
+    rgsml::app::internal::M21PrivateProductAnalysisCoordinator
+        m21AnalysisCoordinator{
+            m18Controllers,m18Fanout,auditionSelector,goldSelection,
+            m21ProductInbox,m21ProductStatusViewModel,
+            [&previewController] {
+                return previewController.published_preview_matches_current_bindings();
+            }};
+    QTimer m21AnalysisPollTimer;
+    m21AnalysisPollTimer.setInterval(250);
+    QObject::connect(&m21AnalysisPollTimer,&QTimer::timeout,
+        &application,[&m21AnalysisCoordinator] {
+            m21AnalysisCoordinator.tick();
+        });
+    m21AnalysisPollTimer.start();
+    // PO: the three analysis panels precede Master Audition in the VISUAL
+    // selector; real numeric publication still requires Phase-6 Product gates.
+    dspChainAdapterModel.bindAnalysisStatusViewModel(
+        &m21ProductStatusViewModel);
+    // All these signals are QUEUED: the full Product mutation has
+    // finished before we reconcile the three independent measurements.
+    // Reauthenticate cache first, THEN refresh QML, instead of showing
+    // a transient STALE frame for up to the next 250-ms worker poll.
+    const auto refreshM21AfterReconcile=
+        [&m21AnalysisCoordinator,&m21ProductStatusViewModel] {
+            m21AnalysisCoordinator.tick();
+            m21ProductStatusViewModel.refresh();
+        };
+    // Direct SOURCE commit observer: some successful source batches
+    // retire old PCM before audition routing emits its own changed().
+    // Queue until the Product-wide mutation/epoch lease has unwound.
+    QObject::connect(&sourceSelection,
+        &rgsml::app::SourceSelectionViewModel::sourceChanged,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+    QObject::connect(&goldSelection,
+        &rgsml::app::GoldSelectionViewModel::changed,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+    // Master clock and M17 terminal revisions can stale M21 Product
+    // evidence without a SOURCE/REFERENCE picker event. The genuine
+    // owner gates in Bridge::capture decide which states are current;
+    // the queued observer only refreshes the status-only view.
+    QObject::connect(&masterOutputRate,
+        &rgsml::app::MasterOutputRateState::changed,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &m21ProductStatusViewModel,
+        refreshM21AfterReconcile,
+        Qt::QueuedConnection);
+
+    // Invalidate the *visible* Export affordance whenever a Product
+    // signal can retire the current verified M17 stage. The real Product
+    // consent gate remains the source of truth; these are UI refreshes
+    // only and cannot mint a ticket or advance an epoch.
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &m18ExportViewModel,
+        &rgsml::app::M18ProductExportViewModel::refresh);
+
+    // SOURCE and Project batches hold an exclusive physical epoch through
+    // their synchronous Qt signals. Reconcile only AFTER those RAII leases
+    // have unwound; a direct connection here would spuriously report BUSY.
+    // The binder checks the actual accepted SOURCE, chain and rate before
+    // allowing any new user-consented worker ticket.
+    const auto m18Reconcile=[&m18Controllers,&m18Fanout,
+                             &m18ExportViewModel] {
+        if(!m18Controllers.upstream.source.has_source()
+           ||!m18Controllers.upstream.rate.has_supported_master_rate())
+            return;
+        const auto reconciled=M18Binding::reconcile_after_product_mutation(
+            m18Controllers,m18Fanout);
+        // During a live export a legitimate unrelated Qt notification may
+        // arrive, but this reconciliation MUST NOT revoke its consent.
+        // All actual physical mutations remain gated by the same authority.
+        if(reconciled)m18ExportViewModel.refresh();
+    };
+    QObject::connect(&sourceSelection,
+        &rgsml::app::SourceSelectionViewModel::sourceChanged,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&masterOutputRate,
+        &rgsml::app::MasterOutputRateState::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+    QObject::connect(&projectSession,
+        &rgsml::app::ProjectSessionViewModel::changed,
+        &application,m18Reconcile,Qt::QueuedConnection);
+
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {
             return auditionRegion.seek(position);
         });
+    referenceWaveformPresentation.set_seek_handler(
+        [&auditionSelector,&playbackTransport](rgsml::core::FrameIndex position) {
+            if(!auditionSelector.gold_active())
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "REFERENCE_WAVEFORM_SEEK_REQUIRES_ACTIVE_REFERENCE"});
+            // seek_target_frame() addresses the actual REFERENCE file's
+            // sample-rate/timebase, NOT the SOURCE region or source cue.
+            return playbackTransport.seek_target_frame(position);
+        });
     waveformPresentation.set_region_commit_handler(
         [&auditionRegion](rgsml::core::FrameRange candidate) {
             return auditionRegion.set_region(candidate);
+        });
+    referenceWaveformPresentation.set_region_commit_handler(
+        [&referenceRegion](rgsml::core::FrameRange candidate) {
+            return referenceRegion.set_region(candidate);
+        });
+    QObject::connect(&referenceRegion,
+        &rgsml::app::AuditionRegionViewModel::changed,
+        &referenceWaveformPresentation,
+        [&referenceRegion,&referenceWaveformPresentation] {
+            referenceWaveformPresentation.set_displayed_region(
+                referenceRegion.region());
+        });
+    QObject::connect(&referenceWaveformPresentation,
+        &rgsml::ui::WaveformPresentation::changed,
+        &referenceRegion,
+        [&referenceRegion,&referenceWaveformPresentation] {
+            referenceRegion.set_waveform_ready(
+                referenceWaveformPresentation.ready());
         });
     QObject::connect(
         &auditionRegion,
@@ -850,6 +1406,13 @@ int main(int argc, char* argv[])
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
+        QStringLiteral("m18ProductExportViewModel"),&m18ExportViewModel);
+    // Real Product-backed M19/M20/M21 readiness only. This QML
+    // context never certifies Phase-6 or exposes synthetic/demo numbers.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m21ProductStatusViewModel"),
+        &m21ProductStatusViewModel);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);
     engine.rootContext()->setContextProperty(
@@ -866,8 +1429,14 @@ int main(int argc, char* argv[])
         QStringLiteral("sourceWaveform"),
         &waveformPresentation);
     engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceWaveform"),
+        &referenceWaveformPresentation);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"),
         &auditionRegion);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceRegion"),
+        &referenceRegion);
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionSelector"),
         &auditionSelector);
@@ -939,8 +1508,305 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 
-    if (deploySmoke && !engine.rootObjects().isEmpty()) {
+    // An explicit real-Main M17/M18 geometry probe must run its delayed
+    // physical-layout checks, not exit through the zero-delay deploy smoke.
+    if (deploySmoke && !p2GuiSmoke && !m17MainEvidence
+        && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
+    }
+    // Product Qt smoke of the actual research-only fifth DSP and its QML
+    // editor at 1184x688. This is NOT a physical Windows playback test.
+    if (p2GuiSmoke) {
+        if (engine.rootObjects().isEmpty()
+            || masteringChainState.module_count() != 5U
+            || !masteringChainState.streaming_p2_preview_instance_id()
+            || dspChainAdapterModel.modules().size() < 6) {
+            std::fprintf(stderr, "P2_I2_GUI_SMOKE_BOOTSTRAP_MISSING\n");
+            return EXIT_FAILURE;
+        }
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if (!window) return EXIT_FAILURE;
+        window->setWidth(1184);
+        window->setHeight(688);
+        dspChainAdapterModel.setSelectedIndex(4); // genuine MANUAL P2 instance
+        window->show();
+        QTimer::singleShot(200, &application,
+            [window, &application, &dspChainAdapterModel] {
+                const auto* panel = window->findChild<QObject*>(
+                    QStringLiteral("streamingTruePeakLimiterEditor"));
+                const auto* selected = dspChainAdapterModel.selected_module();
+                const auto* ceilingSlider = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2CeilingSlider"));
+                const auto* driveSlider = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2DriveSlider"));
+                const bool p2WheelReady = ceilingSlider && driveSlider
+                    && ceilingSlider->property("wheelEnabled").toBool()
+                    && driveSlider->property("wheelEnabled").toBool()
+                    && driveSlider->property("fillFromOrigin").toBool()
+                    && driveSlider->property("positionFillOrigin").toDouble() == 0.0;
+                std::fprintf(stderr, "P2_I2_INPUT_GAIN_STYLE_WHEEL=%s\n",
+                    p2WheelReady ? "PASS" : "FAIL");
+                // The View menu is built from the DSP chain's live adapters.
+                // Require P2 present in BOTH navigation surfaces.
+                const auto* p2ViewItem = window->findChild<QObject*>(
+                    QStringLiteral("menuViewStreamingTruePeakLimiter"));
+                const bool p2InViewMenu = p2ViewItem
+                    && p2ViewItem->property("enabled").toBool()
+                    && p2ViewItem->property("text").toString()
+                        == QStringLiteral("Streaming TP Limiter");
+                std::fprintf(stderr, "P2_I2_VISIBLE_IN_VIEW_MENU=%s\n",
+                    p2InViewMenu ? "PASS" : "FAIL");
+                // Real QML geometry, fonts, and placement are checked at the
+                // frozen minimum 1184x688, not inspected from a mock-up.
+                const auto* ceilingItem = qobject_cast<const QQuickItem*>(
+                    ceilingSlider);
+                const auto* driveItem = qobject_cast<const QQuickItem*>(
+                    driveSlider);
+                const auto* ceilingDisplay = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2CeilingDisplay"));
+                const auto* driveDisplay = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2DriveDisplay"));
+                const auto trackReady = [](const QObject* item) {
+                    const auto* track = item
+                        ? item->findChild<QQuickItem*>(
+                            QStringLiteral("studioSliderTrack")) : nullptr;
+                    const auto* thumb = item
+                        ? item->findChild<QQuickItem*>(
+                            QStringLiteral("studioSliderThumb")) : nullptr;
+                    return track && thumb && std::abs(track->height()-8.0)<0.1
+                        && std::abs(thumb->height()-18.0)<0.1
+                        && std::abs(thumb->width()-18.0)<0.1;
+                };
+                const auto displayReady = [](const QObject* item) {
+                    const QFont font = item
+                        ? item->property("font").value<QFont>() : QFont{};
+                    return item && font.family() == QStringLiteral("Consolas")
+                        && font.pixelSize() == 36 && font.bold();
+                };
+                const bool p2InputGainLayout = ceilingItem && driveItem
+                    && ceilingItem->width() >= 400
+                    && ceilingItem->width() <= 641
+                    && std::abs(ceilingItem->width() - driveItem->width()) < 1.0
+                    && std::abs(ceilingItem->x() - driveItem->x()) < 1.0
+                    && std::abs(ceilingItem->height()-24.0) < 1.0
+                    && std::abs(driveItem->height()-24.0) < 1.0
+                    && trackReady(ceilingSlider) && trackReady(driveSlider)
+                    && displayReady(ceilingDisplay) && displayReady(driveDisplay)
+                    && driveSlider->property("showOriginTick").toBool()
+                    && !ceilingSlider->property("compact").toBool()
+                    && !driveSlider->property("compact").toBool();
+                std::fprintf(stderr,
+                    "P2_I2_INPUT_GAIN_LAYOUT=%s ceiling_width=%.1f drive_width=%.1f\n",
+                    p2InputGainLayout ? "PASS" : "FAIL",
+                    ceilingItem ? ceilingItem->width() : -1.0,
+                    driveItem ? driveItem->width() : -1.0);
+                // PO 2026-11-16: the real P2 min-window editor must show
+                // TWO independent 120x32 numeric wells after the sliders,
+                // 16px Consolas text, and Reset in the external top row.
+                const auto* ceilingWell = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2CeilingNumericWell")));
+                const auto* driveWell = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2DriveNumericWell")));
+                const auto* ceilingInput = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2CeilingNumericInput"));
+                const auto* driveInput = window->findChild<QObject*>(
+                    QStringLiteral("streamingP2DriveNumericInput"));
+                const auto* resetAction = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2ResetButton")));
+                const auto* p2MainPanel = qobject_cast<const QQuickItem*>(
+                    window->findChild<QObject*>(
+                        QStringLiteral("streamingP2MainPanel")));
+                const auto numericReady = [](const QQuickItem* well,
+                                             const QObject* input) {
+                    const auto font=input
+                        ?input->property("font").value<QFont>():QFont{};
+                    return well && input
+                        && std::abs(well->width()-120.0)<0.5
+                        && std::abs(well->height()-32.0)<0.5
+                        && font.family()==QStringLiteral("Consolas")
+                        && font.pixelSize()==16
+                        && well->isVisible();
+                };
+                const bool p2NumericReady =
+                    numericReady(ceilingWell,ceilingInput)
+                    && numericReady(driveWell,driveInput)
+                    && p2MainPanel && resetAction
+                    && resetAction->isVisible()
+                    && resetAction->mapToItem(p2MainPanel,QPointF{}).y()<0.0
+                    && ceilingWell->mapToItem(
+                        const_cast<QQuickItem*>(ceilingItem),
+                        QPointF{}).y()>0.0
+                    && driveWell->mapToItem(
+                        const_cast<QQuickItem*>(driveItem),
+                        QPointF{}).y()>0.0;
+                std::fprintf(stderr,"P2_I2_NUMERIC_WELLS=%s\n",
+                             p2NumericReady ? "PASS" : "FAIL");
+                const bool valid = p2WheelReady && p2InputGainLayout
+                    && p2NumericReady
+                    && p2InViewMenu && window->width() == 1184
+                    && window->height() == 688
+                    && selected
+                    && selected->type_id()
+                        == QStringLiteral("rgsml.dsp.streaming-true-peak-limiter")
+                    && panel && panel->property("visible").toBool()
+                    && !selected->state_text().startsWith(QStringLiteral("ACTIVE"));
+                std::fprintf(stdout, "P2_I2_REAL_QT_GUI_BOOTSTRAP=%s\n",
+                             valid ? "PASS" : "FAIL");
+                std::fflush(stdout);
+                if (!valid) {
+                    application.exit(EXIT_FAILURE);
+                    return;
+                }
+                // Guard all three pre-existing read-only analysis editors
+                // against loss/reordering when opt-in P2 adds MANUAL index 4.
+                // This proves actual Main.qml visibility at the minimum size,
+                // not that analysis metrics have completed or are certified.
+                const QString screenshotPath = qEnvironmentVariable(
+                    "RGSML_P2_I2_SCREENSHOT_PATH");
+                const auto verifyAnalysis = [&](int milestone,
+                                                const char* objectName) {
+                    // Select the existing authority-owned Product adapter,
+                    // never a fragile hard-coded visual index: M16/M17 and
+                    // service rows are independent of the MANUAL DSP count.
+                    const auto wantedInstance =
+                        QStringLiteral("analysis:rgsml.m%1").arg(milestone);
+                    const auto wantedKey =
+                        QStringLiteral("M%1_ANALYSIS").arg(milestone);
+                    dspChainAdapterModel.selectModuleByInstanceId(
+                        wantedInstance);
+                    QCoreApplication::processEvents();
+                    const auto* active = dspChainAdapterModel.selected_module();
+                    const auto* editor = window->findChild<QObject*>(
+                        QString::fromLatin1(objectName));
+                    const bool correctSelection = active
+                        && active->instance_id() == wantedInstance
+                        && active->editor_content_key() == wantedKey;
+                    const bool exists = editor != nullptr;
+                    const bool visible = exists
+                        && editor->property("visible").toBool();
+                    // All three editor instances remain live; resolving
+                    // from the window always finds hidden M19 first.
+                    // Scope to the selected analysis editor instead.
+                    const auto* sourceHeading = editor ? editor->findChild<QObject*>(
+                        QStringLiteral("analysisSourceHeading")) : nullptr;
+                    const auto* redundantFootnote = editor ? editor->findChild<QObject*>(
+                        QStringLiteral("analysisEvidenceState")) : nullptr;
+                    // Read the selected editor's actual scope, not the
+                    // previous pre-compaction fixed heading. M19/M20
+                    // show the current role; M21 has no redundant source
+                    // selector and labels its simultaneous measurements.
+                    const QString expectedHeading = milestone == 21
+                        ? QStringLiteral("Δ = REFERENCE − CURRENT")
+                        : QStringLiteral("CURRENT SCOPE · ")
+                            + (editor
+                                ? editor->property("selectedRole").toString()
+                                : QString{});
+                    const bool compact = sourceHeading
+                        && sourceHeading->property("visible").toBool()
+                        && sourceHeading->property("text").toString()
+                            == expectedHeading
+                        && redundantFootnote
+                        && !redundantFootnote->property("visible").toBool();
+                    bool captureReady = true;
+                    if (correctSelection && visible && compact
+                        && !screenshotPath.isEmpty()) {
+                        // Authentic Main Qt window captured after selecting
+                        // each analysis panel; never a synthetic rendering.
+                        const auto suffix = QStringLiteral("-M%1.png").arg(milestone);
+                        const auto destination = screenshotPath.endsWith(".png")
+                            ? screenshotPath.left(screenshotPath.size() - 4) + suffix
+                            : screenshotPath + suffix;
+                        const auto shot = window->grabWindow();
+                        captureReady = !shot.isNull()
+                            && shot.save(destination, "PNG");
+                    }
+                    const bool shown = correctSelection && visible
+                        && compact && captureReady;
+                    std::fprintf(stderr,
+                        "P2_I2_ANALYSIS_M%d index=%d selected=%s key=%s editor=%d visible=%d result=%s\n",
+                        milestone, dspChainAdapterModel.selected_index(),
+                        active ? active->instance_id().toUtf8().constData() : "(null)",
+                        active ? active->editor_content_key().toUtf8().constData() : "(null)",
+                        exists ? 1 : 0, visible ? 1 : 0,
+                        shown ? "PASS" : "FAIL");
+                    return shown;
+                };
+                const bool m19 = verifyAnalysis(
+                    19, "m19LevelProductAnalysisEditor");
+                const bool m20 = verifyAnalysis(
+                    20, "m20TonalStereoProductAnalysisEditor");
+                const bool m21 = verifyAnalysis(
+                    21, "m21MetricsDeltaProductAnalysisEditor");
+                const bool all = m19 && m20 && m21;
+                std::fflush(stdout);
+                if (!all || screenshotPath.isEmpty()) {
+                    application.exit(all ? EXIT_SUCCESS : EXIT_FAILURE);
+                    return;
+                }
+                // Actual Windows Qt Main screenshots, not QML mockups.
+                // GitHub's HyperVMonitor limits the real window to 1184x~749.
+                // Keep the qualified 1184x688 size and capture the selector
+                // twice at real scroll positions (top and bottom). Publish
+                // original screenshots AND a transparent side-by-side montage.
+                dspChainAdapterModel.setSelectedIndex(4);
+                QTimer::singleShot(650, &application,
+                    [window, &application, screenshotPath] {
+                        auto* scroll = window->findChild<QObject*>(
+                            QStringLiteral("dspChainUnifiedScroll"));
+                        auto* flick = scroll
+                            ? scroll->property("contentItem").value<QQuickItem*>()
+                            : nullptr;
+                        const double total = flick
+                            ? flick->property("contentHeight").toDouble() : 0.0;
+                        const double viewport = flick ? flick->height() : 0.0;
+                        const double bottom = std::max(0.0, total - viewport);
+                        if (!flick || bottom < 2.0) {
+                            std::fprintf(stderr,
+                                "P2_I2_REAL_QT_CHAIN_SCROLL_NOT_AVAILABLE content=%.1f viewport=%.1f\n",
+                                total, viewport);
+                            application.exit(EXIT_FAILURE);
+                            return;
+                        }
+                        flick->setProperty("contentY", 0.0);
+                        QCoreApplication::processEvents();
+                        auto top = window->grabWindow();
+                        flick->setProperty("contentY", bottom);
+                        QCoreApplication::processEvents();
+                        auto lower = window->grabWindow();
+                        // Composite is mechanically stitched from two
+                        // genuine Qt framebuffer captures, never synthesized.
+                        top.setDevicePixelRatio(1.0);
+                        lower.setDevicePixelRatio(1.0);
+                        const QString prefix = screenshotPath.endsWith(".png")
+                            ? screenshotPath.left(screenshotPath.size() - 4)
+                            : screenshotPath;
+                        QImage sheet(top.width() + lower.width(),
+                            std::max(top.height(), lower.height()),
+                            QImage::Format_ARGB32_Premultiplied);
+                        sheet.fill(Qt::black);
+                        {
+                            QPainter painter(&sheet);
+                            painter.drawImage(0, 0, top);
+                            painter.drawImage(top.width(), 0, lower);
+                        }
+                        const bool saved = window->width() == 1184
+                            && window->height() == 688
+                            && !top.isNull() && !lower.isNull()
+                            && top != lower
+                            && top.save(prefix + "-top.png", "PNG")
+                            && lower.save(prefix + "-bottom.png", "PNG")
+                            && sheet.save(screenshotPath, "PNG");
+                        std::fprintf(stderr,
+                            "P2_I2_REAL_QT_CHAIN_SCROLL_TOP_BOTTOM=%s total=%.1f viewport=%.1f bottom=%.1f w=%d h=%d\n",
+                            saved ? "PASS" : "FAIL", total, viewport,
+                            bottom, window->width(), window->height());
+                        std::fflush(stderr);
+                        application.exit(saved ? EXIT_SUCCESS : EXIT_FAILURE);
+                    });
+            });
     }
     if (m17MainEvidence && !engine.rootObjects().isEmpty()) {
         auto* mainWindow=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
@@ -950,7 +1816,165 @@ int main(int argc, char* argv[])
         mainWindow->setHeight(688);
         dspChainAdapterModel.setSelectedIndex(5); // real M17 chain adapter
         mainWindow->show();
-        QTimer::singleShot(900, &application, [mainWindow,&application] {
+        QTimer::singleShot(900, &application, [mainWindow,&application,
+                                                  &dspChainAdapterModel] {
+            // PO 2026-11-15: compare REAL undock/title/context scene
+            // coordinates against Parametric EQ, for EVERY active DSP
+            // editor including M16/M17/M19-M21, at two real window sizes.
+            // Unlike checking just the host's size, this detects smooth
+            // vertical misalignment and hard jumps in shared QML geometry.
+            const auto visualPoint=[mainWindow](const char* name) {
+                const auto* item=mainWindow->findChild<QQuickItem*>(
+                    QString::fromLatin1(name));
+                return item && item->isVisible()
+                    ? item->mapToScene(QPointF(0.0,0.0))
+                    : QPointF(-9999.0,-9999.0);
+            };
+            const auto nearPoint=[](const QPointF& a, const QPointF& b) {
+                return std::abs(a.x()-b.x())<=0.55
+                    && std::abs(a.y()-b.y())<=0.55;
+            };
+            bool allHeaderAlign=true;
+            for(const int windowHeight:{688,735}) {
+                mainWindow->setHeight(windowHeight);
+                QCoreApplication::processEvents();
+                dspChainAdapterModel.setSelectedIndex(1); // Parametric EQ
+                QCoreApplication::processEvents();
+                const QPointF baselineGrip=visualPoint("dspHostTearOffGrip");
+                const QPointF baselineTitle=visualPoint("dspHostModuleTitle");
+                const QPointF baselineContext=visualPoint("dspHostWorkflowContext");
+                const auto* heading=mainWindow->findChild<QQuickItem*>(
+                    QStringLiteral("dspHostHeaderRegion"));
+                const bool baselineValid=baselineGrip.x()>0.0
+                    && baselineTitle.x()>0.0 && baselineContext.x()>0.0
+                    && heading && std::abs(heading->height()-40.0)<=0.55;
+                bool sizeAll=baselineValid;
+                for(int i=0;i<dspChainAdapterModel.modules().size();++i) {
+                    dspChainAdapterModel.setSelectedIndex(i);
+                    QCoreApplication::processEvents();
+                    const auto* module=dspChainAdapterModel.selected_module();
+                    const bool equal=module && baselineValid
+                        && nearPoint(visualPoint("dspHostTearOffGrip"),
+                                     baselineGrip)
+                        && nearPoint(visualPoint("dspHostModuleTitle"),
+                                     baselineTitle)
+                        && nearPoint(visualPoint("dspHostWorkflowContext"),
+                                     baselineContext)
+                        && heading && std::abs(heading->height()-40.0)<=0.55;
+                    std::fprintf(stdout,
+                        "RGS_GUI_HEADER_EQ_PARITY window=%d module=%d key=%s aligned=%d title_y=%.2f grip_y=%.2f\n",
+                        windowHeight,i,module
+                            ? module->editor_content_key().toUtf8().constData()
+                            : "(null)",
+                        equal?1:0,visualPoint("dspHostModuleTitle").y(),
+                        visualPoint("dspHostTearOffGrip").y());
+                    sizeAll=sizeAll && equal;
+                }
+                allHeaderAlign=allHeaderAlign && sizeAll;
+            }
+            // The PO additionally requires every RESIZABLE PRIMARY well
+            // to retain its minimum-window (top,left) pixel origin while
+            // it expands to the right/bottom. Title geometry checks alone
+            // did not catch Stereo/M-S header-gap and P2 margin drift.
+            // Measure actual Qt child geometry RELATIVE TO ITS OWN EDITOR:
+            // unrelated Main resizing/centering must not hide a drift.
+            struct TopLeftSpec {
+                int moduleIndex;
+                const char* editorName;
+                const char* wellName;
+            };
+            const std::array<TopLeftSpec,2> wellSpecs{{
+                {3,"stereoMsEditor","stereoMsActiveSurface"},
+                {4,"streamingTruePeakLimiterEditor","streamingP2MainPanel"}
+            }};
+            const auto wellPoint=[mainWindow,&dspChainAdapterModel](
+                const TopLeftSpec& spec) ->std::optional<QPointF> {
+                dspChainAdapterModel.setSelectedIndex(spec.moduleIndex);
+                // An editor selected for the first time can be created by
+                // a QML Loader only after an event-loop turn. Do not
+                // classify its not-yet-instantiated well as anchor drift:
+                // wait for genuine visible nonzero Qt geometry, then test
+                // the exact same top-left coordinates at every size.
+                const auto sample=[&]() -> std::optional<QPointF> {
+                    auto* editor=mainWindow->findChild<QQuickItem*>(
+                        QString::fromLatin1(spec.editorName));
+                    auto* well=mainWindow->findChild<QQuickItem*>(
+                        QString::fromLatin1(spec.wellName));
+                    if(!editor || !well || !editor->isVisible()
+                        || !well->isVisible() || well->width()<=0
+                        || well->height()<=0) return std::nullopt;
+                    return well->mapToItem(editor,QPointF(0,0));
+                };
+                for(int attempt=0;attempt<12;++attempt) {
+                    QCoreApplication::processEvents();
+                    if(const auto point=sample()) return point;
+                    QEventLoop settle;
+                    QTimer::singleShot(25,&settle,&QEventLoop::quit);
+                    settle.exec();
+                }
+                return std::nullopt;
+            };
+            mainWindow->setWidth(1184);
+            mainWindow->setHeight(688);
+            QCoreApplication::processEvents();
+            const std::array<std::optional<QPointF>,2> baselineWell{{
+                wellPoint(wellSpecs[0]),wellPoint(wellSpecs[1])
+            }};
+            bool allTopLeftAnchors=true;
+            // Windows CI's HyperVMonitor exposes just 1200 physical
+            // screen pixels: a 1350-wide QWindow request is CLAMPED and
+            // Qt emits a warning, which the strict startup contract
+            // correctly treats as failure. Never manufacture a horizontal
+            // PASS from an unsupported requested size. Exercise 1350
+            // ONLY on a real display with sufficient available width.
+            const auto* screen=mainWindow->screen();
+            const bool canTestWide=screen
+                && screen->availableGeometry().width()>=1400;
+            std::fprintf(stdout,
+                "RGS_GUI_REAL_HORIZONTAL_RESIZE=%s available_screen_width=%d\n",
+                canTestWide?"RUN":"NOT_TESTABLE_ON_RUNNER",
+                screen?screen->availableGeometry().width():-1);
+            const std::array<QSize,4> testedSizes{{
+                QSize{1184,688},QSize{1184,735},
+                QSize{canTestWide?1350:1184,688},
+                QSize{canTestWide?1350:1184,735}
+            }};
+            for(const auto& size:testedSizes) {
+                mainWindow->setWidth(size.width());
+                mainWindow->setHeight(size.height());
+                QCoreApplication::processEvents();
+                for(std::size_t i=0;i<wellSpecs.size();++i) {
+                    const auto pos=wellPoint(wellSpecs[i]);
+                    const bool stable=pos && baselineWell[i]
+                        && nearPoint(*pos,*baselineWell[i]);
+                    allTopLeftAnchors=allTopLeftAnchors && stable;
+                    std::fprintf(stdout,
+                        "RGS_GUI_MIN_TOP_LEFT_ANCHOR w=%d h=%d module=%s well=%s x=%.2f y=%.2f stable=%d\n",
+                        size.width(),size.height(),
+                        wellSpecs[i].editorName,wellSpecs[i].wellName,
+                        pos ? pos->x() : -9999.0,
+                        pos ? pos->y() : -9999.0,stable?1:0);
+                }
+            }
+            mainWindow->setWidth(1184);
+            mainWindow->setHeight(688);
+            dspChainAdapterModel.setSelectedIndex(5); // M17
+            QCoreApplication::processEvents();
+            std::fprintf(stdout,
+                "RGS_GUI_ALL_PRIMARY_WELLS_KEEP_MIN_TOP_LEFT=%s\n",
+                allTopLeftAnchors?"PASS":"FAIL");
+            if(!allTopLeftAnchors) {
+                application.exit(EXIT_FAILURE);
+                return;
+            }
+            std::fprintf(stdout,
+                "RGS_GUI_ALL_DSP_HEADERS_MATCH_PARAMETRIC_EQ=%s\n",
+                allHeaderAlign?"PASS":"FAIL");
+            std::fflush(stdout);
+            if(!allHeaderAlign) {
+                application.exit(EXIT_FAILURE);
+                return;
+            }
             auto* popup=mainWindow->findChild<QObject*>(
                 QStringLiteral("m17RateTimePopup"));
             if (!popup || !QMetaObject::invokeMethod(popup,"open")) {
@@ -964,9 +1988,99 @@ int main(int argc, char* argv[])
                 const auto image=mainWindow->grabWindow();
                 const bool geometry=mainWindow->width()==1184
                     && mainWindow->height()==688;
-                const bool dpi=std::abs(ratio-1.5)<0.051;
-                const bool saved=geometry && dpi && !file.isEmpty()
+                // Existing M17 evidence still requires 150% DPI. This
+                // separately marked M18 minimum-window fit gate checks
+                // logical 1184x688 at unscaled 100%, avoiding CI display
+                // cropping while preserving the older 150% proof.
+                const bool m18MinimumOnly=qEnvironmentVariable(
+                    "RGSML_M18_MINIMUM_GUI_ONLY")=="1";
+                const bool dpi=std::abs(
+                    ratio-(m18MinimumOnly ? 1.0 : 1.5))<0.051;
+                // M18 PO 2026-11-15: prove the TWO real WAV actions, all
+                // six rate choices, CALIBRATE and the popup frame fit at the
+                // Product MINIMUM. Do not use visual mockups or scrollbars.
+                auto* panel=qobject_cast<QQuickItem*>(
+                    mainWindow->findChild<QObject*>(
+                        QStringLiteral("m17RateTimePanel")));
+                // A Qt Quick Repeater owns the *QObject* tree of its
+                // delegates separately from their visual parent. QObject
+                // findChild(panel, name) therefore misses six real radio
+                // controls even when they are fully rendered and visible.
+                // Walk the actual QQuickItem scene/parentItem tree, not a
+                // guessed QObject ownership model. No assertion is relaxed.
+                std::function<QQuickItem*(QQuickItem*,const QString&)>
+                    findVisual=[&findVisual](QQuickItem* item,
+                                             const QString& wanted)
+                        ->QQuickItem* {
+                    if (!item) return nullptr;
+                    if (item->objectName()==wanted) return item;
+                    for(auto* child:item->childItems()) {
+                        if(auto* found=findVisual(child,wanted))return found;
+                    }
+                    return nullptr;
+                };
+                const auto inside=[panel,&findVisual](const QString& name) {
+                    auto* child=findVisual(panel,name);
+                    if (!child || !child->isVisible() || !panel) return false;
+                    const auto pos=child->mapToItem(panel,QPointF(0,0));
+                    return child->width()>0.0 && child->height()>0.0
+                        && pos.x() >= -1.0 && pos.y() >= -1.0
+                        && pos.x()+child->width() <= panel->width()+1.0
+                        && pos.y()+child->height() <= panel->height()+1.0;
+                };
+                const bool noScroll=panel
+                    && !panel->property("contentY").isValid()
+                    && !panel->property("contentHeight").isValid();
+                bool allRates=true;
+                for(int i=0;i<6;++i) {
+                    const auto name=QStringLiteral("m17MasterRateOption_%1").arg(i);
+                    const auto* child=findVisual(panel,name);
+                    const auto p=child&&panel
+                        ? child->mapToItem(panel,QPointF(0,0)):QPointF{-1,-1};
+                    const bool ok=inside(name);
+                    allRates=allRates && ok;
+                    std::fprintf(stdout,
+                        "M18_MINIMUM_RATE_%d=%s found=%d visible=%d x=%.1f y=%.1f w=%.1f h=%.1f\n",
+                        i,ok?"PASS":"FAIL",child?1:0,
+                        child&&child->isVisible()?1:0,p.x(),p.y(),
+                        child?child->width():-1.0,child?child->height():-1.0);
+                }
+                const auto rightEdge=[panel,&findVisual](const QString& name) {
+                    const auto* child=findVisual(panel,name);
+                    return child && panel
+                        ? child->mapToItem(panel,QPointF(0,0)).x()
+                            + child->width()
+                        : -9999.0;
+                };
+                const double wavRightDelta=std::abs(
+                    rightEdge(QStringLiteral("m17ExportFloat32"))
+                    -rightEdge(QStringLiteral("m17RateCalibrationButton")));
+                const auto* headerRegion=qobject_cast<QQuickItem*>(
+                    mainWindow->findChild<QObject*>(
+                        QStringLiteral("dspHostHeaderRegion")));
+                const bool headerHeightStable=headerRegion
+                    && std::abs(headerRegion->height()-40.0) <= 1.0;
+                const bool wavUiFits=noScroll && allRates
+                    && inside(QStringLiteral("m17ExportPcm24"))
+                    && inside(QStringLiteral("m17ExportFloat32"))
+                    && inside(QStringLiteral("m17RateCalibrationButton"))
+                    && wavRightDelta <= 2.0 && headerHeightStable;
+                std::fprintf(stdout,
+                    "M18_WAV_RATE_TIME_MINIMUM_1184x688=%s popup_panel_w=%.1f h=%.1f no_scroll=%d rates=%d\n",
+                    wavUiFits ? "PASS" : "FAIL",
+                    panel ? panel->width() : -1.0,
+                    panel ? panel->height() : -1.0,
+                    noScroll?1:0,allRates?1:0);
+                std::fprintf(stdout,
+                    "M18_MINIMUM_FOOTER pcm=%d float=%d calibrate=%d right_delta=%.2f header_h=%.2f\n",
+                    inside(QStringLiteral("m17ExportPcm24"))?1:0,
+                    inside(QStringLiteral("m17ExportFloat32"))?1:0,
+                    inside(QStringLiteral("m17RateCalibrationButton"))?1:0,
+                    wavRightDelta,
+                    headerRegion?headerRegion->height():-1.0);
+                const bool captured=geometry && dpi && !file.isEmpty()
                     && !image.isNull() && image.save(file,"PNG");
+                const bool saved=captured && wavUiFits;
                 std::fprintf(stdout,
                     "M17_REAL_MAIN_QT_LOGICAL=%dx%d DPR=%.3f PHYSICAL=%dx%d SAVED=%d\n",
                     mainWindow->width(),mainWindow->height(),ratio,

@@ -1,4 +1,5 @@
 #include "terminal_private_product_session.hpp"
+#include "internal/m18_owned_master_frame_provider.hpp"
 #include <QThread>
 #include "final_src_candidate_policy.hpp"
 #include <rgsml/core/error.hpp>
@@ -42,7 +43,33 @@ bool TerminalPrivateProductSession::current_selection_for_pending() const
             && offlineSelected_ && offlineSelected_()));
 }
 
+core::Status TerminalPrivateProductSession::admit_m18_private_mutation(
+    const char* operation) const
+{
+    // Optional only. No Product controller installs this gate yet; M17
+    // remains unmodified in production. A throwing gate fails closed.
+    if(!m18MutationAdmission_)return core::Status::success();
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PRODUCT_MUTATION_REQUIRES_QT_OWNER_THREAD"});
+    if(m18PrivateAdmitting_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M18_PRODUCT_MUTATION_REENTRANT_ADMISSION"});
+    m18PrivateAdmitting_=true;
+    struct Unwind final {
+        bool* active;
+        ~Unwind(){*active=false;}
+    } unwind{&m18PrivateAdmitting_};
+    try{return m18MutationAdmission_(operation);}
+    catch(...){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,
+        "M18_PRODUCT_MUTATION_ADMISSION_THROWN"});}
+}
+
 void TerminalPrivateProductSession::failed(const core::Error& error) {
+    if(!admit_m18_private_mutation("failed"))return;
     if(installedMeasuredTicket_ ||measuredSourceRecovery_) {
         status_=measuredSourceRecovery_
             ?QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED")
@@ -69,6 +96,7 @@ void TerminalPrivateProductSession::failed(const core::Error& error) {
     emit changed();
 }
 void TerminalPrivateProductSession::stale() {
+    if(!admit_m18_private_mutation("stale"))return;
     if(installedMeasuredTicket_ ||measuredSourceRecovery_) {
         status_=measuredSourceRecovery_
             ?QStringLiteral("MEASURED_DEVICE_SOURCE_RECOVERY_REQUIRED")
@@ -94,6 +122,12 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
 core::Status TerminalPrivateProductSession::request_private_impl(
     core::SampleRate rate, bool deferred, bool masterOnly)
 {
+    // Pure preflight must not revoke verified-M17 export consent: a rejected
+    // Prepare has not changed Product identity. Admit exactly once at the
+    // first real Pending/renderer write, after all source/rate/device checks.
+    if(m18MutationAdmission_&&QThread::currentThread()!=thread())
+        return core::Status::failure(rejected(
+            "M18_PRIVATE_PREPARE_REQUIRES_PRODUCT_QT_OWNER_THREAD"));
     if(pending_ || privateId_ ||installedMonitor_ ||monitorTransitioning_)
         return core::Status::failure(rejected(
             "A private M17 transaction is already pending or installed."));
@@ -151,6 +185,10 @@ core::Status TerminalPrivateProductSession::request_private_impl(
        ||loop->end()>manual->view().absolute_range().end()))
         return core::Status::failure(rejected(
             "M17 SOURCE loop lies outside the full manual programme."));
+    // M18 Single-Writer: the first Product mutation follows a complete
+    // read-only preflight and precedes Pending, renderer and Qt publication.
+    if(const auto gate=admit_m18_private_mutation("request_private");
+       !gate)return gate;
     // request_private internally invalidates the gate, then emits RENDERING;
     // pending ownership is captured before any queued worker completion.
     pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,
@@ -1559,6 +1597,8 @@ core::Status TerminalPrivateProductSession::control_private_monitor(
 core::Status
 TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
 {
+    if(const auto gate=admit_m18_private_mutation("retry_source_return");
+       !gate)return gate;
     // This is an explicit recovery, NOT a new MASTER render and NOT a
     // second anonymous DEVICE realization. The original M17 PCM remains
     // held by pending_/candidate stage until the SOURCE is genuinely back.
@@ -1782,6 +1822,8 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
 
 core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
 {
+    if(const auto gate=admit_m18_private_mutation("return_monitor_to_manual");
+       !gate)return gate;
     if(QThread::currentThread()!=thread())
         return core::Status::failure(rejected(
             "MONITOR_RETURN_REQUIRES_OWNER_THREAD"));
@@ -2351,9 +2393,9 @@ TerminalPrivateProductSession::private_installed_output_identity() const
         std::move(candidate),*privateId_,*audible.value(),*source.value()});
 }
 
-bool TerminalPrivateProductSession::comparison_owners_current() const
+bool TerminalPrivateProductSession::comparison_pcm_still_valid() const
 {
-    if(!comparison_cached()||!pending_||!selected_||!selected_()
+    if(!comparison_cached()||!pending_
        ||!prepared_||!manual_||!manualId_||!sourceLoop_
        ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
        ||manualId_()!=std::optional{pending_->manualId}
@@ -2375,6 +2417,13 @@ bool TerminalPrivateProductSession::comparison_owners_current() const
         && stage->original_manual_realization_id==pending_->manualId
         && stage->rendered.output_rate==pending_->outputRate
         && renderer_->status()==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
+}
+
+bool TerminalPrivateProductSession::comparison_owners_current() const
+{
+    // A cached PCM is NOT permission to install or export a Master.
+    // Require a newly selected, exact PROCESSED manual owner separately.
+    return selected_ && selected_() && comparison_pcm_still_valid();
 }
 
 std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
@@ -2431,6 +2480,37 @@ TerminalPrivateProductSession::borrow_verified_m17_master_for_device(
            &&playback.value()->state!=core::PlaybackState::PAUSED))
         return {};
     return stage;
+}
+
+std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+TerminalPrivateProductSession::capture_m18_verified_stage_for_worker(
+    core::SampleRate selectedMasterRate) const
+{
+    if(QThread::currentThread()!=thread())return {};
+    const auto stage=current_verified_private_master();
+    if(!stage ||stage->rendered.output_rate!=selectedMasterRate
+       ||!stage->rendered.terminal.checked.final_check
+       ||candidates_->staged()!=stage)
+        return {};
+    return stage;
+}
+
+std::shared_ptr<audio::internal::M18OwnedMasterFrameProvider>
+TerminalPrivateProductSession::capture_m18_verified_master_for_read(
+    core::SampleRate selectedMasterRate) const
+{
+    // Qt-owning-thread check: worker cannot read live QObject selection.
+    // This returns a lifetime-pinned Master, not current export permission.
+    if (QThread::currentThread()!=thread())return {};
+    const auto stage=current_verified_private_master();
+    if (!stage ||stage->rendered.output_rate!=selectedMasterRate
+        ||!stage->rendered.terminal.checked.final_check)
+        return {};
+    // Aliasing shared ownership pins the exact M17 PCM without replay.
+    const auto* pcm=&stage->rendered.terminal.checked.terminal.compensated_pcm;
+    const std::shared_ptr<const audio::AudioBuffer> immutable(stage,pcm);
+    return audio::internal::M18OwnedMasterFrameProvider::capture(
+        immutable,selectedMasterRate);
 }
 
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
@@ -2515,6 +2595,8 @@ materialize_borrowed_verified_m17_monitoring_with_preflight(
 
 core::Status TerminalPrivateProductSession::suspend_for_comparison()
 {
+    if(const auto gate=admit_m18_private_mutation("comparison_suspend");
+       !gate)return gate;
     const bool verified=status_==QStringLiteral("READY_TO_INSTALL")
         ||status_==QStringLiteral("PRIVATE_INSTALLED");
     const bool measured=status_==QStringLiteral("MEASURED_NONCONFORMING_READY")
@@ -2563,6 +2645,8 @@ core::Status TerminalPrivateProductSession::suspend_for_comparison()
 
 core::Status TerminalPrivateProductSession::resume_comparison()
 {
+    if(const auto gate=admit_m18_private_mutation("comparison_resume");
+       !gate)return gate;
     if(!comparison_owners_current()||!rateProbe_)
         return core::Status::failure(rejected(
             "M17 comparison PCM, measured evidence or MANUAL owner became stale."));
@@ -2594,6 +2678,8 @@ core::Status TerminalPrivateProductSession::resume_comparison()
 
 core::Status TerminalPrivateProductSession::cancel()
 {
+    if(const auto gate=admit_m18_private_mutation("cancel");!gate)
+        return gate;
     if(installedMeasuredTicket_ ||measuredSourceRecovery_) {
         const auto returned=return_measured_device_audition();
         if(!returned)return returned;
@@ -2632,6 +2718,7 @@ core::Status TerminalPrivateProductSession::cancel()
 
 bool TerminalPrivateProductSession::adopt_pending_source_loop_without_rerender()
 {
+    if(!admit_m18_private_mutation("adopt_source_loop"))return false;
     if(monitorTransitioning_ ||returnRecovery_ ||installedMonitor_
        ||privateId_||!pending_
        ||!prepared_||!manual_||!manualId_||!sourceLoop_
@@ -2663,11 +2750,20 @@ void TerminalPrivateProductSession::cancel_pending_on_region_change()
 
 void TerminalPrivateProductSession::on_renderer_changed()
 {
-    // A measured anonymous Windows DEVICE lease is a separate owned
-    // transaction. Renderer notifications cannot revoke its return token.
-    if(installedMeasuredTicket_||measuredSourceRecovery_)return;
-    if(!pending_)return;
+    // In M18, a notification is not itself a Product mutation. Progress,
+    // idle/no-pending and measured-DEVICE notifications must not consume
+    // a new export epoch or withdraw an otherwise valid commit ticket.
+    // Enforce Qt affinity BEFORE reading any mutable Product/renderer state.
+    if(m18MutationAdmission_&&QThread::currentThread()!=thread())return;
+    if(installedMeasuredTicket_||measuredSourceRecovery_||!pending_)return;
     const QString state=renderer_->status();
+    if(state!=QStringLiteral("ERROR")
+       &&state!=QStringLiteral("STALE")
+       &&state!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")
+       &&state!=QStringLiteral("READY_PRIVATE"))return;
+    // Only an actionable state transition is a genuine Product write.
+    // A denied worker commit must leave Pending, stage and Qt unchanged.
+    if(!admit_m18_private_mutation("renderer_changed"))return;
     if(state==QStringLiteral("ERROR")) {
         // Never erase the diagnostic after a minutes-long Windows render:
         // e.g. M16 post-trim failure and verification-guard exceedance
@@ -2729,6 +2825,8 @@ core::Status TerminalPrivateProductSession::install_ready_private()
 
 core::Status TerminalPrivateProductSession::install_measured_private()
 {
+    if(const auto gate=admit_m18_private_mutation("install_measured");
+       !gate)return gate;
     if(!pending_||!pending_->deferred
        ||status_!=QStringLiteral("MEASURED_NONCONFORMING_READY")
        ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE"))
@@ -2765,6 +2863,8 @@ core::Status TerminalPrivateProductSession::install_measured_private()
 
 core::Status TerminalPrivateProductSession::install_accepted_candidate()
 {
+    if(const auto gate=admit_m18_private_mutation("install_accepted");
+       !gate)return gate;
     if(!pending_)return core::Status::failure(rejected(
         "M17 cannot install without captured owners."));
     const Pending authority=*pending_;

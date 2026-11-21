@@ -22,6 +22,8 @@
 #include "project_session_view_model.hpp"
 #include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "internal/m18_owner_source_snapshot.hpp"
+#include "internal/m21_product_qt_readiness_bridge.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
@@ -34,6 +36,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFont>
 #include <QGuiApplication>
 #include <QImage>
 #include <QLibraryInfo>
@@ -60,6 +63,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace rgsml::tests {
@@ -509,14 +513,47 @@ struct LayoutEvalResult {
 
 }  // namespace
 
+// Visual-only, fail-closed status fixture for screenshots of REAL Product
+// AnalysisStatusEditor pages inside the REAL Main/DspEditorHost. Never
+// authorizes numbers or substitutes for the canonical M21 Product owner.
+class UnavailableAnalysisVisualFixture final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(bool productionAuthorized READ productionAuthorized CONSTANT)
+    Q_PROPERTY(QVariantMap m19 READ m19 NOTIFY changed)
+    Q_PROPERTY(QVariantMap m20 READ m20 NOTIFY changed)
+    Q_PROPERTY(QVariantMap m21 READ m21 NOTIFY changed)
+public:
+    [[nodiscard]] bool productionAuthorized() const noexcept { return false; }
+    [[nodiscard]] QVariantMap unavailable() const {
+        return {{QStringLiteral("sourceRole"),QStringLiteral("PREPARED")},
+                {QStringLiteral("privateEvidenceStatus"),QStringLiteral("MISSING")}};
+    }
+    [[nodiscard]] QVariantMap m19() const { return unavailable(); }
+    [[nodiscard]] QVariantMap m20() const { return unavailable(); }
+    [[nodiscard]] QVariantMap m21() const { return unavailable(); }
+    Q_INVOKABLE bool selectPanelSource(int,const QString&) { return false; }
+signals:
+    void changed();
+};
+
 class SourceMetadataPanelSmokeTest final : public QObject {
     Q_OBJECT
 
 private slots:
     void childNameLookupVisitsQObjectOnce();
     void hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm();
+    void m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly();
+    void m21IdenticalReadinessFrameDoesNotRequireRepaint();
+    void m21ReadinessFrameDetectsProductMutation();
+    void m21ReadinessFrameDetectsPanelRoutingAndQuality();
+    void m21ReadinessFrameDetectsQualityWithoutNumbers();
+    void m21ReadinessFrameDetectsReferenceScope();
+    void m21ReadinessFrameDetectsProjectAndSourceGenerations();
+    void m21ReadinessFrameDetectsMasterRateIdentity();
+
     void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
+    void referenceTerminologyOnRealMain();
     void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
     void truePeakReadOnlyAnalysisVisualEvidence();
@@ -531,6 +568,220 @@ private slots:
 
 
 
+
+void SourceMetadataPanelSmokeTest::
+m21IdenticalReadinessFrameDoesNotRequireRepaint()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[0].insert(QStringLiteral("privateEvidenceStatus"),
+                       QStringLiteral("MISSING"));
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsProductMutation()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.owner_epoch=1;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_epoch=1;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.current_product_owner=true;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.current_product_owner=true;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].resource="independent-reference";
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1]=a.identities[1];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].generation=11;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].generation=11;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsPanelRoutingAndQuality()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    using Column=app::m21_private::Column;
+    Bridge::Frame a,b;
+    a.routing_revision=1;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.routing_revision=1;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.selected[2]=Column::gold;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.selected[2]=Column::gold;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[0].lifecycle=app::m21_private::Lifecycle::stale;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[0].lifecycle=app::m21_private::Lifecycle::stale;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[2].insert(QStringLiteral("privateQualityOnly"),
+                       QVariantMap{{QStringLiteral("lufs"),QStringLiteral("MISSING")}});
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[2]=a.panels[2];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsMasterRateIdentity()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.master_rate_hz=48000U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.master_rate_hz=48000U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.master_rate_revision=11;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.master_rate_revision=11;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.chain_revision=15;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.chain_revision=15;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsProjectAndSourceGenerations()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.owner_identity.project_generation=2;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.project_generation=2;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.source_generation=3;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.source_generation=3;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.owner_identity.master_generation=4;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.owner_identity.master_generation=4;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsReferenceScope()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.identities[1].scope="Full Track";
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].scope="Full Track";
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].sample_rate=44100U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].sample_rate=44100U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].frames=88200U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].frames=88200U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.identities[1].start=1234U;
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.identities[1].start=1234U;
+    QVERIFY(Bridge::same_visible_frame(a,b));
+}
+
+void SourceMetadataPanelSmokeTest::
+m21ReadinessFrameDetectsQualityWithoutNumbers()
+{
+    using Bridge=app::internal::M21ProductQtReadinessBridge;
+    Bridge::Frame a,b;
+    a.panels[0].insert(QStringLiteral("privateEvidenceStatus"),
+                       QStringLiteral("MISSING"));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[0].insert(QStringLiteral("privateEvidenceStatus"),
+                       QStringLiteral("STALE"));
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    a.panels[0].insert(QStringLiteral("privateQualityOnly"),
+                       QVariantMap{{QStringLiteral("lufs"),QStringLiteral("CURRENT")}});
+    QVERIFY(!Bridge::same_visible_frame(a,b));
+    b.panels[0]=a.panels[0];
+    QVERIFY(Bridge::same_visible_frame(a,b));
+    QVERIFY(!a.panels[0].contains(QStringLiteral("lufsNumeric")));
+}
+
+void SourceMetadataPanelSmokeTest::
+m18ProductSourceSnapshotIsCurrentAndOwnerThreadOnly()
+{
+    app::SourceSelectionViewModel source;
+    const auto missing=
+        app::internal::capture_m18_current_source_on_product_owner(source);
+    QVERIFY(!missing);
+    QCOMPARE(missing.error()->code(),core::ErrorCode::AccessDenied);
+
+    const auto bytes=valid_wav();
+    wav_support::Bytes binary;
+    binary.reserve(static_cast<std::size_t>(bytes.size()));
+    for(const auto octet:bytes)
+        binary.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(octet)));
+    auto control=std::make_shared<wav_support::ReaderControl>();
+    auto probed=audio::SourceResource::probe(
+        wav_support::memory_reader(std::move(binary),control));
+    QVERIFY(probed);
+    QVERIFY(source.adopt_probed_source(std::move(*probed.value())));
+    const auto* current=source.source_resource();
+    QVERIFY(current);
+    const auto exact=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(exact);
+    QVERIFY(exact.value()->same_resource_identity(current->reference()));
+    QVERIFY(exact.value()->permissions().can_read());
+    // A worker must not read a QObject-held current SOURCE. Thread
+    // affinity is checked before accessing even the source pointer.
+    bool rejectedWrongThread=false;
+    std::thread worker([&] {
+        const auto forbidden=app::internal::
+            capture_m18_current_source_on_product_owner(source);
+        rejectedWrongThread=!forbidden
+            &&forbidden.error()->code()==core::ErrorCode::InvalidState;
+    });
+    worker.join();
+    QVERIFY(rejectedWrongThread);
+    // The owner can still snapshot the same current SOURCE afterward.
+    const auto stillCurrent=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(stillCurrent);
+    QVERIFY(stillCurrent.value()->same_resource_identity(
+        current->reference()));
+
+    // Two real filesystem SOURCE selections with the exact same WAV
+    // format, frame count and samples are still different Product inputs.
+    // A bridge may never reuse a previous SOURCE snapshot by Fs alone.
+    QTemporaryDir directory;QVERIFY(directory.isValid());
+    const auto firstPath=write_file(
+        directory,QStringLiteral("m18-source-A.wav"),valid_wav());
+    const auto secondPath=write_file(
+        directory,QStringLiteral("m18-source-B.wav"),valid_wav());
+    QVERIFY(!firstPath.isEmpty()&&!secondPath.isEmpty());
+    source.selectSource(QUrl::fromLocalFile(firstPath));
+    QVERIFY(source.has_source());
+    const auto first=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(first);
+    source.selectSource(QUrl::fromLocalFile(secondPath));
+    QVERIFY(source.has_source());
+    const auto second=app::internal::
+        capture_m18_current_source_on_product_owner(source);
+    QVERIFY(second);
+    QVERIFY(!first.value()->same_resource_identity(*second.value()));
+    QVERIFY(second.value()->same_resource_identity(
+        source.source_resource()->reference()));
+}
 
 void SourceMetadataPanelSmokeTest::
 sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
@@ -558,11 +809,25 @@ sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
         auto found=audio::SourceResource::probe(
             wav_support::memory_reader(std::move(binary),control));
         if(!found)return false;
-        source.adopt_probed_source(std::move(*found.value()));
-        return source.has_source();
+        const auto adopted=source.adopt_probed_source(
+            std::move(*found.value()));
+        return static_cast<bool>(adopted)&&source.has_source();
     };
     QVERIFY(load());
     QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    // The direct probe-to-Source adoption seam (also used by Project open)
+    // must not bypass a worker-held M18 commit epoch.
+    std::size_t deniedSourceReplacements=0;
+    source.set_private_m18_source_mutation_admission(
+        [&](const char*)->core::Status {
+            ++deniedSourceReplacements;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"M18_SOURCE_BUSY_TEST"});
+        });
+    QVERIFY(!load());
+    QCOMPARE(deniedSourceReplacements,std::size_t{1});
+    QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    source.set_private_m18_source_mutation_admission({});
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};
     auto table=advisor.prepare_time_rows();
@@ -654,7 +919,7 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     auto probed=audio::SourceResource::probe(
         wav_support::memory_reader(std::move(binary),control));
     QVERIFY(probed);
-    source.adopt_probed_source(std::move(*probed.value()));
+    QVERIFY(source.adopt_probed_source(std::move(*probed.value())));
     QVERIFY(source.has_source());
     // RAM/DEVICE rows from an earlier SOURCE must be cleared as soon as
     // this real source is committed, even before a manual popup refresh.
@@ -748,7 +1013,7 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
         wav_support::memory_reader(
             std::move(replacement),replacementControl));
     QVERIFY(replacementSource);
-    source.adopt_probed_source(std::move(*replacementSource.value()));
+    QVERIFY(source.adopt_probed_source(std::move(*replacementSource.value())));
     QCOMPARE(adviceNotifications.count(),1); // second SOURCE, same geometry
     QCOMPARE(advisor.status_text(),
         QStringLiteral("SOURCE changed · refresh memory"));
@@ -1044,6 +1309,31 @@ Window {
             qPrintable(QStringLiteral("PO no-scroll: %1 editor bottom=%2 host height=%3")
                 .arg(QString::fromLatin1(fit.editor))
                 .arg(editorBottom.y()).arg(host->height())));
+        if (fit.index==3) {
+            // Compact Stereo well is now 4lp shorter, so check that all
+            // FIVE actual slider/field pairs still lie inside its border.
+            // Checking only the outer Rectangle would miss clipped
+            // controls after a cosmetic min-height reduction.
+            const std::array<const char*,5> names{{
+                "stereoMsWidthControl", "stereoMsCutoffControl",
+                "stereoMsLowWidthControl", "stereoMsMidGainControl",
+                "stereoMsSideGainControl"
+            }};
+            for(const auto* name:names) {
+                auto* control=qobject_cast<QQuickItem*>(find_child_by_name(
+                    editor,QString::fromLatin1(name)));
+                QVERIFY2(control,name);
+                const QPointF top=control->mapToItem(last,QPointF{0,0});
+                const QPointF bottom=control->mapToItem(
+                    last,QPointF{control->width(),control->height()});
+                QVERIFY2(control->width()>0 && control->height()>0
+                    && top.y()>=-1.5 && bottom.y()<=last->height()+1.5,
+                    qPrintable(QStringLiteral(
+                        "PO Stereo controls no-clip: %1 top=%2 bottom=%3 well=%4")
+                        .arg(QString::fromLatin1(name))
+                        .arg(top.y()).arg(bottom.y()).arg(last->height())));
+            }
+        }
         // Genuine Qt-rendered evidence of each REAL seven-adapter editor
         // at the 680x338 constrained host, in one native 1184x688 window.
         // Supporting fixture only: physical Main 150% gate stays PO-owned.
@@ -1095,7 +1385,7 @@ Window {
             // Real QtQuick fixture only; not the physical Main/150%-DPI Gate.
             auto* popup=find_child_by_name(host,QStringLiteral("m17RateTimePopup"));
             QVERIFY(popup);
-            // Rate & Time open/close is observational; no MASTER selection.
+            // WAV Export settings toggle is observational; no MASTER selection.
             const auto revisionBeforePopup=selectedMasterRate.rate_revision();
             const auto rateBeforePopup=selectedMasterRate.master_rate_hz();
             QSignalSpy popupRateChanges{&selectedMasterRate,
@@ -1108,11 +1398,18 @@ Window {
             QVERIFY(panel);
             QVERIFY2(check_item_contained_in_ancestor(panel,host,1.5),
                 "Rate/ETA overlay must fit compact 680x338 host");
-            // Clicking the SAME Rate & Time button while opened closes it;
+            // Clicking the SAME WAV Export button while opened closes it;
             // then a second click opens it again. X / Escape remain valid.
             auto* toggle=find_child_by_name(host,
                 QStringLiteral("m17RateAndTimesButton"));
             QVERIFY(toggle);
+            QCOMPARE(toggle->property("text").toString(),
+                QStringLiteral("WAV Export"));
+            auto* wavPanelTitle=find_child_by_name(
+                host,QStringLiteral("m17WavExportPanelTitle"));
+            QVERIFY(wavPanelTitle);
+            QCOMPARE(wavPanelTitle->property("text").toString(),
+                QStringLiteral("WAV EXPORT · RATE & TIME"));
             QVERIFY(!popup->property("modal").toBool());
             QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
             QTRY_VERIFY_WITH_TIMEOUT(!popup->property("opened").toBool(),2000);
@@ -1307,6 +1604,51 @@ Window {
     QVERIFY(!find_child_by_name(host,QStringLiteral("stereoMsViewport")));
     QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakMeterViewport")));
     QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakLimiterViewport")));
+    // PO 2026-11-19: the fixed 52px Chain tile must render TWO state
+    // lines without cropping, and a longer status must never shift its
+    // semantic title. Exercise the real Qt Text metrics at the 164px
+    // sidebar width, not just static QML source coordinates.
+    for(int i=0;i<7;++i) {
+        auto* row=qobject_cast<QQuickItem*>(find_child_by_name(
+            root.data(),QStringLiteral("dspChainRow_%1").arg(i)));
+        QVERIFY(row);
+        auto* title=qobject_cast<QQuickItem*>(find_child_by_name(
+            row,QStringLiteral("dspChainModuleTitle_%1").arg(i)));
+        auto* state=qobject_cast<QQuickItem*>(find_child_by_name(
+            row,QStringLiteral("dspChainStateText_%1").arg(i)));
+        QVERIFY(title &&state);
+        QCOMPARE(row->height(),52.0);
+        const auto titleTop=title->mapToItem(row,QPointF{}).y();
+        const auto stateTop=state->mapToItem(row,QPointF{}).y();
+        QVERIFY2(titleTop>=0 &&titleTop+title->height()<stateTop,
+            "Shared DSP Chain title and status must occupy independent tracks");
+        QVERIFY2(stateTop+state->height()<=row->height()+0.5,
+            "Shared DSP Chain status well must remain inside fixed row");
+        QVERIFY2(state->property("contentHeight").toReal()
+            <=state->height()+0.5,
+            "Shared DSP Chain must not clip any native default state text");
+    }
+    // Force the exact two-line STREAMING TP status reported physically,
+    // using the existing real Qt Text child (no DSP adapter mutation).
+    auto* testRow=qobject_cast<QQuickItem*>(find_child_by_name(
+        root.data(),QStringLiteral("dspChainRow_4")));
+    QVERIFY(testRow);
+    auto* testTitle=qobject_cast<QQuickItem*>(find_child_by_name(
+        testRow,QStringLiteral("dspChainModuleTitle_4")));
+    auto* testState=qobject_cast<QQuickItem*>(find_child_by_name(
+        testRow,QStringLiteral("dspChainStateText_4")));
+    QVERIFY(testTitle &&testState);
+    const auto frozenTitleY=testTitle->mapToItem(testRow,QPointF{}).y();
+    QVERIFY(testState->setProperty("text",QStringLiteral(
+        "READY · PROCESSED PCM\n(select to listen)")));
+    QCoreApplication::processEvents();
+    QCOMPARE(testState->property("lineCount").toInt(),2);
+    QVERIFY2(!testState->property("truncated").toBool(),
+        "Streaming TP second line must not be truncated");
+    QVERIFY2(testState->property("contentHeight").toReal()
+        <=testState->height()+0.5,
+        "Streaming TP second line must fit into the status text well");
+    QCOMPARE(testTitle->mapToItem(testRow,QPointF{}).y(),frozenTitleY);
     model.setSelectedIndex(0);
     window->close();
 }
@@ -1450,6 +1792,8 @@ Window {
     width: 640
     height: 460
     property bool detached: false
+    // A native Window may not be a QObject child if transientParent is
+    // intentionally null. The fixture still holds one editor and one Window.
 
     // A single persistent control created ONCE, never duplicated by Window.
     Rectangle {
@@ -1491,13 +1835,25 @@ Window {
     QVERIFY2(owned,qPrintable(component.errorString()));
     auto* dockWindow=qobject_cast<QQuickWindow*>(owned.data());
     QVERIFY(dockWindow);
+    // Real native Window has transientParent=null: Qt does not guarantee
+    // QObject::children() or a QML alias QVariant exposes it on Windows.
+    // Use QObject child lookup ONLY for rooted Items and the application
+    // native-window registry for the unique detached QQuickWindow.
     auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
         owned.data(),QStringLiteral("dockingProofRealEditor")));
-    auto* floating=qobject_cast<QQuickWindow*>(find_child_by_name(
-        owned.data(),QStringLiteral("dockingProofFloatingWindow")));
     auto* dockProxy=qobject_cast<QQuickItem*>(find_child_by_name(
         owned.data(),QStringLiteral("dockingProofDockProxy")));
-    QVERIFY(editor && floating && dockProxy);
+    QQuickWindow* floating=nullptr;
+    for(QWindow* candidate:QGuiApplication::allWindows()) {
+        if(candidate->objectName()==QStringLiteral("dockingProofFloatingWindow")) {
+            floating=qobject_cast<QQuickWindow*>(candidate);
+            if(floating)break;
+        }
+    }
+    QVERIFY2(editor,"The single QML-owned editor Item must exist");
+    QVERIFY2(floating,"The real floating QQuickWindow must be registered");
+    QVERIFY2(dockProxy,"The actual LayoutItemProxy must exist");
+    QVERIFY(floating!=dockWindow);
     dockWindow->show();
     QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
     QCOMPARE(editor->property("edits").toInt(),17);
@@ -1742,7 +2098,7 @@ Window {
     QVERIFY(window->setProperty("privateMonitorPreparing",false));
     QCoreApplication::processEvents();
     // PO FQ90: Prepare -> Cancel must occupy exactly the SAME physical
-    // RowLayout width, never moving Rate & Time during a long render.
+    // RowLayout width, never moving WAV Export during a long render.
     auto* prepareButton=find_child_by_name(
         host, QStringLiteral("m17PrepareButton"));
     auto* cancelButton=find_child_by_name(
@@ -1793,7 +2149,28 @@ Window {
             const auto m17Rect=hostRect(limiterEditor,sameAnchors[i]);
             QVERIFY2(!m16Rects[i].isEmpty() && !m17Rect.isEmpty(),
                      qPrintable(sameAnchors[i]));
-            QCOMPARE(m16Rects[i],m17Rect);
+            // Preserve exact physical-coordinate equality, with the
+            // specific rail/editor geometry available in a bounded failure.
+            auto* m16Rail=qobject_cast<QQuickItem*>(find_child_by_name(
+                meterEditor,QStringLiteral("truePeakMeterSharedRail")));
+            auto* m17Rail=qobject_cast<QQuickItem*>(find_child_by_name(
+                limiterEditor,QStringLiteral("truePeakMeterSharedRail")));
+            const QString tpParity=QStringLiteral(
+                "M16/M17 %1: M16=%2 M17=%3; editors %4x%5/%6x%7; rails %8x%9/%10x%11")
+                .arg(sameAnchors[i])
+                .arg(QStringLiteral("(%1,%2 %3x%4)")
+                    .arg(m16Rects[i].x()).arg(m16Rects[i].y())
+                    .arg(m16Rects[i].width()).arg(m16Rects[i].height()))
+                .arg(QStringLiteral("(%1,%2 %3x%4)")
+                    .arg(m17Rect.x()).arg(m17Rect.y())
+                    .arg(m17Rect.width()).arg(m17Rect.height()))
+                .arg(meterEditor->width()).arg(meterEditor->height())
+                .arg(limiterEditor->width()).arg(limiterEditor->height())
+                .arg(m16Rail ? m16Rail->width() : -1.0)
+                .arg(m16Rail ? m16Rail->x() : -1.0)
+                .arg(m17Rail ? m17Rail->width() : -1.0)
+                .arg(m17Rail ? m17Rail->x() : -1.0);
+            QVERIFY2(m16Rects[i]==m17Rect,qPrintable(tpParity));
         }
     }
     host->setHeight(652);
@@ -1890,6 +2267,10 @@ Window {
     objectName: "gateMParityFixture"
     property bool bypass: true
     property string validationMessage: ""
+    property real grFraction: -1
+    property string grScope: "SOURCE"
+    property bool badGrSeries: false
+    property bool nonConformingGr: false
     width: 1184
     height: 688
     visible: false
@@ -1909,6 +2290,23 @@ Window {
         property real ceilingDbTp: -1
         property string ceilingDbTpText: "-1.00"
     }
+    // Synthetic sampled MASTER only for UI geometry and cursor behavior.
+    // Its status cannot authenticate Windows output or M16 measurements.
+    QtObject {
+        id: grFixture
+        property bool offlineAvailable: true
+        property string offlineStatus: fixture.nonConformingGr
+            ? "OFFLINE · NON-CONFORMING · SAMPLED"
+            : "OFFLINE · VERIFIED MASTER · SAMPLED"
+        property var offlineSeries: fixture.badGrSeries
+            ? [{ peakReductionDb: 1, frameBegin: 1, frameEndExclusive: 25 }]
+            : [
+                { peakReductionDb: 0, frameBegin: 0, frameEndExclusive: 25 },
+                { peakReductionDb: 2, frameBegin: 25, frameEndExclusive: 50 },
+                { peakReductionDb: 5, frameBegin: 50, frameEndExclusive: 75 },
+                { peakReductionDb: 1, frameBegin: 75, frameEndExclusive: 100 }
+              ]
+    }
     Rectangle {
         id: surface
         objectName: "m17CandidateCaptureSurface"
@@ -1926,6 +2324,9 @@ Window {
             width: parent.width-474; height: parent.height-140
             limiterModule: fixture
             limiterViewModel: vm
+            limiterOfflineGrProvider: grFixture
+            grTimelineFraction: fixture.grFraction
+            grTimelineScope: fixture.grScope
         }
     }
 }
@@ -2028,10 +2429,148 @@ Window {
         QCoreApplication::processEvents();
         QCOMPARE(prepPlot->property("visible").toBool(),preparing);
         QCOMPARE(grPlot->property("visible").toBool(),!preparing);
-        QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
+        QVERIFY(!grPlot->property("backendVerified").isValid());
+        QVERIFY(!grPlot->property("verifiedSeriesAvailable").isValid());
     };
     expectSlot("NEEDS PREPARATION",false);
+    // A single OFFLINE graph: no legacy GR LIVE controls, no toggle.
+    QVERIFY(grPlot->property("offlineSeriesValid").toBool());
+    QVERIFY(!grPlot->property("offlineSeriesAvailable").toBool()); // BYPASS
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("bypass",false));
+    QCoreApplication::processEvents();
+    QVERIFY(grPlot->property("offlineSeriesAvailable").toBool());
+    for(const double fraction:{0.0,0.25,0.5,0.75,1.0}) {
+        QVERIFY(fixture->setProperty("grFraction",fraction));
+        QCoreApplication::processEvents();
+        QVERIFY(grPlot->property("playheadAvailable").toBool());
+        QCOMPARE(grPlot->property("timelineFraction").toDouble(),fraction);
+        QCOMPARE(grPlot->property("timelineScope").toString(),
+            QStringLiteral("SOURCE"));
+    }
+    // CI #1041 passed behavioral properties but the standard snapshot
+    // captured the BYPASS editor. Here genuinely paint the new graph at two
+    // playhead positions, retain bounded SYNTHETIC evidence (not a physical
+    // M17/Windows consumed-audio certificate), and prove the yellow cursor
+    // actually moved on the raster rather than only updating a QML property.
+    auto* grItem=qobject_cast<QQuickItem*>(grPlot);
+    QVERIFY(grItem && grItem->width()>68 && grItem->height()>=40);
+    const auto syntheticGrSnapshot=[&](double fraction,
+        const QString& name)->QImage {
+        if (!fixture->setProperty("grFraction",fraction)) return {};
+        QTest::qWait(130);
+        QCoreApplication::processEvents();
+        const auto grab=grItem->grabToImage();
+        if (!grab) return {};
+        QSignalSpy ready{grab.data(),&QQuickItemGrabResult::ready};
+        if (ready.empty() && !ready.wait(15000)) return {};
+        const auto image=grab->image();
+        const auto dir=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (!image.isNull()&&!dir.isEmpty()) {
+            if (!QDir{}.mkpath(dir)
+                ||!image.save(QDir{dir}.filePath(name),"PNG"))
+                return {};
+        }
+        return image;
+    };
+    const auto imageQuarter=syntheticGrSnapshot(0.25,
+        QStringLiteral("m17_gr_history_SYNTHETIC_cursor25.png"));
+    const auto imageThreeQuarter=syntheticGrSnapshot(0.75,
+        QStringLiteral("m17_gr_history_SYNTHETIC_cursor75.png"));
+    QVERIFY(!imageQuarter.isNull()&&!imageThreeQuarter.isNull());
+    QCOMPARE(imageQuarter.size(),imageThreeQuarter.size());
+    QVERIFY2(imageQuarter!=imageThreeQuarter,
+        "M17 OFFLINE GR cursor property moved but Canvas pixels did not");
+    // Review the actual whole M17 Qt editor, not just its 54-pixel GR
+    // ribbon. These are still SYNTHETIC waveform/GR test fixtures:
+    // never relabel them as real Windows playback or physical PO FQ.
+    // The same real QML editor instance must render the two positions.
+    const auto syntheticWholeM17=[&](double fraction,
+        const QString& name)->QImage {
+        if (!fixture->setProperty("grFraction",fraction)) return {};
+        QTest::qWait(160);
+        QCoreApplication::processEvents();
+        const auto grabbed=m17->grabToImage();
+        if(!grabbed)return {};
+        QSignalSpy ready{grabbed.data(),&QQuickItemGrabResult::ready};
+        if(ready.empty()&&!ready.wait(15000))return {};
+        const auto image=grabbed->image();
+        if(image.isNull()||image.width()<400||image.height()<200)
+            return {};
+        const auto folder=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if(!folder.isEmpty()) {
+            if(!QDir{}.mkpath(folder)
+               ||!image.save(QDir{folder}.filePath(name),"PNG"))
+                return {};
+        }
+        return image;
+    };
+    const auto wholeQuarter=syntheticWholeM17(
+        0.25,QStringLiteral("m17_gr_history_EDITOR_SYNTHETIC_cursor25.png"));
+    const auto wholeThreeQuarter=syntheticWholeM17(
+        0.75,QStringLiteral("m17_gr_history_EDITOR_SYNTHETIC_cursor75.png"));
+    QVERIFY(!wholeQuarter.isNull()&&!wholeThreeQuarter.isNull());
+    QCOMPARE(wholeQuarter.size(),wholeThreeQuarter.size());
+    QVERIFY2(wholeQuarter!=wholeThreeQuarter,
+        "M17 full editor raster failed to reflect GR playhead seek");
+    const auto cursorX=[&](const QImage& image)->double {
+        const double scale=double(image.width())/grItem->width();
+        const int y=std::clamp(int(std::round(4*scale)),0,image.height()-1);
+        int left=-1,right=-1;
+        for(int x=0;x<image.width();++x) {
+            const auto c=image.pixelColor(x,y);
+            if(c.red()>=215 && c.green()>=145
+                && c.green()<=218 && c.blue()<=105) {
+                if(left<0)left=x;
+                right=x;
+            }
+        }
+        return left<0 ? -1 : 0.5*(left+right)/scale;
+    };
+    const auto expectedX=[&](double fraction)->double {
+        return 6.0+(grItem->width()-40.0)*fraction;
+    };
+    QVERIFY2(std::abs(cursorX(imageQuarter)-expectedX(0.25))<=5.0,
+        "M17 rendered 25 percent cursor is not waveform-timeline aligned");
+    QVERIFY2(std::abs(cursorX(imageThreeQuarter)-expectedX(0.75))<=5.0,
+        "M17 rendered 75 percent cursor is not waveform-timeline aligned");
+
+    // Missing position/invalid scope never creates a false clock.
+    QVERIFY(fixture->setProperty("grFraction",-1.0));
+    QCoreApplication::processEvents();
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("grFraction",0.5));
+    QVERIFY(fixture->setProperty("grScope",QStringLiteral("MASTER")));
+    QCoreApplication::processEvents();
+    QVERIFY(grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("grScope",QString{}));
+    QCoreApplication::processEvents();
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("grScope",QStringLiteral("SOURCE")));
+    QVERIFY(fixture->setProperty("badGrSeries",true));
+    QCoreApplication::processEvents();
+    QVERIFY(!grPlot->property("offlineSeriesValid").toBool());
+    QVERIFY(!grPlot->property("offlineSeriesAvailable").toBool());
+    QVERIFY(!grPlot->property("playheadAvailable").toBool());
+    QVERIFY(fixture->setProperty("badGrSeries",false));
+    QVERIFY(fixture->setProperty("nonConformingGr",true));
+    QCoreApplication::processEvents();
+    QVERIFY(grPlot->property("offlineSeriesAvailable").toBool());
+    auto* grStatus=find_child_by_name(m17,
+        QStringLiteral("m17GrProvenanceStatus"));
+    QVERIFY(grStatus);
+    QCOMPARE(grStatus->property("text").toString(),
+        QStringLiteral("NON-CONFORMING"));
+    QVERIFY(fixture->setProperty("nonConformingGr",false));
+    QVERIFY(fixture->setProperty("grFraction",-1.0));
+    QVERIFY(fixture->setProperty("bypass",true));
+    QCoreApplication::processEvents();
     expectSlot("Preparing audio",true);
+    auto* renderHeading=find_child_by_name(
+        m17,QStringLiteral("m17GrHistoryHeading"));
+    QVERIFY(renderHeading);
+    QCOMPARE(renderHeading->property("text").toString(),
+        QStringLiteral("RENDERING"));
     auto* liveEta=find_child_by_name(
         m17,QStringLiteral("m17PreparationProgressLabel"));
     auto* liveProgress=find_child_by_name(
@@ -2307,7 +2846,7 @@ Window {
              && previewBadge && active && bypass && undo && redo,
              "M16 needs a real row/editor/cards in the standard DSP host");
     QCOMPARE(host->property("moduleTitle").toString(),
-             QStringLiteral("True Peak Meter"));
+             QStringLiteral("TP Meter"));
     QCOMPARE(host->property("moduleContext").toString(),
              QStringLiteral("Mastering"));
     QVERIFY2(meter->property("visible").toBool(),
@@ -2758,6 +3297,10 @@ Window {
 
     // The same REAL typed DSP can be enabled and re-bypassed. Its controls
     // and host do not shift; parameters, IDs and three predecessors persist.
+    // A grabbed Qt frame is not by itself a guarantee that every nested
+    // RowLayout has completed polish on the Windows offscreen backend.
+    QTRY_VERIFY_WITH_TIMEOUT(host->width()>0.0 && host->height()>0.0
+        && controls->width()>0.0 && controls->height()>0.0,5000);
     QVERIFY2(!window->grabWindow().isNull(), "M15 baseline render required");
     const QRectF hostBefore{host->mapToScene(QPointF{}), host->size()};
     const QRectF controlsBefore{controls->mapToScene(QPointF{}), controls->size()};
@@ -3406,6 +3949,108 @@ Window {
     QCoreApplication::processEvents();
 }
 
+// Dedicated PO terminology probe on actual Main.qml. Unlike the
+// historical full-window smoke, this test makes no docking/telemetry claims.
+void SourceMetadataPanelSmokeTest::referenceTerminologyOnRealMain()
+{
+    // Match the genuine application Main bootstrap instead of parsing
+    // the qrc:/Main.qml resource directly: Qt QML_ELEMENT types such as
+    // WaveformItem are registered by loadFromModule, not raw qrc loading.
+    // Only the initial read-only UI surface is exercised.
+    auto playbackService=std::make_unique<FakePlaybackService>();
+    app::PlaybackTransportViewModel playbackTransport{std::move(playbackService)};
+    app::SourceSelectionViewModel sourceSelection;
+    ui::WaveformPresentation waveformPresentation;
+    app::AuditionRegionViewModel auditionRegion{&playbackTransport};
+    app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    auto modules=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(modules);
+    const auto chainUuid=*core::Uuid::parse(
+        "11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid=*core::Uuid::parse(
+        "22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid=*core::Uuid::parse(
+        "33333333-3333-3333-3333-333333333333").value();
+    const auto compUuid=*core::Uuid::parse(
+        "44444444-4444-4444-4444-444444444444").value();
+    const auto gainId=*dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId=*dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    const auto compId=*dsp::ModuleInstanceId::from_uuid(compUuid).value();
+    auto createdChain=app::MasteringChainState::create_default(
+        *modules.value(),chainUuid,gainId,eqId,compId);
+    QVERIFY(createdChain);
+    auto chain=std::move(*createdChain.value());
+    app::MasteringPreviewController preview{
+        &chain,
+        [&auditionSelector] {
+            return auditionSelector.prepared_realization_snapshot();
+        },
+        [&auditionSelector](render::RenderResult result) {
+            return auditionSelector.set_processed_realization(
+                std::move(result));
+        }
+    };
+    app::GainViewModel gain{&chain,&preview};
+    app::EqViewModel eq{&chain,&preview};
+    app::CompressorViewModel compressor{&chain,&preview};
+    app::StereoMsViewModel stereo{&chain,&preview};
+    app::DspChainAdapterModel dspAdapters{
+        &gain,&eq,&compressor,&chain,QStringLiteral("Mastering"),
+        nullptr,&stereo};
+    app::GoldSelectionViewModel goldSelection{&auditionSelector};
+    app::ProjectSessionViewModel projectSession{
+        &sourceSelection,&goldSelection,&auditionRegion,&playbackTransport};
+    analysis::LiveSpectrumAnalyzer spectrumAnalyzer;
+    spectrumAnalyzer.start();
+    app::LiveSpectrumViewModel spectrum{&spectrumAnalyzer};
+    QQmlApplicationEngine engine;
+    engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    auto* context=engine.rootContext();
+    context->setContextProperty("sourceSelection",&sourceSelection);
+    context->setContextProperty("playbackTransport",&playbackTransport);
+    context->setContextProperty("sourceWaveform",&waveformPresentation);
+    context->setContextProperty("auditionRegion",&auditionRegion);
+    context->setContextProperty("auditionSelector",&auditionSelector);
+    context->setContextProperty("goldSelection",&goldSelection);
+    context->setContextProperty("projectSession",&projectSession);
+    context->setContextProperty("gainViewModel",&gain);
+    context->setContextProperty("eqViewModel",&eq);
+    context->setContextProperty("compressorViewModel",&compressor);
+    context->setContextProperty("dspChainAdapterModel",&dspAdapters);
+    context->setContextProperty("liveSpectrumViewModel",&spectrum);
+    context->setContextProperty(
+        "buildProvenance",app::configured_build_provenance());
+    // Canonical Qt QML module registration, exactly like app/src/main.cpp.
+    engine.loadFromModule("Rgsml.Ui","Main");
+    QCOMPARE(engine.rootObjects().size(),1);
+    auto* root=engine.rootObjects().front();
+    QVERIFY(qobject_cast<QQuickWindow*>(root));
+    QCoreApplication::processEvents();
+    const auto checkLabel=[&](const char* objectName,const char* expected) {
+        auto* item=root->findChild<QObject*>(
+            QString::fromLatin1(objectName));
+        return item&&item->property("text").toString()
+            ==QString::fromLatin1(expected);
+    };
+    QVERIFY2(checkLabel("menuOpenGold","Open Reference"),
+        "Real Main file menu must show Open Reference");
+    QVERIFY2(checkLabel("menuOpenSource","Open Source\tCtrl+O"),
+        "File menu must show Open Source while no SOURCE is installed");
+    auto* openSourceShortcut=root->findChild<QObject*>(
+        QStringLiteral("sourceLoadShortcut"));
+    QVERIFY2(openSourceShortcut,"Ctrl+O must have a real Shortcut object");
+    QCOMPARE(openSourceShortcut->property("sequence").toString(),
+             QStringLiteral("Ctrl+O"));
+    QVERIFY(openSourceShortcut->property("enabled").toBool());
+    QVERIFY2(checkLabel("menuClearGold","Clear Reference"),
+        "Real Main file menu must show Clear Reference");
+    QVERIFY2(checkLabel("adaptiveModeToggle_Gold","Reference / AutoMatch"),
+        "Real Main tab must show Reference / AutoMatch");
+    QVERIFY2(checkLabel("auditionGoldButton","REFERENCE"),
+        "Real Main audition control must show REFERENCE");
+    qobject_cast<QQuickWindow*>(root)->close();
+}
+
 void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 {
     auto playbackService = std::make_unique<FakePlaybackService>();
@@ -3415,7 +4060,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     app::SourceSelectionViewModel model;
     model.set_playback_transport(&playbackTransport);
     ui::WaveformPresentation waveformPresentation;
+    ui::WaveformPresentation referenceWaveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
+    app::AuditionRegionViewModel referenceRegion{&playbackTransport,nullptr,true};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
 
     auto moduleRegistry = dsp::ModuleRegistry::create_dsp_package_v1();
@@ -3542,8 +4189,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         [&waveformPresentation, &auditionRegion] {
             waveformPresentation.set_displayed_region(auditionRegion.region());
         });
+    // Product screenshots use the real Main/QML/module adapter paths,
+    // but a deliberately NON-AUTHORIZING status object and no fake numbers.
+    UnavailableAnalysisVisualFixture unavailableAnalysisFixture;
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m21ProductStatusViewModel"),&unavailableAnalysisFixture);
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"), &model);
     engine.rootContext()->setContextProperty(
@@ -3551,7 +4203,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceWaveform"), &waveformPresentation);
     engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceWaveform"), &referenceWaveformPresentation);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"), &auditionRegion);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("referenceRegion"), &referenceRegion);
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionSelector"), &auditionSelector);
     engine.rootContext()->setContextProperty(
@@ -3928,6 +4584,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(sourcePanel);
     QCOMPARE(sourceOpen->property("height").toInt(), 32);
     QCOMPARE(sourceOpen->property("width").toInt(), 110);
+    // Both independently selected WAVs have first-class adjacent load actions.
+    auto* referenceOpen = root->findChild<QObject*>(
+        QStringLiteral("referenceOpenButton"));
+    QVERIFY2(referenceOpen, "Compact layout must expose Open/Replace Reference next to Source");
+    QCOMPARE(referenceOpen->property("height").toInt(), 32);
+    QVERIFY(referenceOpen->property("width").toInt() >= 150);
+    QCOMPARE(referenceOpen->property("text").toString(),
+             QStringLiteral("Open Reference"));
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFileDialog")));
     QVERIFY2((window->flags() & Qt::FramelessWindowHint) == 0, "Main window must NOT be frameless (native windowing model)");
     const auto itemCenter = [](QObject* object) {
@@ -3974,7 +4638,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!preparedTarget->property("enabled").toBool());
     QVERIFY(!processedTarget->property("enabled").toBool());
     QVERIFY(!goldTarget->property("enabled").toBool());
-    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Gold: not loaded"));
+    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Reference: not loaded"));
+    QCOMPARE(goldTarget->property("text").toString(),QStringLiteral("REFERENCE"));
+    QVERIFY2(goldTarget->property("implicitWidth").toReal()>=112,
+             "REFERENCE must fit in the actual audition button without elision");
+    auto* referenceContextTab = root->findChild<QObject*>(
+        QStringLiteral("adaptiveModeToggle_Gold")); // internal ID unchanged
+    QVERIFY(referenceContextTab);
+    QCOMPARE(referenceContextTab->property("text").toString(),
+             QStringLiteral("Reference / AutoMatch"));
+    QVERIFY2(referenceContextTab->property("implicitWidth").toReal()>=166,
+             "Reference/AutoMatch needs enough width at minimum UI scale");
+    auto* referenceStatus = root->findChild<QObject*>(
+        QStringLiteral("goldReferenceStatus")); // internal ID unchanged
+    QVERIFY(referenceStatus);
+    QCOMPARE(referenceStatus->property("text").toString(),
+             QStringLiteral("NO REFERENCE LOADED"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
     auto* waveformPanel = root->findChild<QObject*>(
@@ -4085,6 +4764,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(goldMenuItem && goldFileDialog);
     QVERIFY(goldMenuItem->property("enabled").toBool());
     QVERIFY(goldMenuItem->width() > 0);
+    QCOMPARE(goldMenuItem->property("text").toString(),
+             QStringLiteral("Open Reference"));
+    QCOMPARE(goldFileDialog->property("title").toString(),
+             QStringLiteral("Open Reference WAV"));
+    auto* clearReferenceItem = root->findChild<QObject*>(
+        QStringLiteral("menuClearGold")); // stable internal object name
+    QVERIFY(clearReferenceItem);
+    QCOMPARE(clearReferenceItem->property("text").toString(),
+             QStringLiteral("Clear Reference"));
     auto* gainMenuItem = root->findChild<QObject*>(
         QStringLiteral("menuViewInputGain"));
     auto* eqMenuItem = root->findChild<QObject*>(
@@ -4232,6 +4920,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         directory, QStringLiteral("UI Source.wav"), valid_wav());
     model.selectSource(QUrl::fromLocalFile(validPath));
     QCoreApplication::processEvents();
+    auto* sourceMenuAfterLoad=root->findChild<QObject*>(
+        QStringLiteral("menuOpenSource"));
+    auto* sourceDialogAfterLoad=root->findChild<QObject*>(
+        QStringLiteral("sourceFileDialog"));
+    QVERIFY(sourceMenuAfterLoad &&sourceDialogAfterLoad);
+    QCOMPARE(sourceMenuAfterLoad->property("text").toString(),
+             QStringLiteral("Replace Source\tCtrl+O"));
+    QCOMPARE(sourceDialogAfterLoad->property("title").toString(),
+             QStringLiteral("Replace Source WAV"));
     QVERIFY(saveProjectItem->property("enabled").toBool());
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
@@ -4809,8 +5506,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!gainHostRedoBtn->property("enabled").toBool());
     QCOMPARE(dspHostModuleTitleItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), moduleTitlePosGain);
     QCOMPARE(dspHostWorkflowContextItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), workflowContextPosGain);
-    QCOMPARE(gainHostUndoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), undoPosGain);
-    QCOMPARE(gainHostRedoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), redoPosGain);
+    const QPointF undoPosEq=gainHostUndoItem->mapToItem(
+        dspEditorHostItem,QPointF{0.0,0.0});
+    const QPointF redoPosEq=gainHostRedoItem->mapToItem(
+        dspEditorHostItem,QPointF{0.0,0.0});
+    const QString headerParity=QStringLiteral(
+        "M12C host header: Undo %1->%2, Redo %3->%4, host width=%5, title width=%6")
+        .arg(QStringLiteral("(%1,%2)").arg(undoPosGain.x()).arg(undoPosGain.y()))
+        .arg(QStringLiteral("(%1,%2)").arg(undoPosEq.x()).arg(undoPosEq.y()))
+        .arg(QStringLiteral("(%1,%2)").arg(redoPosGain.x()).arg(redoPosGain.y()))
+        .arg(QStringLiteral("(%1,%2)").arg(redoPosEq.x()).arg(redoPosEq.y()))
+        .arg(dspEditorHostItem->width())
+        .arg(dspHostModuleTitleItem->width());
+    QVERIFY2(undoPosEq==undoPosGain,qPrintable(headerParity));
+    QVERIFY2(redoPosEq==redoPosGain,qPrintable(headerParity));
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
@@ -4850,6 +5559,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(chainEqIcon->opacity(), 1.0);
     QVERIFY2(chainEqIcon->property("glowEnabled").toBool(),
              "Manual EQ must glow while its family hue and 16px slot remain unchanged");
+    QCOMPARE(chainEqIcon->property("glowBlur").toDouble(),10.0);
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
     QVERIFY(gainHostUndoBtn->property("enabled").toBool());
@@ -5092,6 +5802,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow1->property("isBypassed").toBool(), "EQ chain row must reflect bypass without a badge");
     QVERIFY2(!chainEqIcon->property("glowEnabled").toBool(),
              "Bypassed Manual must keep configuration but extinguish its light");
+    QCOMPARE(chainEqIcon->property("glowBlur").toDouble(),0.0);
     QCOMPARE(chainEqIcon->width(),16.0);
     QCOMPARE(chainEqIcon->mapToItem(
         qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x(),eqIconXBefore);
@@ -5376,8 +6087,63 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "compactBottomRight must stay inside compactBottomSplit at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(dspEditorHostNative, compactBottomRightNative),
         "dspEditorHost must stay inside compactBottomRight at minimum size");
+    // The LayoutItemProxy and its nested ColumnLayout schedule polish
+    // asynchronously after the native window/proxy is resized. The same
+    // containment invariant MUST hold after at most 2.5s of ordinary Qt
+    // event-loop/frame progression. No UI property is changed by this test.
+    const QSizeF eqSizeBeforePolish=eqEditorNative->size();
+    int eqPolishIterations=0;
+    while(!check_item_contained_in_ancestor(eqEditorNative,dspEditorHostNative)
+          && eqPolishIterations<50) {
+        window->requestUpdate();
+        QTest::qWait(50);
+        QCoreApplication::processEvents();
+        ++eqPolishIterations;
+    }
+    // Native Qt min-window diagnostic: report BOTH layout and scenegraph
+    // coordinates if the original exact containment assertion fails.
+    // This does not change the accepted geometry or weaken the gate.
+    const QPointF eqOriginInHost=eqEditorNative->mapToItem(
+        dspEditorHostNative,QPointF{});
+    const QPointF hostOriginInProxy=dspEditorHostNative->mapToItem(
+        compactBottomRightNative,QPointF{});
+    auto* eqParentItem=eqEditorNative->parentItem();
+    const QString eqContainmentEvidence=QStringLiteral(
+        "FQ99 frozen EQ containment: editor (%1,%2) %3x%4, "
+        "host %5x%6, host-in-proxy (%7,%8), proxy %9x%10, "
+        "editor visible=%11, parent=%12, Main=%13x%14, module-index=%15, "
+        "before-event-pump=%16x%17, extra-frame-iterations=%18")
+        .arg(eqOriginInHost.x()).arg(eqOriginInHost.y())
+        .arg(eqEditorNative->width()).arg(eqEditorNative->height())
+        .arg(dspEditorHostNative->width()).arg(dspEditorHostNative->height())
+        .arg(hostOriginInProxy.x()).arg(hostOriginInProxy.y())
+        .arg(compactBottomRightNative->width())
+        .arg(compactBottomRightNative->height())
+        .arg(eqEditorNative->isVisible() ? QStringLiteral("yes") : QStringLiteral("no"))
+        .arg(eqParentItem ? eqParentItem->objectName() : QStringLiteral("none"))
+        .arg(window->width()).arg(window->height())
+        .arg(dspWorkspaceObj->property("selectedModuleIndex").toInt())
+        .arg(eqSizeBeforePolish.width()).arg(eqSizeBeforePolish.height())
+        .arg(eqPolishIterations);
     QVERIFY2(check_item_contained_in_ancestor(eqEditorNative, dspEditorHostNative),
-        "parametricEqEditor must stay inside dspEditorHost at minimum size");
+        qPrintable(eqContainmentEvidence));
+    // New M19/M20/M21 views persist as peer children of the same qualified
+    // ColumnLayout; on legacy EQ selection they are truly invisible and
+    // cannot steal its geometry or receive input. No factory/destroy cycle.
+    for (const auto& analysisName : {
+             QStringLiteral("m19LevelProductAnalysisEditor"),
+             QStringLiteral("m20TonalStereoProductAnalysisEditor"),
+             QStringLiteral("m21MetricsDeltaProductAnalysisEditor")}) {
+        auto* analysisPage=qobject_cast<QQuickItem*>(
+            find_child_by_name(dspEditorHostObj,analysisName));
+        QVERIFY2(analysisPage!=nullptr,
+            qPrintable(analysisName+QStringLiteral(" persistent page must exist")));
+        QCOMPARE(analysisPage->parentItem(),eqEditorNative->parentItem());
+        QVERIFY2(!analysisPage->isVisible(),
+            qPrintable(analysisName+QStringLiteral(" must be hidden for EQ")));
+        QVERIFY2(!analysisPage->isEnabled(),
+            qPrintable(analysisName+QStringLiteral(" must not accept EQ input")));
+    }
     QVERIFY2(check_item_contained_in_ancestor(dspChainSelectorNative, compactBottomSplitNative),
         "DSP Chain selector must stay inside compactBottomSplit at minimum size");
 
@@ -5389,6 +6155,38 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             qPrintable(name + QStringLiteral(" must stay inside dspEditorHost at minimum size")));
     }
 
+    // Preserve the FQ-qualified single-row EQ toolbar and six unchanged
+    // controls. Verify their actual geometry in the native product minimum,
+    // never presume that an offscreen software renderer is equivalent.
+    auto* eqToolbarNative=qobject_cast<QQuickItem*>(
+        find_child_by_name(eqEditor,QStringLiteral("eqTopToolbarRegion")));
+    QVERIFY2(eqToolbarNative,"The real EQ toolbar must exist at minimum size");
+    QVERIFY2(check_item_contained_in_ancestor(eqToolbarNative,eqEditorNative),
+             "FQ99 single-row EQ toolbar must stay within the editor");
+    for(const auto& controlName:{
+            QStringLiteral("bandEnabledToggle"),
+            QStringLiteral("eqResetFlatButton"),
+            QStringLiteral("eqOverallToggleButton"),
+            QStringLiteral("eqSpectrumToggleButton"),
+            QStringLiteral("addBandButton"),
+            QStringLiteral("removeBandButton")}) {
+        auto* control=qobject_cast<QQuickItem*>(
+            find_child_by_name(eqEditor,controlName));
+        QVERIFY2(control,qPrintable(controlName));
+        const QPointF origin=control->mapToItem(eqEditorNative,QPointF{});
+        const QString bounds=QStringLiteral(
+            "%1 at (%2,%3) size %4x%5; editor %6x%7; toolbar %8x%9")
+            .arg(controlName)
+            .arg(origin.x()).arg(origin.y())
+            .arg(control->width()).arg(control->height())
+            .arg(eqEditorNative->width()).arg(eqEditorNative->height())
+            .arg(eqToolbarNative->width()).arg(eqToolbarNative->height());
+        QVERIFY2(control->isVisible(),qPrintable(bounds));
+        QVERIFY2(check_item_contained_in_ancestor(control,eqToolbarNative),
+                 qPrintable(bounds));
+        QVERIFY2(check_item_contained_in_ancestor(control,eqEditorNative),
+                 qPrintable(bounds));
+    }
     QVERIFY2(check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(addBandBtn), eqEditorNative),
         "Add Band must stay inside Parametric EQ editor at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(removeBandBtn), eqEditorNative),
@@ -5834,11 +6632,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Presentation seam must freeze, not fabricate, outside active wet
     // audition. Stage 3B2 owns the canonical state transitions.
     observedPlayback->state = core::PlaybackState::PAUSED;
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(
+    // Compressor telemetry is resolved on the real 33 ms Qt timer.
+    // A fixed 50 ms wait can miss one tick on loaded Windows runners,
+    // leaving the previous ACTIVE WET presentation cached. Require the
+    // SAME truthful PAUSED state and unchanged history, but allow bounded
+    // event-loop convergence (as for the PREPARED and BYPASS gates below).
+    QTRY_COMPARE_WITH_TIMEOUT(
         compressorViewModel.telemetry_status(),
-        QStringLiteral("PAUSED"));
+        QStringLiteral("PAUSED"),
+        1000);
     QCOMPARE(
         compressorViewModel.telemetry_history_lanes(),
         liveHistory);
@@ -5846,11 +6648,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     observedPlayback->state = core::PlaybackState::PLAYING;
     QVERIFY(auditionSelector.switch_to(
         app::AuditionTarget::PREPARED));
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(
+    // The resolver is refreshed by a 33 ms Qt timer. A fixed 50 ms
+    // sleep may not include even one timer tick on a loaded Windows CI
+    // runner, retaining the prior PAUSED status (#1069). Require the
+    // SAME strict NOT AUDITIONED state, but allow bounded convergence.
+    QTRY_COMPARE_WITH_TIMEOUT(
         compressorViewModel.telemetry_status(),
-        QStringLiteral("NOT AUDITIONED"));
+        QStringLiteral("NOT AUDITIONED"),
+        1000);
     QCOMPARE(
         compressorViewModel.telemetry_history_lanes(),
         liveHistory);
@@ -6292,6 +7097,387 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* m17ReturnAction=find_child_by_name(root,
         QStringLiteral("m17ReturnSourceButton"));
     QVERIFY(m17MasterAction && m17ReturnAction);
+
+    // Genuine Main/DspEditorHost integration review, NOT the old demo
+    // workbench: add all three genuine analysis adapters only AFTER the
+    // FQ99-qualified legacy test sequence has finished. No DSP mutation.
+    dspChainAdapterModel.bindAnalysisStatusViewModel(&unavailableAnalysisFixture);
+    QCoreApplication::processEvents();
+    const std::array<QString,3> analysisKeys{
+        QStringLiteral("M19_ANALYSIS"),QStringLiteral("M20_ANALYSIS"),
+        QStringLiteral("M21_ANALYSIS")};
+    const std::array<QString,3> analysisInstanceIds{
+        QStringLiteral("analysis:rgsml.m19"),
+        QStringLiteral("analysis:rgsml.m20"),
+        QStringLiteral("analysis:rgsml.m21")};
+    const std::array<QString,3> analysisQmlNames{
+        QStringLiteral("m19LevelProductAnalysisEditor"),
+        QStringLiteral("m20TonalStereoProductAnalysisEditor"),
+        QStringLiteral("m21MetricsDeltaProductAnalysisEditor")};
+    const std::array<QString,3> screenshotStems{
+        QStringLiteral("m19-levels"),QStringLiteral("m20-tonal-stereo"),
+        QStringLiteral("m21-metrics-delta")};
+    std::array<QQuickItem*,3> originalPages{};
+    for(int i=0;i<3;++i) {
+        originalPages[static_cast<std::size_t>(i)] =
+            qobject_cast<QQuickItem*>(
+                find_child_by_name(dspEditorHostObj,analysisQmlNames[static_cast<std::size_t>(i)]));
+        QVERIFY2(originalPages[static_cast<std::size_t>(i)]!=nullptr,
+            "Permanent Product analysis page not found in real Main");
+    }
+    for(int i=0;i<3;++i) {
+        const auto index=static_cast<std::size_t>(i);
+        dspChainAdapterModel.selectModuleByInstanceId(analysisInstanceIds[index]);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            dspChainAdapterModel.selected_module()!=nullptr
+                && dspChainAdapterModel.selected_module()->editor_content_key()
+                    ==analysisKeys[index],5000);
+        // Three analysis kinds now share the ACTUAL StudioIcon Canvas
+        // that paints TP Meter, in the same fixed 16px Chain slot.
+        // No Shapes/PathSvg child or second halo renderer is permitted.
+        const std::array<QString,3> analysisIconKinds{
+            QStringLiteral("analysis-levels"),
+            QStringLiteral("analysis-spectrum"),
+            QStringLiteral("analysis-delta")};
+        const int iconRowIndex=dspChainAdapterModel.selected_index();
+        QVERIFY2(iconRowIndex>=0,"Selected Product analysis index invalid");
+        const auto iconName=QStringLiteral("dspChainModuleIcon_%1")
+            .arg(iconRowIndex);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            find_child_by_name(root,iconName)!=nullptr,5000);
+        auto* analysisIcon=qobject_cast<QQuickItem*>(
+            find_child_by_name(root,iconName));
+        QVERIFY2(analysisIcon,"Selected analysis StudioIcon Canvas missing");
+        QCOMPARE(analysisIcon->property("kind").toString(),analysisIconKinds[index]);
+        QVERIFY2(analysisIcon->property("glowEnabled").toBool(),
+                 "Permanent analysis module must retain TP Meter halo");
+        QCOMPARE(analysisIcon->property("glowBlur").toDouble(),10.0);
+        QCOMPARE(analysisIcon->property("opacity").toDouble(),1.0);
+        QVERIFY2(analysisIcon->isVisible(),"Selected Canvas icon must be visible");
+        QTRY_COMPARE_WITH_TIMEOUT(qRound(analysisIcon->width()),16,5000);
+        QTRY_COMPARE_WITH_TIMEOUT(qRound(analysisIcon->height()),16,5000);
+        QVERIFY2(!find_child_by_name(root,
+            QStringLiteral("dspChainAnalysisVectorIcon_%1").arg(iconRowIndex)),
+            "Obsolete overlapping analysis Shape renderer must be absent");
+        QTRY_VERIFY_WITH_TIMEOUT(originalPages[index]->isVisible(),5000);
+        QVERIFY(originalPages[index]->isEnabled());
+        QCOMPARE(originalPages[index]->property("authorized").toBool(),false);
+        QCOMPARE(originalPages[index]->property("lifecycle").toString(),
+                 QStringLiteral("MISSING"));
+        // Approved PO visuals are now in the genuine permanent Main pages.
+        const std::array<QString,3> landmarks{
+            QStringLiteral("m19MetricValue_lufs"),
+            QStringLiteral("m20WorkbenchSpectrum"),
+            QStringLiteral("m21MissingComparisonNotice")};
+        QVERIFY2(find_child_by_name(originalPages[index],landmarks[index]),
+                 "Missing approved individual analysis visual landmark");
+        // The per-panel selected SOURCE must follow the global physical
+        // audition sequence, without reordering core Column identities.
+        const std::array<QString,3> orderedRoles{
+            QStringLiteral("PREPARED"),
+            QStringLiteral("PROCESSED"),
+            QStringLiteral("REFERENCE")};
+        // M19/M20 selectors belong to the existing canonical HOST header.
+        // M21 presents all three columns simultaneously; a selector would
+        // be misleading and must not be visible.
+        for(int roleIndex=0;roleIndex<3;++roleIndex) {
+            auto* choice=find_child_by_name(dspEditorHostObj,
+                QStringLiteral("analysisSourceOption_%1").arg(roleIndex));
+            QVERIFY2(choice,"Missing real host-level analysis source selector");
+            QCOMPARE(choice->property("text").toString(),
+                orderedRoles[static_cast<std::size_t>(roleIndex)]);
+            auto* choiceItem=qobject_cast<QQuickItem*>(choice);
+            QVERIFY2(choiceItem,"Analysis source selector must be a real QQuickItem");
+            QCOMPARE(choiceItem->isVisible(),index<2);
+        }
+        if(i==0) {
+            for(const auto& key:std::array<QString,5>{
+                QStringLiteral("lufs"),QStringLiteral("rms"),
+                QStringLiteral("samplePeak"),QStringLiteral("truePeak"),
+                QStringLiteral("crest")}) {
+                auto* field=find_child_by_name(originalPages[index],
+                    QStringLiteral("m19MetricValue_")+key);
+                QVERIFY2(field,"Missing Input Gain-style M19 metric tile");
+                QCOMPARE(field->property("heroReadout").toBool(),true);
+                QCOMPARE(field->property("numericPixelSize").toInt(),36);
+                QCOMPARE(field->property("readOnly").toBool(),true);
+                QCOMPARE(field->property("dataAvailable").toBool(),false);
+            }
+        } else if(i==1) {
+            auto* width=find_child_by_name(originalPages[index],
+                QStringLiteral("m20StereoWidthReadout"));
+            QVERIFY2(width,"Missing M20 stereo width");
+            QCOMPARE(width->property("numericPixelSize").toInt(),13);
+            QCOMPARE(width->property("dataAvailable").toBool(),false);
+            QVERIFY(find_child_by_name(originalPages[index],
+                QStringLiteral("m20MissingProfileNotice")));
+            // Axis ticks share the exact logarithmic frequency mapping
+            // with the 20..20000 Hz Canvas, including endpoints.
+            const std::array<QString,5> tickLabels{
+                QStringLiteral("20 Hz"),QStringLiteral("100 Hz"),
+                QStringLiteral("1 kHz"),QStringLiteral("10 kHz"),
+                QStringLiteral("20 kHz")};
+            for(int tick=0;tick<5;++tick) {
+                auto* tickItem=find_child_by_name(originalPages[index],
+                    QStringLiteral("m20FrequencyTick_%1").arg(tick));
+                QVERIFY2(tickItem,"Missing M20 logarithmic frequency tick");
+                QCOMPARE(tickItem->property("text").toString(),
+                    tickLabels[static_cast<std::size_t>(tick)]);
+            }
+        } else {
+            for(int row=0;row<9;++row) {
+                QVERIFY2(find_child_by_name(originalPages[index],
+                    QStringLiteral("m21MetricRow_%1").arg(row)),
+                    "Missing one of the nine approved M21 metric rows");
+                for(int deltaColumn=4;deltaColumn<=5;++deltaColumn) {
+                    const auto barName=QStringLiteral("m21DeltaBar_%1_%2")
+                        .arg(row).arg(deltaColumn);
+                    const auto numberName=QStringLiteral("m21NumericCell_%1_%2")
+                        .arg(row).arg(deltaColumn);
+                    auto* bar=qobject_cast<QQuickItem*>(
+                        find_child_by_name(originalPages[index],barName));
+                    auto* number=qobject_cast<QQuickItem*>(
+                        find_child_by_name(originalPages[index],numberName));
+                    QVERIFY2(bar && number,
+                        "M21 delta must retain numeric value and graph peers");
+                    QVERIFY2(!bar->isVisible(),
+                        "Unavailable Product delta must never display bar");
+                    QCOMPARE(number->property("text").toString(),
+                        QStringLiteral("—"));
+                    QVERIFY2(bar->width()<=44.1 && bar->height()<=8.1,
+                        "M21 bar must remain visibly subordinate to number");
+                }
+            }
+        }
+        QCOMPARE(originalPages[index]->parentItem(),
+                 originalPages[0]->parentItem());
+        for(int j=0;j<3;++j) {
+            if(i==j)continue;
+            const auto other=static_cast<std::size_t>(j);
+            QVERIFY2(!originalPages[other]->isVisible(),
+                "Unselected permanent analysis page must remain hidden");
+            QVERIFY(!originalPages[other]->isEnabled());
+        }
+        QPointF firstAnalysisAnchor;
+        qreal priorSpectrumHeight=0.0;
+        for(const QSize size : {QSize{1184,688},QSize{1350,750},
+                               QSize{1440,900}}) {
+            const auto png=QStringLiteral("PRODUCT_REAL_MAIN_%1_%2x%3_UNAVAILABLE.png")
+                .arg(screenshotStems[index]).arg(size.width()).arg(size.height());
+            QVERIFY2(capture_visual_evidence(window,png,size),
+                     "Failed genuine Main selected-analysis screenshot");
+            QVERIFY2(check_item_contained_in_ancestor(
+                         originalPages[index],qobject_cast<QQuickItem*>(dspEditorHostObj)),
+                     "Selected genuine analysis page must fit real DSP host");
+            // PO strict NO-SCROLL: content is a plain QQuickItem, not
+            // a Flickable whose invisible scrollbar conceals overflow.
+            auto* analysisBody=qobject_cast<QQuickItem*>(
+                // AnalysisStatusEditor overrides the QML component root's
+                // objectName at instantiation, as is standard Qt QML.
+                // Query the genuine authored instance name, not the
+                // component definition's shadowed default name.
+                find_child_by_name(originalPages[index],
+                    QStringLiteral("analysisApprovedContent")));
+            auto* analysisStack=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],
+                    QStringLiteral("analysisProductContentStack")));
+            QVERIFY2(analysisBody&&analysisStack,
+                     "Missing genuine non-scrolling analysis layout");
+            QVERIFY2(!analysisBody->property("contentY").isValid(),
+                     "Analysis panel must never expose Flickable scrolling");
+            QTRY_VERIFY_WITH_TIMEOUT(analysisBody->height()>0.0,5000);
+            QTRY_VERIFY_WITH_TIMEOUT(
+                analysisStack->implicitHeight()>0.0,5000);
+            const auto fitDiagnostic=QStringLiteral(
+                "M%1 viewport=%2 px, content=%3 px at %4x%5")
+                .arg(index+19)
+                .arg(analysisBody->height(),0,'f',1)
+                .arg(analysisStack->implicitHeight(),0,'f',1)
+                .arg(size.width()).arg(size.height());
+            QVERIFY2(analysisStack->implicitHeight()
+                     <=analysisBody->height()+1.0,
+                     qPrintable(fitDiagnostic));
+            // No 490px mode switch, no M19 column reflow and no hidden
+            // status footer. Compare actual scenegraph positions after
+            // Qt's native layout polish at several window sizes.
+            QVERIFY2(!analysisBody->property("compactFit").isValid(),
+                     "Product analysis must not depend on compact breakpoint");
+            auto* availability=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],
+                    QStringLiteral("analysisVerificationStatus")));
+            QVERIFY2(availability&&availability->isVisible(),
+                     "Verification summary must remain in top header");
+            // The empty-current-data state remains explicit but neutral:
+            // no misleading development/release-qualification banner.
+            QCOMPARE(availability->property("text").toString(),
+                     QStringLiteral("NO MEASUREMENTS"));
+            const QString anchorName=index==0
+                ?QStringLiteral("m19LevelsPage")
+                :index==1
+                ?QStringLiteral("m20SpectrumPanel")
+                :QStringLiteral("m21ComparisonPage");
+            auto* analysisAnchor=qobject_cast<QQuickItem*>(
+                find_child_by_name(originalPages[index],anchorName));
+            QVERIFY2(analysisAnchor,"Analysis top-left landmark missing");
+            const QPointF anchorPos=analysisAnchor->mapToItem(
+                analysisBody,QPointF{});
+            if(size.height()==688) firstAnalysisAnchor=anchorPos;
+            else if(index==1) {
+                QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5
+                         &&std::abs(anchorPos.y()-firstAnalysisAnchor.y())<1.5,
+                         "M20 must preserve the top-left anchor");
+            } else {
+                QVERIFY2(std::abs(anchorPos.x()-firstAnalysisAnchor.x())<1.5,
+                         "M19/M21 must retain horizontal left alignment");
+            }
+            if(index==0) {
+                auto* grid=find_child_by_name(originalPages[index],
+                    QStringLiteral("m19MetricsGrid"));
+                auto* relation=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m19ReferenceRelationPanel")));
+                QVERIFY2(grid && grid->property("columns").toInt()==3,
+                         "M19 must retain exactly 3+2 cards");
+                QVERIFY2(relation && relation->height()>=98.0
+                         && relation->height()<=162.1,
+                         "M19 reference relation must expand only within bounds");
+                const qreal centerTop=std::max(
+                    0.0,(analysisBody->height()-analysisAnchor->height())/2.0);
+                QVERIFY2(std::abs(anchorPos.y()-centerTop)<1.5,
+                         "M19 whole 3+2 grid and relation must center vertically");
+                auto* m19Viewport=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m19CenteredViewport")));
+                QVERIFY2(m19Viewport
+                         &&m19Viewport->height()>=analysisBody->height()-1.0,
+                         "M19 viewport must occupy real analysis height");
+                auto* hero=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m19MetricValue_lufs")));
+                QVERIFY2(hero && hero->property("numericPixelSize").toInt()==36,
+                         "M19 numeric typography must not scale");
+            } else if(index==1) {
+                QVERIFY2(analysisAnchor->height()+1.0>=priorSpectrumHeight,
+                         "M20 spectrum must stretch with spare editor height");
+                priorSpectrumHeight=analysisAnchor->height();
+            } else {
+                const auto* row=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m21MetricRow_0")));
+                QVERIFY2(row && row->height()>=22.9 && row->height()<=36.1,
+                         "M21 nine-row table must use bounded 23-36px rows");
+                const qreal centerTop=std::max(
+                    0.0,(analysisBody->height()-analysisAnchor->height())/2.0);
+                QVERIFY2(std::abs(anchorPos.y()-centerTop)<1.5,
+                         "M21 whole table must remain vertically centered");
+                auto* viewport=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m21CenteredViewport")));
+                QVERIFY2(viewport
+                         &&viewport->height()>=analysisBody->height()-1.0,
+                         "M21 centered viewport must retain full height");
+                // PO three-window M21 alignment gate: each Δ heading is
+                // centered between the NUMERIC CENTER and BAR CENTER,
+                // measured from genuine native Qt geometry at this size.
+                // The full source-role labels must fit the 32px header
+                // even at the minimum 1184x688 Product window.
+                auto* firstRow=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],
+                        QStringLiteral("m21MetricRow_0")));
+                QVERIFY(firstRow);
+                const std::array<QString,6> roleHeaders{{
+                    QStringLiteral("METRIC"),
+                    QStringLiteral("PREPARED"),
+                    QStringLiteral("PROCESSED"),
+                    QStringLiteral("REFERENCE"),
+                    QStringLiteral("Δ PREPARED → REFERENCE"),
+                    QStringLiteral("Δ PROCESSED → REFERENCE")}};
+                for(int col=0;col<6;++col) {
+                    auto* m21ColumnHeader=qobject_cast<QQuickItem*>(
+                        find_child_by_name(originalPages[index],
+                            QStringLiteral("m21Header_%1").arg(col)));
+                    auto* cell=qobject_cast<QQuickItem*>(
+                        find_child_by_name(firstRow,
+                            QStringLiteral("m21ValueCell_0_%1").arg(col)));
+                    QVERIFY(m21ColumnHeader && cell);
+                    QCOMPARE(m21ColumnHeader->property("text").toString(),
+                             roleHeaders[static_cast<std::size_t>(col)]);
+                    QVERIFY2(!m21ColumnHeader->property("truncated").toBool(),
+                        "Full M21 role heading must not be truncated");
+                    QVERIFY2(m21ColumnHeader->property("contentHeight").toDouble()
+                        <=m21ColumnHeader->height()+0.5,
+                        "M21 heading exceeds fixed header at minimum window");
+                    const qreal hc=m21ColumnHeader->mapToItem(
+                        analysisAnchor,QPointF{m21ColumnHeader->width()/2,0}).x();
+                    const qreal cc=cell->mapToItem(
+                        analysisAnchor,QPointF{cell->width()/2,0}).x();
+                    QVERIFY2(std::abs(hc-cc)<1.5,
+                        "M21 header and data group must share a centre");
+                    if(col<4)continue;
+                    auto* number=qobject_cast<QQuickItem*>(
+                        find_child_by_name(cell,
+                            QStringLiteral("m21NumericCell_0_%1").arg(col)));
+                    auto* bar=qobject_cast<QQuickItem*>(
+                        find_child_by_name(cell,
+                            QStringLiteral("m21DeltaBar_0_%1").arg(col)));
+                    QVERIFY(number &&bar);
+                    const qreal left=cell->property("deltaGroupLeft").toDouble();
+                    const qreal numWidth=cell->property("numericWidth").toDouble();
+                    const qreal barWidth=cell->property("barWidth").toDouble();
+                    const qreal gap=cell->property("deltaGroupGap").toDouble();
+                    QVERIFY2(left>=-0.5
+                        &&left+numWidth+gap+barWidth<=cell->width()+0.5,
+                        "M21 delta number-and-bar group must fit in its column");
+                    const qreal numberCentre=cell->mapToItem(
+                        analysisAnchor,QPointF{left+numWidth/2,0}).x();
+                    const qreal barCentre=cell->mapToItem(
+                        analysisAnchor,QPointF{left+numWidth+gap+barWidth/2,0}).x();
+                    QVERIFY2(std::abs(hc-(numberCentre+barCentre)/2)<1.5,
+                        "M21 Δ header must center between numeric value and bar");
+                }
+            }
+            if(size.height()==688) {
+                // All essential content must be inside the actual clipped
+                // viewport; presence-only checks are insufficient.
+                const QString lastName=index==0
+                    ?QStringLiteral("m19ReferenceRelationPanel")
+                    :index==1
+                    ?QStringLiteral("m20TonalProfilePanel")
+                    :QStringLiteral("m21MetricRow_8");
+                auto* last=qobject_cast<QQuickItem*>(
+                    find_child_by_name(originalPages[index],lastName));
+                QVERIFY2(last&&last->isVisible(),
+                         "Last essential readout unavailable at minimum");
+                const QPointF offset=last->mapToItem(
+                    analysisBody,QPointF(0,0));
+                QVERIFY2(offset.y()>=-1.0
+                    &&offset.y()+last->height()<=analysisBody->height()+1.0,
+                    "Last essential readout clipped at minimum 1184x688");
+            }
+        }
+    }
+    dspChainAdapterModel.selectModuleByInstanceId(
+        QStringLiteral("analysis:rgsml.m19"));
+    QTRY_VERIFY_WITH_TIMEOUT(originalPages[0]->isVisible(),5000);
+    for(int i=0;i<3;++i) {
+        QCOMPARE(qobject_cast<QQuickItem*>(
+            find_child_by_name(dspEditorHostObj,analysisQmlNames[static_cast<std::size_t>(i)])),
+            originalPages[static_cast<std::size_t>(i)]);
+    }
+    dspChainAdapterModel.setSelectedIndex(1);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        dspChainAdapterModel.selected_module()!=nullptr
+            && dspChainAdapterModel.selected_module()->editor_content_key()
+                ==QStringLiteral("PARAMETRIC_EQ"),5000);
+    for(auto* page:originalPages) {
+        QVERIFY(!page->isVisible());
+        QVERIFY(!page->isEnabled());
+    }
+    QVERIFY2(check_item_contained_in_ancestor(
+                 qobject_cast<QQuickItem*>(find_child_by_name(
+                     dspEditorHostObj,QStringLiteral("parametricEqEditor"))),
+                 qobject_cast<QQuickItem*>(dspEditorHostObj)),
+             "Original EQ must remain contained after analysis navigation");
 
     window->close();
     QCoreApplication::processEvents();
