@@ -193,6 +193,15 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(!actual.source->integrated_lufs.ready());
     QVERIFY(!calculated.value()->observed_m05m06(
         {"unverified",54,false}).source);
+    // Additional named T2–T6 observations reuse the real Product M20
+    // PSD. Unqualified reference-grade status remains a separate gate.
+    const auto tonalFacts=calculated.value()->observed_m05_tonal(
+        {20.0,20000.0},1e-12);
+    QVERIFY(!tonalFacts.authorizes_solver_objective());
+    const auto invalidPolicy=calculated.value()->observed_m05_tonal(
+        {20.0,20000.0},0.0);
+    QVERIFY(!invalidPolicy.t2_spectral_tilt);
+    QVERIFY(!invalidPolicy.t6_high_frequency_slope);
     QCOMPARE(calculated.value()->rendered.signatures().size(),
              std::size_t{2});
     QVERIFY(std::holds_alternative<
