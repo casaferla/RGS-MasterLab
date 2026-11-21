@@ -11,6 +11,9 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <cstdint>
+#include <new>
+#include <span>
+#include <vector>
 #include <string>
 #include <utility>
 
@@ -148,6 +151,56 @@ public:
             accepted.gold.gold.locator()};
         return accepted.job.still_current(
             stamp,selector.prepared_realization_snapshot(),current,bindings);
+    }
+
+    struct GainProposal final {
+        double db{};
+        std::string ticket_identity;
+    };
+
+    // One real M18/Product capture can feed multiple immutable worker
+    // attempts. Construct value snapshots on the Qt owner, without ever
+    // changing the MANUAL chain or each proposal's permitted gain range.
+    // The owned registry is reused across the whole batch (not rebuilt 800x).
+    [[nodiscard]] static core::Result<std::vector<OfflineProductTrialJob>>
+    create_gain_batch_on_owner(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,const Inbox& inbox,
+        const Accepted& accepted,const dsp::ModuleInstanceId& gain_id,
+        std::span<const GainProposal> proposals,
+        core::FrameCount max_block)
+    {
+        using R=core::Result<std::vector<OfflineProductTrialJob>>;
+        if(proposals.empty()||proposals.size()>800
+           ||!still_current(product,fanout,selector,gold,inbox,accepted))
+            return R::failure(
+                fail("L3_OWNER_BATCH_REQUIRES_CURRENT_SOURCE_REFERENCE"));
+        const auto& current=product.upstream.chain.chain();
+        const auto bindings=product.upstream.chain.execution_bindings();
+        try {
+            std::vector<OfflineProductTrialJob> out;
+            out.reserve(proposals.size());
+            for(const auto& proposal:proposals) {
+                auto trial=make_gain_trial(current,bindings,gain_id,
+                                           proposal.db,
+                                           proposal.ticket_identity);
+                if(!trial)return R::failure(
+                    fail("L3_OWNER_BATCH_INVALID_TYPED_GAIN_PROPOSAL"));
+                auto job=OfflineProductTrialJob::create(
+                    accepted.job.stamp(),accepted.job.prepared_owner(),
+                    accepted.job.registry_snapshot(),current,bindings,
+                    *trial,max_block);
+                if(!job)return R::failure(*job.error());
+                out.push_back(std::move(*job.value()));
+            }
+            if(!still_current(product,fanout,selector,gold,inbox,accepted))
+                return R::failure(
+                    fail("L3_OWNER_BATCH_CHANGED_DURING_COPY"));
+            return R::success(std::move(out));
+        }catch(const std::bad_alloc&) {
+            return R::failure(fail("L3_OWNER_BATCH_ALLOCATION_FAILED"));
+        }
     }
 
     [[nodiscard]] static bool result_eligible(
