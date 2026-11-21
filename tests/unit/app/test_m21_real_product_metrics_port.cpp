@@ -33,6 +33,7 @@ private slots:
     void l2RejectsMissingStaleAndUnsupportedScopes();
     void l3OfflineSearchScoresCurrentRealM21ProducerEvidence();
     void l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence();
+    void l3OfflineBudgetCapAndAttemptedFailures();
     void l3ActualGainCandidateRunsExistingRendererAndM19M20();
     void l3C01FullPrefixCandidateMeasuresRealM21Evidence();
 };
@@ -388,6 +389,67 @@ l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence()
     QVERIFY(search->complete(*ticket,producer.view())==Submission::cancelled);
 }
 
+
+void M21RealProductMetricsPortTest::
+l3OfflineBudgetCapAndAttemptedFailures()
+{
+    using namespace app::m21_private;
+    using namespace app::l3_automatch;
+    // This is a budget accounting test, not 800 audio executions.
+    Snapshot processed;
+    processed.column=Column::processed;
+    processed.generation_token=100;
+    processed.resource_identity="owner-authenticated-processed";
+    processed.analysis_scope_label="Full Track";
+    processed.scope_frames=48000;
+    processed.sample_rate_hz=48000;
+    processed.lifecycle=Lifecycle::current;
+    processed.metrics[1]={-18.0,Quality::present,{}};
+    auto gold=processed;
+    gold.column=Column::gold;
+    gold.generation_token=2;
+    gold.resource_identity="independent-reference";
+    gold.metrics[1].unrounded=-16.0;
+    PrivatePublicationGuard guard;
+    QVERIFY(guard.expect(Column::processed,100));
+    QVERIFY(guard.expect(Column::gold,2));
+    QVERIFY(guard.publish(processed));
+    QVERIFY(guard.publish(gold));
+    std::vector<Proposal> proposals;
+    for(std::size_t i=0;i<800;++i)
+        proposals.push_back(Proposal{"offline-candidate-"+std::to_string(i)});
+    const std::vector<Objective> rms{{
+        Metric::full_scope_rms,1.0,1.0}};
+    auto oversize=proposals;
+    oversize.push_back(Proposal{"not-admitted-801"});
+    QVERIFY(!OfflineSearch::begin(5,guard.view(),std::move(oversize),rms));
+    auto run=OfflineSearch::begin(5,guard.view(),std::move(proposals),rms);
+    QVERIFY(run);
+    QCOMPARE(run->best().weighted_error,4.0);
+    auto first=run->next();
+    QVERIFY(first);
+    auto wrong=*first;
+    ++wrong.ordinal;
+    QVERIFY(run->attempted_evaluation_failed(wrong)==Submission::mismatched_ticket);
+    QCOMPARE(run->attempts(),std::size_t{0});
+    QCOMPARE(run->next().has_value(),false); // one pending ticket
+    QCOMPARE(run->attempted_evaluation_failed(*first),
+             Submission::attempted_evaluation_failed);
+    QCOMPARE(run->attempts(),std::size_t{1});
+    QVERIFY(!run->best().typed_dsp_fingerprint);
+    for(std::size_t ordinal=1;ordinal<800;++ordinal) {
+        auto ticket=run->next();
+        QVERIFY(ticket);
+        QCOMPARE(ticket->ordinal,ordinal);
+        QVERIFY(run->attempted_evaluation_failed(*ticket)
+            ==Submission::attempted_evaluation_failed);
+    }
+    QCOMPARE(run->attempts(),std::size_t{800});
+    QVERIFY(run->complete());
+    QVERIFY(!run->next());
+    QCOMPARE(run->best().weighted_error,4.0);
+    QVERIFY(!run->best().typed_dsp_fingerprint);
+}
 
 void M21RealProductMetricsPortTest::
 l3ActualGainCandidateRunsExistingRendererAndM19M20()
