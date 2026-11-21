@@ -2680,3 +2680,16 @@ add_test(NAME rgsml_l3_m11_p03_protected_guard_tests
 set_tests_properties(rgsml_l3_m11_p03_protected_guard_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m11;protected;nonrelease")
+
+# L3-M10 P04/P05 measured top2 seed trial selection, exact 800 attempts.
+qt_add_executable(rgsml_l3_m10_measured_seed_shortlist_tests
+    unit/app/test_l3_m10_measured_seed_shortlist.cpp)
+target_include_directories(rgsml_l3_m10_measured_seed_shortlist_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_measured_seed_shortlist_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_measured_seed_shortlist_tests)
+add_test(NAME rgsml_l3_m10_measured_seed_shortlist_tests
+    COMMAND rgsml_l3_m10_measured_seed_shortlist_tests)
+set_tests_properties(rgsml_l3_m10_measured_seed_shortlist_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;measured_shortlist;nonrelease")
