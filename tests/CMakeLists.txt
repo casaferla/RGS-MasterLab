@@ -2013,6 +2013,21 @@ set_tests_properties(rgsml_l3_transient_shaper_product_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;transient_shaper;full_prefix;typed;nonrelease")
 
+# L3-M10 native frozen coordinate/tie-order budget policy (not
+# the not-yet-complete 27-feature objective, topology or M13 verification).
+qt_add_executable(rgsml_l3_m10_frozen_coordinate_refiner_tests
+    unit/app/test_l3_m10_frozen_coordinate_refiner.cpp)
+target_include_directories(rgsml_l3_m10_frozen_coordinate_refiner_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_frozen_coordinate_refiner_tests
+    PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_frozen_coordinate_refiner_tests)
+add_test(NAME rgsml_l3_m10_frozen_coordinate_refiner_tests
+    COMMAND rgsml_l3_m10_frozen_coordinate_refiner_tests)
+set_tests_properties(rgsml_l3_m10_frozen_coordinate_refiner_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;determinism;budget;tie;nonrelease")
+
 qt_add_executable(rgsml_m21_real_product_metrics_port_tests
     unit/app/test_m21_real_product_metrics_port.cpp)
 target_include_directories(rgsml_m21_real_product_metrics_port_tests PRIVATE
