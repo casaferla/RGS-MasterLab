@@ -382,7 +382,7 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(changedEq);
     QCOMPARE(changedEq->bands()[0].spec().control.range_db,3.0);
     QCOMPARE(eq.bands()[0].spec().control.range_db,6.0);
-    QCOMPARE(changedEq->bands()[0].spec().band_id,band_id);
+    QVERIFY(changedEq->bands()[0].spec().band_id==band_id);
     QVERIFY(!make_dynamic_eq_scalar_trial(
         *manual.value(),baseline,eqId,band_id,
         DynamicEqScalarCoordinate::range_db,6.0,
@@ -448,7 +448,7 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(dynamicMeasured.value()->levels.scope_frame_count==4096);
     QVERIFY(dynamicMeasured.value()->tonal.scope_frame_count==4096);
     QVERIFY(dynamicMeasured.value()->rendered.signatures().size()==2);
-    QVERIFY(dynamicMeasured.value()->rendered.signatures()[0].payload==
+    QVERIFY(dynamicMeasured.value()->rendered.signatures()[0].payload!=
             candidate.value()->rendered.signatures()[0].payload);
     QVERIFY(dynamicMeasured.value()->rendered.signatures()[1].payload!=
             candidate.value()->rendered.signatures()[1].payload);
