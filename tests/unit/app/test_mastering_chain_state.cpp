@@ -440,7 +440,9 @@ m18ActualChainAndTerminalShareOneProductWorkerBarrier()
     const auto deniedLimiter=terminal.value()->set_ceiling_db_tp(-4.0);
     QVERIFY(!deniedLimiter);
     QCOMPARE(chain.value()->gain_parameters().gain_db(),0.0);
-    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    // Product M17 default is 0 dBTP since PO 2026-11-16.
+    // The rejected edit cannot turn that default into -1/-4 dBTP.
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),0.0);
     QVERIFY((*held.value())->revalidate_current());
     held.value()->reset();
     QVERIFY(chain.value()->set_gain_parameters(*updatedGain.value()));
@@ -1269,18 +1271,19 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
         &TerminalLimiterViewModel::changed};
     QVERIFY(acceptedSignals.isValid());
     QVERIFY(visualSignals.isValid());
-    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    // Terminal Product starts at 0 dBTP (generic DSP default remains -1).
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
     QCOMPARE(product.value()->parameter_revision(),std::uint64_t{0});
-    QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("-1.00"));
+    QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("0.00"));
     QVERIFY(vm.bypass());
     QCOMPARE(acceptedChanges,0);
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
     QCOMPARE(vm.draft_ceiling_db_tp(),-6.0);
     QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("-6.00"));
-    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
     QCOMPARE(product.value()->execution_bindings()[0].instance_id,id);
     QCOMPARE(std::get<TruePeakLimiterParameters>(
-        product.value()->execution_bindings()[0].parameters).ceiling_db_tp(),-1.0);
+        product.value()->execution_bindings()[0].parameters).ceiling_db_tp(),0.0);
     QCOMPARE(acceptedChanges,0);
     QCOMPARE(acceptedSignals.count(),0);
     QVERIFY(visualSignals.count()>0);
@@ -1290,14 +1293,14 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     QCOMPARE(vm.validation_field(),QStringLiteral("ceilingDbTp"));
     QVERIFY(!vm.validation_message().isEmpty());
     QVERIFY(!vm.commitDraft());
-    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
     QCOMPARE(acceptedChanges,0);
     QCOMPARE(acceptedSignals.count(),0);
     QVERIFY(!vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-13.0));
     QVERIFY(!vm.commitDraft());
-    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.ceiling_db_tp(),0.0);
     vm.cancelDraft();
-    QCOMPARE(vm.draft_ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.draft_ceiling_db_tp(),0.0);
     QVERIFY(vm.validation_field().isEmpty());
     QVERIFY(vm.validation_message().isEmpty());
 
