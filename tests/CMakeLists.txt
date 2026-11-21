@@ -2816,3 +2816,17 @@ add_test(NAME rgsml_l3_m19_macro_loudness_binding_tests
 set_tests_properties(rgsml_l3_m19_macro_loudness_binding_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m05;m06;m07;m08;native_m19;nonrelease")
+
+# L3 M06 real M20 native broadband width and local correlation -> M07.
+qt_add_executable(rgsml_l3_m20_native_stereo_binding_tests
+    unit/app/test_l3_m20_native_stereo_bindings.cpp)
+target_include_directories(rgsml_l3_m20_native_stereo_binding_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m20_native_stereo_binding_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m20_native_stereo_binding_tests)
+add_test(NAME rgsml_l3_m20_native_stereo_binding_tests
+    COMMAND rgsml_l3_m20_native_stereo_binding_tests)
+set_tests_properties(rgsml_l3_m20_native_stereo_binding_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;m07;m08;native_m20;nonrelease")
