@@ -85,6 +85,9 @@ void FrozenM07RegistryTest::
 realCanonicalDspAvailabilityDoesNotChangeStaticPolicy() {
     const auto native=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(native);
+    // M07 explicitly says that historical factory counts are evidence,
+    // NOT frozen policy: default package now includes five factories.
+    const auto original_factory_count=native.value()->factory_count();
     const auto first=m07::assess_canonical_dsp_snapshot(*native.value());
     QCOMPARE(first.size(),std::size_t{8});
     for(const auto& record:first) {
@@ -114,8 +117,9 @@ realCanonicalDspAvailabilityDoesNotChangeStaticPolicy() {
     QVERIFY(activated[2].intrinsic_context_matches);
     QVERIFY(activated[3].intrinsic_context_matches);
     QCOMPARE(m07::kBindings.size(),std::size_t{27});
-    QCOMPARE(native.value()->factory_count(),
-             std::size_t{3});
+    QCOMPARE(native.value()->factory_count(),original_factory_count);
+    QCOMPARE(trans.value()->factory_count(),
+             original_factory_count+std::size_t{2});
     // The original L1 package factory-less placeholders are immutable.
     QVERIFY(!native.value()->has_factory("rgsml.dsp.dynamic-eq"));
     QVERIFY(!native.value()->has_factory("rgsml.dsp.transient-shaper"));
