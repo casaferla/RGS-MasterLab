@@ -2788,3 +2788,17 @@ add_test(NAME rgsml_l3_m06_lra_native_tests
 set_tests_properties(rgsml_l3_m06_lra_native_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;lra;ebu_discrete;nonrelease")
+
+# L3 M06 D02 real EBU LRA exact M07/M08 frozen scalar binding.
+qt_add_executable(rgsml_l3_m06_d02_lra_binding_tests
+    unit/app/test_l3_m06_d02_lra_binding.cpp)
+target_include_directories(rgsml_l3_m06_d02_lra_binding_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_d02_lra_binding_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_d02_lra_binding_tests)
+add_test(NAME rgsml_l3_m06_d02_lra_binding_tests
+    COMMAND rgsml_l3_m06_d02_lra_binding_tests)
+set_tests_properties(rgsml_l3_m06_d02_lra_binding_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;d02;lra;exact_binding;nonrelease")
