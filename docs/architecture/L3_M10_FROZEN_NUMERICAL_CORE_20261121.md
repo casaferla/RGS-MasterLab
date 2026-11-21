@@ -68,3 +68,36 @@ Transient Shaper manual module schemas. Availability/compatibility
 must be proven explicitly before marking a topology READY: no
 invented controls, mapped time constants, forced topology or silent
 schema upgrades. The accepted milestone contracts remain unchanged.
+
+## Additional frozen M05/M06 support objective and R/C/J algebra
+
+`l3_m10_frozen_target_objective.hpp` consumes the full configured
+M05/M06 feature **component mass** population as supplied and their
+authoritative M08 `optimizationTarget`, not raw Gold-as-target or
+solver-stage achieved. Each eligible component contributes
+`m_i × a_ik × pairSupport × min((residual/scale)^2,16)`,
+with finite normalized residual validation before robust capping.
+The configured coverage denominator includes absent/ineligible
+components. Every requested corrective domain has the inclusive
+`effectiveCoverage>=0.60` gate; no mass shrink, absent-value
+score substitution or fallback from the old nine-cell M21 probe.
+Equal domain weights govern only explicitly comparable corrective
+domains. An empty corrective population returns a distinct
+NO_CORRECTION_REQUIRED state, not a manufactured numeric Jtarget.
+Protected/no-regression and hard TP/GR/stereo safety predicates
+remain separate hard constraint inputs.
+
+`l3_m10_frozen_total_cost.hpp` adds exactly the recovered M10
+law: `R=sum(r_j*(u_j-u_jReference)^2)/sum(r_j)`, reference
+immutable across all sweeps, with the accepted empty-active R=0
+convention; `C=0.5*modules/8 + 0.5*enabled artistic bands/12`,
+then `J=Jtarget+0.02R+0.01C`. These cost values feed the P05
+total order, not a proxy or verifier. Counts/weights/coordinates
+must originate in authenticated M09/M11 ownership evidence.
+
+Native synthetic arithmetic oracles cover loss cap16, configured
+vs effective denominator, support 0.50/1, conditional Jtarget,
+hard coverage rejection, required candidate dropout, weighted
+R=0.4, normalized C=0.5 and J=2.013 for a Jtarget=2 fixture.
+They do **not** constitute fresh real output analyses, complete
+M05/M06 carrier mapping or M13 verification.
