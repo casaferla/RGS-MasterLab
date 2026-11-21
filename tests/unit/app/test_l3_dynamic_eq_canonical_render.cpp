@@ -63,6 +63,7 @@ private slots:
 void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     using namespace app::m21_private;
     using namespace app::l3_automatch;
+    qInfo() << "L3_SCOPE full-programme: entry";
     auto base=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(base);
     QVERIFY(!base.value()->has_factory("rgsml.dsp.dynamic-eq"));
@@ -78,6 +79,7 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     const auto eq_id=id("a0000000-0000-4000-8000-000000000002");
     QVERIFY(chain.value()->add(gain_id,"rgsml.dsp.gain",0));
     QVERIFY(chain.value()->add(eq_id,"rgsml.dsp.dynamic-eq",1));
+    qInfo() << "L3_SCOPE full-programme: chain instantiated";
     const auto gain=dsp::GainParameters::create(0.0);
     QVERIFY(gain);
     const auto eq=dynamic_params();
@@ -114,6 +116,7 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     QVERIFY(baseline_request);
     auto baseline=render::render_preview(*baseline_request.value(),*opt.value());
     QVERIFY(baseline);
+    qInfo() << "L3_SCOPE full-programme: bypassed baseline rendered";
     QCOMPARE(baseline.value()->signatures().size(),std::size_t{2});
     const auto& signature0=baseline.value()->signatures()[1];
     QVERIFY(signature0.disposition==render::ModuleExecutionDisposition::BYPASS_IDENTITY);
@@ -129,6 +132,7 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     QVERIFY(request);
     auto actual=render::render_preview(*request.value(),*opt.value());
     QVERIFY(actual);
+    qInfo() << "L3_SCOPE full-programme: C01 active rendered";
     QCOMPARE(actual.value()->signatures().size(),std::size_t{2});
     const auto& signature=actual.value()->signatures()[1];
     QVERIFY(signature.disposition==render::ModuleExecutionDisposition::PROCESSED);
@@ -149,6 +153,7 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     QVERIFY(gain_request);
     auto gain_render=render::render_preview(*gain_request.value(),*opt.value());
     QVERIFY(gain_render);
+    qInfo() << "L3_SCOPE full-programme: Gain plus C01 rendered";
     QCOMPARE(gain_render.value()->signatures().size(),std::size_t{2});
     QVERIFY(gain_render.value()->signatures()[1].payload==signature.payload);
     const auto gain_output=gain_render.value()->view().channel(0);
@@ -175,6 +180,7 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
         reference.value()->view(),core::FrameIndex{0},*n.value(),
         audio::FrameDomainId::SOURCE_PROCESSING_RATE);
     QVERIFY(l_base&&l_actual&&l_ref&&t_base&&t_actual&&t_ref);
+    qInfo() << "L3_SCOPE full-programme: physical analysis ready";
     const auto baseMetrics=import_real_product_metrics(
         *l_base.value(),*t_base.value(),
         {Column::processed,1U,"actual-render-bypassed","Full Track",true});
@@ -203,11 +209,13 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     QCOMPARE(*search->best().typed_dsp_fingerprint,
              std::string{"typed-c01-bell-full-render"});
     QVERIFY(search->best().weighted_error<0.5);
+    qInfo() << "L3_SCOPE full-programme: M21 candidate improved";
     QVERIFY(chain.value()->set_user_bypass(eq_id,true));
     QVERIFY(!gain_trial->still_matches(*chain.value(),bindings));
 }
 
 void L3CanonicalC01RenderTest::regionAndUnboundParametersFailClosed() {
+    qInfo() << "L3_SCOPE region: entry";
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
     auto opt=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*registry.value()));
@@ -254,6 +262,7 @@ void L3CanonicalC01RenderTest::regionAndUnboundParametersFailClosed() {
     QVERIFY(render::render_preview(*bypass.value(),*opt.value()));
 }
 void L3CanonicalC01RenderTest::signatureExcludesDisabledAndUuidIdentity() {
+    qInfo() << "L3_SCOPE identity: entry";
     auto original=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(original);
     auto registry=dsp::ModuleRegistry::with_dynamic_eq_offline(
