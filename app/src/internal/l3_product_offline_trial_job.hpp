@@ -60,7 +60,7 @@ public:
            ||maximum_block_frames.value()<=0
            ||prepared->view().absolute_start_frame().value()!=0
            ||prepared->view().frame_count().value()<=0
-           ||prepared->view().frame_domain_id()
+           ||prepared->view().timebase().frame_domain_id()
                 !=audio::FrameDomainId::SOURCE_PROCESSING_RATE
            ||live_chain.context()!=dsp::ProcessingChainContext{
                 dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL})
