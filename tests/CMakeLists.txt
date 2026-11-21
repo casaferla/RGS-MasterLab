@@ -2858,3 +2858,17 @@ add_test(NAME rgsml_l3_m20_t01_primary_binding_tests
 set_tests_properties(rgsml_l3_m20_t01_primary_binding_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m05;m07;m08;primary_t01;nonrelease")
+
+# L3 M07 full twenty-seven-source population assembly, fail-closed.
+qt_add_executable(rgsml_l3_m07_exact_27_assembler_tests
+    unit/app/test_l3_m07_exact_27_feature_assembler.cpp)
+target_include_directories(rgsml_l3_m07_exact_27_assembler_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m07_exact_27_assembler_tests
+    PRIVATE rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m07_exact_27_assembler_tests)
+add_test(NAME rgsml_l3_m07_exact_27_assembler_tests
+    COMMAND rgsml_l3_m07_exact_27_assembler_tests)
+set_tests_properties(rgsml_l3_m07_exact_27_assembler_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m07;exact_27_feature;nonrelease")
