@@ -1,6 +1,7 @@
 #include "internal/m21_real_product_metrics_port.hpp"
 #include "internal/l2_automatch_evidence_bridge.hpp"
 #include "internal/l3_automatch_offline_search.hpp"
+#include "internal/l3_automatch_typed_gain_trial.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -134,6 +135,31 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     QVERIFY(std::holds_alternative<render::DynamicEqExecutionSignaturePayload>(
         signature.payload));
     QVERIFY(signature.payload==signature0.payload);
+    // One additional immutable typed Gain proposal now carries the new
+    // Dynamic EQ stage without mutating the live chain or omitting bindings.
+    auto gain_trial=make_gain_trial(*chain.value(),bindings,gain_id,3.0,
+                                   "gain-3db-plus-dynamic-eq");
+    QVERIFY(gain_trial);
+    QVERIFY(gain_trial->still_matches(*chain.value(),bindings));
+    QCOMPARE(gain_trial->candidate_bindings.size(),std::size_t{2});
+    QVERIFY(gain_trial->candidate_bindings[1].parameters==bindings[1].parameters);
+    auto gain_request=render::RenderRequest::create(
+        src.value()->view(),src.value()->view().absolute_range(),
+        *chain.value(),gain_trial->candidate_bindings,*block.value());
+    QVERIFY(gain_request);
+    auto gain_render=render::render_preview(*gain_request.value(),*opt.value());
+    QVERIFY(gain_render);
+    QCOMPARE(gain_render.value()->signatures().size(),std::size_t{2});
+    QVERIFY(gain_render.value()->signatures()[1].payload==signature.payload);
+    const auto gain_output=gain_render.value()->view().channel(0);
+    const auto original_output=actual.value()->view().channel(0);
+    QVERIFY(gain_output&&original_output);
+    bool changed=false;
+    for(std::size_t i=0;i<gain_output.value()->size();++i)
+        if((*gain_output.value())[i]!=(*original_output.value())[i]) {
+            changed=true;break;
+        }
+    QVERIFY(changed);
     const auto l_base=analysis::measure_basic_level_full_resource(
         baseline.value()->buffer());
     const auto l_actual=analysis::measure_basic_level_full_resource(
@@ -177,6 +203,8 @@ void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
     QCOMPARE(*search->best().typed_dsp_fingerprint,
              std::string{"typed-c01-bell-full-render"});
     QVERIFY(search->best().weighted_error<0.5);
+    QVERIFY(chain.value()->set_user_bypass(eq_id,true));
+    QVERIFY(!gain_trial->still_matches(*chain.value(),bindings));
 }
 
 void L3CanonicalC01RenderTest::regionAndUnboundParametersFailClosed() {
