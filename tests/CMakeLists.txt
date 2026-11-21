@@ -2601,3 +2601,16 @@ add_test(NAME rgsml_l3_m09_p01_weighted_atom_fit_tests
 set_tests_properties(rgsml_l3_m09_p01_weighted_atom_fit_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m09;eq;nonrelease")
+
+# L3-M09 frozen structural family alternatives, no M10 consumer truncation.
+qt_add_executable(rgsml_l3_m09_abstract_family_tests
+    unit/app/test_l3_m09_abstract_family_enumeration.cpp)
+target_include_directories(rgsml_l3_m09_abstract_family_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m09_abstract_family_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m09_abstract_family_tests)
+add_test(NAME rgsml_l3_m09_abstract_family_tests
+    COMMAND rgsml_l3_m09_abstract_family_tests)
+set_tests_properties(rgsml_l3_m09_abstract_family_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m09;family_enumeration;nonrelease")
