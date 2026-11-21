@@ -42,6 +42,16 @@ Use the **exact #97 ZIP**, not an earlier #90/#92/#96 build. Retain the original
 - With an actually analyzed non-silent source selected, open **Spectrum / Stereo** and inspect the `TONAL PROFILE / 1/12-OCTAVE BAND ENERGY` panel. It should show only measured, fully supported positive-energy bands on the new relative scale, or honestly display `NO MEASURED BAND ENERGY` when data is unavailable. Verify that PREPARED, PROCESSED, REFERENCE still identify the correct owner without changing analysis data unexpectedly. A runner screenshot with no audio is **not** proof of the populated band plot.
 - The already accepted M21 nine-metric matrix and M18 PCM24/F32 WAV need no duplicate full test unless this final session reveals a new anomaly.
 
+## 2026-11-21 — PO-authorized M24 persistence extension (writer candidate, NOT CI-qualified)
+
+PO has explicitly chosen to persist both SOURCE and REFERENCE Regions and each independent Loop preference in the `.rgsml` file **before** M24 physical acceptance. The earlier "not serialized" statement below describes the **#97 tested baseline**, not this new unqualified writer candidate.
+
+- Project JSON accepts exactly two distinct `timeSelections.auditionRegions` roles at most: `SOURCE` references the selected SOURCE resource, `REFERENCE` the selected active REFERENCE resource. Each entry can carry optional strict-boolean `loopEnabled`; absent means false and is omitted from legacy reserialization.
+- Independent original WAV frame counts validate both Regions **before** Project Open mutates SOURCE, REFERENCE, DSP or Product epoch. Duplicate roles, wrong resource, extra entries, invalid frames and invalid JSON flags fail closed.
+- `ProjectSessionViewModel` binds the existing independent `referenceRegion` in real Main, saves/restores both frame domains and Loop preferences without playback start. SOURCE loop is installed on the current stopped SOURCE audio owner when possible; REFERENCE loop is installed only when REFERENCE itself is selected, using the existing selector provider.
+- New native integration and JSON regression tests must pass on Windows/Linux Focused CI. #97 remains the last verified executable. Do **not** mistake this staging code/document for qualified M24 or a production release.
+- Final PO physical M24 Save/Reopen gate must therefore test **both** saved Regions and both Loop toggles after the new verified artifact, not #97.
+
 ## Persistence scope explicitly verified in repository
 
 - `ProjectSessionViewModel::current_snapshot` writes at most one `project::AuditionRegion` with role `"SOURCE"` (source code around lines 635–646).
