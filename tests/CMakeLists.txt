@@ -2640,3 +2640,16 @@ add_test(NAME rgsml_l3_m10_p04_numeric_domain_tests
 set_tests_properties(rgsml_l3_m10_p04_numeric_domain_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;topology_consumer;nonrelease")
+
+# L3-M10 P04: full combined top32 numeric consumer, coordinate48 gate.
+qt_add_executable(rgsml_l3_m10_p04_numeric_combined_tests
+    unit/app/test_l3_m10_p04_numeric_combined_consumer.cpp)
+target_include_directories(rgsml_l3_m10_p04_numeric_combined_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_p04_numeric_combined_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_p04_numeric_combined_tests)
+add_test(NAME rgsml_l3_m10_p04_numeric_combined_tests
+    COMMAND rgsml_l3_m10_p04_numeric_combined_tests)
+set_tests_properties(rgsml_l3_m10_p04_numeric_combined_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;topology_consumer;nonrelease")

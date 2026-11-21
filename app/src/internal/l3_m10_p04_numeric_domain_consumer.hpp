@@ -90,4 +90,75 @@ struct DomainConsumerResult final {
     }
     return result;
 }
+struct CombinedConsumerInput final {
+    // Already complete M09 Cartesian legal candidates, including
+    // full coordinate inventory and canonical topology evidence.
+    ConsumerInput candidate;
+    std::size_t exact_active_coordinate_count{};
+    bool coordinate_inventory_and_legal_bounds_attested{};
+};
+struct CombinedConsumerResult final {
+    ConsumerStatus status{ConsumerStatus::ranking_unready};
+    std::vector<std::size_t> numeric_selected_indices;
+    std::vector<ConsumerLedgerItem> ledger;
+    [[nodiscard]] constexpr bool authorizes_seed_render() const noexcept {
+        return false;
+    }
+};
+[[nodiscard]] inline CombinedConsumerResult select_combined_top32(
+    std::span<const CombinedConsumerInput> m09_cartesian_legal_deduped)
+{
+    CombinedConsumerResult result;
+    if(m09_cartesian_legal_deduped.empty()) {
+        result.status=ConsumerStatus::empty_stream;
+        return result;
+    }
+    result.ledger.reserve(m09_cartesian_legal_deduped.size());
+    std::vector<m09_frozen::PreRenderTopologyProxy> viable_proxies;
+    std::vector<std::size_t> viable_original_indices;
+    for(std::size_t i=0;i<m09_cartesian_legal_deduped.size();++i) {
+        const auto& v=m09_cartesian_legal_deduped[i];
+        if(v.candidate.proxy.unsigned_topology_key.empty()||
+           !v.coordinate_inventory_and_legal_bounds_attested) {
+            result.status=ConsumerStatus::invalid_canonical_stream;
+            result.ledger.clear();
+            return result;
+        }
+        if(v.exact_active_coordinate_count>kMaxActiveCoordinates) {
+            result.ledger.push_back({
+                i,ConsumerReason::topology_parameter_budget_exceeded,false});
+            continue; // must be excluded BEFORE top32/seed shortlist
+        }
+        result.ledger.push_back({
+            i,ConsumerReason::combined_consumer_cap_excluded,false});
+        viable_original_indices.push_back(i);
+        viable_proxies.push_back(v.candidate.proxy);
+    }
+    if(viable_original_indices.empty()) {
+        result.status=ConsumerStatus::empty_stream;
+        return result;
+    }
+    const auto rank=m09_frozen::partition_and_rank_proxy(viable_proxies);
+    if(!rank.unbound_original_order_indices.empty()) {
+        // An unbound canonical candidate prevents a numerically honest
+        // complete shortlist. >48 exclusions retain their own reasons.
+        result.status=ConsumerStatus::ranking_unready;
+        for(const auto ordinal:viable_original_indices)
+            result.ledger[ordinal].reason=ConsumerReason::ranking_unready;
+        return result;
+    }
+    result.status=ConsumerStatus::ready;
+    const auto selected=std::min(
+        kCombinedConsumerCap,rank.fully_bound_sorted_indices.size());
+    result.numeric_selected_indices.reserve(selected);
+    for(std::size_t i=0;i<selected;++i) {
+        const auto original=viable_original_indices[
+            rank.fully_bound_sorted_indices[i]];
+        result.numeric_selected_indices.push_back(original);
+        result.ledger[original].reason=ConsumerReason::selected;
+        result.ledger[original].selected_but_unavailable=
+            !m09_cartesian_legal_deduped[original].candidate.available_currently;
+    }
+    return result;
+}
 } // namespace rgsml::app::l3_automatch::m10_frozen
