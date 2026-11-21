@@ -2015,6 +2015,21 @@ set_tests_properties(rgsml_l3_transient_shaper_product_tests PROPERTIES
 
 # L3-M10 native frozen coordinate/tie-order budget policy (not
 # the not-yet-complete 27-feature objective, topology or M13 verification).
+# M05/M06 native read-only REAL M19/M16/M20 feature carrier; no
+# invented Phase6 authoritativeness or complete 27-feature objective.
+qt_add_executable(rgsml_l3_m05m06_real_analysis_port_tests
+    unit/app/test_l3_m05m06_real_analysis_port.cpp)
+target_include_directories(rgsml_l3_m05m06_real_analysis_port_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
+target_link_libraries(rgsml_l3_m05m06_real_analysis_port_tests
+    PRIVATE rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m05m06_real_analysis_port_tests)
+add_test(NAME rgsml_l3_m05m06_real_analysis_port_tests
+    COMMAND rgsml_l3_m05m06_real_analysis_port_tests)
+set_tests_properties(rgsml_l3_m05m06_real_analysis_port_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m05;m06;real_pcm;support;nonrelease")
+
 qt_add_executable(rgsml_l3_m10_frozen_coordinate_refiner_tests
     unit/app/test_l3_m10_frozen_coordinate_refiner.cpp)
 target_include_directories(rgsml_l3_m10_frozen_coordinate_refiner_tests
