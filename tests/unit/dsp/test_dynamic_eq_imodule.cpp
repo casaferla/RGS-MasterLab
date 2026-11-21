@@ -125,7 +125,7 @@ void DynamicEqIModuleTest::checkpointExactContinuationAndIdentity() {
     const auto cp=prefix->runtime_checkpoint();
     QVERIFY(cp);
     QCOMPARE(cp.value()->next_input_frame->value(),static_cast<std::int64_t>(cut));
-    QCOMPARE(cp.value()->payload.size(),std::size_t{184}); // 8 + 2*11*8
+    QCOMPARE(cp.value()->payload.size(),std::size_t{192}); // 8 + 2*11*8
     const auto initial=make(d,params(true));
     QVERIFY(initial->prepare(spec));
     const auto unbound=initial->runtime_checkpoint();
@@ -149,7 +149,8 @@ void DynamicEqIModuleTest::checkpointExactContinuationAndIdentity() {
     QVERIFY(!resumed->runtime_checkpoint()); // post-EOS invalid
 }
 void DynamicEqIModuleTest::badCheckpointAndContextAreAtomic() {
-    const auto d=descriptor(),p=params();
+    const auto d=descriptor();
+    const auto p=params();
     const DspProcessSpec spec{format(audio::ChannelLayout::STEREO_LR),
         audio::FrameDomainId::SOURCE_PROCESSING_RATE,frame_count(96)};
     auto source=make(d,p),dest=make(d,p);
@@ -175,26 +176,26 @@ void DynamicEqIModuleTest::badCheckpointAndContextAreAtomic() {
     corrupted.payload[0]^=1U;
     require_rejection(corrupted);
     corrupted=*checkpoint.value();
-    corrupted.payload[8]=0xffU;
-    corrupted.payload[9]=0xffU;
-    corrupted.payload[10]=0xffU;
-    corrupted.payload[11]=0xffU;
-    corrupted.payload[12]=0xffU;
-    corrupted.payload[13]=0xffU;
-    corrupted.payload[14]=0xf8U;
-    corrupted.payload[15]=0x7fU; // NaN detector state
+    corrupted.payload[16]=0xffU;
+    corrupted.payload[17]=0xffU;
+    corrupted.payload[18]=0xffU;
+    corrupted.payload[19]=0xffU;
+    corrupted.payload[20]=0xffU;
+    corrupted.payload[21]=0xffU;
+    corrupted.payload[22]=0xf8U;
+    corrupted.payload[23]=0x7fU; // NaN detector state
     require_rejection(corrupted);
     corrupted=*checkpoint.value();
     corrupted.sonic_fingerprint+="invalid";
     require_rejection(corrupted);
     corrupted=*checkpoint.value();
     corrupted.next_input_frame=core::FrameIndex{47};
-    // Cannot restore to a bound module at wrong epoch once bound.
-    QVERIFY(dest->restore_runtime_checkpoint(corrupted));
+    require_rejection(corrupted); // carrier/payload epoch mismatch
+    QVERIFY(dest->restore_runtime_checkpoint(*checkpoint.value()));
     auto saved=dest->runtime_checkpoint();
     QVERIFY(saved);
-    QCOMPARE(saved.value()->next_input_frame->value(),47);
-    QVERIFY(!dest->restore_runtime_checkpoint(*checkpoint.value()));
+    QCOMPARE(saved.value()->next_input_frame->value(),48);
+    QVERIFY(!dest->restore_runtime_checkpoint(*base.value()));
     QCOMPARE(*dest->runtime_checkpoint().value(),*saved.value());
 
     std::vector<double> x(5,0.2),y(5,0.1);
@@ -207,13 +208,15 @@ void DynamicEqIModuleTest::badCheckpointAndContextAreAtomic() {
     QCOMPARE(*dest->runtime_checkpoint().value(),*saved.value());
 
     x[2]=std::numeric_limits<double>::quiet_NaN();
-    auto bad_in=make_buffer(spec.audio_format,47,x,y);
-    auto bad_out=make_buffer(spec.audio_format,47,
-        std::array<double,5>{7,7,7,7,7},
-        std::array<double,5>{8,8,8,8,8});
+    auto bad_in=make_buffer(spec.audio_format,48,x,y);
+    const std::array<double,5> sentinel_l{7,7,7,7,7};
+    const std::array<double,5> sentinel_r{8,8,8,8,8};
+    auto bad_out=make_buffer(spec.audio_format,48,
+        std::span<const double>{sentinel_l},
+        std::span<const double>{sentinel_r});
     QVERIFY(bad_in&&bad_out);
     QVERIFY(!dest->process(bad_in.value()->view(),bad_out.value()->mutable_view(),
-        DspProcessContext{frame_range(47,52),false,false}));
+        DspProcessContext{frame_range(48,53),false,false}));
     QCOMPARE(*dest->runtime_checkpoint().value(),*saved.value());
     for(double v:*bad_out.value()->view().channel(0).value())QCOMPARE(v,7.0);
     for(double v:*bad_out.value()->view().channel(1).value())QCOMPARE(v,8.0);

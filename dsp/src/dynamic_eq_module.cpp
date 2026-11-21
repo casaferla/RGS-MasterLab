@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -267,8 +268,13 @@ DynamicEqModule::runtime_checkpoint() const
         cp.backend_identity=kBackend;
         cp.next_input_frame=impl_->next;
         const auto& states=impl_->engine->states();
-        cp.payload.reserve(8+88*states.size());
+        cp.payload.reserve(16+88*states.size());
         write_u64(cp.payload,static_cast<std::uint64_t>(states.size()));
+        // Mirror the authoritative next-frame ownership inside the payload.
+        // Mismatched carrier/payload epoch is rejected before state import.
+        write_u64(cp.payload,impl_->next
+            ?static_cast<std::uint64_t>(impl_->next->value())
+            :std::numeric_limits<std::uint64_t>::max());
         for(const auto& b:states)
             for(const double d:fields(b))
                 write_double(cp.payload,d);
@@ -298,11 +304,17 @@ core::Status DynamicEqModule::restore_runtime_checkpoint(
            (impl_->next.has_value()&&impl_->next!=cp.next_input_frame))
             return invalid("INCOMPATIBLE_CHECKPOINT_METADATA");
         const auto count=impl_->engine->states().size();
-        if(cp.payload.size()!=8U+count*88U)
+        if(cp.payload.size()!=16U+count*88U)
             return invalid("CHECKPOINT_LENGTH");
         std::size_t pos=0;
         const auto n=read_u64(cp.payload,pos);
         if(!n||*n!=count)return invalid("CHECKPOINT_BAND_COUNT");
+        const auto epoch=read_u64(cp.payload,pos);
+        const auto expected_epoch=cp.next_input_frame
+            ?static_cast<std::uint64_t>(cp.next_input_frame->value())
+            :std::numeric_limits<std::uint64_t>::max();
+        if(!epoch||*epoch!=expected_epoch)
+            return invalid("CHECKPOINT_EPOCH_MISMATCH");
         std::vector<internal::C01BandState> candidate(count);
         for(auto& b:candidate) {
             std::array<double,11> f{};
