@@ -189,7 +189,9 @@ void DspModuleAdapterTest::testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMo
             QVERIFY(!item->gain_view_model());
             QVERIFY(!item->eq_view_model());
             QVERIFY(!item->compressor_view_model());
-            QCOMPARE(item->state_text(),QStringLiteral("Not yet qualified"));
+            // Read-only analyzer rows are permanent non-DSP observers;
+            // a missing measurement must not imply a qualification badge.
+            QCOMPARE(item->state_text(),QStringLiteral("Read-only analysis"));
             item->setBypass(false);
             item->setBypass(true);
             item->resetToDefault();
