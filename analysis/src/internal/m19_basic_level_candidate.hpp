@@ -6,11 +6,13 @@
 // the actual qualified M16 surface is bound. No extra live/windowed metrics.
 #include "m19_k_weighting_frozen_banks.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -56,6 +58,20 @@ struct BasicLevelPreproductionSnapshot {
         LoudnessPreproductionState::not_finalized};
     bool retained_block_disclosure_complete{false};
     std::vector<RetainedLoudnessFrameInterval> retained_block_union{};
+    // Additive L3-M05/L2 observational series, derived from the SAME M19
+    // preexisting K-filter quarter powers. No change to integrated gate,
+    // BS.1770 coefficients or any of the five M19 static measurements.
+    // Complete ungated 3s windows start on the canonical 100ms grid;
+    // null is silence/nonfinite, not a -70 LUFS floor. Reference-grade,
+    // M07 pairing and Phase6 qualification belong to later Product.
+    struct ShortTermLoudnessSample final {
+        std::uint64_t absolute_start_frame{};
+        std::optional<double> lufs;
+    };
+    bool short_term_3s_observation_complete{false};
+    std::uint64_t short_term_3s_complete_windows{};
+    std::vector<ShortTermLoudnessSample> short_term_3s_grid100;
+    std::optional<double> short_term_3s_type7_p50_lufs;
 };
 
 // Private gate evidence for independent numerical adversaries. All comparisons
@@ -297,7 +313,19 @@ public:
                     quarter_energy_sum_[channel] = 0.0;
                 }
                 ++quarters_completed_;
-                if (quarters_completed_ >= 4U) {
+                // K-weighting is already performed above, in the same
+                // sample order. One scalar quarter-power sum is reused for
+                // M05 3s/100ms ST observations. No second K-filter pass.
+                double quarter_q=0.0;
+                for (std::uint32_t channel=0;channel<channel_count_;++channel)
+                    quarter_q+=quarter_mean_squares_[channel][bucket];
+                if (!std::isfinite(quarter_q)||quarter_q<0.0) {
+                    k_weighting_numerically_valid_=false;
+                } else {
+                    quarter_powers_.push_back(quarter_q);
+                }
+                if (k_weighting_numerically_valid_
+                    &&quarters_completed_ >= 4U) {
                     double q = 0.0;
                     for (std::uint32_t channel = 0; channel < channel_count_; ++channel) {
                         for (double meanPower : quarter_mean_squares_[channel]) {
@@ -347,6 +375,55 @@ public:
         if (bank == nullptr) return std::nullopt;
         out.k_weighting_bank_member_id = bank->member_id;
         out.k_weighting_bank_sha256 = bank->canonical_le_sha256;
+        // Additive L3 L2 source: the existing M19 push() has already
+        // computed exactly one K-weighted 100ms power per complete quarter.
+        // A 3s value is an UNGATED mean over 30 consecutive quarters.
+        // Never use the M19 integrated 400ms gate or floor the -70 tail.
+        constexpr std::size_t kWindowQuarters=30U;
+        if(k_weighting_numerically_valid_) {
+            out.short_term_3s_observation_complete=true;
+            if(quarter_powers_.size()>=kWindowQuarters) {
+                out.short_term_3s_complete_windows=
+                    static_cast<std::uint64_t>(
+                        quarter_powers_.size()-kWindowQuarters+1U);
+                out.short_term_3s_grid100.reserve(
+                    static_cast<std::size_t>(
+                        out.short_term_3s_complete_windows));
+                std::vector<double> valid_values;
+                valid_values.reserve(
+                    static_cast<std::size_t>(
+                        out.short_term_3s_complete_windows));
+                for(std::size_t j=0;
+                    j+kWindowQuarters<=quarter_powers_.size();++j) {
+                    double mean=0.0;
+                    for(std::size_t k=0;k<kWindowQuarters;++k)
+                        mean+=quarter_powers_[j+k]/
+                            static_cast<double>(kWindowQuarters);
+                    std::optional<double> lufs;
+                    if(std::isfinite(mean)&&mean>0.0) {
+                        const double db=-0.691+10.0*std::log10(mean);
+                        if(std::isfinite(db))lufs=db;
+                    }
+                    const auto start=scope_begin_+
+                        static_cast<std::uint64_t>(j)*quarter_frames_;
+                    out.short_term_3s_grid100.push_back({start,lufs});
+                    if(lufs)valid_values.push_back(*lufs);
+                }
+                // Type-7 P50 of all finite ungated complete windows:
+                // P50 is the middle observation or midpoint of two.
+                if(!valid_values.empty()) {
+                    std::sort(valid_values.begin(),valid_values.end());
+                    const auto n=valid_values.size();
+                    if(n%2U==1U)
+                        out.short_term_3s_type7_p50_lufs=
+                            valid_values[n/2U];
+                    else
+                        out.short_term_3s_type7_p50_lufs=
+                            std::midpoint(valid_values[n/2U-1U],
+                                          valid_values[n/2U]);
+                }
+            }
+        }
         if (!k_weighting_numerically_valid_) {
             out.loudness_state = LoudnessPreproductionState::k_numerically_undefined;
         } else if (block_powers_.empty()) {
@@ -428,6 +505,7 @@ private:
     std::array<double, 2> quarter_energy_sum_{};
     std::array<std::array<double, 4>, 2> quarter_mean_squares_{};
     std::vector<double> block_powers_{};
+    std::vector<double> quarter_powers_{};
 };
 
 } // namespace rgsml::analysis::internal::m19
