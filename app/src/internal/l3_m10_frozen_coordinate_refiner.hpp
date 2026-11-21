@@ -72,7 +72,7 @@ struct MeasuredOrderKey final {
     const auto compare=[](auto a,auto b) {
         return a<b?-1:a>b?1:0;
     };
-    for(const std::pair<double,double> pair:{
+    for(const auto& pair:{
             std::pair{x.total_j,y.total_j},
             std::pair{x.target_j,y.target_j},
             std::pair{x.processing_r,y.processing_r}}) {
