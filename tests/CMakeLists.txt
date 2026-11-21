@@ -1999,6 +1999,20 @@ set_tests_properties(rgsml_dsp_transient_shaper_c00_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;transient_shaper;math;state;rollback;nonrelease")
 
+# L3-M03 opt-in Product RenderPreview and no-mutation offline trial.
+qt_add_executable(rgsml_l3_transient_shaper_product_tests
+    unit/app/test_l3_transient_shaper_product.cpp)
+target_include_directories(rgsml_l3_transient_shaper_product_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
+target_link_libraries(rgsml_l3_transient_shaper_product_tests PRIVATE
+    rgsml_render rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_transient_shaper_product_tests)
+add_test(NAME rgsml_l3_transient_shaper_product_tests
+    COMMAND rgsml_l3_transient_shaper_product_tests)
+set_tests_properties(rgsml_l3_transient_shaper_product_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;transient_shaper;full_prefix;typed;nonrelease")
+
 qt_add_executable(rgsml_m21_real_product_metrics_port_tests
     unit/app/test_m21_real_product_metrics_port.cpp)
 target_include_directories(rgsml_m21_real_product_metrics_port_tests PRIVATE
