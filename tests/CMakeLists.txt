@@ -2693,3 +2693,17 @@ add_test(NAME rgsml_l3_m10_measured_seed_shortlist_tests
 set_tests_properties(rgsml_l3_m10_measured_seed_shortlist_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;measured_shortlist;nonrelease")
+
+# L3 M09 exact-carrier dedup -> M10 combined-top32 binding.
+qt_add_executable(rgsml_l3_m10_exact_combined_binding_tests
+    unit/app/test_l3_m10_p04_exact_combined_binding.cpp)
+target_include_directories(rgsml_l3_m10_exact_combined_binding_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_exact_combined_binding_tests
+    PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_exact_combined_binding_tests)
+add_test(NAME rgsml_l3_m10_exact_combined_binding_tests
+    COMMAND rgsml_l3_m10_exact_combined_binding_tests)
+set_tests_properties(rgsml_l3_m10_exact_combined_binding_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m09;m10;exact_combined;nonrelease")
