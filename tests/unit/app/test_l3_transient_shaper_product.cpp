@@ -66,11 +66,11 @@ void TransientProductTest::frozenRegistryOptInAndCanonicalRender() {
     const auto frames=core::FrameCount::create(4096);
     const auto block=core::FrameCount::create(256);
     QVERIFY(format&&frames&&block);
-    auto audio=audio::AudioBuffer::create(
+    auto inputBuffer=audio::AudioBuffer::create(
         *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
         core::FrameIndex{0},*frames.value());
-    QVERIFY(audio);
-    auto pcm=audio.value()->mutable_view().channel(0);
+    QVERIFY(inputBuffer);
+    auto pcm=inputBuffer.value()->mutable_view().channel(0);
     QVERIFY(pcm);
     for(std::size_t i=0;i<pcm.value()->size();++i) {
         const auto time=static_cast<double>(i);
@@ -78,7 +78,7 @@ void TransientProductTest::frozenRegistryOptInAndCanonicalRender() {
             2.0*std::numbers::pi*440.0*time/48000.0);
     }
     auto r=render::RenderRequest::create(
-        audio.value()->view(),audio.value()->view().absolute_range(),
+        inputBuffer.value()->view(),inputBuffer.value()->view().absolute_range(),
         *chain.value(),bindings,*block.value());
     QVERIFY(r);
     auto rendered=render::render_preview(*r.value(),*opt.value());
@@ -105,13 +105,13 @@ void TransientProductTest::frozenRegistryOptInAndCanonicalRender() {
         core::FrameIndex{256},core::FrameIndex{1024});
     QVERIFY(partial);
     auto crop=render::RenderRequest::create(
-        audio.value()->view(),*partial.value(),*chain.value(),
+        inputBuffer.value()->view(),*partial.value(),*chain.value(),
         bindings,*block.value());
     QVERIFY(crop);
     QVERIFY(!render::render_preview(*crop.value(),*opt.value()));
     QVERIFY(chain.value()->set_user_bypass(trans,true));
     auto bypassed=render::RenderRequest::create(
-        audio.value()->view(),*partial.value(),*chain.value(),
+        inputBuffer.value()->view(),*partial.value(),*chain.value(),
         bindings,*block.value());
     QVERIFY(bypassed);
     auto bypassResult=render::render_preview(*bypassed.value(),*opt.value());
@@ -121,10 +121,10 @@ void TransientProductTest::frozenRegistryOptInAndCanonicalRender() {
     const auto wrong=dsp::GainParameters::create(0.0);
     QVERIFY(wrong);
     QVERIFY(!render::RenderRequest::create(
-        audio.value()->view(),audio.value()->view().absolute_range(),
+        inputBuffer.value()->view(),inputBuffer.value()->view().absolute_range(),
         *chain.value(),{{trans,*wrong.value()}},*block.value()));
     QVERIFY(!render::RenderRequest::create(
-        audio.value()->view(),audio.value()->view().absolute_range(),
+        inputBuffer.value()->view(),inputBuffer.value()->view().absolute_range(),
         *chain.value(),{},*block.value()));
 }
 void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
