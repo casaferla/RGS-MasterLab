@@ -4649,7 +4649,7 @@ void ProjectSessionTest::reference_region_and_independent_loop_project_roundtrip
     QVERIFY(session.referenceRegion.set_loop_enabled(true));
     QVERIFY(session.referenceRegion.loop_enabled());
     QVERIFY(session.region.loop_enabled());
-    QCOMPARE(session.observed->loop,std::optional{*referenceRange.value()});
+    QVERIFY(session.observed->loop &&*session.observed->loop==*referenceRange.value());
 
     const auto path=dir.filePath(QStringLiteral("independent-loops.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(path));
@@ -4679,9 +4679,9 @@ void ProjectSessionTest::reference_region_and_independent_loop_project_roundtrip
     // exclusively when their actual audio owner is selected.
     QVERIFY(reopened.observed->state!=core::PlaybackState::PLAYING);
     QVERIFY(reopened.selector.switch_to(app::AuditionTarget::GOLD));
-    QCOMPARE(reopened.observed->loop,std::optional{*referenceRange.value()});
+    QVERIFY(reopened.observed->loop &&*reopened.observed->loop==*referenceRange.value());
     QVERIFY(reopened.selector.switch_to(app::AuditionTarget::PREPARED));
-    QCOMPARE(reopened.observed->loop,std::optional{*sourceRange.value()});
+    QVERIFY(reopened.observed->loop &&*reopened.observed->loop==*sourceRange.value());
     QCOMPARE(reopened.region.region()->begin().value(),std::int64_t{7});
     QCOMPARE(reopened.referenceRegion.region()->begin().value(),std::int64_t{123});
 
