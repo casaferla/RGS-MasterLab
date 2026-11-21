@@ -210,6 +210,13 @@ struct Session final {
                   std::move(uuidFactory))
     {
         project.set_reference_region_view_model(&referenceRegion);
+        selector.set_source_loop_provider([this] {
+            return region.loop_enabled()?region.region():std::nullopt;
+        });
+        selector.set_reference_loop_provider([this] {
+            return referenceRegion.loop_enabled()
+                ?referenceRegion.region():std::nullopt;
+        });
         QObject::connect(&gold,&app::GoldSelectionViewModel::changed,
             &referenceRegion,[this,lastRevision=std::uint64_t{0}]() mutable {
                 const auto revision=gold.selection_revision();
