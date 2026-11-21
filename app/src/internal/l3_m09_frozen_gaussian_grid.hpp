@@ -43,11 +43,15 @@ struct SmoothedGrid final {
 {
     if(selected.empty())return {{},GridFailure::empty_grid};
     // Do not accept unbounded/ill-formed spacing as a source grid.
-    const double radius_count=kGaussianRadiusOctaves/
-                              selected_spacing_octaves;
     if(!std::isfinite(selected_spacing_octaves)
-       ||selected_spacing_octaves<=0.0
-       ||!std::isfinite(radius_count)
+       ||selected_spacing_octaves<=0.0)
+        return {{},GridFailure::illegal_spacing};
+    // Keep the mandatory positive/finiteness preflight before dividing.
+    // A volatile read also avoids MSVC C4723 constant-zero speculation
+    // when a negative test intentionally supplies zero spacing.
+    const volatile double checked_spacing=selected_spacing_octaves;
+    const double radius_count=kGaussianRadiusOctaves/checked_spacing;
+    if(!std::isfinite(radius_count)
        ||radius_count>static_cast<double>(
             std::numeric_limits<std::int32_t>::max()/2))
         return {{},GridFailure::illegal_spacing};
