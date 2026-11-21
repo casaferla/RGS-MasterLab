@@ -11,6 +11,7 @@
 #include "l3_m05m06_real_analysis_port.hpp"
 #include "l3_m05_real_tonal_statistics.hpp"
 #include "l3_m06_real_windowed_rms_crest.hpp"
+#include "l3_m06_real_lra_native.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -79,6 +80,23 @@ struct OfflineProductCandidateMeasurement final {
     observed_m06_native_rms_crest() const
     {
         return m05m06_real::observe_d03_d04_real_pcm(rendered.view());
+    }
+    // D02 reads the SAME real M19 ungated native Short-term analysis.
+    // Active-duration evidence and EBU file-based 1.5s trailing policy
+    // are externally owner-authenticated. A short/stale result cannot
+    // become M07/M10 authority just because it has a numerical LRA.
+    [[nodiscard]] m05m06_real::LraNativeObservation
+    observed_m06_native_lra(
+        m05m06_real::SourceIdentity verified_by_caller,
+        std::int64_t exact_active_frames,
+        bool phase6_file_based_trailing_attested) const
+    {
+        const auto original=observed_m05m06(
+            std::move(verified_by_caller));
+        if(!original.source)return {};
+        return m05m06_real::observe_lra_from_real_m19(
+            *original.source,exact_active_frames,
+            phase6_file_based_trailing_attested);
     }
     // The M07 owner must provide an EXACT shared common bandwidth and
     // accepted spectral floor. No additional audio pass or FFT occurs.
