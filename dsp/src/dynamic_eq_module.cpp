@@ -227,12 +227,14 @@ core::Status DynamicEqModule::process(
                  context.output_frame_range.begin()!=*impl_->next)
             return invalid("NONCONTIGUOUS_OR_REPEATED_BEGIN");
 
-        const auto in0=input.channel(0),out0=output.channel(0);
+        const auto in0=input.channel(0);
+        const auto out0=output.channel(0);
         if(!in0||!out0)return invalid("INVALID_CHANNEL_ZERO");
         std::span<const double> in1;
         std::span<double> out1;
         if(spec.audio_format.channel_count()==2) {
-            const auto a=input.channel(1),b=output.channel(1);
+            const auto a=input.channel(1);
+            const auto b=output.channel(1);
             if(!a||!b)return invalid("INVALID_CHANNEL_ONE");
             in1=*a.value();out1=*b.value();
         }
