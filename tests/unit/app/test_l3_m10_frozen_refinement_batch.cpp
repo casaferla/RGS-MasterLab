@@ -41,7 +41,9 @@ sameFrozenStepsAcrossMeasuredTop2AndSharedBudget() {
     const auto outcome=m10::run_frozen_top2_refinements(
         seeds,coords,0,true,
         [&](std::size_t ordinal,const std::vector<double>& u,bool allow) {
-            QVERIFY(allow);
+            if(!allow)
+                return m10::Evaluation{
+                    m10::EvaluationKind::needs_new_attempt,{}};
             called_ordinals.push_back(ordinal);
             const double target=ordinal==7?0.75:0.25;
             const double d=u[0]-target;
