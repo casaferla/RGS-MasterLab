@@ -22,6 +22,7 @@ private slots:
     void silentLoudnessGateIsAuthoritativelyEmpty();
     void loudnessUnavailableIsNotAnInventedRetainedUnion();
     void retainedLoudnessUnionIsAbsoluteAndFullAtSixRates();
+    void l3M05L2RealSameKPassGrid100AndType7P50();
 };
 
 void BasicLevelAnalyzerTest::
@@ -149,6 +150,77 @@ silenceAndInsufficientScopeRemainTyped()
     QVERIFY(!result.value()->true_peak_db_tp.db);
     QCOMPARE(result.value()->true_peak_db_tp.state,
              BasicLevelValueState::M16_SUPPORTED_UNQUALIFIED);
+}
+
+void BasicLevelAnalyzerTest::
+l3M05L2RealSameKPassGrid100AndType7P50()
+{
+    using namespace analysis;
+    const auto rate=core::SampleRate::create(48000);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(480000); // exactly 10s
+    QVERIFY(rate&&fmt&&frames);
+    auto first=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{103},*frames.value());
+    auto twice=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{103},*frames.value());
+    QVERIFY(first&&twice);
+    auto a=first.value()->mutable_view().channel(0);
+    auto b=twice.value()->mutable_view().channel(0);
+    QVERIFY(a&&b);
+    for(std::size_t i=0;i<a.value()->size();++i) {
+        const double tone=std::sin(
+            2.0*std::numbers::pi*997.0*static_cast<double>(i)/48000.0);
+        (*a.value())[i]=0.20*tone;
+        (*b.value())[i]=0.40*tone;
+    }
+    // Selected-scope M19 uses the same original K bank and zero state;
+    // no M16 call or second K pass.
+    const auto low=measure_basic_level_scope(
+        first.value()->view(),core::FrameIndex{103},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    const auto high=measure_basic_level_scope(
+        twice.value()->view(),core::FrameIndex{103},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(low&&high);
+    QVERIFY(low.value()->short_term_3s_observation_complete);
+    QVERIFY(high.value()->short_term_3s_observation_complete);
+    QCOMPARE(low.value()->short_term_3s_complete_windows,
+             std::uint64_t{71});
+    QCOMPARE(high.value()->short_term_3s_complete_windows,
+             std::uint64_t{71});
+    QCOMPARE(low.value()->short_term_3s_grid100.size(),std::size_t{71});
+    QCOMPARE(high.value()->short_term_3s_grid100.size(),std::size_t{71});
+    QVERIFY(low.value()->short_term_3s_p50_lufs.db);
+    QVERIFY(high.value()->short_term_3s_p50_lufs.db);
+    QCOMPARE(low.value()->short_term_3s_p50_lufs.state,
+             BasicLevelValueState::AVAILABLE);
+    for(std::size_t j=0;j<71;++j) {
+        const auto& x=low.value()->short_term_3s_grid100[j];
+        const auto& y=high.value()->short_term_3s_grid100[j];
+        QCOMPARE(x.absolute_start_frame,
+                 static_cast<std::int64_t>(103+j*4800));
+        QCOMPARE(y.absolute_start_frame,x.absolute_start_frame);
+        QVERIFY(x.lufs&&y.lufs);
+        QVERIFY(std::abs((*y.lufs-*x.lufs)-
+                         20.0*std::log10(2.0))<1e-9);
+    }
+    QVERIFY(std::abs((*high.value()->short_term_3s_p50_lufs.db-
+                      *low.value()->short_term_3s_p50_lufs.db)-
+                     20.0*std::log10(2.0))<1e-9);
+    // The original M19 integrated result has the SAME expected
+    // amplitude scaling and the original one-pass strict gate.
+    QVERIFY(low.value()->integrated_lufs.db);
+    QVERIFY(high.value()->integrated_lufs.db);
+    QVERIFY(std::abs((*high.value()->integrated_lufs.db-
+                      *low.value()->integrated_lufs.db)-
+                     20.0*std::log10(2.0))<1e-9);
+    QVERIFY(!low.value()->true_peak_db_tp.db);
+    QCOMPARE(low.value()->true_peak_db_tp.state,
+             BasicLevelValueState::M16_SCOPE_UNAVAILABLE);
 }
 
 void BasicLevelAnalyzerTest::
