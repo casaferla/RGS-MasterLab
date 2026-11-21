@@ -17,6 +17,7 @@ private slots:
     void staleOrPreflightRejectedNeverRenders();
     void invalidRealEvidenceConsumesAttemptButIsNotCached();
     void budgetRequiresHitWhenAttemptIsNotPermitted();
+    void fullOptionalCacheNeverDowngradesRealCompleteMeasurement();
 };
 void M10CacheEvaluatorTest::firstPhysicalAttemptThenFreeExactHit() {
     m10::ExactCompletedEvaluationCache cache{{0x01}};
@@ -86,6 +87,34 @@ budgetRequiresHitWhenAttemptIsNotPermitted() {
         cache,key(),true,false,fresh);
     QCOMPARE(before.kind,m10::EvaluationKind::needs_new_attempt);
     QCOMPARE(renders,std::uint32_t{0});
+}
+void M10CacheEvaluatorTest::
+fullOptionalCacheNeverDowngradesRealCompleteMeasurement() {
+    m10::ExactCompletedEvaluationCache cache{{0x01}};
+    for(std::uint32_t i=1;i<=800U;++i) {
+        m10::ExactExecutionCacheKey candidate{
+            {0x01},{static_cast<std::uint8_t>(i>>8),
+                    static_cast<std::uint8_t>(i&0xffU)},
+            {static_cast<std::uint8_t>(i>>8),
+             static_cast<std::uint8_t>(i&0xffU)},
+            {0x41}};
+        const m10::MeasuredOrderKey measure{
+            0.2,0.2,0.0,1,candidate.canonical_current_tuple,{0x41}};
+        QCOMPARE(cache.insert_completed(candidate,measure,true),
+                 m10::CacheInsert::inserted);
+    }
+    const auto new_key=key(); // distinct 1-byte execution tuple
+    bool rendered=false;
+    const auto result=m10::evaluate_with_exact_completed_cache(
+        cache,new_key,true,true,[&]() {
+            rendered=true;
+            return m10::FreshCompleteEvidence{measured(),true};
+        });
+    QCOMPARE(result.kind,m10::EvaluationKind::attempted_complete);
+    QVERIFY(result.measured);
+    QVERIFY(rendered);
+    QCOMPARE(cache.size(),std::size_t{800});
+    QVERIFY(!cache.find(new_key));
 }
 } // namespace
 } // namespace rgsml::tests

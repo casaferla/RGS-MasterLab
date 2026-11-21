@@ -35,9 +35,13 @@ template<typename FreshExecute>
         return {EvaluationKind::attempted_failure,{}};
     const auto inserted=cache.insert_completed(
         exact_candidate,*obtained.measured,true);
-    if(inserted!=CacheInsert::inserted&&
-       inserted!=CacheInsert::already_exact)
+    if(inserted==CacheInsert::deterministic_result_collision||
+       inserted==CacheInsert::generation_poisoned||
+       inserted==CacheInsert::invalid_or_unattested)
         return {EvaluationKind::attempted_failure,{}};
+    // A valid completed render remains completed even when the optional
+    // bounded cache is full. Cache capacity is NOT an M10 hard safety
+    // veto, nor a reason to erase actually measured score evidence.
     return {EvaluationKind::attempted_complete,*obtained.measured};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
