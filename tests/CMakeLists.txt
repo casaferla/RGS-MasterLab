@@ -880,6 +880,7 @@ set_tests_properties(rgsml_playback_device_probe PROPERTIES
 )
 
 foreach(dsp_test IN ITEMS
+    dynamic_eq_parameters
     module_descriptor
     module_registry
     processing_chain
