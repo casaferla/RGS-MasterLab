@@ -71,6 +71,34 @@ const std::vector<C01BandState>& C01FrameEngine::states() const noexcept {
     return states_;
 }
 std::uint32_t C01FrameEngine::channels() const noexcept {return channels_;}
+core::Status C01FrameEngine::restore_states(
+    const std::vector<C01BandState>& candidate)
+{
+    if(candidate.size()!=states_.size())
+        return core::Status::failure(fail("CHECKPOINT_BAND_COUNT"));
+    for(std::size_t i=0;i<candidate.size();++i) {
+        const auto& b=candidate[i];
+        if(!std::isfinite(b.unsigned_magnitude_db)||
+           b.unsigned_magnitude_db<0.0||
+           b.unsigned_magnitude_db>std::abs(bands_[i].control.range_db))
+            return core::Status::failure(fail("CHECKPOINT_CONTROL"));
+        for(const auto& lane:b.lanes) {
+            if(!std::isfinite(lane.audio.s1)||
+               !std::isfinite(lane.audio.s2)||
+               !std::isfinite(lane.detector.s1)||
+               !std::isfinite(lane.detector.s2)||
+               !std::isfinite(lane.power)||lane.power<0.0)
+                return core::Status::failure(fail("CHECKPOINT_LANE_STATE"));
+        }
+    }
+    try {
+        auto new_states=candidate;
+        states_.swap(new_states);
+        return core::Status::success();
+    }catch(...) {
+        return core::Status::failure(fail("CHECKPOINT_ALLOCATION"));
+    }
+}
 
 bool C01FrameEngine::process_section(
     const BiquadCoefficients& c,C01BiquadState& s,double x,double& y)

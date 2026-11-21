@@ -48,6 +48,10 @@ public:
     void reset() noexcept;
     [[nodiscard]] const std::vector<C01BandState>& states() const noexcept;
     [[nodiscard]] std::uint32_t channels() const noexcept;
+    // Atomic fixed-state restoration for IModule checkpoint decoding.
+    // Reject corrupt or incompatible state without changing the engine.
+    [[nodiscard]] core::Status restore_states(
+        const std::vector<C01BandState>& candidate);
 private:
     struct Band final {
         EqRouting routing;
