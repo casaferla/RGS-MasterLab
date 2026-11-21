@@ -410,6 +410,30 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
     QCOMPARE(manual.value()->instances().size(),std::size_t{2});
 
+    // Replacing immutable PREPARED PCM without advancing a coincidentally
+    // equal owner epoch must STILL invalidate the worker's authorization.
+    auto secondPrepare=render::render_preview(*prepareRequest.value(),*product);
+    QVERIFY(secondPrepare);
+    auto otherPrepared=std::make_shared<const render::RenderResult>(
+        std::move(*secondPrepare.value()));
+    QVERIFY(!job.value()->still_current(
+        stamp,otherPrepared,*manual.value(),baseline));
+
+    // Each negative case tests its own missing authority while the exact
+    // live chain still matches the original validated trial.
+    auto noEpoch=stamp;
+    noEpoch.m18_owner_epoch=0;
+    QVERIFY(!OfflineProductTrialJob::create(
+        noEpoch,prepared,product,*manual.value(),baseline,*bound,*block.value()));
+    QVERIFY(!OfflineProductTrialJob::create(
+        stamp,{},product,*manual.value(),baseline,*bound,*block.value()));
+    QVERIFY(!OfflineProductTrialJob::create(
+        stamp,prepared,{},*manual.value(),baseline,*bound,*block.value()));
+    const auto wrongBinding=std::vector<dsp::ModuleExecutionBinding>{
+        {gainId,eq},{eqId,*defaultGain.value()}};
+    QVERIFY(!OfflineProductTrialJob::create(
+        stamp,prepared,product,*manual.value(),wrongBinding,*bound,*block.value()));
+
     auto stale=stamp;
     stale.m18_owner_epoch++;
     QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
@@ -424,15 +448,6 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(!job.value()->still_current(stamp,prepared,*manual.value(),changedBindings));
     QVERIFY(manual.value()->set_user_bypass(eqId,true));
     QVERIFY(!job.value()->still_current(stamp,prepared,*manual.value(),baseline));
-
-    auto noEpoch=stamp;
-    noEpoch.m18_owner_epoch=0;
-    QVERIFY(!OfflineProductTrialJob::create(
-        noEpoch,prepared,product,*empty.value(),{},*bound,*block.value()));
-    QVERIFY(!OfflineProductTrialJob::create(
-        stamp,{},product,*empty.value(),{},*bound,*block.value()));
-    QVERIFY(!OfflineProductTrialJob::create(
-        stamp,prepared,{},*empty.value(),{},*bound,*block.value()));
 }
 
 } // namespace
