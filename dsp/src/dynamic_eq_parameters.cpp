@@ -73,8 +73,8 @@ const DynamicEqBandSpec& DynamicEqBandParameters::spec() const noexcept {
 core::Status DynamicEqBandParameters::validate_for_audio(
     std::uint32_t sample_rate_hz,std::uint32_t channels) const
 {
-    if(channels!=1&&channels!=2)
-        return core::Status::failure(bad("INVALID_CHANNEL_LAYOUT"));
+    if(sample_rate_hz==0 ||channels<1 ||channels>2)
+        return core::Status::failure(bad("INVALID_AUDIO_FORMAT"));
     if(channels==1&&spec_.enabled&&spec_.routing!=EqRouting::STEREO)
         return core::Status::failure(bad("MONO_ROUTE_REQUIRES_STEREO"));
     // Only enabled bands instantiate coefficients, detector and audio states.
