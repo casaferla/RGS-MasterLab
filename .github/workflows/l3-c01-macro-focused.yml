@@ -1,4 +1,4 @@
-name: L3-M01 Dynamic EQ C01 IModule/checkpoint (focused, nonrelease)
+name: L3 C01 integrated macro-lot focused native gate (nonrelease)
 on:
   push:
     branches:
@@ -37,17 +37,17 @@ jobs:
         if: runner.os == 'Windows'
         with:
           arch: x64
-      - name: Build and run frozen Dynamic EQ IModule QtTest (Windows)
+      - name: Build and run L3 C01 macro suite (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $log=Join-Path $env:RUNNER_TEMP 'l3-dyn-bounded.log'
           cmake -S . -B build-dyn -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64" *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 55; throw 'L3_CONFIGURE_FAILED' }
-          cmake --build build-dyn --config Release --parallel 4 --target rgsml_dsp_dynamic_eq_imodule_tests *> $log
+          cmake --build build-dyn --config Release --parallel 4 --target rgsml_dsp_dynamic_eq_parameters_tests rgsml_dsp_dynamic_eq_c01_coefficients_tests rgsml_dsp_dynamic_eq_c01_engine_tests rgsml_dsp_dynamic_eq_imodule_tests rgsml_dsp_dynamic_eq_static_equivalence_tests rgsml_dsp_dynamic_eq_perf_measure_tests rgsml_m21_real_product_metrics_port_tests *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 55; throw 'L3_BUILD_FAILED' }
           $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
-          ctest --test-dir build-dyn -C Release --output-on-failure -R '^rgsml_dsp_dynamic_eq_imodule_tests$' *> $log
+          ctest --test-dir build-dyn -C Release --output-on-failure -R '^(rgsml_dsp_dynamic_eq_(parameters|c01_coefficients|c01_engine|imodule|static_equivalence|perf_measure)_tests|rgsml_m21_real_product_metrics_port_tests) *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 65; throw 'L3_NATIVE_TEST_FAILED' }
           Get-Content $log -Tail 7
       - name: Build and run frozen Dynamic EQ IModule QtTest (Linux)
@@ -57,6 +57,21 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           cmake -S . -B build-dyn -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 55 /tmp/l3-dyn-bounded.log; exit 1; }
-          cmake --build build-dyn --parallel 4 --target rgsml_dsp_dynamic_eq_imodule_tests > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 55 /tmp/l3-dyn-bounded.log; exit 1; }
+          cmake --build build-dyn --parallel 4 --target rgsml_dsp_dynamic_eq_parameters_tests rgsml_dsp_dynamic_eq_c01_coefficients_tests rgsml_dsp_dynamic_eq_c01_engine_tests rgsml_dsp_dynamic_eq_imodule_tests rgsml_dsp_dynamic_eq_static_equivalence_tests rgsml_dsp_dynamic_eq_perf_measure_tests rgsml_m21_real_product_metrics_port_tests > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 55 /tmp/l3-dyn-bounded.log; exit 1; }
           ctest --test-dir build-dyn --output-on-failure -R '^rgsml_dsp_dynamic_eq_imodule_tests$' > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 65 /tmp/l3-dyn-bounded.log; exit 1; }
+          tail -n 7 /tmp/l3-dyn-bounded.log
+ *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 65; throw 'L3_NATIVE_TEST_FAILED' }
+          Get-Content $log -Tail 7
+      - name: Build and run frozen Dynamic EQ IModule QtTest (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          cmake -S . -B build-dyn -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 55 /tmp/l3-dyn-bounded.log; exit 1; }
+          cmake --build build-dyn --parallel 4 --target rgsml_dsp_dynamic_eq_parameters_tests rgsml_dsp_dynamic_eq_c01_coefficients_tests rgsml_dsp_dynamic_eq_c01_engine_tests rgsml_dsp_dynamic_eq_imodule_tests rgsml_dsp_dynamic_eq_static_equivalence_tests rgsml_dsp_dynamic_eq_perf_measure_tests rgsml_m21_real_product_metrics_port_tests > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 55 /tmp/l3-dyn-bounded.log; exit 1; }
+          ctest --test-dir build-dyn --output-on-failure -R '^(rgsml_dsp_dynamic_eq_(parameters|c01_coefficients|c01_engine|imodule|static_equivalence|perf_measure)_tests|rgsml_m21_real_product_metrics_port_tests) > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 65 /tmp/l3-dyn-bounded.log; exit 1; }
+          tail -n 7 /tmp/l3-dyn-bounded.log
+ > /tmp/l3-dyn-bounded.log 2>&1 || { tail -n 65 /tmp/l3-dyn-bounded.log; exit 1; }
           tail -n 7 /tmp/l3-dyn-bounded.log
