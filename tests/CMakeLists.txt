@@ -2733,3 +2733,16 @@ add_test(NAME rgsml_l3_m10_exact_cache_tests
 set_tests_properties(rgsml_l3_m10_exact_cache_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;exact_cache;nonrelease")
+
+# L3 M10 real-attempt adapter: exact cache hits vs budgeted full render.
+qt_add_executable(rgsml_l3_m10_cache_evaluator_tests
+    unit/app/test_l3_m10_cache_aware_evaluator.cpp)
+target_include_directories(rgsml_l3_m10_cache_evaluator_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_cache_evaluator_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_cache_evaluator_tests)
+add_test(NAME rgsml_l3_m10_cache_evaluator_tests
+    COMMAND rgsml_l3_m10_cache_evaluator_tests)
+set_tests_properties(rgsml_l3_m10_cache_evaluator_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;exact_cache;attempt_accounting;nonrelease")

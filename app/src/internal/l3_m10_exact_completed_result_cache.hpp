@@ -33,6 +33,10 @@ public:
         ExactCacheBytes current_immutable_snapshot)
         :snapshot_(std::move(current_immutable_snapshot)),
          poisoned_(snapshot_.empty()) {}
+    [[nodiscard]] bool accepts_exact_current_key(
+        const ExactExecutionCacheKey& key) const noexcept {
+        return !poisoned_&&valid_key_fields(key);
+    }
     [[nodiscard]] std::optional<MeasuredOrderKey> find(
         const ExactExecutionCacheKey& key) const {
         if(poisoned_||!valid_key_fields(key))return std::nullopt;
