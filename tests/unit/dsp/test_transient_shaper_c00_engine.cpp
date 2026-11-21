@@ -1,4 +1,5 @@
 #include "internal/transient_shaper_c00_engine.hpp"
+#include "internal/transient_shaper_effective_memory.hpp"
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/core/error.hpp>
 #include <QtTest/QTest>
@@ -89,6 +90,25 @@ void TransientShaperC00Test::parametersAndRates() {
     QVERIFY(!TransientShaperC00Engine::create(*neutral.value(),22050,1,64));
     QVERIFY(!TransientShaperC00Engine::create(*neutral.value(),48000,3,64));
     QVERIFY(!TransientShaperC00Engine::create(*neutral.value(),48000,1,0));
+
+    // Accepted P07 metadata only: no 112-second buffer allocation, no
+    // exact mid-track cropped-prefix claim.
+    const auto h48=dsp::internal::
+        transient_shaper_conservative_precontext_frames(48000);
+    QVERIFY(h48);
+    QCOMPARE(h48.value()->value(),std::int64_t{5397190});
+    const auto h44=dsp::internal::
+        transient_shaper_conservative_precontext_frames(44100);
+    const auto h96=dsp::internal::
+        transient_shaper_conservative_precontext_frames(96000);
+    const auto h192=dsp::internal::
+        transient_shaper_conservative_precontext_frames(192000);
+    QVERIFY(h44&&h96&&h192);
+    QVERIFY(h44.value()->value()<h48.value()->value());
+    QVERIFY(h48.value()->value()<h96.value()->value());
+    QVERIFY(h96.value()->value()<h192.value()->value());
+    QVERIFY(!dsp::internal::
+        transient_shaper_conservative_precontext_frames(88200));
 }
 void TransientShaperC00Test::exactNeutralSignedZero() {
     auto params=TransientShaperParameters::create_default();
