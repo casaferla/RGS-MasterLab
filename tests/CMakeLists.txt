@@ -1974,7 +1974,7 @@ qt_add_executable(rgsml_m21_real_product_metrics_port_tests
 target_include_directories(rgsml_m21_real_product_metrics_port_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
 target_link_libraries(rgsml_m21_real_product_metrics_port_tests PRIVATE
-    rgsml_analysis Qt6::Test)
+    rgsml_analysis rgsml_render Qt6::Test)
 rgsml_apply_project_warnings(rgsml_m21_real_product_metrics_port_tests)
 add_test(NAME rgsml_m21_real_product_metrics_port_tests
     COMMAND rgsml_m21_real_product_metrics_port_tests)
