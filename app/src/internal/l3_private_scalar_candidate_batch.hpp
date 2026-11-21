@@ -97,10 +97,20 @@ public:
         const auto& origin=jobs.front();
         if(!origin.stamp().populated()||!origin.prepared_owner())
             return reject("L3_PRIVATE_BATCH_MISSING_PRODUCT_ORIGIN");
+        // The M21 Product inbox uses this exact generation+resource
+        // identity. The raw provider/locator remain separate in the
+        // stamp, so a different REFERENCE cannot be smuggled in even
+        // when both references happen to have current numerical cells.
+        const auto expected_gold_id=
+            "gold-file-generation:"+
+            std::to_string(origin.stamp().m18_owner_epoch)+"|"+
+            origin.stamp().reference_provider_id+"|"+
+            origin.stamp().reference_locator;
         if(authenticated_gold.column!=m21_private::Column::gold
            ||authenticated_gold.lifecycle!=m21_private::Lifecycle::current
-           ||authenticated_gold.generation_token==0
-           ||authenticated_gold.resource_identity.empty()
+           ||authenticated_gold.generation_token!=
+                origin.stamp().m18_owner_epoch
+           ||authenticated_gold.resource_identity!=expected_gold_id
            ||authenticated_gold.analysis_scope_label!="Full Track")
             return reject("L3_PRIVATE_BATCH_UNAUTHENTICATED_REFERENCE");
         // Explicit reference-side objective suitability is knowable before

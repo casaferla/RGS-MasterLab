@@ -428,8 +428,9 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(goldLevels&&goldTonal);
     const auto imported=app::m21_private::import_real_product_metrics(
         *goldLevels.value(),*goldTonal.value(),
-        {app::m21_private::Column::gold,23,
-         "independent-test-gold-real-pcm","Full Track",true});
+        {app::m21_private::Column::gold,stamp.m18_owner_epoch,
+         "gold-file-generation:19|test.provider|reference:actual-picker-3",
+         "Full Track",true});
     QVERIFY(imported.snapshot);
     const std::array<Objective,1> rms{{
         {app::m21_private::Metric::full_scope_rms,1.0,1.0}}};
@@ -511,6 +512,17 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
         duplicates,*imported.snapshot,rms,rejects));
     QCOMPARE(rejects->attempted(),0U);
     QVERIFY(!rejects->finished());
+    auto impostor=*imported.snapshot;
+    impostor.resource_identity="another-gold-with-valid-looking-numbers";
+    auto impostorProgress=std::make_shared<PrivateBatchProgress>();
+    QVERIFY(!PrivateScalarCandidateBatch::run(
+        batchJobs,impostor,rms,impostorProgress));
+    QCOMPARE(impostorProgress->attempted(),0U);
+    impostor=*imported.snapshot;
+    ++impostor.generation_token;
+    QVERIFY(!PrivateScalarCandidateBatch::run(
+        batchJobs,impostor,rms,impostorProgress));
+    QCOMPARE(impostorProgress->attempted(),0U);
     // The 801st entry is rejected before the first DSP dispatch.
     auto oversized=batchJobs;
     for(std::size_t i=3;i<801;++i)oversized.push_back(batchJobs.front());
