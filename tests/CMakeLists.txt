@@ -1984,6 +1984,20 @@ set_tests_properties(rgsml_l3_dynamic_eq_canonical_render_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;dynamic_eq;full_prefix;real_pcm;unit")
 
+# L3-M03 frozen C00 Transient Shaper causal/transactional native oracle.
+qt_add_executable(rgsml_dsp_transient_shaper_c00_tests
+    unit/dsp/test_transient_shaper_c00_engine.cpp)
+target_include_directories(rgsml_dsp_transient_shaper_c00_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/dsp/src)
+target_link_libraries(rgsml_dsp_transient_shaper_c00_tests PRIVATE
+    rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_dsp_transient_shaper_c00_tests)
+add_test(NAME rgsml_dsp_transient_shaper_c00_tests
+    COMMAND rgsml_dsp_transient_shaper_c00_tests)
+set_tests_properties(rgsml_dsp_transient_shaper_c00_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;transient_shaper;math;state;rollback;nonrelease")
+
 qt_add_executable(rgsml_m21_real_product_metrics_port_tests
     unit/app/test_m21_real_product_metrics_port.cpp)
 target_include_directories(rgsml_m21_real_product_metrics_port_tests PRIVATE
