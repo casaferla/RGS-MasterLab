@@ -2032,6 +2032,21 @@ set_tests_properties(rgsml_l3_m05m06_real_analysis_port_tests PROPERTIES
 
 # L3-M07 ACCEPTED_FROZEN static 27-slot rational registry and actual
 # one-ModuleRegistry availability snapshot. M08/M10 fail-closed bridge.
+# L3-M08 frozen numeric Global×Domain Amount and DesiredTarget law,
+# source-independent, no QML or Project persistence.
+qt_add_executable(rgsml_l3_m08_frozen_amount_tests
+    unit/app/test_l3_m08_frozen_amount.cpp)
+target_include_directories(rgsml_l3_m08_frozen_amount_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m08_frozen_amount_tests PRIVATE
+    Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m08_frozen_amount_tests)
+add_test(NAME rgsml_l3_m08_frozen_amount_tests
+    COMMAND rgsml_l3_m08_frozen_amount_tests)
+set_tests_properties(rgsml_l3_m08_frozen_amount_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m08;amount;target;binary64;nonrelease")
+
 qt_add_executable(rgsml_l3_m07_frozen_registry_tests
     unit/app/test_l3_m07_frozen_registry.cpp)
 target_include_directories(rgsml_l3_m07_frozen_registry_tests PRIVATE
