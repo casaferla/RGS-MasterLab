@@ -12,6 +12,7 @@
 #include "l3_m05_real_tonal_statistics.hpp"
 #include "l3_m06_real_windowed_rms_crest.hpp"
 #include "l3_m06_real_lra_native.hpp"
+#include "l3_m05m06_real_source_bundle.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -97,6 +98,23 @@ struct OfflineProductCandidateMeasurement final {
         return m05m06_real::observe_lra_from_real_m19(
             *original.source,exact_active_frames,
             phase6_file_based_trailing_attested);
+    }
+    // One shared Product-native feature bundle from this very PCM
+    // render + M19/M20 result, not a new analyzer/worker or M21 probe.
+    // Phase6 source authority and M13 fresh verification remain external.
+    [[nodiscard]] std::optional<m05m06_real::ProductNativeFeatureBundle>
+    observed_m05m06_native_bundle(
+        m05m06_real::SourceIdentity verified_by_caller,
+        m05m06_real::CommonTonalBandwidth shared_common,
+        double accepted_density_floor,
+        std::int64_t exact_phase6_active_frames,
+        bool exact_file_based_lra_trailing_attested) const
+    {
+        return m05m06_real::bundle_actual_product_m05m06(
+            rendered.view(),levels,tonal,std::move(verified_by_caller),
+            shared_common,accepted_density_floor,
+            exact_phase6_active_frames,
+            exact_file_based_lra_trailing_attested);
     }
     // The M07 owner must provide an EXACT shared common bandwidth and
     // accepted spectral floor. No additional audio pass or FFT occurs.

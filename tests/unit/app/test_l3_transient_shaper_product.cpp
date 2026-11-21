@@ -208,6 +208,14 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(!lra.is_reference_grade());
     QVERIFY(!lra.lra_lu);
     QVERIFY(!lra.authorizes_m10());
+    const auto bundle=calculated.value()->observed_m05m06_native_bundle(
+        {"owner-proved-candidate",54,true},{20.0,20000.0},1e-12,
+        4096,false);
+    QVERIFY(bundle);
+    QCOMPARE(bundle->native_d03_d04.complete_native_windows.size(),
+             std::size_t{0});
+    QVERIFY(!bundle->native_d02_lra.is_reference_grade());
+    QVERIFY(!bundle->authorizes_m10_or_export());
     // Additional named T2–T6 observations reuse the real Product M20
     // PSD. Unqualified reference-grade status remains a separate gate.
     const auto tonalFacts=calculated.value()->observed_m05_tonal(
