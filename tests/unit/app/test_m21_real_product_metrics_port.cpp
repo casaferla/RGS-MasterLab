@@ -1,5 +1,6 @@
 #include "internal/m21_real_product_metrics_port.hpp"
 #include "internal/l2_automatch_evidence_bridge.hpp"
+#include "internal/l3_automatch_offline_search.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
@@ -20,6 +21,8 @@ private slots:
     void mismatchedScopeOrUntrustedOwnerDenied();
     void l2FullTrackPairPreservesM21DeltasAndRateIndependence();
     void l2RejectsMissingStaleAndUnsupportedScopes();
+    void l3OfflineSearchScoresCurrentRealM21ProducerEvidence();
+    void l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence();
 };
 
 void M21RealProductMetricsPortTest::
@@ -245,6 +248,132 @@ l2RejectsMissingStaleAndUnsupportedScopes()
     view.columns[0]->metrics[1]={{},Quality::missing,"Absent"};
     QVERIFY(make_evidence_pair(view,Column::prepared).problem
         ==PairProblem::no_usable_metrics);
+}
+
+
+void M21RealProductMetricsPortTest::
+l3OfflineSearchScoresCurrentRealM21ProducerEvidence()
+{
+    using namespace app::m21_private;
+    using namespace app::l3_automatch;
+    Snapshot candidate;
+    candidate.column=Column::processed;
+    candidate.generation_token=7;
+    candidate.resource_identity="processed-7";
+    candidate.analysis_scope_label="Full Track";
+    candidate.scope_frames=48000;
+    candidate.sample_rate_hz=48000;
+    candidate.lifecycle=Lifecycle::current;
+    candidate.metrics[0]={-16.,Quality::present,{}};
+    candidate.metrics[1]={-17.,Quality::present,{}};
+    Snapshot reference=candidate;
+    reference.column=Column::gold;
+    reference.generation_token=3;
+    reference.resource_identity="gold-reference-3";
+    reference.sample_rate_hz=44100;
+    reference.scope_frames=88200;
+    reference.metrics[0]={-14.,Quality::present,{}};
+    reference.metrics[1]={-15.,Quality::present,{}};
+
+    PrivatePublicationGuard producer;
+    QVERIFY(producer.expect(Column::processed,7));
+    QVERIFY(producer.expect(Column::gold,3));
+    QVERIFY(producer.publish(candidate));
+    QVERIFY(producer.publish(reference));
+    auto search=OfflineSearch::begin(998,producer.view(),
+        {{"typed-gain-eq-a"},{"typed-gain-eq-b"}},
+        {{Metric::integrated_lufs,1.,2.},{Metric::full_scope_rms,1.,1.}});
+    QVERIFY(search);
+    QCOMPARE(search->best().weighted_error,4.);
+    QVERIFY(!search->best().typed_dsp_fingerprint);
+    QVERIFY(!search->complete());
+    auto ticket1=search->next();
+    QVERIFY(ticket1);
+    QVERIFY(!search->next()); // one in-flight candidate maximum
+    QCOMPARE(ticket1->ordinal,std::size_t{0});
+    QCOMPARE(ticket1->typed_dsp_fingerprint,std::string{"typed-gain-eq-a"});
+
+    QVERIFY(producer.expect(Column::processed,8));
+    candidate.generation_token=8;
+    candidate.resource_identity="processed-8";
+    candidate.metrics[0].unrounded=-15.;
+    candidate.metrics[1].unrounded=-16.;
+    QVERIFY(producer.publish(candidate));
+    QVERIFY(search->complete(*ticket1,producer.view())==Submission::improved);
+    QCOMPARE(search->best().weighted_error,1.);
+    QVERIFY(search->best().typed_dsp_fingerprint);
+    QCOMPARE(*search->best().typed_dsp_fingerprint,
+        std::string{"typed-gain-eq-a"});
+
+    auto ticket2=search->next();
+    QVERIFY(ticket2);
+    QCOMPARE(ticket2->ordinal,std::size_t{1});
+    QVERIFY(producer.expect(Column::processed,9));
+    candidate.generation_token=9;
+    candidate.resource_identity="processed-9";
+    candidate.metrics[0].unrounded=-18.;
+    candidate.metrics[1].unrounded=-19.;
+    QVERIFY(producer.publish(candidate));
+    QVERIFY(search->complete(*ticket2,producer.view())==Submission::accepted);
+    QCOMPARE(search->best().weighted_error,1.);
+    QCOMPARE(search->attempts(),std::size_t{2});
+    QVERIFY(search->complete());
+    QVERIFY(!search->next());
+    QVERIFY(search->complete(*ticket2,producer.view())
+        ==Submission::no_pending_ticket);
+}
+
+void M21RealProductMetricsPortTest::
+l3OfflineSearchRejectsStaleOrUntrustedCandidateEvidence()
+{
+    using namespace app::m21_private;
+    using namespace app::l3_automatch;
+    Snapshot processed;
+    processed.column=Column::processed;
+    processed.generation_token=4;
+    processed.resource_identity="processed-4";
+    processed.analysis_scope_label="Full Track";
+    processed.scope_frames=48000;
+    processed.sample_rate_hz=48000;
+    processed.lifecycle=Lifecycle::current;
+    processed.metrics[1]={-18.,Quality::present,{}};
+    Snapshot gold=processed;
+    gold.column=Column::gold;
+    gold.generation_token=6;
+    gold.resource_identity="reference-6";
+    gold.metrics[1].unrounded=-16.;
+    PrivatePublicationGuard producer;
+    QVERIFY(producer.expect(Column::processed,4));
+    QVERIFY(producer.expect(Column::gold,6));
+    QVERIFY(producer.publish(processed));
+    QVERIFY(producer.publish(gold));
+    const auto initial=producer.view();
+    QVERIFY(!OfflineSearch::begin(0,initial,{{"a"}},
+        {{Metric::full_scope_rms,1.,1.}}));
+    QVERIFY(!OfflineSearch::begin(5,initial,{{"a"},{"a"}},
+        {{Metric::full_scope_rms,1.,1.}}));
+    QVERIFY(!OfflineSearch::begin(5,initial,{{"a"}},
+        {{Metric::full_scope_rms,0.,1.}}));
+    QVERIFY(!OfflineSearch::begin(5,initial,{{"a"}},
+        {{Metric::true_peak,1.,1.}})); // no invented TP objective
+    auto search=OfflineSearch::begin(5,initial,{{"typed-compressor"}},
+        {{Metric::full_scope_rms,1.,1.}});
+    QVERIFY(search);
+    const auto ticket=search->next();
+    QVERIFY(ticket);
+    auto fake=*ticket;
+    ++fake.run_id;
+    QVERIFY(search->complete(fake,initial)==Submission::mismatched_ticket);
+    QVERIFY(!search->cancelled());
+    QVERIFY(producer.expect(Column::gold,7));
+    gold.generation_token=7;
+    gold.resource_identity="reference-replaced-7";
+    QVERIFY(producer.publish(gold));
+    QVERIFY(search->complete(*ticket,producer.view())
+        ==Submission::stale_or_invalid_product);
+    QVERIFY(search->cancelled());
+    QVERIFY(!search->next());
+    QVERIFY(search->complete(*ticket,producer.view())==Submission::cancelled);
 }
 
 } // namespace rgsml::tests
