@@ -47,6 +47,11 @@ public:
     [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
     with_dynamic_eq_offline(ModuleRegistry baseline);
 
+    // Explicit L3-M03 opt-in: attach to the existing frozen L1 placeholder;
+    // never register a second descriptor or activate in default Product.
+    [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
+    with_transient_shaper_offline(ModuleRegistry baseline);
+
     [[nodiscard]] std::span<const ModuleDescriptor> descriptors() const noexcept;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const ModuleDescriptor>>
     find_descriptor(std::string_view type_id) const;

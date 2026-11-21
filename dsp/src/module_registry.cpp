@@ -5,6 +5,8 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_module.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_module.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/gain_module.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_module.hpp>
@@ -47,6 +49,7 @@ using rgsml::core::Result;
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kDynamicEqTypeId = "rgsml.dsp.dynamic-eq";
+constexpr auto kTransientTypeId = "rgsml.dsp.transient-shaper";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
@@ -127,6 +130,25 @@ public:
             Error{ErrorCode::InvalidArgument,
                   "Dynamic EQ offline execution requires explicit typed parameters.",
                   {{"category","DYNAMIC_EQ_TYPED_BINDING_REQUIRED"}}});
+    }
+private:
+    ModuleDescriptor descriptor_;
+};
+
+// Only an explicit, validated typed offline binding may instantiate M03.
+// The frozen default Product registry retains its unbound L1 placeholder.
+class TransientShaperOfflineFactory final:public IModuleFactory {
+public:
+    explicit TransientShaperOfflineFactory(ModuleDescriptor descriptor)
+        :descriptor_(std::move(descriptor)) {}
+    [[nodiscard]] std::string_view module_type_id() const noexcept override {
+        return descriptor_.type_id();
+    }
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override {
+        return Result<std::unique_ptr<IModule>>::failure(
+            Error{ErrorCode::InvalidArgument,
+                "Transient Shaper offline needs typed two-control binding.",
+                {{"category","TRANSIENT_SHAPER_TYPED_BINDING_REQUIRED"}}});
     }
 private:
     ModuleDescriptor descriptor_;
@@ -624,6 +646,36 @@ Result<ModuleRegistry> ModuleRegistry::with_dynamic_eq_offline(
     return create(std::move(registrations));
 }
 
+Result<ModuleRegistry> ModuleRegistry::with_transient_shaper_offline(
+    ModuleRegistry baseline)
+{
+    auto registrations=std::move(baseline.registrations_);
+    const auto iter=std::find_if(
+        registrations.begin(),registrations.end(),
+        [](const ModuleRegistration& entry) {
+            return entry.descriptor.type_id()==kTransientTypeId;
+        });
+    if(iter==registrations.end())
+        return Result<ModuleRegistry>::failure(registry_error(
+            ErrorCode::ResourceNotFound,"TRANSIENT_SHAPER_PLACEHOLDER_MISSING",
+            "Frozen L1 Transient Shaper descriptor is absent."));
+    if(iter->factory)
+        return Result<ModuleRegistry>::failure(registry_error(
+            ErrorCode::InvalidState,"TRANSIENT_SHAPER_ALREADY_ACTIVATED",
+            "M03 opt-in factory already installed."));
+    if(iter->descriptor.algorithm_version()!=
+           std::optional<std::string_view>{"1.0.0"}
+       ||iter->descriptor.parameter_schema_id()!=
+           std::optional<std::string_view>{
+               "rgsml.dsp.transient-shaper.parameters/1.0.0"})
+        return Result<ModuleRegistry>::failure(registry_error(
+            ErrorCode::InvalidState,"TRANSIENT_SHAPER_FROZEN_IDENTITY_MISMATCH",
+            "Existing M03 descriptor identity differs from accepted freeze."));
+    iter->factory=std::make_shared<TransientShaperOfflineFactory>(
+        iter->descriptor);
+    return create(std::move(registrations));
+}
+
 Result<ModuleRegistry> ModuleRegistry::with_streaming_true_peak_preview(
     ModuleRegistry baseline)
 {
@@ -816,6 +868,19 @@ ModuleRegistry::create_module(
             }
             auto module=DynamicEqModule::create(iterator->descriptor,*parameters);
             if(!module)return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            std::unique_ptr<IModule> output=std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(output));
+        }
+
+        if(type_id==kTransientTypeId) {
+            const auto* params=std::get_if<TransientShaperParameters>(&payload);
+            if(!params)return Result<std::unique_ptr<IModule>>::failure(
+                registry_error(ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "Transient Shaper requires two-control typed parameters."));
+            auto module=TransientShaperModule::create(iterator->descriptor,*params);
+            if(!module)return Result<std::unique_ptr<IModule>>::failure(
+                *module.error());
             std::unique_ptr<IModule> output=std::move(*module.value());
             return Result<std::unique_ptr<IModule>>::success(std::move(output));
         }
