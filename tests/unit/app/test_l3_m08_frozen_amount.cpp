@@ -1,5 +1,6 @@
 #include "internal/l3_m08_frozen_amount_target.hpp"
 #include "internal/l3_m08_frozen_proximity_reporting.hpp"
+#include "internal/l3_m08_frozen_targeted_population.hpp"
 #include <QtTest/QTest>
 #include <array>
 #include <bit>
@@ -7,6 +8,9 @@
 #include <cstdint>
 #include <limits>
 #include <string_view>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace rgsml::tests {
 namespace {
@@ -27,6 +31,7 @@ private slots:
     void noClaimOfProductTargetOrM13();
     void p02AlreadyMatchedDropoutAndRawNegativeLaw();
     void p02ConditionalRequestedGlobalDoesNotFabricateFull();
+    void exact27M07M08M10PopulationUsesActualAmountAndEndpoint();
 };
 void FrozenM08AmountTest::frozenFourDomainsAndAmountValidation() {
     auto a=m08::create_amount_config(0.5,ordered(0.8,0.4,0.1,0.0),1);
@@ -246,6 +251,79 @@ p02ConditionalRequestedGlobalDoesNotFabricateFull() {
              m08::GlobalCompleteness::complete);
     QCOMPARE(complete.comparable_domain_mass,1.0);
     QVERIFY(!complete.authorizes_full_match_publication());
+}
+void FrozenM08AmountTest::
+exact27M07M08M10PopulationUsesActualAmountAndEndpoint() {
+    std::vector<m08::AuthenticatedPairSlot> paired;
+    paired.reserve(m07::kBindings.size());
+    for(const auto& b:m07::kBindings) {
+        m08::AuthenticatedPairSlot slot;
+        slot.binding_id=std::string{b.binding_id};
+        slot.source_feature_id=std::string{b.source_feature_id};
+        slot.exact_feature_dependency="test-attested-exact-content";
+        slot.feature_authority_attested=true;
+        const auto n=b.component_share==m07::ComponentShare::thirds
+            ?std::size_t{3}:
+            b.component_share==m07::ComponentShare::configured_n
+            ?std::size_t{2}:std::size_t{1};
+        for(std::size_t i=0;i<n;++i)
+            slot.configured.push_back({
+                true,1.0,
+                {12.0,m08::Endpoint::ordinary},
+                {9.0,m08::Endpoint::ordinary},10.5,true});
+        paired.push_back(std::move(slot));
+    }
+    const auto amounts=m08::create_amount_config(
+        0.5,ordered(),19);
+    QVERIFY(amounts.config);
+    auto built=m08::build_targeted_population(
+        *amounts.config,paired,{true,true,true,true});
+    QVERIFY(built.value);
+    QCOMPARE(built.failure,m08::PopulationFailure::none);
+    QVERIFY(!built.value->authorizes_product_master());
+    QCOMPARE(built.value->desired_by_canonical_slot.size(),
+             std::size_t{27});
+    for(const auto& slot:built.value->desired_by_canonical_slot)
+        for(const auto& t:slot) {
+            QVERIFY(t);
+            QCOMPARE(t->desired_z,10.5);
+            QCOMPARE(t->effective_amount,0.5);
+            QVERIFY(!t->achieved_z);
+            QVERIFY(!t->constraint_adjusted_z);
+        }
+    const auto objective=m10::compute_frozen_target_cost(
+        built.value->objective_input);
+    QVERIFY(objective.valid_measured());
+    QVERIFY(std::abs(*objective.j_target)<1e-12);
+
+    // One missing native ST selector is not dropped from the D01 mass.
+    paired[6].configured[1].current_valid=false;
+    paired[6].configured[1].prepared.z.reset();
+    paired[6].configured[1].reference.z.reset();
+    paired[6].configured[1].current_candidate_z.reset();
+    built=m08::build_targeted_population(
+        *amounts.config,paired,{true,true,true,true});
+    QVERIFY(built.value);
+    QVERIFY(!built.value->desired_by_canonical_slot[6][1]);
+    const auto partial=m10::compute_frozen_target_cost(
+        built.value->objective_input);
+    QVERIFY(partial.valid_measured());
+    QVERIFY(partial.effective_coverage[1]);
+    QVERIFY(std::abs(*partial.effective_coverage[1]-0.95)<1e-12);
+    paired[6].configured[1].current_valid=true;
+    const auto invalid=m08::build_targeted_population(
+        *amounts.config,paired,{true,true,true,true});
+    QVERIFY(!invalid.value);
+    QCOMPARE(invalid.failure,
+             m08::PopulationFailure::amount_or_target_invalid);
+    paired[6].configured[1].prepared.z=12.0;
+    paired[6].configured[1].reference.z=9.0;
+    paired[6].configured[1].current_candidate_z=10.5;
+    paired[0].source_feature_id=
+        std::string{m07::kBindings[0].exclusive_fallback_feature_id};
+    const auto alternative=m08::build_targeted_population(
+        *amounts.config,paired,{true,true,true,true});
+    QVERIFY(alternative.value); // T1 is one slot, not a 28th
 }
 void FrozenM08AmountTest::noClaimOfProductTargetOrM13() {
     const auto amounts=m08::create_amount_config(
