@@ -463,8 +463,8 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
             *manual.value(),baseline,gainId,db,ticket);
         QVERIFY(trial);
         auto newJob=OfflineProductTrialJob::create(
-            stamp,prepared,product,*manual.value(),baseline,
-            *trial,*block.value());
+            stamp,prepared,job.value()->registry_snapshot(),
+            *manual.value(),baseline,*trial,*block.value());
         QVERIFY(newJob);
         batchJobs.push_back(std::move(*newJob.value()));
     }
@@ -484,6 +484,33 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QCOMPARE(progress->completed(),3U);
     QVERIFY(progress->finished());
     QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
+
+    // Distinct ticket identities but IDENTICAL typed DSP payload,
+    // immutable PREPARED, chain, registry and block size: reuse one
+    // already completed scalar result at zero additional render cost.
+    auto sameTrial=make_gain_trial(
+        *manual.value(),baseline,gainId,3.0,
+        "same-PCM-and-parameters-different-ticket");
+    QVERIFY(sameTrial);
+    auto sameJob=OfflineProductTrialJob::create(
+        stamp,prepared,job.value()->registry_snapshot(),
+        *manual.value(),baseline,*sameTrial,*block.value());
+    QVERIFY(sameJob);
+    QVERIFY(batchJobs.front().identical_execution_to(*sameJob.value()));
+    auto exactCacheJobs=batchJobs;
+    exactCacheJobs.push_back(std::move(*sameJob.value()));
+    auto cacheProgress=std::make_shared<PrivateBatchProgress>();
+    const auto cached=PrivateScalarCandidateBatch::run(
+        exactCacheJobs,*imported.snapshot,rms,cacheProgress);
+    QVERIFY(cached);
+    QCOMPARE(cached.value()->attempted,3U);
+    QCOMPARE(cached.value()->completed,4U);
+    QCOMPARE(cached.value()->failed,0U);
+    QCOMPARE(cached.value()->cached_reuses,1U);
+    QCOMPARE(cacheProgress->attempted(),3U);
+    QCOMPARE(cacheProgress->cached_reuses(),1U);
+    QVERIFY(cached.value()->best);
+    QVERIFY(!cached.value()->authorizes_product_publication());
 
     // Exercise the same PCM work through the detached, single-flight
     // owner-poll interface without any QObject on the numerical worker.
