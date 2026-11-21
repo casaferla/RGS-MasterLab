@@ -138,8 +138,9 @@ struct Import final {
     value.profile_1_12.reserve(tonal.primary_bands_1_12.size());
     std::optional<int> last_index;
     for(const auto& band:tonal.primary_bands_1_12) {
-        if(band.band_index<0
-           ||(last_index&&band.band_index<=*last_index)
+        // M20's 1/12-octave canonical indices range around 1 kHz
+        // and legitimately include NEGATIVE k values (e.g. 500 Hz).
+        if((last_index&&band.band_index<=*last_index)
            ||!std::isfinite(band.center_hz)
            ||!std::isfinite(band.low_hz)
            ||!std::isfinite(band.high_hz)
