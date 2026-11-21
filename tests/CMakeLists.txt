@@ -2653,3 +2653,17 @@ add_test(NAME rgsml_l3_m10_p04_numeric_combined_tests
 set_tests_properties(rgsml_l3_m10_p04_numeric_combined_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;topology_consumer;nonrelease")
+
+# L3 M07/M08 authoritative 27-slot current candidate to M10 measured J.
+qt_add_executable(rgsml_l3_m10_authoritative_candidate_cost_tests
+    unit/app/test_l3_m10_authoritative_candidate_cost.cpp)
+target_include_directories(rgsml_l3_m10_authoritative_candidate_cost_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_authoritative_candidate_cost_tests PRIVATE
+    rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_authoritative_candidate_cost_tests)
+add_test(NAME rgsml_l3_m10_authoritative_candidate_cost_tests
+    COMMAND rgsml_l3_m10_authoritative_candidate_cost_tests)
+set_tests_properties(rgsml_l3_m10_authoritative_candidate_cost_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;authoritative_features;nonrelease")
