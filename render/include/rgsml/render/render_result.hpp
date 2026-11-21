@@ -7,6 +7,7 @@
 #include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
@@ -263,12 +264,29 @@ struct StreamingTruePeakLimiterExecutionSignaturePayload final {
                            const StreamingTruePeakLimiterExecutionSignaturePayload&) = default;
 };
 
+// Audio-effective Dynamic EQ identity: UUID and disabled bands deliberately
+// excluded. Ordered active bands retain all controls that shape sound.
+struct DynamicEqBandExecutionSignaturePayload final {
+    rgsml::dsp::DynamicEqFilterType filter_type;
+    rgsml::dsp::EqRouting routing;
+    rgsml::dsp::DynamicEqShape shape;
+    rgsml::dsp::DynamicEqControl control;
+    friend bool operator==(const DynamicEqBandExecutionSignaturePayload&,
+                           const DynamicEqBandExecutionSignaturePayload&)=default;
+};
+struct DynamicEqExecutionSignaturePayload final {
+    std::vector<DynamicEqBandExecutionSignaturePayload> enabled_bands;
+    friend bool operator==(const DynamicEqExecutionSignaturePayload&,
+                           const DynamicEqExecutionSignaturePayload&)=default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
     ParametricEqExecutionSignaturePayload,
     CompressorExecutionSignaturePayload,
     StereoMsExecutionSignaturePayload,
-    StreamingTruePeakLimiterExecutionSignaturePayload>;
+    StreamingTruePeakLimiterExecutionSignaturePayload,
+    DynamicEqExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;
