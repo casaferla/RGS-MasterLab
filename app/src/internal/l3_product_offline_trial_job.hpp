@@ -23,6 +23,7 @@
 #include <new>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -96,9 +97,25 @@ public:
             // as-is; there is no synthetic 5-DSP fallback registry.
             std::shared_ptr<const dsp::ModuleRegistry> registry=
                 std::move(product_registry);
-            if(!registry->has_factory("rgsml.dsp.dynamic-eq")) {
-                auto opt=dsp::ModuleRegistry::with_dynamic_eq_offline(
-                    *registry);
+            // Attach ONLY the frozen placeholders actually required by
+            // the immutable Product candidate graph. A registry already
+            // activated by the owner can be shared across many trials.
+            const auto needed=[&](std::string_view name) {
+                return std::any_of(instances.begin(),instances.end(),
+                    [name](const dsp::ModuleInstance& instance) {
+                        return instance.module_type_id()==name;
+                    });
+            };
+            if(needed("rgsml.dsp.dynamic-eq") &&
+               !registry->has_factory("rgsml.dsp.dynamic-eq")) {
+                auto opt=dsp::ModuleRegistry::with_dynamic_eq_offline(*registry);
+                if(!opt)return R::failure(*opt.error());
+                registry=std::make_shared<const dsp::ModuleRegistry>(
+                    std::move(*opt.value()));
+            }
+            if(needed("rgsml.dsp.transient-shaper") &&
+               !registry->has_factory("rgsml.dsp.transient-shaper")) {
+                auto opt=dsp::ModuleRegistry::with_transient_shaper_offline(*registry);
                 if(!opt)return R::failure(*opt.error());
                 registry=std::make_shared<const dsp::ModuleRegistry>(
                     std::move(*opt.value()));
