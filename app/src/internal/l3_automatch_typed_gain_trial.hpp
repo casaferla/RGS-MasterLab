@@ -60,6 +60,8 @@ struct BoundGainTrial final {
                 &&std::holds_alternative<dsp::GainParameters>(payload))
         || (type=="rgsml.dsp.parametric-eq"
                 &&std::holds_alternative<dsp::ParametricEqParameters>(payload))
+        || (type=="rgsml.dsp.dynamic-eq"
+                &&std::holds_alternative<dsp::DynamicEqParameters>(payload))
         || (type=="rgsml.dsp.compressor"
                 &&std::holds_alternative<dsp::CompressorParameters>(payload))
         || (type=="rgsml.dsp.stereo-ms"
@@ -84,8 +86,10 @@ struct BoundGainTrial final {
     const auto validated=dsp::GainParameters::create(trial_db);
     if(!validated)return std::nullopt;
     const auto instances=chain.instances();
-    if(instances.empty() ||instances.size()>5
-       ||instances.size()!=bindings.size())
+    // The Product registry/chain owns structural capacity and placement.
+    // Do not falsely retain a 5-node cap after an opt-in Dynamic EQ is
+    // appended; each entire binding must still be type-matched exactly.
+    if(instances.empty() ||instances.size()!=bindings.size())
         return std::nullopt;
     std::optional<std::size_t> gainIndex;
     for(std::size_t i=0;i<instances.size();++i) {
