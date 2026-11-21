@@ -73,7 +73,10 @@ struct Group final {
         return {0,0,sign==0?
             MicroReason::missing_non_deadband_movement:
             MicroReason::invalid_component};
-    const double delta=sum/mass;
+    // After positive-mass preflight, suppress speculative MSVC C4723
+    // through a checked runtime read; do not change seed arithmetic.
+    const volatile double checked_positive_mass=mass;
+    const double delta=sum/checked_positive_mass;
     if(!std::isfinite(delta))
         return {0,0,MicroReason::invalid_component};
     return {delta,sign,MicroReason::ready};

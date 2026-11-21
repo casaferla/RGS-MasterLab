@@ -119,8 +119,11 @@ struct SpectralClusterSeed final {
     if(score<=0.0)
         return {{},{},{},{},{},{},false,
                 SpectralSeedReason::invalid_feature_or_grid};
-    const double center=std::exp(weighted_log_frequency/score);
-    const double raw=weighted_delta/score;
+    // Keep the original strictly-positive score preflight; a volatile
+    // denominator prevents MSVC speculative divide-by-zero warning C4723.
+    const volatile double checked_positive_score=score;
+    const double center=std::exp(weighted_log_frequency/checked_positive_score);
+    const double raw=weighted_delta/checked_positive_score;
     if(!std::isfinite(center)||center<=0.0||!std::isfinite(raw))
         return {{},{},{},{},{},{},false,
                 SpectralSeedReason::invalid_feature_or_grid};
