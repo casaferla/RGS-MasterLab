@@ -62,6 +62,8 @@ struct BoundGainTrial final {
                 &&std::holds_alternative<dsp::ParametricEqParameters>(payload))
         || (type=="rgsml.dsp.dynamic-eq"
                 &&std::holds_alternative<dsp::DynamicEqParameters>(payload))
+        || (type=="rgsml.dsp.transient-shaper"
+                &&std::holds_alternative<dsp::TransientShaperParameters>(payload))
         || (type=="rgsml.dsp.compressor"
                 &&std::holds_alternative<dsp::CompressorParameters>(payload))
         || (type=="rgsml.dsp.stereo-ms"

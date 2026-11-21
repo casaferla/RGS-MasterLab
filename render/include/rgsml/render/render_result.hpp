@@ -8,6 +8,7 @@
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
@@ -280,13 +281,23 @@ struct DynamicEqExecutionSignaturePayload final {
                            const DynamicEqExecutionSignaturePayload&)=default;
 };
 
+// Frozen M03 sound identity: both amounts, independent of forced UI
+// layout, window/control representation and module UUID.
+struct TransientShaperExecutionSignaturePayload final {
+    double attack_amount_db{};
+    double sustain_amount_db{};
+    friend bool operator==(const TransientShaperExecutionSignaturePayload&,
+                           const TransientShaperExecutionSignaturePayload&)=default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
     ParametricEqExecutionSignaturePayload,
     CompressorExecutionSignaturePayload,
     StereoMsExecutionSignaturePayload,
     StreamingTruePeakLimiterExecutionSignaturePayload,
-    DynamicEqExecutionSignaturePayload>;
+    DynamicEqExecutionSignaturePayload,
+    TransientShaperExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;
