@@ -25,6 +25,7 @@ public:
         Product::Capture render;
         Product::GoldCapture gold;
         l2_minimal::AutoMatchEvidencePair starting_evidence;
+        m21_private::Snapshot authenticated_reference;
         OfflineProductTrialJob job;
         // The job may be passed to a numerical worker. Accepted and its
         // mutable-QObject freshness methods remain on the Qt owner thread.
@@ -64,6 +65,20 @@ public:
             view,m21_private::Column::processed);
         if(!evidence.evidence)
             return R::failure(fail("L3_OWNER_ADMISSION_M21_NOT_READY"));
+        // Copy the AUTHENTIC current independent GOLD analysis exactly
+        // once. The worker may reuse this immutable reference across
+        // candidates without touching the picker, Qt or doing reference
+        // FFT again. It cannot turn this copy into live Product authority.
+        const auto& reference_column=
+            view.columns[static_cast<std::size_t>(m21_private::Column::gold)];
+        if(!reference_column
+           ||reference_column->lifecycle!=m21_private::Lifecycle::current
+           ||reference_column->generation_token!=
+               reference.value()->owner.epoch
+           ||reference_column->resource_identity
+                !=evidence.evidence->reference_identity)
+            return R::failure(
+                fail("L3_OWNER_ADMISSION_REFERENCE_ANALYSIS_STALE"));
         const auto& chain=product.upstream.chain.chain();
         const auto bindings=product.upstream.chain.execution_bindings();
         if(bindings!=owner.value()->manual_bindings
@@ -98,7 +113,7 @@ public:
             return R::failure(fail("L3_OWNER_ADMISSION_CHANGED_DURING_CAPTURE"));
         return R::success(Accepted{std::move(*owner.value()),
              std::move(*reference.value()),std::move(*evidence.evidence),
-             std::move(*job.value())});
+             *reference_column,std::move(*job.value())});
     }
 
     // Call after the worker has completed and BEFORE any M21 candidate
