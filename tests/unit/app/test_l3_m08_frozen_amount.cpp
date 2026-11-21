@@ -1,4 +1,5 @@
 #include "internal/l3_m08_frozen_amount_target.hpp"
+#include "internal/l3_m08_frozen_proximity_reporting.hpp"
 #include <QtTest/QTest>
 #include <array>
 #include <bit>
@@ -24,6 +25,8 @@ private slots:
     void canonicalDesiredEndpointAndInterior();
     void positiveEffectiveAmountUnderflowAndInvalidEvidence();
     void noClaimOfProductTargetOrM13();
+    void p02AlreadyMatchedDropoutAndRawNegativeLaw();
+    void p02ConditionalRequestedGlobalDoesNotFabricateFull();
 };
 void FrozenM08AmountTest::frozenFourDomainsAndAmountValidation() {
     auto a=m08::create_amount_config(0.5,ordered(0.8,0.4,0.1,0.0),1);
@@ -144,6 +147,105 @@ positiveEffectiveAmountUnderflowAndInvalidEvidence() {
     QVERIFY(!invalid.value);
     QCOMPARE(invalid.failure,
              m08::TargetFailure::invalid_amount_domain);
+}
+void FrozenM08AmountTest::
+p02AlreadyMatchedDropoutAndRawNegativeLaw() {
+    m08::DomainDistanceEvidence evidence{
+        true,true,false,false,3.0,1.5};
+    const auto normal=m08::compute_domain_proximity(evidence);
+    QVERIFY(normal.comparable());
+    QCOMPARE(*normal.raw,0.5);
+    evidence.candidate_to_gold_distance=1.5; // overshoot same distance
+    QCOMPARE(*m08::compute_domain_proximity(evidence).raw,0.5);
+    evidence.baseline_to_gold_distance=1.0;
+    evidence.candidate_to_gold_distance=2.0;
+    const auto worse=m08::compute_domain_proximity(evidence);
+    QVERIFY(worse.comparable());
+    QCOMPARE(*worse.raw,-1.0); // raw worsening is NEVER UI clipped
+    evidence.prepared_already_within_frozen_close=true;
+    evidence.candidate_within_frozen_close=true;
+    const auto matched=m08::compute_domain_proximity(evidence);
+    QVERIFY(matched.comparable());
+    QCOMPARE(*matched.raw,1.0);
+    QCOMPARE(matched.reason,
+             m08::ProximityReason::proximity_already_matched);
+    evidence.candidate_within_frozen_close=false;
+    const auto departed=m08::compute_domain_proximity(evidence);
+    QVERIFY(!departed.comparable());
+    QVERIFY(!departed.raw);
+    QCOMPARE(departed.reason,
+             m08::ProximityReason::
+             proximity_undefined_initial_already_matched_candidate_departure);
+    evidence.required_candidate_components_present=false;
+    const auto dropped=m08::compute_domain_proximity(evidence);
+    QVERIFY(!dropped.raw);
+    QCOMPARE(dropped.reason,
+             m08::ProximityReason::candidate_required_component_missing);
+    evidence.producer_current=false;
+    const auto stale=m08::compute_domain_proximity(evidence);
+    QVERIFY(!stale.raw);
+    QCOMPARE(stale.reason,
+             m08::ProximityReason::source_evidence_unavailable);
+    evidence={true,true,false,false,0.0,0.0};
+    QCOMPARE(m08::compute_domain_proximity(evidence).reason,
+             m08::ProximityReason::invalid_distance);
+}
+void FrozenM08AmountTest::
+p02ConditionalRequestedGlobalDoesNotFabricateFull() {
+    std::array<m08::RequestedDomainReport,4> full{{
+        {true,{{0.8,m08::ProximityReason::comparable}},1.0},
+        {true,{{0.4,m08::ProximityReason::comparable}},0.8},
+        {true,{{},m08::ProximityReason::
+            candidate_required_component_missing},0.5},
+        {true,{{},m08::ProximityReason::
+            source_evidence_unavailable},{}}
+    }};
+    const auto partial=m08::report_requested_domains(full);
+    QCOMPARE(partial.completeness,
+             m08::GlobalCompleteness::partial);
+    QVERIFY(partial.conditional_comparable_proximity);
+    QVERIFY(std::abs(*partial.conditional_comparable_proximity-0.6)<1e-12);
+    QCOMPARE(partial.requested_domain_mass,1.0);
+    QCOMPARE(partial.comparable_domain_mass,0.5);
+    QCOMPARE(partial.structural_coverage,0.5);
+    QVERIFY(std::abs(*partial.fixed_contributions[0]-0.2)<1e-12);
+    QVERIFY(std::abs(*partial.fixed_contributions[1]-0.1)<1e-12);
+    QVERIFY(!partial.fixed_contributions[2]);
+    QVERIFY(!partial.fixed_contributions[3]);
+    QVERIFY(!partial.effective_coverage);
+    QCOMPARE(partial.unknown_effective_mass,0.25);
+    QVERIFY(!partial.authorizes_full_match_publication());
+    full[3].effective_coverage=0.4;
+    const auto covered=m08::report_requested_domains(full);
+    QVERIFY(covered.effective_coverage);
+    QVERIFY(std::abs(*covered.effective_coverage-0.675)<1e-12);
+    full[0].proximity={};
+    full[1].proximity={};
+    const auto none=m08::report_requested_domains(full);
+    QCOMPARE(none.completeness,
+             m08::GlobalCompleteness::no_comparable_domain);
+    QVERIFY(!none.conditional_comparable_proximity);
+    // Request set membership is explicit; an Amount=0 elsewhere does
+    // NOT remove a requested Domain from the global denominator.
+    full[0].requested=false;
+    full[1].requested=false;
+    full[2].requested=false;
+    full[3].requested=false;
+    const auto empty=m08::report_requested_domains(full);
+    QCOMPARE(empty.completeness,
+             m08::GlobalCompleteness::no_requested_domains);
+    QVERIFY(!empty.conditional_comparable_proximity);
+    // Full scope current/raw evidence also never authorizes a master.
+    for(auto& d:full) {
+        d.requested=true;
+        d.effective_coverage=1.0;
+        d.proximity={0.75,m08::ProximityReason::comparable};
+    }
+    const auto complete=m08::report_requested_domains(full);
+    QCOMPARE(complete.completeness,
+             m08::GlobalCompleteness::complete);
+    QCOMPARE(complete.comparable_domain_mass,1.0);
+    QVERIFY(!complete.authorizes_full_match_publication());
 }
 void FrozenM08AmountTest::noClaimOfProductTargetOrM13() {
     const auto amounts=m08::create_amount_config(
