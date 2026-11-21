@@ -1969,6 +1969,21 @@ set_tests_properties(rgsml_true_peak_measurement_tests PROPERTIES
 
 # L1-M21 typed real M19/M20 producer port into Gold-minus-Current
 # comparison, with no fabricated Phase-6 owner or canonical Gold alignment.
+# L3 opt-in exact full-prefix canonical RenderPreview with Dynamic EQ.
+# C01 is not silently added to the GUI/production DSP package.
+qt_add_executable(rgsml_l3_dynamic_eq_canonical_render_tests
+    unit/app/test_l3_dynamic_eq_canonical_render.cpp)
+target_include_directories(rgsml_l3_dynamic_eq_canonical_render_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src ${CMAKE_SOURCE_DIR}/analysis/src)
+target_link_libraries(rgsml_l3_dynamic_eq_canonical_render_tests PRIVATE
+    rgsml_render rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_dynamic_eq_canonical_render_tests)
+add_test(NAME rgsml_l3_dynamic_eq_canonical_render_tests
+    COMMAND rgsml_l3_dynamic_eq_canonical_render_tests)
+set_tests_properties(rgsml_l3_dynamic_eq_canonical_render_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;dynamic_eq;full_prefix;real_pcm;unit")
+
 qt_add_executable(rgsml_m21_real_product_metrics_port_tests
     unit/app/test_m21_real_product_metrics_port.cpp)
 target_include_directories(rgsml_m21_real_product_metrics_port_tests PRIVATE
