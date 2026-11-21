@@ -175,4 +175,26 @@ struct TonalSlope final {
     if(!std::isfinite(slope))return std::nullopt;
     return TonalSlope{slope,total,used,authoritative_density_floor};
 }
+// Convenience observation bundle. Absent T2/T6 support or missing
+// external floor stays explicit. A single call reuses the SAME canonical
+// M20 PSD and band energies and cannot itself grant M07/M08 readiness.
+struct TonalObservationBundle final {
+    std::optional<TonalT3T5> t3_centroid_t4t5_rolloffs;
+    std::optional<TonalSlope> t2_spectral_tilt;
+    std::optional<TonalSlope> t6_high_frequency_slope;
+    [[nodiscard]] bool authorizes_solver_objective()
+        const noexcept {return false;}
+};
+[[nodiscard]] inline TonalObservationBundle
+observe_m05_tonal_bundle(
+    const analysis::TonalStereoAnalysisResult& actual_m20,
+    CommonTonalBandwidth exact_common,double authoritative_density_floor)
+{
+    return {
+        observe_m05_t3t5(actual_m20,exact_common),
+        observe_m05_t2_or_t6(
+            actual_m20,exact_common,authoritative_density_floor,false),
+        observe_m05_t2_or_t6(
+            actual_m20,exact_common,authoritative_density_floor,true)};
+}
 } // namespace rgsml::app::l3_automatch::m05m06_real
