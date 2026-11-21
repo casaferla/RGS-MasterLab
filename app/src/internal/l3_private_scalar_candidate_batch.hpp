@@ -40,6 +40,9 @@ public:
     [[nodiscard]] std::uint32_t failed() const noexcept {
         return failed_.load(std::memory_order_acquire);
     }
+    [[nodiscard]] std::uint32_t cached_reuses() const noexcept {
+        return cached_reuses_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] bool finished() const noexcept {
         return finished_.load(std::memory_order_acquire);
     }
@@ -49,6 +52,7 @@ private:
     std::atomic<std::uint32_t> attempted_{0};
     std::atomic<std::uint32_t> completed_{0};
     std::atomic<std::uint32_t> failed_{0};
+    std::atomic<std::uint32_t> cached_reuses_{0};
     std::atomic<bool> finished_{false};
 };
 enum class PrivateBatchEnd : std::uint8_t {
@@ -65,6 +69,7 @@ struct PrivateBatchReport final {
     std::uint32_t attempted{};
     std::uint32_t completed{};
     std::uint32_t failed{};
+    std::uint32_t cached_reuses{};
     std::optional<PrivateBatchBest> best;
     // Explicitly not authorization for a Product/QML projection.
     [[nodiscard]] constexpr bool authorizes_product_publication()
@@ -91,6 +96,7 @@ public:
         if(!progress||progress->finished()
            ||progress->attempted()!=0
            ||progress->completed()!=0||progress->failed()!=0
+           ||progress->cached_reuses()!=0
            ||jobs.empty()||jobs.size()>kMaxAttempts
            ||objectives.empty()||objectives.size()>9)
             return reject("L3_PRIVATE_BATCH_INVALID_CONFIGURATION");
@@ -147,9 +153,13 @@ public:
                !std::equal(a.begin(),a.end(),b.begin()))
                 return reject("L3_PRIVATE_BATCH_MIXED_DSP_GRAPH");
         }
-        // All preflight rejections above consume ZERO attempts and cannot
-        // mutate the progress object. From here only actual DSP+M19/M20
-        // attempted evaluations increment the ledger.
+        // Only exact completed-score reuse is free. A 32-entry local FIFO
+        // stores ordinal+score, NOT PCM or audio buffers. Identity is
+        // computed from the actual job's typed bindings and shared backend,
+        // not an opaque ticket string. Failed/incomplete renders are never
+        // cached, and no reference from another Product epoch is accepted.
+        std::vector<std::pair<std::size_t,double>> exact_completed;
+        exact_completed.reserve(32);
         PrivateBatchReport report;
         report.end=PrivateBatchEnd::all_attempted;
         for(std::size_t ordinal=0;ordinal<jobs.size();++ordinal) {
@@ -157,28 +167,46 @@ public:
                 report.end=PrivateBatchEnd::cancelled;
                 break;
             }
-            // Mark the attempted evaluation BEFORE DSP dispatch, even if
-            // rendering or measuring fails or cancellation arrives mid-render.
-            ++report.attempted;
-            progress->attempted_.store(report.attempted,
-                                      std::memory_order_release);
-            const auto eval=jobs[ordinal].evaluate();
-            if(!eval) {
-                ++report.failed;
-                progress->failed_.store(report.failed,
-                                        std::memory_order_release);
-                continue;
+            std::optional<double> score;
+            for(auto it=exact_completed.rbegin();
+                it!=exact_completed.rend();++it) {
+                if(jobs[ordinal].identical_execution_to(jobs[it->first])) {
+                    score=it->second;
+                    ++report.cached_reuses;
+                    progress->cached_reuses_.store(
+                        report.cached_reuses,std::memory_order_release);
+                    break;
+                }
             }
-            const auto score=probe_unpublished_candidate(
-                *eval.value(),authenticated_gold,objectives);
             if(!score) {
-                ++report.failed;
-                progress->failed_.store(report.failed,
-                                        std::memory_order_release);
-                continue;
+                // Only an attempted physical RenderPreview+M19/M20 consumes
+                // a budget slot; failed work does too, preflight and
+                // completed-cache hits do not.
+                ++report.attempted;
+                progress->attempted_.store(report.attempted,
+                                          std::memory_order_release);
+                const auto measured=jobs[ordinal].evaluate();
+                if(!measured) {
+                    ++report.failed;
+                    progress->failed_.store(report.failed,
+                                           std::memory_order_release);
+                    continue;
+                }
+                const auto probed=probe_unpublished_candidate(
+                    *measured.value(),authenticated_gold,objectives);
+                if(!probed) {
+                    ++report.failed;
+                    progress->failed_.store(report.failed,
+                                           std::memory_order_release);
+                    continue;
+                }
+                score=probed.value()->normalized_weighted_squared_error;
+                if(exact_completed.size()==32)
+                    exact_completed.erase(exact_completed.begin());
+                exact_completed.emplace_back(ordinal,*score);
             }
-            // If Qt cancelled while C01 was processing, never retain the
-            // in-flight result as an acceptably completed best.
+            // Even after a cheap cache hit, cancellation must suppress any
+            // new "completed best" until current Product is rechecked.
             if(progress->cancellation_requested()) {
                 report.end=PrivateBatchEnd::cancelled;
                 break;
@@ -186,12 +214,9 @@ public:
             ++report.completed;
             progress->completed_.store(report.completed,
                                        std::memory_order_release);
-            if(!report.best ||
-               score.value()->normalized_weighted_squared_error
-                   <report.best->measured_scalar_error)
+            if(!report.best ||*score<report.best->measured_scalar_error)
                 report.best=PrivateBatchBest{
-                    jobs[ordinal].ticket_identity(),ordinal,
-                    score.value()->normalized_weighted_squared_error};
+                    jobs[ordinal].ticket_identity(),ordinal,*score};
         }
         if(progress->cancellation_requested())
             report.end=PrivateBatchEnd::cancelled;
