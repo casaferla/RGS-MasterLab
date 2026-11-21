@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace rgsml::app::l3_automatch::m05m06_real {
@@ -28,8 +29,10 @@ type7_percentile(std::span<const double> sorted,double p) noexcept {
     const auto upper_index=std::min(
         sorted.size()-1,floor_index+1);
     const double delta=index-static_cast<double>(floor_index);
-    return sorted[floor_index]*(1.0-delta)+
-           sorted[upper_index]*delta;
+    const double result=sorted[floor_index]*(1.0-delta)+
+                        sorted[upper_index]*delta;
+    return std::isfinite(result)?
+        std::optional<double>{result}:std::nullopt;
 }
 struct D01ShortTermShape final {
     std::array<double,3> relative_to_p50_lu{};

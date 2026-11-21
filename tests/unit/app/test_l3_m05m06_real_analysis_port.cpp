@@ -1,5 +1,6 @@
 #include "internal/l3_m05m06_real_analysis_port.hpp"
 #include "internal/l3_m05_real_tonal_statistics.hpp"
+#include "internal/l3_m06_real_short_term_shape.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
@@ -23,6 +24,7 @@ private slots:
     void malformedOwnerScopeAndUnavailableCannotFabricateM10();
     void realM20PsdT3T5AndIndependentFlatDensityOracle();
     void realNativeM19ShortTermP50PairedSupportAndNoReanalysis();
+    void frozenD01Type7AndThreeComponentMassNativeOracles();
     void frozenT2T6ExternalFloorAndUnweightedOlsOracle();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
@@ -308,6 +310,12 @@ realNativeM19ShortTermP50PairedSupportAndNoReanalysis() {
     QVERIFY(pair.pair);
     QVERIFY(pair.pair->short_term_p50_lufs.ready());
     QCOMPARE(*pair.pair->short_term_pair_support,1.0);
+    const auto d01=real::pair_d01(*p.source,*g.source);
+    QVERIFY(d01);
+    QCOMPARE(d01->pair_support,1.0);
+    for(std::size_t i=0;i<3;++i)
+        QVERIFY(std::abs(d01->candidate.relative_to_p50_lu[i]-
+                         d01->reference.relative_to_p50_lu[i])<1e-9);
     const double expected=20.0*std::log10(0.45/0.28);
     const double actual=
         *g.source->short_term_p50_lufs.unrounded-
@@ -319,6 +327,50 @@ realNativeM19ShortTermP50PairedSupportAndNoReanalysis() {
     auto corrupted=*p.source;
     corrupted.short_term_p50_lufs={};
     QVERIFY(!corrupted.short_term_p50_lufs.ready());
+}
+void M05M06RealPortTest::
+frozenD01Type7AndThreeComponentMassNativeOracles() {
+    const std::vector<double> sorted{0,1,2,3,4,5,6,7,8,9};
+    QCOMPARE(*real::type7_percentile(sorted,0.10),0.9);
+    QCOMPARE(*real::type7_percentile(sorted,0.50),4.5);
+    QCOMPARE(*real::type7_percentile(sorted,0.90),8.1);
+    QCOMPARE(*real::type7_percentile(sorted,0.95),8.55);
+    QVERIFY(!real::type7_percentile(sorted,-0.01));
+    QVERIFY(!real::type7_percentile(sorted,1.01));
+    real::SourceReadings a;
+    a.owner={"D01-independent-prepared",1,true};
+    a.short_term_complete_windows=10;
+    a.short_term_valid_windows=10;
+    a.short_term_native_support=1.0;
+    a.short_term_p50_lufs={4.5,real::Readiness::measured};
+    for(std::size_t i=0;i<sorted.size();++i)
+        a.short_term_3s_grid100.push_back({
+            static_cast<std::int64_t>(i*4800),
+            {sorted[i],real::Readiness::measured}});
+    const auto shape=real::observe_d01(a);
+    QVERIFY(shape);
+    QVERIFY(std::abs(shape->relative_to_p50_lu[0]+3.6)<1e-12);
+    QVERIFY(std::abs(shape->relative_to_p50_lu[1]-3.6)<1e-12);
+    QVERIFY(std::abs(shape->relative_to_p50_lu[2]-4.05)<1e-12);
+    auto g=a;
+    g.owner={"D01-independent-reference",2,true};
+    for(auto& w:g.short_term_3s_grid100)
+        *w.lufs.unrounded+=6.0;
+    g.short_term_p50_lufs={10.5,real::Readiness::measured};
+    const auto pair=real::pair_d01(a,g);
+    QVERIFY(pair);
+    QCOMPARE(pair->pair_support,1.0);
+    QVERIFY(!pair->authorizes_m10());
+    for(std::size_t i=0;i<3;++i)
+        QVERIFY(std::abs(pair->candidate.relative_to_p50_lu[i]-
+                         pair->reference.relative_to_p50_lu[i])<1e-12);
+    auto corrupt=g;
+    corrupt.short_term_complete_windows=9; // wrong denominator
+    QVERIFY(!real::observe_d01(corrupt));
+    corrupt=g;
+    corrupt.short_term_p50_lufs={0.0,real::Readiness::measured};
+    QVERIFY(!real::observe_d01(corrupt));
+    QVERIFY(!real::pair_d01(a,a)); // one owner cannot self-reference
 }
 void M05M06RealPortTest::
 malformedOwnerScopeAndUnavailableCannotFabricateM10() {
