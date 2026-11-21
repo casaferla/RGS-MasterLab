@@ -193,19 +193,29 @@ def test_product_binds_status_without_demo() -> None:
     assert 'measured_band_energy_1_12' not in snapshots[snapshots.index('struct ReadinessSnapshot final'):]
     assert "m21MissingComparisonNotice" in visuals
     assert "m21MetricRow_" in visuals
-    # PO-approved 16px vectors: only three analysis services, never
-    # inherited meter/stereo placeholders or a new M18/M22 chain row.
+    # Only three analysis services, now drawn by the SAME Qt Canvas 2D
+    # as TP Meter; no second Shape/PathSvg instance or halo semantics.
     selector = read("ui/qml/DspChainSelector.qml")
     vectors = read("ui/qml/AnalysisModuleIcon.qml")
+    icon = read("ui/qml/StudioIcon.qml")
     for key,kind in (("M19_ANALYSIS","analysis-levels"),
                      ("M20_ANALYSIS","analysis-spectrum"),
                      ("M21_ANALYSIS","analysis-delta")):
         assert f'case "{key}": return "{kind}"' in selector
-        assert f'kind === "{kind}"' in vectors
-    assert 'AnalysisModuleIcon {' in selector
-    # M16 and the three nonbypassable analyzer services must share the
-    # exact same row/halo behavior. Missing measurements affect only the
-    # editor's value cells, NEVER dim the permanent analysis row or icon.
+        assert f'kind === "{kind}"' in icon
+    assert 'StudioIcon {' in selector
+    assert 'AnalysisModuleIcon {' not in selector
+    assert 'analysisVectorIcon' not in selector
+    assert 'import QtQuick.Shapes' not in vectors
+    assert 'PathSvg' not in vectors
+    assert 'StudioIcon {' in vectors  # non-instantiated compatibility alias
+    assert 'Canvas {' in icon
+    assert 'ctx.shadowBlur = icon.glowBlur' in icon
+    assert 'ctx.shadowColor = icon.glowEnabled ? icon.glowTint' in icon
+    assert 'ctx.scale(0.75, 0.75)' in icon
+    assert 'module-output-dither' in icon
+    # M16 and the three nonbypassable analyzer services share the
+    # exact row/halo behavior; missing metrics never dim the icon.
     assert '&& moduleAdapter.nonProcessingService' in selector
     assert 'readonly property bool permanentlyLit:' in selector
     assert 'readonly property bool isBypassed:' in selector
@@ -218,17 +228,6 @@ def test_product_binds_status_without_demo() -> None:
     assert 'opacity: rowItem.isBypassed ? 0.28 : 1.0' in selector
     assert 'Always on · Read-only analysis / service' in selector
     assert 'rowItem.permanentlyLit\n' in selector
-    assert 'glowEnabled: moduleSymbol.glowEnabled' in selector
-    assert 'strokeColor: moduleSymbol.strokeColor' in selector
-    # The 16px slot belongs to the EXISTING StudioIcon in the selector;
-    # the 24px vector master is centered in its own Shape component.
-    assert 'anchors.fill: parent' in selector
-    assert 'anchors.centerIn: parent' in vectors
-    assert 'import QtQuick.Shapes' in vectors
-    assert 'PathSvg { path: root.vectorPath }' in vectors
-    assert 'readonly property bool small:' in vectors
-    assert 'Math.min(root.width,root.height)/root.designSize' in vectors
-    assert 'module-output-dither' in vectors
     assert 'case "M18_ANALYSIS"' not in selector
     assert 'case "M22_ANALYSIS"' not in selector
     assert "Image {" not in vectors and ".png" not in vectors

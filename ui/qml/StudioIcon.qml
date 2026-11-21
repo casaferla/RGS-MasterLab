@@ -113,6 +113,61 @@ Canvas {
             line(9.0, 4.3, 9.0, 15.1)
             line(14.4, 8.0, 14.4, 15.1)
             ctx.restore()
+        } else if (kind === "analysis-levels"
+                   || kind === "analysis-spectrum"
+                   || kind === "analysis-delta"
+                   || kind === "module-output-dither") {
+            // M19-M21 use the EXACT same Canvas painter and phosphor
+            // shadow as TP Meter, not a second Shapes/PathSvg overlay.
+            // Approved compact 24-unit vector geometry is mapped onto
+            // StudioIcon's 18-unit grid (and its fixed 16px Chain slot).
+            ctx.save()
+            ctx.scale(0.75, 0.75)
+            ctx.lineWidth = 2.55
+            ctx.beginPath()
+            if (kind === "analysis-levels") {
+                // M19: measured-level trace between fixed upper/lower rails.
+                ctx.moveTo(2.5, 5); ctx.lineTo(21.5, 5)
+                ctx.moveTo(2.5, 19); ctx.lineTo(21.5, 19)
+                ctx.moveTo(3, 12); ctx.lineTo(6, 12)
+                ctx.lineTo(8, 15); ctx.lineTo(11, 7)
+                ctx.lineTo(13.2, 13); ctx.lineTo(15.5, 10)
+                ctx.lineTo(18, 12); ctx.lineTo(21, 12)
+            } else if (kind === "analysis-spectrum") {
+                // M20: two independent spectrum contours.
+                ctx.moveTo(2.5, 10.5); ctx.lineTo(5, 8.5)
+                ctx.lineTo(7.5, 10); ctx.lineTo(10.7, 4)
+                ctx.lineTo(13.2, 9); ctx.lineTo(16, 7)
+                ctx.lineTo(19, 10.5); ctx.lineTo(21.5, 10.5)
+                ctx.moveTo(2.5, 15.5); ctx.lineTo(5, 13.5)
+                ctx.lineTo(7.5, 15); ctx.lineTo(10.7, 9)
+                ctx.lineTo(13.2, 14); ctx.lineTo(16, 12)
+                ctx.lineTo(19, 15.5); ctx.lineTo(21.5, 15.5)
+            } else if (kind === "analysis-delta") {
+                // M21: two readouts and a bidirectional delta bracket.
+                ctx.moveTo(3, 6); ctx.lineTo(12.3, 6)
+                ctx.moveTo(3, 18); ctx.lineTo(12.3, 18)
+                ctx.moveTo(17.1, 5); ctx.lineTo(17.1, 19)
+                ctx.moveTo(14.6, 7.6); ctx.lineTo(17.1, 5)
+                ctx.lineTo(19.6, 7.6)
+                ctx.moveTo(14.6, 16.4); ctx.lineTo(17.1, 19)
+                ctx.lineTo(19.6, 16.4)
+            } else {
+                // Reserved M18 Export Dither symbol, not a Chain row.
+                ctx.moveTo(3, 20); ctx.lineTo(3, 16.5)
+                ctx.moveTo(7, 20); ctx.lineTo(7, 12)
+                ctx.moveTo(11, 20); ctx.lineTo(11, 8)
+                ctx.moveTo(15, 7); ctx.lineTo(15, 7.2)
+                ctx.moveTo(19, 9); ctx.lineTo(19, 9.2)
+                ctx.moveTo(16, 12.5); ctx.lineTo(16, 12.7)
+                ctx.moveTo(20, 14); ctx.lineTo(20, 14.2)
+                ctx.moveTo(15, 18); ctx.lineTo(15, 18.2)
+                ctx.moveTo(20, 19); ctx.lineTo(20, 19.2)
+            }
+            // One combined path/stroke -> one identical halo pass,
+            // avoiding multiplied glow from separately drawn segments.
+            ctx.stroke()
+            ctx.restore()
         } else if (kind === "module-streaming-true-peak-limiter") {
             // Copper live waveform controlled below ceiling, not M17 shield.
             line(2.0,4.8,16.0,4.8)

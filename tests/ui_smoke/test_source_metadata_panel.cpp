@@ -7132,34 +7132,33 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             dspChainAdapterModel.selected_module()!=nullptr
                 && dspChainAdapterModel.selected_module()->editor_content_key()
                     ==analysisKeys[index],5000);
-        // Three independent approved vector kinds must be exposed in the
-        // exact existing 16px DSP Chain slot. This is a real Qt Product
-        // scenegraph check, not a screenshot or a fake QML preview.
+        // Three analysis kinds now share the ACTUAL StudioIcon Canvas
+        // that paints TP Meter, in the same fixed 16px Chain slot.
+        // No Shapes/PathSvg child or second halo renderer is permitted.
         const std::array<QString,3> analysisIconKinds{
             QStringLiteral("analysis-levels"),
             QStringLiteral("analysis-spectrum"),
             QStringLiteral("analysis-delta")};
         const int iconRowIndex=dspChainAdapterModel.selected_index();
         QVERIFY2(iconRowIndex>=0,"Selected Product analysis index invalid");
-        const auto vectorName=QStringLiteral("dspChainAnalysisVectorIcon_%1")
+        const auto iconName=QStringLiteral("dspChainModuleIcon_%1")
             .arg(iconRowIndex);
         QTRY_VERIFY_WITH_TIMEOUT(
-            find_child_by_name(root,vectorName)!=nullptr,5000);
-        auto* vectorIcon=qobject_cast<QQuickItem*>(
-            find_child_by_name(root,vectorName));
-        QVERIFY2(vectorIcon,"Selected Product analysis Shape is not a QQuickItem");
-        QCOMPARE(vectorIcon->property("kind").toString(),analysisIconKinds[index]);
-        QVERIFY2(vectorIcon->property("glowEnabled").toBool(),
-                 "Permanent analysis module must retain its bright halo");
-        QCOMPARE(vectorIcon->property("outerHaloAlpha").toDouble(),0.10);
-        QCOMPARE(vectorIcon->property("innerHaloAlpha").toDouble(),0.24);
-        QCOMPARE(vectorIcon->property("haloTint").value<QColor>(),
-                 vectorIcon->property("strokeColor").value<QColor>());
-        QVERIFY2(vectorIcon->isVisible(),"Selected vector icon must be visible");
-        QTRY_COMPARE_WITH_TIMEOUT(qRound(vectorIcon->width()),16,5000);
-        QTRY_COMPARE_WITH_TIMEOUT(qRound(vectorIcon->height()),16,5000);
-        QVERIFY(find_child_by_name(vectorIcon,
-            QStringLiteral("analysisVectorShape"))!=nullptr);
+            find_child_by_name(root,iconName)!=nullptr,5000);
+        auto* analysisIcon=qobject_cast<QQuickItem*>(
+            find_child_by_name(root,iconName));
+        QVERIFY2(analysisIcon,"Selected analysis StudioIcon Canvas missing");
+        QCOMPARE(analysisIcon->property("kind").toString(),analysisIconKinds[index]);
+        QVERIFY2(analysisIcon->property("glowEnabled").toBool(),
+                 "Permanent analysis module must retain TP Meter halo");
+        QCOMPARE(analysisIcon->property("glowBlur").toDouble(),10.0);
+        QCOMPARE(analysisIcon->property("opacity").toDouble(),1.0);
+        QVERIFY2(analysisIcon->isVisible(),"Selected Canvas icon must be visible");
+        QTRY_COMPARE_WITH_TIMEOUT(qRound(analysisIcon->width()),16,5000);
+        QTRY_COMPARE_WITH_TIMEOUT(qRound(analysisIcon->height()),16,5000);
+        QVERIFY2(!find_child_by_name(root,
+            QStringLiteral("dspChainAnalysisVectorIcon_%1").arg(iconRowIndex)),
+            "Obsolete overlapping analysis Shape renderer must be absent");
         QTRY_VERIFY_WITH_TIMEOUT(originalPages[index]->isVisible(),5000);
         QVERIFY(originalPages[index]->isEnabled());
         QCOMPARE(originalPages[index]->property("authorized").toBool(),false);

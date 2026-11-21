@@ -338,23 +338,9 @@ Rectangle {
                             // Bypass dims the separate row and extinguishes halo.
                             glowEnabled: (rowItem.permanentlyLit
                                 || !rowItem.isDefaultState) && !rowItem.isBypassed
-                            // Three approved analysis glyphs share the
-                            // EXISTING 16px StudioIcon slot, tooltip, focus,
-                            // brightness and bypass semantics. Canvas has no
-                            // paths for these new kinds; a vector Shape child
-                            // supplies the crisp silhouette without moving
-                            // the qualified legacy icon geometry.
-                            AnalysisModuleIcon {
-                                id: analysisVectorIcon
-                                objectName: "dspChainAnalysisVectorIcon_" + rowItem.modelIndex
-                                anchors.fill: parent
-                                kind: moduleSymbol.kind
-                                strokeColor: moduleSymbol.strokeColor
-                                glowEnabled: moduleSymbol.glowEnabled
-                                visible: kind === "analysis-levels"
-                                    || kind === "analysis-spectrum"
-                                    || kind === "analysis-delta"
-                            }
+                            // M19/M20/M21 now render directly in this
+                            // SAME StudioIcon Canvas as the TP Meter:
+                            // one glyph, one phosphor engine, one LED state.
                             opacity: (rowItem.permanentlyLit ? 1.0
                                 : rowItem.isDefaultState ? 0.58 : 1.0)
                                 * (rowItem.isBypassed ? 0.7 : 1.0)

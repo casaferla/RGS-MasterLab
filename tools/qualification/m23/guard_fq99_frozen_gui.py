@@ -111,10 +111,18 @@ P2_EXPECTED_GUI_DELTA = ALLOWED | P2_ADDITIONAL
 # lightening, preserving the exact icon silhouettes, family accents, and
 # on/bypass contract. This single revised QML blob is pinned fail-closed
 # like all other GUI changes, not exempted from M23 or qualified as release.
+# PO 2026-11-21: remove dual icon engines in Product DSP Chain.
+# M19/20/21 preserve their 24-grid vector silhouettes but are drawn by the
+# same StudioIcon Qt Canvas 2D as TP Meter; the extra Shapes/PathSvg child
+# is removed. AnalysisModuleIcon is a non-instantiated compatibility alias
+# only. Same family accent/16px slot/on/bypass/glow, no changed DSP or data.
+# This scoped UI change plus matching real-Qt/static regression tests is
+# exact-hash pinned pending the new Windows/Linux Focused CI and PO visual
+# approval; nothing here amends the historic FQ99 source qualification.
 M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/AuditionSourceSelector.qml": "1225337c5ca5f652cb01a022e3475be5afa1aa74",
     "ui/qml/StudioButton.qml": "04abee78e09e9d6e9cc8f53b7957eca3691fc7a8",
-    "ui/qml/DspChainSelector.qml": "31a513756552b93c7bd2addadd553e3cd1f91c63",
+    "ui/qml/DspChainSelector.qml": "005b9ddb18bec1d4ef6879ef65af0df65f0071c5",
     "ui/qml/AnalysisApprovedContent.qml": "2ef187e2074cfc16f9da18e00db6721f94962d1f",
     "ui/qml/AnalysisStatusEditor.qml": "a0d14be916ca19a3d9fd781f70178b71c4c53df5",
     # PO physical #90: M19/M20/M21 service icons are ALWAYS ON yet
@@ -122,7 +130,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     # same apparent phosphor halo as the other active chain modules.
     # Exact-pin ONLY the reviewed same-hue multi-stroke ShapePaths;
     # no new row, LED, layout, Qt import or synthetic analyzer data.
-    "ui/qml/AnalysisModuleIcon.qml": "44e9c407390dfbb63d75fbd6b5401bebfab9f7db",
+    "ui/qml/AnalysisModuleIcon.qml": "038d05900469b107997b29618aed77e4eded82d2",
     # PO-directed pre-M24 adversarial repair F05: unchanged native M18
     # ticket/consent and FQ99 geometry; only the recovery-only monitor
     # predicate is added to the already approved Return + Export path.
@@ -137,7 +145,7 @@ M18_WAV_OUTPUT_UI_BLOBS = {
     "ui/qml/Main.qml": "c67c65e6ce6109821b9c1dd63521e584cb2906fa",
     "ui/qml/DspEditorHost.qml": "8028ac7e80b70cfb1a5f97a0bbfb118872359919",
     "ui/qml/StreamingTruePeakLimiterEditor.qml": "221ea17a9b42ddf49c5aa667b33514297e9cb3a6",
-    "ui/qml/StudioIcon.qml": "083cb44ba5927e035c4500efbb83c8e5dfc6f148",
+    "ui/qml/StudioIcon.qml": "92d8f93ea5714ba0d944a756e56b1cce72a8a37b",
     "ui/qml/StereoMsEditor.qml": "c56054770d120ca211189a3aff5c3bac4c10672a",
     "ui/qml/DspWorkspace.qml": "b354658f9164258b41c9cac3a6cfd2d42e421802",
     "ui/qml/TruePeakMeterEditor.qml": "71cb0fe236ea683a027f78713449661fc7ebdb1e",
