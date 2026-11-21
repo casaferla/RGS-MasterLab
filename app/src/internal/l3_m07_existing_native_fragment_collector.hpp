@@ -4,6 +4,7 @@
 // bindings; it does not derive missing Phase6 metrics, make a fake
 // twenty-seven-feature dataset or expose release qualification.
 #include "l3_m07_exact_27_feature_assembler.hpp"
+#include "l3_m06_d01_native_binding.hpp"
 #include "l3_m06_d02_lra_binding.hpp"
 #include "l3_m06_d03d04_to_m07_m08.hpp"
 #include "l3_m19_native_macro_loudness_bindings.hpp"
@@ -19,6 +20,7 @@ namespace rgsml::app::l3_automatch::m07_frozen {
 struct ExistingNativeSourceFragments final {
     std::optional<m05m06_real::T01BindingProjection> tonal_primary;
     std::optional<m05m06_real::TonalBindingProjection> tonal_scalar;
+    std::optional<m05m06_real::D01BindingProjection> macro_d01;
     std::optional<m05m06_real::LraBindingProjection> macro_lra;
     std::optional<m05m06_real::D03D04SlotProjection> macro_windowed;
     std::optional<m05m06_real::M19NativeSlotProjection> macro_loudness;
@@ -50,6 +52,8 @@ collect_existing_m05m06_native_fragments(
         add(*fragments.tonal_primary->slot);
     if(fragments.tonal_scalar&&fragments.tonal_scalar->slots)
         for(const auto& s:*fragments.tonal_scalar->slots)add(s);
+    if(fragments.macro_d01&&fragments.macro_d01->slot)
+        add(*fragments.macro_d01->slot);
     if(fragments.macro_lra&&fragments.macro_lra->slot)
         add(*fragments.macro_lra->slot);
     if(fragments.macro_windowed&&fragments.macro_windowed->slots)

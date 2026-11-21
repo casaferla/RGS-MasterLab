@@ -34,6 +34,8 @@ existingNativeSubsetRemainsExplicitlyIncomplete() {
     m07::ExistingNativeSourceFragments selected;
     selected.tonal_primary=m05::T01BindingProjection{
         binding(m07::kBindings[0]),m05::T01BindingFailure::none};
+    selected.macro_d01=m05::D01BindingProjection{
+        binding(m07::kBindings[6]),m05::D01BindingFailure::none};
     std::array<m08::AuthenticatedPairSlot,2> dynamics{
         binding(m07::kBindings[8]),binding(m07::kBindings[9])};
     selected.macro_windowed=m05::D03D04SlotProjection{
@@ -41,9 +43,9 @@ existingNativeSubsetRemainsExplicitlyIncomplete() {
     const auto result=m07::collect_existing_m05m06_native_fragments(
         assembler,selected);
     QCOMPARE(result.status,m07::NativeFragmentAdmission::accepted_partial);
-    QCOMPARE(result.inventory.populated_count,std::size_t{3});
+    QCOMPARE(result.inventory.populated_count,std::size_t{4});
     QCOMPARE(result.inventory.missing_original_binding_ids.size(),
-             std::size_t{24});
+             std::size_t{23});
     QVERIFY(!assembler.complete_canonical_population());
     QVERIFY(!result.authorizes_solver());
 }
