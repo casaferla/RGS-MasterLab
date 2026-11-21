@@ -2588,3 +2588,16 @@ add_test(NAME rgsml_l3_m09_p02_spectral_seed_tests
 set_tests_properties(rgsml_l3_m09_p02_spectral_seed_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m09;spectral;nonrelease")
+
+# L3-M09 P01 unweighted atom projection, real-response weighted fit and tie.
+qt_add_executable(rgsml_l3_m09_p01_weighted_atom_fit_tests
+    unit/app/test_l3_m09_p01_weighted_atom_fit.cpp)
+target_include_directories(rgsml_l3_m09_p01_weighted_atom_fit_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m09_p01_weighted_atom_fit_tests PRIVATE Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m09_p01_weighted_atom_fit_tests)
+add_test(NAME rgsml_l3_m09_p01_weighted_atom_fit_tests
+    COMMAND rgsml_l3_m09_p01_weighted_atom_fit_tests)
+set_tests_properties(rgsml_l3_m09_p01_weighted_atom_fit_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m09;eq;nonrelease")
