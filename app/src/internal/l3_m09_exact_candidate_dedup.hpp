@@ -5,6 +5,8 @@
 // Phase-9 artifact identities, assess DSP availability or mint UUIDs.
 // A conflict poisons the WHOLE generation: no first-wins publication.
 #include <cstdint>
+#include <cstddef>
+#include <map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -61,8 +63,12 @@ public:
                 failed_=true;
                 return InsertStatus::invalid_input;
             }
-        for(auto& stored:carriers_) {
-            if(stored.semantic_tuple!=input.semantic_tuple)continue;
+        // An ordered unsigned-byte index avoids quadratic 43008-entry
+        // full-stream scans while retaining arrival-order descriptors.
+        const auto prior=indices_by_semantic_key_.find(input.semantic_tuple);
+        if(prior!=indices_by_semantic_key_.end())
+        for(const auto index:prior->second) {
+            auto& stored=carriers_[index];
             // Within ONE exact generation and deterministic policy, the
             // same complete semantic key MUST resolve to exactly one seed.
             // Different seed content is an ERROR even if the dependency
@@ -82,6 +88,8 @@ public:
         // Equal semantic key/seed with different dependency evidence is
         // NOT an exact duplicate. Distinct snapshot revisions belong in
         // distinct ExactCandidateGeneration objects.
+        const auto index=carriers_.size();
+        indices_by_semantic_key_[input.semantic_tuple].push_back(index);
         carriers_.push_back(std::move(input));
         return InsertStatus::inserted;
     }
@@ -101,6 +109,7 @@ public:
 private:
     ExactBytes snapshot_;
     std::vector<CandidateCarrier> carriers_;
+    std::map<ExactBytes,std::vector<std::size_t>> indices_by_semantic_key_;
     bool failed_{};
     bool collision_{};
 };

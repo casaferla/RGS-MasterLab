@@ -28,6 +28,7 @@ private slots:
     void variantsAreSeparateAndNoTypeIdOnlyDedup();
     void dependencyAndSnapshotAreNotSilentlyRewritten();
     void malformedEvidenceCannotEscape();
+    void scalePreservesOriginalOrderAndNoUnrelatedCollision();
 };
 void M09ExactDedupTest::exactTripleAndProvenanceOrder() {
     m09::ExactCandidateGeneration generation{bytes("exact-snapshot-A")};
@@ -110,6 +111,32 @@ void M09ExactDedupTest::malformedEvidenceCannotEscape() {
              m09::InsertStatus::invalid_input);
     QVERIFY(!generation.descriptions());
     QVERIFY(!generation.has_seed_collision());
+}
+void M09ExactDedupTest::scalePreservesOriginalOrderAndNoUnrelatedCollision() {
+    m09::ExactCandidateGeneration generation{bytes("exact-snapshot-A")};
+    // Stress a realistic M09-sized stream without O(n^2) scanning.
+    constexpr std::size_t n=4000U;
+    for(std::size_t i=0;i<n;++i) {
+        auto x=candidate("key","seed","dependency");
+        x.semantic_tuple={
+            static_cast<std::uint8_t>((i>>16)&0xffU),
+            static_cast<std::uint8_t>((i>>8)&0xffU),
+            static_cast<std::uint8_t>(i&0xffU)};
+        QCOMPARE(generation.add(std::move(x)),
+                 m09::InsertStatus::inserted);
+    }
+    const auto* descriptions=generation.descriptions();
+    QVERIFY(descriptions);
+    QCOMPARE(descriptions->size(),n);
+    QCOMPARE((*descriptions)[1234].semantic_tuple[2],
+             std::uint8_t{0xd2});
+    auto repeat=candidate("key","seed","dependency","dup");
+    repeat.semantic_tuple={0U,4U,0xd2U};
+    QCOMPARE(generation.add(std::move(repeat)),
+             m09::InsertStatus::exact_duplicate);
+    QCOMPARE(generation.descriptions()->size(),n);
+    QCOMPARE((*generation.descriptions())[1234].ordered_provenance.size(),
+             std::size_t{2});
 }
 } // namespace
 } // namespace rgsml::tests
