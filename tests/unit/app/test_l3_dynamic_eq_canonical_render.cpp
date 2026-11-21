@@ -2,6 +2,7 @@
 #include "internal/l2_automatch_evidence_bridge.hpp"
 #include "internal/l3_automatch_offline_search.hpp"
 #include "internal/l3_automatch_typed_gain_trial.hpp"
+#include "internal/l3_product_offline_trial_job.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -58,6 +59,7 @@ private slots:
     void wholeProgrammePhysicalRendererAndM21Scoring();
     void regionAndUnboundParametersFailClosed();
     void signatureExcludesDisabledAndUuidIdentity();
+    void immutableProductPreparedCandidateAndOwnerEpochGate();
 };
 
 void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
@@ -336,6 +338,99 @@ void L3CanonicalC01RenderTest::signatureExcludesDisabledAndUuidIdentity() {
     // Opt-in is a one-time factory attachment, never additive registration.
     QVERIFY(!dsp::ModuleRegistry::with_dynamic_eq_offline(
         std::move(*registry.value())));
+}
+
+void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGate() {
+    using namespace app::l3_automatch;
+    // Product starts with frozen L1 catalog (factory-less Dynamic EQ).
+    // Only the worker-owned copy activates C01: never change Product.
+    auto p=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(p);
+    auto product=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*p.value()));
+    QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
+    const dsp::ProcessingChainContext context{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL};
+    auto empty=dsp::ProcessingChain::create(*product,context);
+    auto manual=dsp::ProcessingChain::create(*product,context);
+    QVERIFY(empty&&manual);
+    const auto gainId=id("a0000000-0000-4000-8000-000000000011");
+    const auto eqId=id("a0000000-0000-4000-8000-000000000012");
+    QVERIFY(manual.value()->add(gainId,"rgsml.dsp.gain",0));
+    QVERIFY(manual.value()->add(eqId,"rgsml.dsp.dynamic-eq",1));
+    auto defaultGain=dsp::GainParameters::create(0.0);
+    QVERIFY(defaultGain);
+    const auto eq=dynamic_params();
+    const std::vector<dsp::ModuleExecutionBinding> baseline{
+        {gainId,*defaultGain.value()},{eqId,eq}};
+    auto bound=make_gain_trial(*manual.value(),baseline,gainId,3.0,
+                               "product-gain-and-c01-epoch-1");
+    QVERIFY(bound);
+    const auto format=audio::AudioFormat::create(
+        *core::SampleRate::create(48000).value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(4096);
+    const auto block=core::FrameCount::create(1024);
+    QVERIFY(format&&frames&&block);
+    auto raw=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(raw);
+    auto data=raw.value()->mutable_view().channel(0);
+    QVERIFY(data);
+    for(std::size_t i=0;i<data.value()->size();++i)
+        (*data.value())[i]=0.2*std::sin(
+            2*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
+    // A real empty-chain RenderPreview is the retained immutable PREPARED.
+    auto prepareRequest=render::RenderRequest::create(
+        raw.value()->view(),raw.value()->view().absolute_range(),
+        *empty.value(),{},*block.value());
+    QVERIFY(prepareRequest);
+    auto preparedRender=render::render_preview(
+        *prepareRequest.value(),*product);
+    QVERIFY(preparedRender);
+    auto prepared=std::make_shared<const render::RenderResult>(
+        std::move(*preparedRender.value()));
+
+    const OfflineProductOwnerStamp stamp{
+        19,5,3,"source:actual-owner-5","reference:actual-picker-3"};
+    auto job=OfflineProductTrialJob::create(
+        stamp,prepared,product,*manual.value(),baseline,*bound,*block.value());
+    QVERIFY(job);
+    QVERIFY(job.value()->still_current(stamp,prepared,*manual.value(),baseline));
+    QCOMPARE(job.value()->ticket_identity(),
+             std::string("product-gain-and-c01-epoch-1"));
+    const auto candidate=job.value()->execute();
+    QVERIFY(candidate);
+    QVERIFY(job.value()->result_has_expected_scope(*candidate.value()));
+    QCOMPARE(candidate.value()->signatures().size(),std::size_t{2});
+    QVERIFY(std::holds_alternative<render::DynamicEqExecutionSignaturePayload>(
+        candidate.value()->signatures()[1].payload));
+    QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
+    QCOMPARE(manual.value()->instances().size(),std::size_t{2});
+
+    auto stale=stamp;
+    stale.m18_owner_epoch++;
+    QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
+    stale=stamp;stale.source_generation++;
+    QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
+    stale=stamp;stale.reference_selection_revision++;
+    QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
+    stale=stamp;stale.reference_resource_identity+="another-selection";
+    QVERIFY(!job.value()->still_current(stale,prepared,*manual.value(),baseline));
+    auto changedBindings=baseline;
+    changedBindings[0].parameters=*dsp::GainParameters::create(1.0).value();
+    QVERIFY(!job.value()->still_current(stamp,prepared,*manual.value(),changedBindings));
+    QVERIFY(manual.value()->set_user_bypass(eqId,true));
+    QVERIFY(!job.value()->still_current(stamp,prepared,*manual.value(),baseline));
+
+    auto noEpoch=stamp;
+    noEpoch.m18_owner_epoch=0;
+    QVERIFY(!OfflineProductTrialJob::create(
+        noEpoch,prepared,product,*empty.value(),{},*bound,*block.value()));
+    QVERIFY(!OfflineProductTrialJob::create(
+        stamp,{},product,*empty.value(),{},*bound,*block.value()));
+    QVERIFY(!OfflineProductTrialJob::create(
+        stamp,prepared,{},*empty.value(),{},*bound,*block.value()));
 }
 
 } // namespace
