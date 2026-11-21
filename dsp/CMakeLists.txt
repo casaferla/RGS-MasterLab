@@ -8,6 +8,7 @@ add_library(rgsml_dsp STATIC
     src/internal/dynamic_eq_c01_engine.cpp
     src/dynamic_eq_module.cpp
     src/transient_shaper_parameters.cpp
+    src/transient_shaper_module.cpp
     src/internal/transient_shaper_c00_engine.cpp
     src/internal/transient_shaper_effective_memory.cpp
     src/parametric_eq_module.cpp
@@ -73,6 +74,7 @@ if(MSVC)
         src/dynamic_eq_module.cpp
         src/internal/transient_shaper_c00_engine.cpp
         src/internal/transient_shaper_effective_memory.cpp
+        src/transient_shaper_module.cpp
         PROPERTIES COMPILE_OPTIONS "/fp:strict")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     set_source_files_properties(src/true_peak_limiter_module.cpp
@@ -81,6 +83,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
         src/dynamic_eq_module.cpp
         src/internal/transient_shaper_c00_engine.cpp
         src/internal/transient_shaper_effective_memory.cpp
+        src/transient_shaper_module.cpp
         PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 else()
     message(FATAL_ERROR "M17 True Peak Limiter needs an audited strict-FP compiler")
