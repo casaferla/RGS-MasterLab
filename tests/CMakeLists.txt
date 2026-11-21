@@ -883,6 +883,7 @@ foreach(dsp_test IN ITEMS
     dynamic_eq_parameters
     dynamic_eq_c01_coefficients
     dynamic_eq_c01_engine
+    dynamic_eq_imodule
     module_descriptor
     module_registry
     processing_chain
