@@ -193,8 +193,8 @@ p02AlreadyMatchedDropoutAndRawNegativeLaw() {
 void FrozenM08AmountTest::
 p02ConditionalRequestedGlobalDoesNotFabricateFull() {
     std::array<m08::RequestedDomainReport,4> full{{
-        {true,{{0.8,m08::ProximityReason::comparable}},1.0},
-        {true,{{0.4,m08::ProximityReason::comparable}},0.8},
+        {true,{0.8,m08::ProximityReason::comparable},1.0},
+        {true,{0.4,m08::ProximityReason::comparable},0.8},
         {true,{{},m08::ProximityReason::
             candidate_required_component_missing},0.5},
         {true,{{},m08::ProximityReason::
