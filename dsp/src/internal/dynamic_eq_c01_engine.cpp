@@ -56,8 +56,14 @@ core::Result<C01FrameEngine> C01FrameEngine::create(
             if(!std::isfinite(ar)||!std::isfinite(aa)||!std::isfinite(al)
                ||ar<0.0||ar>=1.0||aa<0.0||aa>=1.0||al<0.0||al>=1.0)
                 return R::failure(fail("INVALID_CONTROL_ALPHA"));
+            std::optional<BiquadCoefficients> fixed_audio;
+            if(c.range_db==0.0||c.ratio==1.0) {
+                auto coeff=gen.value()->audio_coefficients(c.base_gain_db);
+                if(!coeff)return R::failure(*coeff.error());
+                fixed_audio=*coeff.value();
+            }
             bands.push_back(Band{spec.routing,c,std::move(*gen.value()),
-                                 *detector.value(),ar,aa,al});
+                                 *detector.value(),fixed_audio,ar,aa,al});
         }
         return R::success(C01FrameEngine(channels,std::move(bands)));
     }catch(...) {
@@ -80,7 +86,8 @@ core::Status C01FrameEngine::restore_states(
         const auto& b=candidate[i];
         if(!std::isfinite(b.unsigned_magnitude_db)||
            b.unsigned_magnitude_db<0.0||
-           b.unsigned_magnitude_db>std::abs(bands_[i].control.range_db))
+           b.unsigned_magnitude_db>std::abs(bands_[i].control.range_db)||
+           (bands_[i].fixed_audio&&b.unsigned_magnitude_db!=0.0))
             return core::Status::failure(fail("CHECKPOINT_CONTROL"));
         for(const auto& lane:b.lanes) {
             if(!std::isfinite(lane.audio.s1)||
@@ -131,9 +138,13 @@ bool C01FrameEngine::apply_audio(
     const Band& band,C01BandState& state,double gain,
     double& l,double& r,std::uint32_t channels)
 {
-    auto c=band.generator.audio_coefficients(gain);
-    if(!c)return false;
-    const auto& coeff=*c.value();
+    // This is an exact fixed-value coefficient reuse, not a gain clock,
+    // quantizer, interpolation or a different recursive realization.
+    const auto dynamic=band.fixed_audio
+        ?core::Result<BiquadCoefficients>::success(*band.fixed_audio)
+        :band.generator.audio_coefficients(gain);
+    if(!dynamic)return false;
+    const auto& coeff=*dynamic.value();
     if(channels==1)
         return process_section(coeff,state.lanes[0].audio,l,l);
     switch(band.routing) {

@@ -7,6 +7,7 @@
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -58,6 +59,9 @@ private:
         DynamicEqControl control;
         C01CoefficientGenerator generator;
         BiquadCoefficients detector;
+        // Verified neutral-control fast path: a fixed effective gain
+        // yields the same binary64 RBJ coefficients on every frame.
+        std::optional<BiquadCoefficients> fixed_audio;
         double rms_a, attack_a, release_a;
     };
     explicit C01FrameEngine(std::uint32_t channels,std::vector<Band> bands);
