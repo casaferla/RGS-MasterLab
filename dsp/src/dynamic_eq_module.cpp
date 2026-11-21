@@ -3,6 +3,7 @@
 #include <rgsml/core/error.hpp>
 #include "internal/dynamic_eq_c01_engine.hpp"
 #include <array>
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -162,10 +163,22 @@ DynamicEqModule::runtime_requirements(const DspProcessSpec& spec) const
     const auto checked=validate(spec,impl_->parameters);
     if(!checked)
         return core::Result<DspRuntimeRequirements>::failure(*checked.error());
+    // A fully bypassed (all bands disabled) execution has no active
+    // detector, control or IIR memory. Its effective pre/postcontext and tail
+    // are provably zero, unlike the enabled C01 realization.
+    const auto& all_bands=impl_->parameters.bands();
+    const bool no_active=std::none_of(all_bands.begin(),all_bands.end(),
+        [](const DynamicEqBandParameters& b){return b.spec().enabled;});
+    if(no_active) {
+        const auto z=*core::FrameCount::create(0).value();
+        return core::Result<DspRuntimeRequirements>::success(
+            DspRuntimeRequirements{DspExecutionModel::STREAMING_CAUSAL,
+                z,z,z,z,z,false});
+    }
     // Frozen DYN_EQ_EFFECTIVE_MEMORY_V1 requires a real, input/state-bound
     // certificate. An unconditional 0 pre-context/tail is NOT a valid
-    // declaration. Direct full-prefix streaming can still be exercised via
-    // prepare/process; Product preview/random access remains fail-closed.
+    // declaration for active bands. Direct full-prefix streaming can still
+    // use prepare/process; Product preview/random access remains fail-closed.
     return core::Result<DspRuntimeRequirements>::failure(
         bad(core::ErrorCode::UnsupportedOperation,
             "DYN_EQ_EFFECTIVE_MEMORY_CERTIFICATE_REQUIRED"));
