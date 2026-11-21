@@ -191,6 +191,20 @@ public:
     [[nodiscard]] const std::string& ticket_identity() const noexcept {
         return ticket_identity_;
     }
+    [[nodiscard]] bool identical_execution_to(
+        const OfflineProductTrialJob& other) const noexcept {
+        if(stamp_!=other.stamp_||prepared_!=other.prepared_
+           ||registry_!=other.registry_
+           ||maximum_block_frames_!=other.maximum_block_frames_
+           ||chain_.context()!=other.chain_.context()
+           ||chain_.revision()!=other.chain_.revision()
+           ||candidate_bindings_!=other.candidate_bindings_)
+            return false;
+        const auto a=chain_.instances();
+        const auto b=other.chain_.instances();
+        return a.size()==b.size()
+            &&std::equal(a.begin(),a.end(),b.begin());
+    }
     [[nodiscard]] const dsp::ProcessingChain& chain() const noexcept {
         return chain_;
     }
