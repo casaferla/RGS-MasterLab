@@ -90,6 +90,11 @@ exact_100ms_frames_for_native_rms(const audio::AudioBufferView& view) {
             number_of_complete_blocks-kNativeRmsGridBlocksPerWindow+1U);
     const double denominator=static_cast<double>(
         channels*kNativeRmsGridBlocksPerWindow*(*block_frames));
+    if(!std::isfinite(denominator)||denominator<=0.0) {
+        out.problem=NativeWindowProblem::invalid_geometry;
+        return out;
+    }
+    const volatile double checked_positive_denominator=denominator;
     for(std::size_t b=0;b<number_of_complete_blocks;++b) {
         NativeHundredMsBlock cell;
         const auto first=b*(*block_frames);
@@ -123,7 +128,7 @@ exact_100ms_frames_for_native_rms(const audio::AudioBufferView& view) {
         NativeRmsCrestWindow measured;
         measured.absolute_start_frame=absolute_start;
         if(valid&&std::isfinite(sum)&&std::isfinite(max_abs)) {
-            const double power=sum/denominator;
+            const double power=sum/checked_positive_denominator;
             if(std::isfinite(power)&&power>=kWindowedDigitalPowerFloor) {
                 const double rms_dbfs=10.0*std::log10(power);
                 if(std::isfinite(rms_dbfs)) {

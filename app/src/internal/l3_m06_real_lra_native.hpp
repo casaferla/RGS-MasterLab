@@ -97,8 +97,11 @@ struct LraNativeObservation final {
     for(const auto v:absolute_gate) {
         relative_linear_sum+=std::pow(10.0,(v-maximum)/10.0);
     }
-    const double average=relative_linear_sum/
-                         static_cast<double>(absolute_gate.size());
+    // Volatile checked cardinality avoids MSVC C4723 speculation while
+    // preserving the original relative-gate mean-energy arithmetic.
+    const volatile double positive_absolute_count=
+        static_cast<double>(absolute_gate.size());
+    const double average=relative_linear_sum/positive_absolute_count;
     if(!std::isfinite(average)||average<=0.0) {
         out.reason=LraNativeReason::invalid_grid_or_numeric;
         return out;
