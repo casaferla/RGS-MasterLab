@@ -14,6 +14,8 @@
 #include <rgsml/render/render_result.hpp>
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
+#include <rgsml/analysis/basic_level_analyzer.hpp>
+#include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -39,6 +41,14 @@ struct OfflineProductOwnerStamp final {
             &&!reference_resource_identity.empty()
             &&source_resource_identity!=reference_resource_identity;
     }
+};
+
+struct OfflineProductCandidateMeasurement final {
+    render::RenderResult rendered;
+    analysis::BasicLevelAnalysisResult levels;
+    analysis::TonalStereoAnalysisResult tonal;
+    // Authentic canonical unrounded analysis; not a manufactured M21
+    // "current" snapshot. Product Qt owner authenticates it after return.
 };
 
 class OfflineProductTrialJob final {
@@ -110,6 +120,28 @@ public:
             maximum_block_frames_);
         if(!request)return R::failure(*request.error());
         return render::render_preview(*request.value(),*registry_);
+    }
+    // Worker-only Product analysis. No M21 publication, no invented
+    // reference or reweighting; real M19 and M20 measurements of actual
+    // full-track RenderPreview output, once per attempted candidate.
+    [[nodiscard]] core::Result<OfflineProductCandidateMeasurement>
+    evaluate() const {
+        using R=core::Result<OfflineProductCandidateMeasurement>;
+        auto rendered=execute();
+        if(!rendered)return R::failure(*rendered.error());
+        if(!result_has_expected_scope(*rendered.value()))
+            return R::failure(failed("L3_OFFLINE_PRODUCT_RENDER_SCOPE_STALE"));
+        const auto levels=analysis::measure_basic_level_full_resource(
+            rendered.value()->buffer());
+        if(!levels)return R::failure(*levels.error());
+        const auto view=rendered.value()->view();
+        const auto tonal=analysis::measure_tonal_stereo_scope(
+            view,view.absolute_start_frame(),view.frame_count(),
+            view.timebase().frame_domain_id());
+        if(!tonal)return R::failure(*tonal.error());
+        return R::success(OfflineProductCandidateMeasurement{
+            std::move(*rendered.value()),
+            std::move(*levels.value()),std::move(*tonal.value())});
     }
     // Caller MUST obtain all current arguments from live Qt Product owner
     // when the worker result returns, never from the worker itself. This
