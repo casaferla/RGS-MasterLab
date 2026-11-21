@@ -39,6 +39,14 @@ struct BasicLevelRetainedInterval final {
     std::uint64_t end{0};
 };
 
+// L3-M05 L2 additive evidence, not one of L1-M19's five static values.
+// A null reading occupies its correct complete 3s Grid100 window and is
+// never replaced by -70 dB or omitted from the support denominator.
+struct BasicLevelShortTermSample final {
+    std::int64_t absolute_start_frame{};
+    std::optional<double> lufs;
+};
+
 struct BasicLevelAnalysisResult final {
     // Absolute, frame-domain-specific AnalysisScope identity. Never
     // silently compare SOURCE, PREPARED and OUTPUT_RATE frame positions.
@@ -60,6 +68,14 @@ struct BasicLevelAnalysisResult final {
     // Phase-6 FeatureStatus or producer signature.
     bool retained_block_disclosure_complete{false};
     std::vector<BasicLevelRetainedInterval> retained_block_union{};
+
+    // Same existing K-weighted M19 source pass; complete ungated 3s
+    // windows every canonical 100ms, Type-7 P50 on finite observations.
+    // Numerical AVAILABLE != Product reference-grade/Phase6 readiness.
+    bool short_term_3s_observation_complete{false};
+    std::uint64_t short_term_3s_complete_windows{};
+    std::vector<BasicLevelShortTermSample> short_term_3s_grid100;
+    BasicLevelValue short_term_3s_p50_lufs{};
 };
 
 // Selected read-only AnalysisScope: four metrics and a typed explicit

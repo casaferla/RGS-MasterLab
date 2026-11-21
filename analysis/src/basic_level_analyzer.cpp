@@ -58,6 +58,27 @@ core::Result<BasicLevelAnalysisResult> measure_basic_level_scope(
     out.retained_block_union.reserve(s.retained_block_union.size());
     for(const auto& interval:s.retained_block_union)
         out.retained_block_union.push_back({interval.begin,interval.end});
+    // L3-M05 L2 exact same-K-path observations. Never change the
+    // existing L1 M19 gate, TP estimator or the five scalar results.
+    out.short_term_3s_observation_complete=
+        s.short_term_3s_observation_complete;
+    out.short_term_3s_complete_windows=
+        s.short_term_3s_complete_windows;
+    out.short_term_3s_grid100.reserve(
+        s.short_term_3s_grid100.size());
+    for(const auto& reading:s.short_term_3s_grid100)
+        out.short_term_3s_grid100.push_back({
+            static_cast<std::int64_t>(reading.absolute_start_frame),
+            reading.lufs});
+    out.short_term_3s_p50_lufs={
+        s.short_term_3s_type7_p50_lufs,
+        s.short_term_3s_type7_p50_lufs
+            ?BasicLevelValueState::AVAILABLE
+            :!s.short_term_3s_observation_complete
+                ?BasicLevelValueState::NUMERIC_UNDEFINED
+                :s.short_term_3s_complete_windows==0U
+                    ?BasicLevelValueState::INSUFFICIENT_DURATION
+                    :BasicLevelValueState::SILENCE};
     out.integrated_lufs=BasicLevelValue{
         s.integrated_lufs,loudness_reason(s.loudness_state)};
     out.full_scope_rms_dbfs=mapped(s.full_scope_rms_dbfs);
