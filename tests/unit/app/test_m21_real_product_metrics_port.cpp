@@ -433,8 +433,8 @@ l3OfflineBudgetCapAndAttemptedFailures()
     QVERIFY(run->attempted_evaluation_failed(wrong)==Submission::mismatched_ticket);
     QCOMPARE(run->attempts(),std::size_t{0});
     QCOMPARE(run->next().has_value(),false); // one pending ticket
-    QCOMPARE(run->attempted_evaluation_failed(*first),
-             Submission::attempted_evaluation_failed);
+    QVERIFY(run->attempted_evaluation_failed(*first)
+        ==Submission::attempted_evaluation_failed);
     QCOMPARE(run->attempts(),std::size_t{1});
     QVERIFY(!run->best().typed_dsp_fingerprint);
     for(std::size_t ordinal=1;ordinal<800;++ordinal) {
