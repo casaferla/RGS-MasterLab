@@ -23,6 +23,7 @@ private slots:
     void loudnessUnavailableIsNotAnInventedRetainedUnion();
     void retainedLoudnessUnionIsAbsoluteAndFullAtSixRates();
     void l3M05L2RealSameKPassGrid100AndType7P50();
+    void l3M05L2QuietUngatedWindowsRemainBelowMinus70();
 };
 
 void BasicLevelAnalyzerTest::
@@ -221,6 +222,55 @@ l3M05L2RealSameKPassGrid100AndType7P50()
     QVERIFY(!low.value()->true_peak_db_tp.db);
     QCOMPARE(low.value()->true_peak_db_tp.state,
              BasicLevelValueState::M16_SCOPE_UNAVAILABLE);
+}
+
+void BasicLevelAnalyzerTest::
+l3M05L2QuietUngatedWindowsRemainBelowMinus70()
+{
+    using namespace analysis;
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    const auto length=core::FrameCount::create(48000*4);
+    QVERIFY(length);
+    auto quiet=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*length.value());
+    QVERIFY(quiet);
+    auto v=quiet.value()->mutable_view().channel(0);
+    QVERIFY(v);
+    for(std::size_t i=0;i<v.value()->size();++i)
+        (*v.value())[i]=1e-6*std::sin(
+            2.0*std::numbers::pi*997.0*static_cast<double>(i)/48000.0);
+    const auto result=measure_basic_level_scope(
+        quiet.value()->view(),core::FrameIndex{0},*length.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(result);
+    QCOMPARE(result.value()->short_term_3s_complete_windows,
+             std::uint64_t{11});
+    QVERIFY(result.value()->short_term_3s_p50_lufs.db);
+    QVERIFY(*result.value()->short_term_3s_p50_lufs.db< -70.0);
+    for(const auto& window:result.value()->short_term_3s_grid100) {
+        QVERIFY(window.lufs);
+        QVERIFY(*window.lufs< -70.0);
+    }
+    QVERIFY(!result.value()->integrated_lufs.db);
+    QCOMPARE(result.value()->integrated_lufs.state,
+             BasicLevelValueState::BELOW_LOUDNESS_GATE);
+    const auto shortLength=core::FrameCount::create(48000*2);
+    QVERIFY(shortLength);
+    const auto shortOnly=measure_basic_level_scope(
+        quiet.value()->view(),core::FrameIndex{0},*shortLength.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(shortOnly);
+    QVERIFY(shortOnly.value()->short_term_3s_observation_complete);
+    QCOMPARE(shortOnly.value()->short_term_3s_complete_windows,
+             std::uint64_t{0});
+    QVERIFY(!shortOnly.value()->short_term_3s_p50_lufs.db);
+    QCOMPARE(shortOnly.value()->short_term_3s_p50_lufs.state,
+             BasicLevelValueState::INSUFFICIENT_DURATION);
 }
 
 void BasicLevelAnalyzerTest::
