@@ -89,14 +89,15 @@ public:
             // Opt-in replaces the L1 factory-less Dynamic EQ slot. P2 and
             // all other actual Product registration identities are copied
             // as-is; there is no synthetic 5-DSP fallback registry.
-            const auto already=product_registry->has_factory(
-                "rgsml.dsp.dynamic-eq");
-            auto opt=already
-                ?core::Result<dsp::ModuleRegistry>::success(*product_registry)
-                :dsp::ModuleRegistry::with_dynamic_eq_offline(*product_registry);
-            if(!opt)return R::failure(*opt.error());
-            auto registry=std::make_shared<const dsp::ModuleRegistry>(
-                std::move(*opt.value()));
+            std::shared_ptr<const dsp::ModuleRegistry> registry=
+                std::move(product_registry);
+            if(!registry->has_factory("rgsml.dsp.dynamic-eq")) {
+                auto opt=dsp::ModuleRegistry::with_dynamic_eq_offline(
+                    *registry);
+                if(!opt)return R::failure(*opt.error());
+                registry=std::make_shared<const dsp::ModuleRegistry>(
+                    std::move(*opt.value()));
+            }
             auto copy=dsp::ProcessingChain::restore(
                 *registry,live_chain.context(),live_chain.revision(),
                 {instances.begin(),instances.end()});
@@ -181,6 +182,8 @@ public:
     [[nodiscard]] const OfflineProductOwnerStamp& stamp() const noexcept {
         return stamp_;
     }
+    [[nodiscard]] const std::shared_ptr<const dsp::ModuleRegistry>&
+    registry_snapshot() const noexcept { return registry_; }
     [[nodiscard]] const std::shared_ptr<const render::RenderResult>&
     prepared_owner() const noexcept { return prepared_; }
     [[nodiscard]] const std::vector<dsp::ModuleExecutionBinding>&
