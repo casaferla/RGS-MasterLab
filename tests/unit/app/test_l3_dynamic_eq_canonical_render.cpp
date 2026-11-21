@@ -3,6 +3,7 @@
 #include "internal/l3_automatch_offline_search.hpp"
 #include "internal/l3_automatch_typed_gain_trial.hpp"
 #include "internal/l3_product_offline_trial_job.hpp"
+#include "internal/l3_offline_private_metric_probe.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -404,6 +405,50 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QVERIFY(job.value()->result_has_expected_scope(candidate.value()->rendered));
     QVERIFY(candidate.value()->levels.scope_frame_count==4096);
     QVERIFY(candidate.value()->tonal.scope_frame_count==4096);
+
+    // INDEPENDENT measured reference. The fixture grants only a private
+    // test owner claim; no Product/QML publication is performed by probe.
+    auto goldBuffer=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(goldBuffer);
+    auto goldSamples=goldBuffer.value()->mutable_view().channel(0);
+    QVERIFY(goldSamples);
+    for(std::size_t i=0;i<goldSamples.value()->size();++i)
+        (*goldSamples.value())[i]=0.4*std::sin(
+            2*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
+    auto goldLevels=analysis::measure_basic_level_full_resource(
+        *goldBuffer.value());
+    auto goldTonal=analysis::measure_tonal_stereo_scope(
+        goldBuffer.value()->view(),core::FrameIndex{0},*frames.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(goldLevels&&goldTonal);
+    const auto imported=app::m21_private::import_real_product_metrics(
+        *goldLevels.value(),*goldTonal.value(),
+        {app::m21_private::Column::gold,23,
+         "independent-test-gold-real-pcm","Full Track",true});
+    QVERIFY(imported.snapshot);
+    const std::array<Objective,1> rms{{
+        {app::m21_private::Metric::full_scope_rms,1.0,1.0}}};
+    const auto probe=probe_unpublished_candidate(
+        *candidate.value(),*imported.snapshot,rms);
+    QVERIFY(probe);
+    QVERIFY(std::isfinite(probe.value()->normalized_weighted_squared_error));
+    QCOMPARE(probe.value()->evaluated_metric_count,std::size_t{1});
+    QCOMPARE(probe.value()->candidate_frames,4096);
+    const std::array<Objective,1> m16tp{{
+        {app::m21_private::Metric::true_peak,1.0,1.0}}};
+    QVERIFY(!probe_unpublished_candidate(
+        *candidate.value(),*imported.snapshot,m16tp));
+    const std::array<Objective,2> duplicate{{
+        {app::m21_private::Metric::full_scope_rms,1.0,1.0},
+        {app::m21_private::Metric::full_scope_rms,1.0,1.0}}};
+    QVERIFY(!probe_unpublished_candidate(
+        *candidate.value(),*imported.snapshot,duplicate));
+    auto staleReference=*imported.snapshot;
+    staleReference.lifecycle=app::m21_private::Lifecycle::stale;
+    QVERIFY(!probe_unpublished_candidate(
+        *candidate.value(),staleReference,rms));
     QCOMPARE(candidate.value()->rendered.signatures().size(),std::size_t{2});
     QVERIFY(std::holds_alternative<render::DynamicEqExecutionSignaturePayload>(
         candidate.value()->rendered.signatures()[1].payload));
