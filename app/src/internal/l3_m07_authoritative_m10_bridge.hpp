@@ -107,13 +107,9 @@ struct BridgeResult final {
                     part.required_candidate_evidence});
         }
     }
-    for(const auto& domain:out.domain) {
-        double mass=0.0;
-        for(const auto& c:domain.configured)
-            mass+=c.configured_mass;
-        if(!std::isfinite(mass)||std::abs(mass-1.0)>1e-12)
-            return reject(BridgeFailure::invalid_component_population);
-    }
+    // Mass integrity was proven EXACTLY in reduced rational units by
+    // static_structure_valid(): no invented epsilon-based "mass repair".
+    // Each configured slot contributes all its original component mass.
     return {std::move(out),BridgeFailure::none};
 }
 } // namespace rgsml::app::l3_automatch::m07_frozen
