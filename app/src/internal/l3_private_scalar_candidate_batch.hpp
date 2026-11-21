@@ -168,13 +168,12 @@ public:
                 break;
             }
             std::optional<double> score;
+            bool cache_hit=false;
             for(auto it=exact_completed.rbegin();
                 it!=exact_completed.rend();++it) {
                 if(jobs[ordinal].identical_execution_to(jobs[it->first])) {
                     score=it->second;
-                    ++report.cached_reuses;
-                    progress->cached_reuses_.store(
-                        report.cached_reuses,std::memory_order_release);
+                    cache_hit=true;
                     break;
                 }
             }
@@ -201,15 +200,23 @@ public:
                     continue;
                 }
                 score=probed.value()->normalized_weighted_squared_error;
-                if(exact_completed.size()==32)
-                    exact_completed.erase(exact_completed.begin());
-                exact_completed.emplace_back(ordinal,*score);
             }
             // Even after a cheap cache hit, cancellation must suppress any
             // new "completed best" until current Product is rechecked.
             if(progress->cancellation_requested()) {
                 report.end=PrivateBatchEnd::cancelled;
                 break;
+            }
+            // Only fully completed, noncancelled candidates may enter the
+            // exact-result cache or increment completed/cached counters.
+            if(cache_hit) {
+                ++report.cached_reuses;
+                progress->cached_reuses_.store(
+                    report.cached_reuses,std::memory_order_release);
+            } else {
+                if(exact_completed.size()==32)
+                    exact_completed.erase(exact_completed.begin());
+                exact_completed.emplace_back(ordinal,*score);
             }
             ++report.completed;
             progress->completed_.store(report.completed,

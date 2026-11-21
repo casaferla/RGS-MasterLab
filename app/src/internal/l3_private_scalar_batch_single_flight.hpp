@@ -93,7 +93,8 @@ public:
         return progress_;
     }
     [[nodiscard]] bool cancel() noexcept {
-        if(std::this_thread::get_id()!=owner_||!state_||!progress_)
+        if(std::this_thread::get_id()!=owner_||!state_||!progress_
+           ||state_->finished.load(std::memory_order_acquire))
             return false;
         progress_->request_cancel();
         return true;
