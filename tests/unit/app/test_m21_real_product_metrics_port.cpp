@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <utility>
 
 namespace rgsml::tests {
 
@@ -639,7 +640,7 @@ l3C01FullPrefixCandidateMeasuresRealM21Evidence()
     QVERIFY(ticket);
     QVERIFY(producer.expect(Column::processed,2U));
     QVERIFY(producer.publish(*candidateMetrics.snapshot));
-    QCOMPARE(search->complete(*ticket,producer.view()),Submission::improved);
+    QVERIFY(search->complete(*ticket,producer.view())==Submission::improved);
     QVERIFY(search->best().typed_dsp_fingerprint.has_value());
     QCOMPARE(*search->best().typed_dsp_fingerprint,
              std::string{"c01-full-prefix-BELL-RANGE-6"});
