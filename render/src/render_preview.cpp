@@ -7,6 +7,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/compressor_module.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -32,6 +33,7 @@ namespace {
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
+constexpr auto kDynamicEqTypeId = "rgsml.dsp.dynamic-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 constexpr auto kTruePeakLimiterTypeId = "rgsml.dsp.true-peak-limiter";
@@ -67,6 +69,29 @@ struct PreparedModule final {
             return binding.instance_id == id;
         });
     return iterator == bindings.end() ? nullptr : std::addressof(*iterator);
+}
+
+[[nodiscard]] ModuleExecutionSignature make_dynamic_eq_signature(
+    const rgsml::dsp::ModuleDescriptor& descriptor,
+    const rgsml::dsp::ModuleInstanceId& id,
+    const rgsml::dsp::DynamicEqParameters& parameters,
+    bool bypass)
+{
+    std::vector<DynamicEqBandExecutionSignaturePayload> active;
+    for(const auto& band:parameters.bands()) {
+        const auto& spec=band.spec();
+        if(spec.enabled)
+            active.push_back(DynamicEqBandExecutionSignaturePayload{
+                spec.filter_type,spec.routing,spec.shape,spec.control});
+    }
+    return ModuleExecutionSignature{
+        id,std::string{kDynamicEqTypeId},
+        std::string{descriptor.algorithm_version().value_or("1.0.0")},
+        std::string{descriptor.parameter_schema_id().value_or(
+            "rgsml.dsp.dynamic-eq.parameters/1.0.0")},
+        bypass?ModuleExecutionDisposition::BYPASS_IDENTITY:
+               ModuleExecutionDisposition::PROCESSED,
+        DynamicEqExecutionSignaturePayload{std::move(active)}};
 }
 
 // Direct, integer Grid100 evaluation avoids cumulative rounding drift at
@@ -614,10 +639,11 @@ rgsml::core::Result<RenderResult> render_preview(
             // Never call the generic default factory for this module.
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
+            const bool is_dynamic_eq = (instance.module_type_id() == kDynamicEqTypeId);
             const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
             const bool is_stereo_ms = (instance.module_type_id() == kStereoMsTypeId);
             const bool is_streaming_p2 = (instance.module_type_id() == kStreamingTruePeakTypeId);
-            const bool is_parameterized = is_gain || is_eq || is_compressor
+            const bool is_parameterized = is_gain || is_eq || is_dynamic_eq || is_compressor
                 || is_stereo_ms || is_streaming_p2;
 
             if (!instance.active() && is_streaming_p2) {
@@ -696,6 +722,17 @@ rgsml::core::Result<RenderResult> render_preview(
                             std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.parametric-eq.parameters/1.0.0")},
                             ModuleExecutionDisposition::BYPASS_IDENTITY,
                             ParametricEqExecutionSignaturePayload{std::move(enabled_bands)}});
+                    } else if (is_dynamic_eq) {
+                        const auto* parameters=std::get_if<rgsml::dsp::DynamicEqParameters>(
+                            &binding->parameters);
+                        if(!parameters)
+                            return rgsml::core::Result<RenderResult>::failure(render_error(
+                                rgsml::core::ErrorCode::InvalidArgument,
+                                "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                                "Bypassed Dynamic EQ requires typed parameters."));
+                        signatures.push_back(make_dynamic_eq_signature(
+                            descriptor.value()->get(),instance.instance_id(),
+                            *parameters,true));
                     } else if (is_compressor) {
                         const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters);
                         const bool is_mono = (source.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C);
@@ -746,7 +783,29 @@ rgsml::core::Result<RenderResult> render_preview(
                 return rgsml::core::Result<RenderResult>::failure(*module.error());
             }
 
-            auto requirements = (*module.value())->runtime_requirements(process_spec);
+            // Enabled C01 has conditional, state/input-bound finite-memory
+            // certificates. This renderer cannot claim a fabricated 0-frame
+            // pre-context for a selected region. The only valid opt-in path
+            // here is exact execution from genuine programme frame zero
+            // through its true end, with no approximate random-access seek.
+            if (is_dynamic_eq && (source.absolute_start_frame().value()!=0
+                || window!=source.absolute_range())) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::UnsupportedOperation,
+                    "DYNAMIC_EQ_FULL_PREFIX_REQUIRED",
+                    "Active C01 RenderPreview requires exact full-programme source from frame zero; arbitrary partial-region context is not certified."));
+            }
+            // Local full-prefix scheduler bounds. These are NOT module
+            // DYN_EQ_EFFECTIVE_MEMORY_V1 certificate values and MUST NOT
+            // be reused by arbitrary seek/region/tail rendering. C01's
+            // accepted latency/lookahead is zero and programme N->N.
+            const auto z=*rgsml::core::FrameCount::create(0).value();
+            auto requirements=is_dynamic_eq
+                ?rgsml::core::Result<rgsml::dsp::DspRuntimeRequirements>::success(
+                    rgsml::dsp::DspRuntimeRequirements{
+                        rgsml::dsp::DspExecutionModel::STREAMING_CAUSAL,
+                        z,z,z,z,z,false})
+                :(*module.value())->runtime_requirements(process_spec);
             if (!requirements) {
                 return rgsml::core::Result<RenderResult>::failure(*requirements.error());
             }
@@ -845,6 +904,17 @@ rgsml::core::Result<RenderResult> render_preview(
                     std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.parametric-eq.parameters/1.0.0")},
                     ModuleExecutionDisposition::PROCESSED,
                     ParametricEqExecutionSignaturePayload{std::move(enabled_bands)}});
+            } else if (is_dynamic_eq) {
+                const auto* parameters=std::get_if<rgsml::dsp::DynamicEqParameters>(
+                    &binding->parameters);
+                if(!parameters)
+                    return rgsml::core::Result<RenderResult>::failure(render_error(
+                        rgsml::core::ErrorCode::InvalidArgument,
+                        "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                        "Active Dynamic EQ requires typed parameters."));
+                signatures.push_back(make_dynamic_eq_signature(
+                    descriptor.value()->get(),instance.instance_id(),
+                    *parameters,false));
             } else if (is_compressor) {
                 const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters);
                 const bool is_mono = (source.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C);
