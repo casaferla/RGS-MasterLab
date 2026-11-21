@@ -63,8 +63,13 @@ struct DomainDistanceEvidence final {
     const double denominator=*evidence.baseline_to_gold_distance;
     if(denominator<=0.0)
         return {{},ProximityReason::invalid_distance};
+    // MSVC /O2 may still diagnose a speculative constant-zero division
+    // (C4723) after optional-value propagation. The positive/finite
+    // preflight above is mandatory; this volatile read prevents only
+    // invalid compile-time speculation, without changing raw arithmetic.
+    const volatile double checked_positive_denominator=denominator;
     const double raw=1.0-
-        *evidence.candidate_to_gold_distance/denominator;
+        *evidence.candidate_to_gold_distance/checked_positive_denominator;
     if(!std::isfinite(raw))
         return {{},ProximityReason::invalid_distance};
     return {raw,ProximityReason::comparable}; // RAW; no UI clip
