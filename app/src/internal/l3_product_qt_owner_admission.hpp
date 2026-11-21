@@ -203,6 +203,57 @@ public:
         }
     }
 
+    struct DynamicEqProposal final {
+        dsp::ModuleInstanceId module_id;
+        core::Uuid band_id;
+        DynamicEqScalarCoordinate coordinate{};
+        double value{};
+        std::string ticket_identity;
+    };
+
+    [[nodiscard]] static core::Result<std::vector<OfflineProductTrialJob>>
+    create_dynamic_eq_batch_on_owner(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,const Inbox& inbox,
+        const Accepted& accepted,
+        std::span<const DynamicEqProposal> proposals,
+        core::FrameCount max_block)
+    {
+        using R=core::Result<std::vector<OfflineProductTrialJob>>;
+        if(proposals.empty()||proposals.size()>800
+           ||!still_current(product,fanout,selector,gold,inbox,accepted))
+            return R::failure(
+                fail("L3_OWNER_DYNAMIC_EQ_BATCH_REQUIRES_CURRENT_EPOCH"));
+        const auto& chain=product.upstream.chain.chain();
+        const auto bindings=product.upstream.chain.execution_bindings();
+        try {
+            std::vector<OfflineProductTrialJob> out;
+            out.reserve(proposals.size());
+            for(const auto& proposal:proposals) {
+                auto trial=make_dynamic_eq_scalar_trial(
+                    chain,bindings,proposal.module_id,proposal.band_id,
+                    proposal.coordinate,proposal.value,
+                    proposal.ticket_identity);
+                if(!trial)return R::failure(
+                    fail("L3_OWNER_DYNAMIC_EQ_BATCH_INVALID_COORDINATE"));
+                auto job=OfflineProductTrialJob::create(
+                    accepted.job.stamp(),accepted.job.prepared_owner(),
+                    accepted.job.registry_snapshot(),chain,bindings,
+                    *trial,max_block);
+                if(!job)return R::failure(*job.error());
+                out.push_back(std::move(*job.value()));
+            }
+            if(!still_current(product,fanout,selector,gold,inbox,accepted))
+                return R::failure(
+                    fail("L3_OWNER_DYNAMIC_EQ_BATCH_STALE_DURING_COPY"));
+            return R::success(std::move(out));
+        }catch(const std::bad_alloc&) {
+            return R::failure(
+                fail("L3_OWNER_DYNAMIC_EQ_BATCH_ALLOCATION_FAILED"));
+        }
+    }
+
     [[nodiscard]] static bool result_eligible(
         const Controllers& product,const Fanout& fanout,
         const AuditionSourceSelector& selector,
