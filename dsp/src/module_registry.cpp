@@ -3,6 +3,8 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/compressor_module.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_module.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/gain_module.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_module.hpp>
@@ -44,6 +46,7 @@ using rgsml::core::ErrorCode;
 using rgsml::core::Result;
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
+constexpr auto kDynamicEqTypeId = "rgsml.dsp.dynamic-eq";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
@@ -106,6 +109,25 @@ public:
         return Result<std::unique_ptr<IModule>>::success(std::move(result));
     }
 
+private:
+    ModuleDescriptor descriptor_;
+};
+
+// Explicit L3 offline factory: unlike a GUI control, a candidate is never
+// generated from implicit random/default parameters. Typed binding required.
+class DynamicEqOfflineFactory final : public IModuleFactory {
+public:
+    explicit DynamicEqOfflineFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor)) {}
+    [[nodiscard]] std::string_view module_type_id() const noexcept override {
+        return descriptor_.type_id();
+    }
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override {
+        return Result<std::unique_ptr<IModule>>::failure(
+            Error{ErrorCode::InvalidArgument,
+                  "Dynamic EQ offline execution requires explicit typed parameters.",
+                  {{"category","DYNAMIC_EQ_TYPED_BINDING_REQUIRED"}}});
+    }
 private:
     ModuleDescriptor descriptor_;
 };
@@ -568,6 +590,25 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
             std::move(canonical_descriptor),
             std::move(factory)});
     }
+    return create(std::move(registrations));
+}
+
+Result<ModuleRegistry> ModuleRegistry::with_dynamic_eq_offline(
+    ModuleRegistry baseline)
+{
+    auto descriptor=ModuleDescriptor::create(make_spec(
+        kDynamicEqTypeId,
+        {ModuleCategory::FILTER_EQ},
+        {ProcessingStage::RESTORE_PREP,ProcessingStage::MASTER},
+        {ChainSegment::MANUAL,ChainSegment::DNA_LINKED,ChainSegment::REF_LINKED},
+        true,PlacementClass::INLINE_CHAIN,std::nullopt,
+        {},false,false,"1.0.0",
+        "rgsml.dsp.dynamic-eq.parameters/1.0.0"));
+    if(!descriptor)return Result<ModuleRegistry>::failure(*descriptor.error());
+    auto value=std::move(*descriptor.value());
+    auto factory=std::make_shared<DynamicEqOfflineFactory>(value);
+    auto registrations=std::move(baseline.registrations_);
+    registrations.push_back(ModuleRegistration{std::move(value),std::move(factory)});
     return create(std::move(registrations));
 }
 

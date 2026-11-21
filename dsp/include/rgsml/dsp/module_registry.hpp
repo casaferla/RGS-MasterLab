@@ -42,6 +42,11 @@ public:
     [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
     with_streaming_true_peak_preview(ModuleRegistry baseline);
 
+    // Explicit L3 offline opt-in, not part of package_v1 or live Product GUI.
+    // Typed DynamicEqParameters only; no implicit unbound defaults.
+    [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
+    with_dynamic_eq_offline(ModuleRegistry baseline);
+
     [[nodiscard]] std::span<const ModuleDescriptor> descriptors() const noexcept;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const ModuleDescriptor>>
     find_descriptor(std::string_view type_id) const;
