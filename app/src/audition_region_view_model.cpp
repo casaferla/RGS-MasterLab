@@ -459,6 +459,29 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
     return core::Status::success();
 }
 
+core::Status AuditionRegionViewModel::restore_project_loop_preference(bool enabled)
+{
+    if(m18_foreign_owner_thread())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "PROJECT_LOOP_RESTORE_REQUIRES_QT_OWNER"});
+    if(enabled &&!region_)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "PROJECT_LOOP_RESTORE_REQUIRES_REGION"});
+    // No extra M18 Product epoch; caller already holds the Project Open
+    // exclusive batch. REFERENCE is not the current DEVICE owner here.
+    if(enabled &&!referenceMode_ &&playback_ &&playback_->playback_available()) {
+        const auto installed=playback_->set_loop_source_range(region_);
+        if(!installed)return installed;
+    }
+    loopEnabled_=enabled;
+    lastCanLoop_=can_loop();
+    errorMessage_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
 core::Status AuditionRegionViewModel::seek(core::FrameIndex position)
 {
     // SEEK changes only transport navigation, never M18 export identity.

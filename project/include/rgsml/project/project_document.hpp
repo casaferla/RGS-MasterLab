@@ -40,6 +40,8 @@ struct AuditionRegion final {
     std::string frameDomain{"SOURCE"};
     std::int64_t startFrame{0};
     std::int64_t endFrameExclusive{0};
+    // Missing in pre-M24 projects means OFF; no project format bump.
+    bool loopEnabled{false};
 };
 
 struct TimeSelections final {

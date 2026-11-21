@@ -14,6 +14,7 @@
 namespace rgsml::app {
 
 class PlaybackTransportViewModel;
+class ProjectSessionViewModel;
 
 class AuditionRegionViewModel final : public QObject {
     Q_OBJECT
@@ -108,6 +109,12 @@ signals:
     void changed();
 
 private:
+    friend class ProjectSessionViewModel;
+    // Project Open owns the exclusive Source/Reference mutation transaction.
+    // Restore only the saved preference; never start playback. SOURCE can
+    // install the loop on its STOPPED owner; REFERENCE is rearmed by the
+    // existing selector only when that audio owner is selected.
+    [[nodiscard]] core::Status restore_project_loop_preference(bool enabled);
     struct TimeSegments final {
         QString hours;
         QString minutes;

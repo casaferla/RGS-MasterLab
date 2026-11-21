@@ -88,13 +88,36 @@ core::Result<ProjectSnapshot> ProjectSnapshot::create(
         !referenceIds.contains(*document.references.activeReferenceId)) {
         return invalid("references.activeReferenceId");
     }
+    // Exactly one region per independent timeline; REFERENCE must belong
+    // to the currently selected genuine REFERENCE resource, never SOURCE.
     std::set<core::Uuid> regionIds;
-    for (const auto& region : document.timeSelections.auditionRegions) {
-        if (region.regionId.is_nil() || !regionIds.insert(region.regionId).second ||
-            region.resourceId != document.sourceResourceId || region.frameDomain != "SOURCE" ||
-            region.startFrame < 0 || region.endFrameExclusive <= region.startFrame) {
-            return invalid("timeSelections.auditionRegions");
+    bool seenSource=false;
+    bool seenReference=false;
+    std::optional<core::Uuid> activeReferenceResource;
+    if(document.references.activeReferenceId) {
+        for(const auto& ref:document.references.items) {
+            if(ref.referenceId==*document.references.activeReferenceId) {
+                activeReferenceResource=ref.resourceId;
+                break;
+            }
         }
+    }
+    if(document.timeSelections.auditionRegions.size()>2U)
+        return invalid("timeSelections.auditionRegions");
+    for (const auto& region : document.timeSelections.auditionRegions) {
+        if(region.regionId.is_nil() ||!regionIds.insert(region.regionId).second
+           ||region.startFrame<0 ||region.endFrameExclusive<=region.startFrame)
+            return invalid("timeSelections.auditionRegions");
+        if(region.frameDomain=="SOURCE") {
+            if(seenSource ||region.resourceId!=document.sourceResourceId)
+                return invalid("timeSelections.auditionRegions");
+            seenSource=true;
+        } else if(region.frameDomain=="REFERENCE") {
+            if(seenReference ||!activeReferenceResource
+               ||region.resourceId!=*activeReferenceResource)
+                return invalid("timeSelections.auditionRegions");
+            seenReference=true;
+        } else return invalid("timeSelections.auditionRegions");
     }
     std::set<core::Uuid> chainIds;
     std::set<core::Uuid> instanceIds;
