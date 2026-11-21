@@ -2900,3 +2900,17 @@ add_test(NAME rgsml_l3_m06_d01_native_binding_tests
 set_tests_properties(rgsml_l3_m06_d01_native_binding_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;d01;m07;m08;nonrelease")
+
+# L3 Product actual same PCM/M19/M20 M05/M06 native evidence bundle.
+qt_add_executable(rgsml_l3_m05m06_real_source_bundle_tests
+    unit/app/test_l3_m05m06_real_source_bundle.cpp)
+target_include_directories(rgsml_l3_m05m06_real_source_bundle_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m05m06_real_source_bundle_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m05m06_real_source_bundle_tests)
+add_test(NAME rgsml_l3_m05m06_real_source_bundle_tests
+    COMMAND rgsml_l3_m05m06_real_source_bundle_tests)
+set_tests_properties(rgsml_l3_m05m06_real_source_bundle_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m05;m06;real_product;nonrelease")
