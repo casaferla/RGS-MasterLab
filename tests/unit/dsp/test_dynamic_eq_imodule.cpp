@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace rgsml::tests {
@@ -222,7 +223,8 @@ void DynamicEqIModuleTest::badCheckpointAndContextAreAtomic() {
     for(double v:*bad_out.value()->view().channel(1).value())QCOMPARE(v,8.0);
 }
 void DynamicEqIModuleTest::resetEosAndPrecontextGate() {
-    const auto d=descriptor(),p=params();
+    const auto d=descriptor();
+    const auto p=params();
     const DspProcessSpec spec{format(audio::ChannelLayout::STEREO_LR),
         audio::FrameDomainId::SOURCE_PROCESSING_RATE,frame_count(12)};
     auto module=make(d,p);
