@@ -59,3 +59,34 @@ kept factory-less. Next integration must attach an opt-in factory
 to that existing descriptor, never register a duplicate, and must
 prove Product full-prefix rendering and offline candidate lifecycle
 before any UI activation.
+
+## Additive opt-in offline Product/AutoMatch integration
+
+A later separately gated macro-lot uses the existing factory-less L1
+`rgsml.dsp.transient-shaper` descriptor and attaches
+`with_transient_shaper_offline` as an **explicit immutable registry copy**.
+No duplicate descriptor, default factory, editor or saved-project schema
+is introduced.
+
+- `ModuleParameterPayload` appends `TransientShaperParameters` only;
+  old variant positions and codecs remain intact. The generic project
+  codec fails closed on M03, as it already does on C01 Dynamic EQ.
+- `RenderRequest` requires the matching two-control payload even when
+  bypassed. `RenderPreview` invokes the same approved M03 IModule only
+  for full-song, origin-zero replay, with exact attack/sustain signatures.
+  Partial-region approximation is expressly rejected.
+- The `OfflineProductTrialJob` copies only needed frozen DSP factories,
+  sharing an existing immutable registry wherever possible. Gain+C01+M03
+  may be measured by the same real M19/M20 worker without mutating MANUAL.
+- `make_transient_scalar_trial` accepts one existing active MANUAL M03
+  module and changes exactly one Attack or Sustain amount in [-12,+12].
+  ProductQt admission can prepare these typed candidate graphs only after
+  authentic M18/SOURCE/REFERENCE and M21 evidence checks and rechecks.
+- Native tests check actual nonneutral PCM, bypass, invalid/missing typed
+  payloads, fail-closed partial render and the M18-epoch-bound read-only
+  worker path; no false producer/Verified M13/QTP status is minted.
+
+M03 C00 sound-law/performance and checkpoint tests are distinct from
+M04 independent musical listening. No test here proves M04 acceptance,
+the full 27-feature frozen M10 optimizer, or the user-desired 20–30-min
+AutoMatch duration.
