@@ -89,3 +89,45 @@ Native analytical test oracles include *flat power/Hz* PSD
 [100,10000]) and synthetic 2.5dB/oct power-density OLS over
 actual M20 band geometry, missing/invalid energy, explicit floor,
 full named intervals, ≥80% support and direct M03 Product reuse.
+
+## M05 L2 + M06 D01 — source-grade later, one existing K pass now
+
+A subsequent additive writer lot extends the **preexisting** M19
+K-weighting per-100-ms quarter source, without a second filter,
+duplicated audio traversal, changed integrated one-pass power gate,
+true-peak estimator, retained gate union or any of M19's five static
+numerical scalars:
+
+- Whole complete chronological 3.000-s windows start every 0.100 s
+  (30 consecutive exact K-weighted quarters). The source series
+  records *every* complete start, its absolute source frame, an
+  optional ungated 3-s LUFS value and the original K-bank identity.
+  Finite values below -70 LUFS are retained, zero-power windows
+  remain NULL and complete-window denominator is never shortened
+  to improve apparent support. Insufficient length and numerical
+  undefined remain separate.
+- L2 canonical Type-7 P50 uses the unrounded finite source window
+  population with no temporal alignment to REFERENCE. Source
+  support is valid native / complete native. Pair support is the
+  frozen MIN(PreparedSupport,ReferenceSupport), recorded once.
+- M06 D01 uses exactly those original complete ST windows for
+  Type-7 P10/P50/P90/P95, returning the three macro-shape components
+  [P10-P50, P90-P50, P95-P50]. They share the original D01 mass
+  0.15 under Macro=0.50; no duplicated 0.15 for each percentile.
+  M19 Type-7 P50 source value is cross-checked; no re-K-filter pass.
+- Source-grade (>=10s active, authentic fully valid Grid100 series),
+  canonical complete-time owner/Phase6 FeatureStatus, M07 stable
+  binding/evidence signatures and M08 optimizationTarget are still
+  independent admission gates. A finite ST value or D01 observation
+  MUST NOT be labelled measured full M10/J, achieved or M13 verified.
+- Regression test uses 10-second actual 48-kHz mono/stereo PCM,
+  checking exactly 71 complete windows, all original M19 five scalar
+  metrics and M16 scope semantics, nonzero absolute frame offset,
+  gain translation 20log10(2) across each ST reading/P50/Integrated
+  and D01 gain-shift invariant differences.
+- Synthetic mathematical oracle additionally checks Type-7 percentiles
+  on [0...9]: P10=0.9, P50=4.5, P90=8.1, P95=8.55, and D01
+  relative components [-3.6,+3.6,+4.05].
+- The same Windows/Linux focused gate includes original M19 public
+  Product analyzer and independent streaming REFERENCE regression
+  targets, not a second long FQ campaign.
