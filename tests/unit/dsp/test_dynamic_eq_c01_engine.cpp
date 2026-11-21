@@ -69,7 +69,9 @@ void C01EngineTest::stereoPartitionInvariantAndBandOrder() {
     one.control.threshold_dbfs=-45.0;
     DynamicEqBandSpec two;
     two.band_id=id(2);
-    two.routing=EqRouting::SIDE;
+    // MID and SIDE are orthogonal and can commute; LEFT crosses the basis
+    // and makes persisted order observationally testable.
+    two.routing=EqRouting::LEFT;
     two.filter_type=DynamicEqFilterType::BELL;
     two.shape=DynamicEqBellShape{1500.0,2.0};
     two.control.range_db=6.0;
@@ -99,9 +101,9 @@ void C01EngineTest::stereoPartitionInvariantAndBandOrder() {
             std::span<double>(r_split).subspan(start,n)));
         start+=n;
     }
-    QCOMPARE(l_full,l_split);
-    QCOMPARE(r_full,r_split);
-    QCOMPARE(full.value()->states(),split.value()->states());
+    QVERIFY(l_full==l_split);
+    QVERIFY(r_full==r_split);
+    QVERIFY(full.value()->states()==split.value()->states());
     auto reversed=DynamicEqParameters::create({*b.value(),*a.value()});
     QVERIFY(reversed);
     auto reverse_engine=C01FrameEngine::create(*reversed.value(),44100,2);
@@ -123,7 +125,7 @@ void C01EngineTest::finiteFailurePreservesPCMAndState() {
     std::fill(ol.begin(),ol.end(),777.0);
     std::fill(orr.begin(),orr.end(),888.0);
     QVERIFY(!eng.value()->process_block(l,r,ol,orr));
-    QCOMPARE(checkpoint,eng.value()->states());
+    QVERIFY(checkpoint==eng.value()->states());
     QVERIFY(std::all_of(ol.begin(),ol.end(),[](double v){return v==777.0;}));
     QVERIFY(std::all_of(orr.begin(),orr.end(),[](double v){return v==888.0;}));
     l[23]=0.2;
@@ -137,8 +139,15 @@ void C01EngineTest::disabledAndRoutingValidation() {
     QVERIFY(off);
     std::vector<double> x{0.1,0.2,-0.3},y(3);
     QVERIFY(off.value()->process_block(x,{},y,{}));
-    QCOMPARE(x,y);
+    QVERIFY(x==y);
     QVERIFY(off.value()->states().empty());
+    // SIDE is valid for stereo and uses only the dedicated Side lane.
+    auto side=C01FrameEngine::create(params(EqRouting::SIDE),48000,2);
+    QVERIFY(side);
+    std::vector<double> left(256,0.4),right(256,-0.4);
+    std::vector<double> out_l(256),out_r(256);
+    QVERIFY(side.value()->process_block(left,right,out_l,out_r));
+    QVERIFY(side.value()->states()[0].lanes[1].power>0.0);
     QVERIFY(!C01FrameEngine::create(params(EqRouting::SIDE),48000,1));
 }
 } // namespace rgsml::tests
