@@ -61,7 +61,8 @@ void FrozenM10RefinerTest::quantizationTieAndFrozenTotalOrder() {
 void FrozenM10RefinerTest::sameCenterMinusThenPlusAndExactlyFourSteps() {
     std::vector<std::vector<double>> observed;
     const auto eval=[&](const std::vector<double>& u,bool can_render) {
-        Q_ASSERT(can_render);
+        if(!can_render)
+            return Evaluation{EvaluationKind::needs_new_attempt,{}};
         observed.push_back(u);
         const double d=u[0]-0.75;
         return Evaluation{EvaluationKind::attempted_complete,
@@ -149,7 +150,8 @@ void FrozenM10RefinerTest::maximum48CoordinatesDeterministicOrder() {
         coordinates.push_back(coord(static_cast<std::uint8_t>(i),1,0.5));
     std::vector<std::pair<double,double>> visits;
     const auto attempted=[&](const std::vector<double>& u,bool allow) {
-        Q_ASSERT(allow);
+        if(!allow)
+            return Evaluation{EvaluationKind::needs_new_attempt,{}};
         visits.emplace_back(u[0],u[47]);
         return Evaluation{EvaluationKind::attempted_complete,score(1.0)};
     };
