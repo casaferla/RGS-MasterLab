@@ -2534,3 +2534,17 @@ add_test(NAME rgsml_l3_m09_frozen_gaussian_grid_tests
 set_tests_properties(rgsml_l3_m09_frozen_gaussian_grid_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m09;gaussian;nonrelease")
+
+# L3-M09 P02 frozen Macro compressor reduction and native Type7 seed.
+qt_add_executable(rgsml_l3_m09_p02_macro_reduction_tests
+    unit/app/test_l3_m09_p02_macro_reduction.cpp)
+target_include_directories(rgsml_l3_m09_p02_macro_reduction_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m09_p02_macro_reduction_tests PRIVATE
+    Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m09_p02_macro_reduction_tests)
+add_test(NAME rgsml_l3_m09_p02_macro_reduction_tests
+    COMMAND rgsml_l3_m09_p02_macro_reduction_tests)
+set_tests_properties(rgsml_l3_m09_p02_macro_reduction_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m09;macro;nonrelease")
