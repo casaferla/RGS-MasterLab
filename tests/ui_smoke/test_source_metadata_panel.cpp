@@ -7300,8 +7300,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                     QStringLiteral("analysisVerificationStatus")));
             QVERIFY2(availability&&availability->isVisible(),
                      "Verification summary must remain in top header");
+            // The empty-current-data state remains explicit but neutral:
+            // no misleading development/release-qualification banner.
             QCOMPARE(availability->property("text").toString(),
-                     QStringLiteral("VERIFIED ANALYSIS UNAVAILABLE"));
+                     QStringLiteral("NO MEASUREMENTS"));
             const QString anchorName=index==0
                 ?QStringLiteral("m19LevelsPage")
                 :index==1
