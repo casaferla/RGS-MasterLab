@@ -1,4 +1,5 @@
 #include "internal/l3_automatch_typed_gain_trial.hpp"
+#include "internal/l3_automatch_typed_transient_trial.hpp"
 #include "internal/l3_product_offline_trial_job.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
@@ -187,6 +188,41 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(std::holds_alternative<
         render::TransientShaperExecutionSignaturePayload>(
         calculated.value()->rendered.signatures()[1].payload));
+
+    // An independent typed Attack-only candidate crosses the SAME actual
+    // RenderPreview/M19/M20 worker path, and Sustain remains unchanged.
+    auto attack=a::make_transient_scalar_trial(
+        *chain.value(),baseline,m03,
+        a::TransientCoordinate::attack_amount_db,
+        10.0,"attack-10-sustain-5");
+    QVERIFY(attack);
+    auto* value=std::get_if<dsp::TransientShaperParameters>(
+        &attack->candidate_bindings[1].parameters);
+    QVERIFY(value);
+    QCOMPARE(value->attack_amount_db(),10.0);
+    QCOMPARE(value->sustain_amount_db(),5.0);
+    QVERIFY(attack->candidate_bindings[0].parameters==
+            baseline[0].parameters);
+    QVERIFY(!a::make_transient_scalar_trial(
+        *chain.value(),baseline,m03,
+        a::TransientCoordinate::attack_amount_db,
+        8.0,"no-op"));
+    QVERIFY(!a::make_transient_scalar_trial(
+        *chain.value(),baseline,m03,
+        a::TransientCoordinate::sustain_amount_db,
+        18.0,"out-of-range"));
+    auto altJob=a::OfflineProductTrialJob::create(
+        stamp,owner,job.value()->registry_snapshot(),
+        *chain.value(),baseline,*attack,*block.value());
+    QVERIFY(altJob);
+    auto alt=altJob.value()->evaluate();
+    QVERIFY(alt);
+    QVERIFY(altJob.value()->result_has_expected_scope(alt.value()->rendered));
+    QCOMPARE(alt.value()->rendered.signatures().size(),std::size_t{2});
+    QVERIFY(alt.value()->rendered.signatures()[0].payload!=
+            calculated.value()->rendered.signatures()[0].payload);
+    QVERIFY(alt.value()->rendered.signatures()[1].payload!=
+            calculated.value()->rendered.signatures()[1].payload);
     QVERIFY(!product->has_factory("rgsml.dsp.transient-shaper"));
     QCOMPARE(chain.value()->instances().size(),std::size_t{2});
     auto changed=stamp;
