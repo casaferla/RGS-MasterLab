@@ -84,6 +84,26 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
     if(expected_k_size!=input.protected_full_k.size())
         return {{},{},
             AuthoritativeCostReason::missing_actual_candidate_or_protection};
+    // Cardinality alone does not bind the protected K to the scored
+    // actual candidate. Compare every canonical ordered transformed
+    // P/G/C value against its authenticated M07/M08 source slot.
+    // In particular, a second fabricated benign K must never be
+    // allowed to vouch for an unrelated regressing candidate.
+    std::size_t canonical_index=0U;
+    for(const auto& slot:input.exact_pair_slots) {
+        for(const auto& feature:slot.configured) {
+            const auto& guard=input.protected_full_k[canonical_index++];
+            if(!feature.prepared.z||!feature.reference.z||
+               !feature.current_candidate_z||
+               !guard.exact_current||!guard.required_in_frozen_k||
+               guard.prepared_z!=*feature.prepared.z||
+               guard.gold_z!=*feature.reference.z||
+               guard.candidate_z!=*feature.current_candidate_z)
+                return {{},{},
+                    AuthoritativeCostReason::
+                        missing_actual_candidate_or_protection};
+        }
+    }
     const auto protected_check=
         m11_frozen::verify_frozen_protected_no_regression(
             input.protected_full_k,

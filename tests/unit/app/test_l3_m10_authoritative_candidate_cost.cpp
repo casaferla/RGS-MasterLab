@@ -57,6 +57,7 @@ private slots:
     void candidateRequiredDropoutRejectsInsteadOfRenormalizing();
     void noCorrectionNeedsIndependentFixedProofNotNoneTop8();
     void m11HardGuardAppliesBeforeAnyNumericScore();
+    void independentGuardAndCandidateCannotDisagree();
 };
 void M10AuthoritativeCostTest::full27SlotExactTargetAndNonzeroComplexity() {
     const auto r=m10::score_exact_candidate_population(source());
@@ -113,6 +114,31 @@ m11HardGuardAppliesBeforeAnyNumericScore() {
     QCOMPARE(m10::score_exact_candidate_population(input).reason,
              m10::AuthoritativeCostReason::
                 missing_actual_candidate_or_protection);
+}
+void M10AuthoritativeCostTest::
+independentGuardAndCandidateCannotDisagree() {
+    auto input=source();
+    // Both individually look safe against Fixed, but do not describe
+    // the same candidate measurement: rejection must be unconditional.
+    input.exact_pair_slots[0].configured[0].current_candidate_z=10.0;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                 missing_actual_candidate_or_protection);
+    input=source();
+    input.protected_full_k[0].prepared_z=11.9;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                 missing_actual_candidate_or_protection);
+    input=source();
+    input.protected_full_k[0].gold_z=9.1;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                 missing_actual_candidate_or_protection);
+    input=source();
+    input.protected_full_k[0].exact_current=false;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                 missing_actual_candidate_or_protection);
 }
 void M10AuthoritativeCostTest::
 noCorrectionNeedsIndependentFixedProofNotNoneTop8() {
