@@ -10,6 +10,7 @@
 #include "l3_automatch_typed_transient_trial.hpp"
 #include "l3_m05m06_real_analysis_port.hpp"
 #include "l3_m05_real_tonal_statistics.hpp"
+#include "l3_m06_real_windowed_rms_crest.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -68,6 +69,16 @@ struct OfflineProductCandidateMeasurement final {
     {
         return m05m06_real::import_actual_full_source(
             levels,tonal,std::move(verified_by_caller));
+    }
+    // Read directly from this candidate's true RenderPreview PCM:
+    // shared 100-ms blocks recover M06 D03/D04 native 400-ms
+    // observations, without another render or synthetic M21 metrics.
+    // Source/REFERENCE and current Qt owner still must be attested by
+    // the M05/M06/M07 caller; this does not authorize M10 scoring.
+    [[nodiscard]] m05m06_real::D03D04NativeSeries
+    observed_m06_native_rms_crest() const
+    {
+        return m05m06_real::observe_d03_d04_real_pcm(rendered.view());
     }
     // The M07 owner must provide an EXACT shared common bandwidth and
     // accepted spectral floor. No additional audio pass or FFT occurs.

@@ -198,4 +198,54 @@ struct D03D04Selectors final {
     }
     return result;
 }
+// Prepared/REFERENCE pair use exact independent full-resource owner
+// stamps. Native support uses MIN once, not a new M07 artistic weight.
+// Eligibility and reference-grade validity remain external Phase-6.
+struct D03D04PairedNative final {
+    D03D04Selectors prepared;
+    D03D04Selectors reference;
+    std::optional<double> paired_d03_support;
+    std::optional<double> paired_d04_support;
+    [[nodiscard]] constexpr bool authorizes_solver_cost() const noexcept {
+        return false;
+    }
+};
+[[nodiscard]] inline std::optional<D03D04PairedNative>
+pair_d03_d04_native(
+    const D03D04NativeSeries& prepared,
+    const D03D04NativeSeries& reference,
+    const SourceIdentity& prepared_owner,
+    const SourceIdentity& reference_owner)
+{
+    if(prepared.problem!=NativeWindowProblem::none||
+       reference.problem!=NativeWindowProblem::none||
+       !prepared_owner.full_track_owner_confirmed||
+       !reference_owner.full_track_owner_confirmed||
+       prepared_owner.generation==0||reference_owner.generation==0||
+       prepared_owner.resource_identity.empty()||
+       reference_owner.resource_identity.empty()||
+       prepared_owner.resource_identity==reference_owner.resource_identity)
+        return std::nullopt;
+    D03D04PairedNative out{
+        extract_d03_d04_type7(prepared),
+        extract_d03_d04_type7(reference),{},{}};
+    if(out.prepared.d03_type7_rms_p95_minus_p10_db&&
+       out.reference.d03_type7_rms_p95_minus_p10_db&&
+       out.prepared.rms_native_support&&
+       out.reference.rms_native_support)
+        out.paired_d03_support=std::min(
+            *out.prepared.rms_native_support,
+            *out.reference.rms_native_support);
+    bool crest_ready=true;
+    for(std::size_t i=0;i<3U;++i)
+        crest_ready=crest_ready&&
+            out.prepared.d04_type7_crest_p10_p50_p90_db[i]&&
+            out.reference.d04_type7_crest_p10_p50_p90_db[i];
+    if(crest_ready&&out.prepared.crest_native_support&&
+       out.reference.crest_native_support)
+        out.paired_d04_support=std::min(
+            *out.prepared.crest_native_support,
+            *out.reference.crest_native_support);
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m05m06_real

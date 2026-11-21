@@ -31,6 +31,7 @@ private slots:
     void belowFloorAndNonfiniteKeepCompleteNativeDenominator();
     void fourBlockOverlapStartsAndTrailingFrameExcluded();
     void constantGainMovesRmsNotCrestAndDoesNotClaimM10();
+    void pairedRmsCrestNativeSupportAndStrictSourceIdentity();
 };
 void RealWindowedRmsCrestTest::
 actualStereoPcmSameWindowRmsAndCrest() {
@@ -120,6 +121,41 @@ constantGainMovesRmsNotCrestAndDoesNotClaimM10() {
         QVERIFY(std::abs(*second.complete_native_windows[i].crest_db-
                          *first.complete_native_windows[i].crest_db)<1e-10);
     }
+}
+void RealWindowedRmsCrestTest::
+pairedRmsCrestNativeSupportAndStrictSourceIdentity() {
+    auto prepared=make_audio(48000);
+    auto gold=make_audio(48000);
+    QVERIFY(prepared&&gold);
+    auto p=prepared.value()->mutable_view().channel(0);
+    auto pr=prepared.value()->mutable_view().channel(1);
+    auto g=gold.value()->mutable_view().channel(0);
+    auto gr=gold.value()->mutable_view().channel(1);
+    for(std::size_t i=0;i<48000U;++i) {
+        (*p.value())[i]=0.2;(*pr.value())[i]=0.2;
+        (*g.value())[i]=0.5;(*gr.value())[i]=0.5;
+    }
+    // First complete 400ms Gold window below digital power floor.
+    for(std::size_t i=0;i<19200U;++i) {
+        (*g.value())[i]=0;(*gr.value())[i]=0;
+    }
+    const auto a=real::observe_d03_d04_real_pcm(prepared.value()->view());
+    const auto b=real::observe_d03_d04_real_pcm(gold.value()->view());
+    const real::SourceIdentity prep_owner{"PREP-actual",1,true};
+    const real::SourceIdentity gold_owner{"GOLD-actual",2,true};
+    const auto result=real::pair_d03_d04_native(
+        a,b,prep_owner,gold_owner);
+    QVERIFY(result);
+    QVERIFY(result->paired_d03_support);
+    QVERIFY(result->paired_d04_support);
+    QCOMPARE(*result->paired_d03_support,6.0/7.0);
+    QCOMPARE(*result->paired_d04_support,6.0/7.0);
+    QVERIFY(!result->authorizes_solver_cost());
+    QVERIFY(!real::pair_d03_d04_native(a,b,prep_owner,prep_owner));
+    QVERIFY(!real::pair_d03_d04_native(
+        a,b,{"PREP-actual",0,true},gold_owner));
+    QVERIFY(!real::pair_d03_d04_native(
+        a,b,{"PREP-actual",1,false},gold_owner));
 }
 } // namespace
 } // namespace rgsml::tests
