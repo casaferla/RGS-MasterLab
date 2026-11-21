@@ -264,7 +264,7 @@ bool StereoMsViewModel::stage(
     double cutoff, double lowWidth, const QString& field)
 {
     if (!available()) {
-        set_error(field, QStringLiteral("Stereo/M-S is not present in this chain."));
+        set_error(field, QStringLiteral("Stereo Imager is not present in this chain."));
         return false;
     }
     const auto candidate = dsp::StereoMsParameters::create(
@@ -293,7 +293,7 @@ bool StereoMsViewModel::setDraftFieldValue(const QString& field, double value)
     if (field == QStringLiteral("sideGainDb")) return setDraftSideGainDb(value);
     if (field == QStringLiteral("monoBassCutoffHz")) return setDraftMonoBassCutoffHz(value);
     if (field == QStringLiteral("lowBandWidthPercent")) return setDraftLowBandWidthPercent(value);
-    set_error(field, QStringLiteral("Unsupported Stereo/M-S parameter field."));
+    set_error(field, QStringLiteral("Unsupported Stereo Imager parameter field."));
     return false;
 }
 

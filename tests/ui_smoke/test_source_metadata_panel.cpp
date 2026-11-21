@@ -1677,7 +1677,7 @@ Window {
         { kind: "module-gain", name: "Input Gain", color: "#6F9FB3" },
         { kind: "module-eq", name: "Parametric EQ", color: "#4E86C6" },
         { kind: "module-compressor", name: "Compressor", color: "#C4774A" },
-        { kind: "module-stereo", name: "Stereo / M-S", color: "#4A9A88" },
+        { kind: "module-stereo", name: "Stereo Imager", color: "#4A9A88" },
         { kind: "module-peak-meter", name: "True Peak Meter", color: "#6683A1" },
         { kind: "module-limiter", name: "True Peak Limiter", color: "#C4774A" },
         { kind: "module-headphones", name: "Master Audition", color: "#718092" }
@@ -6914,7 +6914,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(stereoMenuItem->property("enabled").toBool(),
         "The fourth View action must be selectable, not a placeholder");
     QVERIFY2(stereoMenuItem->property("text").toString().contains(
-        QStringLiteral("Stereo")),
+        QStringLiteral("Stereo Imager")),
         "The fourth View entry must label the live Stereo/M-S adapter");
     QCOMPARE(cleanupViewMenu->property("count").toInt(),
              viewEditorInstantiator->property("count").toInt() + 7);

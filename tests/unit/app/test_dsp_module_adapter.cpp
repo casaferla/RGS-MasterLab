@@ -301,7 +301,7 @@ void DspModuleAdapterTest::testOptInStereoMsModuleSelection()
     auto* adapter = qobject_cast<DspModuleAdapter*>(modules[3].value<QObject*>());
     QVERIFY(adapter);
     QCOMPARE(adapter->type_id(), QStringLiteral("rgsml.dsp.stereo-ms"));
-    QCOMPARE(adapter->display_name(), QStringLiteral("Stereo / M-S"));
+    QCOMPARE(adapter->display_name(), QStringLiteral("Stereo Imager"));
     QCOMPARE(adapter->editor_content_key(), QStringLiteral("STEREO_MS"));
     QCOMPARE(adapter->family_accent(), QStringLiteral("#4A9A88"));
     QCOMPARE(adapter->instance_id(), QString::fromStdString(msId.to_string()));

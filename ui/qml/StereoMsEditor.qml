@@ -93,7 +93,7 @@ Item {
                 Layout.maximumHeight: 30
                 enabled: root.viewModel && root.viewModel.available
                 accentColor: root.seaGreen
-                ToolTip.text: "Restore all Stereo/M-S parameters to defaults. This does not change the module bypass state."
+                ToolTip.text: "Restore all Stereo Imager parameters to defaults. This does not change the module bypass state."
                 ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -101,7 +101,7 @@ Item {
                     anchors.fill: parent
                 }
                 onClicked: if (root.viewModel) root.viewModel.resetToDefault()
-                Accessible.name: "Reset Stereo M/S parameters"
+                Accessible.name: "Reset Stereo Imager parameters"
             }
         }
 
