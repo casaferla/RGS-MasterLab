@@ -181,6 +181,10 @@ public:
     [[nodiscard]] const OfflineProductOwnerStamp& stamp() const noexcept {
         return stamp_;
     }
+    [[nodiscard]] const std::shared_ptr<const render::RenderResult>&
+    prepared_owner() const noexcept { return prepared_; }
+    [[nodiscard]] const std::vector<dsp::ModuleExecutionBinding>&
+    baseline_bindings() const noexcept { return baseline_bindings_; }
     [[nodiscard]] const std::string& ticket_identity() const noexcept {
         return ticket_identity_;
     }
