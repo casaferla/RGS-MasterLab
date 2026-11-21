@@ -1,11 +1,11 @@
 # RGS MasterLab — M24 final PO physical exit: finite acceptance (2026-11-21)
 
-**Status:** approved GUI baseline; final real-hardware audio/SOURCE Region/tonal-profile observations still OPEN. **Not** a declaration of full M24, FQ, Phase-6 Gate G or release PASS.
+**Status:** #98 focused Windows/Linux 7/7 GREEN for dual Region/Loop project persistence; final real-hardware listening, Region/Loop restore and tonal-profile checks still OPEN. **Not** a declaration of full M24, FQ, Phase-6 Gate G or release PASS.
 
 ## Frozen test baseline and provenance
 
 - Single writer: `staging/l1-m24-p2-integration-writer-no-ci-20261114` (this document is a no-CI staging-only checkpoint).
-- Windows research build to test: **Focused #97**, exact SHA `e9acb57f1f8f32c7c0591c076f6677c4f627d399`, [7/7 GREEN](https://github.com/casaferla/RGS-MasterLab/actions/runs/44902078913). Research-only Windows ZIP artifact: [RGS-P2-I2-Win64-RESEARCH-ONLY-97](https://github.com/casaferla/RGS-MasterLab/actions/runs/44902078913/artifacts/14706840898).
+- **Current physical test build: Focused #98**, exact SHA `ff2f81586cadf467db447b6958232a36e0d1bc3c`, [7/7 GREEN](https://github.com/casaferla/RGS-MasterLab/actions/runs/44905534616). Authentic Windows research-only ZIP: [RGS-P2-I2-Win64-RESEARCH-ONLY-98](https://github.com/casaferla/RGS-MasterLab/actions/runs/44905534616/artifacts/14707409493). Prior #97 remains historical approved-GUI baseline only; its executable does **not** persist independent REFERENCE Region/Loops.
 - PO-approved GUI: all DSP Chain glyphs now share `StudioIcon.qml` Canvas 2D, with their 16px silhouettes/family accents and existing glow/bypass semantics. **Do not reopen icons** in M24.
 - The suite is a **scoped** focused build: the previously identified long legacy M17 native combined fixture remains excluded from the physical-artifact lane under the explicit PO scope reset, not covertly counted as PASS. Formal cold FQ and other distinct development/release gates are independent.
 
@@ -20,14 +20,18 @@
 
 ## Remaining physical M24 test — one coherent Windows session
 
-Use the **exact #97 ZIP**, not an earlier #90/#92/#96 build. Retain the original SOURCE and REFERENCE files unchanged. Record a screenshot only where needed; do not rerun full M19/M20/M21 coverage already accepted.
+Use the **exact #98 ZIP**, not an earlier #90/#92/#96/#97 build. Retain the original SOURCE and REFERENCE files unchanged. Record a screenshot only where needed; do not rerun full M19/M20/M21 coverage already accepted.
 
-### A. Nonempty SOURCE Region save/reopen and independent REFERENCE Region in-session
+### A. Both nonempty Regions and both independent Loops — new #98 physical acceptance
 
-1. Open existing `Prova 10.rgsml` in the #97 research build; confirm the correct SOURCE and REFERENCE are present and P2 typed values remain the accepted values above.
-2. Select an **actual nonempty SOURCE Region** (start/end both inside the track) and test its Loop control. Switch to REFERENCE; define a **different nonempty REFERENCE Region** and test its independent Loop control **in the active session**. Confirm the REFERENCE region edit has not changed SOURCE coordinates.
-3. Save As **a new** `.rgsml` (never overwrite accepted `Prova 10.rgsml` or source audio). Close and reopen the new project. Verify exact SOURCE and REFERENCE file locators, the **SOURCE Region start/end** and P2 Ceiling/Drive/Bypass, module order and selected Master output format/rate.
-4. A missing/shifted SOURCE Region after reopening is a blocker. **Do not expect persisted REFERENCE Region or Loop state:** the current `ProjectSessionViewModel` saves only the single SOURCE-tagged `timeSelections.auditionRegions` entry, and does not serialize REFERENCE Region/Loop. The native `gold_region_roundtrip` test covers a nonempty SOURCE Region (`[7,19)`) but has not replaced the PO physical save/reopen observation. Treat persistence of REFERENCE Region/Loop as a separate future-scope decision, not an M24 regression invented by this checklist.
+1. Open existing `Prova 10.rgsml` in the **#98 research build**; confirm SOURCE, REFERENCE, typed fifth P2 (Ceiling -6 dBTP / Drive +8 dB) and 88.2-kHz Float32 master output. This old project has no Audition Regions: both Loops should start OFF.
+2. Select a genuine nonempty SOURCE Region and enable Loop. Switch to REFERENCE; define a **different nonempty REFERENCE Region** and enable its independent Loop. Verify SOURCE coordinates/loop remain unchanged, and REFERENCE Loop applies to the REFERENCE original at its own sample rate, not to SOURCE or the M17 Master.
+3. **Save As a new distinct .rgsml**, leaving `Prova 10.rgsml` and both WAV originals untouched. Close and reopen the new file in #98.
+4. Verify both **SOURCE** and **REFERENCE** Region Start/End and both saved Loop ON flags, plus P2 typed parameters, all source/reference locators, chain order and output rate/format. Reopen must **not** start audio.
+5. Switch audibly SOURCE/PREPARED → REFERENCE → SOURCE/PREPARED; each Loop should apply only to its respective selected timeline. A missing/swapped/out-of-range Region or Loop after reopening, an unexpected autoplay, or Project Open changing the wrong audio owner is a genuine M24 blocker.
+6. Optional quick negative check: turn OFF only REFERENCE Loop, save a second separate project and reopen. SOURCE Loop must remain ON while REFERENCE Loop remains OFF. Do not overwrite earlier acceptance evidence.
+
+This #98 schema accepts up to two role-tagged entries (`SOURCE`, `REFERENCE`) and optional strict boolean `loopEnabled`; absent in legacy projects means OFF. Its C++/JSON tests have passed the scoped Focused CI, but real Windows PO acceptance still needs the above observation.
 
 ### B. Final listening and owner/target continuity
 
@@ -42,26 +46,26 @@ Use the **exact #97 ZIP**, not an earlier #90/#92/#96 build. Retain the original
 - With an actually analyzed non-silent source selected, open **Spectrum / Stereo** and inspect the `TONAL PROFILE / 1/12-OCTAVE BAND ENERGY` panel. It should show only measured, fully supported positive-energy bands on the new relative scale, or honestly display `NO MEASURED BAND ENERGY` when data is unavailable. Verify that PREPARED, PROCESSED, REFERENCE still identify the correct owner without changing analysis data unexpectedly. A runner screenshot with no audio is **not** proof of the populated band plot.
 - The already accepted M21 nine-metric matrix and M18 PCM24/F32 WAV need no duplicate full test unless this final session reveals a new anomaly.
 
-## 2026-11-21 — PO-authorized M24 persistence extension (writer candidate, NOT CI-qualified)
+## 2026-11-21 — PO-authorized M24 persistence extension (Focused #98 GREEN, physical OPEN)
 
-PO has explicitly chosen to persist both SOURCE and REFERENCE Regions and each independent Loop preference in the `.rgsml` file **before** M24 physical acceptance. The earlier "not serialized" statement below describes the **#97 tested baseline**, not this new unqualified writer candidate.
+PO has explicitly chosen to persist both SOURCE and REFERENCE Regions and each independent Loop preference in the `.rgsml` file **before** M24 physical acceptance. The former SOURCE-only persistence contract applies to the historical #97 baseline, not to the current tested #98 candidate.
 
 - Project JSON accepts exactly two distinct `timeSelections.auditionRegions` roles at most: `SOURCE` references the selected SOURCE resource, `REFERENCE` the selected active REFERENCE resource. Each entry can carry optional strict-boolean `loopEnabled`; absent means false and is omitted from legacy reserialization.
 - Independent original WAV frame counts validate both Regions **before** Project Open mutates SOURCE, REFERENCE, DSP or Product epoch. Duplicate roles, wrong resource, extra entries, invalid frames and invalid JSON flags fail closed.
 - `ProjectSessionViewModel` binds the existing independent `referenceRegion` in real Main, saves/restores both frame domains and Loop preferences without playback start. SOURCE loop is installed on the current stopped SOURCE audio owner when possible; REFERENCE loop is installed only when REFERENCE itself is selected, using the existing selector provider.
-- New native integration and JSON regression tests must pass on Windows/Linux Focused CI. #97 remains the last verified executable. Do **not** mistake this staging code/document for qualified M24 or a production release.
-- Final PO physical M24 Save/Reopen gate must therefore test **both** saved Regions and both Loop toggles after the new verified artifact, not #97.
+- **Focused #98 7/7 GREEN at `ff2f8158`** covers the Windows native Project SaveAs/Open with two independently timed WAVs, Loop reattachment and invalid REFERENCE bounds, alongside strict JSON legacy compatibility; scoped CI success does **not** imply the physical M24 or Full Qualification gate.
+- Final PO physical M24 Save/Reopen gate must now test **both** saved Regions and both Loop toggles on exact #98; no need to rerun the accepted GUI icon work.
 
-## Persistence scope explicitly verified in repository
+## Persistence contract verified in #98 source
 
-- `ProjectSessionViewModel::current_snapshot` writes at most one `project::AuditionRegion` with role `"SOURCE"` (source code around lines 635–646).
-- `ProjectSessionViewModel::openProject` reads `timeSelections.auditionRegions.front()` into the SOURCE region model (around lines 984–997, 1124–1131); it does not restore a REFERENCE Region or a Loop toggle.
-- `tests/integration/app/test_project_session.cpp::gold_region_roundtrip` persists then opens an actual nonempty SOURCE `[7,19)` range. These facts are software coverage, not the pending Windows PO physical sign-off.
-- A product requirement to persist REFERENCE Region/Loop must be explicitly scoped and implemented with compatibility safeguards; it is **not** silently assumed or accepted by this M24 exit.
+- `ProjectSessionViewModel::current_snapshot` saves an optional SOURCE-tagged region and a distinct REFERENCE-tagged region associated with its own original resource, each with an independent saved Loop preference.
+- `ProjectSessionViewModel::openProject` preflights the SOURCE and active REFERENCE resource and the corresponding WAV frame bounds before mutation; then restores both Region view models and their Loop preferences. No autoplay; actual Loop installation is owner-specific.
+- `ProjectSnapshot::create` rejects duplicate roles, cross-resource Regions, inactive REFERENCE, invalid frame ranges and more than two entries. Canonical JSON requires exact keys/types and treats missing legacy `loopEnabled` as OFF without changing reserialized original bytes.
+- `rgsml_project_session_tests` and `rgsml_project_json_tests` executed within Focused #98. This evidence is a software gate only; actual user Windows SaveAs/Open remains open.
 
 ## M24 exit decision
 
-**PASS only if** A SOURCE Region Save/Reopen plus in-session REFERENCE/Loop independence, B real full-chain listening/continuity and C genuine M20 band-energy presentation all pass on the same identified Windows #97 research build, with no unresolved actual defect. Keep source/target/rate and test-build identity in the final PO report.
+**PASS only if** A both Region/Loop SaveReopen and independent ownership, B real full-chain listening/continuity and C genuine M20 band-energy presentation all pass on the same identified Windows #98 research build, with no unresolved actual defect. Keep source/target/rate and test-build identity in the final PO report.
 
 An unresolved symptom must be reproduced on exact build/owner and repaired narrowly (writer → focused CI → new physical replay of the affected path). Do not generate speculative safety suites or alter approved UI/DSP to chase a guessed regression.
 
