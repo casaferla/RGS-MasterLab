@@ -37,6 +37,11 @@ struct SourceIdentity final {
 };
 struct SourceReadings final {
     SourceIdentity owner;
+    std::int64_t sample_rate_hz{};
+    std::int64_t scope_frame_count{};
+    std::size_t channels{};
+    std::string k_weighting_bank_member_id;
+    std::string k_weighting_bank_sha256;
     Value integrated_lufs;    // frozen L1
     Value true_peak_db_tp;    // frozen L3 only if M16 QUALIFIED
     Value broadband_width;   // frozen S01 raw observation, not M06 score
@@ -129,6 +134,13 @@ struct Import final {
         return fail(ImportProblem::scope_mismatch);
     SourceReadings value;
     value.owner=std::move(owner);
+    value.sample_rate_hz=levels.sample_rate_hz;
+    value.scope_frame_count=levels.scope_frame_count;
+    value.channels=levels.channel_count;
+    value.k_weighting_bank_member_id=
+        std::string{levels.k_weighting_bank_member_id};
+    value.k_weighting_bank_sha256=
+        std::string{levels.k_weighting_bank_sha256};
     value.integrated_lufs=from_m19(levels.integrated_lufs);
     value.true_peak_db_tp=from_m19(levels.true_peak_db_tp);
     value.broadband_width=from_m20(tonal.width_ratio);
@@ -198,7 +210,15 @@ struct PairedImport final {
        ||!candidate.owner.full_track_owner_confirmed
        ||!reference.owner.full_track_owner_confirmed
        ||candidate.owner.resource_identity==
-           reference.owner.resource_identity)
+           reference.owner.resource_identity
+       ||candidate.sample_rate_hz<=0||reference.sample_rate_hz<=0
+       ||candidate.scope_frame_count<=0||reference.scope_frame_count<=0
+       ||candidate.channels<1||candidate.channels>2
+       ||reference.channels<1||reference.channels>2
+       ||candidate.k_weighting_bank_member_id.empty()
+       ||reference.k_weighting_bank_member_id.empty()
+       ||candidate.k_weighting_bank_sha256.empty()
+       ||reference.k_weighting_bank_sha256.empty())
         return reject(PairProblem::invalid_owner);
     if(candidate.profile_1_12.size()!=reference.profile_1_12.size())
         return reject(PairProblem::incompatible_measurement_geometry);
