@@ -48,6 +48,8 @@ struct DynamicEqBandSpec final {
     EqRouting routing{EqRouting::STEREO};
     DynamicEqShape shape{DynamicEqBellShape{}};
     DynamicEqControl control{};
+    friend bool operator==(const DynamicEqBandSpec&,
+                           const DynamicEqBandSpec&)=default;
 };
 
 class DynamicEqBandParameters final {

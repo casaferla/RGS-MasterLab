@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
@@ -17,6 +18,7 @@ using ModuleParameterPayload = std::variant<
     CompressorParameters,
     StereoMsParameters,
     TruePeakLimiterParameters,
-    StreamingTruePeakLimiterParameters>;
+    StreamingTruePeakLimiterParameters,
+    DynamicEqParameters>;
 
 }  // namespace rgsml::dsp
