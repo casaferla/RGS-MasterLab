@@ -56,6 +56,7 @@ class L3CanonicalC01RenderTest final:public QObject {
 private slots:
     void wholeProgrammePhysicalRendererAndM21Scoring();
     void regionAndUnboundParametersFailClosed();
+    void signatureExcludesDisabledAndUuidIdentity();
 };
 
 void L3CanonicalC01RenderTest::wholeProgrammePhysicalRendererAndM21Scoring() {
@@ -224,6 +225,65 @@ void L3CanonicalC01RenderTest::regionAndUnboundParametersFailClosed() {
     QVERIFY(bypass);
     QVERIFY(render::render_preview(*bypass.value(),*opt.value()));
 }
+void L3CanonicalC01RenderTest::signatureExcludesDisabledAndUuidIdentity() {
+    auto original=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(original);
+    auto registry=dsp::ModuleRegistry::with_dynamic_eq_offline(
+        std::move(*original.value()));
+    QVERIFY(registry);
+    auto chain=dsp::ProcessingChain::create(*registry.value(),{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto eq_id=id("a0000000-0000-4000-8000-000000000004");
+    QVERIFY(chain.value()->add(eq_id,"rgsml.dsp.dynamic-eq",0));
+    const auto single=dynamic_params();
+    auto changed=single.bands()[0].spec();
+    changed.band_id=*core::Uuid::parse(
+        "55555555-4444-4333-8222-111111111111").value();
+    dsp::DynamicEqBandSpec disabled;
+    disabled.band_id=*core::Uuid::parse(
+        "22222222-3333-4444-8555-666666666666").value();
+    disabled.routing=dsp::EqRouting::RIGHT;
+    disabled.enabled=false;
+    auto activeBand=dsp::DynamicEqBandParameters::create(changed);
+    auto inactiveBand=dsp::DynamicEqBandParameters::create(disabled);
+    QVERIFY(activeBand&&inactiveBand);
+    auto extra=dsp::DynamicEqParameters::create(
+        {*activeBand.value(),*inactiveBand.value()});
+    QVERIFY(extra);
+    const auto fmt=audio::AudioFormat::create(
+        *core::SampleRate::create(48000).value(),audio::ChannelLayout::MONO_C);
+    const auto count=core::FrameCount::create(4096);
+    QVERIFY(fmt&&count);
+    auto source=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    QVERIFY(source);
+    auto one=render::RenderRequest::create(source.value()->view(),
+        source.value()->view().absolute_range(),*chain.value(),
+        {{eq_id,single}},*count.value());
+    auto two=render::RenderRequest::create(source.value()->view(),
+        source.value()->view().absolute_range(),*chain.value(),
+        {{eq_id,*extra.value()}},*count.value());
+    QVERIFY(one&&two);
+    auto first=render::render_preview(*one.value(),*registry.value());
+    auto second=render::render_preview(*two.value(),*registry.value());
+    QVERIFY(first&&second);
+    QCOMPARE(first.value()->signatures().size(),std::size_t{1});
+    QCOMPARE(second.value()->signatures().size(),std::size_t{1});
+    QVERIFY(first.value()->signatures()[0].payload==
+            second.value()->signatures()[0].payload);
+    const auto& a=std::get<render::DynamicEqExecutionSignaturePayload>(
+        first.value()->signatures()[0].payload);
+    QCOMPARE(a.enabled_bands.size(),std::size_t{1});
+    const auto x=first.value()->view().channel(0);
+    const auto y=second.value()->view().channel(0);
+    QVERIFY(x&&y);
+    QCOMPARE(x.value()->size(),y.value()->size());
+    QVERIFY(std::equal(x.value()->begin(),x.value()->end(),
+                       y.value()->begin()));
+}
+
 } // namespace
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::L3CanonicalC01RenderTest)
