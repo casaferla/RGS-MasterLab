@@ -2746,3 +2746,17 @@ add_test(NAME rgsml_l3_m10_cache_evaluator_tests
 set_tests_properties(rgsml_l3_m10_cache_evaluator_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;exact_cache;attempt_accounting;nonrelease")
+
+# L3-M06 real D03/D04 400ms/Grid100 RMS and same-window crest PCM.
+qt_add_executable(rgsml_l3_m06_native_rms_crest_tests
+    unit/app/test_l3_m06_real_windowed_rms_crest.cpp)
+target_include_directories(rgsml_l3_m06_native_rms_crest_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_native_rms_crest_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_native_rms_crest_tests)
+add_test(NAME rgsml_l3_m06_native_rms_crest_tests
+    COMMAND rgsml_l3_m06_native_rms_crest_tests)
+set_tests_properties(rgsml_l3_m06_native_rms_crest_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;native_rms;native_crest;nonrelease")
