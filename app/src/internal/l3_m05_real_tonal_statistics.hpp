@@ -102,4 +102,77 @@ struct TonalT3T5 final {
        ||!std::isfinite(z3))return std::nullopt;
     return TonalT3T5{common,E,centroid,*p85,*p95,z1,z2,z3};
 }
+// M05 frozen T2/T6 named-band spectral density OLS. The ACTUAL
+// authoritative density floor is a REQUIRED M07/configuration input,
+// not a magic DSP constant supplied by this source port.
+struct TonalSlope final {
+    double slope_db_per_octave{};
+    std::size_t configured_bands{};
+    std::size_t above_floor_bands{};
+    double supplied_density_floor{};
+};
+[[nodiscard]] inline std::optional<TonalSlope> observe_m05_t2_or_t6(
+    const analysis::TonalStereoAnalysisResult& producer,
+    CommonTonalBandwidth common,double authoritative_density_floor,
+    bool high_frequency_slope)
+{
+    using State=analysis::TonalStereoMetricState;
+    const double lo=high_frequency_slope?8000.0:100.0;
+    const double hi=high_frequency_slope?16000.0:10000.0;
+    const double fs=static_cast<double>(producer.sample_rate_hz);
+    if(producer.spectrum_state!=State::AVAILABLE
+       ||producer.complete_spectral_windows==0
+       ||producer.sample_rate_hz<=0
+       ||!std::isfinite(common.low_hz)
+       ||!std::isfinite(common.high_hz)
+       ||common.low_hz>lo||common.high_hz<hi
+       ||common.low_hz<20.0
+       ||common.high_hz>std::min(20000.0,0.45*fs)
+       ||!std::isfinite(authoritative_density_floor)
+       ||authoritative_density_floor<=0.0)
+        return std::nullopt;
+    std::size_t total=0,used=0;
+    double sx=0.0,sy=0.0,sxx=0.0,sxy=0.0;
+    for(const auto& band:producer.primary_bands_1_12) {
+        if(!std::isfinite(band.center_hz)
+           ||!std::isfinite(band.low_hz)
+           ||!std::isfinite(band.high_hz))
+            return std::nullopt;
+        // The M05 configured OLS interval is never shrunk to a
+        // better-looking subset; excluded density cells retain mass
+        // in the >=80% support test.
+        if(band.center_hz<lo||band.center_hz>hi)continue;
+        ++total;
+        if(!band.fully_supported
+           ||band.low_hz<common.low_hz
+           ||band.high_hz>common.high_hz
+           ||!(band.high_hz>band.low_hz)
+           ||!std::isfinite(band.measured_linear_energy)
+           ||band.measured_linear_energy<0.0)
+            return std::nullopt;
+        const double density=band.measured_linear_energy/
+            (band.high_hz-band.low_hz);
+        if(!std::isfinite(density)||density<0.0)
+            return std::nullopt;
+        if(density<=authoritative_density_floor)continue;
+        const double x=std::log2(band.center_hz/1000.0);
+        const double y=10.0*std::log10(density);
+        if(!std::isfinite(x)||!std::isfinite(y))
+            return std::nullopt;
+        ++used;
+        sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;
+        if(!std::isfinite(sx)||!std::isfinite(sy)
+           ||!std::isfinite(sxx)||!std::isfinite(sxy))
+            return std::nullopt;
+    }
+    if(total==0||used<3||5*used<4*total)
+        return std::nullopt;
+    const double n=static_cast<double>(used);
+    const double denominator=n*sxx-sx*sx;
+    if(!(denominator>0.0)||!std::isfinite(denominator))
+        return std::nullopt;
+    const double slope=(n*sxy-sx*sy)/denominator;
+    if(!std::isfinite(slope))return std::nullopt;
+    return TonalSlope{slope,total,used,authoritative_density_floor};
+}
 } // namespace rgsml::app::l3_automatch::m05m06_real
