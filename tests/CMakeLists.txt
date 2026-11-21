@@ -2039,7 +2039,7 @@ qt_add_executable(rgsml_l3_m08_frozen_amount_tests
 target_include_directories(rgsml_l3_m08_frozen_amount_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src)
 target_link_libraries(rgsml_l3_m08_frozen_amount_tests PRIVATE
-    Qt6::Test)
+    rgsml_dsp Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m08_frozen_amount_tests)
 add_test(NAME rgsml_l3_m08_frozen_amount_tests
     COMMAND rgsml_l3_m08_frozen_amount_tests)
