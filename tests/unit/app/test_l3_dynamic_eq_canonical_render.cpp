@@ -2,6 +2,7 @@
 #include "internal/l2_automatch_evidence_bridge.hpp"
 #include "internal/l3_automatch_offline_search.hpp"
 #include "internal/l3_automatch_typed_gain_trial.hpp"
+#include "internal/l3_automatch_typed_dynamic_eq_trial.hpp"
 #include "internal/l3_product_offline_trial_job.hpp"
 #include "internal/l3_offline_private_metric_probe.hpp"
 #include "internal/l3_private_scalar_candidate_batch.hpp"
@@ -367,6 +368,33 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     const auto eq=dynamic_params();
     const std::vector<dsp::ModuleExecutionBinding> baseline{
         {gainId,*defaultGain.value()},{eqId,eq}};
+    const auto band_id=eq.bands()[0].spec().band_id;
+    auto dynamicTrial=make_dynamic_eq_scalar_trial(
+        *manual.value(),baseline,eqId,band_id,
+        DynamicEqScalarCoordinate::range_db,3.0,
+        "typed-real-dynamic-eq-range-3");
+    QVERIFY(dynamicTrial);
+    QCOMPARE(dynamicTrial->candidate_bindings.size(),std::size_t{2});
+    QVERIFY(dynamicTrial->candidate_bindings[0].parameters==
+            baseline[0].parameters);
+    const auto* changedEq=std::get_if<dsp::DynamicEqParameters>(
+        &dynamicTrial->candidate_bindings[1].parameters);
+    QVERIFY(changedEq);
+    QCOMPARE(changedEq->bands()[0].spec().control.range_db,3.0);
+    QCOMPARE(eq.bands()[0].spec().control.range_db,6.0);
+    QCOMPARE(changedEq->bands()[0].spec().band_id,band_id);
+    QVERIFY(!make_dynamic_eq_scalar_trial(
+        *manual.value(),baseline,eqId,band_id,
+        DynamicEqScalarCoordinate::range_db,6.0,
+        "unmodified"));
+    QVERIFY(!make_dynamic_eq_scalar_trial(
+        *manual.value(),baseline,eqId,band_id,
+        DynamicEqScalarCoordinate::shelf_slope,1.0,
+        "wrong-shape"));
+    QVERIFY(!make_dynamic_eq_scalar_trial(
+        *manual.value(),baseline,eqId,band_id,
+        DynamicEqScalarCoordinate::range_db,100.0,
+        "out-of-bounds"));
     auto bound=make_gain_trial(*manual.value(),baseline,gainId,3.0,
                                "product-gain-and-c01-epoch-1");
     QVERIFY(bound);
@@ -407,6 +435,23 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     const auto candidate=job.value()->evaluate();
     QVERIFY(candidate);
     QVERIFY(job.value()->result_has_expected_scope(candidate.value()->rendered));
+    // The exact same Product job path also executes a one-coordinate C01
+    // trial, changing neither Gain nor any other Dynamic EQ control.
+    auto dynamicJob=OfflineProductTrialJob::create(
+        stamp,prepared,job.value()->registry_snapshot(),
+        *manual.value(),baseline,*dynamicTrial,*block.value());
+    QVERIFY(dynamicJob);
+    auto dynamicMeasured=dynamicJob.value()->evaluate();
+    QVERIFY(dynamicMeasured);
+    QVERIFY(dynamicJob.value()->result_has_expected_scope(
+        dynamicMeasured.value()->rendered));
+    QVERIFY(dynamicMeasured.value()->levels.scope_frame_count==4096);
+    QVERIFY(dynamicMeasured.value()->tonal.scope_frame_count==4096);
+    QVERIFY(dynamicMeasured.value()->rendered.signatures().size()==2);
+    QVERIFY(dynamicMeasured.value()->rendered.signatures()[0].payload==
+            candidate.value()->rendered.signatures()[0].payload);
+    QVERIFY(dynamicMeasured.value()->rendered.signatures()[1].payload!=
+            candidate.value()->rendered.signatures()[1].payload);
     QVERIFY(candidate.value()->levels.scope_frame_count==4096);
     QVERIFY(candidate.value()->tonal.scope_frame_count==4096);
 
@@ -484,6 +529,21 @@ void L3CanonicalC01RenderTest::immutableProductPreparedCandidateAndOwnerEpochGat
     QCOMPARE(progress->completed(),3U);
     QVERIFY(progress->finished());
     QVERIFY(!product->has_factory("rgsml.dsp.dynamic-eq"));
+
+    // Scalar research accepts both Gain and C01 Dynamic EQ numeric
+    // proposals in one immutable Product batch, with separate tickets.
+    std::vector<OfflineProductTrialJob> mixed;
+    mixed.push_back(batchJobs.front());
+    mixed.push_back(std::move(*dynamicJob.value()));
+    auto mixedProgress=std::make_shared<PrivateBatchProgress>();
+    const auto mixedReport=PrivateScalarCandidateBatch::run(
+        mixed,*imported.snapshot,rms,mixedProgress);
+    QVERIFY(mixedReport);
+    QCOMPARE(mixedReport.value()->attempted,2U);
+    QCOMPARE(mixedReport.value()->completed,2U);
+    QCOMPARE(mixedReport.value()->failed,0U);
+    QVERIFY(mixedReport.value()->best);
+    QVERIFY(!mixedReport.value()->authorizes_product_publication());
 
     // Distinct ticket identities but IDENTICAL typed DSP payload,
     // immutable PREPARED, chain, registry and block size: reuse one
