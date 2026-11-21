@@ -7,6 +7,7 @@
 // before accepting any result, and keep the actual M21 authority separate.
 #include "l3_automatch_typed_gain_trial.hpp"
 #include "l3_automatch_typed_dynamic_eq_trial.hpp"
+#include "l3_automatch_typed_transient_trial.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -71,7 +72,8 @@ public:
         const Trial& trial,core::FrameCount maximum_block_frames)
     {
         static_assert(std::is_same_v<Trial,BoundGainTrial>
-                   ||std::is_same_v<Trial,BoundDynamicEqTrial>);
+                   ||std::is_same_v<Trial,BoundDynamicEqTrial>
+                   ||std::is_same_v<Trial,BoundTransientTrial>);
         using R=core::Result<OfflineProductTrialJob>;
         if(!stamp.populated() ||!prepared ||!product_registry
            ||!trial.still_matches(live_chain,live_bindings)
