@@ -23,8 +23,9 @@ struct BoundLegalCombinedCandidate final {
     bool availability_currently{};
 };
 enum class BoundLegalStatus:std::uint8_t {
-    selected,unbound_ranking,invalid_or_stale_generation,
-    candidate_key_seed_collision,inconsistent_exact_annotation
+    selected,unbound_ranking,all_candidates_parameter_budget_excluded,
+    invalid_or_stale_generation,candidate_key_seed_collision,
+    inconsistent_exact_annotation
 };
 struct BoundLegalCombinedResult final {
     BoundLegalStatus status{BoundLegalStatus::invalid_or_stale_generation};
@@ -124,6 +125,9 @@ bind_exact_legal_combined_and_select_top32(
         result.status=BoundLegalStatus::selected;
     else if(result.combined_consumer.status==ConsumerStatus::ranking_unready)
         result.status=BoundLegalStatus::unbound_ranking;
+    else if(result.combined_consumer.status==ConsumerStatus::empty_stream)
+        result.status=
+            BoundLegalStatus::all_candidates_parameter_budget_excluded;
     else
         result.status=BoundLegalStatus::invalid_or_stale_generation;
     return result;

@@ -30,6 +30,7 @@ private slots:
     void inconsistentDuplicateNumericAnnotationFails();
     void missingProxyOrStaleSnapshotCannotProduceRankedSubset();
     void exactCoordinate48ExclusionRetainsOriginalLedger();
+    void allParameterBudgetExcludedIsNotAStaleSnapshot();
 };
 void M10ExactCombinedTest::
 exactDuplicateProvenanceAndNoAvailabilityBackfill() {
@@ -116,6 +117,23 @@ exactCoordinate48ExclusionRetainsOriginalLedger() {
              std::size_t{1});
     QCOMPARE(r.combined_consumer.ledger[0].reason,
              m10::ConsumerReason::topology_parameter_budget_exceeded);
+}
+void M10ExactCombinedTest::
+allParameterBudgetExcludedIsNotAStaleSnapshot() {
+    auto a=candidate(1,0.1);
+    auto b=candidate(2,0.2);
+    a.exact_active_coordinate_count=49;
+    b.exact_active_coordinate_count=50;
+    const std::vector<m10::BoundLegalCombinedCandidate> input{a,b};
+    const auto r=m10::bind_exact_legal_combined_and_select_top32(
+        bytes("snapshot-A"),input,true);
+    QCOMPARE(r.status,m10::BoundLegalStatus::
+        all_candidates_parameter_budget_excluded);
+    QVERIFY(r.combined_consumer.numeric_selected_indices.empty());
+    QCOMPARE(r.combined_consumer.ledger.size(),std::size_t{2});
+    for(const auto& item:r.combined_consumer.ledger)
+        QCOMPARE(item.reason,
+                 m10::ConsumerReason::topology_parameter_budget_exceeded);
 }
 } // namespace
 } // namespace rgsml::tests
