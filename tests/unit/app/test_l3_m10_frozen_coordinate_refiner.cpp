@@ -1,4 +1,5 @@
 #include "internal/l3_m10_frozen_coordinate_refiner.hpp"
+#include "internal/l3_m10_frozen_coordinate_transform.hpp"
 #include <QtTest/QTest>
 #include <algorithm>
 #include <array>
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -29,11 +31,53 @@ class FrozenM10RefinerTest final:public QObject {
     Q_OBJECT
 private slots:
     void quantizationTieAndFrozenTotalOrder();
+    void exactP01TransformsAndNoClamps();
     void sameCenterMinusThenPlusAndExactlyFourSteps();
     void exhaustedBudgetRetainsBestAndAllowsExactCache();
     void malformedEvidenceAndCancellation();
     void maximum48CoordinatesDeterministicOrder();
 };
+void FrozenM10RefinerTest::exactP01TransformsAndNoClamps() {
+    const std::array<std::tuple<Transform,double,double>,5> specs{{
+        {Transform::additive_or_linear,-3.0,3.0},
+        {Transform::frequency_log2,40.0,12000.0},
+        {Transform::positive_time_or_q_log,0.1,500.0},
+        {Transform::ratio_log_from_one,1.0,20.0},
+        {Transform::zero_inclusive_time,0.0,20.0}
+    }};
+    for(const auto& [kind,lo,hi]:specs) {
+        const auto x=CoordinateTransform::create(kind,lo,hi);
+        QVERIFY(x);
+        QCOMPARE(*x->to_normalized(lo),0.0);
+        QCOMPARE(*x->to_normalized(hi),1.0);
+        QCOMPARE(*x->from_normalized(0.0),lo);
+        QCOMPARE(*x->from_normalized(1.0),hi);
+        QVERIFY(!x->from_normalized(-0.001));
+        QVERIFY(!x->from_normalized(1.001));
+        QVERIFY(!x->to_normalized(lo-0.01));
+        QVERIFY(!x->to_normalized(hi+0.01));
+        for(const double u:{0.125,0.25,0.5,0.75,0.875}) {
+            const auto value=x->from_normalized(u);
+            QVERIFY(value);
+            const auto roundtrip=x->to_normalized(*value);
+            QVERIFY(roundtrip);
+            QVERIFY(std::abs(*roundtrip-u)<1e-12);
+        }
+    }
+    QVERIFY(!CoordinateTransform::create(
+        Transform::frequency_log2,0.0,20000.0));
+    QVERIFY(!CoordinateTransform::create(
+        Transform::ratio_log_from_one,0.5,20.0));
+    QVERIFY(!CoordinateTransform::create(
+        Transform::positive_time_or_q_log,-1.0,10.0));
+    QVERIFY(!CoordinateTransform::create(
+        Transform::zero_inclusive_time,1.0,20.0));
+    QVERIFY(!CoordinateTransform::create(
+        Transform::additive_or_linear,1.0,1.0));
+    QVERIFY(!CoordinateTransform::create(
+        Transform::additive_or_linear,
+        std::numeric_limits<double>::quiet_NaN(),1.0));
+}
 void FrozenM10RefinerTest::quantizationTieAndFrozenTotalOrder() {
     QCOMPARE(*quantize_q1e9(2.5e-9),std::int64_t{2});
     QCOMPARE(*quantize_q1e9(3.5e-9),std::int64_t{4});
