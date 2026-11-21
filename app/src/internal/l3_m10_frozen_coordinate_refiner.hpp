@@ -99,7 +99,8 @@ enum class EvaluationKind :std::uint8_t {
     preflight_rejected, // zero attempted DSP+analyzer work
     completed_cache_hit, // exact authentic complete evidence only
     attempted_failure, // render, analyzer, hard-constraint failure
-    attempted_complete // full authoritative render+analysis+cost
+    attempted_complete, // full authoritative render+analysis+cost
+    needs_new_attempt // refused because actual budget is exhausted
 };
 struct Evaluation final {
     EvaluationKind kind{EvaluationKind::preflight_rejected};
@@ -127,8 +128,9 @@ public:
     // Called for each in-bounds direction (minus first) with a private,
     // complete normalized state. The adapter owns M09 inverse transforms,
     // coupled predicates, exact execution cache and M05/M06 measurement.
-    // When allow_new_attempt=false, it may only return preflight_rejected
-    // or completed_cache_hit. No 801st render may be launched.
+    // When allow_new_attempt=false it may return preflight_rejected,
+    // completed_cache_hit, or needs_new_attempt (never a real render).
+    // No 801st render may be launched.
     template<typename Evaluate>
     [[nodiscard]] static std::optional<Outcome> run(
         std::vector<Coordinate> coords,MeasuredOrderKey seed,
@@ -206,11 +208,21 @@ public:
                         ++result.attempted_failures;
                         continue;
                     case EvaluationKind::attempted_complete:
-                        if(!event.measured||!allow_new
-                           ||!valid_key(*event.measured))
-                            return std::nullopt;
+                        if(!allow_new)return std::nullopt;
                         ++result.attempted_total;
+                        if(!event.measured||!valid_key(*event.measured)) {
+                            // Audio/analyzer was actually attempted.
+                            // Never refund it or promote a nonfinite score.
+                            ++result.attempted_failures;
+                            continue;
+                        }
                         break;
+                    case EvaluationKind::needs_new_attempt:
+                        if(allow_new||event.measured)return std::nullopt;
+                        // Do not abort the rest: later exact complete-cache
+                        // hits can still be valid after attempted #800.
+                        result.end=End::budget_exhausted;
+                        continue;
                     default:
                         return std::nullopt;
                     }
