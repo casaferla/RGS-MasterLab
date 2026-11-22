@@ -62,3 +62,9 @@ if(NOT MSVC)
   target_compile_options(dynamic_eq_common_smoke PRIVATE
     -Wall -Wextra -Werror -fno-fast-math -ffp-contract=off)
 endif()
+
+# Common QObject is actually instantiated in the Dynamic EQ QML test.
+# Link the exact frozen C01 coefficient generator; no duplicate response DSP.
+target_sources(dynamic_eq_dynamics_smoke PRIVATE
+  dynamic_eq_research_common_view_model.hpp
+  "${ROOT}/dsp/src/internal/dynamic_eq_c01_coefficients.cpp")
