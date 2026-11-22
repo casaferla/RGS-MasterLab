@@ -25,6 +25,53 @@ render_restored_m12_full_native_pcm_once(
         return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
     };
     const auto original=current_owned_prepared.view();
+    // The worker must validate the live, typed graph itself, not merely
+    // trust a prepared ticket supplied by another component. Each native
+    // segment retains its frozen owner/link semantics and one exact binding
+    // per module. A forged aggregate plan is never executable.
+    const auto valid_segment=[&](
+        const dsp::ProcessingChain& chain,
+        const dsp::ProcessingChainContext expected,
+        const std::span<const dsp::ModuleExecutionBinding> bindings,
+        const bool is_reference) {
+        if(chain.context()!=expected||
+           chain.instances().size()!=bindings.size())
+            return false;
+        for(std::size_t i=0;i<bindings.size();++i) {
+            const auto& node=chain.instances()[i];
+            if(!binding_matches_instance(node,bindings[i])||
+               !plan.registry_owner||
+               !plan.registry_owner->has_factory(node.module_type_id()))
+                return false;
+            if(is_reference) {
+                if(node.provenance()!=dsp::ModuleProvenance::REFERENCE_MATCH||
+                   node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
+                   node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
+                   !node.semantic_node_id()||
+                   node.semantic_node_id()->is_nil()||
+                   node.module_type_id()=="rgsml.dsp.gain"||
+                   node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter")
+                    return false;
+            } else if(node.provenance()!=dsp::ModuleProvenance::MANUAL||
+                      node.owner()!=dsp::ModuleOwner::USER||
+                      node.link_state()!=dsp::ModuleLinkState::UNLINKED||
+                      node.semantic_node_id())
+                return false;
+        }
+        return true;
+    };
+    if(!plan.registry_owner)return fail("L3_M12_REPLAY_REGISTRY_MISSING");
+    if(!valid_segment(plan.manual_prefix,{
+           dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
+           plan.manual_bindings,false)||
+       !valid_segment(plan.reference_linked,{
+           dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+           plan.reference_bindings,true)||
+       (plan.terminal_p2 &&
+        !valid_segment(*plan.terminal_p2,{
+            dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
+            plan.terminal_p2_bindings,false)))
+        return fail("L3_M12_REPLAY_OWNER_BINDING_OR_SEGMENT_INVALID");
     if(!plan.registry_owner||plan.project_id.is_nil()||
        plan.source_id.is_nil()||plan.reference_id.is_nil()||
        plan.plan_id.is_nil()||plan.linked_chain_id.is_nil()||
