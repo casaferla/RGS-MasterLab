@@ -4,6 +4,15 @@
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_ref_linked_project_restore.hpp"
 #include "internal/l3_m12_ref_linked_native_replay_plan.hpp"
+#include "internal/l3_m12_restored_native_render.hpp"
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/audio_format.hpp>
+#include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
+#include <cmath>
+#include <numbers>
 #include "internal/l3_m12_ref_linked_project_open_gate.hpp"
 #include "internal/dsp_manual_preset_bundle.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
@@ -257,6 +266,159 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
              accepted().reference_match_controller_id);
     QVERIFY(!productReopen.value()->authorizes_project_adoption());
     QVERIFY(!productReopen.value()->is_m12_materialization_receipt());
+    // Construct a Product-shaped protected MANUAL graph and preflight
+    // real owned native replay without accepting/adopting the M12 draft.
+    auto manualGain=dsp::ProcessingChain::create(*reg,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manualGain);
+    const auto gainId=id("bf100000-0000-4000-8000-000000000001");
+    QVERIFY(manualGain.value()->add(gainId,"rgsml.dsp.gain",0));
+    const auto gainParams=dsp::GainParameters::create(-3.0);
+    QVERIFY(gainParams);
+    const std::vector<dsp::ModuleExecutionBinding> gainBindings{{
+        gainId,*gainParams.value()}};
+    const auto serializedGain=dsp::encode_module_parameters_json(
+        gainBindings.front().parameters);
+    QVERIFY(serializedGain);
+    const auto savedGainJson=project::OpaqueJsonValue::parse(
+        *serializedGain.value());
+    QVERIFY(savedGainJson);
+    project::Module savedGain;
+    savedGain.instanceId=gainId.uuid();
+    savedGain.typeId="rgsml.dsp.gain";
+    savedGain.parameters=*savedGainJson.value();
+    const auto gainDescriptor=reg->find_descriptor(savedGain.typeId);
+    QVERIFY(gainDescriptor);
+    savedGain.algorithmVersion=gainDescriptor.value()->get().algorithm_version();
+    savedGain.parameterSchemaId=gainDescriptor.value()->get().parameter_schema_id();
+    auto replayDocument=proposed;
+    replayDocument.chains.front().revision=manualGain.value()->revision();
+    replayDocument.chains.front().modules.push_back(savedGain);
+    const auto replayPlan=m::prepare_restored_m12_native_replay_plan(
+        replayDocument,*productReopen.value(),manualChain.chainId,
+        *manualGain.value(),gainBindings,true);
+    QVERIFY(replayPlan);
+    QVERIFY(!replayPlan.value()->authorizes_project_adoption());
+    QVERIFY(!replayPlan.value()->is_m12_materialization_receipt());
+    QVERIFY(!replayPlan.value()->is_m13_verified());
+    QCOMPARE(replayPlan.value()->manual_prefix.instances().size(),
+             std::size_t{1});
+    QCOMPARE(replayPlan.value()->reference_linked.instances().size(),
+             std::size_t{3});
+    QVERIFY(!replayPlan.value()->terminal_p2);
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        replayDocument,*productReopen.value(),manualChain.chainId,
+        *manualGain.value(),gainBindings,false));
+    auto changedGain=replayDocument;
+    changedGain.chains.front().modules.front().userBypass=true;
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        changedGain,*productReopen.value(),manualChain.chainId,
+        *manualGain.value(),gainBindings,true));
+    changedGain=replayDocument;
+    changedGain.chains.front().modules.front().parameters=
+        *project::OpaqueJsonValue::parse("{\"gainDb\":5.0}").value();
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        changedGain,*productReopen.value(),manualChain.chainId,
+        *manualGain.value(),gainBindings,true));
+    auto forgedLinked=*productReopen.value();
+    forgedLinked.exact_m10_winning_checksum="forged-winner";
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        replayDocument,forgedLinked,manualChain.chainId,
+        *manualGain.value(),gainBindings,true));
+
+    // Real 48k PCM through the EXISTING native renderer, no WAV export.
+    const auto sampleRate=core::SampleRate::create(48000);
+    QVERIFY(sampleRate);
+    const auto audioFormat=audio::AudioFormat::create(
+        *sampleRate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(audioFormat);
+    const auto frameCount=core::FrameCount::create(48000);
+    const auto maxBlock=core::FrameCount::create(1024);
+    QVERIFY(frameCount&&maxBlock);
+    auto input=audio::AudioBuffer::create(
+        *audioFormat.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frameCount.value());
+    QVERIFY(input);
+    const auto left=input.value()->mutable_view().channel(0);
+    const auto right=input.value()->mutable_view().channel(1);
+    QVERIFY(left&&right);
+    for(std::size_t i=0;i<left.value()->size();++i) {
+        const double phase=2.0*std::numbers::pi*440.0*
+                           static_cast<double>(i)/48000.0;
+        (*left.value())[i]=0.35*std::sin(phase);
+        (*right.value())[i]=0.27*std::sin(phase);
+    }
+    auto empty=dsp::ProcessingChain::create(*reg,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(empty);
+    const auto preparedRequest=render::RenderRequest::create(
+        input.value()->view(),input.value()->view().absolute_range(),
+        *empty.value(),{},*maxBlock.value());
+    QVERIFY(preparedRequest);
+    const auto prepared=render::render_preview(
+        *preparedRequest.value(),*reg);
+    QVERIFY(prepared);
+    const auto realReplay=m::render_restored_m12_full_native_pcm_once(
+        *replayPlan.value(),*prepared.value(),*maxBlock.value());
+    QVERIFY(realReplay);
+    QCOMPARE(realReplay.value()->view().frame_count().value(),
+             std::int64_t{48000});
+    QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
+
+    // Even a BYPASSED P2 stays in the actual terminal position after
+    // REF_LINKED; the saved Manual value, not an M10 transient override,
+    // remains the replay truth.
+    auto p2Registration=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        *reg);
+    QVERIFY(p2Registration);
+    auto optRegistry=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*p2Registration.value()));
+    auto manualWithP2=dsp::ProcessingChain::create(*optRegistry,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manualWithP2);
+    QVERIFY(manualWithP2.value()->add(gainId,"rgsml.dsp.gain",0));
+    const auto p2Id=id("bf100000-0000-4000-8000-000000000002");
+    QVERIFY(manualWithP2.value()->add(
+        p2Id,"rgsml.dsp.streaming-true-peak-limiter",1));
+    const auto manualP2Params=dsp::StreamingTruePeakLimiterParameters::create(
+        -1.0,0.0,2);
+    QVERIFY(manualP2Params);
+    const std::vector<dsp::ModuleExecutionBinding> manualP2Bindings{
+        {gainId,*gainParams.value()},{p2Id,*manualP2Params.value()}};
+    const auto p2Json=dsp::encode_module_parameters_json(
+        manualP2Bindings.back().parameters);
+    QVERIFY(p2Json);
+    const auto p2Opaque=project::OpaqueJsonValue::parse(*p2Json.value());
+    QVERIFY(p2Opaque);
+    auto p2Doc=replayDocument;
+    project::Module persistedP2;
+    persistedP2.instanceId=p2Id.uuid();
+    persistedP2.typeId="rgsml.dsp.streaming-true-peak-limiter";
+    persistedP2.parameters=*p2Opaque.value();
+    const auto p2Descriptor=optRegistry->find_descriptor(persistedP2.typeId);
+    QVERIFY(p2Descriptor);
+    persistedP2.algorithmVersion=p2Descriptor.value()->get().algorithm_version();
+    persistedP2.parameterSchemaId=p2Descriptor.value()->get().parameter_schema_id();
+    p2Doc.chains.front().modules.push_back(persistedP2);
+    p2Doc.chains.front().revision=manualWithP2.value()->revision();
+    const auto reopenedP2=m::decode_exact_m12_ref_linked_product_state(
+        p2Doc,optRegistry);
+    QVERIFY(reopenedP2);
+    const auto p2Plan=m::prepare_restored_m12_native_replay_plan(
+        p2Doc,*reopenedP2.value(),manualChain.chainId,
+        *manualWithP2.value(),manualP2Bindings,true);
+    QVERIFY(p2Plan);
+    QVERIFY(p2Plan.value()->terminal_p2.has_value());
+    QCOMPARE(p2Plan.value()->manual_prefix.instances().size(),
+             std::size_t{1});
+    QCOMPARE(p2Plan.value()->terminal_p2_bindings.size(),std::size_t{1});
+    const auto p2RealReplay=m::render_restored_m12_full_native_pcm_once(
+        *p2Plan.value(),*prepared.value(),*maxBlock.value());
+    QVERIFY(p2RealReplay);
+    QCOMPARE(p2RealReplay.value()->signatures().back().type_id,
+             std::string("rgsml.dsp.streaming-true-peak-limiter"));
+    QCOMPARE(p2RealReplay.value()->view().frame_count().value(),
+             std::int64_t{48000});
     // The opt-in runtime factory must still exist when reopened:
     // do not silently drop a required calculated module.
     // Project decoding must refuse foreign-owned nodes masquerading

@@ -3174,7 +3174,7 @@ target_include_directories(rgsml_l3_m12_project_carrier_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src
     ${CMAKE_SOURCE_DIR}/project/src/internal)
 target_link_libraries(rgsml_l3_m12_project_carrier_tests
-    PRIVATE rgsml_dsp rgsml_project Qt6::Test)
+    PRIVATE rgsml_render rgsml_audio rgsml_dsp rgsml_project Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m12_project_carrier_tests)
 add_test(NAME rgsml_l3_m12_project_carrier_tests
     COMMAND rgsml_l3_m12_project_carrier_tests)
