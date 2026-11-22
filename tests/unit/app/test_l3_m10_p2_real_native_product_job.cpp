@@ -3,6 +3,7 @@
 #include "internal/l3_m05m06_owned_full_source_native_facts.hpp"
 #include "internal/l3_m05m06_original_prepared_reference_pair.hpp"
 #include "internal/l3_m05m06_product_reference_full_native_worker.hpp"
+#include "internal/l3_m05m06_product_qt_original_pair_worker.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
@@ -50,6 +51,8 @@ static_assert(std::is_pointer_v<
     decltype(&a::ProductQtP2NativeAdmission::still_current_on_owner)>);
 static_assert(std::is_pointer_v<
     decltype(&a::measure_current_gold_full_native_worker)>);
+static_assert(std::is_pointer_v<
+    decltype(&a::measure_product_qt_original_pair_native_worker)>);
 static_assert(std::is_same_v<
     decltype(std::declval<
         const a::ProductQtP2NativeAdmission::Accepted&>().
