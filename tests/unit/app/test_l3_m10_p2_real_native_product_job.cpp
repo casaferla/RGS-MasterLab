@@ -337,6 +337,51 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         *native.value(),-90.0).passes());
     const a::m05m06_real::SourceIdentity owner{
         "actual-p2-candidate",11U,true};
+    // The authentic full-source pair must REPLACE every P/G numerical
+    // family. Even after original real P/G/C PCM, missing canonical
+    // M07 Phase6 definitions MUST prevent a score.
+    const auto original_three_way=[&]{
+        m10::P2OriginalRealNativeTriple triple;
+        const std::array<a::m05m06_real::SourceIdentity,3> owners{{
+            source_owner,gold_owner,owner}};
+        for(std::size_t k=0;k<3U;++k) {
+            triple.t01.actual_sources[k].owner=owners[k];
+            triple.t02_t06.sources[k].owner=owners[k];
+            triple.d01.source[k].owner=owners[k];
+            triple.d07_d09.current_sources[k].owner=owners[k];
+            triple.d10_d12.source_owner[k]=owners[k];
+            triple.s03_s06.independent_source_owners[k]=owners[k];
+        }
+        triple.m19.prepared.owner=owners[0];
+        triple.m19.reference.owner=owners[1];
+        triple.m19.actual_candidate.owner=owners[2];
+        triple.s01_s02.prepared.owner=owners[0];
+        triple.s01_s02.reference.owner=owners[1];
+        triple.s01_s02.actual_candidate.owner=owners[2];
+        triple.d02.prepared_owner=owners[0];
+        triple.d02.reference_owner=owners[1];
+        triple.d02.candidate_owner=owners[2];
+        triple.d03_d04.prepared_owner=owners[0];
+        triple.d03_d04.reference_owner=owners[1];
+        triple.d03_d04.candidate_owner=owners[2];
+        return triple;
+    };
+    auto stale_original=original_three_way();
+    stale_original.d10_d12.source_owner[1].resource_identity=
+        "wrong-independent-reference";
+    QCOMPARE(
+        m10::bind_p2_original_native_triple_from_independent_full_pair(
+            std::move(stale_original),*original_pair.value(),
+            *native.value(),owner,48000*3,true).reason,
+        m10::P2RealTripleBindingReason::
+            missing_owner_or_inconsistent_three_way_scope);
+    const auto joined=
+        m10::bind_p2_original_native_triple_from_independent_full_pair(
+            original_three_way(),*original_pair.value(),
+            *native.value(),owner,48000*3,true);
+    QCOMPARE(joined.reason,m10::P2RealTripleBindingReason::
+        missing_original_source_binding);
+    QVERIFY(!joined.fragments);
     // An arbitrary callback-owned triple is NOT allowed to launder the
     // actual P2 measured candidate: all ten source stamps are required.
     auto invalid=m10::bind_p2_original_native_triple_from_real_candidate(
