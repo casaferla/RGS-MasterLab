@@ -1422,11 +1422,14 @@ qt_add_executable(rgsml_mastering_preview_controller_tests
 target_include_directories(rgsml_mastering_preview_controller_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        # Header-only Product admission helpers include the Windows
+        # platform contract, but Linux tests must NEVER compile the
+        # actual Windows-only exporter implementation (Windows.h).
+        ${CMAKE_SOURCE_DIR}/platform/windows/include
 )
 target_link_libraries(rgsml_mastering_preview_controller_tests
     PRIVATE
         rgsml_project
-        rgsml_platform
         rgsml_render
         rgsml_dsp
         rgsml_audio
