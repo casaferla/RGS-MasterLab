@@ -114,21 +114,35 @@ void L3P2TypedTrialTest::wrongBindingBypassOrGraphMustRefuse() {
         *chain.value(),p2only,p2,a::P2ScalarCoordinate::drive_db,
         2.0,"right");
     QVERIFY(trial);
-    QVERIFY(chain.value()->add(gainId,"rgsml.dsp.gain",1));
+    // The Product descriptor requires Gain before P2.  Adding Gain
+    // after P2 is invalid; create a genuinely legal changed graph.
+    QVERIFY(!chain.value()->add(gainId,"rgsml.dsp.gain",1));
+    QVERIFY(chain.value()->add(gainId,"rgsml.dsp.gain",0));
+    QVERIFY(!chain.value()->move(p2,0));
     QVERIFY(!trial->still_matches(*chain.value(),p2only));
     QVERIFY(!a::make_p2_scalar_trial(
         *chain.value(),p2only,p2,a::P2ScalarCoordinate::drive_db,
         2.0,"old-bindings"));
     auto gain=dsp::GainParameters::create(0.0);
     QVERIFY(gain);
+    // A syntactically valid binding vector with the wrong order must
+    // not be accepted against a legally ordered current Product graph.
     const std::vector<dsp::ModuleExecutionBinding> wrongOrder{
         {p2,*old.value()},{gainId,*gain.value()}};
     QVERIFY(!a::make_p2_scalar_trial(
         *chain.value(),wrongOrder,p2,a::P2ScalarCoordinate::drive_db,
-        2.0,"not-final"));
+        2.0,"wrong-bindings"));
+    const std::vector<dsp::ModuleExecutionBinding> ordered{
+        {gainId,*gain.value()},{p2,*old.value()}};
+    const auto legal=a::make_p2_scalar_trial(
+        *chain.value(),ordered,p2,a::P2ScalarCoordinate::drive_db,
+        2.0,"valid-p2-final");
+    QVERIFY(legal);
+    QVERIFY(legal->still_matches(*chain.value(),ordered));
     QVERIFY(chain.value()->set_user_bypass(p2,true));
+    QVERIFY(!legal->still_matches(*chain.value(),ordered));
     QVERIFY(!a::make_p2_scalar_trial(
-        *chain.value(),wrongOrder,p2,a::P2ScalarCoordinate::drive_db,
+        *chain.value(),ordered,p2,a::P2ScalarCoordinate::drive_db,
         2.0,"bypass"));
 }
 } // namespace
