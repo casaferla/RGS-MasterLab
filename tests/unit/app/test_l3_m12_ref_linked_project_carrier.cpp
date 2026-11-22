@@ -1,5 +1,6 @@
 #include "internal/l3_m12_ref_linked_project_carrier.hpp"
 #include "internal/l3_m12_project_transaction_draft.hpp"
+#include "internal/l3_m12_p2_persisted_sound_guard.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
@@ -33,6 +34,7 @@ class M12NativeProjectCarrierTest final:public QObject{
 private slots:
     void realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules();
     void wrongProjectChainOrUnavailableFactoryCannotBePublished();
+    void optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound();
 };
 void M12NativeProjectCarrierTest::
 realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
@@ -265,6 +267,102 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(again);
     QCOMPARE(*again.value(),*encoded.value());
     QVERIFY(!stage.value()->authorizes_project_mutation());
+}
+void M12NativeProjectCarrierTest::
+optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto opted=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        *base.value());
+    QVERIFY(opted);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*opted.value()));
+    auto manual=dsp::ProcessingChain::create(*registry,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto p2Id=id("c1000000-0000-4000-8000-000000000001");
+    QVERIFY(manual.value()->add(
+        p2Id,"rgsml.dsp.streaming-true-peak-limiter",0));
+    const auto manualP2=dsp::StreamingTruePeakLimiterParameters::create(
+        -1.0,0.0,2);
+    const auto optimizedP2=dsp::StreamingTruePeakLimiterParameters::create(
+        -3.0,6.0,2);
+    auto eq=dsp::ParametricEqParameters::create_legacy_default();
+    QVERIFY(manualP2&&optimizedP2&&eq);
+    const std::vector<dsp::ModuleExecutionBinding> manualBindings{{
+        p2Id,*manualP2.value()}};
+    const auto originalAccepted=accepted();
+    const std::vector<m::ExactLinkedNode> artistic{{
+        id("c1000000-0000-4000-8000-000000000002"),
+        uuid("c2000000-0000-4000-8000-000000000001"),
+        "rgsml.dsp.parametric-eq",*eq.value()
+    }};
+    const auto staged=m::stage_exact_m12_native_ref_linked(
+        originalAccepted,*manual.value(),manualBindings,
+        registry,artistic);
+    QVERIFY(staged);
+    const m::StagedExactP2Winner changed{
+        p2Id,*optimizedP2.value(),
+        originalAccepted.plan_id,
+        originalAccepted.exact_m10_result_and_topology_checksum,
+        originalAccepted.exact_source_reference_amount_scope_revision,
+        "real-m10-p2-winner-ticket",manual.value()->revision(),
+        {manual.value()->instances().begin(),
+         manual.value()->instances().end()},manualBindings};
+    QVERIFY(changed.matches(*staged.value(),*manual.value(),
+                            manualBindings));
+    const auto json=dsp::encode_module_parameters_json(
+        manualBindings.back().parameters);
+    QVERIFY(json);
+    const auto canonical=project::OpaqueJsonValue::parse(*json.value());
+    QVERIFY(canonical);
+    project::Module persistedP2;
+    persistedP2.instanceId=p2Id.uuid();
+    persistedP2.typeId="rgsml.dsp.streaming-true-peak-limiter";
+    persistedP2.provenance="MANUAL";
+    persistedP2.owner="USER";
+    persistedP2.linkState="UNLINKED";
+    persistedP2.enabled=true;
+    persistedP2.parameters=*canonical.value();
+    project::Chain persisted;
+    persisted.chainId=uuid("c3000000-0000-4000-8000-000000000001");
+    persisted.stage="MASTER";
+    persisted.segment="MANUAL";
+    persisted.revision=manual.value()->revision();
+    persisted.modules.push_back(persistedP2);
+    auto audit=m::audit_exact_m12_p2_persisted_sound(
+        *staged.value(),changed,*manual.value(),manualBindings,
+        persisted,true);
+    QCOMPARE(audit.reason,m::P2PersistedSoundReason::
+        manual_p2_sound_conflict_requires_user_decision);
+    QVERIFY(!audit.keeps_exact_frozen_sound());
+    QVERIFY(!audit.authorizes_manual_p2_mutation());
+    QVERIFY(!audit.authorizes_project_commit());
+
+    auto fixed=changed;
+    fixed.winning_parameters=*manualP2.value();
+    QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
+        *staged.value(),fixed,*manual.value(),manualBindings,
+        persisted,true).reason,
+        m::P2PersistedSoundReason::keep_fixed_manual_p2);
+    // A forged on-disk value cannot validate against the live DSP.
+    const auto changedJson=dsp::encode_module_parameters_json(
+        dsp::ModuleParameterPayload{*optimizedP2.value()});
+    QVERIFY(changedJson);
+    const auto changedPayload=
+        project::OpaqueJsonValue::parse(*changedJson.value());
+    QVERIFY(changedPayload);
+    persisted.modules.back().parameters=*changedPayload.value();
+    QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
+        *staged.value(),fixed,*manual.value(),manualBindings,
+        persisted,true).reason,
+        m::P2PersistedSoundReason::
+            persisted_manual_p2_conflicts_with_live_product);
+    persisted.modules.back().parameters=*canonical.value();
+    QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
+        *staged.value(),fixed,*manual.value(),manualBindings,
+        persisted,false).reason,
+        m::P2PersistedSoundReason::missing_or_stale_m10_m12_winner);
 }
 void M12NativeProjectCarrierTest::
 wrongProjectChainOrUnavailableFactoryCannotBePublished(){
