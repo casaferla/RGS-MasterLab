@@ -213,6 +213,24 @@ frozenM10CanonicalPairDecodesAndRejectsInvalidInventory() {
     QCOMPARE(typed->drive_db(),6.0);
     QCOMPARE(typed->margin_percent(),5);
     QVERIFY(bound->typed.still_matches(*chain.value(),bindings));
+    // Frozen source can retain exactly the USER P2 settings while M10
+    // varies a distinct artistic coordinate. This remains a valid
+    // typed Product configuration, not an automatic preflight veto.
+    const auto manual_identity=m10::bind_m10_p2_joint_coordinates(
+        inventory,proposed,names,*chain.value(),bindings,p2id,
+        "exact-other-dsp-coordinate",
+        [&](const m10::Coordinate& c,double)->std::optional<double> {
+            if(c.stable_parameter_id==names.ceiling_parameter_id)
+                return -1.0;
+            if(c.stable_parameter_id==names.drive_parameter_id)
+                return 0.0;
+            return std::nullopt;
+        });
+    QVERIFY(manual_identity);
+    const auto* same_p2=manual_identity->typed.chosen_p2_parameters();
+    QVERIFY(same_p2);
+    QCOMPARE(*same_p2,*p2.value());
+
     QVERIFY(!bound->authorizes_product_publication());
     const auto previous_calls=calls;
     auto missing=inventory;
@@ -284,14 +302,13 @@ frozenM10P2ExactCacheAllowsOnlyCompletedCurrentScores() {
         ->std::optional<m10::ExactExecutionCacheKey> {
         const auto* params=bound.typed.chosen_p2_parameters();
         if(!params)return std::nullopt;
-        const auto encoded=dsp::encode_module_parameters_json(
-            dsp::ModuleParameterPayload{*params});
-        if(!encoded)return std::nullopt;
-        // Test-only exact typed canonical content; in Product this
-        // must come from the authenticated complete M07-M11 serializer.
+        if(!params)return std::nullopt;
+        // Adversarial test: a broken key-maker returns identical base
+        // candidate bytes for two P2 settings. The M10 P2 adapter
+        // must independently strengthen effective-cache identity.
+        // Product still MUST use the full M07-M11 canonical serializer.
         return m10::ExactExecutionCacheKey{
-            {0xaa},{encoded.value()->begin(),encoded.value()->end()},
-            {0x11},{0x22}};
+            {0xaa},{0xef,0xbe},{0x11},{0x22}};
     };
     const auto preflight=[&](const m10::BoundM10P2Candidate& bound) {
         return current_owner&&
