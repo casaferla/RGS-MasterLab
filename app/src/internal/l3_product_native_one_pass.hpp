@@ -32,9 +32,13 @@ struct ProductNativeOnePassResult final {
     [[nodiscard]] constexpr bool authorizes_m10_or_export()
         const noexcept{return false;}
 };
+// Reusable native analyzer for any genuine immutable Product job that
+// exposes execute()/result_has_expected_scope(). The specialized M10/P2
+// three-segment job renders once and reuses this exact FFT/feature path.
+template<typename ProductJob>
 [[nodiscard]] inline core::Result<ProductNativeOnePassResult>
 measure_real_product_candidate_once(
-    const OfflineProductTrialJob& job,ProductNativeOnePassSpec spec,
+    const ProductJob& job,ProductNativeOnePassSpec spec,
     const std::atomic<bool>* cancellation=nullptr) {
     using R=core::Result<ProductNativeOnePassResult>;
     const auto fail=[](const char* text) {
