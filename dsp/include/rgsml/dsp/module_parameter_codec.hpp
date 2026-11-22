@@ -2,6 +2,8 @@
 
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_parameter_payload.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
@@ -13,6 +15,17 @@
 
 namespace rgsml::dsp {
 
+// Existing ONE canonical DSP parameter codec, now with current L3
+// frozen public Dynamic EQ / Transient Shaper schemas. Strict decoder
+// rejects duplicates, unknown keys, wrong union shape and nonfinite.
+[[nodiscard]] rgsml::core::Result<std::string>
+encode_dynamic_eq_parameters_json(const DynamicEqParameters& params);
+[[nodiscard]] rgsml::core::Result<DynamicEqParameters>
+decode_dynamic_eq_parameters_json(std::string_view json_text);
+[[nodiscard]] rgsml::core::Result<std::string>
+encode_transient_shaper_parameters_json(const TransientShaperParameters& params);
+[[nodiscard]] rgsml::core::Result<TransientShaperParameters>
+decode_transient_shaper_parameters_json(std::string_view json_text);
 [[nodiscard]] rgsml::core::Result<std::string> encode_module_parameters_json(
     const ModuleParameterPayload& payload);
 

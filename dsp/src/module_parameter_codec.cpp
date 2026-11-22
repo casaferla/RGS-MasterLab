@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -26,6 +27,8 @@ constexpr auto kCompressorSchemaId = "rgsml.dsp.compressor.parameters/1.0.0";
 constexpr auto kStereoMsSchemaId = "rgsml.dsp.stereo-ms.parameters/1.0.0";
 constexpr auto kTruePeakLimiterSchemaId = "rgsml.dsp.true-peak-limiter.parameters/1.0.0";
 constexpr auto kStreamingP2SchemaId = "rgsml.dsp.streaming-true-peak-limiter.parameters/0.1.0";
+constexpr auto kDynamicEqSchemaId = "rgsml.dsp.dynamic-eq.parameters/1.0.0";
+constexpr auto kTransientSchemaId = "rgsml.dsp.transient-shaper.parameters/1.0.0";
 
 [[nodiscard]] Error codec_error(ErrorCode code, std::string category, std::string message)
 {
@@ -633,6 +636,183 @@ decode_streaming_true_peak_limiter_parameters_json(std::string_view source)
         j["marginPercent"].get<int>());
 }
 
+
+namespace {
+// Count EVERY native JSON key event before nlohmann builds the DOM.
+// Root and every nested band key must remain unique; normal object
+// materialization otherwise silently discards duplicate source keys.
+[[nodiscard]] json l3_strict_parameter_parse(std::string_view source,
+                                              std::size_t& key_events) {
+    key_events=0U;
+    const auto count=[&key_events](int,json::parse_event_t event,json&)->bool {
+        if(event==json::parse_event_t::key)++key_events;
+        return key_events<=100U;
+    };
+    return json::parse(source.begin(),source.end(),count,false);
+}
+[[nodiscard]] bool l3_is_number(const json& v) noexcept {
+    return v.is_number() &&!v.is_boolean();
+}
+[[nodiscard]] std::string l3_filter_name(DynamicEqFilterType type) {
+    switch(type) {
+    case DynamicEqFilterType::BELL:return "BELL";
+    case DynamicEqFilterType::LOW_SHELF:return "LOW_SHELF";
+    case DynamicEqFilterType::HIGH_SHELF:return "HIGH_SHELF";
+    }
+    return "";
+}
+} // namespace
+
+Result<std::string>
+encode_dynamic_eq_parameters_json(const DynamicEqParameters& params)
+{
+    json bands=json::array();
+    for(const auto& band:params.bands()) {
+        const auto& spec=band.spec();
+        json row;
+        row["bandId"]=spec.band_id.to_string();
+        row["enabled"]=spec.enabled;
+        row["filterType"]=l3_filter_name(spec.filter_type);
+        row["routing"]=routing_to_string(spec.routing);
+        if(const auto* bell=std::get_if<DynamicEqBellShape>(&spec.shape)) {
+            row["frequencyHz"]=bell->frequency_hz;
+            row["q"]=bell->q;
+        }else if(const auto* shelf=
+                  std::get_if<DynamicEqShelfShape>(&spec.shape)) {
+            row["frequencyHz"]=shelf->frequency_hz;
+            row["shelfSlope"]=shelf->shelf_slope;
+        }else return Result<std::string>::failure(codec_error(
+            ErrorCode::InvalidArgument,"INVALID_DYNAMIC_EQ_SHAPE",
+            "Dynamic EQ must use one discriminated valid shape."));
+        const auto& control=spec.control;
+        row["baseGainDb"]=control.base_gain_db;
+        row["rangeDb"]=control.range_db;
+        row["thresholdDbfs"]=control.threshold_dbfs;
+        row["ratio"]=control.ratio;
+        row["rmsTimeConstantMs"]=control.rms_time_constant_ms;
+        row["attackMs"]=control.attack_ms;
+        row["releaseMs"]=control.release_ms;
+        bands.push_back(std::move(row));
+    }
+    json root;
+    root["bands"]=std::move(bands);
+    return Result<std::string>::success(root.dump());
+}
+
+Result<DynamicEqParameters>
+decode_dynamic_eq_parameters_json(std::string_view bytes)
+{
+    using R=Result<DynamicEqParameters>;
+    const auto fail=[](const char* category)->R {
+        return R::failure(codec_error(
+            ErrorCode::InvalidArgument,category,
+            "Frozen L3 Dynamic EQ parameter schema mismatch."));
+    };
+    std::size_t keys=0U;
+    const auto doc=l3_strict_parameter_parse(bytes,keys);
+    if(doc.is_discarded()||!doc.is_object()||doc.size()!=1U||
+       !doc.contains("bands")||!doc["bands"].is_array()||
+       doc["bands"].empty()||doc["bands"].size()>6U)
+        return fail("L3_DYN_EQ_STRICT_ROOT");
+    const auto& array=doc["bands"];
+    if(keys!=1U+array.size()*13U)
+        return fail("L3_DYN_EQ_DUPLICATE_OR_UNKNOWN_KEYS");
+    constexpr std::array<std::string_view,13> required{{
+        "bandId","enabled","filterType","routing","frequencyHz",
+        "baseGainDb","rangeDb","thresholdDbfs","ratio",
+        "rmsTimeConstantMs","attackMs","releaseMs","q"
+    }};
+    std::vector<DynamicEqBandParameters> result;
+    result.reserve(array.size());
+    for(const auto& row:array) {
+        if(!row.is_object()||row.size()!=13U)
+            return fail("L3_DYN_EQ_STRICT_BAND_KEYS");
+        for(std::size_t j=0;j<12U;++j)
+            if(!row.contains(std::string(required[j])))
+                return fail("L3_DYN_EQ_STRICT_BAND_KEYS");
+        if(!row.contains("q")&&!row.contains("shelfSlope"))
+            return fail("L3_DYN_EQ_DISCRIMINATED_SHAPE");
+        if(row.contains("q")&&row.contains("shelfSlope"))
+            return fail("L3_DYN_EQ_SHAPE_COLLISION");
+        if(!row["bandId"].is_string()||
+           !row["enabled"].is_boolean()||
+           !row["filterType"].is_string()||
+           !row["routing"].is_string())
+            return fail("L3_DYN_EQ_IDENTITY_TYPE");
+        for(const auto key:{
+                "frequencyHz","baseGainDb","rangeDb","thresholdDbfs",
+                "ratio","rmsTimeConstantMs","attackMs","releaseMs"})
+            if(!l3_is_number(row.at(key)))
+                return fail("L3_DYN_EQ_NUMERIC_TYPE");
+        const bool is_bell=row["filterType"]=="BELL";
+        const bool is_low=row["filterType"]=="LOW_SHELF";
+        const bool is_high=row["filterType"]=="HIGH_SHELF";
+        if(!(is_bell||is_low||is_high))
+            return fail("L3_DYN_EQ_FILTER_TYPE");
+        if(is_bell!=row.contains("q")||
+           !l3_is_number(row.at(is_bell?"q":"shelfSlope")))
+            return fail("L3_DYN_EQ_FILTER_SHAPE");
+        const auto band_id=core::Uuid::parse(
+            row["bandId"].get<std::string_view>());
+        if(!band_id)return R::failure(*band_id.error());
+        const auto routing=string_to_routing(
+            row["routing"].get<std::string_view>());
+        if(!routing)return R::failure(*routing.error());
+        DynamicEqBandSpec spec;
+        spec.band_id=*band_id.value();
+        spec.enabled=row["enabled"].get<bool>();
+        spec.filter_type=is_bell?DynamicEqFilterType::BELL:
+            is_low?DynamicEqFilterType::LOW_SHELF:
+                   DynamicEqFilterType::HIGH_SHELF;
+        spec.routing=*routing.value();
+        if(is_bell)
+            spec.shape=DynamicEqBellShape{
+                row["frequencyHz"].get<double>(),row["q"].get<double>()};
+        else
+            spec.shape=DynamicEqShelfShape{
+                row["frequencyHz"].get<double>(),
+                row["shelfSlope"].get<double>()};
+        spec.control={
+            row["baseGainDb"].get<double>(),
+            row["rangeDb"].get<double>(),
+            row["thresholdDbfs"].get<double>(),
+            row["ratio"].get<double>(),
+            row["rmsTimeConstantMs"].get<double>(),
+            row["attackMs"].get<double>(),
+            row["releaseMs"].get<double>()};
+        auto band=DynamicEqBandParameters::create(std::move(spec));
+        if(!band)return R::failure(*band.error());
+        result.push_back(std::move(*band.value()));
+    }
+    return DynamicEqParameters::create(std::move(result));
+}
+Result<std::string> encode_transient_shaper_parameters_json(
+    const TransientShaperParameters& params)
+{
+    json row;
+    row["attackAmountDb"]=params.attack_amount_db();
+    row["sustainAmountDb"]=params.sustain_amount_db();
+    return Result<std::string>::success(row.dump());
+}
+Result<TransientShaperParameters>
+decode_transient_shaper_parameters_json(std::string_view bytes)
+{
+    using R=Result<TransientShaperParameters>;
+    std::size_t keys=0U;
+    const auto row=l3_strict_parameter_parse(bytes,keys);
+    if(row.is_discarded()||!row.is_object()||row.size()!=2U||
+       keys!=2U||!row.contains("attackAmountDb")||
+       !row.contains("sustainAmountDb")||
+       !l3_is_number(row["attackAmountDb"])||
+       !l3_is_number(row["sustainAmountDb"]))
+        return R::failure(codec_error(
+            ErrorCode::InvalidArgument,"L3_M03_STRICT_PARAMETER_SCHEMA",
+            "Transient Shaper has exactly two numeric signed dB controls."));
+    return TransientShaperParameters::create(
+        row["attackAmountDb"].get<double>(),
+        row["sustainAmountDb"].get<double>());
+}
+
 Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& payload)
 {
     return std::visit(
@@ -650,14 +830,15 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
                 return encode_true_peak_limiter_parameters_json(params);
             } else if constexpr (std::is_same_v<T, StreamingTruePeakLimiterParameters>) {
                 return encode_streaming_true_peak_limiter_parameters_json(params);
+            } else if constexpr (std::is_same_v<T,DynamicEqParameters>) {
+                return encode_dynamic_eq_parameters_json(params);
+            } else if constexpr (std::is_same_v<T,TransientShaperParameters>) {
+                return encode_transient_shaper_parameters_json(params);
             } else {
-                // Dynamic EQ and Transient Shaper are currently L3
-                // offline-only modules. No new approved .rgsml codec exists;
-                // never serialize under a legacy schema or coerce controls.
                 return Result<std::string>::failure(codec_error(
                     ErrorCode::UnsupportedOperation,
-                    "L3_DSP_PERSISTENCE_NOT_AUTHORIZED",
-                    "L3 offline DSP has no authorized saved-project parameter codec yet."));
+                    "UNRECOGNIZED_PARAMETER_PAYLOAD",
+                    "No current canonical parameter codec for this payload."));
             }
         },
         payload);
@@ -667,6 +848,18 @@ Result<ModuleParameterPayload> decode_module_parameters_json(
     std::string_view schema_id,
     std::string_view json_text)
 {
+    if(schema_id==kDynamicEqSchemaId) {
+        auto p=decode_dynamic_eq_parameters_json(json_text);
+        if(!p)return Result<ModuleParameterPayload>::failure(*p.error());
+        return Result<ModuleParameterPayload>::success(
+            ModuleParameterPayload{std::move(*p.value())});
+    }
+    if(schema_id==kTransientSchemaId) {
+        auto p=decode_transient_shaper_parameters_json(json_text);
+        if(!p)return Result<ModuleParameterPayload>::failure(*p.error());
+        return Result<ModuleParameterPayload>::success(
+            ModuleParameterPayload{std::move(*p.value())});
+    }
     if (schema_id == kGainSchemaId) {
         auto gain_res = decode_gain_parameters_json(json_text);
         if (!gain_res) {
