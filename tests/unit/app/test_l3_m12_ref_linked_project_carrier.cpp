@@ -596,6 +596,64 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
             QCOMPARE(std::bit_cast<std::uint64_t>((*beforeSamples.value())[i]),
                      std::bit_cast<std::uint64_t>((*afterSamples.value())[i]));
     }
+    // Six canonical sample rates x two layouts, 1/8-second each, use
+    // the SAME persisted Project graph. No optimizer/proxy/M17 export is
+    // substituted for genuine native DSP. Small audio fixtures keep this
+    // cross-rate check bounded within the focused CI.
+    for(const int hz:{44100,48000,88200,96000,176400,192000}) {
+        const auto fs=core::SampleRate::create(hz);
+        QVERIFY(fs);
+        const auto frames=core::FrameCount::create(hz/8);
+        QVERIFY(frames);
+        for(const auto layout:{audio::ChannelLayout::MONO_C,
+                               audio::ChannelLayout::STEREO_LR}) {
+            const auto format=audio::AudioFormat::create(*fs.value(),layout);
+            QVERIFY(format);
+            auto programme=audio::AudioBuffer::create(
+                *format.value(),
+                audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                core::FrameIndex{0},*frames.value());
+            QVERIFY(programme);
+            auto writable=programme.value()->mutable_view();
+            for(std::size_t ch=0;ch<format.value()->channel_count();++ch) {
+                const auto channel=writable.channel(ch);
+                QVERIFY(channel);
+                for(std::size_t i=0;i<channel.value()->size();++i)
+                    (*channel.value())[i]=0.35*std::sin(
+                        2.0*std::numbers::pi*(440.0+55.0*ch)*
+                        static_cast<double>(i)/hz);
+            }
+            const auto preRequest=render::RenderRequest::create(
+                programme.value()->view(),
+                programme.value()->view().absolute_range(),
+                *empty.value(),{},*maxBlock.value());
+            QVERIFY(preRequest);
+            const auto sourcePCM=render::render_preview(
+                *preRequest.value(),*reg);
+            QVERIFY(sourcePCM);
+            const auto originalPCM=m::render_restored_m12_full_native_pcm_once(
+                *replayPlan.value(),*sourcePCM.value(),*maxBlock.value());
+            const auto savedPCM=m::render_restored_m12_full_native_pcm_once(
+                *diskPlan.value(),*sourcePCM.value(),*maxBlock.value());
+            QVERIFY(originalPCM&&savedPCM);
+            QCOMPARE(originalPCM.value()->view().absolute_range(),
+                     savedPCM.value()->view().absolute_range());
+            QCOMPARE(originalPCM.value()->view().format(),
+                     savedPCM.value()->view().format());
+            for(std::size_t ch=0;ch<format.value()->channel_count();++ch) {
+                const auto originalChannel=originalPCM.value()->view().channel(ch);
+                const auto savedChannel=savedPCM.value()->view().channel(ch);
+                QVERIFY(originalChannel&&savedChannel);
+                QCOMPARE(originalChannel.value()->size(),
+                         savedChannel.value()->size());
+                for(std::size_t i=0;i<originalChannel.value()->size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                                 (*originalChannel.value())[i]),
+                             std::bit_cast<std::uint64_t>(
+                                 (*savedChannel.value())[i]));
+            }
+        }
+    }
     // The renderer must reject structurally forged replay tickets as
     // well as wrong Project Open input. No plausible PCM is emitted from
     // an unrelated native binding or manually recontextualized segment.
