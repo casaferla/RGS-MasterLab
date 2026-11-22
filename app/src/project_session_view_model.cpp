@@ -569,12 +569,17 @@ bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
 
 void ProjectSessionViewModel::on_source_changed()
 {
-    // Invalidate the previous linked-audio owner at the first source
-    // change, before a new asynchronous preview can capture it.
-    if(previewController_ &&
+    const auto* source = source_->source_resource();
+    // A presentation-only change on the SAME original is not a new
+    // source epoch. Revoke a linked ticket only when the actual
+    // immutable audio owner differs (or disappears).
+    const bool changed=source
+        ?(!lastSource_||
+          !lastSource_->same_resource_identity(source->reference()))
+        :lastSource_.has_value();
+    if(changed&&previewController_ &&
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
-    const auto* source = source_->source_resource();
     if (source && lastSource_ &&
         !lastSource_->same_resource_identity(source->reference())) sourceId_.reset();
     if (source) lastSource_ = source->reference();
@@ -583,12 +588,14 @@ void ProjectSessionViewModel::on_source_changed()
 
 void ProjectSessionViewModel::on_gold_changed()
 {
-    // A different REFERENCE makes the old calculated ownership stale;
-    // manual audio remains independent and is not silently modified.
-    if(previewController_ &&
+    const auto* gold = gold_->gold_resource();
+    const bool changed=gold
+        ?(!lastGold_||
+          !lastGold_->same_resource_identity(gold->reference()))
+        :lastGold_.has_value();
+    if(changed&&previewController_ &&
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
-    const auto* gold = gold_->gold_resource();
     if (!gold) {
         goldId_.reset(); referenceId_.reset();
         referenceRegionId_.reset(); lastGold_.reset();
