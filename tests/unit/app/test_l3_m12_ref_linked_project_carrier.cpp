@@ -386,6 +386,24 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(realReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
+    // The renderer must reject structurally forged replay tickets as
+    // well as wrong Project Open input. No plausible PCM is emitted from
+    // an unrelated native binding or manually recontextualized segment.
+    auto forgedPlan=*replayPlan.value();
+    forgedPlan.reference_bindings.front().instance_id=gainId;
+    QVERIFY(!m::render_restored_m12_full_native_pcm_once(
+        forgedPlan,*prepared.value(),*maxBlock.value()));
+    forgedPlan=*replayPlan.value();
+    forgedPlan.registry_owner.reset();
+    QVERIFY(!m::render_restored_m12_full_native_pcm_once(
+        forgedPlan,*prepared.value(),*maxBlock.value()));
+    forgedPlan=*replayPlan.value();
+    auto wrongSegment=dsp::ProcessingChain::create(*reg,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED});
+    QVERIFY(wrongSegment);
+    forgedPlan.manual_prefix=*wrongSegment.value();
+    QVERIFY(!m::render_restored_m12_full_native_pcm_once(
+        forgedPlan,*prepared.value(),*maxBlock.value()));
     // Product's queued PreviewJob is valid only for the exact immutable
     // PREPARED allocation plus the current live MANUAL/registry identity.
     auto preparedForWorker=render::render_preview(
