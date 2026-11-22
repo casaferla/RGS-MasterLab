@@ -3108,3 +3108,17 @@ add_test(NAME rgsml_l3_m06_p04_native_descriptors_tests
 set_tests_properties(rgsml_l3_m06_p04_native_descriptors_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;p04;native_d07_d08;nonrelease")
+
+# L3 M06 P04 real 1-ms causal attack rise D09 independent of TS knob.
+qt_add_executable(rgsml_l3_m06_p04_native_attack_rise_tests
+    unit/app/test_l3_m06_p04_native_attack_rise.cpp)
+target_include_directories(rgsml_l3_m06_p04_native_attack_rise_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_p04_native_attack_rise_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_p04_native_attack_rise_tests)
+add_test(NAME rgsml_l3_m06_p04_native_attack_rise_tests
+    COMMAND rgsml_l3_m06_p04_native_attack_rise_tests)
+set_tests_properties(rgsml_l3_m06_p04_native_attack_rise_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;p04;native_attack_rise;nonrelease")
