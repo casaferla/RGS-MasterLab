@@ -131,6 +131,31 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto& proposed=
         transaction.value()->candidate_not_yet_committed.document();
     QCOMPARE(proposed.chains.size(),std::size_t{2});
+    // Dynamic EQ / Transient Shaper / Parametric EQ are real
+    // registered DSPs, not opaque plan-only placeholders. Rebuild
+    // them from the actual persisted REF_LINKED project segment.
+    const auto productReopen=m::decode_exact_m12_ref_linked_product_state(
+        proposed,reg);
+    QVERIFY(productReopen);
+    QCOMPARE(productReopen.value()->exact_native_chain.instances(),
+             stage.value()->chain.instances());
+    QCOMPARE(productReopen.value()->exact_native_bindings,
+             stage.value()->exact_bindings);
+    QCOMPARE(productReopen.value()->exact_native_bindings.size(),
+             std::size_t{3});
+    QCOMPARE(productReopen.value()->plan_id,accepted().plan_id);
+    QCOMPARE(productReopen.value()->controller_id,
+             accepted().reference_match_controller_id);
+    QVERIFY(!productReopen.value()->authorizes_project_adoption());
+    QVERIFY(!productReopen.value()->is_m12_materialization_receipt());
+    // The opt-in runtime factory must still exist when reopened:
+    // do not silently drop a required calculated module.
+    const auto minimal=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(minimal);
+    const auto noOptin=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*minimal.value()));
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        proposed,noOptin));
     QVERIFY(m::exact_project_chain_equal(
         proposed.chains.front(),manualChain));
     QCOMPARE(proposed.chains.back().segment,std::string("REF_LINKED"));
