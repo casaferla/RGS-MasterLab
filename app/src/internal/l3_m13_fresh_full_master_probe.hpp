@@ -48,7 +48,9 @@ probe_fresh_m13_full_native_master_once(
     core::FrameCount maximum_block_frames,
     double exact_frozen_automatch_m16_safety_max_db_tp,
     bool current_materialized_m12_receipt_verified_by_product_owner,
-    bool current_full_m11_fixed_and_independent_safety_attested)
+    bool current_full_m11_fixed_and_independent_safety_attested,
+    std::optional<dsp::StreamingTruePeakLimiterParameters>
+        exact_m10_winning_p2_parameters=std::nullopt)
 {
     using R=core::Result<FreshNativeMasterCompositionProbe>;
     const auto fail=[](const char* why) {
@@ -84,6 +86,12 @@ probe_fresh_m13_full_native_master_once(
        !std::isfinite(exact_frozen_automatch_m16_safety_max_db_tp)||
        maximum_block_frames.value()<=0)
         return fail("L3_M13_FULL_MASTER_M12_M11_OR_OWNER_INVALID");
+    // P2 may be manually present, but a live P2 may NEVER be rendered
+    // before the artistic REF_LINKED corrections. M10 supplies the
+    // validated winning Ceiling/Drive typed binding; the manual graph is
+    // immutable and its Margin/user bypass remain protected.
+    bool p2_present=false;
+    std::optional<std::size_t> active_p2_at;
     for(std::size_t i=0;i<protected_manual_bindings.size();++i) {
         const auto& instance=protected_manual.instances()[i];
         if(!binding_matches_instance(instance,protected_manual_bindings[i])||
@@ -91,6 +99,24 @@ probe_fresh_m13_full_native_master_once(
            instance.owner()!=dsp::ModuleOwner::USER||
            instance.link_state()!=dsp::ModuleLinkState::UNLINKED)
             return fail("L3_M13_FULL_MASTER_PROTECTED_MANUAL_MISMATCH");
+        if(instance.module_type_id()==
+               "rgsml.dsp.streaming-true-peak-limiter") {
+            if(p2_present||i+1U!=protected_manual_bindings.size())
+                return fail("L3_M13_P2_MANUAL_TERMINAL_ORDER_INVALID");
+            p2_present=true;
+            if(instance.active())active_p2_at=i;
+        }
+    }
+    if(active_p2_at.has_value()!=
+           exact_m10_winning_p2_parameters.has_value())
+        return fail("L3_M13_P2_WINNER_MISSING_OR_MANUAL_BYPASS");
+    if(active_p2_at) {
+        const auto* manual_p2=
+            std::get_if<dsp::StreamingTruePeakLimiterParameters>(
+                &protected_manual_bindings[*active_p2_at].parameters);
+        if(!manual_p2||manual_p2->margin_percent()!=
+                          exact_m10_winning_p2_parameters->margin_percent())
+            return fail("L3_M13_P2_PROTECTED_MARGIN_CHANGED");
     }
     for(std::size_t i=0;i<current_linked.exact_bindings.size();++i) {
         const auto& instance=current_linked.chain.instances()[i];
@@ -135,18 +161,51 @@ probe_fresh_m13_full_native_master_once(
                             "L3_M13_FULL_MASTER_SEGMENT_SCOPE_CHANGED"});
         return rendered;
     };
-    auto manual=run_stage(
-        original,protected_manual,protected_manual_bindings);
-    if(!manual)return R::failure(*manual.error());
-    auto linked=run_stage(
-        manual.value()->view(),
-        current_linked.chain,current_linked.exact_bindings);
-    if(!linked)return R::failure(*linked.error());
-    // The selected native candidate is the complete exact in-memory
-    // SOURCE_PROCESSING_RATE output BEFORE exporting. TruePeak M16 is
-    // fresh, whole-resource and independent of M17/P2 ceiling settings.
+    std::optional<render::RenderResult> selected;
+    std::uint32_t segment_passes=2U;
+    if(active_p2_at) {
+        // Keep the original MANUAL chain untouched in memory and Project.
+        // Recompose its exact fixed prefix, the current REF_LINKED winner,
+        // and the same manual P2 instance with the M10 winner parameters.
+        const auto nodes=protected_manual.instances();
+        auto fixed=dsp::ProcessingChain::restore(
+            *current_linked.registry_owner,protected_manual.context(),
+            protected_manual.revision(),
+            {nodes.begin(),nodes.end()-1});
+        if(!fixed)return R::failure(*fixed.error());
+        std::vector<dsp::ModuleExecutionBinding> fixed_bindings{
+            protected_manual_bindings.begin(),
+            protected_manual_bindings.end()-1};
+        auto manual=run_stage(original,*fixed.value(),fixed_bindings);
+        if(!manual)return R::failure(*manual.error());
+        auto linked=run_stage(
+            manual.value()->view(),
+            current_linked.chain,current_linked.exact_bindings);
+        if(!linked)return R::failure(*linked.error());
+        auto p2=dsp::ProcessingChain::restore(
+            *current_linked.registry_owner,protected_manual.context(),
+            protected_manual.revision(),{nodes.back()});
+        if(!p2)return R::failure(*p2.error());
+        const std::vector<dsp::ModuleExecutionBinding> p2_binding{{
+            nodes.back().instance_id(),*exact_m10_winning_p2_parameters}};
+        auto limited=run_stage(linked.value()->view(),*p2.value(),
+                               p2_binding);
+        if(!limited)return R::failure(*limited.error());
+        selected.emplace(std::move(*limited.value()));
+        segment_passes=3U;
+    } else {
+        auto manual=run_stage(
+            original,protected_manual,protected_manual_bindings);
+        if(!manual)return R::failure(*manual.error());
+        auto linked=run_stage(
+            manual.value()->view(),
+            current_linked.chain,current_linked.exact_bindings);
+        if(!linked)return R::failure(*linked.error());
+        selected.emplace(std::move(*linked.value()));
+    }
+    // Fresh actual SOURCE_RATE PCM and M16 analysis, never M17 WAV export.
     const auto m16=analysis::measure_true_peak_full_resource(
-        linked.value()->buffer());
+        selected->buffer());
     if(!m16)return R::failure(*m16.error());
     const auto measured_linear=m16.value()->global_linear_peak();
     const auto safe_linear=std::pow(
@@ -155,16 +214,16 @@ probe_fresh_m13_full_native_master_once(
        safe_linear<=0.0||measured_linear>safe_linear)
         return fail("L3_M13_FRESH_M16_AUTOMATCH_SAFETY_EXCEEDED");
     auto m19=analysis::measure_basic_level_full_resource(
-        linked.value()->buffer());
+        selected->buffer());
     if(!m19)return R::failure(*m19.error());
-    const auto v=linked.value()->view();
+    const auto v=selected->view();
     auto m20=analysis::measure_tonal_stereo_scope(
         v,v.absolute_start_frame(),v.frame_count(),
         v.timebase().frame_domain_id());
     if(!m20)return R::failure(*m20.error());
     return R::success(FreshNativeMasterCompositionProbe{
-        std::move(*linked.value()),std::move(*m16.value()),
+        std::move(*selected),std::move(*m16.value()),
         std::move(*m19.value()),std::move(*m20.value()),
-        exact_frozen_automatch_m16_safety_max_db_tp,1U,2U});
+        exact_frozen_automatch_m16_safety_max_db_tp,1U,segment_passes});
 }
 } // namespace rgsml::app::l3_automatch::m13_frozen
