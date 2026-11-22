@@ -569,6 +569,11 @@ bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
 
 void ProjectSessionViewModel::on_source_changed()
 {
+    // Invalidate the previous linked-audio owner at the first source
+    // change, before a new asynchronous preview can capture it.
+    if(previewController_ &&
+       previewController_->has_private_m12_product_preview_ticket())
+        previewController_->set_private_m12_product_preview_ticket({});
     const auto* source = source_->source_resource();
     if (source && lastSource_ &&
         !lastSource_->same_resource_identity(source->reference())) sourceId_.reset();
@@ -578,6 +583,11 @@ void ProjectSessionViewModel::on_source_changed()
 
 void ProjectSessionViewModel::on_gold_changed()
 {
+    // A different REFERENCE makes the old calculated ownership stale;
+    // manual audio remains independent and is not silently modified.
+    if(previewController_ &&
+       previewController_->has_private_m12_product_preview_ticket())
+        previewController_->set_private_m12_product_preview_ticket({});
     const auto* gold = gold_->gold_resource();
     if (!gold) {
         goldId_.reset(); referenceId_.reset();

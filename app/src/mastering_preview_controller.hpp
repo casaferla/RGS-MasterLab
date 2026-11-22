@@ -76,6 +76,10 @@ public:
     void set_private_m12_product_preview_ticket(
         std::shared_ptr<const l3_automatch::m12_frozen::
             M12ImmutableProductPreviewTicket> ticket);
+    // Owner-thread inspection only. Source/Reference transitions must
+    // revoke a linked realization before an unrelated Project loads.
+    [[nodiscard]] bool has_private_m12_product_preview_ticket()
+        const noexcept {return static_cast<bool>(m12ReplayTicket_);}
     // Research-only timing evidence, never used in ordinary Product builds.
     // Call once on the owner thread before scheduling any preview jobs.
     void set_research_p2_timing_log_path(QString path);

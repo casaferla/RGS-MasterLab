@@ -848,6 +848,7 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     auto invalidTicket=std::make_shared<const
         l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>();
     controller.set_private_m12_product_preview_ticket(invalidTicket);
+    QVERIFY(controller.has_private_m12_product_preview_ticket());
     QCOMPARE(controller.preview_generation(),priorGeneration+1U);
     QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
     QVERIFY(!controller.published_preview_matches_current_bindings());
@@ -866,6 +867,7 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     // Explicitly clearing the opt-in restores the unchanged ordinary
     // MANUAL preview path. No REF_LINKED adoption was ever authorized.
     controller.set_private_m12_product_preview_ticket({});
+    QVERIFY(!controller.has_private_m12_product_preview_ticket());
     QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
     controller.set_preview_executor({});
     controller.request_preview();
