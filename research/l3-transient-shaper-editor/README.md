@@ -188,3 +188,12 @@ invokes the actual Reset button, confirms read-only lockout and validates
 both 0.0 dB fields after reset. The research fixture reloads the genuine
 accepted DSP values before further playback/sidecar provenance checks; it
 does not claim the unrendered reset state was audible.
+
+## Real QML slider-to-C00 controls smoke
+
+The Qt Release harness now drives both actual Attack/Sustain slider
+`commitRequested` signals and verifies the shared research owner receives
++4.2/-2.7 dB, then restores the originally accepted C00 parameters. The
+zero-origin fill/tick presentation remains enabled. A locked control rejects
+even a directly invoked Qt commit signal. A research manual edit is not
+mistaken for a new audible PCM realization.

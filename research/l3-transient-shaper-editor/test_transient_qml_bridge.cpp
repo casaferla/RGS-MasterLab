@@ -169,6 +169,31 @@ int main(int argc,char** argv) {
         CHECK(compact.save(QDir(screenshotDir).filePath(
             QStringLiteral("TransientShaper-Research-Compact.png")),"PNG"));
     }
+    // Drive the two actual QML slider commit signals. These are the same
+    // handlers used on keyboard/pointer release, not direct C00 setters.
+    QObject* attackSlider=root->findChild<QObject*>(
+        QStringLiteral("transientShaperAttackSlider"));
+    QObject* sustainSlider=root->findChild<QObject*>(
+        QStringLiteral("transientShaperSustainSlider"));
+    CHECK(attackSlider && sustainSlider);
+    CHECK(attackSlider->property("enabled").toBool());
+    CHECK(sustainSlider->property("enabled").toBool());
+    CHECK(attackSlider->property("fillFromOrigin").toBool());
+    CHECK(sustainSlider->property("fillFromOrigin").toBool());
+    CHECK(attackSlider->property("showOriginTick").toBool());
+    CHECK(sustainSlider->property("showOriginTick").toBool());
+    CHECK(QMetaObject::invokeMethod(attackSlider,"commitRequested",
+        Qt::DirectConnection,Q_ARG(double,4.2)));
+    CHECK(QMetaObject::invokeMethod(sustainSlider,"commitRequested",
+        Qt::DirectConnection,Q_ARG(double,-2.7)));
+    app.processEvents();
+    CHECK(controls.attackAmountDb()==4.2);
+    CHECK(controls.sustainAmountDb()==-2.7);
+    // Restore the authoritative accepted parameters for C00 sidecar tests.
+    controls.loadAcceptedParameters(*p.value());
+    app.processEvents();
+    CHECK(controls.attackAmountDb()==6.0 && controls.sustainAmountDb()==-3.0);
+
     // Reject an unfinished numeric draft when research authoring is revoked.
     QObject* attackInput=root->findChild<QObject*>(
         QStringLiteral("transientShaperAttackNumericInput"));
@@ -180,6 +205,13 @@ int main(int argc,char** argv) {
     controls.setResearchManualEditable(false);
     app.processEvents();
     CHECK(!editor->property("editorEnabled").toBool());
+    CHECK(controls.attackAmountDb()==6.0 && controls.sustainAmountDb()==-3.0);
+    CHECK(!attackSlider->property("enabled").toBool());
+    CHECK(!sustainSlider->property("enabled").toBool());
+    CHECK(QMetaObject::invokeMethod(attackSlider,"commitRequested",
+        Qt::DirectConnection,Q_ARG(double,8.5)));
+    CHECK(QMetaObject::invokeMethod(sustainSlider,"commitRequested",
+        Qt::DirectConnection,Q_ARG(double,-8.5)));
     CHECK(controls.attackAmountDb()==6.0 && controls.sustainAmountDb()==-3.0);
     CHECK(attackInput->property("text").toString()==QStringLiteral("6.0"));
     CHECK(sustainInput->property("text").toString()==QStringLiteral("-3.0"));
