@@ -45,6 +45,10 @@ jobs:
           cmake -S research/l3-dynamic-eq-editor -B /tmp/rgs-dynamic-qt -G Ninja \
             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64"
           cmake --build /tmp/rgs-dynamic-qt --parallel 4
+      - name: Verify common C01 band owner and static base response
+        shell: bash
+        run: |
+          /tmp/rgs-dynamic-qt/dynamic_eq_common_smoke
       - name: Load both Qt EQ editors
         shell: bash
         run: |

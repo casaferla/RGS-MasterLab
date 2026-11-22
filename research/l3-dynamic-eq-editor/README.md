@@ -143,3 +143,14 @@ PlaybackSnapshot at 5s selects exactly 250 actual gain buckets; the harness
 is conspicuously labeled test playback, not a physical listening test.
 It captures the unobstructed main editor and the real C01 Activity window.
 No Product registration, manual fine tuning or merge during L3.
+
+## Shared C01 state — common EQ read-only presenter
+
+`DynamicEqResearchCommonViewModel` reads the exact accepted band vector
+and selected index from the existing six-parameter C01 model, preserving
+band UUID, filter, routing, frequency, base gain, Q and shelf slope. Its
+257-point curve evaluates the **frozen C01 coefficients at static BASE
+GAIN** — not an Overall and not a fabricated applied dynamic response.
+It never owns duplicate band parameters or modifies Product during L3.
+A separate Qt Core test confirms multi-band selection and true C01 curves.
+The later QML binding and post-L3 typed manual transactions remain separate.

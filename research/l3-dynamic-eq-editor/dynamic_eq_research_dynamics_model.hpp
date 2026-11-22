@@ -21,6 +21,13 @@ class DynamicEqResearchDynamicsModel final : public QObject {
 public:
     explicit DynamicEqResearchDynamicsModel(QObject* parent=nullptr):QObject(parent){}
     [[nodiscard]] bool loaded() const noexcept {return !bands_.empty();}
+    // The common EQ presenter observes these accepted specs by reference:
+    // no duplicate state or parameter authority is permitted.
+    [[nodiscard]] const std::vector<rgsml::dsp::DynamicEqBandSpec>&
+    acceptedBandSpecs() const noexcept {return bands_;}
+    [[nodiscard]] std::size_t selectedBandIndex() const noexcept {
+        return selected_;
+    }
     [[nodiscard]] bool manualEditable() const noexcept {return editable_;}
     [[nodiscard]] QVariantMap values() const {
         const auto& c=control();

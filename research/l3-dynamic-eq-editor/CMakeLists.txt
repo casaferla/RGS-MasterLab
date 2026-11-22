@@ -45,3 +45,20 @@ if(NOT MSVC)
   target_compile_options(dynamic_eq_activity_qml_smoke PRIVATE
     -Wall -Wextra -Werror -fno-fast-math -ffp-contract=off)
 endif()
+
+# Native Qt Core check of one typed C01 band owner (nonrelease).
+add_executable(dynamic_eq_common_smoke
+  test_dynamic_eq_common.cpp
+  dynamic_eq_research_common_view_model.hpp
+  dynamic_eq_research_dynamics_model.hpp
+  "${ROOT}/dsp/src/dynamic_eq_parameters.cpp"
+  "${ROOT}/dsp/src/internal/dynamic_eq_c01_coefficients.cpp"
+  "${ROOT}/core/src/uuid.cpp"
+  "${ROOT}/core/src/error.cpp")
+target_include_directories(dynamic_eq_common_smoke PRIVATE
+  "${ROOT}/core/include" "${ROOT}/dsp/include")
+target_link_libraries(dynamic_eq_common_smoke PRIVATE Qt6::Core)
+if(NOT MSVC)
+  target_compile_options(dynamic_eq_common_smoke PRIVATE
+    -Wall -Wextra -Werror -fno-fast-math -ffp-contract=off)
+endif()
