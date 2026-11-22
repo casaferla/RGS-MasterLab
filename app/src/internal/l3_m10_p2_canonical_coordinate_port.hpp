@@ -93,7 +93,8 @@ bind_m10_p2_joint_coordinates(
         return std::nullopt;
     auto typed=make_p2_joint_trial(
         current_protected_manual,current_bindings,exact_p2_instance,
-        *physical_ceiling,*physical_drive,std::move(exact_ticket_identity));
+        *physical_ceiling,*physical_drive,std::move(exact_ticket_identity),
+        true /* full M10 trial can vary another DSP while P2 is fixed */);
     if(!typed)return std::nullopt;
     return BoundM10P2Candidate{
         std::move(*typed),

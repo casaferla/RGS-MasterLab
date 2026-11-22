@@ -60,7 +60,8 @@ struct BoundP2Trial final {
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleInstanceId& p2_id,
     P2ScalarCoordinate coordinate,
-    double proposed_value,std::string ticket_identity)
+    double proposed_value,std::string ticket_identity,
+    bool allow_identity_candidate=false)
 {
     if(ticket_identity.empty()||ticket_identity.size()>128U
        ||chain.context()!=dsp::ProcessingChainContext{
@@ -104,7 +105,8 @@ struct BoundP2Trial final {
     // Margin remains the independent user-configured 2/5 policy.
     const auto validated=dsp::StreamingTruePeakLimiterParameters::create(
         ceiling,drive,original->margin_percent());
-    if(!validated||*validated.value()==*original)return std::nullopt;
+    if(!validated||(*validated.value()==*original&&!allow_identity_candidate))
+        return std::nullopt;
     std::vector<dsp::ModuleExecutionBinding> baseline(
         bindings.begin(),bindings.end());
     auto candidate=baseline;
@@ -145,7 +147,8 @@ make_p2_joint_trial(
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleInstanceId& p2_id,
     double chosen_ceiling_db_tp,double chosen_drive_db,
-    std::string ticket_identity)
+    std::string ticket_identity,
+    bool allow_identity_candidate=false)
 {
     if(bindings.empty())return std::nullopt;
     const auto* previous=
@@ -154,7 +157,8 @@ make_p2_joint_trial(
     if(!previous)return std::nullopt;
     const auto both=dsp::StreamingTruePeakLimiterParameters::create(
         chosen_ceiling_db_tp,chosen_drive_db,previous->margin_percent());
-    if(!both||*both.value()==*previous)return std::nullopt;
+    if(!both||(*both.value()==*previous&&!allow_identity_candidate))
+        return std::nullopt;
     // The first non-identity coordinate chooses a real Product/owner
     // baseline and exact graph check, not a synthetic candidate shortcut.
     const auto coordinate=
@@ -166,7 +170,7 @@ make_p2_joint_trial(
         ?chosen_drive_db:chosen_ceiling_db_tp;
     auto single=make_p2_scalar_trial(
         chain,bindings,p2_id,coordinate,first_value,
-        std::move(ticket_identity));
+        std::move(ticket_identity),allow_identity_candidate);
     if(!single)return std::nullopt;
     single->candidate_bindings.back().parameters=*both.value();
     return BoundP2JointTrial{
