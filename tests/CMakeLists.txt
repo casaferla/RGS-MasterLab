@@ -3038,3 +3038,17 @@ add_test(NAME rgsml_l3_product_native_stereo_candidate_tests
 set_tests_properties(rgsml_l3_product_native_stereo_candidate_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;real_product;s03_s06;single_fft;nonrelease")
+
+# L3 M11 independent native Stereo raw hard safety (S02/S05/S06).
+qt_add_executable(rgsml_l3_m11_native_stereo_safety_tests
+    unit/app/test_l3_m11_native_stereo_hard_safety.cpp)
+target_include_directories(rgsml_l3_m11_native_stereo_safety_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m11_native_stereo_safety_tests
+    PRIVATE rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m11_native_stereo_safety_tests)
+add_test(NAME rgsml_l3_m11_native_stereo_safety_tests
+    COMMAND rgsml_l3_m11_native_stereo_safety_tests)
+set_tests_properties(rgsml_l3_m11_native_stereo_safety_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m11;native_stereo;safety;nonrelease")
