@@ -6,6 +6,7 @@
 // source/reference dependency generation, never substituted by M21
 // display metrics. Canonical cross-Fs grids/grades remain with M07.
 #include "l3_m05m06_owned_full_source_native_facts.hpp"
+#include "l3_m05m06_product_native_identity.hpp"
 #include <atomic>
 #include <cstdint>
 #include <utility>
@@ -22,15 +23,14 @@ struct OriginalPreparedReferenceNativeFacts final {
 // are independent: a new REFERENCE with the same path is still new.
 [[nodiscard]] inline bool original_pair_matches_product_owner(
     const OriginalPreparedReferenceNativeFacts& observed,
-    const OfflineProductOwnerStamp& stamp) noexcept
+    const OfflineProductOwnerStamp& stamp)
 {
     const auto& p=observed.prepared.original_m19_m20.owner;
     const auto& g=observed.reference.original_m19_m20.owner;
-    return stamp.populated()&&
-           p.full_track_owner_confirmed&&g.full_track_owner_confirmed&&
-           p.generation==stamp.source_generation&&
-           g.generation==stamp.reference_selection_revision&&
-           !p.resource_identity.empty()&&!g.resource_identity.empty()&&
+    return authentic_product_source_identity(
+               p,stamp,OriginalProductRole::prepared)&&
+           authentic_product_source_identity(
+               g,stamp,OriginalProductRole::reference)&&
            p.resource_identity!=g.resource_identity;
 }
 [[nodiscard]] inline core::Result<OriginalPreparedReferenceNativeFacts>

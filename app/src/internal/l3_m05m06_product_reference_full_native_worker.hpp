@@ -6,6 +6,7 @@
 // SOURCE variant as REFERENCE. Completion remains provisional until
 // the caller rechecks GoldCapture on the Qt owner thread.
 #include "l3_m05m06_owned_full_source_native_facts.hpp"
+#include "l3_m05m06_product_native_identity.hpp"
 #include "m21_product_owner_analysis.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -29,7 +30,7 @@ struct ProductReferenceNativeFullResult final {
 [[nodiscard]] inline core::Result<ProductReferenceNativeFullResult>
 measure_current_gold_full_native_worker(
     const internal::M21ProductOwnerAnalysis::GoldCapture& captured,
-    m05m06_real::SourceIdentity exact_reference_product_owner,
+    const OfflineProductOwnerStamp& exact_product_owner,
     ProductNativeOnePassSpec native_spec,
     m05m06_real::CommonTonalBandwidth exact_phase6_common_bandwidth,
     double exact_phase6_tonal_density_floor,
@@ -43,9 +44,15 @@ measure_current_gold_full_native_worker(
     if(!captured.gold.permissions().can_read()||
        !captured.owner.epoch||!captured.owner.identity.valid()||
        !captured.selection_revision||
-       !exact_reference_product_owner.full_track_owner_confirmed||
-       !exact_reference_product_owner.generation||
-       exact_reference_product_owner.resource_identity.empty()||
+       !exact_product_owner.populated()||
+       captured.owner.epoch!=exact_product_owner.m18_owner_epoch||
+       captured.owner.identity.source_generation!=
+           exact_product_owner.source_generation||
+       captured.selection_revision!=
+           exact_product_owner.reference_selection_revision||
+       captured.gold.provider_id()!=
+           exact_product_owner.reference_provider_id||
+       captured.gold.locator()!=exact_product_owner.reference_locator||
        captured.full_frames<=0||
        (captured.channels!=1U&&captured.channels!=2U)||
        (captured.sample_rate_hz!=44100U&&captured.sample_rate_hz!=48000U&&
@@ -89,7 +96,8 @@ measure_current_gold_full_native_worker(
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return fail("L3_REFERENCE_NATIVE_CANCELLED_AFTER_READ");
     auto original=observe_original_owned_full_source_once(
-        *full.value(),std::move(exact_reference_product_owner),
+        *full.value(),native_product_original_identity(
+            exact_product_owner,OriginalProductRole::reference),
         std::move(native_spec),exact_phase6_common_bandwidth,
         exact_phase6_tonal_density_floor,
         exact_phase6_lra_file_based_trailing_attested,cancellation);

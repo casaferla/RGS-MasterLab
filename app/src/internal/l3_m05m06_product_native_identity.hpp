@@ -80,7 +80,7 @@ native_product_candidate_identity(
 [[nodiscard]] inline bool authentic_product_source_identity(
     const m05m06_real::SourceIdentity& found,
     const OfflineProductOwnerStamp& owner,
-    OriginalProductRole role) noexcept
+    OriginalProductRole role)
 {
     const auto exact=native_product_original_identity(owner,role);
     return found.full_track_owner_confirmed&&
@@ -91,7 +91,7 @@ native_product_candidate_identity(
 [[nodiscard]] inline bool authentic_product_candidate_identity(
     const m05m06_real::SourceIdentity& found,
     const OfflineProductOwnerStamp& owner,
-    std::string_view exact_ticket) noexcept
+    std::string_view exact_ticket)
 {
     const auto exact=native_product_candidate_identity(owner,exact_ticket);
     return found.full_track_owner_confirmed&&
