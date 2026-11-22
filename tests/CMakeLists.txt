@@ -1437,6 +1437,12 @@ target_link_libraries(rgsml_mastering_preview_controller_tests
         Qt6::Core
         Qt6::Test
 )
+# Linux compiles the Product admission contract without Windows exporter
+# implementation; Windows retains the native library for resolved symbols.
+if(WIN32)
+    target_link_libraries(rgsml_mastering_preview_controller_tests
+        PRIVATE rgsml_platform)
+endif()
 rgsml_apply_project_warnings(rgsml_mastering_preview_controller_tests)
 add_test(NAME rgsml_mastering_preview_controller_tests COMMAND rgsml_mastering_preview_controller_tests)
 set_tests_properties(rgsml_mastering_preview_controller_tests PROPERTIES
