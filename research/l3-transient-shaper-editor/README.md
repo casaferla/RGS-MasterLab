@@ -33,8 +33,8 @@ Result on the research host: `transient activity collector: all tests passed`.
 This is a collector semantic test, **not** proof of actual C00 telemetry
 integration or a Qt GUI test.
 
-No CMake, DSP, host, module registry, project serialization, Qt application
-composition, or CI workflow files are modified. No pull request or merge.
+No CMake, host, module registry, project serialization, Qt application
+composition, or production CI workflow files are modified. No pull request or merge.
 The new editor is intentionally not wired into the production app yet.
 
 ## Future production adapter / observation contract
@@ -61,6 +61,25 @@ It is created only on explicit telemetry opt-in, and its immutable
 5-second window can be requested after a seek. Raw audio/DSP never waits
 for QML. Mapping the snake_case native buckets to the camelCase QML
 carrier and authentic RealizationId is the later integration seam.
+
+## Research-only authentic C00 observation hook
+
+This isolated branch also modifies ONLY its own copy of
+`dsp/src/internal/transient_shaper_c00_engine.{hpp,cpp}`. The default
+4-argument create/process calls keep their original sonic execution path.
+`create(..., true)` opts into a preallocated one-block observation buffer.
+`process_block(..., &sink, firstFrame)` delivers exact per-sample
+`g_attack_db` and `g_sustain_db` only after the block commits successfully.
+An observation error invalidates telemetry, never PCM or C00 state.
+No sink is retained between blocks. The optional hook has no Product caller,
+and no AutoMatch code is changed on this branch.
+
+An additional no-Qt gate compiles and executes the ACTUAL C00 source:
+`test_transient_c00_observation.cpp` confirms byte-identical observed
+versus unobserved PCM, four rates, mono/stereo, chunk partitioning,
+failed-block rollback, observer failure isolation, and absolute frame overflow.
+A dedicated research-only GitHub Actions workflow runs this native gate.
+This is NOT a release qualification or proof of UI/audio playback integration.
 
 The C00 engine already computes `g_attack_db` and `g_sustain_db` per
 sample; a future bounded telemetry tap must sample/aggregate those exact

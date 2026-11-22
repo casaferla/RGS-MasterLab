@@ -1,0 +1,39 @@
+name: Transient Shaper research observation gate (nonrelease)
+on:
+  push:
+    branches:
+      - research/l3-transient-shaper-editor-isolated-20261122
+    paths:
+      - 'dsp/src/internal/transient_shaper_c00_engine.*'
+      - 'research/l3-transient-shaper-editor/**'
+      - 'ui/qml/TransientActivityScope.qml'
+      - '.github/workflows/research-transient-observation.yml'
+permissions:
+  contents: read
+jobs:
+  native-observation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile and run authentic C00/collector tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rgsml-transient-research
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -fno-fast-math -ffp-contract=off \
+            -Icore/include -Idsp/include -Idsp/src \
+            research/l3-transient-shaper-editor/test_transient_activity_collector.cpp \
+            -o /tmp/rgsml-transient-research/collector
+          /tmp/rgsml-transient-research/collector
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -fno-fast-math -ffp-contract=off -UNDEBUG \
+            -Icore/include -Idsp/include -Idsp/src \
+            research/l3-transient-shaper-editor/test_transient_c00_observation.cpp \
+            dsp/src/internal/transient_shaper_c00_engine.cpp \
+            dsp/src/transient_shaper_parameters.cpp core/src/error.cpp \
+            -o /tmp/rgsml-transient-research/c00-observer
+          /tmp/rgsml-transient-research/c00-observer
