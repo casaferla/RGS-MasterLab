@@ -555,6 +555,8 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(realReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
+    QCOMPARE(realReplay.value()->chain_revision(),
+             replayPlan.value()->reference_linked.revision());
     // This second ZIP fixture includes an ACTUAL persisted Input Gain.
     // Rehydrate MANUAL and REF_LINKED from genuine ProjectRepository
     // bytes and compare every resulting PCM sample to the pre-save native
@@ -803,6 +805,8 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
     QCOMPARE(p2RealReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
+    QCOMPARE(p2RealReplay.value()->chain_revision(),
+             p2Plan.value()->terminal_p2->revision());
     // Independent native oracle: explicitly render each real DSP
     // segment in the frozen order, then compare *every* output sample
     // bit-for-bit. A signature alone cannot prove the true audio.

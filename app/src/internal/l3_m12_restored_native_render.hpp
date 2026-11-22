@@ -186,6 +186,11 @@ render_restored_m12_full_native_pcm_once(
         if(pcm.value()->view().absolute_range()!=original.absolute_range()||
            pcm.value()->view().format()!=original.format())
             return fail("L3_M12_REPLAY_DSP_CHANGED_FRAME_DOMAIN");
+        // Each independently rendered native stage has its own
+        // structural revision. It must not be mistaken for the MANUAL
+        // revision of the complete Product realization.
+        if(pcm.value()->chain_revision()!=chain.revision())
+            return fail("L3_M12_REPLAY_STAGE_REVISION_STALE");
         return pcm;
     };
     auto manual=run(original,plan.manual_prefix,plan.manual_bindings);
