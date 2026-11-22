@@ -15,6 +15,7 @@
 #include "l3_m05m06_real_source_bundle.hpp"
 #include "l3_m06_native_spectral_d10_d12.hpp"
 #include "l3_m06_m20_native_frame_energy_sink.hpp"
+#include "l3_m06_m20_coherent_stereo_band_sink.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -134,6 +135,12 @@ struct OfflineProductNativeSpectralCandidate final {
     m05m06_real::SpectralD10D12Native measured_native_d10_d12;
     std::vector<std::uint64_t> original_selected_stft_ordinals;
     [[nodiscard]] constexpr bool authorizes_product_publication()
+        const noexcept{return false;}
+};
+struct OfflineProductNativeStereoCandidate final {
+    OfflineProductCandidateMeasurement measurement;
+    m05m06_real::StereoCoherentNativeResult native_s03_s06;
+    [[nodiscard]] constexpr bool authorizes_export_or_plan()
         const noexcept{return false;}
 };
 class OfflineProductTrialJob final {
@@ -308,6 +315,63 @@ public:
              std::move(*tonal.value())},
             std::move(d10_d12),
             sink.canonical_original_ordinals()});
+    }
+    // Exactly one real candidate render + original M19/M20 with an opt-in
+    // stereo-only signed coherent PSD observer. The independent Phase6
+    // low-end retained-loudness gate must be attested as identical to
+    // the M20 selected frames; never infer this from the UI or LUFS.
+    [[nodiscard]] core::Result<OfflineProductNativeStereoCandidate>
+    evaluate_with_native_stereo_s03_s06(
+        std::vector<m05m06_real::NativeFrameBand> exact_common_bands,
+        std::uint64_t current_m20_native_fft_size,
+        bool exact_phase6_stereo_band_geometry_attested,
+        bool exact_low_end_width_gate_matches_selected_native_frames,
+        std::uint64_t exact_phase6_active_pcm_frames,
+        bool exact_source_reference_grade_attested,
+        std::span<const bool> exact_zero_side_per_band={},
+        const std::array<bool,3>& low_end_zero_side={{false,false,false}},
+        analysis::TonalStereoTrustedSupport supplied_support={}) const
+    {
+        using R=core::Result<OfflineProductNativeStereoCandidate>;
+        if(!exact_phase6_stereo_band_geometry_attested||
+           exact_common_bands.empty()||
+           !prepared_||
+           prepared_->view().format().channel_count()!=2U||
+           supplied_support.selected_stereo_frame_sink||
+           supplied_support.selected_native_frame_sink)
+            return R::failure(
+                failed("L3_STEREO_NATIVE_PHASE6_AUTHORITY_MISSING"));
+        auto rendered=execute();
+        if(!rendered)return R::failure(*rendered.error());
+        if(!result_has_expected_scope(*rendered.value()))
+            return R::failure(failed("L3_STEREO_RENDER_SCOPE_STALE"));
+        const auto levels=analysis::measure_basic_level_full_resource(
+            rendered.value()->buffer());
+        if(!levels)return R::failure(*levels.error());
+        const auto view=rendered.value()->view();
+        m05m06_real::AuthenticM20CoherentStereoSink sink{
+            static_cast<std::uint32_t>(
+                view.format().sample_rate().value()),
+            current_m20_native_fft_size,std::move(exact_common_bands),
+            true,exact_low_end_width_gate_matches_selected_native_frames};
+        if(!sink.valid())
+            return R::failure(failed("L3_STEREO_NATIVE_BAND_GRID_INVALID"));
+        supplied_support.selected_stereo_frame_sink=&sink;
+        const auto tonal=analysis::measure_tonal_stereo_scope(
+            view,view.absolute_start_frame(),view.frame_count(),
+            view.timebase().frame_domain_id(),supplied_support);
+        if(!tonal)return R::failure(*tonal.error());
+        auto observed=sink.finalize(
+            exact_phase6_active_pcm_frames,
+            exact_source_reference_grade_attested,
+            exact_zero_side_per_band,low_end_zero_side);
+        if(!observed.numerical_source_valid||
+           observed.native_selected_frames!=
+             tonal.value()->selected_spectral_windows)
+            return R::failure(failed("L3_STEREO_NATIVE_SOURCE_INVALID"));
+        return R::success(OfflineProductNativeStereoCandidate{
+            {std::move(*rendered.value()),std::move(*levels.value()),
+             std::move(*tonal.value())},std::move(observed)});
     }
     // Caller MUST obtain all current arguments from live Qt Product owner
     // when the worker result returns, never from the worker itself. This

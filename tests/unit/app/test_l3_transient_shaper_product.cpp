@@ -237,6 +237,10 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QCOMPARE(nativeSpectrum.value()->measurement.tonal.mean_linear_psd,
              calculated.value()->tonal.mean_linear_psd);
     QVERIFY(!nativeSpectrum.value()->authorizes_product_publication());
+    // A mono Product source must not be silently duplicated into a
+    // stereo M/S source merely to populate S03-S06.
+    QVERIFY(!job.value()->evaluate_with_native_stereo_s03_s06(
+        {{0,20,80},{1,80,200}},4096U,true,true,4096,true));
     // Additional named T2–T6 observations reuse the real Product M20
     // PSD. Unqualified reference-grade status remains a separate gate.
     const auto tonalFacts=calculated.value()->observed_m05_tonal(
