@@ -45,6 +45,13 @@ struct M12PreparedProjectTransaction final {
     core::Uuid ref_linked_chain_id;
     std::string accepted_plan_checksum;
     std::string pre_commit_project_revision_dependency;
+    // Retain the ACTUAL complete before-state, including unknown optional
+    // resources, until the Product's exclusive epoch rechecks its content.
+    // A structural revision or a user-supplied "current" boolean is not
+    // a substitute for this immutable pre-publication equality.
+    std::optional<project::ProjectSnapshot> exact_precommit_project;
+    [[nodiscard]] bool matches_exact_precommit(
+        const project::ProjectSnapshot& current) const;
     [[nodiscard]] constexpr bool authorizes_project_commit() const noexcept {
         return false;
     }
@@ -76,6 +83,80 @@ struct M12PreparedProjectTransaction final {
         if(!exact_project_module_equal(a.modules[k],b.modules[k]))
             return false;
     return true;
+}
+template<class T,class Predicate>
+[[nodiscard]] inline bool m12_exact_vector_equal(
+    const std::vector<T>& a,const std::vector<T>& b,Predicate predicate)
+{
+    return a.size()==b.size()&&
+        std::equal(a.begin(),a.end(),b.begin(),predicate);
+}
+// Whole-document *content* comparison, including fields that M12 is not
+// permitted to edit. Do not narrow this to just the MANUAL DSP revision.
+[[nodiscard]] inline bool m12_exact_project_snapshot_equal(
+    const project::ProjectSnapshot& a,const project::ProjectSnapshot& b)
+{
+    const auto& x=a.document();
+    const auto& y=b.document();
+    const auto loc=[](const project::LocatorHint& l,
+                      const project::LocatorHint& r){
+        return l.providerId==r.providerId&&l.locator==r.locator&&
+               l.displayName==r.displayName;
+    };
+    const auto resource=[&](const project::Resource& l,
+                            const project::Resource& r){
+        return l.resourceId==r.resourceId&&
+               l.resourceType==r.resourceType&&l.identity==r.identity&&
+               m12_exact_vector_equal(l.locatorHints,r.locatorHints,loc);
+    };
+    const auto reference=[](const project::Reference& l,
+                            const project::Reference& r){
+        return l.referenceId==r.referenceId&&
+               l.referenceType==r.referenceType&&
+               l.resourceId==r.resourceId;
+    };
+    const auto region=[](const project::AuditionRegion& l,
+                         const project::AuditionRegion& r){
+        return l.regionId==r.regionId&&l.resourceId==r.resourceId&&
+               l.frameDomain==r.frameDomain&&
+               l.startFrame==r.startFrame&&
+               l.endFrameExclusive==r.endFrameExclusive&&
+               l.loopEnabled==r.loopEnabled;
+    };
+    const auto optional=[](const project::OptionalEntry& l,
+                           const project::OptionalEntry& r){
+        return l.path==r.path&&l.mediaType==r.mediaType&&
+               l.bytes==r.bytes;
+    };
+    return x.projectId==y.projectId&&x.displayName==y.displayName&&
+        x.sourceResourceId==y.sourceResourceId&&
+        m12_exact_vector_equal(x.resources,y.resources,resource)&&
+        x.references.activeReferenceId==y.references.activeReferenceId&&
+        m12_exact_vector_equal(x.references.items,y.references.items,
+                               reference)&&
+        m12_exact_vector_equal(x.timeSelections.auditionRegions,
+                               y.timeSelections.auditionRegions,region)&&
+        x.timeSelections.analysisScopes==y.timeSelections.analysisScopes&&
+        x.timeSelections.processingRegions==y.timeSelections.processingRegions&&
+        m12_exact_vector_equal(x.chains,y.chains,exact_project_chain_equal)&&
+        x.pipeline.repairChainId==y.pipeline.repairChainId&&
+        x.pipeline.conditioningChainId==y.pipeline.conditioningChainId&&
+        x.pipeline.masteringChainId==y.pipeline.masteringChainId&&
+        x.activeProfileApplication==y.activeProfileApplication&&
+        x.analyses==y.analyses&&x.plans==y.plans&&
+        x.referenceMatch==y.referenceMatch&&
+        x.masteringDNA==y.masteringDNA&&x.output==y.output&&
+        x.derivedArtifacts==y.derivedArtifacts&&
+        x.history==y.history&&x.extensions==y.extensions&&
+        m12_exact_vector_equal(a.optional_entries(),b.optional_entries(),
+                               optional);
+}
+[[nodiscard]] inline bool
+M12PreparedProjectTransaction::matches_exact_precommit(
+    const project::ProjectSnapshot& current) const
+{
+    return exact_precommit_project&&
+        m12_exact_project_snapshot_equal(*exact_precommit_project,current);
 }
 [[nodiscard]] inline core::Result<M12PreparedProjectTransaction>
 prepare_exact_m12_project_transaction(
@@ -310,6 +391,7 @@ prepare_exact_m12_project_transaction(
         ident.reference_match_controller_id,
         exact_native_carrier.native_project_chain.chainId,
         ident.exact_plan_content_checksum,
-        ident.exact_source_reference_amount_scope_revision});
+        ident.exact_source_reference_amount_scope_revision,
+        current_project});
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
