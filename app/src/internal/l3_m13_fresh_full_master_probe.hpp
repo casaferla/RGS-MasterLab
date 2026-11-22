@@ -1,8 +1,10 @@
 #pragma once
 // L3 M13 independent fresh FULL-MASTER native render preflight.
-// Runs the genuine frozen Product segments in original logical order:
-// Prepared -> protected MANUAL -> current REF_LINKED winner.
-// Its true peak is measured by M16 on actual fresh PCM. It never
+// Replays the genuine Product segments as PREPARED -> protected MANUAL
+// fixed DSP -> current REF_LINKED winner -> optional active P2 suffix.
+// An explicit, typed M10 P2 winner is required when manual P2 is active;
+// without it the probe fails closed rather than misordering the limiter.
+// True Peak is measured with M16 on the actual final fresh PCM. It never
 // invokes M17 Export TP Limiter, overwrites independent M17 ceiling,
 // or modifies optional P2 Streaming TP Limiter configuration.
 #include "l3_m13_fresh_native_verification_probe.hpp"

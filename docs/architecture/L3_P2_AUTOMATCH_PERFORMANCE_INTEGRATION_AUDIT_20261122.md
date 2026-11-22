@@ -37,3 +37,10 @@ Source references:
 - **Processing order:** PREPARED → protected fixed MANUAL DSP → REF_LINKED artistic corrections including Dynamic EQ/Transient Shaper → exactly one effective P2 **as the final streaming DSP** → M16 measurement of the actual generated source-rate PCM. M17 is exclusively final WAV Export, with its own independent ceiling, outside M10.
 - **Performance:** no bypass or stale-cached PCM is counted as an actual P2-active objective; recompute P2 when its input or typed settings change, but reuse verified immutable upstream prefixes and completed scores where exact dependency keys permit. No extra GUI/render publication for each M10 evaluation; do fresh M13 full verification of the winner.
 - **Traceability:** this is an owner decision with implementation gaps, not an assertion that P2 optimization currently works. Change code, tests, benchmarks and any required L3 frozen-authority delta coherently before release.
+
+## Implementation receipts (writer, nonrelease)
+
+- `37ef2586`: exact typed `make_p2_scalar_trial` for Ceiling or Drive with Product graph snapshot validation and manual Margin preservation; new `rgsml_l3_p2_typed_trial_tests`.
+- `900bb0d9`: the guarded fresh M13 probe now fails closed if an active P2 lacks an explicit typed M10 winner. It renders the protected MANUAL prefix, then REF_LINKED and only then the genuine P2 suffix. M16 measures the actual P2-processed output, not an M17 export result.
+- `c68681ef`: native synthetic regression tests for active P2, altered Drive, wrong Margin, output difference, segment count and no false VERIFIED/export grant. Same existing M13 test target.
+- These changes are incremental. The canonical M10 whole-resource evaluator, accepted P2 winner receipt/ownership in persistent REF_LINKED Product, and full physical timing budget are NOT yet completed or qualified. A single CI gate will cover the staged compilation and tests when the macro-lot is promoted.
