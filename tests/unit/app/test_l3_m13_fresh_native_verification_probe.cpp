@@ -1,5 +1,6 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
+#include "internal/l3_m12_native_terminal_guarded_stage.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -75,9 +76,14 @@ noM12ReceiptCannotPretendFreshVerification() {
         uuid("c3000000-0000-4000-8000-000000000001"),
         "rgsml.dsp.parametric-eq",*eq.value()}};
     const std::vector<dsp::ModuleExecutionBinding> none;
-    const auto stage=m12::stage_exact_m12_native_ref_linked(
-        accepted,*manual.value(),none,owned,nodes);
+    const auto stage=m12::stage_m12_with_independent_m16_safety(
+        accepted,*manual.value(),none,*buffer.value(),
+        0.0,true,owned,nodes);
     QVERIFY(stage);
+    // Frozen AutoMatch M16 guard, without any WAV export module.
+    QVERIFY(!m12::stage_m12_with_independent_m16_safety(
+        accepted,*manual.value(),none,*buffer.value(),
+        -24.0,true,owned,nodes));
     QVERIFY(!m13::probe_fresh_m13_ref_linked_segment_once(
         *stage.value(),*prepared.value(),*chunk.value(),false));
     // Simulated authoritative M12 receipt for isolated analysis tests,
