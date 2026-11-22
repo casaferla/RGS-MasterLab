@@ -2,6 +2,7 @@
 #include "internal/l3_m12_project_transaction_draft.hpp"
 #include "internal/l3_m12_p2_persisted_sound_guard.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
+#include "internal/l3_m12_ref_linked_project_restore.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
@@ -444,6 +445,39 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
     QCOMPARE(reopened.value()->chains.front().modules.back().
              parameters.canonical_utf8(),
              canonical.value()->canonical_utf8());
+    // The persisted REF_LINKED chain is decoded into the SAME native
+    // ModuleRegistry/ProcessingChain/typed bindings as M12 stage.
+    // This is a read-only decoder; ProductSession must still adopt it
+    // atomically with MANUAL to make a reopened project audible.
+    const auto restored=m::decode_exact_m12_ref_linked_product_state(
+        *reopened.value(),registry);
+    QVERIFY(restored);
+    QCOMPARE(restored.value()->plan_id,originalAccepted.plan_id);
+    QCOMPARE(restored.value()->controller_id,
+             originalAccepted.reference_match_controller_id);
+    QCOMPARE(restored.value()->exact_plan_checksum,
+             originalAccepted.exact_plan_content_checksum);
+    QCOMPARE(restored.value()->exact_native_chain.instances(),
+             staged.value()->chain.instances());
+    QCOMPARE(restored.value()->exact_native_bindings,
+             staged.value()->exact_bindings);
+    QVERIFY(!restored.value()->authorizes_project_adoption());
+    QVERIFY(!restored.value()->is_m12_materialization_receipt());
+    QVERIFY(!restored.value()->authorizes_m13_verification());
+    auto wrongOwner=*reopened.value();
+    wrongOwner.chains.back().modules.front().owner="USER";
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        wrongOwner,registry));
+    auto wrongSchema=*reopened.value();
+    wrongSchema.chains.back().modules.front().parameterSchemaId=
+        "rgsml.invalid.schema/1.0.0";
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        wrongSchema,registry));
+    auto noMaterialization=*reopened.value();
+    noMaterialization.referenceMatch=
+        project::OpaqueJsonValue::empty_object();
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        noMaterialization,registry));
     // Readback without a REAL Product writer lease is NOT a receipt,
     // even when its bytes happen to equal the prepared draft.
     const auto parsedReadback=project::ProjectSnapshot::create(
