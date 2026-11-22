@@ -573,11 +573,11 @@ void ProjectSessionViewModel::on_source_changed()
     // A presentation-only change on the SAME original is not a new
     // source epoch. Revoke a linked ticket only when the actual
     // immutable audio owner differs (or disappears).
-    const bool changed=source
+    const bool resourceChanged=source
         ?(!lastSource_||
           !lastSource_->same_resource_identity(source->reference()))
         :lastSource_.has_value();
-    if(changed&&previewController_ &&
+    if(resourceChanged&&previewController_ &&
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
     if (source && lastSource_ &&
@@ -589,11 +589,11 @@ void ProjectSessionViewModel::on_source_changed()
 void ProjectSessionViewModel::on_gold_changed()
 {
     const auto* gold = gold_->gold_resource();
-    const bool changed=gold
+    const bool resourceChanged=gold
         ?(!lastGold_||
           !lastGold_->same_resource_identity(gold->reference()))
         :lastGold_.has_value();
-    if(changed&&previewController_ &&
+    if(resourceChanged&&previewController_ &&
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
     if (!gold) {
