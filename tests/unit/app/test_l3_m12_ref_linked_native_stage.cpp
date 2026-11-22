@@ -1,4 +1,5 @@
 #include "internal/l3_m12_ref_linked_native_stage.hpp"
+#include "internal/l3_m12_reference_insertion_anchor.hpp"
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
@@ -37,6 +38,7 @@ private slots:
     void forbiddenInputGainCollisionsStalenessAndUnavailableAreAtomic();
     void noCorrectionEmptyArtisticSectionMustBeExplicit();
     void linkedSuspensionAndUserBypassAreIndependent();
+    void frozenInsertionAnchorPrecedesNativeProtectedP2();
 };
 void M12NativeStageTest::
 realRegistryStagesTypedEqAndProtectsManualInputGain() {
@@ -171,6 +173,63 @@ linkedSuspensionAndUserBypassAreIndependent() {
     QVERIFY(linked.instances()[0].user_bypass());
     QVERIFY(linked.instances()[0].controller_suspended());
     QVERIFY(!linked.instances()[0].active());
+}
+void M12NativeStageTest::
+frozenInsertionAnchorPrecedesNativeProtectedP2() {
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto opted=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        *base.value());
+    QVERIFY(opted);
+    auto reg=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*opted.value()));
+    auto manual=dsp::ProcessingChain::create(*reg,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto gain=id("c9000000-0000-4000-8000-000000000001");
+    const auto p2=id("c9000000-0000-4000-8000-000000000002");
+    QVERIFY(manual.value()->add(gain,"rgsml.dsp.gain",0));
+    auto noP2=m::plan_canonical_m12_insertion_anchor(
+        *manual.value(),*reg,true);
+    QVERIFY(noP2.exact_current());
+    QVERIFY(noP2.current_gap->left_neighbor_instance_id);
+    QCOMPARE(*noP2.current_gap->left_neighbor_instance_id,gain);
+    QVERIFY(!noP2.current_gap->right_neighbor_instance_id);
+    QVERIFY(manual.value()->add(
+        p2,"rgsml.dsp.streaming-true-peak-limiter",1));
+    auto hasP2=m::plan_canonical_m12_insertion_anchor(
+        *manual.value(),*reg,true);
+    QVERIFY(hasP2.exact_current());
+    QVERIFY(hasP2.current_gap->left_neighbor_instance_id);
+    QVERIFY(hasP2.current_gap->right_neighbor_instance_id);
+    QCOMPARE(*hasP2.current_gap->left_neighbor_instance_id,gain);
+    QCOMPARE(*hasP2.current_gap->right_neighbor_instance_id,p2);
+    QCOMPARE(hasP2.current_gap->anchor_revision,std::uint64_t{1});
+    QCOMPARE(hasP2.current_gap->protected_manual_revision,
+             manual.value()->revision());
+    QVERIFY(!hasP2.current_gap->authorizes_project_mutation());
+    const auto recheck=m::revalidate_exact_m12_insertion_anchor(
+        *hasP2.current_gap,*manual.value(),*reg,true);
+    QVERIFY(recheck.exact_current());
+    QCOMPARE(recheck.current_gap->right_neighbor_instance_id,
+             hasP2.current_gap->right_neighbor_instance_id);
+    QVERIFY(!m::revalidate_exact_m12_insertion_anchor(
+        *hasP2.current_gap,*manual.value(),*reg,false).exact_current());
+    QVERIFY(!m::plan_canonical_m12_insertion_anchor(
+        *manual.value(),*reg,false).exact_current());
+    // An already accepted gap cannot be reused after any frozen
+    // fixed DSP revision change, even if its neighbor IDs survive.
+    auto stale=*hasP2.current_gap;
+    ++stale.protected_manual_revision;
+    QCOMPARE(m::revalidate_exact_m12_insertion_anchor(
+        stale,*manual.value(),*reg,true).reason,
+        m::InsertionAnchorReason::stale_or_invalid_owner);
+    stale=*hasP2.current_gap;
+    stale.right_neighbor_instance_id=gain;
+    QCOMPARE(m::revalidate_exact_m12_insertion_anchor(
+        stale,*manual.value(),*reg,true).reason,
+        m::InsertionAnchorReason::
+            changed_neighbor_pair_requires_review);
 }
 } // namespace
 } // namespace rgsml::tests
