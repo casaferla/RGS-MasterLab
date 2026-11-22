@@ -532,6 +532,41 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
                      std::bit_cast<std::uint64_t>(
                          (*oracleSamples.value())[frame]));
     }
+    // A user-bypassed terminal P2 is still structurally AFTER the
+    // linked artist DSP. The bypass must not move the node, alter
+    // its saved Ceiling/Drive or reinstate limiter processing.
+    auto manualBypassed=*manualWithP2.value();
+    QVERIFY(manualBypassed.set_user_bypass(p2Id,true));
+    auto bypassedDocument=p2Doc;
+    bypassedDocument.chains.front().modules.back().userBypass=true;
+    bypassedDocument.chains.front().revision=manualBypassed.revision();
+    const auto restoredBypass=m::decode_exact_m12_ref_linked_product_state(
+        bypassedDocument,optRegistry);
+    QVERIFY(restoredBypass);
+    const auto bypassPlan=m::prepare_restored_m12_native_replay_plan(
+        bypassedDocument,*restoredBypass.value(),manualChain.chainId,
+        manualBypassed,manualP2Bindings,true);
+    QVERIFY(bypassPlan);
+    QVERIFY(bypassPlan.value()->terminal_p2);
+    QVERIFY(!bypassPlan.value()->terminal_p2->instances().front().active());
+    const auto bypassSound=m::render_restored_m12_full_native_pcm_once(
+        *bypassPlan.value(),*prepared.value(),*maxBlock.value());
+    QVERIFY(bypassSound);
+    const auto bypassView=bypassSound.value()->view();
+    const auto withoutP2=realReplay.value()->view();
+    QCOMPARE(bypassView.absolute_range(),withoutP2.absolute_range());
+    for(std::size_t ch=0;ch<bypassView.format().channel_count();++ch) {
+        const auto bypassSamples=bypassView.channel(ch);
+        const auto plainSamples=withoutP2.channel(ch);
+        QVERIFY(bypassSamples&&plainSamples);
+        QCOMPARE(bypassSamples.value()->size(),plainSamples.value()->size());
+        for(std::size_t frame=0;frame<bypassSamples.value()->size();++frame)
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                         (*bypassSamples.value())[frame]),
+                     std::bit_cast<std::uint64_t>(
+                         (*plainSamples.value())[frame]));
+    }
+
     // P2 parameters are part of the same immutable MANUAL worker key:
     // a later dial adjustment invalidates the old linked replay ticket.
     const auto p2SharedPlan=
