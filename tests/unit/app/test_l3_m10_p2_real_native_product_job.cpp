@@ -8,6 +8,7 @@
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
+#include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
 #include "internal/l3_m10_p2_actual_m16_guard.hpp"
 #include "internal/l3_m10_p2_real_native_triple_binding.hpp"
 #include "internal/l3_m10_p2_product_qt_owner_capture.hpp"
@@ -63,6 +64,7 @@ class P2RealNativeProductTest final:public QObject {
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void adaptiveRamCacheBudgetPreservesColdRender();
+    void canonicalP2TrialTicketsCover48OrderedParameters();
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
     void streamingP2AndIndependentM16RenderAtAllSixRates();
     void canonicalAll27ScoringRequiresRealM11Protection();
@@ -576,6 +578,58 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         *linked.value(),artistic));
 }
 
+void P2RealNativeProductTest::
+canonicalP2TrialTicketsCover48OrderedParameters() {
+    namespace m10=a::m10_frozen;
+    const std::vector<m10::Coordinate> original{
+        {{0x50,0x32},{0x02},0.625},
+        {{0x50,0x32},{0x01},0.5}};
+    QVERIFY(!m10::m10_valid_sorted_coordinate_inventory(original));
+    const auto ordered=m10::m10_sort_exact_inventory(original);
+    QVERIFY(ordered);
+    QCOMPARE(ordered->size(),std::size_t{2});
+    QCOMPARE((*ordered)[0].stable_parameter_id,
+             std::vector<std::uint8_t>({0x01}));
+    const std::vector<double> aligned{0.5,0.625};
+    const auto exact=m10::m10_exact_native_trial_ticket(
+        7,*ordered,aligned);
+    QVERIFY(exact);
+    QVERIFY(exact->size()<=128U); // actual P2 typed admission limit
+    const auto again=m10::m10_exact_native_trial_ticket(
+        7,*ordered,aligned);
+    QCOMPARE(exact,again);
+    QVERIFY(exact!=m10::m10_exact_native_trial_ticket(
+        9,*ordered,aligned));
+    QVERIFY(exact!=m10::m10_exact_native_trial_ticket(
+        7,*ordered,std::vector<double>{0.5,0.75}));
+    QVERIFY(!m10::m10_exact_native_trial_ticket(
+        7,original,aligned)); // unsorted gives NO misleading binding
+    QVERIFY(!m10::m10_exact_native_trial_ticket(
+        7,*ordered,std::vector<double>{0.5}));
+    auto duplicated=*ordered;
+    duplicated[1]=duplicated[0];
+    QVERIFY(!m10::m10_sort_exact_inventory(duplicated));
+    std::vector<m10::Coordinate> maximum_inventory;
+    std::vector<double> maximum_normalized;
+    for(std::size_t i=0;i<48U;++i) {
+        maximum_inventory.push_back({
+            {0x52,0x47,0x53},
+            {static_cast<std::uint8_t>(i+1U)},
+            0.5});
+        maximum_normalized.push_back(0.5);
+    }
+    const auto maximum=m10::m10_exact_native_trial_ticket(
+        31,maximum_inventory,maximum_normalized);
+    QVERIFY(maximum);
+    QVERIFY(maximum->size()<=128U);
+    maximum_normalized[47]=0.625;
+    QVERIFY(maximum!=m10::m10_exact_native_trial_ticket(
+        31,maximum_inventory,maximum_normalized));
+    maximum_normalized[47]=
+        std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(!m10::m10_exact_native_trial_ticket(
+        31,maximum_inventory,maximum_normalized));
+}
 void P2RealNativeProductTest::adaptiveRamCacheBudgetPreservesColdRender() {
     using namespace a::m10_p2_memory;
     constexpr std::uint64_t mib=1024ULL*1024ULL;
