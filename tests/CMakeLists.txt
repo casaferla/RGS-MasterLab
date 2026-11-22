@@ -3225,3 +3225,17 @@ add_test(NAME rgsml_l3_p2_typed_trial_tests
 set_tests_properties(rgsml_l3_p2_typed_trial_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;p2;typed_parameters;nonrelease")
+
+# L3 M10 P2 one real Product 3-segment render and native M05/M06 observation.
+qt_add_executable(rgsml_l3_m10_p2_real_native_product_tests
+    unit/app/test_l3_m10_p2_real_native_product_job.cpp)
+target_include_directories(rgsml_l3_m10_p2_real_native_product_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m10_p2_real_native_product_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp rgsml_render Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m10_p2_real_native_product_tests)
+add_test(NAME rgsml_l3_m10_p2_real_native_product_tests
+    COMMAND rgsml_l3_m10_p2_real_native_product_tests)
+set_tests_properties(rgsml_l3_m10_p2_real_native_product_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;p2;real_product;native_analysis;nonrelease")
