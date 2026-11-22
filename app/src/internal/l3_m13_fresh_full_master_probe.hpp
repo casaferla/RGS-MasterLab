@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 #include <utility>
 
 namespace rgsml::app::l3_automatch::m13_frozen {
@@ -118,8 +119,9 @@ probe_fresh_m13_full_native_master_once(
         std::span<const dsp::ModuleExecutionBinding> bindings)
         ->core::Result<render::RenderResult> {
         auto request=render::RenderRequest::create(
-            source,source.absolute_range(),chain,bindings,
-            maximum_block_frames);
+            source,source.absolute_range(),chain,
+            std::vector<dsp::ModuleExecutionBinding>{
+                bindings.begin(),bindings.end()},maximum_block_frames);
         if(!request)return core::Result<render::RenderResult>::failure(
             *request.error());
         auto rendered=render::render_preview(

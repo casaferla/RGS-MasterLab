@@ -194,17 +194,17 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     for(const auto& module:restored.value()->
             updated_project_not_committed.document().chains.back().modules)
         QVERIFY(!module.controllerSuspended);
-    const auto stale=m::prepare_m12_owned_controller_suspension(
+    const auto stale_suspension=m::prepare_m12_owned_controller_suspension(
         zero.value()->updated_project_not_committed,
         carrier.value()->exact_owner_controller,
         carrier.value()->native_project_chain.chainId,
         m::ControllerSuspensionCause::plan_stale,true);
-    QVERIFY(stale);
-    QVERIFY(stale.value()->updated_project_not_committed.document().
+    QVERIFY(stale_suspension);
+    QVERIFY(stale_suspension.value()->updated_project_not_committed.document().
         referenceMatch.canonical_utf8().find(
           "\"freshnessState\":\"STALE\"")!=std::string::npos);
     QVERIFY(!m::prepare_m12_owned_controller_suspension(
-        stale.value()->updated_project_not_committed,
+        stale_suspension.value()->updated_project_not_committed,
         carrier.value()->exact_owner_controller,
         carrier.value()->native_project_chain.chainId,
         m::ControllerSuspensionCause::current_amount_restored,true));
