@@ -3151,3 +3151,18 @@ add_test(NAME rgsml_l3_m06_p04_product_to_m07_tests
 set_tests_properties(rgsml_l3_m06_p04_product_to_m07_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;p04;m07;native_product;nonrelease")
+
+# L3 M12 native REF_LINKED module provenance, true Product factory and
+# protected MANUAL/USER unchanged; staged only, not project publication.
+qt_add_executable(rgsml_l3_m12_ref_linked_native_stage_tests
+    unit/app/test_l3_m12_ref_linked_native_stage.cpp)
+target_include_directories(rgsml_l3_m12_ref_linked_native_stage_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m12_ref_linked_native_stage_tests
+    PRIVATE rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m12_ref_linked_native_stage_tests)
+add_test(NAME rgsml_l3_m12_ref_linked_native_stage_tests
+    COMMAND rgsml_l3_m12_ref_linked_native_stage_tests)
+set_tests_properties(rgsml_l3_m12_ref_linked_native_stage_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m12;real_dsp;ref_linked;protected;nonrelease")
