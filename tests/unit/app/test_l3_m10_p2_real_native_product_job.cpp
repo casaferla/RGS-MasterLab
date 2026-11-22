@@ -2,6 +2,7 @@
 #include "internal/l3_product_native_one_pass.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
+#include "internal/l3_m10_p2_real_native_triple_binding.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
@@ -39,6 +40,7 @@ private slots:
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
     void streamingP2AndIndependentM16RenderAtAllSixRates();
     void canonicalAll27ScoringRequiresRealM11Protection();
+    void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
 };
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
@@ -492,6 +494,64 @@ canonicalAll27ScoringRequiresRealM11Protection() {
         wrong,independent,"exact-test-phase6",true);
     QCOMPARE(duplicate.reason,
              m10::P2NativeCostReason::incomplete_or_conflicting_m07);
+}
+
+void P2RealNativeProductTest::
+allNativeTripleOwnersAgreeBeforeBuildingAnyFeature() {
+    namespace m10=a::m10_frozen;
+    namespace native=a::m05m06_real;
+    m10::P2OriginalRealNativeTriple all;
+    QCOMPARE(m10::bind_all_original_real_native_p2_triple(all).reason,
+             m10::P2RealTripleBindingReason::
+                missing_owner_or_inconsistent_three_way_scope);
+    const std::array<native::SourceIdentity,3> owners{{
+        {"prepared-resource",3U,true},
+        {"reference-resource",4U,true},
+        {"candidate-p2-resource",5U,true}}};
+    for(std::size_t i=0;i<3U;++i) {
+        all.t01.actual_sources[i].owner=owners[i];
+        all.t02_t06.sources[i].owner=owners[i];
+        all.d01.source[i].owner=owners[i];
+        all.d07_d09.current_sources[i].owner=owners[i];
+        all.d10_d12.source_owner[i]=owners[i];
+        all.s03_s06.independent_source_owners[i]=owners[i];
+    }
+    all.m19.prepared.owner=owners[0];
+    all.m19.reference.owner=owners[1];
+    all.m19.actual_candidate.owner=owners[2];
+    all.d02.prepared_owner=owners[0];
+    all.d02.reference_owner=owners[1];
+    all.d02.candidate_owner=owners[2];
+    all.d03_d04.prepared_owner=owners[0];
+    all.d03_d04.reference_owner=owners[1];
+    all.d03_d04.candidate_owner=owners[2];
+    all.s01_s02.prepared.owner=owners[0];
+    all.s01_s02.reference.owner=owners[1];
+    all.s01_s02.actual_candidate.owner=owners[2];
+    const auto only_missing_definitions=
+        m10::bind_all_original_real_native_p2_triple(all);
+    QCOMPARE(only_missing_definitions.reason,
+             m10::P2RealTripleBindingReason::
+                missing_original_source_binding);
+    QVERIFY(!only_missing_definitions.fragments);
+    QVERIFY(!only_missing_definitions.authorizes_solver());
+    // An independent tonal frame for a different candidate generation
+    // must not be paired with the correctly stamped M19/M20 Product
+    // measurement, even before any possible numeric assembly.
+    ++all.t02_t06.sources[2].owner.generation;
+    QCOMPARE(m10::bind_all_original_real_native_p2_triple(all).reason,
+             m10::P2RealTripleBindingReason::
+                missing_owner_or_inconsistent_three_way_scope);
+    all.t02_t06.sources[2].owner=owners[2];
+    all.d10_d12.source_owner[1].resource_identity="another-reference";
+    QCOMPARE(m10::bind_all_original_real_native_p2_triple(all).reason,
+             m10::P2RealTripleBindingReason::
+                missing_owner_or_inconsistent_three_way_scope);
+    all.d10_d12.source_owner[1]=owners[1];
+    all.m19.actual_candidate.owner.resource_identity="prepared-resource";
+    QCOMPARE(m10::bind_all_original_real_native_p2_triple(all).reason,
+             m10::P2RealTripleBindingReason::
+                missing_owner_or_inconsistent_three_way_scope);
 }
 } // namespace
 } // namespace rgsml::tests
