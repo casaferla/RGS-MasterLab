@@ -2,6 +2,7 @@
 #include "internal/l3_product_native_one_pass.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
+#include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_actual_m16_guard.hpp"
 #include "internal/l3_m10_p2_real_native_triple_binding.hpp"
 #include "internal/l3_m10_p2_product_qt_owner_capture.hpp"
@@ -272,7 +273,50 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         });
     QCOMPARE(unbound.reason,
              m10::P2NativeCostReason::missing_triple_native_authority);
-    QVERIFY(!unbound.complete_measured());
+    // Test the actual bound-coordinate -> Product worker -> genuine
+    // P2 native scorer integration, with immutable MANUAL and exact
+    // candidate REF_LINKED graph. Absent original P/G native authority
+    // fails after the real render, never creates a bogus score.
+    const m10::P2NativeProductWorkerScope worker{
+        stamp,prepared_owner,product_registry,*active_manual.value(),
+        manual_bindings,*block.value(),true};
+    const auto missing_original=[](const a::M10P2FullNativeEvidence&)
+        ->std::optional<m10::P2OriginalRealNativeTriple>{
+        return std::nullopt;
+    };
+    const auto from_bound=
+        m10::measure_and_score_bound_m10_p2_product_worker(
+            worker,*linked.value(),artistic,*chosen,
+            spec_for_authoritative_bridge,&*prefix.value(),
+            "current-phase6-test-generation",{},0.0,owner,true,
+            missing_original);
+    QCOMPARE(from_bound.reason,
+             m10::P2NativeCostReason::missing_triple_native_authority);
+    QVERIFY(!from_bound.complete_measured());
+    QVERIFY(!from_bound.as_exact_cache_evidence().
+        full_current_render_analysis_hard_gates_attested);
+    auto unauthenticated_worker=worker;
+    unauthenticated_worker.current_qt_product_epoch_and_m09_m11_attested=
+        false;
+    const auto no_owner=
+        m10::measure_and_score_bound_m10_p2_product_worker(
+            unauthenticated_worker,*linked.value(),artistic,*chosen,
+            spec_for_authoritative_bridge,&*prefix.value(),
+            "current-phase6-test-generation",{},0.0,owner,true,
+            missing_original);
+    QCOMPARE(no_owner.reason,
+             m10::P2NativeCostReason::stale_or_unattested_product);
+    // A stricter M11 TP ceiling rejects the real candidate before
+    // any callback may substitute a claimed original triple.
+    const auto unsafe_bound=
+        m10::measure_and_score_bound_m10_p2_product_worker(
+            worker,*linked.value(),artistic,*chosen,
+            spec_for_authoritative_bridge,&*prefix.value(),
+            "current-phase6-test-generation",{},-90.0,owner,true,
+            missing_original);
+    QCOMPARE(unsafe_bound.reason,
+             m10::P2NativeCostReason::m08_or_m11_safety_rejected);
+    QVERIFY(!from_bound.complete_measured());
     QVERIFY(!unbound.as_exact_cache_evidence().
         full_current_render_analysis_hard_gates_attested);
     const auto* retained=std::get_if<
