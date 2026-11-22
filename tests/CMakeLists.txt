@@ -3230,9 +3230,13 @@ set_tests_properties(rgsml_l3_p2_typed_trial_tests PROPERTIES
 qt_add_executable(rgsml_l3_m10_p2_real_native_product_tests
     unit/app/test_l3_m10_p2_real_native_product_job.cpp)
 target_include_directories(rgsml_l3_m10_p2_real_native_product_tests
-    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_SOURCE_DIR}/analysis/src
+        ${CMAKE_SOURCE_DIR}/platform/windows/src)
 target_link_libraries(rgsml_l3_m10_p2_real_native_product_tests
-    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp rgsml_render Qt6::Test)
+    PRIVATE rgsml_project rgsml_platform rgsml_audio rgsml_analysis
+            rgsml_dsp rgsml_render Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m10_p2_real_native_product_tests)
 add_test(NAME rgsml_l3_m10_p2_real_native_product_tests
     COMMAND rgsml_l3_m10_p2_real_native_product_tests)
