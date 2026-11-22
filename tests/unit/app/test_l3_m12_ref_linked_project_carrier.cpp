@@ -326,6 +326,26 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!m::prepare_restored_m12_native_replay_plan(
         replayDocument,forgedLinked,manualChain.chainId,
         *manualGain.value(),gainBindings,true));
+    forgedLinked=*productReopen.value();
+    forgedLinked.exact_native_chain=std::move(
+        *dsp::ProcessingChain::restore(*reg,{
+            dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+            12,{forgedLinked.exact_native_chain.instances().begin(),
+                forgedLinked.exact_native_chain.instances().end()}).value());
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        replayDocument,forgedLinked,manualChain.chainId,
+        *manualGain.value(),gainBindings,true));
+    auto forgedSchema=replayDocument;
+    forgedSchema.chains.front().modules.front().parameterSchemaId=
+        std::string("rgsml.dsp.gain.wrong/999");
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        forgedSchema,*productReopen.value(),manualChain.chainId,
+        *manualGain.value(),gainBindings,true));
+    auto removedReference=replayDocument;
+    removedReference.references.items.clear();
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        removedReference,*productReopen.value(),manualChain.chainId,
+        *manualGain.value(),gainBindings,true));
 
     // Real 48k PCM through the EXISTING native renderer, no WAV export.
     const auto sampleRate=core::SampleRate::create(48000);

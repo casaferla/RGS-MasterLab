@@ -99,6 +99,8 @@ prepare_restored_m12_native_replay_plan(
        again.value()->persisted_linked_chain_id!=
            linked.persisted_linked_chain_id||
        again.value()->exact_plan_revision!=linked.exact_plan_revision||
+       again.value()->exact_native_chain.revision()!=
+           linked.exact_native_chain.revision()||
        again.value()->exact_plan_checksum!=linked.exact_plan_checksum||
        again.value()->exact_m10_winning_checksum!=
            linked.exact_m10_winning_checksum||
@@ -132,6 +134,17 @@ prepare_restored_m12_native_replay_plan(
            stored.linkState!="UNLINKED"||
            stored.semanticNodeId.has_value())
             return fail("L3_M12_REPLAY_MANUAL_INSTANCE_OR_OWNER_STALE");
+        const auto descriptor=linked.registry_owner->find_descriptor(
+            stored.typeId);
+        if(!descriptor)return R::failure(*descriptor.error());
+        const auto& registered=descriptor.value()->get();
+        if(!registered.algorithm_version()||
+           !registered.parameter_schema_id()||
+           !stored.algorithmVersion||!stored.parameterSchemaId||
+           *stored.algorithmVersion!=*registered.algorithm_version()||
+           *stored.parameterSchemaId!=*registered.parameter_schema_id()||
+           !linked.registry_owner->has_factory(stored.typeId))
+            return fail("L3_M12_REPLAY_MANUAL_ALGORITHM_OR_SCHEMA_STALE");
         const auto encoded=dsp::encode_module_parameters_json(
             binding.parameters);
         if(!encoded)return R::failure(*encoded.error());
