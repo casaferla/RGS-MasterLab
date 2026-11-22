@@ -380,9 +380,19 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto prepared=render::render_preview(
         *preparedRequest.value(),*reg);
     QVERIFY(prepared);
+    m::M12NativeStageExecutionWitness firstStageWitness;
     const auto realReplay=m::render_restored_m12_full_native_pcm_once(
-        *replayPlan.value(),*prepared.value(),*maxBlock.value());
+        *replayPlan.value(),*prepared.value(),*maxBlock.value(),
+        &firstStageWitness);
     QVERIFY(realReplay);
+    QCOMPARE(firstStageWitness.protected_manual.size(),std::size_t{1});
+    QCOMPARE(firstStageWitness.reference_linked.size(),std::size_t{3});
+    QVERIFY(firstStageWitness.user_terminal_p2.empty());
+    QVERIFY(!firstStageWitness.is_m12_committed());
+    QVERIFY(!firstStageWitness.is_m13_verified());
+    QCOMPARE(firstStageWitness.protected_manual.front().instance_id,gainId);
+    QCOMPARE(firstStageWitness.reference_linked.front().instance_id,
+             replayPlan.value()->reference_linked.instances().front().instance_id());
     QCOMPARE(realReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
@@ -392,7 +402,11 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     auto forgedPlan=*replayPlan.value();
     forgedPlan.reference_bindings.front().instance_id=gainId;
     QVERIFY(!m::render_restored_m12_full_native_pcm_once(
-        forgedPlan,*prepared.value(),*maxBlock.value()));
+        forgedPlan,*prepared.value(),*maxBlock.value(),
+        &firstStageWitness));
+    QVERIFY(firstStageWitness.protected_manual.empty());
+    QVERIFY(firstStageWitness.reference_linked.empty());
+    QVERIFY(firstStageWitness.user_terminal_p2.empty());
     forgedPlan=*replayPlan.value();
     forgedPlan.registry_owner.reset();
     QVERIFY(!m::render_restored_m12_full_native_pcm_once(
@@ -501,9 +515,17 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(p2Plan.value()->manual_prefix.instances().size(),
              std::size_t{1});
     QCOMPARE(p2Plan.value()->terminal_p2_bindings.size(),std::size_t{1});
+    m::M12NativeStageExecutionWitness completeStageWitness;
     const auto p2RealReplay=m::render_restored_m12_full_native_pcm_once(
-        *p2Plan.value(),*prepared.value(),*maxBlock.value());
+        *p2Plan.value(),*prepared.value(),*maxBlock.value(),
+        &completeStageWitness);
     QVERIFY(p2RealReplay);
+    QCOMPARE(completeStageWitness.protected_manual.size(),std::size_t{1});
+    QCOMPARE(completeStageWitness.reference_linked.size(),std::size_t{3});
+    QCOMPARE(completeStageWitness.user_terminal_p2.size(),std::size_t{1});
+    QCOMPARE(completeStageWitness.user_terminal_p2.front().instance_id,p2Id);
+    QVERIFY(!completeStageWitness.is_m12_committed());
+    QVERIFY(!completeStageWitness.is_m13_verified());
     QCOMPARE(p2RealReplay.value()->signatures().back().type_id,
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
     QCOMPARE(p2RealReplay.value()->view().frame_count().value(),
