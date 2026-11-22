@@ -234,10 +234,33 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     spec.spectral_bands={{0,20,80},{1,80,200},{2,200,1000}};
     spec.stereo_bands={{0,20,80},{1,80,200},{2,200,1000}};
     const auto spec_for_authoritative_bridge=spec;
+    // One genuine, preexisting full-resource PCM can now use the
+    // SAME native Phase6 M19/M20/P04 analysis without rerendering a
+    // candidate. PREPARED and decoded REFERENCE will retain distinct
+    // Product owners; no computed observation itself authorizes M07.
+    const auto prepared_native=
+        a::measure_real_full_owned_pcm_native_once(
+            *source.value(),spec_for_authoritative_bridge);
+    QVERIFY(prepared_native);
+    QCOMPARE(prepared_native.value()->levels.sample_rate_hz,48000);
+    QCOMPARE(prepared_native.value()->tonal.sample_rate_hz,48000U);
+    QVERIFY(prepared_native.value()->tonal.selected_spectral_windows>0U);
+    QVERIFY(!prepared_native.value()->authorizes_m10_or_m12());
+    const auto candidate_native=
+        a::measure_real_full_owned_pcm_native_once(
+            actual.value()->buffer(),spec_for_authoritative_bridge);
+    QVERIFY(candidate_native);
+    QVERIFY(!candidate_native.value()->authorizes_m10_or_m12());
     const auto native=a::measure_m10_p2_full_native_once(
         *job.value(),std::move(spec),&*prefix.value());
     QVERIFY(native);
     QVERIFY(native.value()->native.s03_s06.numerical_source_valid);
+    QCOMPARE(candidate_native.value()->levels.integrated_lufs.state,
+             native.value()->native.actual.levels.integrated_lufs.state);
+    QCOMPARE(candidate_native.value()->tonal.selected_spectral_windows,
+             native.value()->native.actual.tonal.selected_spectral_windows);
+    QCOMPARE(candidate_native.value()->selected_original_m20_ordinals,
+             native.value()->native.selected_original_m20_ordinals);
     QVERIFY(native.value()->native.d07_d09.reason==
         a::m05m06_real::P04ProductObservationReason::ready);
     QVERIFY(!native.value()->native.authorizes_m10_or_export());
