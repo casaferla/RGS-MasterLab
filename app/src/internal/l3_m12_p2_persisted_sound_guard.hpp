@@ -21,7 +21,8 @@ enum class P2PersistedSoundReason : std::uint8_t {
     keep_fixed_manual_p2,
     missing_or_stale_m10_m12_winner,
     manual_p2_sound_conflict_requires_user_decision,
-    persisted_manual_p2_conflicts_with_live_product
+    persisted_manual_p2_conflicts_with_live_product,
+    unverified_p2_terminal_after_linked_execution_order
 };
 struct P2PersistedSoundAudit final {
     P2PersistedSoundReason reason{
@@ -46,7 +47,8 @@ audit_exact_m12_p2_persisted_sound(
     const dsp::ProcessingChain& live_manual,
     std::span<const dsp::ModuleExecutionBinding> live_bindings,
     const project::Chain& exact_persisted_manual,
-    bool current_product_owner_and_accepted_diff_rechecked)
+    bool current_product_owner_and_accepted_diff_rechecked,
+    bool actual_product_execution_anchor_runs_linked_before_p2)
 {
     using E=P2PersistedSoundReason;
     if(!current_product_owner_and_accepted_diff_rechecked||
@@ -86,6 +88,10 @@ audit_exact_m12_p2_persisted_sound(
         return {E::persisted_manual_p2_conflicts_with_live_product};
     if(*frozen!=winner.winning_parameters)
         return {E::manual_p2_sound_conflict_requires_user_decision};
+    // Equal values are not sufficient. The Product must also
+    // attest the native placement REF_LINKED before terminal P2.
+    if(!actual_product_execution_anchor_runs_linked_before_p2)
+        return {E::unverified_p2_terminal_after_linked_execution_order};
     for(const auto& linked:staged.chain.instances())
         if(linked.module_type_id()==
            "rgsml.dsp.streaming-true-peak-limiter")
@@ -106,12 +112,14 @@ prepare_exact_m12_project_transaction_with_p2_sound_guard(
     M12ProjectTransactionExpected expected,
     const StagedExactP2Winner& exact_winner,
     const dsp::ProcessingChain& live_manual,
-    std::span<const dsp::ModuleExecutionBinding> live_bindings)
+    std::span<const dsp::ModuleExecutionBinding> live_bindings,
+    bool actual_product_execution_anchor_runs_linked_before_p2)
 {
     const auto guard=audit_exact_m12_p2_persisted_sound(
         accepted,exact_winner,live_manual,live_bindings,
         expected.exact_protected_manual_snapshot,
-        expected.current_product_epoch_and_accepted_diff_attested);
+        expected.current_product_epoch_and_accepted_diff_attested,
+        actual_product_execution_anchor_runs_linked_before_p2);
     if(!guard.keeps_exact_frozen_sound()) {
         const char* error=guard.reason==
             P2PersistedSoundReason::

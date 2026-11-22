@@ -333,7 +333,7 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
     persisted.modules.push_back(persistedP2);
     auto audit=m::audit_exact_m12_p2_persisted_sound(
         *staged.value(),changed,*manual.value(),manualBindings,
-        persisted,true);
+        persisted,true,true);
     QCOMPARE(audit.reason,m::P2PersistedSoundReason::
         manual_p2_sound_conflict_requires_user_decision);
     QVERIFY(!audit.keeps_exact_frozen_sound());
@@ -344,8 +344,13 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
     fixed.winning_parameters=*manualP2.value();
     QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
         *staged.value(),fixed,*manual.value(),manualBindings,
-        persisted,true).reason,
+        persisted,true,true).reason,
         m::P2PersistedSoundReason::keep_fixed_manual_p2);
+    QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
+        *staged.value(),fixed,*manual.value(),manualBindings,
+        persisted,true,false).reason,
+        m::P2PersistedSoundReason::
+            unverified_p2_terminal_after_linked_execution_order);
     // A forged on-disk value cannot validate against the live DSP.
     const auto changedJson=dsp::encode_module_parameters_json(
         dsp::ModuleParameterPayload{*optimizedP2.value()});
@@ -356,13 +361,13 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
     persisted.modules.back().parameters=*changedPayload.value();
     QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
         *staged.value(),fixed,*manual.value(),manualBindings,
-        persisted,true).reason,
+        persisted,true,true).reason,
         m::P2PersistedSoundReason::
             persisted_manual_p2_conflicts_with_live_product);
     persisted.modules.back().parameters=*canonical.value();
     QCOMPARE(m::audit_exact_m12_p2_persisted_sound(
         *staged.value(),fixed,*manual.value(),manualBindings,
-        persisted,false).reason,
+        persisted,false,true).reason,
         m::P2PersistedSoundReason::missing_or_stale_m10_m12_winner);
 
     // A genuinely serializable Product Project receives ordinary
@@ -411,13 +416,13 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
     const auto changedDraft=
         m::prepare_exact_m12_project_transaction_with_p2_sound_guard(
             *prior.value(),*carrier.value(),*staged.value(),
-            expected,changed,*manual.value(),manualBindings);
+            expected,changed,*manual.value(),manualBindings,true);
     QVERIFY(!changedDraft);
     QCOMPARE(prior.value()->document().chains.size(),std::size_t{1});
     const auto keepFixedDraft=
         m::prepare_exact_m12_project_transaction_with_p2_sound_guard(
             *prior.value(),*carrier.value(),*staged.value(),
-            expected,fixed,*manual.value(),manualBindings);
+            expected,fixed,*manual.value(),manualBindings,true);
     QVERIFY(keepFixedDraft);
     QVERIFY(!keepFixedDraft.value()->authorizes_project_commit());
     QVERIFY(!keepFixedDraft.value()->is_materialization_receipt());
