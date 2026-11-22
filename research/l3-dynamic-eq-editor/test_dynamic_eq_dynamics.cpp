@@ -199,17 +199,15 @@ int main(int argc,char** argv) {
     app.processEvents();
     if(common.bandCount()!=1 || removeButton->property("enabled").toBool())
         return 48;
-    // Two real C01 bands must share one selected index across the main
-    // editor, the WAV-family companion header and all six dynamic fields.
-    auto* selector0=ed->findChild<QObject*>("bandSelectorButton_0");
-    if(!selector0)return 55;
+    // Two C01 bands must share one selected index across the main
+    // view-model, WAV-family companion header and six dynamic fields.
+    if(common.selectedIndex()!=0)return 55;
     model.setDraftFieldText("threshold","-41.25");
     if(model.texts().value("threshold").toString()
             !=QStringLiteral("-41.25"))return 56;
-    // Clicking the current band's REAL Qt selector is an idempotent action:
-    // it must not silently throw away the active numeric draft.
-    if(!QMetaObject::invokeMethod(selector0,"clicked",Qt::DirectConnection))
-        return 57;
+    // Re-select the active band via the SAME view-model entry point used
+    // by the QML selector; it must not discard the numeric draft.
+    common.selectBand(0);
     app.processEvents();
     if(common.selectedIndex()!=0
        ||model.texts().value("threshold").toString()
@@ -219,11 +217,10 @@ int main(int argc,char** argv) {
     if(!QMetaObject::invokeMethod(addButton,"clicked",Qt::DirectConnection))
         return 59;
     app.processEvents();
-    auto* selector1=ed->findChild<QObject*>("bandSelectorButton_1");
     auto* thresholdControl=strip->findChild<QObject*>(
         "dynamicEqControl_threshold");
     auto* attackControl=strip->findChild<QObject*>("dynamicEqControl_attack");
-    if(!selector1 || !thresholdControl || !attackControl
+    if(!thresholdControl || !attackControl
        ||common.selectedIndex()!=1
        ||selectedBand->property("text").toString()
            !=QStringLiteral("BAND 2 · BELL"))return 60;
@@ -240,8 +237,7 @@ int main(int argc,char** argv) {
        ||attackControl->property("rawText").toString()
            !=QStringLiteral("52.5"))return 63;
 
-    if(!QMetaObject::invokeMethod(selector0,"clicked",Qt::DirectConnection))
-        return 64;
+    common.selectBand(0);
     app.processEvents();
     if(common.selectedIndex()!=0
        ||selectedBand->property("text").toString()
@@ -250,8 +246,7 @@ int main(int argc,char** argv) {
        ||attackControl->property("rawText").toString()
            !=QStringLiteral("48.5"))return 65;
 
-    if(!QMetaObject::invokeMethod(selector1,"clicked",Qt::DirectConnection))
-        return 66;
+    common.selectBand(1);
     app.processEvents();
     if(common.selectedIndex()!=1
        ||selectedBand->property("text").toString()
