@@ -864,6 +864,23 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     QVERIFY(accepted==oldPCM);
     QVERIFY(!controller.published_preview_matches_current_bindings());
 
+    // A parameter-only MANUAL edit may not request a new generation:
+    // post-render Qt delivery must STILL revalidate the original job
+    // bindings, before publishing even a failed (or formerly valid) result.
+    // The Qt event loop is not pumped between request and mutation, so
+    // the observed callback necessarily sees the changed Product owner.
+    const auto staleBefore=controller.stale_results_discarded();
+    const auto oldChainRevision=state.value()->chain().revision();
+    controller.request_preview();
+    const auto revisedGain=dsp::GainParameters::create(-3.25);
+    QVERIFY(revisedGain);
+    QVERIFY(state.value()->set_gain_parameters(*revisedGain.value()));
+    QCOMPARE(state.value()->chain().revision(),oldChainRevision);
+    QTRY_VERIFY(controller.stale_results_discarded()>staleBefore);
+    QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
+    QVERIFY(accepted==oldPCM);
+    QVERIFY(!controller.published_preview_matches_current_bindings());
+
     // Explicitly clearing the opt-in restores the unchanged ordinary
     // MANUAL preview path. No REF_LINKED adoption was ever authorized.
     controller.set_private_m12_product_preview_ticket({});
