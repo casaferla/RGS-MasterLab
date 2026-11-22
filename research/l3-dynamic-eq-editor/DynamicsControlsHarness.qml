@@ -12,7 +12,7 @@ ApplicationWindow {
         objectName: "dynamicEqResearchEditor"
         anchors.fill: parent
         anchors.margins: 16
-        viewModel: null
+        viewModel: researchCommon
         spectrumViewModel: null
         dynamicsControls: researchDynamics
         showDynamics: true

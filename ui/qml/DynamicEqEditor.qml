@@ -63,6 +63,7 @@ Rectangle {
 
             StudioToggle {
                 objectName: "bandEnabledToggle"
+                enabled: root.manualEditable
                 text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
                 checked: root.viewModel ? root.viewModel.enabled : true
                 onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
@@ -75,8 +76,8 @@ Rectangle {
                 objectName: "eqResetFlatButton"
                 text: "Reset Flat"
                 minimumControlWidth: 88
-                enabled: root.viewModel !== null && root.viewModel !== undefined
-                onClicked: if (root.viewModel) root.viewModel.resetToFlat()
+                enabled: root.manualEditable
+                onClicked: if (root.manualEditable) root.viewModel.resetToFlat()
                 Accessible.name: "Reset EQ to Flat"
                 ToolTip.text: "Reset all EQ parameters to Flat baseline"
                 ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
@@ -376,7 +377,7 @@ Rectangle {
                                     minimumControlWidth: 88
                                     contentPadding: 4
                                     opacity: modelData.token.startsWith("RESERVED_") ? 0 : 1
-                                    enabled: !modelData.token.startsWith("RESERVED_")
+                                    enabled: root.manualEditable && !modelData.token.startsWith("RESERVED_")
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                     onClicked: {
@@ -432,7 +433,7 @@ Rectangle {
                                     text: modelData.label
                                     minimumControlWidth: 80
                                     contentPadding: 4
-                                    enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
+                                    enabled: root.manualEditable && (modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable))
                                     selected: root.viewModel && root.viewModel.routing === modelData.token
                                     tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
                                     onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
@@ -485,6 +486,7 @@ Rectangle {
 
                         StudioNumericSliderPair {
                             objectName: "eqFrequencyControl"
+                            enabled: root.manualEditable
                             fieldObjectName: "frequencyField"
                             sliderObjectName: "eqFrequencySlider"
                             compact: false
@@ -511,6 +513,7 @@ Rectangle {
 
                         StudioNumericSliderPair {
                             objectName: "eqGainControl"
+                            enabled: root.manualEditable
                             fieldObjectName: "gainField"
                             sliderObjectName: "eqGainSlider"
                             compact: false
@@ -540,6 +543,7 @@ Rectangle {
 
                         StudioNumericSliderPair {
                             objectName: "eqQControl"
+                            enabled: root.manualEditable
                             fieldObjectName: "qField"
                             sliderObjectName: "eqQSlider"
                             compact: false
@@ -567,6 +571,7 @@ Rectangle {
 
                         StudioNumericSliderPair {
                             objectName: "eqShelfSlopeControl"
+                            enabled: root.manualEditable
                             fieldObjectName: "shelfSlopeField"
                             sliderObjectName: "eqShelfSlopeSlider"
                             compact: false

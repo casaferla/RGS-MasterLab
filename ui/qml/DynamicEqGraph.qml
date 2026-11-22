@@ -33,6 +33,20 @@ Rectangle {
     }
     readonly property double minGain: -18.0
     readonly property double maxGain: 18.0
+    // Frozen C01 BASE GAIN response is static. Time-varying applied gain is
+    // displayed only by the separate provenance-gated Activity companion.
+    Text {
+        objectName: "dynamicEqBaseResponseLabel"
+        x: root.plotX + 8
+        y: root.plotY + 4
+        z: 8
+        visible: root.viewModel && root.viewModel.responseSemantics
+            && root.viewModel.selectedBandResponsePoints.length > 0
+        text: "BASE GAIN RESPONSE  ·  C01"
+        font.family: "Segoe UI"
+        font.pixelSize: 10
+        color: "#8DA8B7"
+    }
 
     // Board04 plotRect specifications
     readonly property real plotX: 52

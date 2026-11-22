@@ -1,4 +1,5 @@
 #include "dynamic_eq_research_dynamics_model.hpp"
+#include "dynamic_eq_research_common_view_model.hpp"
 #include <rgsml/core/uuid.hpp>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -50,8 +51,13 @@ int main(int argc,char** argv) {
     if(!model.commitDraft()||!model.validatedSnapshot()
        ||model.values().value("attack").toDouble()!=48.5)return 12;
     model.setResearchManualEditable(false);
+    DynamicEqResearchCommonViewModel common(model);
+    if(common.bandCount()!=1 || common.gain()!=8.0
+       ||common.selectedBandResponsePoints().size()!=257
+       ||common.manualEditable())return 29;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("researchDynamics",&model);
+    engine.rootContext()->setContextProperty("researchCommon",&common);
     engine.load(QUrl::fromLocalFile(
         QFileInfo(QString::fromLocal8Bit(argv[1])).absoluteFilePath()));
     if(engine.rootObjects().size()!=1)return 13;
@@ -61,6 +67,9 @@ int main(int argc,char** argv) {
     QObject* companion=win->findChild<QObject*>("dynamicEqDynamicsCompanion");
     QObject* graph=ed ? ed->findChild<QObject*>("parametricEqGraph") : nullptr;
     if(!ed || !strip || !companion || !graph)return 14;
+    if(ed->property("viewModel").value<QObject*>()!=&common
+       ||ed->property("dynamicsControls").value<QObject*>()!=&model)
+        return 30;
     auto* window=qobject_cast<QQuickWindow*>(win);
     auto* sideWindow=qobject_cast<QQuickWindow*>(companion);
     if(!window || !sideWindow)return 16;

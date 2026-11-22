@@ -154,3 +154,13 @@ GAIN** — not an Overall and not a fabricated applied dynamic response.
 It never owns duplicate band parameters or modifies Product during L3.
 A separate Qt Core test confirms multi-band selection and true C01 curves.
 The later QML binding and post-L3 typed manual transactions remain separate.
+
+## Qt binding to one typed C01 store (no Product controls)
+
+The main inherited EQ editor receives `DynamicEqResearchCommonViewModel`,
+which observes the SAME `DynamicEqResearchDynamicsModel` object as the
+separate six-control Dynamics window. Band selection is readable during L3;
+all filter, routing, enable, reset, and frequency/gain/Q/shelf text/slider
+mutations are explicitly disabled. The graph labels its actual C01
+**BASE GAIN RESPONSE** and never labels it dynamic or Overall. The Qt smoke
+now checks both QML context bindings and retains the previous geometry tests.
