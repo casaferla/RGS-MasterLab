@@ -39,7 +39,7 @@ Item {
             if (!p || !Number.isSafeInteger(p.frameBegin)
                 || !Number.isSafeInteger(p.frameEndExclusive)
                 || p.frameBegin < 0 || p.frameEndExclusive <= p.frameBegin
-                || (prevEnd >= 0 && p.frameBegin < prevEnd))
+                || (prevEnd >= 0 && p.frameBegin !== prevEnd))
                 return false
             const fields = ["attackMinDb", "attackMaxDb", "attackLastDb",
                             "sustainMinDb", "sustainMaxDb", "sustainLastDb"]
@@ -53,16 +53,23 @@ Item {
                 || p.sustainLastDb > p.sustainMaxDb) return false
             prevEnd = p.frameEndExclusive
         }
-        // Reject sidecars which contain no data in the audible 5-second window.
-        return history[history.length - 1].frameEndExclusive >
-            audibleFrame - sampleRateHz * secondsVisible
+        // A whole-track or a bounded 5-second slice may be supplied, but
+        // never treat an entirely future series as played telemetry.
+        const windowStart = Math.max(0,
+            audibleFrame - sampleRateHz * secondsVisible)
+        return history.some(p =>
+            p.frameEndExclusive > windowStart
+            && p.frameEndExclusive <= audibleFrame)
     }
     readonly property bool graphAvailable: identityCurrent && bucketsValid
     function currentValue(field) {
         if (!graphAvailable) return NaN
         for (let i = history.length - 1; i >= 0; --i) {
             const p = history[i]
-            if (p.frameEndExclusive <= audibleFrame)
+            const windowStart = Math.max(0,
+                audibleFrame - sampleRateHz * secondsVisible)
+            if (p.frameEndExclusive <= audibleFrame
+                && p.frameEndExclusive > windowStart)
                 return p[field]
         }
         return NaN

@@ -15,6 +15,24 @@ changes the active L3 writer nor enables manual fine-tuning during L3.
 - `research/l3-transient-shaper-editor/Demo.qml`: **synthetic-only** UX
   sandbox, conspicuously labeled; never publish fake values as DSP output.
 
+- `research/l3-transient-shaper-editor/transient_activity_collector.hpp`:
+  opt-in, zero-allocation-after-construction, bounded full-track 20 ms
+  min/max/last **observation** of the existing C00's two applied gains.
+  The producer must pass the actual C00 gain states, not recompute them.
+- `research/l3-transient-shaper-editor/test_transient_activity_collector.cpp`:
+  standalone native test for all supported rates, frame continuity,
+  peaks, finite/bounded values, capacity, seeks and future-data exclusion.
+
+Collector validation (local C++20, independent of the Product target):
+```sh
+g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+ research/l3-transient-shaper-editor/test_transient_activity_collector.cpp \
+ -o /tmp/transient_collector_test && /tmp/transient_collector_test
+```
+Result on the research host: `transient activity collector: all tests passed`.
+This is a collector semantic test, **not** proof of actual C00 telemetry
+integration or a Qt GUI test.
+
 No CMake, DSP, host, module registry, project serialization, Qt application
 composition, or CI workflow files are modified. No pull request or merge.
 The new editor is intentionally not wired into the production app yet.
@@ -32,9 +50,17 @@ sustainMinDb,sustainMaxDb,sustainLastDb}` in dB. The same accepted
 audible `RealizationId` must be visible via two identity properties.
 `audibleFrame` comes ONLY from the authentic playback snapshot; changing
 it scrolls the five-second view, and pause freezes it. Only fully consumed telemetry buckets are displayed;
-no unseen portion of the current bucket may leak into the playback scope.\nWhen identities
+no unseen portion of the current bucket may leak into the playback scope.
+When identities
 differ, bypass is active, or the sidecar is missing, the graph says
 TELEMETRY UNAVAILABLE. No independent animation clock in production.
+
+Full-track history uses 20 ms buckets, default maximum 60,000 buckets
+(about 20 minutes at 50 buckets/s; approximately 3.84 MiB storage).
+It is created only on explicit telemetry opt-in, and its immutable
+5-second window can be requested after a seek. Raw audio/DSP never waits
+for QML. Mapping the snake_case native buckets to the camelCase QML
+carrier and authentic RealizationId is the later integration seam.
 
 The C00 engine already computes `g_attack_db` and `g_sustain_db` per
 sample; a future bounded telemetry tap must sample/aggregate those exact
