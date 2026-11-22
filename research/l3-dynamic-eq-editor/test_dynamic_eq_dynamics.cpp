@@ -74,6 +74,19 @@ int main(int argc,char** argv) {
     if(!strip->property("visible").toBool())return 21;
     if(!sideWindow->transientParent()
        || sideWindow->transientParent()!=window)return 22;
+    QObject* openButton=ed->findChild<QObject*>(
+        "dynamicEqDynamicsWindowButton");
+    if(!openButton || !openButton->property("enabled").toBool())
+        return 24;
+    // Panel can be hidden and restored without resizing or obscuring
+    // the Parametric-derived graph or unlocking the manual DSP editor.
+    ed->setProperty("showDynamics", false);
+    app.processEvents();
+    if(sideWindow->isVisible())return 25;
+    ed->setProperty("showDynamics", true);
+    app.processEvents();
+    if(!sideWindow->isVisible() || ed->property("manualEditable").toBool())
+        return 26;
     const QString dir=qEnvironmentVariable("RGSML_DYNAMIC_CONTROLS_SCREENSHOT_DIR");
     if(!dir.isEmpty()) {
         if(!QDir().mkpath(dir))return 17;

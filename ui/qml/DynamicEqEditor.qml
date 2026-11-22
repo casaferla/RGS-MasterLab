@@ -227,6 +227,24 @@ Rectangle {
                 }
 
                 Item { Layout.fillWidth: true }
+
+                // New Dynamic-only button uses the unused RIGHT end of the
+                // band strip. Shared L1 controls never shift. No Product
+                // instance exists until L3 AutoMatch closes.
+                StudioButton {
+                    objectName: "dynamicEqDynamicsWindowButton"
+                    text: root.showDynamics ? "Hide Dynamics" : "Dynamics"
+                    minimumControlWidth: 112
+                    Layout.minimumWidth: 112
+                    Layout.preferredWidth: 112
+                    Layout.maximumWidth: 112
+                    enabled: !!root.dynamicsControls
+                    selected: root.showDynamics
+                    tone: root.showDynamics ? "primary" : "secondary"
+                    onClicked: root.showDynamics = !root.showDynamics
+                    Accessible.name: "Show or hide Dynamic EQ controls window"
+                    ToolTip.text: "Open the separate six-parameter Dynamic EQ panel"
+                }
             }
         }
 

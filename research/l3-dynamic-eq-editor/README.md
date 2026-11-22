@@ -69,3 +69,12 @@ The isolated Qt screenshot job captures TWO real images: the unobstructed
 main EQ editor and the actual C01 controls window. The companion starts
 closed unless the research harness explicitly requests it; there is no
 Product integration or manual fine tuning during AutoMatch L3.
+
+## Dedicated Dynamics button (post-L3 research)
+
+A right-aligned, fixed-width `Dynamics / Hide Dynamics` button sits in the
+unused trailing part of the existing band strip, leaving six band selectors,
+Spectrum, Filter, Routing and Frequency/Gain/Q at their original positions.
+It opens/closes the separate C01 controls window and cannot become a Product
+manual editor before the end of L3. Qt tests toggle the window twice, confirm
+it is a child of the real editor host window, and verify the manual lock.
