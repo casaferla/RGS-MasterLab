@@ -95,3 +95,20 @@ The dedicated Linux native test compares bit-identical PCM, checkpoint state,
 band identity and frame continuity across 44.1/48/96/192 kHz, mono/stereo,
 and error/overflow paths. This is **not** yet a QML Activity animation,
 an accepted playback-sidecar identity, or a post-L3 editor integration.
+
+## Per-band 20ms C01 full-track history (research)
+
+The callback now feeds a preallocated `C01ActivityHistoryCollector` with
+50 true gain buckets per second, per-band UUID and route, exact minimum/
+maximum/last smoothed dynamic gain, last effective gain, last signed target,
+and detector power max/last with tagged detector level. Maximum 60,000
+buckets (20 minutes) and bounded full-track seek support; no allocations
+inside the callback, no FFT/QML detector, no output changes. The collector
+fails closed on frame discontinuities, bad values, changed band identities
+or capacity exhaustion; the PCM block remains committed. Native tests cover
+all four supported rates, completed-bucket playhead exclusion, seek/loop
+windows and full capacity. UI and actual audible-realization binding still
+remain to be implemented post-L3.
+
+The research-only Qt geometry workflow now triggers only for the QML/Qt
+source files it actually tests, not every native C01 history experiment.

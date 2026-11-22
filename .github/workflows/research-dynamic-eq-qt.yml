@@ -4,7 +4,12 @@ on:
     branches:
       - research/l3-dynamic-eq-editor-isolated-20261122
     paths:
-      - 'research/l3-dynamic-eq-editor/**'
+      - 'research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml'
+      - 'research/l3-dynamic-eq-editor/DynamicsControlsHarness.qml'
+      - 'research/l3-dynamic-eq-editor/CMakeLists.txt'
+      - 'research/l3-dynamic-eq-editor/test_dynamic_eq_layout.cpp'
+      - 'research/l3-dynamic-eq-editor/test_dynamic_eq_dynamics.cpp'
+      - 'research/l3-dynamic-eq-editor/dynamic_eq_research_dynamics_model.hpp'
       - 'ui/qml/DynamicEqEditor.qml'
       - 'ui/qml/DynamicEqGraph.qml'
       - '.github/workflows/research-dynamic-eq-qt.yml'
