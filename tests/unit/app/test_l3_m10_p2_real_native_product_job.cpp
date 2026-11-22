@@ -4,6 +4,7 @@
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_actual_m16_guard.hpp"
 #include "internal/l3_m10_p2_real_native_triple_binding.hpp"
+#include "internal/l3_m10_p2_product_qt_owner_capture.hpp"
 #include "internal/l3_m10_p2_verified_candidate_triple.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
@@ -23,6 +24,7 @@
 #include <numbers>
 #include <optional>
 #include <vector>
+#include <type_traits>
 
 namespace rgsml::tests {
 namespace {
@@ -35,6 +37,12 @@ namespace a=rgsml::app::l3_automatch;
     const auto value=dsp::ModuleInstanceId::from_uuid(uuid(str));
     Q_ASSERT(value);return *value.value();
 }
+// Compile the real Qt owner admission surface in the same Windows/Linux
+// native product gate. This is NOT a Qt Product GUI integration test.
+static_assert(std::is_member_function_pointer_v<
+    decltype(&a::ProductQtP2NativeAdmission::capture_on_owner)>);
+static_assert(std::is_member_function_pointer_v<
+    decltype(&a::ProductQtP2NativeAdmission::still_current_on_owner)>);
 class P2RealNativeProductTest final:public QObject {
     Q_OBJECT
 private slots:

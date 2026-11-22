@@ -156,7 +156,7 @@ public:
     }
 private:
     [[nodiscard]] static core::Error error(const char* code) {
-        return {core::ErrorCode::InvalidState,code};
+        return core::Error{core::ErrorCode::InvalidState,code};
     }
 };
 } // namespace rgsml::app::l3_automatch
