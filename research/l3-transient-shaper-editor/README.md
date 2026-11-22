@@ -147,3 +147,12 @@ AutoMatch code, or L3 C01 CI branch. Do not merge during L3. No fabricated
 telemetry, additional transient controls, spectrum-only detectors, or
 edit-side mutation of protected AutoMatch ownership. The shared frozen
 DSP truthful-visualization contract remains authoritative.
+
+## Release-mode Qt smoke safety
+
+The QML/C00 research test uses an always-evaluated `CHECK` gate rather than
+`assert()`, because `NDEBUG` must never remove the actual C00 PCM render or
+its real-gain telemetry checks. The isolated Qt workflow builds in Release
+mode and checks 250 complete 20-ms C00 buckets, the five-second playback
+projection, editable/read-only lock, stale provenance and a Qt screenshot.
+No production module or L3 AutoMatch branch is changed.

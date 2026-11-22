@@ -12,7 +12,6 @@
 #include <QVariant>
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -22,35 +21,42 @@
 using namespace rgsml;
 using namespace rgsml::research::transient_ui;
 
+// Always execute processing and checks even in Release (NDEBUG).
+#define CHECK(expr) do { if (!(expr)) { \
+    std::cerr << "Transient Qt/C00 check failed at line " << __LINE__ \
+              << ": " << #expr << std::endl; \
+    return 20; \
+} } while (false)
+
 int main(int argc,char** argv) {
     if(argc!=2)return 2;
     QGuiApplication app(argc,argv);
     TransientResearchControls controls;
-    assert(!controls.manualEditable());
+    CHECK(!controls.manualEditable());
     controls.setAttackAmountDb(6.0);
-    assert(controls.attackAmountDb()==0.0);
+    CHECK(controls.attackAmountDb()==0.0);
     controls.setResearchManualEditable(true);
     controls.setAttackAmountDb(6.0);
     controls.setSustainAmountDb(-3.0);
-    assert(controls.attackAmountDb()==6.0);
-    assert(controls.sustainAmountDb()==-3.0);
+    CHECK(controls.attackAmountDb()==6.0);
+    CHECK(controls.sustainAmountDb()==-3.0);
     controls.setAttackAmountDb(13.0);
-    assert(controls.attackAmountDb()==6.0);
+    CHECK(controls.attackAmountDb()==6.0);
     controls.setResearchManualEditable(false);
     controls.setSustainAmountDb(5.0);
-    assert(controls.sustainAmountDb()==-3.0);
+    CHECK(controls.sustainAmountDb()==-3.0);
 
     const auto p=dsp::TransientShaperParameters::create(6.0,-3.0);
-    assert(p);
+    CHECK(p);
     // The display must never show zero when C00 actually rendered +6/-3.
     // This read-only path is permitted even while manual editing is locked.
     controls.loadAcceptedParameters(*p.value());
-    assert(controls.attackAmountDb()==6.0);
-    assert(controls.sustainAmountDb()==-3.0);
-    assert(!controls.manualEditable());
+    CHECK(controls.attackAmountDb()==6.0);
+    CHECK(controls.sustainAmountDb()==-3.0);
+    CHECK(!controls.manualEditable());
     auto e=dsp::internal::TransientShaperC00Engine::create(
         *p.value(),48000U,1U,256U,true);
-    assert(e);
+    CHECK(e);
     TransientActivityCollector collector(48000U,0,400);
     TransientC00ActivitySink sink(collector);
     constexpr std::uint64_t frames=48000U*6U;
@@ -71,12 +77,12 @@ int main(int argc,char** argv) {
                 2.0*std::numbers::pi*441.0*x/48000.0);
             if(sample%24000U==0U)in[j]+=0.72;
         }
-        assert(e.value()->process_block(
+        CHECK(e.value()->process_block(
             std::span<const double>(in.data(),n),{},
             std::span<double>(out.data(),n),{},&sink,offset));
     }
-    assert(!sink.observation_failed());
-    assert(collector.finish());
+    CHECK(!sink.observation_failed());
+    CHECK(collector.finish());
 
     core::PlaybackSnapshot snap;
     snap.state=core::PlaybackState::PLAYING;
@@ -93,11 +99,11 @@ int main(int argc,char** argv) {
     };
     TransientActivityQtBridge telemetry;
     telemetry.apply(project());
-    assert(telemetry.activityTelemetryAvailable());
-    assert(telemetry.activityHistory().size()==250);
-    assert(telemetry.telemetryRealizationId()==QStringLiteral("4242"));
-    assert(telemetry.audibleFrame()==240000);
-    assert(telemetry.activityHistory().first().toMap()
+    CHECK(telemetry.activityTelemetryAvailable());
+    CHECK(telemetry.activityHistory().size()==250);
+    CHECK(telemetry.telemetryRealizationId()==QStringLiteral("4242"));
+    CHECK(telemetry.audibleFrame()==240000);
+    CHECK(telemetry.activityHistory().first().toMap()
             .value(QStringLiteral("attackMaxDb")).toDouble()>0.0);
 
     QQmlApplicationEngine engine;
