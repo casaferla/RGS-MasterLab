@@ -14,12 +14,30 @@
 #include <vector>
 
 namespace rgsml::app::l3_automatch::m12_frozen {
+// The stage-level execution signatures survive even though the ordinary
+// RenderResult returned by the final native stage exposes only that stage's
+// revision/signatures. They are diagnostic M12 evidence, NOT a complete
+// Product RealizationId nor a successful M12/M13 acceptance receipt.
+struct M12NativeStageExecutionWitness final {
+    std::vector<render::ModuleExecutionSignature> protected_manual;
+    std::vector<render::ModuleExecutionSignature> reference_linked;
+    std::vector<render::ModuleExecutionSignature> user_terminal_p2;
+    [[nodiscard]] constexpr bool is_m12_committed() const noexcept {
+        return false;
+    }
+    [[nodiscard]] constexpr bool is_m13_verified() const noexcept {
+        return false;
+    }
+};
 [[nodiscard]] inline core::Result<render::RenderResult>
 render_restored_m12_full_native_pcm_once(
     const RestoredM12NativeReplayPlan& plan,
     const render::RenderResult& current_owned_prepared,
-    core::FrameCount maximum_block_frames)
+    core::FrameCount maximum_block_frames,
+    M12NativeStageExecutionWitness* stage_witness = nullptr)
 {
+    // Never leak a prior successful witness across a rejected render.
+    if(stage_witness)*stage_witness={};
     using R=core::Result<render::RenderResult>;
     const auto fail=[](const char* reason){
         return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
@@ -136,13 +154,22 @@ render_restored_m12_full_native_pcm_once(
     auto linked=run(manual.value()->view(),plan.reference_linked,
                     plan.reference_bindings);
     if(!linked)return linked;
-    if(!plan.terminal_p2)return linked;
+    if(!plan.terminal_p2) {
+        if(stage_witness)*stage_witness={
+            manual.value()->signatures(),linked.value()->signatures(),{}};
+        return linked;
+    }
     if(plan.terminal_p2_bindings.size()!=1U||
        plan.terminal_p2->instances().size()!=1U||
        plan.terminal_p2->instances().front().module_type_id()!=
            "rgsml.dsp.streaming-true-peak-limiter")
         return fail("L3_M12_REPLAY_TERMINAL_NOT_OWNED_P2");
-    return run(linked.value()->view(),*plan.terminal_p2,
-               plan.terminal_p2_bindings);
+    auto final=run(linked.value()->view(),*plan.terminal_p2,
+                   plan.terminal_p2_bindings);
+    if(!final)return final;
+    if(stage_witness)*stage_witness={
+        manual.value()->signatures(),linked.value()->signatures(),
+        final.value()->signatures()};
+    return final;
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
