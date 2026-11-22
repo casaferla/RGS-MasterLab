@@ -1,4 +1,6 @@
 #include "internal/l3_m12_ref_linked_project_carrier.hpp"
+#include "internal/l3_m12_project_transaction_draft.hpp"
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
@@ -91,6 +93,17 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         doc.sourceResourceId,"AUDIO",
         {{"rgsml.windows.local-file","C:/source.wav","source.wav"}},
         std::nullopt});
+    const auto referenceResource=uuid(
+        "b7000000-0000-4000-8000-000000000002");
+    const auto activeReference=uuid(
+        "b7000000-0000-4000-8000-000000000003");
+    doc.resources.push_back({
+        referenceResource,"AUDIO",
+        {{"rgsml.windows.local-file","C:/reference.wav","reference.wav"}},
+        std::nullopt});
+    doc.references.activeReferenceId=activeReference;
+    doc.references.items.push_back({
+        activeReference,"GOLD",referenceResource});
     project::Chain manualChain;
     manualChain.chainId=uuid("b8000000-0000-4000-8000-000000000001");
     manualChain.stage="MASTER";
@@ -98,6 +111,77 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     manualChain.revision=0;
     doc.pipeline.masteringChainId=manualChain.chainId;
     doc.chains.push_back(manualChain);
+    const auto currentBefore=project::ProjectSnapshot::create(doc);
+    QVERIFY(currentBefore);
+    // Current real terminal M17 must exist; no boolean alone may
+    // prove that a mandatory TruePeak limiter is composition-safe.
+    auto terminal=dsp::ProcessingChain::create(
+        *reg,{dsp::ProcessingStage::MASTER,
+              dsp::ChainSegment::TERMINAL});
+    QVERIFY(terminal);
+    const auto terminalId=id(
+        "b8000000-0000-4000-8000-000000000002");
+    QVERIFY(terminal.value()->add(
+        terminalId,"rgsml.dsp.true-peak-limiter",0));
+    const auto tp=dsp::TruePeakLimiterParameters::create(0.0);
+    QVERIFY(tp);
+    const std::vector<dsp::ModuleExecutionBinding> terminalBindings{
+        {terminalId,*tp.value()}};
+    m::M12ProjectTransactionExpected identity{
+        doc.sourceResourceId,activeReference,manualChain.chainId,
+        manualChain,std::nullopt,true,true};
+    const auto transaction=m::prepare_exact_m12_project_transaction(
+        *currentBefore.value(),*carrier.value(),*stage.value(),
+        *terminal.value(),terminalBindings,0.0,identity);
+    QVERIFY(transaction);
+    QVERIFY(!transaction.value()->authorizes_project_commit());
+    QVERIFY(!transaction.value()->is_materialization_receipt());
+    const auto& proposed=
+        transaction.value()->candidate_not_yet_committed.document();
+    QCOMPARE(proposed.chains.size(),std::size_t{2});
+    QVERIFY(m::exact_project_chain_equal(
+        proposed.chains.front(),manualChain));
+    QCOMPARE(proposed.chains.back().segment,std::string("REF_LINKED"));
+    QCOMPARE(proposed.pipeline.masteringChainId,
+             doc.pipeline.masteringChainId);
+    QCOMPARE(currentBefore.value()->document().chains.size(),
+             std::size_t{1});
+    QVERIFY(proposed.referenceMatch.canonical_utf8().find(
+        "\"verificationState\":\"NOT_VERIFIED\"")!=std::string::npos);
+    // A stale manual revision, changed REF owner or mismatched real
+    // terminal ceiling may never commit a half-replacement.
+    auto stale=identity;
+    ++stale.exact_protected_manual_snapshot.revision;
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *currentBefore.value(),*carrier.value(),*stage.value(),
+        *terminal.value(),terminalBindings,0.0,stale));
+    stale=identity;
+    stale.exact_live_reference_id=uuid(
+        "b7000000-0000-4000-8000-000000000004");
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *currentBefore.value(),*carrier.value(),*stage.value(),
+        *terminal.value(),terminalBindings,0.0,stale));
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *currentBefore.value(),*carrier.value(),*stage.value(),
+        *terminal.value(),terminalBindings,-1.0,identity));
+    // Exact same-controller update may replace only its existing
+    // segment; its immutable native manual/terminal scope survives.
+    auto update=identity;
+    update.exact_existing_linked_snapshot=proposed.chains.back();
+    const auto updated=m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *carrier.value(),*stage.value(),*terminal.value(),
+        terminalBindings,0.0,update);
+    QVERIFY(updated);
+    QCOMPARE(updated.value()->candidate_not_yet_committed.document().
+             chains.size(),std::size_t{2});
+    auto corrupted=proposed;
+    corrupted.chains.front().revision+=1;
+    const auto changed=project::ProjectSnapshot::create(corrupted);
+    QVERIFY(changed);
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *changed.value(),*carrier.value(),*stage.value(),
+        *terminal.value(),terminalBindings,0.0,identity));
     doc.chains.push_back(carrier.value()->native_project_chain);
     const auto snapshot=project::ProjectSnapshot::create(doc);
     QVERIFY(snapshot);
