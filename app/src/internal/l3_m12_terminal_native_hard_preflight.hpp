@@ -1,8 +1,8 @@
 #pragma once
-// L3 M12 P05 exact terminal OUTPUT TruePeak limiter hard preflight.
-// A nominal mandatory slot with zero valid active limiter instances
-// does NOT make the limiter optional. No M12 takeover of MANUAL TP,
-// no silent second limiter or ceiling reoptimization.
+// Read-only diagnostic for independent M17 WAV Export terminal setup.
+// NOT a precondition for AutoMatch M12 materialization or M13 M16
+// verification; WAV Export ceiling is independent of P2/AutoMatch.
+// This legacy diagnostic cannot grant product export authority.
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
@@ -32,7 +32,7 @@ struct TerminalNativeVerdict final {
         const noexcept{return false;}
 };
 [[nodiscard]] inline TerminalNativeVerdict
-verify_current_m12_terminal_limiter_composition(
+audit_independent_m17_wav_export_only(
     const dsp::ProcessingChain& actual_terminal,
     std::span<const dsp::ModuleExecutionBinding> existing_terminal_bindings,
     double frozen_accepted_ceiling_db_tp,

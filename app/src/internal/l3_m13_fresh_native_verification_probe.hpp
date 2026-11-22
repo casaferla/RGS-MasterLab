@@ -2,7 +2,8 @@
 // L3 M13 PRE-verifier native probe: one FRESH logical render and
 // NEW M19/M20 analysis of ordinary current REF_LINKED DSP segment.
 // Never reuses M10 candidate PCM; the actual post-M12 combined master,
-// terminal limiter, M11 final safety, QTP and report remain mandatory.
+// M11 protection, independent M16 TP, QTP and report remain mandatory.
+// WAV Export M17 and optional Streaming TP P2 are NOT M13 prerequisites.
 // No VERIFIED status exists at this preflight boundary.
 #include "l3_m12_ref_linked_native_stage.hpp"
 #include <rgsml/render/render_request.hpp>

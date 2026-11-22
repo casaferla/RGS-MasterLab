@@ -32,7 +32,7 @@ actualTerminalSingleLimiterExactFrozenCeiling() {
     QVERIFY(p);
     const std::vector<dsp::ModuleExecutionBinding> binding{
         {limiter,*p.value()}};
-    const auto v=m::verify_current_m12_terminal_limiter_composition(
+    const auto v=m::audit_independent_m17_wav_export_only(
         *chain.value(),binding,-1.0,true);
     QCOMPARE(v.reason,m::TerminalNativeReason::pass);
     QVERIFY(v.valid_existing_limiter);
@@ -47,7 +47,7 @@ missingBypassCeilingOrStaleOwnerIsHardVeto() {
         dsp::ProcessingStage::MASTER,dsp::ChainSegment::TERMINAL});
     QVERIFY(chain);
     const auto limiter=id();
-    QCOMPARE(m::verify_current_m12_terminal_limiter_composition(
+    QCOMPARE(m::audit_independent_m17_wav_export_only(
         *chain.value(),{},-1.0,true).reason,
         m::TerminalNativeReason::
             missing_or_multiple_terminal_true_peak);
@@ -57,14 +57,14 @@ missingBypassCeilingOrStaleOwnerIsHardVeto() {
     QVERIFY(p);
     const std::vector<dsp::ModuleExecutionBinding> binding{
         {limiter,*p.value()}};
-    QCOMPARE(m::verify_current_m12_terminal_limiter_composition(
+    QCOMPARE(m::audit_independent_m17_wav_export_only(
         *chain.value(),binding,0.0,true).reason,
         m::TerminalNativeReason::incompatible_terminal_ceiling);
-    QCOMPARE(m::verify_current_m12_terminal_limiter_composition(
+    QCOMPARE(m::audit_independent_m17_wav_export_only(
         *chain.value(),binding,-1.0,false).reason,
         m::TerminalNativeReason::stale_or_unverified_owner);
     QVERIFY(chain.value()->set_user_bypass(limiter,true));
-    QCOMPARE(m::verify_current_m12_terminal_limiter_composition(
+    QCOMPARE(m::audit_independent_m17_wav_export_only(
         *chain.value(),binding,-1.0,true).reason,
         m::TerminalNativeReason::
             bypassed_or_suspended_terminal_safety);
