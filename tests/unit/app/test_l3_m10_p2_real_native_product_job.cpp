@@ -1,5 +1,6 @@
 #include "internal/l3_m10_p2_real_native_product_job.hpp"
 #include "internal/l3_product_native_one_pass.hpp"
+#include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
@@ -144,6 +145,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto job=create(*chosen);
     auto control=create(*alternative);
     QVERIFY(job&&control);
+    QVERIFY(job.value()->identical_upstream_to(*control.value()));
     QVERIFY(job.value()->still_current(
         stamp,prepared_owner,*active_manual.value(),manual_bindings,
         *linked.value(),artistic));
@@ -152,6 +154,18 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto baseline=control.value()->execute();
     QVERIFY(actual&&baseline);
     QVERIFY(job.value()->result_has_expected_scope(*actual.value()));
+    const auto prefix=job.value()->prepare_exact_pre_p2_prefix();
+    QVERIFY(prefix);
+    QVERIFY(!prefix.value()->authorizes_m10_score());
+    const auto hot=control.value()->execute_with_exact_pre_p2_prefix(
+        *prefix.value());
+    QVERIFY(hot);
+    const auto cold_view=baseline.value()->view().channel(0);
+    const auto hot_view=hot.value()->view().channel(0);
+    QVERIFY(cold_view&&hot_view);
+    QCOMPARE(cold_view.value()->size(),hot_view.value()->size());
+    for(std::size_t i=0;i<cold_view.value()->size();++i)
+        QCOMPARE((*cold_view.value())[i],(*hot_view.value())[i]);
     QVERIFY(!actual.value()->signatures().empty());
     QCOMPARE(actual.value()->signatures().back().type_id,
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
@@ -180,14 +194,18 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     spec.exact_low_end_zero_side={{true,true,true}};
     spec.spectral_bands={{0,20,80},{1,80,200},{2,200,1000}};
     spec.stereo_bands={{0,20,80},{1,80,200},{2,200,1000}};
-    const auto native=a::measure_real_product_candidate_once(
-        *job.value(),std::move(spec));
+    const auto native=a::measure_m10_p2_full_native_once(
+        *job.value(),std::move(spec),&*prefix.value());
     QVERIFY(native);
-    QVERIFY(native.value()->s03_s06.numerical_source_valid);
-    QVERIFY(native.value()->d07_d09.reason==
+    QVERIFY(native.value()->native.s03_s06.numerical_source_valid);
+    QVERIFY(native.value()->native.d07_d09.reason==
         a::m05m06_real::P04ProductObservationReason::ready);
-    QVERIFY(!native.value()->authorizes_m10_or_export());
-    QVERIFY(native.value()->actual.tonal.selected_spectral_windows>0U);
+    QVERIFY(!native.value()->native.authorizes_m10_or_export());
+    QVERIFY(!native.value()->authentic_27_slot_m10_score());
+    QVERIFY(!native.value()->authorizes_master_publication());
+    QVERIFY(native.value()->native.actual.tonal.selected_spectral_windows>0U);
+    QVERIFY(std::isfinite(
+        native.value()->m16_actual_p2_output.global_linear_peak()));
     const auto* retained=std::get_if<
         dsp::StreamingTruePeakLimiterParameters>(
         &manual_bindings.back().parameters);
