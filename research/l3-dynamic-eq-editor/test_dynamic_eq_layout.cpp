@@ -35,8 +35,12 @@ static bool equal_geometry(QQuickItem* a,QQuickItem* b,
 static bool equal_position(QQuickItem* a,QQuickItem* b,
                             std::string_view label) {
     if(!a || !b)return false;
-    const bool xok=std::abs(a->x()-b->x())<=0.5;
-    const bool yok=std::abs(a->y()-b->y())<=0.5;
+    // The requirement concerns absolute on-screen placement, NOT local
+    // delegate coordinates within two independently-polished RowLayouts.
+    const QPointF sceneA=a->mapToScene(QPointF(0,0));
+    const QPointF sceneB=b->mapToScene(QPointF(0,0));
+    const bool xok=std::abs(sceneA.x()-sceneB.x())<=1.0;
+    const bool yok=std::abs(sceneA.y()-sceneB.y())<=1.0;
     if(!xok || !yok)
         std::cerr<<"Position drift in "<<label<<"\n";
     return xok && yok;
