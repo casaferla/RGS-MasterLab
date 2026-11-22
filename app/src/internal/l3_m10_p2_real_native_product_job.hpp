@@ -20,10 +20,54 @@
 #include <new>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace rgsml::app::l3_automatch {
+// Owned, nonpersistent, exact whole-resource native PCM at the INPUT
+// to P2, after both protected MANUAL-fixed and REF_LINKED artistic DSP.
+// It can be reused only by a job whose entire upstream graph and owner
+// are byte/instance-identical. It cannot authorize partial scoring.
+class M10P2ExactPrefix final {
+    friend class M10P2RealNativeProductJob;
+public:
+    [[nodiscard]] constexpr bool authorizes_m10_score() const noexcept {
+        return false;
+    }
+private:
+    M10P2ExactPrefix(
+        OfflineProductOwnerStamp owner,
+        std::shared_ptr<const render::RenderResult> prepared,
+        std::shared_ptr<const dsp::ModuleRegistry> registry,
+        std::shared_ptr<const render::RenderResult> rendered,
+        std::uint64_t manual_revision,
+        std::vector<dsp::ModuleInstance> manual_nodes,
+        std::vector<dsp::ModuleExecutionBinding> manual_bindings,
+        std::uint64_t linked_revision,
+        std::vector<dsp::ModuleInstance> linked_nodes,
+        std::vector<dsp::ModuleExecutionBinding> linked_bindings,
+        core::FrameCount block)
+        : owner_(std::move(owner)),prepared_(std::move(prepared)),
+          registry_(std::move(registry)),rendered_(std::move(rendered)),
+          manual_revision_(manual_revision),
+          manual_nodes_(std::move(manual_nodes)),
+          manual_bindings_(std::move(manual_bindings)),
+          linked_revision_(linked_revision),
+          linked_nodes_(std::move(linked_nodes)),
+          linked_bindings_(std::move(linked_bindings)),block_(block) {}
+    OfflineProductOwnerStamp owner_;
+    std::shared_ptr<const render::RenderResult> prepared_;
+    std::shared_ptr<const dsp::ModuleRegistry> registry_;
+    std::shared_ptr<const render::RenderResult> rendered_;
+    std::uint64_t manual_revision_{};
+    std::vector<dsp::ModuleInstance> manual_nodes_;
+    std::vector<dsp::ModuleExecutionBinding> manual_bindings_;
+    std::uint64_t linked_revision_{};
+    std::vector<dsp::ModuleInstance> linked_nodes_;
+    std::vector<dsp::ModuleExecutionBinding> linked_bindings_;
+    core::FrameCount block_;
+};
 class M10P2RealNativeProductJob final {
 public:
     [[nodiscard]] static core::Result<M10P2RealNativeProductJob> create(
@@ -155,22 +199,63 @@ public:
         }
     }
 
-    [[nodiscard]] core::Result<render::RenderResult> execute() const {
-        using R=core::Result<render::RenderResult>;
+    // An exact upstream can be rendered once for a sweep of different
+    // P2 Ceiling/Drive pairs, rather than invoking the costly earlier
+    // chain for every P2 setting. The Product owner decides the RAM cap.
+    [[nodiscard]] core::Result<M10P2ExactPrefix>
+    prepare_exact_pre_p2_prefix() const
+    {
+        using R=core::Result<M10P2ExactPrefix>;
         if(!prepared_||!registry_)
             return R::failure(error("L3_M10_P2_MISSING_IMMUTABLE_OWNER"));
-        const auto original=prepared_->view();
-        auto fixed=render_segment(original,fixed_,fixed_bindings_);
+        auto fixed=render_segment(
+            prepared_->view(),fixed_,fixed_bindings_);
         if(!fixed)return R::failure(*fixed.error());
         auto linked=render_segment(
             fixed.value()->view(),linked_,linked_bindings_);
         if(!linked)return R::failure(*linked.error());
+        auto immutable=std::make_shared<const render::RenderResult>(
+            std::move(*linked.value()));
+        return R::success(M10P2ExactPrefix{
+            owner_,prepared_,registry_,std::move(immutable),
+            baseline_manual_revision_,baseline_manual_nodes_,
+            baseline_manual_bindings_,linked_.revision(),
+            {linked_.instances().begin(),linked_.instances().end()},
+            linked_bindings_,max_block_frames_});
+    }
+    [[nodiscard]] core::Result<render::RenderResult>
+    execute_with_exact_pre_p2_prefix(const M10P2ExactPrefix& prefix) const
+    {
+        using R=core::Result<render::RenderResult>;
+        if(!prefix.rendered_||prefix.owner_!=owner_||
+           prefix.prepared_!=prepared_||prefix.registry_!=registry_||
+           prefix.block_!=max_block_frames_||
+           prefix.manual_revision_!=baseline_manual_revision_||
+           prefix.manual_nodes_!=baseline_manual_nodes_||
+           prefix.manual_bindings_!=baseline_manual_bindings_||
+           prefix.linked_revision_!=linked_.revision()||
+           prefix.linked_bindings_!=linked_bindings_||
+           prefix.linked_nodes_.size()!=linked_.instances().size()||
+           !std::equal(prefix.linked_nodes_.begin(),
+                       prefix.linked_nodes_.end(),
+                       linked_.instances().begin())||
+           prefix.rendered_->view().absolute_range()!=
+               prepared_->view().absolute_range()||
+           prefix.rendered_->view().format()!=prepared_->view().format())
+            return R::failure(error("L3_M10_P2_PREFIX_UPSTREAM_STALE"));
         auto limited=render_segment(
-            linked.value()->view(),final_p2_,p2_bindings_);
+            prefix.rendered_->view(),final_p2_,p2_bindings_);
         if(!limited)return R::failure(*limited.error());
         if(!result_has_expected_scope(*limited.value()))
             return R::failure(error("L3_M10_P2_FULL_RENDER_SCOPE_INVALID"));
         return limited;
+    }
+    [[nodiscard]] core::Result<render::RenderResult> execute() const
+    {
+        using R=core::Result<render::RenderResult>;
+        auto prefix=prepare_exact_pre_p2_prefix();
+        if(!prefix)return R::failure(*prefix.error());
+        return execute_with_exact_pre_p2_prefix(*prefix.value());
     }
     [[nodiscard]] bool result_has_expected_scope(
         const render::RenderResult& out) const noexcept
@@ -220,6 +305,25 @@ public:
     }
     [[nodiscard]] const std::string& ticket_identity() const noexcept {
         return ticket_identity_;
+    }
+    [[nodiscard]] const OfflineProductOwnerStamp& owner_stamp()
+        const noexcept{return owner_;}
+    // Expose only the non-effective manual baseline for testing freshness.
+    [[nodiscard]] bool identical_upstream_to(
+        const M10P2RealNativeProductJob& other) const noexcept
+    {
+        return owner_==other.owner_&&prepared_==other.prepared_&&
+            registry_==other.registry_&&
+            baseline_manual_revision_==other.baseline_manual_revision_&&
+            baseline_manual_nodes_==other.baseline_manual_nodes_&&
+            baseline_manual_bindings_==other.baseline_manual_bindings_&&
+            linked_.revision()==other.linked_.revision()&&
+            linked_bindings_==other.linked_bindings_&&
+            max_block_frames_==other.max_block_frames_&&
+            linked_.instances().size()==other.linked_.instances().size()&&
+            std::equal(linked_.instances().begin(),
+                       linked_.instances().end(),
+                       other.linked_.instances().begin());
     }
     [[nodiscard]] constexpr bool authorizes_publication()const noexcept {
         return false;
