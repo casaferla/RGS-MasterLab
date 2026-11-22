@@ -174,7 +174,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *changedOutput.value()));
     modifiedBefore=doc;
     project::OptionalEntry extraEntry;
-    extraEntry.path="evidence/unrelated.bin";
+    extraEntry.path="artifacts/unrelated.bin";
     extraEntry.mediaType="application/octet-stream";
     extraEntry.bytes={std::byte{0x21},std::byte{0x42}};
     auto changedOptional=project::ProjectSnapshot::create(
