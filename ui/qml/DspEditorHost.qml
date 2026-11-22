@@ -7,6 +7,10 @@ Rectangle {
     objectName: "dspEditorHost"
 
     property var adapterModel: null
+    // Main installs one Product-backed native preset controller. A
+    // standalone QML preview has no file mutation affordance.
+    property var presetController: typeof dspPresetController !== "undefined"
+        ? dspPresetController : null
     // Opt-in via Main only. Standalone DSP editor fixtures preserve their
     // historical local validation feedback for isolated smoke coverage.
     property bool errorsInGlobalStatusBar: false
@@ -261,7 +265,10 @@ Rectangle {
                 Layout.preferredHeight: 30
                 StudioIcon {
                     objectName: "dspHostDockToggleIcon"
-                    anchors.centerIn: parent
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    // Optical top alignment with the first title line,
+                    // keeping the 22px slot/X coordinate unchanged.
                     width: 20
                     height: 20
                     kind: root.detachedWindow ? "dock" : "undock"
@@ -307,6 +314,26 @@ Rectangle {
                 }
             }
 
+            // Reusable preset operations for every actual editable
+            // MANUAL DSP. M16/M17 and M19/M20/M21 are not interchangeable
+            // user-controlled mastering DSP presets.
+            DspPresetHeaderActions {
+                objectName: "dspModulePresetHeaderActions"
+                Layout.preferredWidth: 45
+                Layout.minimumWidth: visible ? 45 : 0
+                Layout.maximumWidth: visible ? 45 : 0
+                Layout.preferredHeight: 22
+                presetController: root.presetController
+                moduleInstanceId: root.activeModule
+                    && root.activeModule.editorContentKey !== "TRUE_PEAK_LIMITER"
+                    && root.activeModule.editorContentKey !== "TRUE_PEAK_METER"
+                    && root.activeModule.editorContentKey !== "MASTER_MONITOR"
+                    && root.activeModule.editorContentKey !== "M19_ANALYSIS"
+                    && root.activeModule.editorContentKey !== "M20_ANALYSIS"
+                    && root.activeModule.editorContentKey !== "M21_ANALYSIS"
+                    ? root.activeModule.instanceId : ""
+                moduleDisplayName: root.moduleTitle
+            }
             Item { Layout.fillWidth: true }
 
             // M19/M20 are read-only modules: use the SAME top-right

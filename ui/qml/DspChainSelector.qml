@@ -10,6 +10,10 @@ Rectangle {
     implicitHeight: 300
 
     property var adapterModel: null
+    // Main installs one Product-backed native preset controller. A
+    // standalone QML preview has no file mutation affordance.
+    property var presetController: typeof dspPresetController !== "undefined"
+        ? dspPresetController : null
     property int selectedIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
@@ -169,6 +173,16 @@ Rectangle {
                 font.family: "Segoe UI"
                 font.pixelSize: 10
                 font.weight: Font.Bold
+            }
+            Item { Layout.fillWidth: true }
+            DspPresetHeaderActions {
+                objectName: "dspChainPresetHeaderActions"
+                Layout.preferredWidth: 45
+                Layout.minimumWidth: 45
+                Layout.maximumWidth: 45
+                Layout.preferredHeight: 22
+                entireChain: true
+                presetController: root.presetController
             }
         }
     }
