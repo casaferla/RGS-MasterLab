@@ -1426,6 +1426,7 @@ target_include_directories(rgsml_mastering_preview_controller_tests
 target_link_libraries(rgsml_mastering_preview_controller_tests
     PRIVATE
         rgsml_project
+        rgsml_platform
         rgsml_render
         rgsml_dsp
         rgsml_audio
