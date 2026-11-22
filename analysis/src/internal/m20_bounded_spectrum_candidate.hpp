@@ -3,6 +3,7 @@
 // M20 isolated preproduction: actual shared FFT/Hann/PSD, bounded STFT ring.
 // External active-gate mask is BORROWED, never inferred from M19 LUFS.
 #include "m20_scope_spectrum_candidate.hpp"
+#include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <complex>
 #include <memory>
 #include <span>
@@ -21,9 +22,11 @@ public:
   BoundedSpectrumAccumulatorCandidate(
       std::uint32_t fs,std::uint64_t origin,std::uint64_t frames,
       std::uint32_t channels,bool gate_available=false,
-      std::span<const std::uint8_t> mask={})
+      std::span<const std::uint8_t> mask={},
+      TonalStereoSelectedFrameSink* selected_sink=nullptr)
     : fs_(fs),channels_(channels),origin_(origin),frames_(frames),
-      gate_available_(gate_available),mask_(mask)
+      gate_available_(gate_available),mask_(mask),
+      selected_sink_(selected_sink)
   {
     const auto g=spectral_geometry(fs_);
     if(!g || frames_==0 || (channels_!=1&&channels_!=2) ||
@@ -112,6 +115,13 @@ private:
     else psd_r_.clear();
     const auto mean=mean_channel_psd(psd_l_,psd_r_);
     if(!mean||mean->size()!=sums_.size())return false;
+    // One source-native callback, BEFORE the original time-averaged
+    // accumulation; callback failure aborts rather than dropping a
+    // spectral frame and changing selected native support.
+    if(selected_sink_&&!selected_sink_->on_selected_native_frame(
+         frame,fs_,geometry_.fft,
+         std::span<const double>{mean->data(),mean->size()}))
+      return false;
     for(std::size_t k=0;k<sums_.size();++k){
       sums_[k]+=(*mean)[k];
       if(!std::isfinite(sums_[k]))return false;
@@ -123,6 +133,7 @@ private:
   std::uint64_t origin_=0,frames_=0,consumed_=0;
   bool gate_available_=false,valid_=false,finalized_=false;
   std::span<const std::uint8_t> mask_; // never owned or mutated
+  TonalStereoSelectedFrameSink* selected_sink_=nullptr;
   SpectralGeometry geometry_{};
   HannWindow hann_{};
   std::unique_ptr<Radix2Fft> fft_;

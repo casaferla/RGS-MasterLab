@@ -18,6 +18,20 @@ struct TonalStereoRetainedInterval final {
     std::uint64_t begin{0},end{0}; // absolute, half-open
 };
 
+// Optional source-owned callback to reuse exactly the SAME native FFT
+// frames for L3 feature extraction without a second FFT/PSD pass.
+// No ownership transfer or persistence. The ordinary L1 path remains
+// identical with null sink and never collects per-frame PSD arrays.
+class TonalStereoSelectedFrameSink {
+public:
+    virtual ~TonalStereoSelectedFrameSink() = default;
+    [[nodiscard]] virtual bool on_selected_native_frame(
+        std::uint64_t absolute_stft_ordinal,
+        std::uint32_t sample_rate_hz,
+        std::uint64_t fft_size,
+        std::span<const double> real_mean_channel_psd) = 0;
+};
+
 struct TonalStereoTrustedSupport final {
     // If unavailable, explicitly include ALL complete STFT windows,
     // never infer a mask from LUFS alone.
@@ -30,6 +44,9 @@ struct TonalStereoTrustedSupport final {
     // 0=MISSING, 1=ELIGIBLE, 2=LOW_SUPPORT, from an *external* support
     // owner. Absent means no normalized band fractions are authorized.
     std::span<const std::uint8_t> authoritative_band_eligibility{};
+    // Fully optional; caller MUST independently attest the exact
+    // source/Phase6 grid/gate/current owner before using its payload.
+    TonalStereoSelectedFrameSink* selected_native_frame_sink{nullptr};
 };
 
 enum class TonalStereoMetricState : std::uint8_t {
