@@ -58,7 +58,35 @@ private slots:
     void noCorrectionNeedsIndependentFixedProofNotNoneTop8();
     void m11HardGuardAppliesBeforeAnyNumericScore();
     void independentGuardAndCandidateCannotDisagree();
+    void currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost();
 };
+void M10AuthoritativeCostTest::
+currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost() {
+    auto input=source();
+    input.native_stereo_raw_safety_required_by_current_owner=true;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                 missing_actual_candidate_or_protection);
+    rgsml::app::l3_automatch::m11_frozen::NativeStereoRawSafety native;
+    native.exact_current_source_candidate_and_canonical_safety_revision=true;
+    native.source_and_candidate_stereo=true;
+    native.no_forbidden_decorrelation_or_haas=true;
+    native.prepared_correlation_p10_raw=0.1;
+    native.candidate_correlation_p10_raw=0.2;
+    native.prepared_negative_correlation_occupancy=0.05;
+    native.candidate_negative_correlation_occupancy=0.04;
+    native.prepared_low_end_width={0.5,0.5,0.5};
+    native.candidate_low_end_width={0.4,0.4,0.4};
+    native.prepared_low_end_rho={0.6,0.6,0.6};
+    native.candidate_low_end_rho={0.6,0.6,0.6};
+    input.native_stereo_raw_safety=native;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::measured);
+    input.native_stereo_raw_safety->candidate_low_end_width[1]=0.6;
+    QCOMPARE(m10::score_exact_candidate_population(input).reason,
+             m10::AuthoritativeCostReason::
+                 missing_actual_candidate_or_protection);
+}
 void M10AuthoritativeCostTest::full27SlotExactTargetAndNonzeroComplexity() {
     const auto r=m10::score_exact_candidate_population(source());
     QCOMPARE(r.reason,m10::AuthoritativeCostReason::measured);

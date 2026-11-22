@@ -7,6 +7,7 @@
 #include "l3_m08_frozen_targeted_population.hpp"
 #include "l3_m10_frozen_total_cost.hpp"
 #include "l3_m11_p03_protected_no_regression.hpp"
+#include "l3_m11_native_stereo_hard_safety.hpp"
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -33,6 +34,13 @@ struct AuthoritativeCostInput final {
     bool m11_fixed_and_protected_snapshot_current{};
     bool fresh_candidate_render_and_analysis_current{};
     bool hard_m11_and_independent_safety_preflight_passed{};
+    // When current Product scope is stereo, independent raw M20 and
+    // coherent low-end M11 evidence is mandatory, NOT a fourth artistic
+    // domain or a replacement for protected full K. Legacy mono inputs
+    // remain unchanged unless an explicit native record is attached.
+    bool native_stereo_raw_safety_required_by_current_owner{};
+    std::optional<m11_frozen::NativeStereoRawSafety>
+        native_stereo_raw_safety;
     bool m11_no_correction_full_evidence_attested{};
     // Ordered full M11 K, structurally matching M07 configured
     // component count. Actual transformed values must come from M11.
@@ -71,6 +79,15 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
     }
     if(!input.fresh_candidate_render_and_analysis_current||
        !input.hard_m11_and_independent_safety_preflight_passed)
+        return {{},{},
+            AuthoritativeCostReason::missing_actual_candidate_or_protection};
+    if(input.native_stereo_raw_safety_required_by_current_owner&&
+       !input.native_stereo_raw_safety)
+        return {{},{},
+            AuthoritativeCostReason::missing_actual_candidate_or_protection};
+    if(input.native_stereo_raw_safety&&
+       !m11_frozen::verify_m11_native_stereo_hard_safety(
+           *input.native_stereo_raw_safety).passes_hard_gate())
         return {{},{},
             AuthoritativeCostReason::missing_actual_candidate_or_protection};
     auto population=m08_frozen::build_targeted_population(
