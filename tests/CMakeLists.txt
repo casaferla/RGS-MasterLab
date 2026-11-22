@@ -2996,3 +2996,17 @@ add_test(NAME rgsml_l3_m06_m20_coherent_psd_tests
 set_tests_properties(rgsml_l3_m06_m20_coherent_psd_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;m20;real_stereo;coherent_psd;nonrelease")
+
+# L3 M06 actual native M20 S03-S06 coherent band and cumulative low-end.
+qt_add_executable(rgsml_l3_m06_native_stereo_band_tests
+    unit/app/test_l3_m06_native_coherent_stereo_band_sink.cpp)
+target_include_directories(rgsml_l3_m06_native_stereo_band_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_native_stereo_band_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_native_stereo_band_tests)
+add_test(NAME rgsml_l3_m06_native_stereo_band_tests
+    COMMAND rgsml_l3_m06_native_stereo_band_tests)
+set_tests_properties(rgsml_l3_m06_native_stereo_band_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;native_stereo;s03_s06;nonrelease")
