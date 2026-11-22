@@ -90,8 +90,20 @@ decode_exact_m12_ref_linked_product_state(
         meta.value(QStringLiteral("planId")).toString().toStdString());
     const auto checksum=meta.value(
         QStringLiteral("planContentChecksum")).toString().toStdString();
+    // A merely named plan/controller is not sufficient: all canonical
+    // M10/M11/source-dependency identities must survive Project Open.
+    // The unsigned revisions were serialized as exact decimal STRINGS,
+    // not JSON doubles (which would lose U64 precision).
+    const auto exact_revision=std::to_string(exact_linked->revision);
     if(!controller||!plan||controller.value()->is_nil()||
        plan.value()->is_nil()||checksum.empty()||
+       meta.value(QStringLiteral("policyId")).toString()!=
+           QStringLiteral("rgsml.reference-match.materialization-policy/1.0.0")||
+       meta.value(QStringLiteral("winnerContentChecksum")).toString().isEmpty()||
+       meta.value(QStringLiteral("protectedFixedChecksum")).toString().isEmpty()||
+       meta.value(QStringLiteral("sourceReferenceScopeRevision")).toString().isEmpty()||
+       meta.value(QStringLiteral("planRevision")).toString().toStdString()!=
+           exact_revision||
        meta.value(QStringLiteral("schemaId")).toString()!=
            QStringLiteral("rgsml.reference-match.materialization.schema/1.0.0")||
        meta.value(QStringLiteral("materializationState")).toString()!=
@@ -99,7 +111,7 @@ decode_exact_m12_ref_linked_product_state(
        meta.value(QStringLiteral("linkedChainId")).toString().toStdString()!=
            exact_linked->chainId.to_string()||
        meta.value(QStringLiteral("linkedChainRevision")).toString().
-           toStdString()!=std::to_string(exact_linked->revision))
+           toStdString()!=exact_revision)
         return fail("L3_M12_REOPEN_MATERIALIZATION_OWNER_OR_REV_STALE");
     std::vector<dsp::ModuleInstance> nodes;
     std::vector<dsp::ModuleExecutionBinding> bindings;

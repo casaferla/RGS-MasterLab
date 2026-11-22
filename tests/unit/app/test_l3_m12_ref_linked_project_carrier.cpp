@@ -13,6 +13,10 @@
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <QtTest/QTest>
+#include <QByteArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QString>
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -144,12 +148,81 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(m::assess_current_product_ref_linked_open_safety(proposed),
              m::ProjectOpenLinkedSafety::
                  blocked_until_product_ref_linked_replay_is_installed);
+    // Even a deliberately malformed/partially published REF plan
+    // cannot be interpreted as playable ordinary MANUAL sound.
+    auto metadataOnly=proposed;
+    metadataOnly.chains.pop_back();
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(metadataOnly),
+             m::ProjectOpenLinkedSafety::
+                 blocked_until_product_ref_linked_replay_is_installed);
+    auto misplaced=doc;
+    misplaced.chains.front().segment="REF_LINKED";
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(misplaced),
+             m::ProjectOpenLinkedSafety::
+                 blocked_until_product_ref_linked_replay_is_installed);
+    auto foreignNode=doc;
+    auto ownershipNode=carrier.value()->native_project_chain.modules.front();
+    ownershipNode.linkState="UNLINKED";
+    ownershipNode.owner="USER";
+    foreignNode.chains.front().modules.push_back(ownershipNode);
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(foreignNode),
+             m::ProjectOpenLinkedSafety::
+                 blocked_until_product_ref_linked_replay_is_installed);
+    foreignNode.chains.front().modules.back().provenance="MANUAL";
+    foreignNode.chains.front().modules.back().owner="REFERENCE_MATCH";
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(foreignNode),
+             m::ProjectOpenLinkedSafety::
+                 blocked_until_product_ref_linked_replay_is_installed);
+    foreignNode.chains.front().modules.back().owner="USER";
+    foreignNode.chains.front().modules.back().linkState="REF_LINKED";
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(foreignNode),
+             m::ProjectOpenLinkedSafety::
+                 blocked_until_product_ref_linked_replay_is_installed);
     // Dynamic EQ / Transient Shaper / Parametric EQ are real
     // registered DSPs, not opaque plan-only placeholders. Rebuild
     // them from the actual persisted REF_LINKED project segment.
     const auto productReopen=m::decode_exact_m12_ref_linked_product_state(
         proposed,reg);
     QVERIFY(productReopen);
+    // The persisted metadata must round-trip every original plan,
+    // winning result, M11 protection and scope dependency: omitting
+    // any one is not a legitimate restored candidate.
+    const auto fullRecord=QJsonDocument::fromJson(
+        QByteArray::fromStdString(
+            proposed.referenceMatch.canonical_utf8())).object();
+    for(const char* key:{"policyId","winnerContentChecksum",
+                         "protectedFixedChecksum",
+                         "sourceReferenceScopeRevision","planRevision"}) {
+        auto badRecord=fullRecord;
+        auto badMaterialization=badRecord.value(
+            QStringLiteral("materialization")).toObject();
+        badMaterialization.remove(QString::fromLatin1(key));
+        badRecord.insert(QStringLiteral("materialization"),
+                         badMaterialization);
+        auto badProject=proposed;
+        const auto parsed=project::OpaqueJsonValue::parse(
+            QJsonDocument(badRecord).toJson(
+                QJsonDocument::Compact).toStdString());
+        QVERIFY(parsed);
+        badProject.referenceMatch=*parsed.value();
+        QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+            badProject,reg));
+    }
+    auto wrongRevisionRecord=fullRecord;
+    auto wrongRevisionMaterialization=wrongRevisionRecord.value(
+        QStringLiteral("materialization")).toObject();
+    wrongRevisionMaterialization.insert(
+        QStringLiteral("planRevision"),QStringLiteral("999999"));
+    wrongRevisionRecord.insert(QStringLiteral("materialization"),
+                               wrongRevisionMaterialization);
+    auto wrongRevisionProject=proposed;
+    const auto wrongRevisionPayload=project::OpaqueJsonValue::parse(
+        QJsonDocument(wrongRevisionRecord).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(wrongRevisionPayload);
+    wrongRevisionProject.referenceMatch=*wrongRevisionPayload.value();
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        wrongRevisionProject,reg));
     QCOMPARE(productReopen.value()->exact_native_chain.instances().size(),
              stage.value()->chain.instances().size());
     QVERIFY(std::equal(
