@@ -1425,6 +1425,7 @@ target_include_directories(rgsml_mastering_preview_controller_tests
         # M21 Product owner analysis imports the internal M20 native
         # candidate declaration through its private source include root.
         ${CMAKE_SOURCE_DIR}/analysis/src
+        ${CMAKE_SOURCE_DIR}/platform/windows/src
         # Header-only Product admission helpers include the Windows
         # platform contract, but Linux tests must NEVER compile the
         # actual Windows-only exporter implementation (Windows.h).
