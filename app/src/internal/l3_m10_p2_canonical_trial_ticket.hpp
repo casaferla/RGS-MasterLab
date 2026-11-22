@@ -6,6 +6,7 @@
 // This ticket is an identity only, NOT a cache key, objective or
 // permission to publish a Project/M13-verified master.
 #include "l3_m10_frozen_coordinate_refiner.hpp"
+#include <rgsml/core/sha256.hpp>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -104,6 +105,13 @@ m10_exact_native_trial_ticket(
         trial_ticket_detail::append_binary64(ticket,u);
         ticket+=';';
     }
-    return ticket;
+    // The existing typed P2 admission hard-limits ticket_identity
+    // to 128 bytes. A full 48-coordinate exact serialization can
+    // exceed that limit. Its SHA-256 is a bounded, domain-separated
+    // content-addressed identity; FULL immutable DSP/M07-M11 bytes
+    // remain mandatory in the separate exact evaluation cache key.
+    const auto bytes=std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(ticket.data()),ticket.size()};
+    return "rgsml.l3.m10.p2.sha256/1;"+core::sha256_hex(bytes);
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
