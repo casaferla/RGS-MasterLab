@@ -959,10 +959,11 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     foreignLinked.stage="CONDITIONING";
     foreignLinked.segment="REF_LINKED";
     foreignStageDoc.chains.push_back(foreignLinked);
-    const auto foreignStage=project::ProjectSnapshot::create(foreignStageDoc);
-    if(foreignStage) {
+    const auto foreignStageSnapshot=
+        project::ProjectSnapshot::create(foreignStageDoc);
+    if(foreignStageSnapshot) {
         QVERIFY(!m::prepare_exact_m12_project_transaction(
-            *foreignStage.value(),*carrier.value(),*stage.value(),
+            *foreignStageSnapshot.value(),*carrier.value(),*stage.value(),
             identity));
     }
     // Exact same-controller update may replace only its existing
