@@ -177,6 +177,9 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
         6.0,"m10-exact-p2-winner");
     QVERIFY(chosen);
     QVERIFY(chosen->still_matches(*manual.value(),manualBindings));
+    const auto* actual_m10_p2=chosen->chosen_p2_parameters();
+    QVERIFY(actual_m10_p2);
+    QCOMPARE(actual_m10_p2->drive_db(),6.0);
     const auto rate=core::SampleRate::create(48000);
     const auto format=audio::AudioFormat::create(
         *rate.value(),audio::ChannelLayout::STEREO_LR);
@@ -230,7 +233,7 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
         *prepared.value(),*block.value(),0.0,true,true,*p2.value());
     const auto second=m13::probe_fresh_m13_full_native_master_once(
         *stage.value(),*manual.value(),manualBindings,
-        *prepared.value(),*block.value(),0.0,true,true,*drive.value());
+        *prepared.value(),*block.value(),0.0,true,true,*actual_m10_p2);
     QVERIFY(first&&second);
     QCOMPARE(second.value()->genuine_dsp_segment_passes,
              std::uint32_t{3});
