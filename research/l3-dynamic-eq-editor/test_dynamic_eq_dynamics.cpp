@@ -134,6 +134,22 @@ int main(int argc,char** argv) {
     app.processEvents();
     if(ed->property("manualEditable").toBool()
        ||strip->property("editable").toBool())return 34;
+    // Closing the transient tool window must synchronize its toggle,
+    // leave the main response plot untouched and permit reopening.
+    const auto graphWidth=graph->property("width").toDouble();
+    const auto graphHeight=graph->property("height").toDouble();
+    sideWindow->hide();
+    app.processEvents();
+    if(sideWindow->isVisible()||ed->property("showDynamics").toBool())
+        return 35;
+    ed->setProperty("showDynamics",true);
+    app.processEvents();
+    if(!sideWindow->isVisible()||!ed->property("showDynamics").toBool()
+       ||ed->property("manualEditable").toBool()
+       ||strip->property("editable").toBool())return 36;
+    if(graph->property("width").toDouble()!=graphWidth
+       ||graph->property("height").toDouble()!=graphHeight)
+        return 37;
     std::cout<<"C01 shared-state Qt read-only/manual research gate: PASS\n";
     return 0;
 }

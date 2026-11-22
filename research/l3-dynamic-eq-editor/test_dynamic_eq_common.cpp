@@ -86,6 +86,20 @@ int main(int argc,char** argv) {
     if(common.filter()!="BELL"||common.q()!=0.707)return 40;
     common.redo();
     if(common.q()!=1.6)return 41;
+    // Same-filter re-selection must preserve actual Shelf Slope as well.
+    common.setFilter("LOW_SHELF");
+    common.setDraftFieldValue("shelfSlope",0.62);
+    if(!common.commitDraft()||common.shelfSlope()!=0.62)return 42;
+    const auto shelfResponse=common.selectedBandResponsePoints();
+    common.setFilter("LOW_SHELF");
+    if(common.shelfSlope()!=0.62
+       ||common.selectedBandResponsePoints()!=shelfResponse)return 43;
+    common.undo();
+    if(common.filter()!="LOW_SHELF"||common.shelfSlope()!=1.0)return 44;
+    common.redo();
+    if(common.shelfSlope()!=0.62)return 45;
+    common.setFilter("BELL");
+    if(!common.qApplicable())return 46;
     common.graphDrag(1600.0,22.0); // C01 signed Range limits Base.
     common.graphRelease();
     if(common.frequency()!=1600.0||common.gain()!=14.0)return 21;
@@ -111,6 +125,14 @@ int main(int argc,char** argv) {
     if(common.bandCount()!=2||common.selectedIndex()!=1)return 33;
     common.undo();
     if(common.bandCount()!=3)return 34;
+    const auto threeBandIds=common.bandSummaries();
+    common.resetToFlat();
+    if(common.bandCount()!=1||!common.isDefault())return 47;
+    common.undo();
+    if(common.bandCount()!=3||common.bandSummaries()!=threeBandIds)
+        return 48;
+    // Permission revoke makes Undo/Redo unavailable but retains the
+    // committed state; no rejected edit can alter it.
     owner.setResearchManualEditable(false);
     if(common.addAvailable()||common.removeAvailable()||common.canUndo())
         return 35;

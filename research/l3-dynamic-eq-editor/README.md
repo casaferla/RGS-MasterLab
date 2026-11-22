@@ -214,3 +214,13 @@ negative detector power, or out-of-bounds effective/target gain is rejected
 before Activity is marked available. The smoke checks that a rejected sidecar
 clears the old realization and graph and that valid C01 history restores it.
 No L3 Product, playback owner or DSP processing algorithm is modified.
+
+## Research UI lifecycle and C01 filter regression gate
+
+The isolated Qt Core test now proves a repeated LOW_SHELF selection retains
+its authored Shelf Slope (in addition to BELL Q), leaves its base response
+unchanged, and creates no phantom Undo state. Reset Flat is tested through
+undo restoration of all three accepted band identities. The actual Qt dual
+window smoke tests hide/reopen synchronization and asserts that dismissing
+the separate Dynamics tool window does not resize the original EQ graph or
+unlock either control surface. No production or L3 writer changes.
