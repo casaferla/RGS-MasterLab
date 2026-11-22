@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <new>
 #include <span>
 #include <string>
@@ -199,29 +200,42 @@ public:
         }
     }
 
-    // An exact upstream can be rendered once for a sweep of different
-    // P2 Ceiling/Drive pairs, rather than invoking the costly earlier
-    // chain for every P2 setting. The Product owner decides the RAM cap.
+    // A 5-minute 48k stereo double PCM occupies ~219.7 MiB.
+    // Allow ONE explicit exact prefix, bounded by 256 MiB by default.
+    // Oversized 96k/192k songs are rendered COLD, never silently
+    // truncated or admitted to unbounded cache memory.
     [[nodiscard]] core::Result<M10P2ExactPrefix>
-    prepare_exact_pre_p2_prefix() const
+    prepare_exact_pre_p2_prefix(
+        std::size_t max_cache_bytes=256U*1024U*1024U) const
     {
         using R=core::Result<M10P2ExactPrefix>;
         if(!prepared_||!registry_)
             return R::failure(error("L3_M10_P2_MISSING_IMMUTABLE_OWNER"));
-        auto fixed=render_segment(
-            prepared_->view(),fixed_,fixed_bindings_);
-        if(!fixed)return R::failure(*fixed.error());
-        auto linked=render_segment(
-            fixed.value()->view(),linked_,linked_bindings_);
+        const auto v=prepared_->view();
+        const auto frames=v.frame_count().value();
+        const auto channels=v.format().channel_count();
+        if(frames<=0||channels<1U||channels>2U||max_cache_bytes==0U||
+           static_cast<std::uint64_t>(frames)>
+               std::numeric_limits<std::uint64_t>::max()/
+               (static_cast<std::uint64_t>(channels)*sizeof(double))||
+           static_cast<std::uint64_t>(frames)*
+               static_cast<std::uint64_t>(channels)*sizeof(double)>
+               static_cast<std::uint64_t>(max_cache_bytes))
+            return R::failure(error("L3_M10_P2_EXACT_PREFIX_RAM_BUDGET"));
+        auto linked=render_pre_p2();
         if(!linked)return R::failure(*linked.error());
-        auto immutable=std::make_shared<const render::RenderResult>(
-            std::move(*linked.value()));
-        return R::success(M10P2ExactPrefix{
-            owner_,prepared_,registry_,std::move(immutable),
-            baseline_manual_revision_,baseline_manual_nodes_,
-            baseline_manual_bindings_,linked_.revision(),
-            {linked_.instances().begin(),linked_.instances().end()},
-            linked_bindings_,max_block_frames_});
+        try {
+            auto immutable=std::make_shared<const render::RenderResult>(
+                std::move(*linked.value()));
+            return R::success(M10P2ExactPrefix{
+                owner_,prepared_,registry_,std::move(immutable),
+                baseline_manual_revision_,baseline_manual_nodes_,
+                baseline_manual_bindings_,linked_.revision(),
+                {linked_.instances().begin(),linked_.instances().end()},
+                linked_bindings_,max_block_frames_});
+        }catch(const std::bad_alloc&) {
+            return R::failure(error("L3_M10_P2_PREFIX_SNAPSHOT_OOM"));
+        }
     }
     [[nodiscard]] core::Result<render::RenderResult>
     execute_with_exact_pre_p2_prefix(const M10P2ExactPrefix& prefix) const
@@ -253,9 +267,16 @@ public:
     [[nodiscard]] core::Result<render::RenderResult> execute() const
     {
         using R=core::Result<render::RenderResult>;
-        auto prefix=prepare_exact_pre_p2_prefix();
-        if(!prefix)return R::failure(*prefix.error());
-        return execute_with_exact_pre_p2_prefix(*prefix.value());
+        // Always available: a cold full real Product rendering does not
+        // depend on whether an optional bounded prefix fits RAM.
+        auto upstream=render_pre_p2();
+        if(!upstream)return R::failure(*upstream.error());
+        auto limited=render_segment(
+            upstream.value()->view(),final_p2_,p2_bindings_);
+        if(!limited)return R::failure(*limited.error());
+        if(!result_has_expected_scope(*limited.value()))
+            return R::failure(error("L3_M10_P2_FULL_RENDER_SCOPE_INVALID"));
+        return limited;
     }
     [[nodiscard]] bool result_has_expected_scope(
         const render::RenderResult& out) const noexcept
@@ -353,6 +374,18 @@ private:
           baseline_manual_revision_(revision),
           baseline_manual_nodes_(std::move(manual_nodes)),
           baseline_manual_bindings_(std::move(manual_bindings)) {}
+    [[nodiscard]] core::Result<render::RenderResult> render_pre_p2()
+        const
+    {
+        using R=core::Result<render::RenderResult>;
+        if(!prepared_||!registry_)
+            return R::failure(error("L3_M10_P2_MISSING_IMMUTABLE_OWNER"));
+        auto fixed=render_segment(
+            prepared_->view(),fixed_,fixed_bindings_);
+        if(!fixed)return R::failure(*fixed.error());
+        return render_segment(
+            fixed.value()->view(),linked_,linked_bindings_);
+    }
     [[nodiscard]] core::Result<render::RenderResult> render_segment(
         const audio::AudioBufferView& source,
         const dsp::ProcessingChain& chain,
