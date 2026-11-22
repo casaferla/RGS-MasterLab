@@ -6,6 +6,7 @@
 // forged 27-feature cost or final M13 verification. Each candidate's
 // P2 Ceiling/Drive comes from the current exact M10 typed binding.
 #include "l3_m10_p2_canonical_coordinate_port.hpp"
+#include "l3_m10_p2_memory_budget.hpp"
 #include "l3_product_offline_trial_job.hpp"
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -200,13 +201,12 @@ public:
         }
     }
 
-    // A 5-minute 48k stereo double PCM occupies ~219.7 MiB.
-    // Allow ONE explicit exact prefix, bounded by 256 MiB by default.
-    // Oversized 96k/192k songs are rendered COLD, never silently
-    // truncated or admitted to unbounded cache memory.
+    // Optional exact PCM prefix cache uses available physical RAM at the
+    // time of creation. Never compromise entire-resource output if the
+    // budget is too small: execute() takes the correct cold path.
     [[nodiscard]] core::Result<M10P2ExactPrefix>
     prepare_exact_pre_p2_prefix(
-        std::size_t max_cache_bytes=256U*1024U*1024U) const
+        std::optional<std::size_t> requested_maximum=std::nullopt) const
     {
         using R=core::Result<M10P2ExactPrefix>;
         if(!prepared_||!registry_)
@@ -214,6 +214,8 @@ public:
         const auto v=prepared_->view();
         const auto frames=v.frame_count().value();
         const auto channels=v.format().channel_count();
+        const auto max_cache_bytes=
+            m10_p2_memory::current_budget(requested_maximum);
         if(frames<=0||channels<1U||channels>2U||max_cache_bytes==0U||
            static_cast<std::uint64_t>(frames)>
                std::numeric_limits<std::uint64_t>::max()/
