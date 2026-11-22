@@ -5,11 +5,13 @@
 // may adopt/persist it and then issue a true materialization receipt.
 // A prepared document is NOT an M12 receipt, M13 VERIFIED, or export.
 #include "l3_m12_ref_linked_project_carrier.hpp"
+#include "l3_m12_terminal_native_hard_preflight.hpp"
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/project/opaque_json_value.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <nlohmann/json.hpp>
+#include <span>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -29,7 +31,7 @@ struct M12ProjectTransactionExpected final {
     project::Chain exact_protected_manual_snapshot;
     std::optional<project::Chain> exact_existing_linked_snapshot;
     bool current_product_epoch_and_accepted_diff_attested{};
-    bool full_m11_and_terminal_safety_current{};
+    bool full_m11_protected_safety_current{};
 };
 struct M12PreparedProjectTransaction final {
     project::ProjectSnapshot candidate_not_yet_committed;
@@ -75,6 +77,9 @@ prepare_exact_m12_project_transaction(
     const project::ProjectSnapshot& current_project,
     const FrozenProjectLinkedCarrier& exact_native_carrier,
     const StagedRefLinkedSegment& accepted_stage,
+    const dsp::ProcessingChain& current_actual_terminal,
+    std::span<const dsp::ModuleExecutionBinding> current_terminal_bindings,
+    double frozen_accepted_ceiling_db_tp,
     M12ProjectTransactionExpected expected)
 {
     using R=core::Result<M12PreparedProjectTransaction>;
@@ -83,7 +88,7 @@ prepare_exact_m12_project_transaction(
             core::ErrorCode::InvalidState,code});
     };
     if(!expected.current_product_epoch_and_accepted_diff_attested||
-       !expected.full_m11_and_terminal_safety_current||
+       !expected.full_m11_protected_safety_current||
        expected.exact_live_source_id.is_nil()||
        expected.exact_live_reference_id.is_nil()||
        expected.exact_protected_manual_chain_id.is_nil()||
@@ -100,6 +105,13 @@ prepare_exact_m12_project_transaction(
        exact_native_carrier.native_project_chain.segment!="REF_LINKED"||
        exact_native_carrier.native_project_chain.chainId.is_nil())
         return fail("L3_M12_PROJECT_TRANSACTION_WRONG_OWNER_OR_PLAN");
+    const auto terminal=verify_current_m12_terminal_limiter_composition(
+        current_actual_terminal,current_terminal_bindings,
+        frozen_accepted_ceiling_db_tp,
+        expected.current_product_epoch_and_accepted_diff_attested&&
+        expected.full_m11_protected_safety_current);
+    if(!terminal.admissible_without_new_terminal_action())
+        return fail("L3_M12_PROJECT_TRANSACTION_TERMINAL_NOT_ADMISSIBLE");
     // Independently reconstruct the actual native codec carrier.
     // A caller cannot present alternate linked PCM/parameters with the
     // same accepted plan checksum.
