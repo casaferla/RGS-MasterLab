@@ -6,6 +6,7 @@
 // No M21 nine-metric scoring, M17 export, project write or result publish.
 // This bridge alone does not claim the complete M05/M06 27-slot authority.
 #include "l3_m10_p2_real_native_product_job.hpp"
+#include "l3_m10_p2_bound_native_worker_score.hpp"
 #include "m21_product_owner_analysis.hpp"
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
@@ -14,6 +15,7 @@
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
 #include <QThread>
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <new>
@@ -34,9 +36,21 @@ public:
         Product::Capture source;
         Product::GoldCapture reference;
         std::shared_ptr<const dsp::ModuleRegistry> live_registry;
+        // Freeze the full MANUAL graph while holding the actual Qt
+        // Product epoch. A refiner worker must NEVER re-read this chain
+        // through the mutable GUI after asynchronous dispatch.
+        dsp::ProcessingChain frozen_manual_chain;
+        core::FrameCount frozen_max_block_frames;
         // The worker owns independent frozen chain/parameter copies
         // and may run on a different thread without touching Qt.
         M10P2RealNativeProductJob job;
+        [[nodiscard]] m10_frozen::P2NativeProductWorkerScope
+        native_worker_scope() const noexcept
+        {
+            return {job.owner_stamp(),source.prepared,live_registry,
+                    frozen_manual_chain,source.manual_bindings,
+                    frozen_max_block_frames,true};
+        }
         [[nodiscard]] constexpr bool authorizes_m10_m12_or_export()
             const noexcept{return false;}
     };
@@ -104,7 +118,8 @@ public:
                 error("L3_P2_QT_CAPTURE_CHANGED_BEFORE_DISPATCH"));
         return R::success(Accepted{
             std::move(*source.value()),std::move(*reference.value()),
-            live_registry,std::move(*job.value())});
+            live_registry,manual,max_block_frames,
+            std::move(*job.value())});
     }
 
     struct BatchCandidate final {
@@ -199,6 +214,13 @@ public:
             return false;
         const auto& manual=product.upstream.chain.chain();
         const auto bindings=product.upstream.chain.execution_bindings();
+        const auto saved=accepted.frozen_manual_chain.instances();
+        const auto live=manual.instances();
+        if(manual.revision()!=accepted.frozen_manual_chain.revision()||
+           live.size()!=saved.size()||
+           !std::equal(live.begin(),live.end(),saved.begin())||
+           bindings!=accepted.source.manual_bindings)
+            return false;
         const OfflineProductOwnerStamp now{
             accepted.source.owner.epoch,
             accepted.source.owner.identity.source_generation,
