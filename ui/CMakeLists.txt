@@ -8,6 +8,7 @@ qt_add_qml_module(rgsml_ui
         qml/AuditionSourceSelector.qml
         qml/CompressorEditor.qml
         qml/DspChainSelector.qml
+        qml/DspPresetHeaderActions.qml
         qml/DspEditorHost.qml
         qml/DspFloatingModuleWindow.qml
         qml/DspWorkspace.qml
