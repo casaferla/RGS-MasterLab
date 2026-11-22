@@ -10,9 +10,23 @@
 #include <string_view>
 #include <array>
 
+static QQuickItem* find_visual_item(QQuickItem* parent,
+                                     const QString& sought) {
+    if (!parent) return nullptr;
+    if (parent->objectName()==sought) return parent;
+    for (QQuickItem* child : parent->childItems()) {
+        if (auto* found=find_visual_item(child,sought)) return found;
+    }
+    return nullptr;
+}
 static QQuickItem* item(QObject* root,const char* name) {
-    return qobject_cast<QQuickItem*>(
-        root->findChild<QObject*>(QString::fromLatin1(name)));
+    const QString sought=QString::fromLatin1(name);
+    // QML Repeater delegates are in the VISUAL item hierarchy, not
+    // necessarily QObject children of their editor root.
+    if(auto* visual=qobject_cast<QQuickItem*>(root)) {
+        if(auto* found=find_visual_item(visual,sought))return found;
+    }
+    return qobject_cast<QQuickItem*>(root->findChild<QObject*>(sought));
 }
 static bool equal_geometry(QQuickItem* a,QQuickItem* b,
                             std::string_view label) {
@@ -78,7 +92,11 @@ int main(int argc,char** argv) {
     if(stage==QStringLiteral("measure")) {
         QQuickItem* a=item(original,"filterButton_BELL");
         QQuickItem* b=item(dynamic,"filterButton_BELL");
-        if(!a || !b)return 16;
+        if(!a || !b) {
+            std::cout<<"missing-"<<(a?"dynamic":"original")
+                     <<"-Bell"<<std::flush;
+            return 0; // diagnostic always leaves trace in artifact name
+        }
         const auto pa=a->mapToScene(QPointF{0,0});
         const auto pb=b->mapToScene(QPointF{0,0});
         const auto ten=[](double n) {return std::lround(n*10.0);};
