@@ -63,7 +63,7 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
-StudioButton {
+            StudioButton {
                 objectName: "eqOverallToggleButton"
                 text: "Overall"
                 selected: root.viewModel ? root.viewModel.showCombinedResponse : false

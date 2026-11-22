@@ -81,7 +81,7 @@ Item {
                 }
                 Accessible.name: validationFeedbackText.text
             }
-}
+        }
 
         RowLayout {
             id: visualWells

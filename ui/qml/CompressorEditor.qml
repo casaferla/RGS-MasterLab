@@ -35,9 +35,8 @@ Item {
         anchors.margins: 8
         spacing: 6
 
-        // Header Action Bar: the shared DSP host already names "Compressor".
-        // UX-003: keep Reset aligned right without a redundant local title.
-// Main Editor Body Split
+        // Header Reset is now in the shared fixed 2x2 utility cluster.
+        // Main Editor Body Split
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true

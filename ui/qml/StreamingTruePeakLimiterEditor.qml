@@ -34,9 +34,8 @@ Item {
         anchors.fill: parent
         anchors.margins: 8
         spacing: 5
-        // Reset belongs to the outer action bar, as in Input Gain and
-        // other DSP editors, NEVER buried in the main parameter well.
-Rectangle {
+        // Reset is in the shared fixed 2x2 utility cluster above.
+        Rectangle {
             objectName: "streamingP2MainPanel"
             Layout.fillWidth: true
             Layout.fillHeight: true

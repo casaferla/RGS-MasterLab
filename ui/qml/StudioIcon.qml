@@ -227,7 +227,10 @@ Canvas {
             ctx.stroke()
             ctx.lineWidth = 1.4
             ctx.beginPath()
-            ctx.ellipse(9.0,9.2,1.35,2.05,0,0,2*Math.PI)
+            ctx.moveTo(9.0,7.15)
+            ctx.bezierCurveTo(10.8,7.15,10.8,11.25,9.0,11.25)
+            ctx.bezierCurveTo(7.2,11.25,7.2,7.15,9.0,7.15)
+            ctx.closePath()
             ctx.stroke()
             ctx.restore()
         } else if (kind === "preset-open") {

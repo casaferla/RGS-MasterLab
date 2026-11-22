@@ -42,8 +42,8 @@ Item {
         anchors.margins: 20
         spacing: 16
 
-        // Header Action Bar
-// Center Panel: Large Display, Slider, Direct Numeric Input
+        // Reset moved to the shared fixed 2x2 header utility cluster.
+        // Center Panel: Large Display, Slider, Direct Numeric Input
         Rectangle {
             id: mainPanel
             objectName: "gainMainPanel"
