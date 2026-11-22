@@ -115,8 +115,15 @@ noM12ReceiptCannotPretendFreshVerification() {
              std::uint32_t{1});
     QCOMPARE(whole.value()->genuine_dsp_segment_passes,
              std::uint32_t{3});
-    QCOMPARE(whole.value()->independent_full_master_render.view().
+    QCOMPARE(whole.value()->independent_final_output_pcm.view().
                  frame_count().value(),std::int64_t{48000});
+    QCOMPARE(whole.value()->independent_final_output_pcm.view().
+                 timebase().frame_domain_id(),
+             audio::FrameDomainId::OUTPUT_RATE);
+    QCOMPARE(whole.value()->genuine_m17_applied_gain_witness_frames,
+             std::uint64_t{48000});
+    QVERIFY(std::isfinite(
+        whole.value()->independent_m17_m16_check.after_linear_peak));
     QCOMPARE(whole.value()->independent_final_m20.channel_count,2U);
     QVERIFY(!whole.value()->is_m13_verified());
     QVERIFY(!whole.value()->authorizes_master_export());
