@@ -18,8 +18,9 @@
 #include <vector>
 namespace rgsml::tests {
 namespace {
-namespace m12=rgsml::app::l3_automatch::m12_frozen;
-namespace m13=rgsml::app::l3_automatch::m13_frozen;
+namespace a=rgsml::app::l3_automatch;
+namespace m12=a::m12_frozen;
+namespace m13=a::m13_frozen;
 [[nodiscard]] core::Uuid uuid(const char* s) {
     auto x=core::Uuid::parse(s);Q_ASSERT(x);return *x.value();
 }
