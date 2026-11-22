@@ -185,6 +185,28 @@ int main(int argc,char** argv) {
     CHECK(sustainInput->property("text").toString()==QStringLiteral("-3.0"));
     CHECK(scope->property("graphAvailable").toBool());
 
+    // Reset is an actual visible StudioButton. It must reject clicks
+    // while locked and use the accepted DSP parameters on manual opt-in.
+    QObject* resetButton=root->findChild<QObject*>(
+        QStringLiteral("transientShaperResetButton"));
+    CHECK(resetButton);
+    CHECK(!resetButton->property("enabled").toBool());
+    controls.setResearchManualEditable(true);
+    app.processEvents();
+    CHECK(resetButton->property("enabled").toBool());
+    CHECK(QMetaObject::invokeMethod(resetButton,"clicked",Qt::DirectConnection));
+    app.processEvents();
+    CHECK(controls.attackAmountDb()==0.0 && controls.sustainAmountDb()==0.0);
+    CHECK(attackInput->property("text").toString()==QStringLiteral("0.0"));
+    CHECK(sustainInput->property("text").toString()==QStringLiteral("0.0"));
+    // Restore the actual accepted C00 snapshot before checking telemetry;
+    // manually reset research values are NOT a new audio realization.
+    controls.setResearchManualEditable(false);
+    controls.loadAcceptedParameters(*p.value());
+    app.processEvents();
+    CHECK(controls.attackAmountDb()==6.0 && controls.sustainAmountDb()==-3.0);
+    CHECK(!resetButton->property("enabled").toBool());
+
     // Corrupt render telemetry must fail closed at the C++/Qt boundary,
     // erase the previous 250 buckets, and recover on the next valid snapshot.
     auto malformed=project();

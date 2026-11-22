@@ -17,6 +17,11 @@ ApplicationWindow {
         && !isFinite(researchEditor.parseNumeric("   ", -12, 12))
         && !isFinite(researchEditor.parseNumeric("13", -12, 12))
         && !isFinite(researchEditor.parseNumeric("1,2,3", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("0xA", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("1e1", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("1_0", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("1.2,3", -12, 12))
+        && Math.abs(researchEditor.parseNumeric(",5", -12, 12) - 0.5) < 1e-9
         && Math.abs(researchEditor.parseNumeric("1,2", -12, 12) - 1.2) < 1e-9
         && Math.abs(researchEditor.parseNumeric("-12.0", -12, 12) + 12) < 1e-9
         && Math.abs(researchEditor.parseNumeric("12.0", -12, 12) - 12) < 1e-9

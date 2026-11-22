@@ -177,3 +177,14 @@ accepts decimal commas, rejects malformed/out-of-domain input, and retains
 semantics in the actual QML scene, checks usable controls and authentic
 C00 history at 760x570, and captures an additional compact-size screenshot.
 This is editor research only; no audio/product integration.
+
+## Ordinary decimal-only input and visible Reset gate
+
+Qt Quick numeric wells accept signed ordinary decimals with dot or comma,
+including `,5`, but reject JavaScript `Number()` conveniences such as
+hexadecimal, exponent notation and digit separators. The real QML harness
+checks these cases instead of mocking the parser. A Release-mode Qt test
+invokes the actual Reset button, confirms read-only lockout and validates
+both 0.0 dB fields after reset. The research fixture reloads the genuine
+accepted DSP values before further playback/sidecar provenance checks; it
+does not claim the unrendered reset state was audible.

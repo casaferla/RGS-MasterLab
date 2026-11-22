@@ -37,7 +37,10 @@ Item {
     // or Sustain when a selected numeric field is erased and loses focus.
     function parseNumeric(text, low, high) {
         const trimmed=String(text).trim()
-        if(trimmed.length === 0) return NaN
+        // Number() alone accepts hex, exponent and Infinity-like drafts.
+        // Parameter wells use explicit ordinary decimal notation only.
+        if(!/^[+-]?(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)$/.test(trimmed))
+            return NaN
         const parsed=Number(trimmed.replace(",","."))
         if(!Number.isFinite(parsed) || parsed<low || parsed>high) return NaN
         return Math.round(parsed*10)/10
