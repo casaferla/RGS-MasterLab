@@ -4,6 +4,8 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlExpression>
+#include <QQmlEngine>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QDir>
@@ -124,6 +126,29 @@ int main(int argc,char** argv) {
        ||strip->property("width").toDouble()<920
        ||strip->property("height").toDouble()<112)
         return 51;
+    // Actual QML placement calculation: desktop-sized companions may
+    // fit to the right on ultrawide screens, but a single Full HD
+    // 1184x688 main window should place the 1050x196 companion above.
+    auto placement=[&](const QString& js) {
+        QQmlExpression expression(QQmlEngine::contextForObject(companion),
+                                  companion,js);
+        const QVariant result=expression.evaluate();
+        return expression.hasError()?QVariantMap{}:result.toMap();
+    };
+    const auto fullHd=placement(QStringLiteral(
+        "suggestedPosition(368,196,1184,688,0,0,1920,1040)"));
+    const auto ultrawide=placement(QStringLiteral(
+        "suggestedPosition(300,100,1184,688,0,0,2560,1400)"));
+    const auto below=placement(QStringLiteral(
+        "suggestedPosition(120,35,1184,688,0,0,1920,1040)"));
+    if(fullHd.value("edge").toString()!=QStringLiteral("above-touch")
+       ||fullHd.value("x").toInt()!=368
+       ||fullHd.value("y").toInt()!=0
+       ||ultrawide.value("edge").toString()!=QStringLiteral("right")
+       ||ultrawide.value("x").toInt()!=1492
+       ||below.value("edge").toString()!=QStringLiteral("below")
+       ||below.value("y").toInt()!=731)
+        return 68;
     // A detached surface is NOT a descendant of the graph QQuickItem.
     if(graph->findChild<QObject*>("dynamicEqDynamicsStrip"))return 20;
     if(!strip->property("visible").toBool())return 21;

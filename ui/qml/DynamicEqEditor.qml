@@ -744,12 +744,26 @@ Rectangle {
         bandViewModel: root.viewModel
         visible: root.showDynamics && !!root.dynamicsControls
         transientParent: root.Window.window
-        x: root.Window.window
-            ? root.Window.window.x + root.Window.window.width + 10 : 0
-        y: root.Window.window
-            ? root.Window.window.y + 60 : 0
+        // A fixed "to the right" location can put this 1050px window
+        // off a single Full HD screen. Place once using the actual current
+        // main-window screen's taskbar-aware available geometry.
+        x: 0
+        y: 0
         onVisibleChanged: {
-            if (!visible && root.showDynamics) root.showDynamics = false
+            if (visible) {
+                const host = root.Window.window
+                const bounds = host && host.screen
+                    ? host.screen.availableGeometry : null
+                if (host && bounds && bounds.width > 0 && bounds.height > 0) {
+                    const target = dynamicCompanion.suggestedPosition(
+                        host.x, host.y, host.width, host.height,
+                        bounds.x, bounds.y, bounds.width, bounds.height)
+                    dynamicCompanion.x = target.x
+                    dynamicCompanion.y = target.y
+                }
+            } else if (root.showDynamics) {
+                root.showDynamics = false
+            }
         }
     }
 }

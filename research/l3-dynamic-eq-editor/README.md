@@ -264,3 +264,15 @@ exercises real selector buttons with two accepted C01 bands, checks their
 independent Threshold and Attack values across main EQ/companion switches,
 and ensures the WAV-family header shows the correct selection. Relock still
 blocks manual edits; no Product or L3 DSP path is changed.
+
+## Standalone Dynamics window placement (research)
+
+A hardcoded right-of-main position would put the 1050px tool mostly off a
+single 1920px-wide display next to a 1184px main window. Opening Dynamics
+now computes one preferred position using the hosting window's current
+screen available geometry: right or left if both windows fit; otherwise
+below or above the main editor, with an adjacent no-gap option before any
+clamped overlap fallback on very small displays. The companion remains
+freely movable after opening. Pure placement examples are exercised in the
+actual Qt QML smoke for Full HD, wide-screen and below-main cases. No
+Product-owned persisted window placement or docking behavior is changed.

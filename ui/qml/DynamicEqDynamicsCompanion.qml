@@ -27,6 +27,40 @@ Window {
     title: "Dynamic EQ · Dynamics — RGS MasterLab"
     flags: Qt.Tool
 
+    // Placement is computed only when opened. Thereafter this remains an
+    // independently movable tool window: dragging either window does not
+    // destroy an active numeric edit or force an unexpected second move.
+    // Screen bounds are supplied by the owning main QWindow.
+    function suggestedPosition(mx, my, mw, mh, ax, ay, aw, ah) {
+        const gap = 8
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+        const right = ax + aw
+        const bottom = ay + ah
+        const maxX = Math.max(ax, right - root.width)
+        const maxY = Math.max(ay, bottom - root.height)
+        const vertical = clamp(my + 60, ay, maxY)
+        if (mx + mw + gap + root.width <= right)
+            return {x: mx + mw + gap, y: vertical, edge: "right"}
+        if (mx - gap - root.width >= ax)
+            return {x: mx - gap - root.width, y: vertical, edge: "left"}
+
+        const alignedX = clamp(mx, ax, maxX)
+        if (my + mh + gap + root.height <= bottom)
+            return {x: alignedX, y: my + mh + gap, edge: "below"}
+        if (my - gap - root.height >= ay)
+            return {x: alignedX, y: my - gap - root.height, edge: "above"}
+        // At 1920x1080, a centered 1184x688 main window cannot share
+        // the horizontal axis with a 1050px companion. Adjacent edges
+        // without an 8px gap still keep the EQ graph unobstructed.
+        if (my + mh + root.height <= bottom)
+            return {x: alignedX, y: my + mh, edge: "below-touch"}
+        if (my - root.height >= ay)
+            return {x: alignedX, y: my - root.height, edge: "above-touch"}
+        // On a very small display no non-overlapping arrangement fits.
+        // Prefer an on-screen companion; it remains freely draggable.
+        return {x: alignedX, y: clamp(my, ay, maxY), edge: "clamped"}
+    }
+
     Rectangle {
         id: panel
         objectName: "dynamicEqDynamicsWavFamilyPanel"
