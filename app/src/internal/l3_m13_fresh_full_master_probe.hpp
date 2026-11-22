@@ -6,6 +6,8 @@
 // render, never an M10 candidate PCM or M13 VERIFIED report.
 #include "l3_m13_fresh_native_verification_probe.hpp"
 #include "l3_m12_terminal_native_hard_preflight.hpp"
+#include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
+#include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
@@ -22,9 +24,13 @@
 
 namespace rgsml::app::l3_automatch::m13_frozen {
 struct FreshNativeMasterCompositionProbe final {
-    render::RenderResult independent_full_master_render;
+    // The final domain is OUTPUT_RATE, never a fake SOURCE_RATE
+    // RenderPreview terminal result. No export/publication authority.
+    audio::AudioBuffer independent_final_output_pcm;
+    render::TruePeakLimiterFinalCheck independent_m17_m16_check;
     analysis::BasicLevelAnalysisResult independent_final_m19;
     analysis::TonalStereoAnalysisResult independent_final_m20;
+    std::uint64_t genuine_m17_applied_gain_witness_frames{};
     std::uint32_t logical_verification_evaluations{1U};
     std::uint32_t genuine_dsp_segment_passes{3U};
     [[nodiscard]] constexpr bool is_m13_verified() const noexcept {
@@ -144,22 +150,46 @@ probe_fresh_m13_full_native_master_once(
         manual.value()->view(),
         current_linked.chain,current_linked.exact_bindings);
     if(!linked)return R::failure(*linked.error());
-    // Terminal must be the final audio stage and is never adopted
-    // into the current-controller REF_LINKED segment.
-    auto last=run_stage(
-        linked.value()->view(),
-        current_terminal,current_terminal_bindings);
-    if(!last)return R::failure(*last.error());
+    // M17 MUST run on a true full-resource OUTPUT_RATE owner. The
+    // legacy RenderPreview intentionally refuses active M17 and MUST
+    // NOT be used for this terminal phase. First integrate the native
+    // same-rate full-resource Source->Output bridge. Future nonidentity
+    // master SRC requires the exact pinned final Q0 asset/policy.
+    const auto source_rate=original.format().sample_rate();
+    auto output=audio::materialize_full_resource_output_rate_candidate(
+        linked.value()->view(),source_rate,maximum_block_frames);
+    if(!output)return R::failure(*output.error());
+    if(output.value()->used_src||
+       output.value()->pcm.view().frame_count()!=
+           original.frame_count()||
+       output.value()->pcm.view().timebase().frame_domain_id()!=
+           audio::FrameDomainId::OUTPUT_RATE)
+        return fail("L3_M13_FULL_MASTER_OUTPUT_DOMAIN_OR_SRC_STALE");
+    auto terminal_output=render::
+        render_true_peak_limiter_bound_terminal_candidate(
+            output.value()->pcm.view(),current_terminal,
+            current_terminal_bindings,
+            *current_linked.registry_owner,maximum_block_frames);
+    if(!terminal_output)
+        return R::failure(*terminal_output.error());
+    auto& checked=terminal_output.value()->checked;
+    if(checked.terminal.bypassed||!checked.final_check||
+       checked.terminal.applied_gain_frames.size()!=
+           static_cast<std::size_t>(original.frame_count().value()))
+        return fail("L3_M13_FULL_MASTER_M17_OR_M16_INCOMPLETE");
+    const auto witness=checked.terminal.applied_gain_frames.size();
     auto m19=analysis::measure_basic_level_full_resource(
-        last.value()->buffer());
+        checked.terminal.compensated_pcm);
     if(!m19)return R::failure(*m19.error());
-    const auto v=last.value()->view();
+    const auto v=checked.terminal.compensated_pcm.view();
     auto m20=analysis::measure_tonal_stereo_scope(
         v,v.absolute_start_frame(),v.frame_count(),
         v.timebase().frame_domain_id());
     if(!m20)return R::failure(*m20.error());
     return R::success(FreshNativeMasterCompositionProbe{
-        std::move(*last.value()),std::move(*m19.value()),
-        std::move(*m20.value()),1U,3U});
+        std::move(checked.terminal.compensated_pcm),
+        *checked.final_check,
+        std::move(*m19.value()),std::move(*m20.value()),
+        static_cast<std::uint64_t>(witness),1U,3U});
 }
 } // namespace rgsml::app::l3_automatch::m13_frozen
