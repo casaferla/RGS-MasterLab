@@ -1,6 +1,6 @@
 #pragma once
 // L3 M05 already-computed REAL M20 PSD/OLS Tonal T02..T06 ->
-// original five M07 slots. No new FFT, band shrinkage, invented floor,
+// original five M07 feature_slots. No new FFT, band shrinkage, invented floor,
 // spectral-profile resampling or source revision. T01 handled separately.
 #include "l3_m05_real_tonal_statistics.hpp"
 #include "l3_m05m06_real_analysis_port.hpp"
@@ -42,7 +42,7 @@ enum class TonalBindingProblem:std::uint8_t {
     feature_content_unresolved
 };
 struct TonalBindingProjection final {
-    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,5>> slots;
+    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,5>> feature_slots;
     TonalBindingProblem problem{
         TonalBindingProblem::common_bandwidth_or_floor_unresolved};
     [[nodiscard]] constexpr bool authorizes_m10() const noexcept {
@@ -83,7 +83,7 @@ struct TonalBindingProjection final {
                 return {{},
                     TonalBindingProblem::common_bandwidth_or_floor_unresolved};
     }
-    std::array<m08_frozen::AuthenticatedPairSlot,5> slots;
+    std::array<m08_frozen::AuthenticatedPairSlot,5> feature_slots;
     for(std::size_t i=0;i<5U;++i) {
         const auto* m07=m07_frozen::find_binding(
             kM20ScalarTonalBindings[i]);
@@ -92,7 +92,7 @@ struct TonalBindingProjection final {
                phase6_definition_and_common_bandwidth_current||
            evidence.features[i].exact_phase6_feature_dependency.empty())
             return {{},TonalBindingProblem::feature_content_unresolved};
-        slots[i]={
+        feature_slots[i]={
             std::string{m07->binding_id},
             std::string{m07->source_feature_id},
             evidence.features[i].exact_phase6_feature_dependency,
@@ -132,12 +132,12 @@ struct TonalBindingProjection final {
                 return {{},TonalBindingProblem::feature_content_unresolved};
         }
         const bool ready=scalar[0]&&scalar[1];
-        slots[i].configured.push_back({
+        feature_slots[i].configured.push_back({
             static_cast<bool>(ready),ready?1.0:0.0,
             {scalar[0],m08_frozen::Endpoint::ordinary},
             {scalar[1],m08_frozen::Endpoint::ordinary},
             scalar[2],true});
     }
-    return {std::move(slots),TonalBindingProblem::none};
+    return {std::move(feature_slots),TonalBindingProblem::none};
 }
 } // namespace rgsml::app::l3_automatch::m05m06_real

@@ -1,5 +1,5 @@
 #pragma once
-// L3 M05/M06 M19 source -> exact M07 D05,D06,L01,L02,L03 slots.
+// L3 M05/M06 M19 source -> exact M07 D05,D06,L01,L02,L03 feature_slots.
 // Existing M19 scope/quality, M05/06 reference-grade and immutable
 // Phase6 feature content are required. No new LUFS/TP/PLR estimator,
 // no Type7-to-scalar support substitution, no missing-M16 promotion.
@@ -35,7 +35,7 @@ enum class M19SlotFailure:std::uint8_t {
     none,stale_or_unauthenticated_owners,invalid_feature_authority
 };
 struct M19NativeSlotProjection final {
-    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,5>> slots;
+    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,5>> feature_slots;
     M19SlotFailure reason{M19SlotFailure::stale_or_unauthenticated_owners};
     [[nodiscard]] constexpr bool authorizes_solver_or_publish()
         const noexcept {return false;}
@@ -63,19 +63,19 @@ struct M19NativeSlotProjection final {
        e.reference.owner.resource_identity==
            e.actual_candidate.owner.resource_identity)
         return {{},M19SlotFailure::stale_or_unauthenticated_owners};
-    std::array<m08_frozen::AuthenticatedPairSlot,5> slots;
-    for(std::size_t i=0;i<slots.size();++i) {
+    std::array<m08_frozen::AuthenticatedPairSlot,5> feature_slots;
+    for(std::size_t i=0;i<feature_slots.size();++i) {
         const auto* binding=m07_frozen::find_binding(
             kM19NativeBindingIds[i]);
         if(!binding||
            !e.authority[i].current_phase6_definition_and_revision||
            e.authority[i].exact_feature_dependency.empty())
             return {{},M19SlotFailure::invalid_feature_authority};
-        slots[i].binding_id=std::string{binding->binding_id};
-        slots[i].source_feature_id=std::string{binding->source_feature_id};
-        slots[i].exact_feature_dependency=
+        feature_slots[i].binding_id=std::string{binding->binding_id};
+        feature_slots[i].source_feature_id=std::string{binding->source_feature_id};
+        feature_slots[i].exact_feature_dependency=
             e.authority[i].exact_feature_dependency;
-        slots[i].feature_authority_attested=true;
+        feature_slots[i].feature_authority_attested=true;
         std::array<std::optional<double>,3> coords{};
         std::array<bool,3> ready{};
         for(std::size_t j=0;j<owners.size();++j) {
@@ -109,12 +109,12 @@ struct M19NativeSlotProjection final {
             }
         }
         const bool pair_valid=ready[0]&&ready[1]&&support>0.0;
-        slots[i].configured.push_back({
+        feature_slots[i].configured.push_back({
             pair_valid,pair_valid?support:0.0,
             {coords[0],m08_frozen::Endpoint::ordinary},
             {coords[1],m08_frozen::Endpoint::ordinary},
             coords[2],true});
     }
-    return {std::move(slots),M19SlotFailure::none};
+    return {std::move(feature_slots),M19SlotFailure::none};
 }
 } // namespace rgsml::app::l3_automatch::m05m06_real

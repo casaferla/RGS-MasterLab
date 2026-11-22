@@ -44,15 +44,15 @@ void M20NativeStereoBindingTest::
 monoEndpointDistinctFromPositiveWidthAndThreeFisher() {
     const auto r=real::bind_real_m20_s01_s02(sample());
     QCOMPARE(r.reason,real::M20StereoFailure::none);
-    QVERIFY(r.slots);
-    QCOMPARE((*r.slots)[0].configured.size(),std::size_t{1});
-    QCOMPARE((*r.slots)[1].configured.size(),std::size_t{3});
-    const auto& width=(*r.slots)[0].configured[0];
+    QVERIFY(r.feature_slots);
+    QCOMPARE((*r.feature_slots)[0].configured.size(),std::size_t{1});
+    QCOMPARE((*r.feature_slots)[1].configured.size(),std::size_t{3});
+    const auto& width=(*r.feature_slots)[0].configured[0];
     QCOMPARE(width.prepared.endpoint,m08::Endpoint::mono_side_muted);
     QCOMPARE(width.reference.endpoint,m08::Endpoint::ordinary);
     QCOMPARE(*width.prepared.z,-24.0);
     QCOMPARE(width.paired_native_support,1.0);
-    for(const auto& c:(*r.slots)[1].configured)
+    for(const auto& c:(*r.feature_slots)[1].configured)
         QCOMPARE(c.paired_native_support,0.8);
     QVERIFY(!r.authorizes_product_publication());
 }
@@ -62,11 +62,11 @@ missingLocalCorrelationDoesNotDeleteComponents() {
     source.reference.correlation_fisher_z[1].state=
         real::Readiness::missing;
     const auto r=real::bind_real_m20_s01_s02(source);
-    QVERIFY(r.slots);
-    QCOMPARE((*r.slots)[1].configured.size(),std::size_t{3});
-    QVERIFY(!(*r.slots)[1].configured[1].current_valid);
-    QCOMPARE((*r.slots)[1].configured[1].paired_native_support,0.0);
-    QVERIFY((*r.slots)[1].configured[0].current_valid);
+    QVERIFY(r.feature_slots);
+    QCOMPARE((*r.feature_slots)[1].configured.size(),std::size_t{3});
+    QVERIFY(!(*r.feature_slots)[1].configured[1].current_valid);
+    QCOMPARE((*r.feature_slots)[1].configured[1].paired_native_support,0.0);
+    QVERIFY((*r.feature_slots)[1].configured[0].current_valid);
 }
 void M20NativeStereoBindingTest::
 staleAuthorityOrInvalidSupportCannotYieldFalseMatch() {

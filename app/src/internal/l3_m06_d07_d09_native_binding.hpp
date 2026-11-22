@@ -28,7 +28,7 @@ enum class TransientBindingFailure:std::uint8_t {
     none,unbound_or_stale_source,unresolved_native_descriptor_policy
 };
 struct TransientBindingProjection final {
-    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,3>> slots;
+    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,3>> feature_slots;
     TransientBindingFailure failure{
         TransientBindingFailure::unbound_or_stale_source};
     [[nodiscard]] constexpr bool authorizes_match_or_publication()

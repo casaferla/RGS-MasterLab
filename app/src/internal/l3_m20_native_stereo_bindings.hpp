@@ -1,5 +1,5 @@
 #pragma once
-// L3 M06 real M20 S01/S02 -> exactly two original M07 Stereo slots.
+// L3 M06 real M20 S01/S02 -> exactly two original M07 Stereo feature_slots.
 // M20 measured broadband width and native 400ms correlation quantiles
 // already exist; do not regenerate side energy or create a new safety
 // objective. Mono endpoint uses RAW actual zero-side evidence, not z.
@@ -29,7 +29,7 @@ enum class M20StereoFailure:std::uint8_t {
     invalid_native_support
 };
 struct M20StereoProjection final {
-    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,2>> slots;
+    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,2>> feature_slots;
     M20StereoFailure reason{M20StereoFailure::invalid_owner};
     [[nodiscard]] constexpr bool authorizes_product_publication()
         const noexcept{return false;}

@@ -41,10 +41,10 @@ actualThreeCanonicalBindingsWithIndependentSupport() {
     auto e=example();
     const auto bound=real::bind_real_d07_d09(e);
     QCOMPARE(bound.failure,real::TransientBindingFailure::none);
-    QVERIFY(bound.slots);
-    QCOMPARE(bound.slots->size(),std::size_t{3});
+    QVERIFY(bound.feature_slots);
+    QCOMPARE(bound.feature_slots->size(),std::size_t{3});
     for(std::size_t d=0;d<3U;++d) {
-        const auto& b=(*bound.slots)[d];
+        const auto& b=(*bound.feature_slots)[d];
         QCOMPARE(b.configured.size(),std::size_t{3});
         for(const auto& cell:b.configured) {
             QVERIFY(cell.current_valid);
@@ -60,20 +60,20 @@ oneDescriptorMissingLeavesThreeOriginalComponents() {
     e.current_sources[1].measured.d07_d08_d09[1].reason=
         real::TransientDescriptorFailure::insufficient_events_or_active_scope;
     const auto bound=real::bind_real_d07_d09(e);
-    QVERIFY(bound.slots);
-    const auto& missing=(*bound.slots)[1];
+    QVERIFY(bound.feature_slots);
+    const auto& missing=(*bound.feature_slots)[1];
     QCOMPARE(missing.configured.size(),std::size_t{3});
     for(const auto& cell:missing.configured) {
         QVERIFY(!cell.current_valid);
         QCOMPARE(cell.paired_native_support,0.0);
     }
-    QVERIFY((*bound.slots)[0].configured[0].current_valid);
+    QVERIFY((*bound.feature_slots)[0].configured[0].current_valid);
 }
 void M06TransientBindingTest::
 staleP04OrMissingFeatureVersionRejectsGeneration() {
     auto e=example();
     e.same_exact_p04_policy_context_and_generation_attested=false;
-    QVERIFY(!real::bind_real_d07_d09(e).slots);
+    QVERIFY(!real::bind_real_d07_d09(e).feature_slots);
     e=example();
     e.exact_feature_definition_digests[2].clear();
     QCOMPARE(real::bind_real_d07_d09(e).failure,

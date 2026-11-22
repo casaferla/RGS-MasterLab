@@ -46,16 +46,16 @@ exactFiveSlotsAndNativeL02PairMinOnce() {
     const auto e=populated();
     const auto r=real::bind_real_m19_loudness_macro(e);
     QCOMPARE(r.reason,real::M19SlotFailure::none);
-    QVERIFY(r.slots);
-    QCOMPARE(r.slots->size(),std::size_t{5});
+    QVERIFY(r.feature_slots);
+    QCOMPARE(r.feature_slots->size(),std::size_t{5});
     for(std::size_t i=0;i<5U;++i) {
-        QCOMPARE((*r.slots)[i].configured.size(),std::size_t{1});
-        QCOMPARE((*r.slots)[i].binding_id,
+        QCOMPARE((*r.feature_slots)[i].configured.size(),std::size_t{1});
+        QCOMPARE((*r.feature_slots)[i].binding_id,
                  std::string{real::kM19NativeBindingIds[i]});
-        QVERIFY((*r.slots)[i].configured[0].current_valid);
+        QVERIFY((*r.feature_slots)[i].configured[0].current_valid);
     }
-    QCOMPARE((*r.slots)[3].configured[0].paired_native_support,0.75);
-    QCOMPARE((*r.slots)[4].configured[0].paired_native_support,1.0);
+    QCOMPARE((*r.feature_slots)[3].configured[0].paired_native_support,0.75);
+    QCOMPARE((*r.feature_slots)[4].configured[0].paired_native_support,1.0);
     QVERIFY(!r.authorizes_solver_or_publish());
 }
 void M19MacroLoudnessBindingTest::
@@ -63,20 +63,20 @@ truePeakUnqualifiedCannotBePromoted() {
     auto e=populated();
     e.reference.true_peak_db_tp.state=real::Readiness::unqualified;
     const auto r=real::bind_real_m19_loudness_macro(e);
-    QVERIFY(r.slots);
-    QVERIFY(!(*r.slots)[4].configured[0].current_valid);
-    QVERIFY(!(*r.slots)[4].configured[0].reference.z);
-    QCOMPARE((*r.slots)[4].configured[0].paired_native_support,0.0);
+    QVERIFY(r.feature_slots);
+    QVERIFY(!(*r.feature_slots)[4].configured[0].current_valid);
+    QVERIFY(!(*r.feature_slots)[4].configured[0].reference.z);
+    QCOMPARE((*r.feature_slots)[4].configured[0].paired_native_support,0.0);
 }
 void M19MacroLoudnessBindingTest::
 absentReferenceGradeRetainsConfiguredMass() {
     auto e=populated();
     e.authority[2].source_reference_grade[1]=false;
     const auto r=real::bind_real_m19_loudness_macro(e);
-    QVERIFY(r.slots);
-    QVERIFY(!(*r.slots)[2].configured[0].current_valid);
-    QCOMPARE((*r.slots)[2].configured.size(),std::size_t{1});
-    QVERIFY(!(*r.slots)[2].configured[0].reference.z);
+    QVERIFY(r.feature_slots);
+    QVERIFY(!(*r.feature_slots)[2].configured[0].current_valid);
+    QCOMPARE((*r.feature_slots)[2].configured.size(),std::size_t{1});
+    QVERIFY(!(*r.feature_slots)[2].configured[0].reference.z);
 }
 void M19MacroLoudnessBindingTest::
 staleOwnerOrSourceDependencyRejectsEntireProjection() {

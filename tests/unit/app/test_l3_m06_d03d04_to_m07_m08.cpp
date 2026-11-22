@@ -51,16 +51,16 @@ void M06NativeBindingTest::exactCanonicalBindingsAndNoExtraMass() {
     QVERIFY(input);
     const auto mapped=real::make_real_d03_d04_m07_m08_slots(*input);
     QCOMPARE(mapped.reason,real::D03D04SlotFailure::none);
-    QVERIFY(mapped.slots);
-    QCOMPARE((*mapped.slots)[0].binding_id,
+    QVERIFY(mapped.feature_slots);
+    QCOMPARE((*mapped.feature_slots)[0].binding_id,
              std::string{"rgsml.reference-match.binding.dynamics.d03"});
-    QCOMPARE((*mapped.slots)[1].source_feature_id,
+    QCOMPARE((*mapped.feature_slots)[1].source_feature_id,
              std::string{"rgsml.dynamics.crest.local.series"});
-    QCOMPARE((*mapped.slots)[0].configured.size(),std::size_t{1});
-    QCOMPARE((*mapped.slots)[1].configured.size(),std::size_t{3});
-    QVERIFY((*mapped.slots)[0].configured[0].current_valid);
-    QCOMPARE((*mapped.slots)[0].configured[0].paired_native_support,1.0);
-    for(const auto& c:(*mapped.slots)[1].configured) {
+    QCOMPARE((*mapped.feature_slots)[0].configured.size(),std::size_t{1});
+    QCOMPARE((*mapped.feature_slots)[1].configured.size(),std::size_t{3});
+    QVERIFY((*mapped.feature_slots)[0].configured[0].current_valid);
+    QCOMPARE((*mapped.feature_slots)[0].configured[0].paired_native_support,1.0);
+    for(const auto& c:(*mapped.feature_slots)[1].configured) {
         QVERIFY(c.current_valid);
         QVERIFY(c.current_candidate_z);
         QCOMPARE(c.paired_native_support,1.0);
@@ -90,10 +90,10 @@ void M06NativeBindingTest::absentCurrentCandidateValueRemainsNull() {
     in->actual_candidate.valid_rms_windows=0;
     in->actual_candidate.valid_crest_windows=0;
     const auto mapped=real::make_real_d03_d04_m07_m08_slots(*in);
-    QVERIFY(mapped.slots);
-    QVERIFY((*mapped.slots)[0].configured[0].current_valid);
-    QVERIFY(!(*mapped.slots)[0].configured[0].current_candidate_z);
-    for(const auto& part:(*mapped.slots)[1].configured)
+    QVERIFY(mapped.feature_slots);
+    QVERIFY((*mapped.feature_slots)[0].configured[0].current_valid);
+    QVERIFY(!(*mapped.feature_slots)[0].configured[0].current_candidate_z);
+    for(const auto& part:(*mapped.feature_slots)[1].configured)
         QVERIFY(!part.current_candidate_z);
 }
 } // namespace

@@ -42,28 +42,28 @@ void M20TonalBindingTest::
 fiveOriginalSlotsPreserveLog2AndSlopeCoordinates() {
     const auto r=real::bind_real_m20_t02_t06(sample());
     QCOMPARE(r.problem,real::TonalBindingProblem::none);
-    QVERIFY(r.slots);
-    QCOMPARE(r.slots->size(),std::size_t{5});
+    QVERIFY(r.feature_slots);
+    QCOMPARE(r.feature_slots->size(),std::size_t{5});
     for(std::size_t i=0;i<5U;++i) {
-        QCOMPARE((*r.slots)[i].configured.size(),std::size_t{1});
-        QVERIFY((*r.slots)[i].configured[0].current_valid);
-        QCOMPARE((*r.slots)[i].configured[0].paired_native_support,1.0);
+        QCOMPARE((*r.feature_slots)[i].configured.size(),std::size_t{1});
+        QVERIFY((*r.feature_slots)[i].configured[0].current_valid);
+        QCOMPARE((*r.feature_slots)[i].configured[0].paired_native_support,1.0);
     }
-    QCOMPARE(*(*r.slots)[0].configured[0].prepared.z,1.0);
-    QCOMPARE(*(*r.slots)[1].configured[0].prepared.z,9.0);
-    QCOMPARE(*(*r.slots)[2].configured[0].prepared.z,10.0);
-    QCOMPARE(*(*r.slots)[3].configured[0].prepared.z,11.0);
-    QCOMPARE(*(*r.slots)[4].configured[0].prepared.z,2.0);
+    QCOMPARE(*(*r.feature_slots)[0].configured[0].prepared.z,1.0);
+    QCOMPARE(*(*r.feature_slots)[1].configured[0].prepared.z,9.0);
+    QCOMPARE(*(*r.feature_slots)[2].configured[0].prepared.z,10.0);
+    QCOMPARE(*(*r.feature_slots)[3].configured[0].prepared.z,11.0);
+    QCOMPARE(*(*r.feature_slots)[4].configured[0].prepared.z,2.0);
     QVERIFY(!r.authorizes_m10());
 }
 void M20TonalBindingTest::missingReferenceGradeKeepsOriginalMass() {
     auto x=sample();
     x.features[2].reference_grade[1]=false;
     const auto r=real::bind_real_m20_t02_t06(x);
-    QVERIFY(r.slots);
-    QCOMPARE((*r.slots)[2].configured.size(),std::size_t{1});
-    QVERIFY(!(*r.slots)[2].configured[0].current_valid);
-    QCOMPARE((*r.slots)[2].configured[0].paired_native_support,0.0);
+    QVERIFY(r.feature_slots);
+    QCOMPARE((*r.feature_slots)[2].configured.size(),std::size_t{1});
+    QVERIFY(!(*r.feature_slots)[2].configured[0].current_valid);
+    QCOMPARE((*r.feature_slots)[2].configured[0].paired_native_support,0.0);
 }
 void M20TonalBindingTest::
 changedCommonBandwidthAndFloorFailClosed() {

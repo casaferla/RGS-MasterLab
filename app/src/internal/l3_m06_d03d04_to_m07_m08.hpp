@@ -23,7 +23,7 @@ enum class D03D04SlotFailure:std::uint8_t {
     invalid_feature_dependency
 };
 struct D03D04SlotProjection final {
-    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,2>> slots;
+    std::optional<std::array<m08_frozen::AuthenticatedPairSlot,2>> feature_slots;
     D03D04SlotFailure reason{D03D04SlotFailure::stale_or_unauthenticated_input};
     [[nodiscard]] constexpr bool authorizes_product_publication()
         const noexcept{return false;}
@@ -57,7 +57,7 @@ make_real_d03_d04_m07_m08_slots(const D03D04FullEvidence& e)
             std::string{binding.source_feature_id},
             e.exact_feature_dependency,true,{}};
     };
-    std::array<m08_frozen::AuthenticatedPairSlot,2> slots{
+    std::array<m08_frozen::AuthenticatedPairSlot,2> feature_slots{
         as_slot(*d03),as_slot(*d04)};
     const auto add=[](m08_frozen::AuthenticatedPairSlot& to,
         std::optional<double> prepared,std::optional<double> gold,
@@ -68,16 +68,16 @@ make_real_d03_d04_m07_m08_slots(const D03D04FullEvidence& e)
             {prepared,m08_frozen::Endpoint::ordinary},
             {gold,m08_frozen::Endpoint::ordinary},observed,true});
     };
-    add(slots[0],pair->prepared.d03_type7_rms_p95_minus_p10_db,
+    add(feature_slots[0],pair->prepared.d03_type7_rms_p95_minus_p10_db,
         pair->reference.d03_type7_rms_p95_minus_p10_db,
         candidate.d03_type7_rms_p95_minus_p10_db,
         pair->paired_d03_support);
     for(std::size_t i=0;i<3U;++i)
-        add(slots[1],
+        add(feature_slots[1],
             pair->prepared.d04_type7_crest_p10_p50_p90_db[i],
             pair->reference.d04_type7_crest_p10_p50_p90_db[i],
             candidate.d04_type7_crest_p10_p50_p90_db[i],
             pair->paired_d04_support);
-    return {std::move(slots),D03D04SlotFailure::none};
+    return {std::move(feature_slots),D03D04SlotFailure::none};
 }
 } // namespace rgsml::app::l3_automatch::m05m06_real

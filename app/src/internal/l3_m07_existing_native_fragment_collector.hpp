@@ -50,18 +50,18 @@ collect_existing_m05m06_native_fragments(
     };
     if(fragments.tonal_primary&&fragments.tonal_primary->slot)
         add(*fragments.tonal_primary->slot);
-    if(fragments.tonal_scalar&&fragments.tonal_scalar->slots)
-        for(const auto& s:*fragments.tonal_scalar->slots)add(s);
+    if(fragments.tonal_scalar&&fragments.tonal_scalar->feature_slots)
+        for(const auto& s:*fragments.tonal_scalar->feature_slots)add(s);
     if(fragments.macro_d01&&fragments.macro_d01->slot)
         add(*fragments.macro_d01->slot);
     if(fragments.macro_lra&&fragments.macro_lra->slot)
         add(*fragments.macro_lra->slot);
-    if(fragments.macro_windowed&&fragments.macro_windowed->slots)
-        for(const auto& s:*fragments.macro_windowed->slots)add(s);
-    if(fragments.macro_loudness&&fragments.macro_loudness->slots)
-        for(const auto& s:*fragments.macro_loudness->slots)add(s);
-    if(fragments.stereo_broadband&&fragments.stereo_broadband->slots)
-        for(const auto& s:*fragments.stereo_broadband->slots)add(s);
+    if(fragments.macro_windowed&&fragments.macro_windowed->feature_slots)
+        for(const auto& s:*fragments.macro_windowed->feature_slots)add(s);
+    if(fragments.macro_loudness&&fragments.macro_loudness->feature_slots)
+        for(const auto& s:*fragments.macro_loudness->feature_slots)add(s);
+    if(fragments.stereo_broadband&&fragments.stereo_broadband->feature_slots)
+        for(const auto& s:*fragments.stereo_broadband->feature_slots)add(s);
     const auto inventory=generation.current_inventory();
     if(invalid||inventory.entire_generation_poisoned)
         return {NativeFragmentAdmission::conflicting_or_invalid_source,
