@@ -553,6 +553,46 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(realReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
+    // This second ZIP fixture includes an ACTUAL persisted Input Gain.
+    // Rehydrate MANUAL and REF_LINKED from genuine ProjectRepository
+    // bytes and compare every resulting PCM sample to the pre-save native
+    // realization. Preserved IDs/metadata alone are not audio evidence.
+    const auto persistedReplay=project::ProjectSnapshot::create(replayDocument);
+    QVERIFY(persistedReplay);
+    const auto audioZip=std::make_shared<M12ZipStorage>();
+    const auto persistedStatus=project::ProjectRepository::save_create_new(
+        *persistedReplay.value(),std::make_unique<M12ZipEndpoint>(audioZip),
+        [audioZip]()->core::Result<std::unique_ptr<core::IResourceReader>>{
+            return core::Result<std::unique_ptr<core::IResourceReader>>::
+                success(std::make_unique<M12ZipEndpoint>(audioZip));
+        });
+    QVERIFY(persistedStatus);
+    const auto onDisk=project::ProjectRepository::open(
+        std::make_unique<M12ZipEndpoint>(audioZip));
+    QVERIFY(onDisk);
+    const auto diskLinked=m::decode_exact_m12_ref_linked_product_state(
+        onDisk.value()->document(),reg);
+    QVERIFY(diskLinked);
+    const auto diskPlan=m::prepare_restored_m12_native_replay_plan(
+        onDisk.value()->document(),*diskLinked.value(),
+        manualChain.chainId,*manualGain.value(),gainBindings,true);
+    QVERIFY(diskPlan);
+    const auto diskPCM=m::render_restored_m12_full_native_pcm_once(
+        *diskPlan.value(),*prepared.value(),*maxBlock.value());
+    QVERIFY(diskPCM);
+    const auto beforeZip=realReplay.value()->view();
+    const auto afterZip=diskPCM.value()->view();
+    QCOMPARE(beforeZip.absolute_range(),afterZip.absolute_range());
+    QCOMPARE(beforeZip.format(),afterZip.format());
+    for(std::size_t ch=0;ch<beforeZip.format().channel_count();++ch) {
+        const auto beforeSamples=beforeZip.channel(ch);
+        const auto afterSamples=afterZip.channel(ch);
+        QVERIFY(beforeSamples&&afterSamples);
+        QCOMPARE(beforeSamples.value()->size(),afterSamples.value()->size());
+        for(std::size_t i=0;i<beforeSamples.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*beforeSamples.value())[i]),
+                     std::bit_cast<std::uint64_t>((*afterSamples.value())[i]));
+    }
     // The renderer must reject structurally forged replay tickets as
     // well as wrong Project Open input. No plausible PCM is emitted from
     // an unrelated native binding or manually recontextualized segment.
