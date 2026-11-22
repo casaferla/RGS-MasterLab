@@ -287,11 +287,11 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto gold_right=independent_gold.value()->mutable_view().channel(1);
     QVERIFY(gold_left&&gold_right);
     for(std::size_t i=0;i<gold_left.value()->size();++i) {
-        const double v=0.3*std::sin(
+        const double reference_sample=0.3*std::sin(
             2.0*std::numbers::pi*660.0*
             static_cast<double>(i)/48000.0);
-        (*gold_left.value())[i]=v;
-        (*gold_right.value())[i]=v;
+        (*gold_left.value())[i]=reference_sample;
+        (*gold_right.value())[i]=reference_sample;
     }
     const auto source_owner=a::native_product_original_identity(
         stamp,a::OriginalProductRole::prepared);
