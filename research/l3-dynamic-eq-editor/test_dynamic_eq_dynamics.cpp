@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
+#include <QColor>
 #include <cassert>
 #include <iostream>
 
@@ -84,6 +85,31 @@ int main(int argc,char** argv) {
     app.processEvents();
     if(!sideWindow->isVisible() || ed->property("manualEditable").toBool())
         return 15;
+    // WAV Export family chrome is a real Qt scene, not a screenshot mock.
+    QObject* panel=companion->findChild<QObject*>(
+        "dynamicEqDynamicsWavFamilyPanel");
+    QObject* panelTitle=companion->findChild<QObject*>(
+        "dynamicEqDynamicsPanelTitle");
+    QObject* selectedBand=companion->findChild<QObject*>(
+        "dynamicEqDynamicsSelectedBand");
+    QObject* mode=companion->findChild<QObject*>(
+        "dynamicEqControlsReadOnlyStatus");
+    QObject* closeButton=companion->findChild<QObject*>(
+        "dynamicEqDynamicsCloseButton");
+    if(!panel || !panelTitle || !selectedBand || !mode || !closeButton
+       ||panelTitle->property("text").toString()
+            !=QStringLiteral("DYNAMIC EQ · DYNAMICS")
+       ||selectedBand->property("text").toString()
+            !=QStringLiteral("BAND 1 · BELL")
+       ||mode->property("text").toString()!=QStringLiteral("READ ONLY")
+       ||panel->property("radius").toInt()!=7
+       ||panel->property("color").value<QColor>()
+            !=QColor(QStringLiteral("#101F30")))
+        return 50;
+    if(sideWindow->width()<980 || sideWindow->height()!=196
+       ||strip->property("width").toDouble()<920
+       ||strip->property("height").toDouble()<112)
+        return 51;
     // A detached surface is NOT a descendant of the graph QQuickItem.
     if(graph->findChild<QObject*>("dynamicEqDynamicsStrip"))return 20;
     if(!strip->property("visible").toBool())return 21;
@@ -129,7 +155,9 @@ int main(int argc,char** argv) {
     model.setResearchManualEditable(true);
     app.processEvents();
     if(!ed->property("manualEditable").toBool()
-       ||!strip->property("editable").toBool())return 31;
+       ||!strip->property("editable").toBool()
+       ||mode->property("text").toString()!=QStringLiteral("MANUAL EDIT"))
+        return 31;
     common.setDraftFieldText("gain","10");
     if(!common.commitDraft() || common.gain()!=10.0
        ||model.acceptedBandSpecs()[0].control.base_gain_db!=10.0
@@ -174,7 +202,9 @@ int main(int argc,char** argv) {
     model.setResearchManualEditable(false);
     app.processEvents();
     if(ed->property("manualEditable").toBool()
-       ||strip->property("editable").toBool())return 34;
+       ||strip->property("editable").toBool()
+       ||mode->property("text").toString()!=QStringLiteral("READ ONLY"))
+        return 34;
     if(undoButton->property("enabled").toBool()
        ||redoButton->property("enabled").toBool()
        ||addButton->property("enabled").toBool()
@@ -195,6 +225,18 @@ int main(int argc,char** argv) {
     if(graph->property("width").toDouble()!=graphWidth
        ||graph->property("height").toDouble()!=graphHeight)
         return 37;
+    // WAV-style internal X closes the tool and restores the main toggle.
+    if(!QMetaObject::invokeMethod(closeButton,"clicked",Qt::DirectConnection))
+        return 52;
+    app.processEvents();
+    if(sideWindow->isVisible() || ed->property("showDynamics").toBool())
+        return 53;
+    ed->setProperty("showDynamics",true);
+    app.processEvents();
+    if(!sideWindow->isVisible()
+       ||graph->property("width").toDouble()!=graphWidth
+       ||graph->property("height").toDouble()!=graphHeight)
+        return 54;
     std::cout<<"C01 shared-state Qt read-only/manual research gate: PASS\n";
     return 0;
 }

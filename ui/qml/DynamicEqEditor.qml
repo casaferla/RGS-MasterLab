@@ -741,6 +741,7 @@ Rectangle {
         id: dynamicCompanion
         objectName: "dynamicEqDynamicsCompanion"
         dynamicsViewModel: root.dynamicsControls
+        bandViewModel: root.viewModel
         visible: root.showDynamics && !!root.dynamicsControls
         transientParent: root.Window.window
         x: root.Window.window

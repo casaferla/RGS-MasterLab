@@ -8,21 +8,13 @@ Rectangle {
         && dynamicsViewModel.loaded && dynamicsViewModel.manualEditable
     height: 112
     radius: 5
-    color: "#F20A1D2B"
-    border.color: "#345771"
+    color: "#142B3C"
+    border.color: "#27465F"
     border.width: 1
     RowLayout {
         anchors.fill: parent
         anchors.margins: 7
         spacing: 7
-        Text {
-            text: "DYNAMIC"
-            Layout.alignment: Qt.AlignTop
-            Layout.topMargin: 6
-            color: "#F2B632"
-            font.pixelSize: 10
-            font.bold: true
-        }
         Repeater {
             model: [
                 {key:"range",label:"RANGE",unit:"dB",lo:-18,hi:18,step:0.1,log:false},

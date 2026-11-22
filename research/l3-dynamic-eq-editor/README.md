@@ -235,3 +235,22 @@ research harness injects a unique deterministic UUID provider and exercises
 actual QML Add Band, Undo, Redo and Remove Band signals, then proves all
 mutation actions relock. Production UUID allocation and Product ownership
 remain post-L3 integration responsibilities.
+
+## WAV Export family styling for the detached Dynamics window
+
+The standalone C01 Dynamics window stays a non-modal `Qt.Tool` companion
+without covering or shrinking the inherited EQ graph or Spectrum. Its
+visual chrome now reuses the actual WAV Export design vocabulary:
+`#101F30` rounded inner panel, `#27465F` hairline, rounded 2px copper
+top arc, 12px Segoe UI semibold title and 25x22 inset close button.
+The second compact line shows the accepted C01 selected band/filter and
+a truthful READ ONLY / MANUAL EDIT status, bound to the same typed owner;
+no separate DSP state or duplicate spectrum.
+
+The former redundant strip "DYNAMIC" text is removed to leave more
+space for the six existing numeric/slider pairs. The panel is a fixed
+196px-tall tool window (980–1280px wide) with no scrolling. Qt smoke
+checks the WAV-family theme, selected-band label, edit/relock status,
+close-and-reopen behavior and unchanged main-graph geometry. Native
+Product registration, docking and actual playback remain deferred to
+the operational L3 integration decision.
