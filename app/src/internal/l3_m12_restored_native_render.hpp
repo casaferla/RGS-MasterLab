@@ -61,6 +61,31 @@ render_restored_m12_full_native_pcm_once(
         return true;
     };
     if(!plan.registry_owner)return fail("L3_M12_REPLAY_REGISTRY_MISSING");
+    if(!plan.manual_prefix.instances().empty()&&
+       plan.manual_prefix.instances().front().module_type_id()!=
+           "rgsml.dsp.gain")
+        return fail("L3_M12_REPLAY_INPUT_GAIN_NOT_PROTECTED_FIRST");
+    // Direct aggregates cannot smuggle a second P2 inside MANUAL or
+    // collide a controller-owned node with a protected user module.
+    if(std::any_of(plan.manual_prefix.instances().begin(),
+                   plan.manual_prefix.instances().end(),
+                   [](const dsp::ModuleInstance& node){
+                       return node.module_type_id()==
+                           "rgsml.dsp.streaming-true-peak-limiter";
+                   }))
+        return fail("L3_M12_REPLAY_DUPLICATE_TERMINAL_P2");
+    for(const auto& linked:plan.reference_linked.instances()) {
+        if(linked.module_type_id()=="rgsml.dsp.true-peak-limiter"||
+           linked.module_type_id()=="rgsml.dsp.dither")
+            return fail("L3_M12_REPLAY_EXPORT_SAFETY_IN_INLINE_REF");
+        for(const auto& manual:plan.manual_prefix.instances())
+            if(linked.instance_id()==manual.instance_id())
+                return fail("L3_M12_REPLAY_MANUAL_REF_ID_COLLISION");
+        if(plan.terminal_p2)
+            for(const auto& terminal:plan.terminal_p2->instances())
+                if(linked.instance_id()==terminal.instance_id())
+                    return fail("L3_M12_REPLAY_REF_P2_ID_COLLISION");
+    }
     if(!valid_segment(plan.manual_prefix,{
            dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
            plan.manual_bindings,false)||
