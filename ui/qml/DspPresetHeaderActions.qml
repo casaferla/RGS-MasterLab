@@ -18,8 +18,10 @@ Item {
     readonly property bool actionsAvailable: !!presetController
         && (entireChain || moduleInstanceId.length > 0)
     visible: actionsAvailable
-    implicitWidth: 45
-    implicitHeight: 22
+    // Two 19px icons in a 42x20 row, also usable as bottom half of
+    // the fixed 2x2 utility cluster in every module header.
+    implicitWidth: 42
+    implicitHeight: 20
     width: implicitWidth
     height: implicitHeight
 
@@ -35,14 +37,14 @@ Item {
 
     Row {
         anchors.centerIn: parent
-        spacing: 3
+        spacing: 2
         StudioIconButton {
             id: presetOpen
             objectName: root.entireChain
                 ? "dspChainPresetOpen" : "dspModulePresetOpen"
             iconKind: "preset-open"
-            controlSize: 21
-            iconSize: 16
+            controlSize: 19
+            iconSize: 15
             enabled: root.actionsAvailable
             onClicked: openFileDialog.open()
             Accessible.name: "Open settings for " + root.scopeName()
@@ -61,8 +63,8 @@ Item {
             objectName: root.entireChain
                 ? "dspChainPresetSave" : "dspModulePresetSave"
             iconKind: "preset-save"
-            controlSize: 21
-            iconSize: 16
+            controlSize: 19
+            iconSize: 15
             enabled: root.actionsAvailable
             onClicked: saveFileDialog.open()
             Accessible.name: "Save settings for " + root.scopeName()
