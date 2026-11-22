@@ -3080,3 +3080,17 @@ add_test(NAME rgsml_l3_m06_p04_native_flux_tests
 set_tests_properties(rgsml_l3_m06_p04_native_flux_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;p04;native_flux;nonrelease")
+
+# L3 M06 Phase6 P04 exact robust-MAD and canonical local/NMS selection.
+qt_add_executable(rgsml_l3_m06_p04_native_event_tests
+    unit/app/test_l3_m06_p04_native_event_selection.cpp)
+target_include_directories(rgsml_l3_m06_p04_native_event_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_p04_native_event_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_p04_native_event_tests)
+add_test(NAME rgsml_l3_m06_p04_native_event_tests
+    COMMAND rgsml_l3_m06_p04_native_event_tests)
+set_tests_properties(rgsml_l3_m06_p04_native_event_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;p04;robust_mad;nms;nonrelease")
