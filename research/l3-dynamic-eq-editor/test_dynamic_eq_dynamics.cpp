@@ -199,6 +199,67 @@ int main(int argc,char** argv) {
     app.processEvents();
     if(common.bandCount()!=1 || removeButton->property("enabled").toBool())
         return 48;
+    // Two real C01 bands must share one selected index across the main
+    // editor, the WAV-family companion header and all six dynamic fields.
+    auto* selector0=ed->findChild<QObject*>("bandSelectorButton_0");
+    if(!selector0)return 55;
+    model.setDraftFieldText("threshold","-41.25");
+    if(model.texts().value("threshold").toString()
+            !=QStringLiteral("-41.25"))return 56;
+    // Clicking the current band's REAL Qt selector is an idempotent action:
+    // it must not silently throw away the active numeric draft.
+    if(!QMetaObject::invokeMethod(selector0,"clicked",Qt::DirectConnection))
+        return 57;
+    app.processEvents();
+    if(common.selectedIndex()!=0
+       ||model.texts().value("threshold").toString()
+           !=QStringLiteral("-41.25"))return 58;
+    model.cancelDraft();
+
+    if(!QMetaObject::invokeMethod(addButton,"clicked",Qt::DirectConnection))
+        return 59;
+    app.processEvents();
+    auto* selector1=ed->findChild<QObject*>("bandSelectorButton_1");
+    auto* thresholdControl=strip->findChild<QObject*>(
+        "dynamicEqControl_threshold");
+    auto* attackControl=strip->findChild<QObject*>("dynamicEqControl_attack");
+    if(!selector1 || !thresholdControl || !attackControl
+       ||common.selectedIndex()!=1
+       ||selectedBand->property("text").toString()
+           !=QStringLiteral("BAND 2 · BELL"))return 60;
+
+    model.setDraftFieldText("threshold","-37.5");
+    if(!model.commitDraft())return 61;
+    model.setDraftFieldText("attack","52.5");
+    if(!model.commitDraft())return 62;
+    app.processEvents();
+    if(model.values().value("threshold").toDouble()!=-37.5
+       ||model.values().value("attack").toDouble()!=52.5
+       ||thresholdControl->property("rawText").toString()
+           !=QStringLiteral("-37.5")
+       ||attackControl->property("rawText").toString()
+           !=QStringLiteral("52.5"))return 63;
+
+    if(!QMetaObject::invokeMethod(selector0,"clicked",Qt::DirectConnection))
+        return 64;
+    app.processEvents();
+    if(common.selectedIndex()!=0
+       ||selectedBand->property("text").toString()
+           !=QStringLiteral("BAND 1 · BELL")
+       ||model.values().value("attack").toDouble()!=48.5
+       ||attackControl->property("rawText").toString()
+           !=QStringLiteral("48.5"))return 65;
+
+    if(!QMetaObject::invokeMethod(selector1,"clicked",Qt::DirectConnection))
+        return 66;
+    app.processEvents();
+    if(common.selectedIndex()!=1
+       ||selectedBand->property("text").toString()
+           !=QStringLiteral("BAND 2 · BELL")
+       ||model.values().value("threshold").toDouble()!=-37.5
+       ||model.values().value("attack").toDouble()!=52.5
+       ||thresholdControl->property("rawText").toString()
+           !=QStringLiteral("-37.5"))return 67;
     model.setResearchManualEditable(false);
     app.processEvents();
     if(ed->property("manualEditable").toBool()

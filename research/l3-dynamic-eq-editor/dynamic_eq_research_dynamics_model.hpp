@@ -115,6 +115,9 @@ public:
     }
     [[nodiscard]] bool selectBand(std::size_t n) {
         if(n>=bands_.size())return false;
+        // Clicking the already-selected band must not discard an unfinished
+        // numeric edit or an in-progress graph gesture.
+        if(n==selected_)return true;
         selected_=n; cancelDraft(); graph_draft_.reset();
         emit changed(); return true;
     }

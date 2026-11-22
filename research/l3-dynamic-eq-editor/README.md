@@ -254,3 +254,13 @@ checks the WAV-family theme, selected-band label, edit/relock status,
 close-and-reopen behavior and unchanged main-graph geometry. Native
 Product registration, docking and actual playback remain deferred to
 the operational L3 integration decision.
+
+## Selected-band coherence (research C01)
+
+Repeatedly clicking the active band selector is now idempotent: uncommitted
+numeric text or a graph drag is preserved. Changing to a different band
+explicitly clears the previous band's draft. An isolated Qt Quick smoke
+exercises real selector buttons with two accepted C01 bands, checks their
+independent Threshold and Attack values across main EQ/companion switches,
+and ensures the WAV-family header shows the correct selection. Relock still
+blocks manual edits; no Product or L3 DSP path is changed.

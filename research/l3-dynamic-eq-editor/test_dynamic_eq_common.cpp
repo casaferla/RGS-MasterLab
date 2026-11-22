@@ -52,6 +52,15 @@ int main(int argc,char** argv) {
     if(common.filter()!="LOW_SHELF")return 14;
     owner.setResearchManualEditable(true);
     if(!common.manualEditable())return 15;
+    // Reselecting the selected band is a no-op, even during a draft.
+    common.setDraftFieldText("threshold","-42.5");
+    common.selectBand(1);
+    if(owner.texts().value("threshold").toString()
+           !=QStringLiteral("-42.5"))return 49;
+    common.selectBand(0);
+    if(owner.texts().value("threshold").toString()
+           ==QStringLiteral("-42.5"))return 50;
+    common.selectBand(1);
     // Identical permission updates do not discard an in-progress draft.
     common.setDraftFieldText("gain","12");
     owner.setResearchManualEditable(true);
