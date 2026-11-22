@@ -35,7 +35,8 @@ class P2RealNativeProductTest final:public QObject {
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void adaptiveRamCacheBudgetPreservesColdRender();
-    void streamingP2AndIndependentM16RenderAt192kHz();
+    void streamingP2AndIndependentM16RenderAtAllSixRates_data();
+    void streamingP2AndIndependentM16RenderAtAllSixRates();
 };
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
@@ -245,8 +246,8 @@ void P2RealNativeProductTest::adaptiveRamCacheBudgetPreservesColdRender() {
     using namespace a::m10_p2_memory;
     constexpr std::uint64_t mib=1024ULL*1024ULL;
     // The 256 MiB default used in preview is NOT a frozen
-    // limitation for AutoMatch. On sufficient RAM, 96/192 kHz whole
-    // resource prefixes can be cached without a fixed 256 MiB veto.
+    // limitation for AutoMatch. All six Product rates, including
+    // 176.4 and 192 kHz, share the same adaptive RAM policy.
     QCOMPARE(budget_from_available_ram(0U),std::size_t{0});
     QCOMPARE(budget_from_available_ram(512ULL*mib),std::size_t{0});
     QCOMPARE(budget_from_available_ram(2048ULL*mib),
@@ -268,9 +269,16 @@ void P2RealNativeProductTest::adaptiveRamCacheBudgetPreservesColdRender() {
                 budget_from_available_ram(4096ULL*mib)));
     // 300 s, stereo float64, 192 kHz: ~879 MiB single prefix.
     // No fake downsampling, fixed 256 MiB gate or truncated buffer.
+    constexpr std::uint64_t sample_bytes_5m_176k4=
+        5ULL*60ULL*176400ULL*2ULL*sizeof(double);
     constexpr std::uint64_t sample_bytes_5m_192k=
         5ULL*60ULL*192000ULL*2ULL*sizeof(double);
-    QVERIFY(sample_bytes_5m_192k>sample_bytes_5m_96k);
+    QVERIFY(sample_bytes_5m_176k4>sample_bytes_5m_96k);
+    QVERIFY(sample_bytes_5m_192k>sample_bytes_5m_176k4);
+    QVERIFY(sample_bytes_5m_176k4>256ULL*mib);
+    QVERIFY(sample_bytes_5m_176k4<
+        static_cast<std::uint64_t>(
+            budget_from_available_ram(8192ULL*mib)));
     QVERIFY(sample_bytes_5m_192k>256ULL*mib);
     QVERIFY(sample_bytes_5m_192k<
         static_cast<std::uint64_t>(
@@ -285,9 +293,21 @@ void P2RealNativeProductTest::adaptiveRamCacheBudgetPreservesColdRender() {
 }
 
 void P2RealNativeProductTest::
-streamingP2AndIndependentM16RenderAt192kHz() {
-    // Test real DSP/analysis support at the top Fs without allocating
-    // a 300-second recording on CI. The RAM arithmetic is tested above.
+streamingP2AndIndependentM16RenderAtAllSixRates_data() {
+    QTest::addColumn<int>("sampleRate");
+    QTest::newRow("44k1") << 44100;
+    QTest::newRow("48k") << 48000;
+    QTest::newRow("88k2") << 88200;
+    QTest::newRow("96k") << 96000;
+    QTest::newRow("176k4") << 176400;
+    QTest::newRow("192k") << 192000;
+}
+void P2RealNativeProductTest::
+streamingP2AndIndependentM16RenderAtAllSixRates() {
+    QFETCH(int,sampleRate);
+    // One second of real DSP+M16 per supported rate; cache
+    // admission for five-minute 176.4/192-kHz PCM is checked above.
+    // Do not allocate six full five-minute buffers in CI.
     auto basic=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(basic);
     auto opt=dsp::ModuleRegistry::with_streaming_true_peak_preview(
@@ -306,11 +326,11 @@ streamingP2AndIndependentM16RenderAt192kHz() {
     QVERIFY(params);
     const std::vector<dsp::ModuleExecutionBinding> bindings{{
         limiter_id,*params.value()}};
-    const auto rate=core::SampleRate::create(192000);
+    const auto rate=core::SampleRate::create(sampleRate);
     QVERIFY(rate);
     const auto fmt=audio::AudioFormat::create(
         *rate.value(),audio::ChannelLayout::STEREO_LR);
-    const auto frames=core::FrameCount::create(192000);
+    const auto frames=core::FrameCount::create(sampleRate);
     const auto block=core::FrameCount::create(4096);
     QVERIFY(fmt&&frames&&block);
     auto source=audio::AudioBuffer::create(
@@ -322,7 +342,7 @@ streamingP2AndIndependentM16RenderAt192kHz() {
     QVERIFY(l&&r);
     for(std::size_t i=0;i<l.value()->size();++i) {
         const double v=0.2*std::sin(2.0*std::numbers::pi*440.0*
-            static_cast<double>(i)/192000.0);
+            static_cast<double>(i)/static_cast<double>(sampleRate));
         (*l.value())[i]=v;
         (*r.value())[i]=v;
     }
@@ -334,9 +354,9 @@ streamingP2AndIndependentM16RenderAt192kHz() {
     const auto rendered=render::render_preview(*req.value(),*registry);
     QVERIFY(rendered);
     QCOMPARE(rendered.value()->view().format().sample_rate().value(),
-             192000);
+             sampleRate);
     QCOMPARE(rendered.value()->view().frame_count().value(),
-             192000);
+             sampleRate);
     QVERIFY(!rendered.value()->signatures().empty());
     QCOMPARE(rendered.value()->signatures().back().type_id,
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
