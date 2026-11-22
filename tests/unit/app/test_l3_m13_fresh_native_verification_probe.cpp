@@ -1,6 +1,5 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
-#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -94,61 +93,43 @@ noM12ReceiptCannotPretendFreshVerification() {
     QVERIFY(fresh.value()->fresh_m20.mean_linear_psd.size()>0U);
     QVERIFY(!fresh.value()->is_m13_verified());
     QVERIFY(!fresh.value()->authorizes_export());
-    // The *independent whole master* must use the original frozen
-    // Manual -> actual ReferenceMatch -> still-current M17 terminal.
-    auto terminal=dsp::ProcessingChain::create(*owned,{
-        dsp::ProcessingStage::MASTER,dsp::ChainSegment::TERMINAL});
-    QVERIFY(terminal);
-    const auto tpId=id("c4000000-0000-4000-8000-000000000001");
-    QVERIFY(terminal.value()->add(
-        tpId,"rgsml.dsp.true-peak-limiter",0));
-    auto ceiling=dsp::TruePeakLimiterParameters::create(0.0);
-    QVERIFY(ceiling);
-    const std::vector<dsp::ModuleExecutionBinding> terminalBindings{
-        {tpId,*ceiling.value()}};
+    // M13 runs M16 on the entire actual AutoMatch PCM BEFORE export.
+    // Neither a terminal M17 module nor its ceiling is an input.
     const auto whole=m13::probe_fresh_m13_full_native_master_once(
-        *stage.value(),*manual.value(),none,*terminal.value(),
-        terminalBindings,*prepared.value(),*chunk.value(),
-        0.0,true,true);
+        *stage.value(),*manual.value(),none,
+        *prepared.value(),*chunk.value(),0.0,true,true);
     QVERIFY(whole);
     QCOMPARE(whole.value()->logical_verification_evaluations,
              std::uint32_t{1});
     QCOMPARE(whole.value()->genuine_dsp_segment_passes,
-             std::uint32_t{3});
-    QCOMPARE(whole.value()->independent_final_output_pcm.view().
+             std::uint32_t{2});
+    QCOMPARE(whole.value()->independent_match_render.view().
                  frame_count().value(),std::int64_t{48000});
-    QCOMPARE(whole.value()->independent_final_output_pcm.view().
+    QCOMPARE(whole.value()->independent_match_render.view().
                  timebase().frame_domain_id(),
-             audio::FrameDomainId::OUTPUT_RATE);
-    QCOMPARE(whole.value()->genuine_m17_applied_gain_witness_frames,
-             std::uint64_t{48000});
+             audio::FrameDomainId::SOURCE_PROCESSING_RATE);
     QVERIFY(std::isfinite(
-        whole.value()->independent_m17_m16_check.after_linear_peak));
+        whole.value()->authentic_full_resource_m16.global_linear_peak()));
+    QVERIFY(whole.value()->authentic_full_resource_m16.global_linear_peak()
+        <1.0);
     QCOMPARE(whole.value()->independent_final_m20.channel_count,2U);
     QVERIFY(!whole.value()->is_m13_verified());
     QVERIFY(!whole.value()->authorizes_master_export());
     QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
-        *stage.value(),*manual.value(),none,*terminal.value(),
-        terminalBindings,*prepared.value(),*chunk.value(),
-        0.0,false,true));
+        *stage.value(),*manual.value(),none,
+        *prepared.value(),*chunk.value(),0.0,false,true));
+    // Independent AutoMatch safety threshold may be DIFFERENT from M17.
     QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
-        *stage.value(),*manual.value(),none,*terminal.value(),
-        terminalBindings,*prepared.value(),*chunk.value(),
-        -1.0,true,true));
-    // Live manual changed AFTER M12 stage: no stale protected gain or
-    // graph revision can pass the independent verifier preflight.
+        *stage.value(),*manual.value(),none,
+        *prepared.value(),*chunk.value(),-24.0,true,true));
+    // A changed M11 fixed chain invalidates the verifier even if the
+    // linked DSP winner stays unchanged.
     QVERIFY(manual.value()->add(
         id("c4000000-0000-4000-8000-000000000002"),
         "rgsml.dsp.gain",0));
     QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
-        *stage.value(),*manual.value(),none,*terminal.value(),
-        terminalBindings,*prepared.value(),*chunk.value(),
-        0.0,true,true));
-    QVERIFY(terminal.value()->set_user_bypass(tpId,true));
-    QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
-        *stage.value(),*manual.value(),none,*terminal.value(),
-        terminalBindings,*prepared.value(),*chunk.value(),
-        0.0,true,true));
+        *stage.value(),*manual.value(),none,
+        *prepared.value(),*chunk.value(),0.0,true,true));
 }
 void M13FreshNativeProbeTest::
 newRealRenderAndIndependentAnalysisRemainNonverified() {
