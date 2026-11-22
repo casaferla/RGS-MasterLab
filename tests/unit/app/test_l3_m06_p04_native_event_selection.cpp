@@ -76,6 +76,21 @@ rejectsBrokenAbsoluteFrameIdentity(){
     QCOMPARE(rejected.reason,
              p::P04SelectionReason::
                  unqualified_or_invalid_flux_population);
+    // The same apparently monotonic population must be rejected
+    // when a single native sample is shifted off the frozen rational
+    // 200 Hz grid, even if its timestamp/center is shifted together.
+    r=fixture();
+    ++r.canonical[3].absolute_start_frame;
+    r.canonical[3].event_center_twice_frames+=2U;
+    const auto shifted=p::select_p04_canonical_native_events(r);
+    QCOMPARE(shifted.reason,p::P04SelectionReason::
+                 unqualified_or_invalid_flux_population);
+    r=fixture();
+    r.canonical[41].raw_positive_spectral_flux.reset();
+    QVERIFY(p::select_p04_canonical_native_events(r).canonical_events.empty());
+    QCOMPARE(p::select_p04_canonical_native_events(r).reason,
+             p::P04SelectionReason::
+                 unqualified_or_invalid_flux_population);
 }
 } // namespace
 } // namespace rgsml::tests

@@ -68,11 +68,24 @@ select_p04_canonical_native_events(
        native.canonical.size()<2U)
         return out;
     const auto fs=native.sample_rate_hz;
+    const auto expected_window=p04_round_ties_even(fs,50U);
+    if(!expected_window||native.native_window_frames!=*expected_window)
+        return out;
+    std::uint64_t expected_fft=1U;
+    while(expected_fft<*expected_window&&expected_fft<=16384U)
+        expected_fft*=2U;
+    if(native.canonical_fft_size!=expected_fft)return out;
     const auto& frames=native.canonical;
     std::vector<std::optional<double>> z(frames.size());
     for(std::size_t i=0;i<frames.size();++i) {
         const auto& f=frames[i];
+        if(i>std::numeric_limits<std::uint64_t>::max()/fs)
+            return out;
+        const auto exact_start=p04_round_ties_even(i*fs,200U);
+        if(!exact_start||f.absolute_start_frame!=*exact_start)
+            return out;
         if(f.canonical_grid_ordinal!=i||
+           (i>0U&&!f.raw_positive_spectral_flux)||
            (i>0U&&
             f.absolute_start_frame<=frames[i-1U].absolute_start_frame)||
            f.event_center_twice_frames!=
