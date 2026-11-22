@@ -67,6 +67,8 @@ measure_and_score_bound_m10_p2_product_worker(
        exact_candidate_source_owner.resource_identity.empty()||
        !exact_candidate_source_owner.generation||
        !real_prepared_reference_native_pair||
+       !original_pair_matches_product_owner(
+           *real_prepared_reference_native_pair,current.current_owner)||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return refused();
 

@@ -17,6 +17,22 @@ struct OriginalPreparedReferenceNativeFacts final {
     [[nodiscard]] constexpr bool authorizes_m10_or_m12()
         const noexcept{return false;}
 };
+// Generation alignment is necessary on EVERY new solver attempt AND
+// exact completed-cache hit. Source and REFERENCE selection revisions
+// are independent: a new REFERENCE with the same path is still new.
+[[nodiscard]] inline bool original_pair_matches_product_owner(
+    const OriginalPreparedReferenceNativeFacts& observed,
+    const OfflineProductOwnerStamp& stamp) noexcept
+{
+    const auto& p=observed.prepared.original_m19_m20.owner;
+    const auto& g=observed.reference.original_m19_m20.owner;
+    return stamp.populated()&&
+           p.full_track_owner_confirmed&&g.full_track_owner_confirmed&&
+           p.generation==stamp.source_generation&&
+           g.generation==stamp.reference_selection_revision&&
+           !p.resource_identity.empty()&&!g.resource_identity.empty()&&
+           p.resource_identity!=g.resource_identity;
+}
 [[nodiscard]] inline core::Result<OriginalPreparedReferenceNativeFacts>
 measure_original_prepared_reference_native_once(
     const audio::AudioBuffer& exact_current_prepared,

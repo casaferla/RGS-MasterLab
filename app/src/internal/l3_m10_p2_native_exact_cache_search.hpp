@@ -71,6 +71,9 @@ template<typename M09Decode,typename CanonicalKey,
        !verified_candidate_owner.generation||
        verified_candidate_owner.resource_identity.empty()||
        !authentic_prepared_reference_native_pair||
+       !original_pair_matches_product_owner(
+           *authentic_prepared_reference_native_pair,
+           owners.current_owner)||
        exact_m07_phase6_generation.empty()||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {EvaluationKind::preflight_rejected,{}};
