@@ -1,0 +1,41 @@
+name: Transient Shaper isolated Qt QML smoke (nonrelease)
+on:
+  push:
+    branches:
+      - research/l3-transient-shaper-editor-isolated-20261122
+    paths:
+      - 'research/l3-transient-shaper-editor/**'
+      - 'ui/qml/TransientShaperEditor.qml'
+      - 'ui/qml/TransientActivityScope.qml'
+      - '.github/workflows/research-transient-qt-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  qt-qml-research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      QT_QUICK_CONTROLS_STYLE: Basic
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt 6.8 Quick Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64
+      - name: Compile and load real C00-QML research editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S research/l3-transient-shaper-editor -B /tmp/transient-qt-research \
+            -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64"
+          cmake --build /tmp/transient-qt-research --parallel 4
+          /tmp/transient-qt-research/transient_research_qml_smoke \
+            "$GITHUB_WORKSPACE/research/l3-transient-shaper-editor/RealC00QtHarness.qml"
