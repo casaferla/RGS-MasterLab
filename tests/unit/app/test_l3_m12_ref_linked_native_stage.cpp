@@ -114,7 +114,7 @@ forbiddenInputGainCollisionsStalenessAndUnavailableAreAtomic() {
     QVERIFY(!m::stage_exact_m12_native_ref_linked(
         stale,*manual.value(),protectedParams,registry,{node}));
     stale=approved();
-    stale.anchor_and_separate_terminal_limiter_admissible=false;
+    stale.independent_m16_measurement_and_m11_safety_attested=false;
     QVERIFY(!m::stage_exact_m12_native_ref_linked(
         stale,*manual.value(),protectedParams,registry,{node}));
     QCOMPARE(manual.value()->revision(),std::uint64_t{1});

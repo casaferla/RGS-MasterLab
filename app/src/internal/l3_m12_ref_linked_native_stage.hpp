@@ -2,7 +2,8 @@
 // L3-M12 native Product REF_LINKED stage, real DSP ModuleInstance/Registry
 // and typed ModuleExecutionBinding, not a second/parallel DSP chain.
 // This stage is NOT project publication or M13 verification. Persistent
-// carrier / atomic receipt and mandatory terminal composition follow.
+// carrier / atomic receipt follow. WAV Export M17 is NEVER owned or
+// configured by AutoMatch; it is independent of M16 analytical safety.
 #include "l3_automatch_typed_gain_trial.hpp"
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
@@ -38,7 +39,7 @@ struct AcceptedPlanAndOwner final {
     std::uint64_t exact_accepted_plan_revision{};
     bool current_source_reference_owner_and_plan_attested{};
     bool m11_protected_and_full_candidate_safety_passed{};
-    bool anchor_and_separate_terminal_limiter_admissible{};
+    bool independent_m16_measurement_and_m11_safety_attested{};
     bool no_correction_required{};
 };
 struct StagedRefLinkedSegment final {
@@ -80,7 +81,7 @@ stage_exact_m12_native_ref_linked(
        accepted.exact_source_reference_amount_scope_revision.empty()||
        !accepted.current_source_reference_owner_and_plan_attested||
        !accepted.m11_protected_and_full_candidate_safety_passed||
-       !accepted.anchor_and_separate_terminal_limiter_admissible||
+       !accepted.independent_m16_measurement_and_m11_safety_attested||
        (accepted.no_correction_required!=original_m10_ordered_nodes.empty())||
        !live_registry||
        protected_manual.context()!=dsp::ProcessingChainContext{
