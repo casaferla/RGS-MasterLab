@@ -35,6 +35,7 @@ class P2RealNativeProductTest final:public QObject {
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void adaptiveRamCacheBudgetPreservesColdRender();
+    void streamingP2AndIndependentM16RenderAt192kHz();
 };
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
@@ -265,6 +266,86 @@ void P2RealNativeProductTest::adaptiveRamCacheBudgetPreservesColdRender() {
     QVERIFY(sample_bytes_5m_96k<
             static_cast<std::uint64_t>(
                 budget_from_available_ram(4096ULL*mib)));
+    // 300 s, stereo float64, 192 kHz: ~879 MiB single prefix.
+    // No fake downsampling, fixed 256 MiB gate or truncated buffer.
+    constexpr std::uint64_t sample_bytes_5m_192k=
+        5ULL*60ULL*192000ULL*2ULL*sizeof(double);
+    QVERIFY(sample_bytes_5m_192k>sample_bytes_5m_96k);
+    QVERIFY(sample_bytes_5m_192k>256ULL*mib);
+    QVERIFY(sample_bytes_5m_192k<
+        static_cast<std::uint64_t>(
+            budget_from_available_ram(8192ULL*mib)));
+    // A machine with little available RAM must skip *cache only*.
+    QVERIFY(sample_bytes_5m_192k>
+        static_cast<std::uint64_t>(
+            budget_from_available_ram(2048ULL*mib)));
+    QVERIFY(sample_bytes_5m_192k<
+        static_cast<std::uint64_t>(
+            budget_from_available_ram(32768ULL*mib)));
+}
+
+void P2RealNativeProductTest::
+streamingP2AndIndependentM16RenderAt192kHz() {
+    // Test real DSP/analysis support at the top Fs without allocating
+    // a 300-second recording on CI. The RAM arithmetic is tested above.
+    auto basic=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(basic);
+    auto opt=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*basic.value()));
+    QVERIFY(opt);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*opt.value()));
+    auto chain=dsp::ProcessingChain::create(*registry,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto limiter_id=id("cc000000-0000-4000-8000-000000000001");
+    QVERIFY(chain.value()->add(
+        limiter_id,"rgsml.dsp.streaming-true-peak-limiter",0));
+    const auto params=dsp::StreamingTruePeakLimiterParameters::create(
+        -1.0,3.0,2);
+    QVERIFY(params);
+    const std::vector<dsp::ModuleExecutionBinding> bindings{{
+        limiter_id,*params.value()}};
+    const auto rate=core::SampleRate::create(192000);
+    QVERIFY(rate);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    const auto frames=core::FrameCount::create(192000);
+    const auto block=core::FrameCount::create(4096);
+    QVERIFY(fmt&&frames&&block);
+    auto source=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(source);
+    auto l=source.value()->mutable_view().channel(0);
+    auto r=source.value()->mutable_view().channel(1);
+    QVERIFY(l&&r);
+    for(std::size_t i=0;i<l.value()->size();++i) {
+        const double v=0.2*std::sin(2.0*std::numbers::pi*440.0*
+            static_cast<double>(i)/192000.0);
+        (*l.value())[i]=v;
+        (*r.value())[i]=v;
+    }
+    const auto req=render::RenderRequest::create(
+        source.value()->view(),
+        source.value()->view().absolute_range(),
+        *chain.value(),bindings,*block.value());
+    QVERIFY(req);
+    const auto rendered=render::render_preview(*req.value(),*registry);
+    QVERIFY(rendered);
+    QCOMPARE(rendered.value()->view().format().sample_rate().value(),
+             192000);
+    QCOMPARE(rendered.value()->view().frame_count().value(),
+             192000);
+    QVERIFY(!rendered.value()->signatures().empty());
+    QCOMPARE(rendered.value()->signatures().back().type_id,
+             std::string("rgsml.dsp.streaming-true-peak-limiter"));
+    // Analyze the real post-P2 samples using independent M16.
+    const auto tp=analysis::measure_true_peak_full_resource(
+        rendered.value()->buffer());
+    QVERIFY(tp);
+    QVERIFY(std::isfinite(tp.value()->global_linear_peak()));
+    QVERIFY(tp.value()->global_linear_peak()<=1.0);
 }
 } // namespace
 } // namespace rgsml::tests
