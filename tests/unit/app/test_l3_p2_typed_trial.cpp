@@ -77,6 +77,22 @@ ceilingAndDriveAreRealTypedIndependentCandidates() {
     QVERIFY(!a::make_p2_scalar_trial(
         *chain.value(),binds,p2,a::P2ScalarCoordinate::drive_db,
         5.0,""));
+    const auto joint=a::make_p2_joint_trial(
+        *chain.value(),binds,p2,-3.0,9.0,"exact-m10-joint");
+    QVERIFY(joint);
+    QVERIFY(joint->still_matches(*chain.value(),binds));
+    const auto* chosen=joint->chosen_p2_parameters();
+    QVERIFY(chosen);
+    QCOMPARE(chosen->ceiling_db_tp(),-3.0);
+    QCOMPARE(chosen->drive_db(),9.0);
+    QCOMPARE(chosen->margin_percent(),5);
+    a::Ticket jointTicket{2U,1U,"exact-m10-joint"};
+    QVERIFY(joint->matches_ticket(jointTicket));
+    QVERIFY(!a::make_p2_joint_trial(
+        *chain.value(),binds,p2,-1.0,0.0,"same"));
+    QVERIFY(!a::make_p2_joint_trial(
+        *chain.value(),binds,p2,-13.0,9.0,"out-of-range"));
+
 }
 void L3P2TypedTrialTest::wrongBindingBypassOrGraphMustRefuse() {
     auto base=dsp::ModuleRegistry::create_dsp_package_v1();

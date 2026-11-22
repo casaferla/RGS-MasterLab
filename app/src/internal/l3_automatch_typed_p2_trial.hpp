@@ -114,4 +114,63 @@ struct BoundP2Trial final {
         chain.revision(),{nodes.begin(),nodes.end()},
         std::move(baseline),std::move(candidate)};
 }
+
+// A full M10 candidate may move BOTH coordinates while the original
+// immutable MANUAL snapshot stays fixed. Use the same validation as a
+// single-coordinate trial, then build the complete authentic typed pair.
+// This is one candidate with two independent frozen coordinates, not a
+// new solver step-size policy or two artificial measured evaluations.
+struct BoundP2JointTrial final {
+    BoundP2Trial base;
+    double chosen_ceiling_db_tp{};
+    double chosen_drive_db{};
+    [[nodiscard]] bool still_matches(
+        const dsp::ProcessingChain& chain,
+        std::span<const dsp::ModuleExecutionBinding> live) const
+    {
+        return base.still_matches(chain,live);
+    }
+    [[nodiscard]] bool matches_ticket(const Ticket& ticket) const {
+        return base.matches_ticket(ticket);
+    }
+    [[nodiscard]] const dsp::StreamingTruePeakLimiterParameters*
+    chosen_p2_parameters() const noexcept
+    {
+        return base.chosen_p2_parameters();
+    }
+};
+[[nodiscard]] inline std::optional<BoundP2JointTrial>
+make_p2_joint_trial(
+    const dsp::ProcessingChain& chain,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const dsp::ModuleInstanceId& p2_id,
+    double chosen_ceiling_db_tp,double chosen_drive_db,
+    std::string ticket_identity)
+{
+    if(bindings.empty())return std::nullopt;
+    const auto* previous=
+        std::get_if<dsp::StreamingTruePeakLimiterParameters>(
+            &bindings.back().parameters);
+    if(!previous)return std::nullopt;
+    const auto both=dsp::StreamingTruePeakLimiterParameters::create(
+        chosen_ceiling_db_tp,chosen_drive_db,previous->margin_percent());
+    if(!both||*both.value()==*previous)return std::nullopt;
+    // The first non-identity coordinate chooses a real Product/owner
+    // baseline and exact graph check, not a synthetic candidate shortcut.
+    const auto coordinate=
+        chosen_ceiling_db_tp==previous->ceiling_db_tp()
+        ?P2ScalarCoordinate::drive_db
+        :P2ScalarCoordinate::ceiling_db_tp;
+    const double first_value=
+        coordinate==P2ScalarCoordinate::drive_db
+        ?chosen_drive_db:chosen_ceiling_db_tp;
+    auto single=make_p2_scalar_trial(
+        chain,bindings,p2_id,coordinate,first_value,
+        std::move(ticket_identity));
+    if(!single)return std::nullopt;
+    single->candidate_bindings.back().parameters=*both.value();
+    return BoundP2JointTrial{
+        std::move(*single),both.value()->ceiling_db_tp(),
+        both.value()->drive_db()};
+}
 } // namespace rgsml::app::l3_automatch
