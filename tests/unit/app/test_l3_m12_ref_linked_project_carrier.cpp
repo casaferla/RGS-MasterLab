@@ -592,6 +592,18 @@ userManualChainAndSingleModulePresetsAreStrictlyTyped() {
     QVERIFY(all.value()->modules.front().user_bypass);
     const auto bytes=p::encode_json(*all.value());
     QVERIFY(bytes);
+    const auto committedBefore=*manual.value();
+    const auto draft=p::prepare_explicit_manual_preset_restore(
+        *all.value(),*manual.value(),bindings,*registry);
+    QVERIFY(draft);
+    QCOMPARE(draft.value()->proposed_manual_chain.revision(),
+             manual.value()->revision()+1U);
+    QCOMPARE(draft.value()->proposed_bindings,bindings);
+    QVERIFY(!draft.value()->authorizes_project_commit());
+    QVERIFY(!draft.value()->authorizes_automatch_takeover());
+    QCOMPARE(manual.value()->revision(),committedBefore.revision());
+    QCOMPARE(manual.value()->instances().size(),
+             committedBefore.instances().size());
     const auto reopened=p::decode_json(*bytes.value(),*registry);
     QVERIFY(reopened);
     QVERIFY(p::matches_exact_manual_topology(
@@ -608,6 +620,24 @@ userManualChainAndSingleModulePresetsAreStrictlyTyped() {
     const auto oneReopen=p::decode_json(*oneJson.value(),*registry);
     QVERIFY(oneReopen);
     QCOMPARE(oneReopen.value()->modules.size(),std::size_t{1});
+    // A single-DSP preset is applied to the CURRENT typed instance,
+    // without copying an old instanceId or touching the other modules.
+    auto differentP2=*oneReopen.value();
+    auto newP2=dsp::StreamingTruePeakLimiterParameters::create(
+        -5.0,8.0,2);
+    QVERIFY(newP2);
+    differentP2.modules[0].parameters=*newP2.value();
+    differentP2.modules[0].user_bypass=true;
+    const auto proposedSingle=p::prepare_explicit_manual_preset_restore(
+        differentP2,*manual.value(),bindings,*registry,std::size_t{1});
+    QVERIFY(proposedSingle);
+    QCOMPARE(proposedSingle.value()->proposed_bindings[0].parameters,
+             bindings[0].parameters);
+    QCOMPARE(proposedSingle.value()->proposed_bindings[1].parameters,
+             dsp::ModuleParameterPayload{*newP2.value()});
+    QVERIFY(proposedSingle.value()->proposed_manual_chain.
+        instances()[1].user_bypass());
+    QVERIFY(!manual.value()->instances()[1].user_bypass());
     QVERIFY(p::matches_exact_manual_topology(
         *oneReopen.value(),*manual.value(),std::size_t{1}));
     QVERIFY(!p::matches_exact_manual_topology(
@@ -633,6 +663,14 @@ userManualChainAndSingleModulePresetsAreStrictlyTyped() {
         "rgsml.dsp.parametric-eq",1));
     QVERIFY(!p::matches_exact_manual_topology(
         *reopened.value(),*incompatible.value()));
+    QVERIFY(!p::prepare_explicit_manual_preset_restore(
+        *reopened.value(),*incompatible.value(),bindings,*registry));
+    auto invalidScope=*oneReopen.value();
+    invalidScope.modules[0].parameter_schema_id=
+        "rgsml.dsp.invalid.parameters/0";
+    QVERIFY(!p::prepare_explicit_manual_preset_restore(
+        invalidScope,*manual.value(),bindings,*registry,
+        std::size_t{1}));
 }
 void M12NativeProjectCarrierTest::
 wrongProjectChainOrUnavailableFactoryCannotBePublished(){
