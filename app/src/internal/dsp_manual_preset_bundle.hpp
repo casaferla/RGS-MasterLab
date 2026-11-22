@@ -24,6 +24,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <limits>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -229,5 +231,86 @@ struct ManualPreset final {
             return false;
     }
     return true;
+}
+// Entirely PROVISIONAL restore; current MANUAL remains unchanged.
+// The Product writer has to validate project/epoch again, explicitly
+// obtain user consent and adopt one complete atomic after-state.
+struct ProposedManualPresetRestore final {
+    dsp::ProcessingChain proposed_manual_chain;
+    std::vector<dsp::ModuleExecutionBinding> proposed_bindings;
+    [[nodiscard]] constexpr bool authorizes_automatch_takeover()
+        const noexcept{return false;}
+    [[nodiscard]] constexpr bool authorizes_project_commit()
+        const noexcept{return false;}
+};
+[[nodiscard]] inline core::Result<ProposedManualPresetRestore>
+prepare_explicit_manual_preset_restore(
+    const ManualPreset& preset,
+    const dsp::ProcessingChain& current_manual,
+    std::span<const dsp::ModuleExecutionBinding> current_bindings,
+    const dsp::ModuleRegistry& current_registry,
+    std::optional<std::size_t> selected_module_index=std::nullopt)
+{
+    using R=core::Result<ProposedManualPresetRestore>;
+    const auto fail=[](const char* why) {
+        return R::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    const auto original=current_manual.instances();
+    if(!matches_exact_manual_topology(
+           preset,current_manual,selected_module_index)||
+       original.size()!=current_bindings.size()||
+       current_manual.revision()==
+           std::numeric_limits<std::uint64_t>::max())
+        return fail("DSP_PRESET_RESTORE_TOPOLOGY_CHANGED");
+    std::vector<dsp::ModuleInstance> nextNodes(original.begin(),
+                                                original.end());
+    std::vector<dsp::ModuleExecutionBinding> nextBindings{
+        current_bindings.begin(),current_bindings.end()};
+    for(std::size_t i=0;i<original.size();++i) {
+        if(current_bindings[i].instance_id!=original[i].instance_id()||
+           original[i].controller_suspended()||
+           original[i].domain_suspended()||
+           original[i].semantic_node_id().has_value())
+            return fail("DSP_PRESET_RESTORE_PROTECTED_OR_STALE_MANUAL");
+    }
+    for(std::size_t k=0;k<preset.modules.size();++k) {
+        const auto i=selected_module_index?*selected_module_index:k;
+        const auto& originalNode=original[i];
+        const auto& stored=preset.modules[k];
+        const auto desc=current_registry.find_descriptor(stored.type_id);
+        if(!desc)return R::failure(*desc.error());
+        const auto& d=desc.value()->get();
+        if(!d.algorithm_version()||!d.parameter_schema_id()||
+           !current_registry.has_factory(stored.type_id)||
+           stored.algorithm_version!=*d.algorithm_version()||
+           stored.parameter_schema_id!=*d.parameter_schema_id())
+            return fail("DSP_PRESET_RESTORE_SCHEMA_OR_FACTORY_CHANGED");
+        const auto encoded=dsp::encode_module_parameters_json(
+            stored.parameters);
+        if(!encoded)return R::failure(*encoded.error());
+        const auto decoded=dsp::decode_module_parameters_json(
+            *d.parameter_schema_id(),*encoded.value());
+        if(!decoded||*decoded.value()!=stored.parameters)
+            return fail("DSP_PRESET_RESTORE_PARAMETERS_NOT_CANONICAL");
+        auto proposed=dsp::ModuleInstance::create({
+            originalNode.instance_id(),
+            std::string(originalNode.module_type_id()),
+            stored.enabled,stored.user_bypass,
+            originalNode.controller_suspended(),
+            originalNode.domain_suspended(),
+            originalNode.provenance(),originalNode.owner(),
+            originalNode.link_state(),
+            originalNode.semantic_node_id(),
+            originalNode.parameter_state()});
+        if(!proposed)return R::failure(*proposed.error());
+        nextNodes[i]=std::move(*proposed.value());
+        nextBindings[i].parameters=stored.parameters;
+    }
+    auto restored=dsp::ProcessingChain::restore(
+        current_registry,current_manual.context(),
+        current_manual.revision()+1U,std::move(nextNodes));
+    if(!restored)return R::failure(*restored.error());
+    return R::success(ProposedManualPresetRestore{
+        std::move(*restored.value()),std::move(nextBindings)});
 }
 } // namespace rgsml::app::dsp_presets
