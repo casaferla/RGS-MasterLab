@@ -13,6 +13,8 @@
 #include "l3_m06_real_windowed_rms_crest.hpp"
 #include "l3_m06_real_lra_native.hpp"
 #include "l3_m05m06_real_source_bundle.hpp"
+#include "l3_m06_native_spectral_d10_d12.hpp"
+#include "l3_m06_m20_native_frame_energy_sink.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -127,6 +129,13 @@ struct OfflineProductCandidateMeasurement final {
     }
 };
 
+struct OfflineProductNativeSpectralCandidate final {
+    OfflineProductCandidateMeasurement measurement;
+    m05m06_real::SpectralD10D12Native measured_native_d10_d12;
+    std::vector<std::uint64_t> original_selected_stft_ordinals;
+    [[nodiscard]] constexpr bool authorizes_product_publication()
+        const noexcept{return false;}
+};
 class OfflineProductTrialJob final {
 public:
     // An accepted, fully validated Gain or Dynamic EQ trial is a complete
@@ -239,6 +248,66 @@ public:
         return R::success(OfflineProductCandidateMeasurement{
             std::move(*rendered.value()),
             std::move(*levels.value()),std::move(*tonal.value())});
+    }
+    // Explicit opt-in that extracts REAL per-frame native E[t,b]
+    // INSIDE this candidate's existing M20 FFT pass. Not an extra
+    // analysis FFT or a surrogate M21 nine-metric probe. Invalid owner/
+    // native Phase6 policy is rejected before executing any render.
+    [[nodiscard]] core::Result<OfflineProductNativeSpectralCandidate>
+    evaluate_with_native_spectral_d10_d12(
+        std::vector<m05m06_real::NativeFrameBand> exact_bands,
+        std::uint64_t current_m20_native_fft_size,
+        bool current_full_phase6_frame_grid_attested,
+        std::uint64_t phase6_exact_active_duration_frames,
+        analysis::TonalStereoTrustedSupport supplied_support={}) const
+    {
+        using R=core::Result<OfflineProductNativeSpectralCandidate>;
+        if(!current_full_phase6_frame_grid_attested||
+           exact_bands.empty()||
+           supplied_support.selected_native_frame_sink)
+            return R::failure(
+                failed("L3_M06_NATIVE_FRAME_AUTHORITY_UNAVAILABLE"));
+        auto rendered=execute();
+        if(!rendered)return R::failure(*rendered.error());
+        if(!result_has_expected_scope(*rendered.value()))
+            return R::failure(failed("L3_NATIVE_RENDER_SCOPE_STALE"));
+        const auto levels=analysis::measure_basic_level_full_resource(
+            rendered.value()->buffer());
+        if(!levels)return R::failure(*levels.error());
+        const auto view=rendered.value()->view();
+        m05m06_real::AuthenticM20FrameEnergySink sink{
+            static_cast<std::uint32_t>(view.format().sample_rate().value()),
+            current_m20_native_fft_size,std::move(exact_bands),true};
+        if(!sink.valid())
+            return R::failure(
+                failed("L3_M06_NATIVE_BAND_GRID_NOT_AUTHENTIC"));
+        supplied_support.selected_native_frame_sink=&sink;
+        const auto tonal=analysis::measure_tonal_stereo_scope(
+            view,view.absolute_start_frame(),view.frame_count(),
+            view.timebase().frame_domain_id(),supplied_support);
+        if(!tonal)return R::failure(*tonal.error());
+        if(!sink.valid()||
+           sink.exact_e_tb().size()!=
+             tonal.value()->selected_spectral_windows)
+            return R::failure(
+                failed("L3_M06_NATIVE_FRAME_SOURCE_MISMATCH"));
+        auto d10_d12=m05m06_real::reduce_native_spectral_d10_d12(
+            sink.exact_e_tb(),sink.configured_bands(),true,
+            phase6_exact_active_duration_frames,
+            static_cast<std::uint64_t>(
+                view.format().sample_rate().value()));
+        if(d10_d12.source_reason==
+              m05m06_real::SpectralNativeReason::invalid_arithmetic||
+           d10_d12.source_reason==
+              m05m06_real::SpectralNativeReason::
+                  invalid_energy_or_geometry)
+            return R::failure(
+                failed("L3_M06_NATIVE_STFT_ENERGY_INVALID"));
+        return R::success(OfflineProductNativeSpectralCandidate{
+            {std::move(*rendered.value()),std::move(*levels.value()),
+             std::move(*tonal.value())},
+            std::move(d10_d12),
+            sink.canonical_original_ordinals()});
     }
     // Caller MUST obtain all current arguments from live Qt Product owner
     // when the worker result returns, never from the worker itself. This

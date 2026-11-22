@@ -216,6 +216,27 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
              std::size_t{0});
     QVERIFY(!bundle->native_d02_lra.is_reference_grade());
     QVERIFY(!bundle->authorizes_m10_or_export());
+    // One actual L3 Product trial, one underlying M20 native FFT pass.
+    // This 4096-frame test yields only one real STFT frame; it must
+    // report insufficient D10-D12 support rather than fake a match.
+    const auto nativeSpectrum=
+        job.value()->evaluate_with_native_spectral_d10_d12(
+            {{0,100.0,400.0},{1,400.0,800.0},
+             {2,800.0,1600.0}},4096U,true,4096U);
+    QVERIFY(nativeSpectrum);
+    QCOMPARE(nativeSpectrum.value()->
+        original_selected_stft_ordinals.size(),std::size_t{1});
+    QCOMPARE(nativeSpectrum.value()->
+        measured_native_d10_d12.candidate_active_frames,
+        std::uint64_t{1});
+    for(const auto& feature:nativeSpectrum.value()->
+            measured_native_d10_d12.canonical_band_results)
+        QCOMPARE(feature.reason[0],
+            a::m05m06_real::SpectralNativeReason::
+                insufficient_band_frame_support);
+    QCOMPARE(nativeSpectrum.value()->measurement.tonal.mean_linear_psd,
+             calculated.value()->tonal.mean_linear_psd);
+    QVERIFY(!nativeSpectrum.value()->authorizes_product_publication());
     // Additional named T2–T6 observations reuse the real Product M20
     // PSD. Unqualified reference-grade status remains a separate gate.
     const auto tonalFacts=calculated.value()->observed_m05_tonal(
