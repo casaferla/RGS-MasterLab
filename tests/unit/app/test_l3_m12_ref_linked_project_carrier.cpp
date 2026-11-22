@@ -3,6 +3,7 @@
 #include "internal/l3_m12_p2_persisted_sound_guard.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_ref_linked_project_restore.hpp"
+#include "internal/dsp_manual_preset_bundle.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
@@ -37,6 +38,7 @@ class M12NativeProjectCarrierTest final:public QObject{
 private slots:
     void realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules();
     void wrongProjectChainOrUnavailableFactoryCannotBePublished();
+    void userManualChainAndSingleModulePresetsAreStrictlyTyped();
     void optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound();
 };
 void M12NativeProjectCarrierTest::
@@ -555,6 +557,77 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
         *alteredAttachment.value(),true).reason,
         m::PostCommitReadbackReason::
             unrelated_optional_entries_changed);
+}
+void M12NativeProjectCarrierTest::
+userManualChainAndSingleModulePresetsAreStrictlyTyped() {
+    namespace p=rgsml::app::dsp_presets;
+    auto baseline=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(baseline);
+    auto opted=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*baseline.value()));
+    QVERIFY(opted);
+    const auto registry=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*opted.value()));
+    auto manual=dsp::ProcessingChain::create(*registry,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto gain=id("cb000000-0000-4000-8000-000000000001");
+    const auto p2=id("cb000000-0000-4000-8000-000000000002");
+    QVERIFY(manual.value()->add(gain,"rgsml.dsp.gain",0));
+    QVERIFY(manual.value()->add(
+        p2,"rgsml.dsp.streaming-true-peak-limiter",1));
+    QVERIFY(manual.value()->set_user_bypass(gain,true));
+    auto gainParams=dsp::GainParameters::create(-4.0);
+    auto p2Params=dsp::StreamingTruePeakLimiterParameters::create(
+        -2.0,4.0,2);
+    QVERIFY(gainParams&&p2Params);
+    const std::vector<dsp::ModuleExecutionBinding> bindings{{
+        gain,*gainParams.value()},{p2,*p2Params.value()}};
+    const auto all=p::capture(
+        *manual.value(),bindings,*registry);
+    QVERIFY(all);
+    QVERIFY(!all.value()->authorizes_project_commit());
+    QVERIFY(!all.value()->authorizes_automatch_overwrite());
+    QCOMPARE(all.value()->modules.size(),std::size_t{2});
+    QVERIFY(all.value()->modules.front().user_bypass);
+    const auto bytes=p::encode_json(*all.value());
+    QVERIFY(bytes);
+    const auto reopened=p::decode_json(*bytes.value(),*registry);
+    QVERIFY(reopened);
+    QVERIFY(p::matches_exact_manual_topology(
+        *reopened.value(),*manual.value()));
+    QCOMPARE(reopened.value()->modules[0].parameters,bindings[0].parameters);
+    QCOMPARE(reopened.value()->modules[1].parameters,bindings[1].parameters);
+    QVERIFY(!p::matches_exact_manual_topology(
+        *reopened.value(),*manual.value(),std::size_t{1}));
+    const auto single=p::capture(
+        *manual.value(),bindings,*registry,std::size_t{1});
+    QVERIFY(single);
+    const auto oneJson=p::encode_json(*single.value());
+    QVERIFY(oneJson);
+    const auto oneReopen=p::decode_json(*oneJson.value(),*registry);
+    QVERIFY(oneReopen);
+    QCOMPARE(oneReopen.value()->modules.size(),std::size_t{1});
+    QVERIFY(p::matches_exact_manual_topology(
+        *oneReopen.value(),*manual.value(),std::size_t{1}));
+    QVERIFY(!p::matches_exact_manual_topology(
+        *oneReopen.value(),*manual.value(),std::size_t{0}));
+    // A preset cannot install an unregistered P2 on a normal Product.
+    auto noOptin=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(noOptin);
+    QVERIFY(!p::decode_json(*bytes.value(),*noOptin.value()));
+    // Schema, kind and parameter payload must never be coerced.
+    auto wrongSchema=*bytes.value();
+    const auto found=wrongSchema.find("rgsml.dsp.manual-preset/1.0.0");
+    QVERIFY(found!=std::string::npos);
+    wrongSchema.replace(found,
+        std::string("rgsml.dsp.manual-preset/1.0.0").size(),
+        "rgsml.dsp.manual-preset/999.0.0");
+    QVERIFY(!p::decode_json(wrongSchema,*registry));
+    auto differentOrder=*manual.value();
+    QVERIFY(differentOrder.move(p2,0));
+    QVERIFY(!p::matches_exact_manual_topology(
+        *reopened.value(),differentOrder));
 }
 void M12NativeProjectCarrierTest::
 wrongProjectChainOrUnavailableFactoryCannotBePublished(){
