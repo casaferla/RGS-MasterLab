@@ -3,6 +3,7 @@
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
+#include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_actual_m16_guard.hpp"
 #include "internal/l3_m10_p2_real_native_triple_binding.hpp"
 #include "internal/l3_m10_p2_product_qt_owner_capture.hpp"
@@ -316,6 +317,45 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             missing_original);
     QCOMPARE(unsafe_bound.reason,
              m10::P2NativeCostReason::m08_or_m11_safety_rejected);
+    // The frozen refiner can now call the SAME physically measured
+    // P2 evaluator through the exact-completed-result cache adapter.
+    // No real three-way ORIGINAL native authority -> every attempted
+    // render must be a failure, and MUST NOT pollute the cache.
+    m10::ExactCompletedEvaluationCache completed_cache{{0xa1,0xb2}};
+    const std::vector<double> proposed_u{0.5,0.625};
+    const auto real_graph=[&](const m10::BoundM10P2Candidate&)
+        ->std::optional<m10::RealP2LinkedCandidateGraph>{
+        return m10::RealP2LinkedCandidateGraph{*linked.value(),artistic};
+    };
+    const auto exact_key=[](const m10::BoundM10P2Candidate&)
+        ->std::optional<m10::ExactExecutionCacheKey>{
+        return m10::ExactExecutionCacheKey{
+            {0xa1,0xb2},{0xc3},{0xd4},{0xe5}};
+    };
+    const auto run_cached=[&](bool allowed,bool product_current) {
+        auto scoped=worker;
+        scoped.current_qt_product_epoch_and_m09_m11_attested=
+            product_current;
+        return m10::evaluate_real_m10_p2_native_cached(
+            scoped,inventory,proposed_u,names,p2_id,
+            "real-p2-cached-canonical-ticket",
+            completed_cache,allowed,
+            spec_for_authoritative_bridge,&*prefix.value(),
+            "current-phase6-test-generation",{},0.0,owner,true,
+            inverse,exact_key,
+            [](const m10::BoundM10P2Candidate&){return true;},
+            real_graph,missing_original);
+    };
+    QCOMPARE(run_cached(true,false).kind,
+             m10::EvaluationKind::preflight_rejected);
+    QCOMPARE(completed_cache.size(),std::size_t{0});
+    QCOMPARE(run_cached(false,true).kind,
+             m10::EvaluationKind::needs_new_attempt);
+    QCOMPARE(completed_cache.size(),std::size_t{0});
+    QCOMPARE(run_cached(true,true).kind,
+             m10::EvaluationKind::attempted_failure);
+    QCOMPARE(completed_cache.size(),std::size_t{0});
+    QVERIFY(!completed_cache.poisoned());
     QVERIFY(!from_bound.complete_measured());
     QVERIFY(!unbound.as_exact_cache_evidence().
         full_current_render_analysis_hard_gates_attested);
