@@ -210,6 +210,62 @@ Canvas {
             ctx.quadraticCurveTo(12.0, 16.4, 14.9, 15.0)
             ctx.closePath()
             ctx.stroke()
+        } else if (kind === "preset-open") {
+            // Single lightweight folder with an upward-opening lip.
+            // Not the native-window Undock icon: this always means
+            // load a DSP or whole-chain settings preset from disk.
+            // One 18x18 painter for docked and floating headers.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.lineWidth = 1.65
+            ctx.beginPath()
+            ctx.moveTo(2.1,6.0)
+            ctx.lineTo(2.1,4.9)
+            ctx.quadraticCurveTo(2.1,4.0,3.0,4.0)
+            ctx.lineTo(7.0,4.0)
+            ctx.lineTo(8.4,5.5)
+            ctx.lineTo(15.0,5.5)
+            ctx.quadraticCurveTo(15.9,5.5,15.9,6.4)
+            ctx.lineTo(15.9,7.5)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(3.2,8.0)
+            ctx.lineTo(16.2,8.0)
+            ctx.lineTo(13.8,14.6)
+            ctx.quadraticCurveTo(13.6,15.2,12.8,15.2)
+            ctx.lineTo(3.0,15.2)
+            ctx.quadraticCurveTo(2.0,15.2,2.2,14.3)
+            ctx.closePath()
+            ctx.stroke()
+            ctx.restore()
+        } else if (kind === "preset-save") {
+            // Recognizable small floppy, deliberately schematic.
+            // No M17 WAV-export suggestion and no phosphor glow.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.lineWidth = 1.55
+            ctx.beginPath()
+            ctx.moveTo(3.0,2.6)
+            ctx.lineTo(13.0,2.6)
+            ctx.lineTo(15.2,4.8)
+            ctx.lineTo(15.2,15.4)
+            ctx.lineTo(2.8,15.4)
+            ctx.lineTo(2.8,3.0)
+            ctx.closePath()
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(5.3,2.6)
+            ctx.lineTo(5.3,7.2)
+            ctx.lineTo(12.7,7.2)
+            ctx.lineTo(12.7,2.6)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(5.3,15.4)
+            ctx.lineTo(5.3,10.2)
+            ctx.lineTo(12.7,10.2)
+            ctx.lineTo(12.7,15.4)
+            ctx.stroke()
+            ctx.restore()
         } else if (kind === "dock-large") {
             // PO 2026-10-27: independent optical drawing for 64x64 center
             // well, NOT an enlarged clone of the 20x20 native-window icon.
