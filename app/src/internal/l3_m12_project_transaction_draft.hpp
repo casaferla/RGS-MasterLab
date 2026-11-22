@@ -148,6 +148,47 @@ prepare_exact_m12_project_transaction(
        !exact_project_chain_equal(
            *manual,expected.exact_protected_manual_snapshot))
         return fail("L3_M12_PROJECT_TRANSACTION_MANUAL_CHANGED");
+    // Compare the persisted MANUAL owner to the ACTUAL frozen M11
+    // DSP modules and exact typed parameter payloads captured with
+    // the accepted stage. Caller-provided expected snapshots alone
+    // cannot launder a changed Input Gain or fixed module.
+    if(manual->revision!=
+           accepted_stage.frozen_protected_manual_revision||
+       manual->modules.size()!=
+           accepted_stage.frozen_protected_manual_instances.size()||
+       manual->modules.size()!=
+           accepted_stage.frozen_protected_manual_bindings.size())
+        return fail("L3_M12_PROJECT_TRANSACTION_FIXED_DSP_STALE");
+    for(std::size_t i=0;i<manual->modules.size();++i) {
+        const auto& persisted=manual->modules[i];
+        const auto& actual=
+            accepted_stage.frozen_protected_manual_instances[i];
+        const auto& typed=
+            accepted_stage.frozen_protected_manual_bindings[i];
+        if(!binding_matches_instance(actual,typed)||
+           persisted.instanceId!=actual.instance_id().uuid()||
+           persisted.typeId!=actual.module_type_id()||
+           persisted.enabled!=actual.enabled()||
+           persisted.userBypass!=actual.user_bypass()||
+           persisted.controllerSuspended!=
+               actual.controller_suspended()||
+           persisted.domainSuspended!=actual.domain_suspended()||
+           persisted.provenance!="MANUAL"||
+           persisted.owner!="USER"||
+           persisted.linkState!="UNLINKED"||
+           persisted.semanticNodeId.has_value())
+            return fail("L3_M12_PROJECT_TRANSACTION_FIXED_DSP_STALE");
+        const auto json=dsp::encode_module_parameters_json(
+            typed.parameters);
+        if(!json)return R::failure(*json.error());
+        const auto canonical_fixed=project::OpaqueJsonValue::parse(
+            *json.value());
+        if(!canonical_fixed)return R::failure(
+            *canonical_fixed.error());
+        if(canonical_fixed.value()->canonical_utf8()!=
+           persisted.parameters.canonical_utf8())
+            return fail("L3_M12_PROJECT_TRANSACTION_FIXED_PAYLOAD_STALE");
+    }
     if(exact_native_carrier.native_project_chain.chainId==
        manual->chainId)
         return fail("L3_M12_PROJECT_TRANSACTION_ID_COLLISION");
