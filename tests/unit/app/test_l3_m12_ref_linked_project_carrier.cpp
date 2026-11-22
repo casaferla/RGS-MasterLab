@@ -1,5 +1,6 @@
 #include "internal/l3_m12_ref_linked_project_carrier.hpp"
 #include "internal/l3_m12_project_transaction_draft.hpp"
+#include "internal/l3_m12_owned_controller_suspension.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
 #include <rgsml/project/project_snapshot.hpp>
@@ -175,6 +176,60 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(updated);
     QCOMPARE(updated.value()->candidate_not_yet_committed.document().
              chains.size(),std::size_t{2});
+    // Amount=0 preserves the actual LINKED node, the unrelated MANUAL
+    // chain, and all user/domains/bypass flags independently.
+    const auto zero=m::prepare_m12_owned_controller_suspension(
+        transaction.value()->candidate_not_yet_committed,
+        carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::amount_zero,true);
+    QVERIFY(zero);
+    QVERIFY(!zero.value()->authorizes_persisted_commit());
+    const auto& suspended=
+        zero.value()->updated_project_not_committed.document();
+    QCOMPARE(suspended.chains.size(),std::size_t{2});
+    QVERIFY(m::exact_project_chain_equal(
+        suspended.chains.front(),manualChain));
+    QCOMPARE(suspended.chains.back().modules.size(),std::size_t{3});
+    for(std::size_t i=0;i<3U;++i) {
+        const auto& original=proposed.chains.back().modules[i];
+        const auto& now=suspended.chains.back().modules[i];
+        QVERIFY(now.controllerSuspended);
+        QCOMPARE(now.userBypass,original.userBypass);
+        QCOMPARE(now.enabled,original.enabled);
+        QCOMPARE(now.domainSuspended,original.domainSuspended);
+        QCOMPARE(now.semanticNodeId,original.semanticNodeId);
+        QCOMPARE(now.parameters.canonical_utf8(),
+                 original.parameters.canonical_utf8());
+    }
+    const auto restored=m::prepare_m12_owned_controller_suspension(
+        zero.value()->updated_project_not_committed,
+        carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::current_amount_restored,true);
+    QVERIFY(restored);
+    for(const auto& module:restored.value()->
+            updated_project_not_committed.document().chains.back().modules)
+        QVERIFY(!module.controllerSuspended);
+    const auto stale=m::prepare_m12_owned_controller_suspension(
+        zero.value()->updated_project_not_committed,
+        carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::plan_stale,true);
+    QVERIFY(stale);
+    QVERIFY(stale.value()->updated_project_not_committed.document().
+        referenceMatch.canonical_utf8().find(
+          "\"freshnessState\":\"STALE\"")!=std::string::npos);
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        stale.value()->updated_project_not_committed,
+        carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::current_amount_restored,true));
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        transaction.value()->candidate_not_yet_committed,
+        uuid("bf000000-0000-4000-8000-000000000001"),
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::amount_zero,true));
     auto corrupted=proposed;
     corrupted.chains.front().revision+=1;
     const auto changed=project::ProjectSnapshot::create(corrupted);
