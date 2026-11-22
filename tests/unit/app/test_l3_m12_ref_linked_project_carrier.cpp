@@ -279,7 +279,8 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(reopenedZip);
     const auto& reopenedDocument=reopenedZip.value()->document();
     QCOMPARE(reopenedDocument.projectId,proposed.projectId);
-    QCOMPARE(reopenedDocument.referenceMatch,proposed.referenceMatch);
+    QCOMPARE(reopenedDocument.referenceMatch.canonical_utf8(),
+             proposed.referenceMatch.canonical_utf8());
     QCOMPARE(reopenedDocument.chains.size(),std::size_t{2});
     QVERIFY(m::exact_project_chain_equal(
         reopenedDocument.chains.front(),manualChain));
