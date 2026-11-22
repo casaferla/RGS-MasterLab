@@ -47,6 +47,16 @@ int main(int argc,char** argv) {
         QStringLiteral("dynamicEqResearch"));
     if(!original || !dynamic)return 4;
     app.processEvents();
+    // Force Qt Quick to polish/layout BOTH editor subtrees before testing
+    // individual Repeater button positions. Simple processEvents() alone
+    // is insufficient for offscreen scene graph geometry.
+    auto* quickWindow=qobject_cast<QQuickWindow*>(root);
+    if(!quickWindow)return 14;
+    quickWindow->show();
+    app.processEvents();
+    const auto firstFrame=quickWindow->grabWindow();
+    if(firstFrame.isNull())return 15;
+    app.processEvents();
     if(stage==QStringLiteral("load")) {
         std::cout<<"Dynamic EQ QML scene: PASS\n";
         return 0;

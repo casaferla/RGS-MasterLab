@@ -17,7 +17,10 @@ ApplicationWindow {
         x: 16; y: 16
         width: root.width - 32
         height: root.height - 32
-        opacity: 0.0
+        // Keep the source subtree in a real render pass, otherwise Qt may
+        // defer its nested Repeater/RowLayout geometry indefinitely.
+        opacity: 0.01
+        z: 0
         viewModel: null
         spectrumViewModel: null
     }
@@ -26,6 +29,7 @@ ApplicationWindow {
         x: 16; y: 16
         width: root.width - 32
         height: root.height - 32
+        z: 1
         viewModel: null
         spectrumViewModel: null
     }
