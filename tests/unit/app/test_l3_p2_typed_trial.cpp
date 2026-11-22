@@ -1,9 +1,12 @@
 #include "internal/l3_automatch_typed_p2_trial.hpp"
+#include "internal/l3_m10_p2_canonical_coordinate_port.hpp"
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <QtTest/QTest>
 #include <cstdint>
 #include <memory>
+#include <limits>
+#include <optional>
 #include <vector>
 
 namespace rgsml::tests {
@@ -21,6 +24,7 @@ class L3P2TypedTrialTest final:public QObject {
 private slots:
     void ceilingAndDriveAreRealTypedIndependentCandidates();
     void wrongBindingBypassOrGraphMustRefuse();
+    void frozenM10CanonicalPairDecodesAndRejectsInvalidInventory();
 };
 void L3P2TypedTrialTest::
 ceilingAndDriveAreRealTypedIndependentCandidates() {
@@ -144,6 +148,91 @@ void L3P2TypedTrialTest::wrongBindingBypassOrGraphMustRefuse() {
     QVERIFY(!a::make_p2_scalar_trial(
         *chain.value(),ordered,p2,a::P2ScalarCoordinate::drive_db,
         2.0,"bypass"));
+}
+
+void L3P2TypedTrialTest::
+frozenM10CanonicalPairDecodesAndRejectsInvalidInventory() {
+    namespace m10=a::m10_frozen;
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto opt=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*base.value()));
+    QVERIFY(opt);
+    auto chain=dsp::ProcessingChain::create(*opt.value(),{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto gainId=id("de000000-0000-4000-8000-000000000001");
+    const auto p2id=id("de000000-0000-4000-8000-000000000002");
+    QVERIFY(chain.value()->add(gainId,"rgsml.dsp.gain",0));
+    QVERIFY(chain.value()->add(
+        p2id,"rgsml.dsp.streaming-true-peak-limiter",1));
+    auto gain=dsp::GainParameters::create(0.0);
+    auto p2=dsp::StreamingTruePeakLimiterParameters::create(-1.0,0.0,5);
+    QVERIFY(gain&&p2);
+    const std::vector<dsp::ModuleExecutionBinding> bindings{
+        {gainId,*gain.value()},{p2id,*p2.value()}};
+    const m10::ExactP2CoordinateNames names{
+        {0x70,0x32},{0x43},{0x44}};
+    const std::vector<m10::Coordinate> inventory{
+        {{0x70,0x32},{0x44},0.5},
+        {{0x70,0x33},{0x41},0.3},
+        {{0x70,0x32},{0x43},0.75}};
+    const std::vector<double> proposed{0.625,0.4,0.25};
+    std::size_t calls=0;
+    const auto authorized_m09_inverse=[&](
+        const m10::Coordinate& c,double u)->std::optional<double> {
+        ++calls;
+        // A fixture mapping, NOT a production normalization policy.
+        if(c.stable_parameter_id==names.ceiling_parameter_id)
+            return -12.0+u*12.0;
+        if(c.stable_parameter_id==names.drive_parameter_id)
+            return -24.0+u*48.0;
+        return std::nullopt;
+    };
+    auto bound=m10::bind_m10_p2_joint_coordinates(
+        inventory,proposed,names,*chain.value(),bindings,p2id,
+        "exact-current-m10-typed-ticket",authorized_m09_inverse);
+    QVERIFY(bound);
+    QCOMPARE(calls,std::size_t{2});
+    QCOMPARE(bound->normalized_ceiling_u,0.25);
+    QCOMPARE(bound->normalized_drive_u,0.625);
+    const auto* typed=bound->typed.chosen_p2_parameters();
+    QVERIFY(typed);
+    QCOMPARE(typed->ceiling_db_tp(),-9.0);
+    QCOMPARE(typed->drive_db(),6.0);
+    QCOMPARE(typed->margin_percent(),5);
+    QVERIFY(bound->typed.still_matches(*chain.value(),bindings));
+    QVERIFY(!bound->authorizes_product_publication());
+    const auto previous_calls=calls;
+    auto missing=inventory;
+    missing[2].stable_parameter_id={0x45};
+    QVERIFY(!m10::bind_m10_p2_joint_coordinates(
+        missing,proposed,names,*chain.value(),bindings,p2id,
+        "ticket",authorized_m09_inverse));
+    QCOMPARE(calls,previous_calls);
+    auto duplicate=inventory;
+    duplicate[1].semantic_node_id={0x70,0x32};
+    duplicate[1].stable_parameter_id=names.ceiling_parameter_id;
+    QVERIFY(!m10::bind_m10_p2_joint_coordinates(
+        duplicate,proposed,names,*chain.value(),bindings,p2id,
+        "ticket",authorized_m09_inverse));
+    auto u_nan=proposed;
+    u_nan[0]=std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(!m10::bind_m10_p2_joint_coordinates(
+        inventory,u_nan,names,*chain.value(),bindings,p2id,
+        "ticket",authorized_m09_inverse));
+    auto out_of_range=proposed;
+    out_of_range[2]=1.01;
+    QVERIFY(!m10::bind_m10_p2_joint_coordinates(
+        inventory,out_of_range,names,*chain.value(),bindings,p2id,
+        "ticket",authorized_m09_inverse));
+    QVERIFY(!m10::bind_m10_p2_joint_coordinates(
+        inventory,proposed,names,*chain.value(),bindings,p2id,
+        "",authorized_m09_inverse));
+    QVERIFY(chain.value()->set_user_bypass(p2id,true));
+    QVERIFY(!m10::bind_m10_p2_joint_coordinates(
+        inventory,proposed,names,*chain.value(),bindings,p2id,
+        "ticket",authorized_m09_inverse));
 }
 } // namespace
 } // namespace rgsml::tests
