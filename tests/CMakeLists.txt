@@ -3195,3 +3195,17 @@ add_test(NAME rgsml_l3_m13_fresh_native_probe_tests
 set_tests_properties(rgsml_l3_m13_fresh_native_probe_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m13;new_render;real_m19m20;nonrelease")
+
+# L3 M12 original terminal TruePeak compositional hard veto.
+qt_add_executable(rgsml_l3_m12_terminal_hard_preflight_tests
+    unit/app/test_l3_m12_terminal_native_hard_preflight.cpp)
+target_include_directories(rgsml_l3_m12_terminal_hard_preflight_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m12_terminal_hard_preflight_tests
+    PRIVATE rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m12_terminal_hard_preflight_tests)
+add_test(NAME rgsml_l3_m12_terminal_hard_preflight_tests
+    COMMAND rgsml_l3_m12_terminal_hard_preflight_tests)
+set_tests_properties(rgsml_l3_m12_terminal_hard_preflight_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m12;terminal_tp;nonrelease")
