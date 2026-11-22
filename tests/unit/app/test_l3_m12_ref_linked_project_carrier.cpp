@@ -114,26 +114,13 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     doc.chains.push_back(manualChain);
     const auto currentBefore=project::ProjectSnapshot::create(doc);
     QVERIFY(currentBefore);
-    // Current real terminal M17 must exist; no boolean alone may
-    // prove that a mandatory TruePeak limiter is composition-safe.
-    auto terminal=dsp::ProcessingChain::create(
-        *reg,{dsp::ProcessingStage::MASTER,
-              dsp::ChainSegment::TERMINAL});
-    QVERIFY(terminal);
-    const auto terminalId=id(
-        "b8000000-0000-4000-8000-000000000002");
-    QVERIFY(terminal.value()->add(
-        terminalId,"rgsml.dsp.true-peak-limiter",0));
-    const auto tp=dsp::TruePeakLimiterParameters::create(0.0);
-    QVERIFY(tp);
-    const std::vector<dsp::ModuleExecutionBinding> terminalBindings{
-        {terminalId,*tp.value()}};
+    // AutoMatch M12 needs no M17 WAV export limiter or ceiling.
     m::M12ProjectTransactionExpected identity{
         doc.sourceResourceId,activeReference,manualChain.chainId,
         manualChain,std::nullopt,true,true};
     const auto transaction=m::prepare_exact_m12_project_transaction(
         *currentBefore.value(),*carrier.value(),*stage.value(),
-        *terminal.value(),terminalBindings,0.0,identity);
+        identity);
     QVERIFY(transaction);
     QVERIFY(!transaction.value()->authorizes_project_commit());
     QVERIFY(!transaction.value()->is_materialization_receipt());
@@ -149,30 +136,26 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
              std::size_t{1});
     QVERIFY(proposed.referenceMatch.canonical_utf8().find(
         "\"verificationState\":\"NOT_VERIFIED\"")!=std::string::npos);
-    // A stale manual revision, changed REF owner or mismatched real
-    // terminal ceiling may never commit a half-replacement.
+    // A stale manual revision or changed Reference must refuse M12.
+    // An independently chosen WAV ceiling has no bearing on this gate.
     auto stale=identity;
     ++stale.exact_protected_manual_snapshot.revision;
     QVERIFY(!m::prepare_exact_m12_project_transaction(
         *currentBefore.value(),*carrier.value(),*stage.value(),
-        *terminal.value(),terminalBindings,0.0,stale));
+        stale));
     stale=identity;
     stale.exact_live_reference_id=uuid(
         "b7000000-0000-4000-8000-000000000004");
     QVERIFY(!m::prepare_exact_m12_project_transaction(
         *currentBefore.value(),*carrier.value(),*stage.value(),
-        *terminal.value(),terminalBindings,0.0,stale));
-    QVERIFY(!m::prepare_exact_m12_project_transaction(
-        *currentBefore.value(),*carrier.value(),*stage.value(),
-        *terminal.value(),terminalBindings,-1.0,identity));
+        stale));
     // Exact same-controller update may replace only its existing
     // segment; its immutable native manual/terminal scope survives.
     auto update=identity;
     update.exact_existing_linked_snapshot=proposed.chains.back();
     const auto updated=m::prepare_exact_m12_project_transaction(
         transaction.value()->candidate_not_yet_committed,
-        *carrier.value(),*stage.value(),*terminal.value(),
-        terminalBindings,0.0,update);
+        *carrier.value(),*stage.value(),update);
     QVERIFY(updated);
     QCOMPARE(updated.value()->candidate_not_yet_committed.document().
              chains.size(),std::size_t{2});
@@ -249,14 +232,14 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         laundered.chains.front();
     QVERIFY(!m::prepare_exact_m12_project_transaction(
         *illicit_snapshot.value(),*carrier.value(),*stage.value(),
-        *terminal.value(),terminalBindings,0.0,forged_expected));
+        forged_expected));
     auto corrupted=proposed;
     corrupted.chains.front().revision+=1;
     const auto changed=project::ProjectSnapshot::create(corrupted);
     QVERIFY(changed);
     QVERIFY(!m::prepare_exact_m12_project_transaction(
         *changed.value(),*carrier.value(),*stage.value(),
-        *terminal.value(),terminalBindings,0.0,identity));
+        identity));
     doc.chains.push_back(carrier.value()->native_project_chain);
     const auto snapshot=project::ProjectSnapshot::create(doc);
     QVERIFY(snapshot);
