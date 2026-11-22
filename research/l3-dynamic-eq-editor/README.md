@@ -56,3 +56,16 @@ within the flexible graph so all shared Parametric EQ controls remain fixed.
 Manual mutation is locked during L3. An isolated Qt test checks bounds,
 accepted snapshots, manual lock, QML loading, and a screenshot artifact.
 No DSP calculation or Product integration is introduced.
+
+## Detached C01 inspector, no graph occlusion
+
+The first overlay obscured the plotted curve and the frequency labels.
+Now the six C01 controls live in a separate transient `Qt.Tool` window
+(`DynamicEqDynamicsCompanion.qml`). The original DynamicEqGraph is never
+occluded or resized, and all L1 shared controls retain their exact slots.
+The test requires the companion to have the main playback/editor window as
+transient parent and checks that its strip is not a child of the graph.
+The isolated Qt screenshot job captures TWO real images: the unobstructed
+main EQ editor and the actual C01 controls window. The companion starts
+closed unless the research harness explicitly requests it; there is no
+Product integration or manual fine tuning during AutoMatch L3.

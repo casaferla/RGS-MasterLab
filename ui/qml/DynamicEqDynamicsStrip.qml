@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
-// Research overlay inside the flexible graph. Common L1 controls do not move.
+// Research-only detached companion. The entire original graph stays visible.
 Rectangle {
     id: root
     property var dynamicsViewModel: null

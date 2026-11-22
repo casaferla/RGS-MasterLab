@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 Rectangle {
     id: root
@@ -291,17 +292,6 @@ Rectangle {
                 }
             }
 
-            DynamicEqDynamicsStrip {
-                objectName: "dynamicEqDynamicsStrip"
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: 8
-                anchors.bottomMargin: 19
-                z: 35
-                visible: root.showDynamics && !!root.dynamicsControls
-                dynamicsViewModel: root.dynamicsControls
-            }
         }
 
         // Selected-Band Inspector: extended down for compact slider tier,
@@ -677,5 +667,23 @@ Rectangle {
         }
 
 
+    }
+
+    // Research-only detached companion: never covers the graph's plot,
+    // frequency axis, Spectrum or the original Parametric EQ controls.
+    // During AutoMatch L3 this editor does NOT exist in the Product.
+    DynamicEqDynamicsCompanion {
+        id: dynamicCompanion
+        objectName: "dynamicEqDynamicsCompanion"
+        dynamicsViewModel: root.dynamicsControls
+        visible: root.showDynamics && !!root.dynamicsControls
+        transientParent: root.Window.window
+        x: root.Window.window
+            ? root.Window.window.x + root.Window.window.width + 10 : 0
+        y: root.Window.window
+            ? root.Window.window.y + 60 : 0
+        onVisibleChanged: {
+            if (!visible && root.showDynamics) root.showDynamics = false
+        }
     }
 }

@@ -58,19 +58,35 @@ int main(int argc,char** argv) {
     QObject* win=engine.rootObjects().first();
     QObject* ed=win->findChild<QObject*>("dynamicEqResearchEditor");
     QObject* strip=win->findChild<QObject*>("dynamicEqDynamicsStrip");
-    if(!ed||!strip||!strip->property("visible").toBool())return 14;
-    if(ed->property("manualEditable").toBool())return 15;
+    QObject* companion=win->findChild<QObject*>("dynamicEqDynamicsCompanion");
+    QObject* graph=ed ? ed->findChild<QObject*>("parametricEqGraph") : nullptr;
+    if(!ed || !strip || !companion || !graph)return 14;
     auto* window=qobject_cast<QQuickWindow*>(win);
-    if(!window)return 16;
-    window->show();app.processEvents();
+    auto* sideWindow=qobject_cast<QQuickWindow*>(companion);
+    if(!window || !sideWindow)return 16;
+    window->show();
+    sideWindow->show();
+    app.processEvents();
+    if(!sideWindow->isVisible() || ed->property("manualEditable").toBool())
+        return 15;
+    // A detached surface is NOT a descendant of the graph QQuickItem.
+    if(graph->findChild<QObject*>("dynamicEqDynamicsStrip"))return 20;
+    if(!strip->property("visible").toBool())return 21;
+    if(!sideWindow->transientParent()
+       || sideWindow->transientParent()!=window)return 22;
     const QString dir=qEnvironmentVariable("RGSML_DYNAMIC_CONTROLS_SCREENSHOT_DIR");
     if(!dir.isEmpty()) {
         if(!QDir().mkpath(dir))return 17;
         QImage image=window->grabWindow();
         if(image.isNull()||!image.save(
-            QDir(dir).filePath("DynamicEq-C01-Dynamics-Research.png"),"PNG"))
+            QDir(dir).filePath("DynamicEq-C01-Main-Unobstructed.png"),"PNG"))
             return 18;
+        app.processEvents();
+        const QImage side=sideWindow->grabWindow();
+        if(side.isNull() || !side.save(
+            QDir(dir).filePath("DynamicEq-C01-Controls-Companion.png"),"PNG"))
+            return 23;
     }
-    std::cout<<"C01 frozen typed controls and QML overlay: PASS\n";
+    std::cout<<"C01 frozen typed controls + detached QML companion: PASS\n";
     return 0;
 }
