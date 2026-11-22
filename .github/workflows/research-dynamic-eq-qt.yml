@@ -47,6 +47,13 @@ jobs:
         run: |
           /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
             "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" common
+      - name: Measure absolute Bell positions
+        id: bell_measure
+        shell: bash
+        run: |
+          pos=$(/tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" measure)
+          echo "position=$pos" >> "$GITHUB_OUTPUT"
       - name: Verify Bell button position
         shell: bash
         run: |
@@ -78,6 +85,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dynamic-eq-structural-layout
-          path: \${{ runner.temp }}/dynamic-eq-visual/*.png
+          name: dynamic-eq-structural-layout-${{ steps.bell_measure.outputs.position }}
+          path: ${{ runner.temp }}/dynamic-eq-visual/*.png
           if-no-files-found: warn

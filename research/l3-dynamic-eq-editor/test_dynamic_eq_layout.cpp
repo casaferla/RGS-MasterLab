@@ -75,6 +75,19 @@ int main(int argc,char** argv) {
         std::cout<<"Dynamic EQ QML scene: PASS\n";
         return 0;
     }
+    if(stage==QStringLiteral("measure")) {
+        QQuickItem* a=item(original,"filterButton_BELL");
+        QQuickItem* b=item(dynamic,"filterButton_BELL");
+        if(!a || !b)return 16;
+        const auto pa=a->mapToScene(QPointF{0,0});
+        const auto pb=b->mapToScene(QPointF{0,0});
+        const auto ten=[](double n) {return std::lround(n*10.0);};
+        std::cout<<"ox"<<ten(pa.x())<<"-oy"<<ten(pa.y())
+                 <<"-dx"<<ten(pb.x())<<"-dy"<<ten(pb.y())
+                 <<"-ow"<<ten(a->width())<<"-dw"<<ten(b->width())
+                 <<"-oh"<<ten(a->height())<<"-dh"<<ten(b->height());
+        return 0;
+    }
     constexpr std::array<const char*,10> controls{{
         "eqTopToolbarRegion","eqSpectrumToggleButton",
         "eqBandStripRegion","eqFrequencyControl","eqGainControl",
