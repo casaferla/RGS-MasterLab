@@ -1,5 +1,7 @@
 #include "internal/l3_automatch_typed_p2_trial.hpp"
 #include "internal/l3_m10_p2_canonical_coordinate_port.hpp"
+#include "internal/l3_m10_p2_exact_cache_evaluator.hpp"
+#include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <QtTest/QTest>
@@ -25,6 +27,7 @@ private slots:
     void ceilingAndDriveAreRealTypedIndependentCandidates();
     void wrongBindingBypassOrGraphMustRefuse();
     void frozenM10CanonicalPairDecodesAndRejectsInvalidInventory();
+    void frozenM10P2ExactCacheAllowsOnlyCompletedCurrentScores();
 };
 void L3P2TypedTrialTest::
 ceilingAndDriveAreRealTypedIndependentCandidates() {
@@ -241,6 +244,96 @@ frozenM10CanonicalPairDecodesAndRejectsInvalidInventory() {
     QVERIFY(!m10::bind_m10_p2_joint_coordinates(
         inventory,proposed,names,*chain.value(),bindings,p2id,
         "ticket",authorized_m09_inverse));
+}
+
+void L3P2TypedTrialTest::
+frozenM10P2ExactCacheAllowsOnlyCompletedCurrentScores() {
+    namespace m10=a::m10_frozen;
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto opt=dsp::ModuleRegistry::with_streaming_true_peak_preview(
+        std::move(*base.value()));
+    QVERIFY(opt);
+    auto chain=dsp::ProcessingChain::create(*opt.value(),{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto p2id=id("df000000-0000-4000-8000-000000000001");
+    QVERIFY(chain.value()->add(
+        p2id,"rgsml.dsp.streaming-true-peak-limiter",0));
+    const auto baseP2=dsp::StreamingTruePeakLimiterParameters::create(
+        -1.0,0.0,2);
+    QVERIFY(baseP2);
+    const std::vector<dsp::ModuleExecutionBinding> current{
+        {p2id,*baseP2.value()}};
+    const m10::ExactP2CoordinateNames fields{
+        {0x90},{0x01},{0x02}};
+    const std::vector<m10::Coordinate> inventory{
+        {{0x90},{0x01},0.9},{{0x90},{0x02},0.5}};
+    m10::ExactCompletedEvaluationCache cache({0xaa});
+    std::uint32_t renders=0;
+    bool current_owner=true;
+    const auto inverse=[&](const m10::Coordinate& c,double u)
+        ->std::optional<double> {
+        if(c.stable_parameter_id==fields.ceiling_parameter_id)
+            return -12.0+12.0*u;
+        if(c.stable_parameter_id==fields.drive_parameter_id)
+            return -24.0+48.0*u;
+        return std::nullopt;
+    };
+    const auto exact_key=[](const m10::BoundM10P2Candidate& bound)
+        ->std::optional<m10::ExactExecutionCacheKey> {
+        const auto* params=bound.typed.chosen_p2_parameters();
+        if(!params)return std::nullopt;
+        const auto encoded=dsp::encode_module_parameters_json(
+            dsp::ModuleParameterPayload{*params});
+        if(!encoded)return std::nullopt;
+        // Test-only exact typed canonical content; in Product this
+        // must come from the authenticated complete M07-M11 serializer.
+        return m10::ExactExecutionCacheKey{
+            {0xaa},{encoded.value()->begin(),encoded.value()->end()},
+            {0x11},{0x22}};
+    };
+    const auto preflight=[&](const m10::BoundM10P2Candidate& bound) {
+        return current_owner&&
+            bound.typed.still_matches(*chain.value(),current);
+    };
+    const auto physical=[&](const m10::BoundM10P2Candidate& bound) {
+        ++renders;
+        const auto* params=bound.typed.chosen_p2_parameters();
+        if(!params)return m10::FreshCompleteEvidence{};
+        // Unit test exercises attribution/cache only. A Product worker
+        // MUST render and analyze 27 canonical features before claiming
+        // full_current_render_analysis_hard_gates_attested.
+        return m10::FreshCompleteEvidence{
+            m10::MeasuredOrderKey{10.0,3.0,2.0,1U,{0x11},{0x22}},
+            true};
+    };
+    const auto evaluate=[&](const std::vector<double>& u,bool allow) {
+        return m10::evaluate_m10_p2_with_exact_cache(
+            inventory,u,fields,*chain.value(),current,p2id,
+            "exact-product-candidate",cache,allow,
+            inverse,exact_key,preflight,physical);
+    };
+    const std::vector<double> first{0.5,0.625};
+    const auto score=evaluate(first,true);
+    QCOMPARE(score.kind,m10::EvaluationKind::attempted_complete);
+    QCOMPARE(renders,std::uint32_t{1});
+    QCOMPARE(cache.size(),std::size_t{1});
+    const auto cached=evaluate(first,false);
+    QCOMPARE(cached.kind,m10::EvaluationKind::completed_cache_hit);
+    QCOMPARE(renders,std::uint32_t{1});
+    const std::vector<double> second{0.5,0.75};
+    const auto budget=evaluate(second,false);
+    QCOMPARE(budget.kind,m10::EvaluationKind::needs_new_attempt);
+    QCOMPARE(renders,std::uint32_t{1});
+    const auto secondScore=evaluate(second,true);
+    QCOMPARE(secondScore.kind,m10::EvaluationKind::attempted_complete);
+    QCOMPARE(renders,std::uint32_t{2});
+    QCOMPARE(cache.size(),std::size_t{2});
+    current_owner=false;
+    const auto stale=evaluate(first,false);
+    QCOMPARE(stale.kind,m10::EvaluationKind::preflight_rejected);
+    QCOMPARE(renders,std::uint32_t{2});
 }
 } // namespace
 } // namespace rgsml::tests
