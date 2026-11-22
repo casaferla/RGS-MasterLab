@@ -3094,3 +3094,17 @@ add_test(NAME rgsml_l3_m06_p04_native_event_tests
 set_tests_properties(rgsml_l3_m06_p04_native_event_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;p04;robust_mad;nms;nonrelease")
+
+# L3 M06 actual P04 native selected events -> real D07/D08 PCM contexts.
+qt_add_executable(rgsml_l3_m06_p04_native_descriptors_tests
+    unit/app/test_l3_m06_p04_real_event_descriptors.cpp)
+target_include_directories(rgsml_l3_m06_p04_native_descriptors_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_p04_native_descriptors_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_p04_native_descriptors_tests)
+add_test(NAME rgsml_l3_m06_p04_native_descriptors_tests
+    COMMAND rgsml_l3_m06_p04_native_descriptors_tests)
+set_tests_properties(rgsml_l3_m06_p04_native_descriptors_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;p04;native_d07_d08;nonrelease")
