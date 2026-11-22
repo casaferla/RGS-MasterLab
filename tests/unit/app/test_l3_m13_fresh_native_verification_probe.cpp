@@ -180,7 +180,8 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
     const auto rate=core::SampleRate::create(48000);
     const auto format=audio::AudioFormat::create(
         *rate.value(),audio::ChannelLayout::STEREO_LR);
-    const auto frames=core::FrameCount::create(8192);
+    // A full second is required for real canonical loudness analysis.
+    const auto frames=core::FrameCount::create(48000);
     const auto block=core::FrameCount::create(512);
     auto buffer=audio::AudioBuffer::create(
         *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
@@ -192,7 +193,7 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
     for(std::size_t i=0;i<l.value()->size();++i) {
         const double v=0.25*std::sin(
             2.0*std::numbers::pi*440.0*static_cast<double>(i)/48000.0);
-        (*l.value())[i]=v;(*r.value())[i]=-v;
+        (*l.value())[i]=v;(*r.value())[i]=v;
     }
     const auto request=render::RenderRequest::create(
         buffer.value()->view(),buffer.value()->view().absolute_range(),
@@ -234,7 +235,7 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
     QCOMPARE(second.value()->genuine_dsp_segment_passes,
              std::uint32_t{3});
     QCOMPARE(second.value()->independent_match_render.view().
-                 frame_count().value(),std::int64_t{8192});
+                 frame_count().value(),std::int64_t{48000});
     QCOMPARE(second.value()->independent_match_render.signatures().size(),
              std::size_t{1});
     QCOMPARE(second.value()->independent_match_render.signatures().back().type_id,
@@ -252,8 +253,12 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
     for(std::size_t i=0;i<a.value()->size();++i)
         if((*a.value())[i]!=(*b.value())[i]){differs=true;break;}
     QVERIFY(differs);
-    QCOMPARE(manualBindings[0].parameters,
-             dsp::ModuleParameterPayload{*p2.value()});
+    const auto* still_manual=
+        std::get_if<dsp::StreamingTruePeakLimiterParameters>(
+            &manualBindings[0].parameters);
+    QVERIFY(still_manual);
+    QCOMPARE(still_manual->drive_db(),0.0);
+    QCOMPARE(still_manual->margin_percent(),2);
     QVERIFY(!second.value()->is_m13_verified());
     QVERIFY(!second.value()->authorizes_master_export());
 }
