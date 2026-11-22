@@ -1,6 +1,7 @@
 #include "internal/l3_m12_ref_linked_project_carrier.hpp"
 #include "internal/l3_m12_project_transaction_draft.hpp"
 #include "internal/l3_m12_p2_persisted_sound_guard.hpp"
+#include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
@@ -438,6 +439,49 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
     QCOMPARE(reopened.value()->chains.front().modules.back().
              parameters.canonical_utf8(),
              canonical.value()->canonical_utf8());
+    // Readback without a REAL Product writer lease is NOT a receipt,
+    // even when its bytes happen to equal the prepared draft.
+    const auto parsedReadback=project::ProjectSnapshot::create(
+        *reopened.value());
+    QVERIFY(parsedReadback);
+    const auto noRealCommit=m::audit_exact_m12_postcommit_project_readback(
+        *prior.value(),*keepFixedDraft.value(),*parsedReadback.value(),
+        false);
+    QCOMPARE(noRealCommit.reason,m::PostCommitReadbackReason::
+        missing_real_owner_transaction);
+    QVERIFY(!noRealCommit.is_product_materialization_receipt());
+    QVERIFY(!noRealCommit.authorizes_m13_verification());
+    // This test simulates the readback AFTER a hypothetical real
+    // atomic Qt owner commit, without pretending to perform one.
+    const auto exactReadback=m::audit_exact_m12_postcommit_project_readback(
+        *prior.value(),*keepFixedDraft.value(),*parsedReadback.value(),
+        true);
+    QCOMPARE(exactReadback.reason,m::PostCommitReadbackReason::
+        exact_after_state);
+    QVERIFY(exactReadback.exact_after_state_observed());
+    QVERIFY(!exactReadback.is_product_materialization_receipt());
+    auto corruptedAfter=*reopened.value();
+    corruptedAfter.chains.front().modules.back().parameters=
+        *changedPayload.value();
+    const auto corruptedAfterSnapshot=
+        project::ProjectSnapshot::create(corruptedAfter);
+    QVERIFY(corruptedAfterSnapshot);
+    QCOMPARE(m::audit_exact_m12_postcommit_project_readback(
+        *prior.value(),*keepFixedDraft.value(),
+        *corruptedAfterSnapshot.value(),true).reason,
+        m::PostCommitReadbackReason::
+            incomplete_or_noncanonical_readback);
+    const std::vector<project::OptionalEntry> unrelatedFiles{{
+        "unrelated/file.txt","text/plain",{
+            std::byte{0x61},std::byte{0x62}}}};
+    const auto alteredAttachment=project::ProjectSnapshot::create(
+        *reopened.value(),unrelatedFiles);
+    QVERIFY(alteredAttachment);
+    QCOMPARE(m::audit_exact_m12_postcommit_project_readback(
+        *prior.value(),*keepFixedDraft.value(),
+        *alteredAttachment.value(),true).reason,
+        m::PostCommitReadbackReason::
+            unrelated_optional_entries_changed);
 }
 void M12NativeProjectCarrierTest::
 wrongProjectChainOrUnavailableFactoryCannotBePublished(){
