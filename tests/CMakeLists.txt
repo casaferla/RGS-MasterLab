@@ -2984,3 +2984,15 @@ add_test(NAME rgsml_l3_m06_m20_native_frame_sink_tests
 set_tests_properties(rgsml_l3_m06_m20_native_frame_sink_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;native_stft;single_fft;nonrelease")
+
+# L3 M06 exact M20 coherent L/R/cross PSD opt-in; M20 numerical identity.
+qt_add_executable(rgsml_l3_m06_m20_coherent_psd_tests
+    unit/app/test_l3_m06_m20_coherent_stereo_psd_tap.cpp)
+target_link_libraries(rgsml_l3_m06_m20_coherent_psd_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_m20_coherent_psd_tests)
+add_test(NAME rgsml_l3_m06_m20_coherent_psd_tests
+    COMMAND rgsml_l3_m06_m20_coherent_psd_tests)
+set_tests_properties(rgsml_l3_m06_m20_coherent_psd_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;m20;real_stereo;coherent_psd;nonrelease")
