@@ -5,6 +5,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QQuickItem>
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
@@ -14,6 +15,19 @@
 
 using namespace rgsml;
 using namespace rgsml::research::dynamic_ui;
+
+// QML Repeater delegates are parented in the Qt Quick visual item tree,
+// not necessarily the same QObject ownership tree used by findChild().
+static QObject* findVisualItem(QObject* candidate,const QString& name) {
+    if(!candidate)return nullptr;
+    if(candidate->objectName()==name)return candidate;
+    const auto* item=qobject_cast<QQuickItem*>(candidate);
+    if(!item)return nullptr;
+    for(auto* child:item->childItems()) {
+        if(auto* found=findVisualItem(child,name))return found;
+    }
+    return nullptr;
+}
 int main(int argc,char** argv) {
     if(argc!=2)return 2;
     QGuiApplication app(argc,argv);
@@ -217,13 +231,21 @@ int main(int argc,char** argv) {
     if(!QMetaObject::invokeMethod(addButton,"clicked",Qt::DirectConnection))
         return 59;
     app.processEvents();
-    auto* thresholdControl=strip->findChild<QObject*>(
-        "dynamicEqControl_threshold");
-    auto* attackControl=strip->findChild<QObject*>("dynamicEqControl_attack");
+    auto* thresholdControl=findVisualItem(
+        strip,QStringLiteral("dynamicEqControl_threshold"));
+    auto* attackControl=findVisualItem(
+        strip,QStringLiteral("dynamicEqControl_attack"));
     if(!thresholdControl || !attackControl
        ||common.selectedIndex()!=1
        ||selectedBand->property("text").toString()
-           !=QStringLiteral("BAND 2 · BELL"))return 60;
+           !=QStringLiteral("BAND 2 · BELL")) {
+        std::cerr<<"Dynamics selected-band visual probe: threshold="
+                 <<bool(thresholdControl)<<" attack="<<bool(attackControl)
+                 <<" index="<<common.selectedIndex()
+                 <<" label="<<selectedBand->property("text").toString().toStdString()
+                 <<"\n";
+        return 60;
+    }
 
     model.setDraftFieldText("threshold","-37.5");
     if(!model.commitDraft())return 61;
