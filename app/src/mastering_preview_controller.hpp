@@ -21,6 +21,9 @@
 #include <vector>
 
 namespace rgsml::app {
+namespace l3_automatch::m12_frozen {
+struct M12ImmutableProductPreviewTicket;
+}
 
 class MasteringPreviewController final : public QObject {
     Q_OBJECT
@@ -42,6 +45,10 @@ public:
         // Immutable registry snapshot corresponding to this exact chain.
         // Keeps the P2 opt-in factory alive through the worker lifetime.
         std::shared_ptr<const dsp::ModuleRegistry> registry;
+        // Present only after a future real Product M12 ownership gate.
+        // A copied immutable ticket cannot be retargeted mid-render.
+        std::shared_ptr<const l3_automatch::m12_frozen::
+            M12ImmutableProductPreviewTicket> m12ReplayTicket;
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob& job)>;
@@ -63,6 +70,12 @@ public:
     // Product publisher callback, on the Qt owner thread. No copy of PCM.
     void set_accepted_processed_provider(AcceptedProcessedProvider provider);
     void set_preview_executor(PreviewExecutor executor);
+    // Opt-in Product seam only; NOT a Q_INVOKABLE and not installed
+    // by default. Source/Project writer must authorize its future use.
+    // Replacing it invalidates any old accepted PROCESSED generation.
+    void set_private_m12_product_preview_ticket(
+        std::shared_ptr<const l3_automatch::m12_frozen::
+            M12ImmutableProductPreviewTicket> ticket);
     // Research-only timing evidence, never used in ordinary Product builds.
     // Call once on the owner thread before scheduling any preview jobs.
     void set_research_p2_timing_log_path(QString path);
@@ -93,6 +106,8 @@ private:
     ProcessedRealizationPublisher publisher_;
     AcceptedProcessedProvider acceptedProcessedProvider_;
     PreviewExecutor previewExecutor_;
+    std::shared_ptr<const l3_automatch::m12_frozen::
+        M12ImmutableProductPreviewTicket> m12ReplayTicket_;
     dsp::ModuleRegistry registry_{*dsp::ModuleRegistry::create_dsp_package_v1().value()};
 
     std::uint64_t previewGeneration_{0};

@@ -2,6 +2,7 @@
 // Compile-check Qt Product admission on the Windows app build. No UI
 // activation, background work or automatic AutoMatch launch here.
 #include "internal/l3_product_qt_owner_admission.hpp"
+#include "internal/l3_m12_product_preview_worker_ticket.hpp"
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/error.hpp>
@@ -292,6 +293,24 @@ void MasteringPreviewController::set_preview_executor(PreviewExecutor executor)
     previewExecutor_ = std::move(executor);
 }
 
+void MasteringPreviewController::set_private_m12_product_preview_ticket(
+    std::shared_ptr<const l3_automatch::m12_frozen::
+        M12ImmutableProductPreviewTicket> ticket)
+{
+    if(QThread::currentThread()!=thread())return;
+    // A formerly accepted MANUAL-only PCM is not evidence for the
+    // newly selected REF_LINKED realization. Fence older queued jobs.
+    ++previewGeneration_;
+    acceptedPreviewGeneration_=0;
+    acceptedPreviewOwner_.reset();
+    acceptedPreviewBindings_.clear();
+    pendingPreviewBindings_.clear();
+    m12ReplayTicket_=std::move(ticket);
+    previewStatus_=QStringLiteral("IDLE");
+    previewError_.clear();
+    emit changed();
+}
+
 void MasteringPreviewController::set_research_p2_timing_log_path(QString path)
 {
     // Only research startup calls this, before the first worker job.
@@ -361,7 +380,8 @@ void MasteringPreviewController::request_preview()
         std::move(preparedSnapshot),
         chainState_->chain(),
         chainState_->execution_bindings(),
-        chainState_->registry_snapshot()
+        chainState_->registry_snapshot(),
+        m12ReplayTicket_
     };
 
     // The pending snapshot is the exact DSP input of the accepted
@@ -403,7 +423,15 @@ void MasteringPreviewController::worker_loop()
             core::Error{core::ErrorCode::InvalidState, "No renderer."});
 
         bool cacheHit=false;
-        if (previewExecutor_) {
+        if (job.m12ReplayTicket) {
+            // Never permit an optional custom PreviewExecutor to bypass
+            // immutable linked ownership checks. This uses the ordinary
+            // native renderer, with real REF before optional terminal P2.
+            renderResult=l3_automatch::m12_frozen::
+                render_m12_exact_product_preview_job(
+                    *job.m12ReplayTicket,job,
+                    *core::FrameCount::create(4096).value());
+        } else if (previewExecutor_) {
             renderResult = previewExecutor_(job);
         } else {
             // Immutable registry corresponding to the exact accepted
