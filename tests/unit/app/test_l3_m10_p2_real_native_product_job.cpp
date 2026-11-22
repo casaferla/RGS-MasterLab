@@ -629,6 +629,38 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QCOMPARE(first_refinement_u[0],0.25);
     QCOMPARE(first_refinement_u[1],0.5);
     QVERIFY(!first_refinement.authorizes_product_publication());
+    const auto before_rejection=actual_preflight_calls;
+    auto unauthenticated_refinement=refinement_product;
+    unauthenticated_refinement.
+        exact_current_m09_m10_m11_inventory_authority_attested=false;
+    const auto not_authorized=
+        m10::run_real_m10_p2_frozen_top2_refinements(
+            measured_seed_trials,reverse_m09_inventory,0U,
+            unauthenticated_refinement,
+            [&](std::size_t ordinal,const m10::Coordinate& coord,
+                double u)->std::optional<double>{
+                return ordinal==7U?inverse(coord,u):std::nullopt;
+            },
+            full_key_unavailable,valid_current,no_graph,
+            sterile_constraints,no_original);
+    QCOMPARE(not_authorized.reason,
+             m10::RefinementBatchReason::invalid_inventory);
+    QCOMPARE(actual_preflight_calls,before_rejection);
+    auto duplicate_m09_inventory=reverse_m09_inventory;
+    duplicate_m09_inventory[0][1]=duplicate_m09_inventory[0][0];
+    const auto bad_inventory=
+        m10::run_real_m10_p2_frozen_top2_refinements(
+            measured_seed_trials,duplicate_m09_inventory,0U,
+            refinement_product,
+            [&](std::size_t ordinal,const m10::Coordinate& coord,
+                double u)->std::optional<double>{
+                return ordinal==7U?inverse(coord,u):std::nullopt;
+            },
+            full_key_unavailable,valid_current,no_graph,
+            sterile_constraints,no_original);
+    QCOMPARE(bad_inventory.reason,
+             m10::RefinementBatchReason::invalid_inventory);
+    QCOMPARE(actual_preflight_calls,before_rejection);
     QVERIFY(!from_bound.complete_measured());
     QVERIFY(!unbound.as_exact_cache_evidence().
         full_current_render_analysis_hard_gates_attested);

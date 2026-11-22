@@ -13,6 +13,7 @@
 #include "l3_m05m06_product_native_identity.hpp"
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
