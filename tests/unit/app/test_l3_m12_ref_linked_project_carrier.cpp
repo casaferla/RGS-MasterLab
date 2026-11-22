@@ -3,6 +3,7 @@
 #include "internal/l3_m12_p2_persisted_sound_guard.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_ref_linked_project_restore.hpp"
+#include "internal/l3_m12_ref_linked_project_open_gate.hpp"
 #include "internal/dsp_manual_preset_bundle.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
@@ -134,6 +135,15 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto& proposed=
         transaction.value()->candidate_not_yet_committed.document();
     QCOMPARE(proposed.chains.size(),std::size_t{2});
+    // Until ProjectSession can atomically replay REF_LINKED DSP, even
+    // a valid M12 candidate must NOT be silently reopened as MANUAL
+    // alone. Legacy projects with no linked segment remain supported.
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(doc),
+             m::ProjectOpenLinkedSafety::
+                 ordinary_project_without_ref_linked);
+    QCOMPARE(m::assess_current_product_ref_linked_open_safety(proposed),
+             m::ProjectOpenLinkedSafety::
+                 blocked_until_product_ref_linked_replay_is_installed);
     // Dynamic EQ / Transient Shaper / Parametric EQ are real
     // registered DSPs, not opaque plan-only placeholders. Rebuild
     // them from the actual persisted REF_LINKED project segment.

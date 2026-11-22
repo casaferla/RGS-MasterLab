@@ -1,4 +1,5 @@
 #include "project_session_view_model.hpp"
+#include "internal/l3_m12_ref_linked_project_open_gate.hpp"
 
 #include "audition_region_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
@@ -986,6 +987,19 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     auto opened = project::ProjectRepository::open(std::move(*reader.value()));
     if (!opened) { publish_error(*opened.error()); return; }
     const auto& doc = opened.value()->document();
+    // L3-M12: ProjectSession currently restores MANUAL only. A saved
+    // REF_LINKED Master must NOT silently sound different on reopening.
+    // Block on the Qt owner BEFORE probing or adopting SOURCE/Gold,
+    // until Product has a genuine atomic linked-chain replay path.
+    if(l3_automatch::m12_frozen::
+         assess_current_product_ref_linked_open_safety(doc)!=
+       l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
+         ordinary_project_without_ref_linked) {
+        publish_error(core::Error{
+            core::ErrorCode::InvalidState,
+            "L3_M12_PROJECT_OPEN_REF_LINKED_REPLAY_NOT_YET_INTEGRATED"});
+        return;
+    }
     // Fail-closed preflight before transport/Source/chain mutation.
     auto rate = project::MasterOutputRatePreference::read(doc.output);
     if (!rate) { publish_error(*rate.error()); return; }
