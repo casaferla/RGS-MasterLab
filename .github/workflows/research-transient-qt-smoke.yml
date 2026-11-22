@@ -37,5 +37,14 @@ jobs:
           cmake -S research/l3-transient-shaper-editor -B /tmp/transient-qt-research \
             -G Ninja -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64"
           cmake --build /tmp/transient-qt-research --parallel 4
-          /tmp/transient-qt-research/transient_research_qml_smoke \
-            "$GITHUB_WORKSPACE/research/l3-transient-shaper-editor/RealC00QtHarness.qml"
+          mkdir -p "$RUNNER_TEMP/transient-ui-artifacts"
+          RGSML_RESEARCH_SCREENSHOT_DIR="$RUNNER_TEMP/transient-ui-artifacts" \
+            /tmp/transient-qt-research/transient_research_qml_smoke \
+              "$GITHUB_WORKSPACE/research/l3-transient-shaper-editor/RealC00QtHarness.qml"
+      - name: Upload isolated Qt screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transient-shaper-qt-research-visual
+          path: ${{ runner.temp }}/transient-ui-artifacts/*.png
+          if-no-files-found: warn

@@ -2,7 +2,10 @@
 #include "transient_c00_activity_sink.hpp"
 #include "transient_research_controls.hpp"
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
+#include <QDir>
 #include <QFileInfo>
+#include <QImage>
+#include <QQuickWindow>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -39,6 +42,12 @@ int main(int argc,char** argv) {
 
     const auto p=dsp::TransientShaperParameters::create(6.0,-3.0);
     assert(p);
+    // The display must never show zero when C00 actually rendered +6/-3.
+    // This read-only path is permitted even while manual editing is locked.
+    controls.loadAcceptedParameters(*p.value());
+    assert(controls.attackAmountDb()==6.0);
+    assert(controls.sustainAmountDb()==-3.0);
+    assert(!controls.manualEditable());
     auto e=dsp::internal::TransientShaperC00Engine::create(
         *p.value(),48000U,1U,256U,true);
     assert(e);
@@ -108,6 +117,25 @@ int main(int argc,char** argv) {
     controls.setResearchManualEditable(true);
     app.processEvents();
     if(!editor->property("editorEnabled").toBool())return 7;
+    // Optional test screenshot: actual Qt Quick render, real C00 gain data,
+    // but simulated PlaybackSnapshot. Never labeled a Product screen.
+    const QString screenshotDir=qEnvironmentVariable("RGSML_RESEARCH_SCREENSHOT_DIR");
+    if(!screenshotDir.isEmpty()) {
+        QQuickWindow* quick=qobject_cast<QQuickWindow*>(root);
+        if(!quick)return 11;
+        quick->show();
+        app.processEvents();
+        const QImage image=quick->grabWindow();
+        if(image.isNull()) {
+            std::cerr<<"Qt Quick screenshot unavailable\n";
+            return 12;
+        }
+        if(!QDir().mkpath(screenshotDir))return 13;
+        const QString output=QDir(screenshotDir).filePath(
+            QStringLiteral("TransientShaper-Research-QML.png"));
+        if(!image.save(output, "PNG"))return 14;
+        std::cout<<"Qt research screenshot saved\n";
+    }
     controls.setResearchManualEditable(false);
 
     telemetry.apply(project(8));

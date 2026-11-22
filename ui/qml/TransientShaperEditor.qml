@@ -64,7 +64,7 @@ Item {
                 accentColor: root.copper
                 enabled: root.editorEnabled
                 onClicked: if(root.transientModule) root.transientModule.resetToDefault()
-                Accessible.name: "Reset Transient Shaper Limiter to defaults"
+                Accessible.name: "Reset Transient Shaper to defaults"
             }
         }
 

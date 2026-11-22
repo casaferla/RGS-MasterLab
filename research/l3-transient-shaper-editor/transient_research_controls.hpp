@@ -14,6 +14,16 @@ public:
     [[nodiscard]] double attackAmountDb() const noexcept {return attack_;}
     [[nodiscard]] double sustainAmountDb() const noexcept {return sustain_;}
     [[nodiscard]] bool manualEditable() const noexcept {return editable_;}
+    // Read-only snapshot loading comes from the SAME accepted DSP parameter
+    // instance as the PCM whose gain history is presented.
+    void loadAcceptedParameters(
+        const rgsml::dsp::TransientShaperParameters& p) noexcept {
+        const double a=p.attack_amount_db();
+        const double s=p.sustain_amount_db();
+        if(a==attack_ && s==sustain_)return;
+        attack_=a; sustain_=s;
+        emit changed();
+    }
     // Research-only permission; no production binding.
     void setResearchManualEditable(bool allow) noexcept {
         if(editable_==allow)return;

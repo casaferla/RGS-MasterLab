@@ -37,6 +37,27 @@ No CMake, host, module registry, project serialization, Qt application
 composition, or production CI workflow files are modified. No pull request or merge.
 The new editor is intentionally not wired into the production app yet.
 
+## Independent Qt/QML materialization proof
+
+`transient_activity_qt_bridge.hpp` translates a fully validated
+`PlaybackActivityProjection` into the editor's existing QML properties,
+only within safe JavaScript integer bounds. Invalid/stale render evidence
+clears the chart without asking the DSP to recompute its envelopes.
+`transient_research_controls.hpp` starts locked, validates Attack/Sustain
+with the exact typed parameter factory and loads accepted C00 parameter
+snapshots read-only, separate from manual edits.
+
+`RealC00QtHarness.qml` is a standalone actual Qt scene: a generated PCM
+fixture is processed by the actual C00 engine and produces authentic
+observed gain samples, while the playback snapshot is deliberately
+SIMULATED and clearly labeled. `test_transient_qml_bridge.cpp` checks
+real Qt/QML editor creation, locks, actual-gain values, stale revision,
+stale realization and pause. The isolated Qt 6.8 CI runs an offscreen
+QtQuick load and uploads its rendered research screenshot as a run artifact.
+
+These green gates do NOT claim an audible physical listening test or a
+Product-accepted visual editor. Do not merge with the active L3 writer.
+
 ## Authentic playback owner safety projection (research)
 
 The new `transient_activity_playback_projection.hpp` checks the real
