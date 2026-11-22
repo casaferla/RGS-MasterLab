@@ -299,21 +299,52 @@ void ModuleParameterCodecTest::genericModuleParameterCodecApi()
 
 void ModuleParameterCodecTest::dynamicEqOfflineCodecFailClosed()
 {
+    // Current frozen L3 parameter schemas now persist through the
+    // SAME DSP codec as legacy modules. Unknown keys, duplicates,
+    // invalid discriminated shape or controls still fail closed.
     const auto id=*Uuid::parse(
         "77777777-7777-4777-8777-777777777777").value();
     const auto params=DynamicEqParameters::create_default(id);
     QVERIFY(params);
     const ModuleParameterPayload payload{*params.value()};
     const auto result=encode_module_parameters_json(payload);
-    QVERIFY(!result); // no invented .rgsml Dynamic EQ schema
+    QVERIFY(result);
+    const auto restored=decode_module_parameters_json(
+        "rgsml.dsp.dynamic-eq.parameters/1.0.0",*result.value());
+    QVERIFY(restored);
+    QVERIFY(std::holds_alternative<DynamicEqParameters>(*restored.value()));
+    QCOMPARE(std::get<DynamicEqParameters>(*restored.value()),
+             *params.value());
+    const auto reencoded=encode_module_parameters_json(*restored.value());
+    QVERIFY(reencoded);
+    QCOMPARE(*reencoded.value(),*result.value());
     QVERIFY(!decode_module_parameters_json(
         "rgsml.dsp.dynamic-eq.parameters/1.0.0","{}"));
-    const auto transient=TransientShaperParameters::create_default();
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.dynamic-eq.parameters/1.0.0",
+        R"({"bands":[{"bandId":"77777777-7777-4777-8777-777777777777","enabled":true,"filterType":"BELL","routing":"STEREO","frequencyHz":1000,"q":0.707,"baseGainDb":0,"rangeDb":0,"thresholdDbfs":-24,"ratio":2,"rmsTimeConstantMs":10,"attackMs":30,"releaseMs":200,"shelfSlope":1}]})"));
+    const auto transient=TransientShaperParameters::create(6.0,-3.0);
     QVERIFY(transient);
     const ModuleParameterPayload payloadM03{*transient.value()};
-    QVERIFY(!encode_module_parameters_json(payloadM03));
+    const auto encoded=encode_module_parameters_json(payloadM03);
+    QVERIFY(encoded);
+    const auto decoded=decode_module_parameters_json(
+        "rgsml.dsp.transient-shaper.parameters/1.0.0",
+        *encoded.value());
+    QVERIFY(decoded);
+    QVERIFY(std::holds_alternative<TransientShaperParameters>(
+        *decoded.value()));
+    QCOMPARE(std::get<TransientShaperParameters>(*decoded.value()),
+             *transient.value());
     QVERIFY(!decode_module_parameters_json(
-        "rgsml.dsp.transient-shaper.parameters/1.0.0","{}"));
+        "rgsml.dsp.transient-shaper.parameters/1.0.0",
+        R"({"attackAmountDb":0,"attackAmountDb":1,"sustainAmountDb":0})"));
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.transient-shaper.parameters/1.0.0",
+        R"({"attackAmountDb":0,"sustainAmountDb":0,"lookAheadMs":5})"));
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.transient-shaper.parameters/1.0.0",
+        R"({"attackAmountDb":30,"sustainAmountDb":0})"));
 }
 
 }  // namespace
