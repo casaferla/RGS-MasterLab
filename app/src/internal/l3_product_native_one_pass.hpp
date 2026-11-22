@@ -5,6 +5,7 @@
 // No surrogate M21, extra render, M10/M13 or publication authority.
 #include "l3_product_offline_trial_job.hpp"
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -32,8 +33,9 @@ struct ProductNativeOnePassResult final {
         const noexcept{return false;}
 };
 [[nodiscard]] inline core::Result<ProductNativeOnePassResult>
-measure_real_product_candidate_once(const OfflineProductTrialJob& job,
-                                   ProductNativeOnePassSpec spec) {
+measure_real_product_candidate_once(
+    const OfflineProductTrialJob& job,ProductNativeOnePassSpec spec,
+    const std::atomic<bool>* cancellation=nullptr) {
     using R=core::Result<ProductNativeOnePassResult>;
     const auto fail=[](const char* text) {
         return R::failure(core::Error{
@@ -44,8 +46,12 @@ measure_real_product_candidate_once(const OfflineProductTrialJob& job,
        spec.source_support.selected_native_frame_sink||
        spec.source_support.selected_stereo_frame_sink)
         return fail("L3_ONCE_MISSING_SOURCE_OR_GRID");
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_ONCE_CANCELLED_BEFORE_RENDER");
     auto rendered=job.execute();
     if(!rendered)return R::failure(*rendered.error());
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_ONCE_CANCELLED_AFTER_RENDER");
     if(!job.result_has_expected_scope(*rendered.value()))
         return fail("L3_ONCE_RENDER_SCOPE_STALE");
     const auto view=rendered.value()->view();
@@ -78,6 +84,8 @@ measure_real_product_candidate_once(const OfflineProductTrialJob& job,
         view,view.absolute_start_frame(),view.frame_count(),
         view.timebase().frame_domain_id(),spec.source_support);
     if(!tonal)return R::failure(*tonal.error());
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_ONCE_CANCELLED_AFTER_M20");
     if(!spectral.valid()||spectral.exact_e_tb().size()!=
        tonal.value()->selected_spectral_windows)
         return fail("L3_ONCE_NATIVE_STFT_COUNT_MISMATCH");
@@ -102,7 +110,7 @@ measure_real_product_candidate_once(const OfflineProductTrialJob& job,
     }
     auto p04=m05m06_real::measure_product_p04_d07_d09(
         view,static_cast<std::int64_t>(spec.phase6_active_pcm_frames),
-        true);
+        true,cancellation);
     if(p04.reason!=m05m06_real::P04ProductObservationReason::ready)
         return fail("L3_ONCE_NATIVE_P04_INVALID");
     return R::success(ProductNativeOnePassResult{
