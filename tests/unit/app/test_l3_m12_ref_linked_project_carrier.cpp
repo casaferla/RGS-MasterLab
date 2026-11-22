@@ -950,6 +950,21 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!m::prepare_exact_m12_project_transaction(
         *currentBefore.value(),*carrier.value(),*stage.value(),
         stale));
+    // A REF_LINKED segment disguised as a different processing stage
+    // cannot coexist with a freshly materialized current-controller REF.
+    auto foreignStageDoc=doc;
+    project::Chain foreignLinked;
+    foreignLinked.chainId=uuid(
+        "b7000000-0000-4000-8000-000000000009");
+    foreignLinked.stage="CONDITIONING";
+    foreignLinked.segment="REF_LINKED";
+    foreignStageDoc.chains.push_back(foreignLinked);
+    const auto foreignStage=project::ProjectSnapshot::create(foreignStageDoc);
+    if(foreignStage) {
+        QVERIFY(!m::prepare_exact_m12_project_transaction(
+            *foreignStage.value(),*carrier.value(),*stage.value(),
+            identity));
+    }
     // Exact same-controller update may replace only its existing
     // segment; its immutable native manual/terminal scope survives.
     auto update=identity;

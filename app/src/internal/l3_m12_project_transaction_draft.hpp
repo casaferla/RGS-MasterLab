@@ -214,6 +214,14 @@ prepare_exact_m12_project_transaction(
         });
     if(r==live.references.items.end())
         return fail("L3_M12_PROJECT_TRANSACTION_REFERENCE_MISSING");
+    // The canonical REF_LINKED owner exists only in MASTER. A
+    // foreign-stage linked segment is not a spare graph that may be
+    // silently retained while another controller is materialized.
+    if(std::any_of(live.chains.begin(),live.chains.end(),
+        [](const project::Chain& chain) {
+            return chain.segment=="REF_LINKED"&&chain.stage!="MASTER";
+        }))
+        return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_LINKED_STAGE");
     const auto manual=std::find_if(
         live.chains.begin(),live.chains.end(),
         [&](const project::Chain& chain) {
