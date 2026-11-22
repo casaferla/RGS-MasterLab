@@ -3052,3 +3052,17 @@ add_test(NAME rgsml_l3_m11_native_stereo_safety_tests
 set_tests_properties(rgsml_l3_m11_native_stereo_safety_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m11;native_stereo;safety;nonrelease")
+
+# L3 true M20/Native S05-S06 raw safety -> original M11 hard veto.
+qt_add_executable(rgsml_l3_m11_native_stereo_bridge_tests
+    unit/app/test_l3_m06_m20_stereo_to_m11_raw_safety.cpp)
+target_include_directories(rgsml_l3_m11_native_stereo_bridge_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m11_native_stereo_bridge_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m11_native_stereo_bridge_tests)
+add_test(NAME rgsml_l3_m11_native_stereo_bridge_tests
+    COMMAND rgsml_l3_m11_native_stereo_bridge_tests)
+set_tests_properties(rgsml_l3_m11_native_stereo_bridge_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m11;native_stereo;safety_bridge;nonrelease")
