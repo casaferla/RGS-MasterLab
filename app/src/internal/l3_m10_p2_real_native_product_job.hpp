@@ -404,7 +404,7 @@ private:
         return rendered;
     }
     [[nodiscard]] static core::Error error(const char* code) {
-        return {core::ErrorCode::InvalidState,code};
+        return core::Error{core::ErrorCode::InvalidState,code};
     }
     OfflineProductOwnerStamp owner_;
     std::shared_ptr<const render::RenderResult> prepared_;
