@@ -32,6 +32,22 @@ public:
         std::span<const double> real_mean_channel_psd) = 0;
 };
 
+// Optional native M20 stereo cross-spectrum tap. All three PSD arrays
+// use the same normalization, FFT frame, center and overlap. Cross
+// PSD is signed REAL(L*conj(R)), not magnitude-squared coherence.
+// Null unless an explicit L3 two-channel observer is installed.
+class TonalStereoStereoFrameSink {
+public:
+    virtual ~TonalStereoStereoFrameSink() = default;
+    [[nodiscard]] virtual bool on_selected_stereo_frame(
+        std::uint64_t canonical_stft_ordinal,
+        std::uint32_t sample_rate_hz,
+        std::uint64_t fft_size,
+        std::span<const double> left_psd,
+        std::span<const double> right_psd,
+        std::span<const double> real_cross_psd) = 0;
+};
+
 struct TonalStereoTrustedSupport final {
     // If unavailable, explicitly include ALL complete STFT windows,
     // never infer a mask from LUFS alone.
@@ -47,6 +63,7 @@ struct TonalStereoTrustedSupport final {
     // Fully optional; caller MUST independently attest the exact
     // source/Phase6 grid/gate/current owner before using its payload.
     TonalStereoSelectedFrameSink* selected_native_frame_sink{nullptr};
+    TonalStereoStereoFrameSink* selected_stereo_frame_sink{nullptr};
 };
 
 enum class TonalStereoMetricState : std::uint8_t {

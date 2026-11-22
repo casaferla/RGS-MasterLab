@@ -86,7 +86,8 @@ core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
     m20_private::BoundedSpectrumAccumulatorCandidate accumulator{
         fs,origin,frames,static_cast<std::uint32_t>(channels),
         supplied.has_spectral_gate,supplied.spectral_frame_mask,
-        supplied.selected_native_frame_sink};
+        supplied.selected_native_frame_sink,
+        supplied.selected_stereo_frame_sink};
     constexpr std::size_t kChunk=4096U;
     for(std::size_t offset=0;offset<left.size();) {
         const auto take=std::min(kChunk,left.size()-offset);
