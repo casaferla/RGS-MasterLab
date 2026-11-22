@@ -4,6 +4,7 @@
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_actual_m16_guard.hpp"
 #include "internal/l3_m10_p2_real_native_triple_binding.hpp"
+#include "internal/l3_m10_p2_verified_candidate_triple.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
@@ -18,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <vector>
@@ -221,6 +223,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     spec.exact_low_end_zero_side={{true,true,true}};
     spec.spectral_bands={{0,20,80},{1,80,200},{2,200,1000}};
     spec.stereo_bands={{0,20,80},{1,80,200},{2,200,1000}};
+    const auto spec_for_authoritative_bridge=spec;
     const auto native=a::measure_m10_p2_full_native_once(
         *job.value(),std::move(spec),&*prefix.value());
     QVERIFY(native);
@@ -233,6 +236,37 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(native.value()->native.actual.tonal.selected_spectral_windows>0U);
     QVERIFY(std::isfinite(
         native.value()->m16_actual_p2_output.global_linear_peak()));
+    // The complete P2 PCM and M19/M20/M16 must agree on their scope.
+    namespace m10=a::m10_frozen;
+    QVERIFY(m10::check_m10_p2_native_actual_m16(
+        *native.value(),0.0).passes());
+    QVERIFY(!m10::check_m10_p2_native_actual_m16(
+        *native.value(),-90.0).passes());
+    const a::m05m06_real::SourceIdentity owner{
+        "actual-p2-candidate",11U,true};
+    // An arbitrary callback-owned triple is NOT allowed to launder the
+    // actual P2 measured candidate: all ten source stamps are required.
+    auto invalid=m10::bind_p2_original_native_triple_from_real_candidate(
+        {},*native.value(),owner,48000*3,true);
+    QVERIFY(!invalid.fragments);
+    QCOMPARE(invalid.reason,m10::P2RealTripleBindingReason::
+        missing_owner_or_inconsistent_three_way_scope);
+    // Instantiate the full real Product M10 scorer with an absent
+    // upstream P/G triple. Even after genuine rendering, no made-up
+    // M21 or partial 27-slot objective may become a cacheable score.
+    const auto unbound=m10::measure_and_score_m10_p2_full_native_candidate(
+        *job.value(),spec_for_authoritative_bridge,&*prefix.value(),
+        "current-phase6-test-generation",true,{},
+        0.0,owner,true,
+        [](const a::M10P2FullNativeEvidence&)
+            ->std::optional<m10::P2OriginalRealNativeTriple>{
+            return std::nullopt;
+        });
+    QCOMPARE(unbound.reason,
+             m10::P2NativeCostReason::missing_triple_native_authority);
+    QVERIFY(!unbound.complete_measured());
+    QVERIFY(!unbound.as_exact_cache_evidence().
+        full_current_render_analysis_hard_gates_attested);
     const auto* retained=std::get_if<
         dsp::StreamingTruePeakLimiterParameters>(
         &manual_bindings.back().parameters);
