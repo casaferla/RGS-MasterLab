@@ -148,6 +148,40 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(transaction);
     QVERIFY(!transaction.value()->authorizes_project_commit());
     QVERIFY(!transaction.value()->is_materialization_receipt());
+    QVERIFY(transaction.value()->matches_exact_precommit(*currentBefore.value()));
+    // P04: revision-only checks are insufficient. Even an unrelated
+    // extension/output/optional file mutation invalidates the accepted
+    // full precommit owner without changing MANUAL's revision.
+    auto modifiedBefore=doc;
+    modifiedBefore.displayName="a-renamed-project";
+    auto renamed=project::ProjectSnapshot::create(modifiedBefore);
+    QVERIFY(renamed);
+    QVERIFY(!transaction.value()->matches_exact_precommit(*renamed.value()));
+    modifiedBefore=doc;
+    modifiedBefore.chains.front().revision++;
+    auto revisedManual=project::ProjectSnapshot::create(modifiedBefore);
+    QVERIFY(revisedManual);
+    QVERIFY(!transaction.value()->matches_exact_precommit(
+        *revisedManual.value()));
+    modifiedBefore=doc;
+    const auto futureOutput=project::OpaqueJsonValue::parse(
+        "{\"unrelatedExportChoice\":true}");
+    QVERIFY(futureOutput);
+    modifiedBefore.output=*futureOutput.value();
+    auto changedOutput=project::ProjectSnapshot::create(modifiedBefore);
+    QVERIFY(changedOutput);
+    QVERIFY(!transaction.value()->matches_exact_precommit(
+        *changedOutput.value()));
+    modifiedBefore=doc;
+    project::OptionalEntry extraEntry;
+    extraEntry.path="evidence/unrelated.bin";
+    extraEntry.mediaType="application/octet-stream";
+    extraEntry.bytes={std::byte{0x21},std::byte{0x42}};
+    auto changedOptional=project::ProjectSnapshot::create(
+        modifiedBefore,{extraEntry});
+    QVERIFY(changedOptional);
+    QVERIFY(!transaction.value()->matches_exact_precommit(
+        *changedOptional.value()));
     const auto& proposed=
         transaction.value()->candidate_not_yet_committed.document();
     QCOMPARE(proposed.chains.size(),std::size_t{2});
