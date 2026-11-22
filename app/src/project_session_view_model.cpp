@@ -93,6 +93,7 @@ private:
 {
     switch (p) {
         case dsp::ModuleProvenance::MANUAL: return "MANUAL";
+        case dsp::ModuleProvenance::REFERENCE_MATCH: return "REFERENCE_MATCH";
     }
     return "MANUAL";
 }
@@ -101,6 +102,7 @@ private:
 {
     switch (o) {
         case dsp::ModuleOwner::USER: return "USER";
+        case dsp::ModuleOwner::REFERENCE_MATCH: return "REFERENCE_MATCH";
     }
     return "USER";
 }
@@ -109,6 +111,7 @@ private:
 {
     switch (l) {
         case dsp::ModuleLinkState::UNLINKED: return "UNLINKED";
+        case dsp::ModuleLinkState::REF_LINKED: return "REF_LINKED";
     }
     return "UNLINKED";
 }
