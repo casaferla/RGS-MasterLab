@@ -48,13 +48,13 @@ struct BridgeResult final {
     BridgeFailure failure{BridgeFailure::wrong_slot_count};
 };
 [[nodiscard]] inline BridgeResult to_m10_population(
-    const std::vector<ResolvedSlot>& slots,
+    const std::vector<ResolvedSlot>& resolved_slots,
     const std::array<bool,4>& m08_requested_corrective)
 {
     const auto reject=[](BridgeFailure reason)->BridgeResult{
         return {{},reason};
     };
-    if(slots.size()!=kBindings.size())
+    if(resolved_slots.size()!=kBindings.size())
         return reject(BridgeFailure::wrong_slot_count);
     Populations out;
     for(std::size_t d=0;d<4;++d) {
@@ -64,7 +64,7 @@ struct BridgeResult final {
     }
     for(std::size_t i=0;i<kBindings.size();++i) {
         const auto& frozen=kBindings[i];
-        const auto& source=slots[i];
+        const auto& source=resolved_slots[i];
         if(source.binding_id!=frozen.binding_id)
             return reject(BridgeFailure::binding_order_or_identity_mismatch);
         if(source.resolved_source_feature_id!=frozen.source_feature_id &&
