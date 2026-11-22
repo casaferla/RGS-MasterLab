@@ -38,8 +38,10 @@ class DynamicEqResearchCommonViewModel final:public QObject {
     Q_PROPERTY(bool qApplicable READ qApplicable NOTIFY changed)
     Q_PROPERTY(bool shelfSlopeApplicable READ shelfSlopeApplicable NOTIFY changed)
     Q_PROPERTY(bool slopeApplicable READ slopeApplicable CONSTANT)
-    Q_PROPERTY(bool addAvailable READ addAvailable CONSTANT)
-    Q_PROPERTY(bool removeAvailable READ removeAvailable CONSTANT)
+    Q_PROPERTY(bool addAvailable READ addAvailable NOTIFY changed)
+    Q_PROPERTY(bool removeAvailable READ removeAvailable NOTIFY changed)
+    Q_PROPERTY(bool canUndo READ canUndo NOTIFY changed)
+    Q_PROPERTY(bool canRedo READ canRedo NOTIFY changed)
     Q_PROPERTY(bool routeAvailable READ routeAvailable NOTIFY changed)
     Q_PROPERTY(bool mixedRouting READ mixedRouting NOTIFY changed)
     Q_PROPERTY(bool isDefault READ isDefault NOTIFY changed)
@@ -95,10 +97,18 @@ public:
         const auto* s=std::get_if<rgsml::dsp::DynamicEqShelfShape>(&spec().shape);
         return s?s->shelf_slope:1.0;
     }
-    [[nodiscard]] QString frequencyText() const {return num(frequency());}
-    [[nodiscard]] QString gainText() const {return num(gain());}
-    [[nodiscard]] QString qText() const {return num(q());}
-    [[nodiscard]] QString shelfSlopeText() const {return num(shelfSlope());}
+    [[nodiscard]] QString frequencyText() const {
+        return source_->pendingFieldTextOr("frequency",frequency());
+    }
+    [[nodiscard]] QString gainText() const {
+        return source_->pendingFieldTextOr("gain",gain());
+    }
+    [[nodiscard]] QString qText() const {
+        return source_->pendingFieldTextOr("q",q());
+    }
+    [[nodiscard]] QString shelfSlopeText() const {
+        return source_->pendingFieldTextOr("shelfSlope",shelfSlope());
+    }
     [[nodiscard]] bool gainApplicable() const noexcept {return loaded();}
     [[nodiscard]] bool qApplicable() const noexcept {
         return !loaded()||spec().filter_type==rgsml::dsp::DynamicEqFilterType::BELL;
@@ -107,8 +117,18 @@ public:
         return loaded()&&!qApplicable();
     }
     [[nodiscard]] bool slopeApplicable() const noexcept {return false;}
-    [[nodiscard]] bool addAvailable() const noexcept {return false;}
-    [[nodiscard]] bool removeAvailable() const noexcept {return false;}
+    [[nodiscard]] bool addAvailable() const noexcept {
+        return source_->canAddBand();
+    }
+    [[nodiscard]] bool removeAvailable() const noexcept {
+        return source_->canRemoveBand();
+    }
+    [[nodiscard]] bool canUndo() const noexcept {
+        return source_->canUndo();
+    }
+    [[nodiscard]] bool canRedo() const noexcept {
+        return source_->canRedo();
+    }
     [[nodiscard]] bool routeAvailable() const noexcept {return channels_==2;}
     [[nodiscard]] bool mixedRouting() const noexcept {
         if(bands().size()<2)return false;
@@ -220,6 +240,14 @@ public:
     Q_INVOKABLE void resetToFlat() {
         static_cast<void>(source_->resetResearchToFlat());
     }
+    Q_INVOKABLE void addBand() {
+        static_cast<void>(source_->addResearchBand());
+    }
+    Q_INVOKABLE void removeSelectedBand() {
+        static_cast<void>(source_->removeResearchBand());
+    }
+    Q_INVOKABLE void undo() {source_->undoResearchEdit();}
+    Q_INVOKABLE void redo() {source_->redoResearchEdit();}
     Q_INVOKABLE void graphDrag(double f,double g) {
         source_->setGraphDraft(f,g);
     }

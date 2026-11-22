@@ -175,3 +175,14 @@ commit, including signed Base Gain+Range endpoints and no Notch/Pass modes.
 The six-controls window and selected-band base-curve update together.
 Manual changes are **only** enabled by explicit research-test opt-in; L3
 Product still contains neither editor and receives no changes.
+
+## C01 band operations, typed Undo/Redo and stable draft text
+
+Research-only manual authoring now supports Add Band (only with an explicitly
+injected unique UUID generator), Remove Band, Reset Flat and up to 50 undo
+snapshots. Each successful C01 typed edit or band operation records a bounded
+snapshot; read-only selection and failed edits do not. Common numeric fields
+reflect the actual pending text while typing and revert on Escape/cancel.
+All operations fail closed when `manualEditable=false`, and the Production
+AutoMatch branch is not involved. The isolated Qt Core test exercises these
+branches before any Product editor acceptance.

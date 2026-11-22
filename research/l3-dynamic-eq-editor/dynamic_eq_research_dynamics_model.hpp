@@ -6,6 +6,7 @@
 #include <QVariantMap>
 #include <cmath>
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <cstdint>
 #include <cstddef>
@@ -48,12 +49,66 @@ public:
     }
     [[nodiscard]] QString validationField() const {return error_key_;}
     [[nodiscard]] QString validationMessage() const {return error_text_;}
+    [[nodiscard]] QString pendingFieldTextOr(const QString& key,double fallback) const {
+        return pending_key_==key ? pending_text_
+            :QString::number(fallback,'g',8);
+    }
+    using IdGenerator=std::function<rgsml::core::Uuid()>;
+    void setResearchIdGenerator(IdGenerator generator) {
+        id_generator_=std::move(generator);emit changed();
+    }
+    [[nodiscard]] bool canAddBand() const noexcept {
+        return editable_ && loaded() && bands_.size()<6U
+            && bool(id_generator_);
+    }
+    [[nodiscard]] bool canRemoveBand() const noexcept {
+        return editable_ && bands_.size()>1U;
+    }
+    [[nodiscard]] bool canUndo() const noexcept {
+        return editable_ && !undo_.empty();
+    }
+    [[nodiscard]] bool canRedo() const noexcept {
+        return editable_ && !redo_.empty();
+    }
+    [[nodiscard]] bool addResearchBand() {
+        if(!canAddBand())return false;
+        const auto uid=id_generator_();
+        if(uid.is_nil())return false;
+        for(const auto& b:bands_)if(b.band_id==uid)return false;
+        rgsml::dsp::DynamicEqBandSpec next;
+        next.band_id=uid;
+        auto typed=rgsml::dsp::DynamicEqBandParameters::create(next);
+        if(!typed||!typed.value()->validate_for_audio(fs_,channels_))
+            return false;
+        pushUndo();bands_.push_back(next);
+        selected_=bands_.size()-1;cancelDraft();emit changed();return true;
+    }
+    [[nodiscard]] bool removeResearchBand() {
+        if(!canRemoveBand())return false;
+        pushUndo();
+        bands_.erase(bands_.begin()+static_cast<std::ptrdiff_t>(selected_));
+        selected_=std::min(selected_,bands_.size()-1);
+        cancelDraft();emit changed();return true;
+    }
+    void undoResearchEdit() {
+        if(!canUndo())return;
+        redo_.push_back(snapshot());
+        auto target=std::move(undo_.back());undo_.pop_back();
+        restore(std::move(target));
+    }
+    void redoResearchEdit() {
+        if(!canRedo())return;
+        undo_.push_back(snapshot());
+        auto target=std::move(redo_.back());redo_.pop_back();
+        restore(std::move(target));
+    }
     [[nodiscard]] bool loadAcceptedParameters(
         const rgsml::dsp::DynamicEqParameters& accepted) {
         if(accepted.bands().empty()||accepted.bands().size()>6U)return false;
         bands_.clear();
         for(const auto& b:accepted.bands())bands_.push_back(b.spec());
         selected_=0;
+        undo_.clear();redo_.clear();
         cancelDraft();
         emit changed();
         return true;
@@ -121,7 +176,7 @@ public:
         flat.band_id=bands_.front().band_id;
         auto checked=rgsml::dsp::DynamicEqBandParameters::create(flat);
         if(!checked)return false;
-        bands_.assign(1,flat);selected_=0;
+        pushUndo();bands_.assign(1,flat);selected_=0;
         graph_draft_.reset();cancelDraft();emit changed();return true;
     }
     void setGraphDraft(double frequency,double gain) {
@@ -207,8 +262,26 @@ private:
         auto checked=rgsml::dsp::DynamicEqBandParameters::create(next);
         if(!checked || !checked.value()->validate_for_audio(fs_,channels_))
             return fail("C01_OUT_OF_RANGE_OR_ENDPOINT");
+        if(bands_[selected_]!=next)pushUndo();
         bands_[selected_]=std::move(next);cancelDraft();emit changed();
         return true;
+    }
+    struct Snapshot {
+        std::vector<rgsml::dsp::DynamicEqBandSpec> bands;
+        std::size_t selected{0};
+    };
+    [[nodiscard]] Snapshot snapshot() const {
+        return Snapshot{bands_,selected_};
+    }
+    void pushUndo() {
+        undo_.push_back(snapshot());
+        if(undo_.size()>50U)undo_.erase(undo_.begin());
+        redo_.clear();
+    }
+    void restore(Snapshot previous) {
+        bands_=std::move(previous.bands);
+        selected_=previous.selected;
+        cancelDraft();emit changed();
     }
     [[nodiscard]] bool fail(const char* error) {
         error_key_=pending_key_;error_text_=QString::fromLatin1(error);
@@ -227,6 +300,8 @@ private:
     bool editable_{false};
     std::uint32_t fs_{48000U},channels_{2U};
     std::optional<rgsml::dsp::DynamicEqBandSpec> graph_draft_;
+    IdGenerator id_generator_;
+    std::vector<Snapshot> undo_,redo_;
     QString pending_key_,pending_text_,error_key_,error_text_;
 };
 }

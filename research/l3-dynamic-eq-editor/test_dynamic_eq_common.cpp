@@ -53,7 +53,10 @@ int main(int argc,char** argv) {
     owner.setResearchManualEditable(true);
     if(!common.manualEditable())return 15;
     common.setDraftFieldText("gain","15"); // 15+range4 exceeds +18.
+    if(common.gainText()!="15")return 26;
     if(common.commitDraft()||common.gain()!=-3.0)return 16;
+    common.cancelDraft();
+    if(common.gainText()=="15")return 27;
     common.setDraftFieldText("gain","10");
     if(!common.commitDraft()||common.gain()!=10.0
        ||owner.acceptedBandSpecs()[1].control.base_gain_db!=10.0)
@@ -72,7 +75,26 @@ int main(int argc,char** argv) {
     if(common.routing()!="SIDE")return 23;
     common.setRouting("NOT_A_ROUTE");
     if(common.routing()!="SIDE")return 24;
+    auto id3=core::Uuid::parse("33333333-3333-4333-8333-333333333333");
+    if(!id3)return 28;
+    owner.setResearchIdGenerator([id=*id3.value()](){return id;});
+    if(!common.addAvailable()||common.removeAvailable()==false)return 29;
+    // With two bands, removal is valid; addition uses injected unique UUID.
+    common.addBand();
+    if(common.bandCount()!=3||common.selectedIndex()!=2
+       ||common.selectedBandId()!=QString::fromStdString(id3.value()->to_string()))
+        return 30;
+    common.undo();
+    if(common.bandCount()!=2||!common.canRedo())return 31;
+    common.redo();
+    if(common.bandCount()!=3)return 32;
+    common.removeSelectedBand();
+    if(common.bandCount()!=2||common.selectedIndex()!=1)return 33;
+    common.undo();
+    if(common.bandCount()!=3)return 34;
     owner.setResearchManualEditable(false);
+    if(common.addAvailable()||common.removeAvailable()||common.canUndo())
+        return 35;
     common.setFilter("LOW_SHELF");
     if(common.filter()!="BELL"||common.manualEditable())return 25;
     std::cout<<"Dynamic EQ typed research common + Dynamics single state: PASS\n";
