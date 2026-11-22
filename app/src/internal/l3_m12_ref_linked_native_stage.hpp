@@ -101,6 +101,7 @@ stage_exact_m12_native_ref_linked(
            n.exact_registered_type_id.empty()||
            n.exact_registered_type_id=="rgsml.dsp.gain"||
            n.exact_registered_type_id=="rgsml.dsp.true-peak-limiter"||
+           n.exact_registered_type_id=="rgsml.dsp.streaming-true-peak-limiter"||
            n.exact_registered_type_id=="rgsml.dsp.dither")
             return fail("L3_M12_FORBIDDEN_OR_MISSING_NODE");
         for(const auto& existing:protected_manual.instances())

@@ -107,6 +107,10 @@ forbiddenInputGainCollisionsStalenessAndUnavailableAreAtomic() {
     node.exact_m10_winning_parameters=*gain.value();
     QVERIFY(!m::stage_exact_m12_native_ref_linked(
         approved(),*manual.value(),protectedParams,registry,{node}));
+    // No AutoMatch mutation of independently user-owned P2/M17.
+    node.exact_registered_type_id="rgsml.dsp.streaming-true-peak-limiter";
+    QVERIFY(!m::stage_exact_m12_native_ref_linked(
+        approved(),*manual.value(),protectedParams,registry,{node}));
     node.exact_registered_type_id="rgsml.dsp.parametric-eq";
     node.exact_m10_winning_parameters=*eq.value();
     auto stale=approved();
