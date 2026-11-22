@@ -5,6 +5,7 @@
 #include "internal/l3_m12_ref_linked_project_restore.hpp"
 #include "internal/l3_m12_ref_linked_native_replay_plan.hpp"
 #include "internal/l3_m12_restored_native_render.hpp"
+#include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
@@ -364,6 +365,55 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(realReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
+    // Product's queued PreviewJob is valid only for the exact immutable
+    // PREPARED allocation plus the current live MANUAL/registry identity.
+    auto preparedForWorker=render::render_preview(
+        *preparedRequest.value(),*reg);
+    QVERIFY(preparedForWorker);
+    const auto ownedPrepared=std::make_shared<const render::RenderResult>(
+        std::move(*preparedForWorker.value()));
+    const auto ownedReplayPlan=
+        std::make_shared<const m::RestoredM12NativeReplayPlan>(
+            *replayPlan.value());
+    const auto workerTicket=m::prepare_m12_immutable_product_preview_ticket(
+        ownedReplayPlan,ownedPrepared,*manualGain.value(),gainBindings);
+    QVERIFY(workerTicket);
+    QVERIFY(!workerTicket.value()->authorizes_product_installation());
+    QVERIFY(!workerTicket.value()->authorizes_m12_receipt());
+    QVERIFY(!workerTicket.value()->authorizes_m13_verified());
+    rgsml::app::MasteringPreviewController::PreviewJob validJob{
+        1U,ownedPrepared,*manualGain.value(),gainBindings,reg};
+    const auto ownedWorkerRender=m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),validJob,*maxBlock.value());
+    QVERIFY(ownedWorkerRender);
+    QCOMPARE(ownedWorkerRender.value()->view().frame_count().value(),
+             std::int64_t{48000});
+    auto staleJob=validJob;
+    staleJob.generation=0;
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),staleJob,*maxBlock.value()));
+    staleJob=validJob;
+    staleJob.registry=std::make_shared<const dsp::ModuleRegistry>(*reg);
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),staleJob,*maxBlock.value()));
+    staleJob=validJob;
+    const auto alternateParams=dsp::GainParameters::create(-5.0);
+    QVERIFY(alternateParams);
+    staleJob.bindings[0].parameters=*alternateParams.value();
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),staleJob,*maxBlock.value()));
+    staleJob=validJob;
+    QVERIFY(staleJob.chain.set_user_bypass(gainId,true));
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),staleJob,*maxBlock.value()));
+    auto newPrepared=render::render_preview(
+        *preparedRequest.value(),*reg);
+    QVERIFY(newPrepared);
+    staleJob=validJob;
+    staleJob.preparedSnapshot=std::make_shared<const render::RenderResult>(
+        std::move(*newPrepared.value()));
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),staleJob,*maxBlock.value()));
 
     // Even a BYPASSED P2 stays in the actual terminal position after
     // REF_LINKED; the saved Manual value, not an M10 transient override,
@@ -419,6 +469,24 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
     QCOMPARE(p2RealReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
+    // P2 parameters are part of the same immutable MANUAL worker key:
+    // a later dial adjustment invalidates the old linked replay ticket.
+    const auto p2SharedPlan=
+        std::make_shared<const m::RestoredM12NativeReplayPlan>(
+            *p2Plan.value());
+    const auto p2Ticket=m::prepare_m12_immutable_product_preview_ticket(
+        p2SharedPlan,ownedPrepared,*manualWithP2.value(),manualP2Bindings);
+    QVERIFY(p2Ticket);
+    rgsml::app::MasteringPreviewController::PreviewJob p2Job{
+        2U,ownedPrepared,*manualWithP2.value(),manualP2Bindings,optRegistry};
+    QVERIFY(m::render_m12_exact_product_preview_job(
+        *p2Ticket.value(),p2Job,*maxBlock.value()));
+    const auto alternateP2=dsp::StreamingTruePeakLimiterParameters::create(
+        -3.0,4.0,2);
+    QVERIFY(alternateP2);
+    p2Job.bindings.back().parameters=*alternateP2.value();
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *p2Ticket.value(),p2Job,*maxBlock.value()));
     // The opt-in runtime factory must still exist when reopened:
     // do not silently drop a required calculated module.
     // Project decoding must refuse foreign-owned nodes masquerading
