@@ -10,6 +10,7 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <QtTest/QTest>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -252,6 +253,9 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QVERIFY(!p04.value()->authorizes_product_publication());
     QVERIFY(!job.value()->evaluate_with_native_p04_d07_d09(
         4096,false));
+    std::atomic<bool> cancelled_p04{true};
+    QVERIFY(!job.value()->evaluate_with_native_p04_d07_d09(
+        4096,true,&cancelled_p04));
     // A mono Product source must not be silently duplicated into a
     // stereo M/S source merely to populate S03-S06.
     QVERIFY(!job.value()->evaluate_with_native_stereo_s03_s06(

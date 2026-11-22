@@ -28,6 +28,7 @@
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <new>
@@ -386,7 +387,8 @@ public:
     [[nodiscard]] core::Result<OfflineProductNativeTransientCandidate>
     evaluate_with_native_p04_d07_d09(
         std::int64_t exact_phase6_active_frames,
-        bool exact_current_p04_policy_and_product_source_attested) const
+        bool exact_current_p04_policy_and_product_source_attested,
+        const std::atomic<bool>* cancellation=nullptr) const
     {
         using R=core::Result<OfflineProductNativeTransientCandidate>;
         if(!exact_current_p04_policy_and_product_source_attested||
@@ -396,11 +398,15 @@ public:
               prepared_->view().frame_count().value())
             return R::failure(
                 failed("L3_P04_SOURCE_OR_POLICY_NOT_CURRENT"));
+        if(cancellation&&cancellation->load(std::memory_order_acquire))
+            return R::failure(failed("L3_P04_CANCELLED_BEFORE_RENDER"));
         auto basic=evaluate();
         if(!basic)return R::failure(*basic.error());
+        if(cancellation&&cancellation->load(std::memory_order_acquire))
+            return R::failure(failed("L3_P04_CANCELLED_AFTER_RENDER"));
         auto observed=m05m06_real::measure_product_p04_d07_d09(
             basic.value()->rendered.view(),
-            exact_phase6_active_frames,true);
+            exact_phase6_active_frames,true,cancellation);
         if(observed.reason!=
               m05m06_real::P04ProductObservationReason::ready)
             return R::failure(
