@@ -409,6 +409,18 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     // P2 native scorer integration, with immutable MANUAL and exact
     // candidate REF_LINKED graph. Absent original P/G native authority
     // fails after the real render, never creates a bogus score.
+    // Same full source PCM but a changed REFERENCE selection generation
+    // cannot reuse a native P/G pair for a new M10 attempt/cache hit.
+    QVERIFY(a::original_pair_matches_product_owner(
+        *original_pair.value(),stamp));
+    auto newer_reference_stamp=stamp;
+    ++newer_reference_stamp.reference_selection_revision;
+    QVERIFY(!a::original_pair_matches_product_owner(
+        *original_pair.value(),newer_reference_stamp));
+    auto newer_source_stamp=stamp;
+    ++newer_source_stamp.source_generation;
+    QVERIFY(!a::original_pair_matches_product_owner(
+        *original_pair.value(),newer_source_stamp));
     const m10::P2NativeProductWorkerScope worker{
         stamp,prepared_owner,product_registry,*active_manual.value(),
         manual_bindings,*block.value(),true};
@@ -477,6 +489,20 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             [](const m10::BoundM10P2Candidate&){return true;},
             real_graph,missing_original);
     };
+    const auto mismatched_scope=m10::P2NativeProductWorkerScope{
+        newer_reference_stamp,prepared_owner,product_registry,
+        *active_manual.value(),manual_bindings,*block.value(),true};
+    const auto stale_cache_attempt=m10::evaluate_real_m10_p2_native_cached(
+        mismatched_scope,inventory,proposed_u,names,p2_id,
+        "real-p2-cached-canonical-ticket",completed_cache,true,
+        spec_for_authoritative_bridge,&*prefix.value(),
+        "current-phase6-test-generation",{},0.0,owner,
+        &*original_pair.value(),true,inverse,exact_key,
+        [](const m10::BoundM10P2Candidate&){return true;},
+        real_graph,missing_original);
+    QCOMPARE(stale_cache_attempt.kind,
+             m10::EvaluationKind::preflight_rejected);
+    QCOMPARE(completed_cache.size(),std::size_t{0});
     QCOMPARE(run_cached(true,false).kind,
              m10::EvaluationKind::preflight_rejected);
     QCOMPARE(completed_cache.size(),std::size_t{0});
