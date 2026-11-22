@@ -20,7 +20,9 @@
 #include <cstdint>
 #include <limits>
 #include <list>
+#include <span>
 #include <utility>
+#include <vector>
 
 namespace rgsml::app {
 namespace {
