@@ -1,4 +1,5 @@
 #include "internal/l3_product_offline_trial_job.hpp"
+#include "internal/l3_product_native_one_pass.hpp"
 #include "internal/l3_automatch_typed_gain_trial.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
@@ -109,6 +110,36 @@ void ProductNativeStereoTest::realStereoRenderSameM20FftDeliversS03ToS06() {
         {{0,20,80}},4096,true,false,48000*3,true);
     QVERIFY(no_low);
     QVERIFY(!no_low.value()->native_s03_s06.low_end_width[0].transformed_z);
+    // Real single Product candidate: one render and one M19/M20 pass
+    // with BOTH native spectral/stereo observers plus distinct P04.
+    a::ProductNativeOnePassSpec spec;
+    spec.current_full_phase6_source_and_grid=true;
+    spec.exact_m20_fft_size=4096;
+    spec.phase6_active_pcm_frames=48000U*3U;
+    spec.exact_stereo_reference_grade=true;
+    spec.exact_m19_low_end_gate_same_as_m20_stft=true;
+    spec.exact_low_end_zero_side={{true,true,true}};
+    spec.spectral_bands={{0,20,80},{1,80,200},{2,200,1000}};
+    spec.stereo_bands={{0,20,80},{1,80,200},{2,200,1000}};
+    const auto unified=a::measure_real_product_candidate_once(
+        *job.value(),std::move(spec));
+    QVERIFY(unified);
+    QVERIFY(job.value()->result_has_expected_scope(
+        unified.value()->actual.rendered));
+    QCOMPARE(unified.value()->actual.tonal.mean_linear_psd,
+             native.value()->measurement.tonal.mean_linear_psd);
+    QCOMPARE(unified.value()->selected_original_m20_ordinals.size(),
+             static_cast<std::size_t>(
+               unified.value()->actual.tonal.selected_spectral_windows));
+    QCOMPARE(unified.value()->s03_s06.native_selected_frames,
+             unified.value()->actual.tonal.selected_spectral_windows);
+    QVERIFY(unified.value()->s03_s06.numerical_source_valid);
+    QCOMPARE(unified.value()->d10_d12.canonical_band_results.size(),
+             std::size_t{3});
+    QVERIFY(unified.value()->d07_d09.actual_flux.canonical.size()>300U);
+    QCOMPARE(unified.value()->d07_d09.reason,
+             a::m05m06_real::P04ProductObservationReason::ready);
+    QVERIFY(!unified.value()->authorizes_m10_or_export());
     QVERIFY(job.value()->still_current(
         stamp,owned,*live.value(),baseline));
 }
