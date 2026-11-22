@@ -1851,8 +1851,17 @@ int main(int argc, char* argv[])
                 const QPointF baselineContext=visualPoint("dspHostWorkflowContext");
                 const auto* heading=mainWindow->findChild<QQuickItem*>(
                     QStringLiteral("dspHostHeaderRegion"));
+                const auto* utility=mainWindow->findChild<QQuickItem*>(
+                    QStringLiteral("dspHostTearOffGrip"));
+                // All module titles start after the SAME 44x40 two-row
+                // utility square, even when only Dock is meaningful
+                // (read-only Levels) or the name is longer (M17).
+                const bool footprint=utility
+                    && std::abs(utility->width()-44.0)<=0.55
+                    && std::abs(utility->height()-40.0)<=0.55;
                 const bool baselineValid=baselineGrip.x()>0.0
                     && baselineTitle.x()>0.0 && baselineContext.x()>0.0
+                    && footprint
                     && heading && std::abs(heading->height()-40.0)<=0.55;
                 bool sizeAll=baselineValid;
                 for(int i=0;i<dspChainAdapterModel.modules().size();++i) {
