@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <string>
@@ -87,8 +88,8 @@ prepare_exact_m12_project_transaction(
        expected.exact_live_reference_id.is_nil()||
        expected.exact_protected_manual_chain_id.is_nil()||
        !accepted_stage.registry_owner||
-       accepted_stage.accepted_identity.no_correction_required!=
-           exact_native_carrier.native_project_chain.modules.empty()||
+       accepted_stage.accepted_identity.no_correction_required||
+       exact_native_carrier.native_project_chain.modules.empty()||
        exact_native_carrier.exact_owner_controller!=
            accepted_stage.accepted_identity.reference_match_controller_id||
        exact_native_carrier.exact_accepted_plan_id!=
@@ -212,7 +213,11 @@ prepare_exact_m12_project_transaction(
                    !prior.contains("controllerId")||
                    !prior.at("controllerId").is_string()||
                    prior.at("controllerId").get<std::string>()!=
-                     exact_native_carrier.exact_owner_controller.to_string())
+                     exact_native_carrier.exact_owner_controller.to_string()||
+                   !prior.contains("linkedChainId")||
+                   !prior.at("linkedChainId").is_string()||
+                   prior.at("linkedChainId").get<std::string>()!=
+                     exact_native_carrier.native_project_chain.chainId.to_string())
                     return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_CONTROLLER");
             } else if(expected.exact_existing_linked_snapshot)
                 return fail("L3_M12_PROJECT_TRANSACTION_MISSING_PRIOR_OWNER");
