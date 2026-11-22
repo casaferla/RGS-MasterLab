@@ -178,6 +178,14 @@ public:
 
     [[nodiscard]] std::vector<dsp::ModuleExecutionBinding> execution_bindings() const;
 
+    // User-requested MANUAL preset restoration: one actual owner-gated
+    // transaction, never an L3 automatic replacement or M12 receipt.
+    // A complete, current, validated draft must be staged beforehand.
+    [[nodiscard]] core::Status apply_explicit_manual_preset_draft(
+        const dsp::ProcessingChain& validated_after_chain,
+        std::span<const dsp::ModuleExecutionBinding> validated_after_bindings);
+
+
     friend bool operator==(const MasteringChainState&, const MasteringChainState&) = default;
 
 private:

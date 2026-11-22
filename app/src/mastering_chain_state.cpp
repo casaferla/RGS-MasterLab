@@ -683,6 +683,85 @@ Status MasteringChainState::set_user_bypass(const ModuleInstanceId& instance_id,
     return chain_.set_user_bypass(instance_id, bypassed);
 }
 
+Status MasteringChainState::apply_explicit_manual_preset_draft(
+    const dsp::ProcessingChain& nextChain,
+    std::span<const ModuleExecutionBinding> nextBindings)
+{
+    const auto invalid=[](const char* reason){
+        return Status::failure(Error{ErrorCode::InvalidState,reason});
+    };
+    const auto oldNodes=chain_.instances();
+    const auto newNodes=nextChain.instances();
+    if(!registry_||
+       nextChain.context()!=chain_.context()||
+       nextChain.revision()!=chain_.revision()+1U||
+       oldNodes.size()!=newNodes.size()||
+       nextBindings.size()!=oldNodes.size()||
+       oldNodes.empty())
+        return invalid("DSP_PRESET_COMMIT_WRONG_CHAIN_OR_REVISION");
+    // Every instance ID and module identity MUST survive. New topology
+    // and linked/foreign ownership can only arrive via M12 reviewed
+    // materialization, NEVER via the standalone preset workflow.
+    for(std::size_t i=0;i<oldNodes.size();++i) {
+        const auto& prev=oldNodes[i];
+        const auto& now=newNodes[i];
+        if(prev.instance_id()!=now.instance_id()||
+           prev.module_type_id()!=now.module_type_id()||
+           prev.provenance()!=ModuleProvenance::MANUAL||
+           now.provenance()!=ModuleProvenance::MANUAL||
+           prev.owner()!=ModuleOwner::USER||
+           now.owner()!=ModuleOwner::USER||
+           prev.link_state()!=ModuleLinkState::UNLINKED||
+           now.link_state()!=ModuleLinkState::UNLINKED||
+           prev.semantic_node_id().has_value()||
+           now.semantic_node_id().has_value()||
+           prev.controller_suspended()!=now.controller_suspended()||
+           prev.domain_suspended()!=now.domain_suspended()||
+           nextBindings[i].instance_id!=now.instance_id())
+            return invalid("DSP_PRESET_COMMIT_PROTECTED_NODE_CHANGED");
+        const auto& payload=nextBindings[i].parameters;
+        const auto type=now.module_type_id();
+        const bool typed=
+            (type==kGainTypeId&&std::holds_alternative<GainParameters>(payload))||
+            (type==kEqTypeId&&std::holds_alternative<ParametricEqParameters>(payload))||
+            (type==kCompressorTypeId&&std::holds_alternative<CompressorParameters>(payload))||
+            (type==kStereoMsTypeId&&std::holds_alternative<StereoMsParameters>(payload))||
+            (type==kStreamingP2TypeId&&
+                std::holds_alternative<StreamingTruePeakLimiterParameters>(payload));
+        if(!typed||!registry_->has_factory(type))
+            return invalid("DSP_PRESET_COMMIT_INVALID_TYPED_PARAMETERS");
+    }
+    // Recreate with the SAME immutable Registry so ordering/singleton
+    // rules cannot be bypassed using a foreign ProcessingChain.
+    std::vector<ModuleInstance> nodes(newNodes.begin(),newNodes.end());
+    auto checked=ProcessingChain::restore(
+        *registry_,chain_.context(),nextChain.revision(),std::move(nodes));
+    if(!checked)return Status::failure(*checked.error());
+    // Preallocate the entire after-state BEFORE acquiring the one M18
+    // admission. No partial setter sequence, no duplicate DSP render.
+    auto after=*this;
+    after.chain_=std::move(*checked.value());
+    for(std::size_t i=0;i<newNodes.size();++i) {
+        const auto& payload=nextBindings[i].parameters;
+        if(const auto* gain=std::get_if<GainParameters>(&payload))
+            after.gain_params_=*gain;
+        else if(const auto* eq=std::get_if<ParametricEqParameters>(&payload))
+            after.eq_params_=*eq;
+        else if(const auto* comp=std::get_if<CompressorParameters>(&payload))
+            after.compressor_params_=*comp;
+        else if(const auto* ms=std::get_if<StereoMsParameters>(&payload))
+            after.stereo_ms_params_=*ms;
+        else if(const auto* p2=
+                    std::get_if<StreamingTruePeakLimiterParameters>(&payload))
+            after.streaming_p2_preview_params_=*p2;
+    }
+    if(const auto admitted=admit_m18_chain_mutation(
+           "explicit_user_manual_preset_restore");!admitted)
+        return admitted;
+    *this=std::move(after);
+    return Status::success();
+}
+
 std::vector<ModuleExecutionBinding> MasteringChainState::execution_bindings() const
 {
     std::vector<ModuleExecutionBinding> bindings{
