@@ -3181,3 +3181,17 @@ add_test(NAME rgsml_l3_m12_project_carrier_tests
 set_tests_properties(rgsml_l3_m12_project_carrier_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m12;native_project;ref_linked;nonrelease")
+
+# L3 M13 fresh post-M12 native RenderPreview+M19/M20 only; not VERIFIED.
+qt_add_executable(rgsml_l3_m13_fresh_native_probe_tests
+    unit/app/test_l3_m13_fresh_native_verification_probe.cpp)
+target_include_directories(rgsml_l3_m13_fresh_native_probe_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m13_fresh_native_probe_tests
+    PRIVATE rgsml_render rgsml_analysis rgsml_audio rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m13_fresh_native_probe_tests)
+add_test(NAME rgsml_l3_m13_fresh_native_probe_tests
+    COMMAND rgsml_l3_m13_fresh_native_probe_tests)
+set_tests_properties(rgsml_l3_m13_fresh_native_probe_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m13;new_render;real_m19m20;nonrelease")
