@@ -560,6 +560,75 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
              m10::EvaluationKind::attempted_failure);
     QCOMPARE(completed_cache.size(),std::size_t{0});
     QVERIFY(!completed_cache.poisoned());
+    // A real top-two M10 loop must bind the refiner's SORTED coordinate
+    // order to M09 inverse + P2 trial ticket, even if M09 furnished an
+    // unsorted original topology inventory. No pre-render proxy score
+    // can be substituted for an absent full M07-M11 physical score.
+    const std::vector<m10::SeedTrial> measured_seed_trials{{
+        7U,m10::SeedTrialKind::attempted_complete,
+        m10::MeasuredOrderKey{1.0,1.0,0.0,1U,{0x07},{0x70}},
+        true,true
+    }};
+    const std::vector<std::vector<m10::Coordinate>> reverse_m09_inventory{{
+        inventory[1],inventory[0]
+    }};
+    const std::string frozen_m07_definition{
+        "current-phase6-test-generation"};
+    const m10::RealP2Top2ProductEnvironment refinement_product{
+        worker,*original_pair.value(),names,p2_id,completed_cache,
+        spec_for_authoritative_bridge,frozen_m07_definition,
+        0.0,true,true};
+    std::vector<double> first_refinement_u;
+    std::size_t actual_preflight_calls=0U;
+    const auto full_key_unavailable=[](
+        std::size_t,const m10::BoundM10P2Candidate&)
+        ->std::optional<m10::ExactExecutionCacheKey>{
+        return std::nullopt;
+    };
+    const auto valid_current=[&](
+        std::size_t ordinal,const m10::BoundM10P2Candidate& bound){
+        ++actual_preflight_calls;
+        return ordinal==7U&&
+            !bound.typed.base.ticket_identity.empty()&&
+            bound.typed.base.ticket_identity.size()<=128U;
+    };
+    const auto no_graph=[](
+        std::size_t,const m10::BoundM10P2Candidate&)
+        ->std::optional<m10::RealP2LinkedCandidateGraph>{
+        return std::nullopt;
+    };
+    const auto sterile_constraints=[&](
+        std::size_t ordinal,const std::vector<double>& u)
+        ->std::optional<m10::AuthoritativeCostInput> {
+        if(ordinal!=7U||u.size()!=2U)return std::nullopt;
+        if(first_refinement_u.empty())first_refinement_u=u;
+        return m10::AuthoritativeCostInput{};
+    };
+    const auto no_original=[](
+        std::size_t,const a::M10P2FullNativeEvidence&)
+        ->std::optional<m10::P2OriginalRealNativeTriple>{
+        return std::nullopt;
+    };
+    const auto first_refinement=
+        m10::run_real_m10_p2_frozen_top2_refinements(
+            measured_seed_trials,reverse_m09_inventory,0U,
+            refinement_product,
+            [&](std::size_t ordinal,const m10::Coordinate& coord,
+                double u)->std::optional<double>{
+                return ordinal==7U?inverse(coord,u):std::nullopt;
+            },
+            full_key_unavailable,valid_current,no_graph,
+            sterile_constraints,no_original);
+    QCOMPARE(first_refinement.reason,
+             m10::RefinementBatchReason::complete);
+    QCOMPARE(first_refinement.total_attempted,std::uint32_t{1});
+    QCOMPARE(first_refinement.candidate_refinements.size(),
+             std::size_t{1});
+    QCOMPARE(actual_preflight_calls,std::size_t{16});
+    QCOMPARE(first_refinement_u.size(),std::size_t{2});
+    QCOMPARE(first_refinement_u[0],0.25);
+    QCOMPARE(first_refinement_u[1],0.5);
+    QVERIFY(!first_refinement.authorizes_product_publication());
     QVERIFY(!from_bound.complete_measured());
     QVERIFY(!unbound.as_exact_cache_evidence().
         full_current_render_analysis_hard_gates_attested);
