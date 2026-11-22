@@ -1,4 +1,5 @@
 #include "mastering_preview_controller.hpp"
+#include "internal/l3_m12_product_preview_worker_ticket.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -109,6 +110,7 @@ private slots:
     void testRenderFailurePreservesLastGoodAudio();
     void testPublisherFailureReportsErrorWithoutCorruptingState();
     void testPreparedInputRemainsImmutable();
+    void testM12OptInTicketFencesAcceptedPCM();
 };
 
 void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
@@ -807,6 +809,68 @@ void MasteringPreviewControllerTest::testPublisherFailureReportsErrorWithoutCorr
 
     // State remains valid and active
     QCOMPARE(state.value()->gain_parameters().gain_db(), 0.0);
+}
+
+void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=*core::Uuid::parse(
+        "e4000000-0000-4000-8000-000000000001").value();
+    const auto gainId=*dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "e4000000-0000-4000-8000-000000000002").value()).value();
+    const auto eqId=*dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "e4000000-0000-4000-8000-000000000003").value()).value();
+    auto state=MasteringChainState::create_default(
+        *registry.value(),chainId,gainId,eqId);
+    QVERIFY(state);
+    auto prepared=make_unit_prepared_result();
+    std::shared_ptr<render::RenderResult> accepted;
+    MasteringPreviewController controller{
+        state.value(),[prepared]{return prepared;},
+        [&accepted](render::RenderResult candidate){
+            accepted=std::make_shared<render::RenderResult>(
+                std::move(candidate));
+            return core::Status::success();
+        }};
+    controller.set_accepted_processed_provider(
+        [&accepted]{return accepted;});
+    controller.request_preview();
+    QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
+    QVERIFY(controller.published_preview_matches_current_bindings());
+    const auto priorGeneration=controller.preview_generation();
+    const auto oldPCM=accepted;
+
+    // An unissued/invalid M12 ticket must take precedence over any
+    // synthetic PreviewExecutor and cannot publish a MANUAL-only stand-in.
+    auto invalidTicket=std::make_shared<const
+        l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>();
+    controller.set_private_m12_product_preview_ticket(invalidTicket);
+    QCOMPARE(controller.preview_generation(),priorGeneration+1U);
+    QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
+    QVERIFY(!controller.published_preview_matches_current_bindings());
+    controller.set_preview_executor(
+        [](const MasteringPreviewController::PreviewJob&)
+          ->core::Result<render::RenderResult> {
+            return core::Result<render::RenderResult>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "MUST_NOT_BYPASS_M12_TICKET"});
+        });
+    controller.request_preview();
+    QTRY_COMPARE(controller.preview_status(),QStringLiteral("ERROR"));
+    QVERIFY(accepted==oldPCM);
+    QVERIFY(!controller.published_preview_matches_current_bindings());
+
+    // Explicitly clearing the opt-in restores the unchanged ordinary
+    // MANUAL preview path. No REF_LINKED adoption was ever authorized.
+    controller.set_private_m12_product_preview_ticket({});
+    QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
+    controller.set_preview_executor({});
+    controller.request_preview();
+    QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
+    QVERIFY(controller.published_preview_matches_current_bindings());
 }
 
 void MasteringPreviewControllerTest::testPreparedInputRemainsImmutable()
