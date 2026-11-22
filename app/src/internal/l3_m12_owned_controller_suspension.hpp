@@ -6,7 +6,11 @@
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/error.hpp>
-#include <nlohmann/json.hpp>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QString>
+#include <QByteArray>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -40,31 +44,26 @@ prepare_m12_owned_controller_suspension(
        current_controller_id.is_nil()||original_ref_chain_id.is_nil())
         return fail("L3_M12_CONTROLLER_SUSPENSION_OWNER_STALE");
     auto doc=live.document();
-    nlohmann::json meta;
-    try {
-        meta=nlohmann::json::parse(doc.referenceMatch.canonical_utf8());
-        if(!meta.is_object()||!meta.contains("materialization")||
-           !meta.at("materialization").is_object())
-            return fail("L3_M12_CONTROLLER_SUSPENSION_META_MISSING");
-        const auto& data=meta.at("materialization");
-        if(!data.contains("controllerId")||
-           !data.at("controllerId").is_string()||
-           data.at("controllerId").get<std::string>()!=
-               current_controller_id.to_string()||
-           !data.contains("linkedChainId")||
-           !data.at("linkedChainId").is_string()||
-           data.at("linkedChainId").get<std::string>()!=
-               original_ref_chain_id.to_string()||
-           !data.contains("materializationState")||
-           data.at("materializationState")!="MATERIALIZED"||
-           !data.contains("planId")||
-           !data.at("planId").is_string()||
-           !data.contains("planContentChecksum")||
-           !data.at("planContentChecksum").is_string())
-            return fail("L3_M12_CONTROLLER_SUSPENSION_NOT_OWNED");
-    }catch(const nlohmann::json::exception&) {
+    QJsonParseError json_error;
+    const auto metadata=QJsonDocument::fromJson(
+        QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()),
+        &json_error);
+    if(json_error.error!=QJsonParseError::NoError||!metadata.isObject())
         return fail("L3_M12_CONTROLLER_SUSPENSION_META_INVALID");
-    }
+    auto meta=metadata.object();
+    const auto val=meta.value(QStringLiteral("materialization"));
+    if(!val.isObject())
+        return fail("L3_M12_CONTROLLER_SUSPENSION_META_MISSING");
+    auto data=val.toObject();
+    if(data.value(QStringLiteral("controllerId")).toString()!=
+           QString::fromStdString(current_controller_id.to_string())||
+       data.value(QStringLiteral("linkedChainId")).toString()!=
+           QString::fromStdString(original_ref_chain_id.to_string())||
+       data.value(QStringLiteral("materializationState")).toString()!=
+           QStringLiteral("MATERIALIZED")||
+       !data.value(QStringLiteral("planId")).isString()||
+       !data.value(QStringLiteral("planContentChecksum")).isString())
+        return fail("L3_M12_CONTROLLER_SUSPENSION_NOT_OWNED");
     auto it=std::find_if(doc.chains.begin(),doc.chains.end(),
         [&](const project::Chain& chain) {
             return chain.chainId==original_ref_chain_id&&
@@ -75,9 +74,8 @@ prepare_m12_owned_controller_suspension(
     const bool suspend=cause!=ControllerSuspensionCause::
         current_amount_restored;
     if(cause==ControllerSuspensionCause::current_amount_restored) {
-        const auto& materialization=meta.at("materialization");
-        if(materialization.contains("freshnessState")&&
-           materialization.at("freshnessState")=="STALE")
+        if(data.value(QStringLiteral("freshnessState")).toString()==
+              QStringLiteral("STALE"))
             return fail("L3_M12_CONTROLLER_STALE_PLAN_CANNOT_REACTIVATE");
     }
     for(auto& module:it->modules) {
@@ -91,12 +89,16 @@ prepare_m12_owned_controller_suspension(
     // Amount-zero is reversible without retuning; stale requires a
     // new accepted plan/review and cannot become current by Amount.
     if(cause==ControllerSuspensionCause::plan_stale)
-        meta["materialization"]["freshnessState"]="STALE";
-    else if(!meta["materialization"].contains("freshnessState"))
-        meta["materialization"]["freshnessState"]="CURRENT";
-    meta["materialization"]["verificationState"]="NOT_VERIFIED";
+        data.insert(QStringLiteral("freshnessState"),
+                    QStringLiteral("STALE"));
+    else if(!data.contains(QStringLiteral("freshnessState")))
+        data.insert(QStringLiteral("freshnessState"),
+                    QStringLiteral("CURRENT"));
+    data.insert(QStringLiteral("verificationState"),
+                QStringLiteral("NOT_VERIFIED"));
+    meta.insert(QStringLiteral("materialization"),data);
     const auto canonical=project::OpaqueJsonValue::parse(
-        meta.dump(-1,' ',false,nlohmann::json::error_handler_t::strict));
+        QJsonDocument(meta).toJson(QJsonDocument::Compact).toStdString());
     if(!canonical)return R::failure(*canonical.error());
     doc.referenceMatch=*canonical.value();
     auto changed=project::ProjectSnapshot::create(
