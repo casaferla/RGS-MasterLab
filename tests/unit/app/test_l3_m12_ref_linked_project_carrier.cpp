@@ -393,6 +393,21 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(firstStageWitness.protected_manual.front().instance_id,gainId);
     QCOMPARE(firstStageWitness.reference_linked.front().instance_id,
              replayPlan.value()->reference_linked.instances().front().instance_id());
+    QVERIFY(m::m12_native_stage_witness_matches_replay_plan(
+        *replayPlan.value(),firstStageWitness));
+    auto forgedWitness=firstStageWitness;
+    forgedWitness.reference_linked.front().instance_id=gainId;
+    QVERIFY(!m::m12_native_stage_witness_matches_replay_plan(
+        *replayPlan.value(),forgedWitness));
+    forgedWitness=firstStageWitness;
+    forgedWitness.protected_manual.front().algorithm_version="bogus-version";
+    QVERIFY(!m::m12_native_stage_witness_matches_replay_plan(
+        *replayPlan.value(),forgedWitness));
+    forgedWitness=firstStageWitness;
+    forgedWitness.reference_linked.front().disposition=
+        render::ModuleExecutionDisposition::BYPASS_IDENTITY;
+    QVERIFY(!m::m12_native_stage_witness_matches_replay_plan(
+        *replayPlan.value(),forgedWitness));
     QCOMPARE(realReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(realReplay.value()->view().format(),input.value()->view().format());
@@ -536,6 +551,12 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QCOMPARE(completeStageWitness.user_terminal_p2.front().instance_id,p2Id);
     QVERIFY(!completeStageWitness.is_m12_committed());
     QVERIFY(!completeStageWitness.is_m13_verified());
+    QVERIFY(m::m12_native_stage_witness_matches_replay_plan(
+        *p2Plan.value(),completeStageWitness));
+    auto forgedP2Witness=completeStageWitness;
+    forgedP2Witness.user_terminal_p2.front().type_id="forged-limiter";
+    QVERIFY(!m::m12_native_stage_witness_matches_replay_plan(
+        *p2Plan.value(),forgedP2Witness));
     QCOMPARE(p2RealReplay.value()->signatures().back().type_id,
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
     QCOMPARE(p2RealReplay.value()->view().frame_count().value(),
