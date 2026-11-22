@@ -137,6 +137,8 @@ int main(int argc,char** argv) {
     const auto threeBandIds=common.bandSummaries();
     common.resetToFlat();
     if(common.bandCount()!=1||!common.isDefault())return 47;
+    common.resetToFlat(); // idempotent; one Undo must restore three bands
+    if(common.bandCount()!=1||!common.isDefault())return 51;
     common.undo();
     if(common.bandCount()!=3||common.bandSummaries()!=threeBandIds)
         return 48;

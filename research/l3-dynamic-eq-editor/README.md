@@ -286,3 +286,11 @@ repeated commas and nonfinite strings are rejected as `INVALID_NUMBER`;
 rejected drafts never modify an accepted C01 band. Real Qt smoke checks
 these cases under the same six-pair UI owner and confirms explicit cancel
 clears validation. Product integration and L3 authoring remain untouched.
+
+## Idempotent Reset Flat (C01 research)
+
+A repeated Reset Flat on the already-default single-band C01 snapshot is
+strictly a no-op, preserving the unique band ID and avoiding phantom Undo
+entries. The isolated C++/Qt test resets twice, then undoes once and verifies
+all three prior band identities are restored. No additional Product control
+or modification to the frozen DSP contract is introduced.

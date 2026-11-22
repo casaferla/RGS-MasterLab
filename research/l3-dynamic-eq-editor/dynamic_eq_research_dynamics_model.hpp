@@ -182,6 +182,10 @@ public:
         flat.band_id=bands_.front().band_id;
         auto checked=rgsml::dsp::DynamicEqBandParameters::create(flat);
         if(!checked)return false;
+        // Repeating Reset Flat on an already-flat single band is a no-op.
+        // It must not add a phantom Undo snapshot or truncate Redo history.
+        if(bands_.size()==1U && selected_==0U && bands_.front()==flat)
+            return true;
         pushUndo();bands_.assign(1,flat);selected_=0;
         graph_draft_.reset();cancelDraft();emit changed();return true;
     }
