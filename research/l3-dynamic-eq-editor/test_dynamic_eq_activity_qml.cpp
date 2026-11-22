@@ -7,12 +7,13 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QImage>
-#include <cassert>
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
+#include <stdexcept>
 #include <numbers>
 #include <span>
 #include <vector>
@@ -25,7 +26,8 @@ static DynamicEqParameters fixture() {
     DynamicEqBandSpec a;
     auto ida=core::Uuid::parse("11111111-1111-4111-8111-111111111111");
     auto idb=core::Uuid::parse("22222222-2222-4222-8222-222222222222");
-    assert(ida && idb);a.band_id=*ida.value();
+    if(!ida || !idb)throw std::runtime_error("C01 fixture UUID invalid");
+    a.band_id=*ida.value();
     a.control.range_db=-9.0;a.control.threshold_dbfs=-52.0;
     a.routing=EqRouting::STEREO;
     DynamicEqBandSpec b;
@@ -36,17 +38,24 @@ static DynamicEqParameters fixture() {
     b.shape=DynamicEqShelfShape{800.0,0.8};
     auto aa=DynamicEqBandParameters::create(a);
     auto bb=DynamicEqBandParameters::create(b);
-    assert(aa && bb);
+    if(!aa || !bb)throw std::runtime_error("C01 fixture band rejected");
     auto all=DynamicEqParameters::create({*aa.value(),*bb.value()});
-    assert(all);
+    if(!all)throw std::runtime_error("C01 fixture rejected");
     return *all.value();
 }
+// Processing must execute in Release too; assert() would erase it.
+#define CHECK(expr) do { if (!(expr)) { \
+    std::cerr << "C01 Activity check failed line " << __LINE__ \
+              << ": " << #expr << std::endl; \
+    return 20; \
+} } while(false)
+
 int main(int argc,char** argv) {
     if(argc!=2)return 2;
     QGuiApplication app(argc,argv);
     constexpr auto fs=48000U;
     auto e=C01FrameEngine::create(fixture(),fs,2);
-    assert(e);
+    CHECK(e);
     C01ActivityHistoryCollector history(fs,0,400);
     std::vector<C01FrameActivitySample> scratch(1024);
     std::vector<double> left(1024),right(1024),out_l(1024),out_r(1024);
@@ -61,7 +70,7 @@ int main(int argc,char** argv) {
             right[i]=0.20*std::cos(2*std::numbers::pi*1101.0*t/fs);
             if((at+i)%24000==0)left[i]+=0.5;
         }
-        assert(e.value()->process_block(
+        CHECK(e.value()->process_block(
             std::span<const double>(left.data(),n),
             std::span<const double>(right.data(),n),
             std::span<double>(out_l.data(),n),
@@ -134,5 +143,19 @@ int main(int argc,char** argv) {
            ||!b.save(QDir(dir).filePath("DynamicEq-C01-Real-Gain-History.png"),"PNG"))
             return 11;
     }
+    // A malformed sidecar must clear the Activity window and all identity
+    // rather than displaying rejected gain under the previous realization.
+    auto malformed=projection();
+    malformed.history.front().bands[0].gain_last_db=
+        std::numeric_limits<double>::quiet_NaN();
+    qt.apply(malformed);
+    app.processEvents();
+    if(qt.available() || !qt.buckets().empty()
+       || !qt.realizationId().isEmpty()
+       || graph->property("graphAvailable").toBool())return 12;
+    qt.apply(projection());
+    app.processEvents();
+    if(!qt.available() || qt.buckets().size()!=250
+       || !graph->property("graphAvailable").toBool())return 13;
     std::cout<<"C01 Qt real 5s Activity + provenance gate: PASS\n";
 }

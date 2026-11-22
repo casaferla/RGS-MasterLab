@@ -43,6 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake -S research/l3-dynamic-eq-editor -B /tmp/rgs-dynamic-qt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64"
           cmake --build /tmp/rgs-dynamic-qt --parallel 4
       - name: Verify common C01 band owner and static base response

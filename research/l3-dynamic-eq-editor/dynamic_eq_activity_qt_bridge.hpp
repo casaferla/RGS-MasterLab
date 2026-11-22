@@ -67,6 +67,9 @@ public:
                    ||!std::isfinite(b.effective_gain_last_db)
                    ||!std::isfinite(b.signed_target_last_db)
                    ||!std::isfinite(b.detector_power_max)
+                   ||b.detector_power_max<0.0
+                   ||std::abs(b.effective_gain_last_db)>18.000001
+                   ||std::abs(b.signed_target_last_db)>18.000001
                    ||b.gain_min_db>b.gain_last_db
                    ||b.gain_last_db>b.gain_max_db
                    ||std::abs(b.gain_min_db)>18.000001

@@ -204,3 +204,13 @@ graph drag state. Re-selecting BELL / LOW_SHELF / HIGH_SHELF no longer
 reconstructs the shape: the accepted Q or Shelf Slope stays unchanged and no
 phantom Undo snapshot is created. The Qt Core smoke checks filter response,
 Undo/Redo and permission transitions. No Product or L3 integration.
+
+## C01 Activity Qt Release-safe and fail-closed validation
+
+The isolated Qt Activity harness now performs real C01 PCM processing with
+always-evaluated checks even when `NDEBUG` is defined, and its dedicated Qt
+workflow uses Release configuration. Malformed nonfinite min/last/max gain,
+negative detector power, or out-of-bounds effective/target gain is rejected
+before Activity is marked available. The smoke checks that a rejected sidecar
+clears the old realization and graph and that valid C01 history restores it.
+No L3 Product, playback owner or DSP processing algorithm is modified.
