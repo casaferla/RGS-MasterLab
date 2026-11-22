@@ -1,4 +1,6 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
+#include "internal/l3_m13_fresh_full_master_probe.hpp"
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -11,6 +13,7 @@
 #include <cstdint>
 #include <memory>
 #include <numbers>
+#include <vector>
 namespace rgsml::tests {
 namespace {
 namespace m12=rgsml::app::l3_automatch::m12_frozen;
@@ -91,6 +94,54 @@ noM12ReceiptCannotPretendFreshVerification() {
     QVERIFY(fresh.value()->fresh_m20.mean_linear_psd.size()>0U);
     QVERIFY(!fresh.value()->is_m13_verified());
     QVERIFY(!fresh.value()->authorizes_export());
+    // The *independent whole master* must use the original frozen
+    // Manual -> actual ReferenceMatch -> still-current M17 terminal.
+    auto terminal=dsp::ProcessingChain::create(*owned,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::TERMINAL});
+    QVERIFY(terminal);
+    const auto tpId=id("c4000000-0000-4000-8000-000000000001");
+    QVERIFY(terminal.value()->add(
+        tpId,"rgsml.dsp.true-peak-limiter",0));
+    auto ceiling=dsp::TruePeakLimiterParameters::create(0.0);
+    QVERIFY(ceiling);
+    const std::vector<dsp::ModuleExecutionBinding> terminalBindings{
+        {tpId,*ceiling.value()}};
+    const auto whole=m13::probe_fresh_m13_full_native_master_once(
+        *stage.value(),*manual.value(),none,*terminal.value(),
+        terminalBindings,*prepared.value(),*chunk.value(),
+        0.0,true,true);
+    QVERIFY(whole);
+    QCOMPARE(whole.value()->logical_verification_evaluations,
+             std::uint32_t{1});
+    QCOMPARE(whole.value()->genuine_dsp_segment_passes,
+             std::uint32_t{3});
+    QCOMPARE(whole.value()->independent_full_master_render.view().
+                 frame_count().value(),std::int64_t{48000});
+    QCOMPARE(whole.value()->independent_final_m20.channel_count,2U);
+    QVERIFY(!whole.value()->is_m13_verified());
+    QVERIFY(!whole.value()->authorizes_master_export());
+    QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
+        *stage.value(),*manual.value(),none,*terminal.value(),
+        terminalBindings,*prepared.value(),*chunk.value(),
+        0.0,false,true));
+    QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
+        *stage.value(),*manual.value(),none,*terminal.value(),
+        terminalBindings,*prepared.value(),*chunk.value(),
+        -1.0,true,true));
+    // Live manual changed AFTER M12 stage: no stale protected gain or
+    // graph revision can pass the independent verifier preflight.
+    QVERIFY(manual.value()->add(
+        id("c4000000-0000-4000-8000-000000000002"),
+        "rgsml.dsp.gain",0));
+    QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
+        *stage.value(),*manual.value(),none,*terminal.value(),
+        terminalBindings,*prepared.value(),*chunk.value(),
+        0.0,true,true));
+    QVERIFY(terminal.value()->set_user_bypass(tpId,true));
+    QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
+        *stage.value(),*manual.value(),none,*terminal.value(),
+        terminalBindings,*prepared.value(),*chunk.value(),
+        0.0,true,true));
 }
 void M13FreshNativeProbeTest::
 newRealRenderAndIndependentAnalysisRemainNonverified() {
