@@ -79,7 +79,7 @@ render_restored_m12_full_native_pcm_once(
         return true;
     };
     if(!plan.registry_owner)return fail("L3_M12_REPLAY_REGISTRY_MISSING");
-    if(!plan.manual_prefix.instances().empty()&&
+    if(plan.manual_prefix.instances().empty()||
        plan.manual_prefix.instances().front().module_type_id()!=
            "rgsml.dsp.gain")
         return fail("L3_M12_REPLAY_INPUT_GAIN_NOT_PROTECTED_FIRST");

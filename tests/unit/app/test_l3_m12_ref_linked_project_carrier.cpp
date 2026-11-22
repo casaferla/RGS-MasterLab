@@ -418,6 +418,16 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     forgedPlan.manual_prefix=*wrongSegment.value();
     QVERIFY(!m::render_restored_m12_full_native_pcm_once(
         forgedPlan,*prepared.value(),*maxBlock.value()));
+    // Input Gain is mandatory. An empty MANUAL prefix cannot be
+    // mistaken for an ordinary accepted plan with no upstream processing.
+    auto emptyManualPrefix=dsp::ProcessingChain::create(*reg,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(emptyManualPrefix);
+    forgedPlan=*replayPlan.value();
+    forgedPlan.manual_prefix=*emptyManualPrefix.value();
+    forgedPlan.manual_bindings.clear();
+    QVERIFY(!m::render_restored_m12_full_native_pcm_once(
+        forgedPlan,*prepared.value(),*maxBlock.value()));
     // Product's queued PreviewJob is valid only for the exact immutable
     // PREPARED allocation plus the current live MANUAL/registry identity.
     auto preparedForWorker=render::render_preview(
