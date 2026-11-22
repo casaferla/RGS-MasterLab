@@ -7,6 +7,8 @@
 #include "l3_m06_d01_native_binding.hpp"
 #include "l3_m06_d02_lra_binding.hpp"
 #include "l3_m06_d03d04_to_m07_m08.hpp"
+#include "l3_m06_d07_d09_native_binding.hpp"
+#include "l3_m06_d10_d12_native_binding.hpp"
 #include "l3_m19_native_macro_loudness_bindings.hpp"
 #include "l3_m20_native_stereo_bindings.hpp"
 #include "l3_m20_tonal_scalar_bindings.hpp"
@@ -23,6 +25,8 @@ struct ExistingNativeSourceFragments final {
     std::optional<m05m06_real::D01BindingProjection> macro_d01;
     std::optional<m05m06_real::LraBindingProjection> macro_lra;
     std::optional<m05m06_real::D03D04SlotProjection> macro_windowed;
+    std::optional<m05m06_real::TransientBindingProjection> micro_events;
+    std::optional<m05m06_real::SpectralSlotProjection> spectral_frame_energy;
     std::optional<m05m06_real::M19NativeSlotProjection> macro_loudness;
     std::optional<m05m06_real::M20StereoProjection> stereo_broadband;
 };
@@ -58,6 +62,12 @@ collect_existing_m05m06_native_fragments(
         add(*fragments.macro_lra->slot);
     if(fragments.macro_windowed&&fragments.macro_windowed->feature_slots)
         for(const auto& s:*fragments.macro_windowed->feature_slots)add(s);
+    if(fragments.micro_events&&fragments.micro_events->feature_slots)
+        for(const auto& s:*fragments.micro_events->feature_slots)add(s);
+    if(fragments.spectral_frame_energy&&
+       fragments.spectral_frame_energy->feature_bindings)
+        for(const auto& s:*
+            fragments.spectral_frame_energy->feature_bindings)add(s);
     if(fragments.macro_loudness&&fragments.macro_loudness->feature_slots)
         for(const auto& s:*fragments.macro_loudness->feature_slots)add(s);
     if(fragments.stereo_broadband&&fragments.stereo_broadband->feature_slots)

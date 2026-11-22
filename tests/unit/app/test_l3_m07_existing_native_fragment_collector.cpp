@@ -26,6 +26,7 @@ private slots:
     void existingNativeSubsetRemainsExplicitlyIncomplete();
     void duplicateCannotOverwriteOrDoubleCountFeature();
     void missingAllFragmentsReportsExactMissingIds();
+    void certifiedNativeEventAndSpectralFragmentsKeepFourStereoMissing();
 };
 void M07NativeFragmentCollectorTest::
 existingNativeSubsetRemainsExplicitlyIncomplete() {
@@ -76,6 +77,29 @@ missingAllFragmentsReportsExactMissingIds() {
              std::size_t{27});
     QCOMPARE(result.inventory.missing_original_binding_ids.front(),
              m07::kBindings[0].binding_id);
+}
+void M07NativeFragmentCollectorTest::
+certifiedNativeEventAndSpectralFragmentsKeepFourStereoMissing() {
+    m07::ExactTwentySevenFeatureAssembler g{
+        "authentic-native-Phase6-generation",true};
+    m07::ExistingNativeSourceFragments fragments;
+    std::array<m08::AuthenticatedPairSlot,3> transient{
+        binding(m07::kBindings[12]),binding(m07::kBindings[13]),
+        binding(m07::kBindings[14])};
+    std::array<m08::AuthenticatedPairSlot,3> spectral{
+        binding(m07::kBindings[15]),binding(m07::kBindings[16]),
+        binding(m07::kBindings[17])};
+    fragments.micro_events=m05::TransientBindingProjection{
+        transient,m05::TransientBindingFailure::none};
+    fragments.spectral_frame_energy=m05::SpectralSlotProjection{
+        spectral,m05::SpectralSlotFailure::none};
+    const auto out=m07::collect_existing_m05m06_native_fragments(
+        g,fragments);
+    QCOMPARE(out.status,m07::NativeFragmentAdmission::accepted_partial);
+    QCOMPARE(out.inventory.populated_count,std::size_t{6});
+    QCOMPARE(out.inventory.missing_original_binding_ids.size(),
+             std::size_t{21});
+    QVERIFY(!g.complete_canonical_population());
 }
 } // namespace
 } // namespace rgsml::tests

@@ -10,3 +10,12 @@ production; T01 1/3 fallback remains an exclusive same-slot
 alternative. A partial feature source may NEVER be presented
 as a complete M10 objective, and duplicate/conflicting bindings
 poison the generation.
+
+Added D07–D09 authenticated canonical event-descriptor fragments and
+D10–D12 exact full-frame STFT energy fragments, bringing the
+source-adapter structural coverage to 23/27 original binding IDs
+when combined with existing M19/M20/native PCM adapters. The remaining
+four are S03–S06. Crucially the P04 event detector and full per-frame
+Phase6 canonical STFT source are NOT yet implemented here; these six
+new fragments can only be supplied by independent authentic producers.
+No population readiness or AutoMatch convergence is asserted.
