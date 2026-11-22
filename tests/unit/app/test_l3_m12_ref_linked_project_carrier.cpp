@@ -547,7 +547,10 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *replayPlan.value(),forgedWitness));
     forgedWitness=firstStageWitness;
     forgedWitness.reference_linked.front().disposition=
-        render::ModuleExecutionDisposition::BYPASS_IDENTITY;
+        firstStageWitness.reference_linked.front().disposition==
+            render::ModuleExecutionDisposition::PROCESSED
+            ?render::ModuleExecutionDisposition::BYPASS_IDENTITY
+            :render::ModuleExecutionDisposition::PROCESSED;
     QVERIFY(!m::m12_native_stage_witness_matches_replay_plan(
         *replayPlan.value(),forgedWitness));
     QCOMPARE(realReplay.value()->view().frame_count().value(),
