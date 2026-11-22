@@ -5,6 +5,7 @@
 // DESC then timestamp ASC, minimum 30ms, final chronological events.
 #include "l3_m06_p04_native_flux.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +25,8 @@ struct P04DetectedNativeEvent final {
     double robust_z{};
 };
 enum class P04SelectionReason:std::uint8_t {
-    ready,unqualified_or_invalid_flux_population,invalid_numeric
+    ready,unqualified_or_invalid_flux_population,invalid_numeric,
+    cancelled
 };
 struct P04DetectedNativePopulation final {
     std::vector<P04DetectedNativeEvent> canonical_events;
@@ -56,7 +58,9 @@ p04_type7_median(std::vector<double> observations)
         std::optional<double>{median}:std::nullopt;
 }
 [[nodiscard]] inline P04DetectedNativePopulation
-select_p04_canonical_native_events(const P04RawFluxPopulation& native)
+select_p04_canonical_native_events(
+    const P04RawFluxPopulation& native,
+    const std::atomic<bool>* cancellation=nullptr)
 {
     P04DetectedNativePopulation out;
     if(native.reason!=P04NativeReason::ready||
@@ -87,6 +91,12 @@ select_p04_canonical_native_events(const P04RawFluxPopulation& native)
     // Direct 1s frame-center neighborhood on the canonical frame
     // starts; same Nw means center-time differences = start differences.
     for(std::size_t i=0;i<frames.size();++i) {
+        if(cancellation&&cancellation->load(
+             std::memory_order_acquire)) {
+            out.canonical_events.clear();
+            out.reason=P04SelectionReason::cancelled;
+            return out;
+        }
         if(!frames[i].raw_positive_spectral_flux)continue;
         std::vector<double> baseline;
         const auto origin=frames[i].absolute_start_frame;
@@ -127,6 +137,12 @@ select_p04_canonical_native_events(const P04RawFluxPopulation& native)
     }
     std::vector<std::size_t> local;
     for(std::size_t i=0;i<frames.size();++i) {
+        if(cancellation&&cancellation->load(
+             std::memory_order_acquire)) {
+            out.canonical_events.clear();
+            out.reason=P04SelectionReason::cancelled;
+            return out;
+        }
         if(!z[i]||*z[i]<6.0)continue;
         const auto origin=frames[i].absolute_start_frame;
         bool winner=true;
