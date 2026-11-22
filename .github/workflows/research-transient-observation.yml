@@ -37,3 +37,9 @@ jobs:
             dsp/src/transient_shaper_parameters.cpp core/src/error.cpp \
             -o /tmp/rgsml-transient-research/c00-observer
           /tmp/rgsml-transient-research/c00-observer
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -fno-fast-math -ffp-contract=off -UNDEBUG \
+            -Icore/include -Idsp/include -Idsp/src -Iaudio/include \
+            research/l3-transient-shaper-editor/test_transient_activity_playback_projection.cpp \
+            -o /tmp/rgsml-transient-research/playback-projection
+          /tmp/rgsml-transient-research/playback-projection

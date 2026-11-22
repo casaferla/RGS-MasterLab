@@ -37,6 +37,23 @@ No CMake, host, module registry, project serialization, Qt application
 composition, or production CI workflow files are modified. No pull request or merge.
 The new editor is intentionally not wired into the production app yet.
 
+## Authentic playback owner safety projection (research)
+
+The new `transient_activity_playback_projection.hpp` checks the real
+`PlaybackSnapshot`'s `AudibleRealizationState` (stable `NEW` phase),
+its `RealizationId`, the accepted chain revision, exact frame domain,
+sample rate, render completion, actually auditioned PROCESSED, and
+bypass disposition. Only then does it expose the completed 5-second
+sampled gain history. PAUSED freezes the cursor, seeking backwards
+reselects history from the immutable sidecar. No SOURCE↔OUTPUT rate
+conversion is guessed; unavailable data stays unavailable.
+
+The caller must obtain the sidecar RealizationId and provenance from
+the real accepted render/publisher; this research projection does not
+invent a value or attach itself to Product/AutoMatch. Tests verify
+wrong realization, old revision, handoff transition, stop/seek, wrong
+timebase/sample rate, bypass, and pause.
+
 ## Future production adapter / observation contract
 
 The editor accepts `transientModule` with:
