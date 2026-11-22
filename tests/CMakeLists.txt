@@ -3024,3 +3024,17 @@ add_test(NAME rgsml_l3_m06_s03_s06_binding_tests
 set_tests_properties(rgsml_l3_m06_s03_s06_binding_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;m07;s03_s06;native_stereo;nonrelease")
+
+# L3 actual Product gain trial: signed M20 FFT -> S03-S06 native observations.
+qt_add_executable(rgsml_l3_product_native_stereo_candidate_tests
+    unit/app/test_l3_product_native_stereo_candidate.cpp)
+target_include_directories(rgsml_l3_product_native_stereo_candidate_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_product_native_stereo_candidate_tests
+    PRIVATE rgsml_audio rgsml_analysis rgsml_dsp rgsml_render Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_product_native_stereo_candidate_tests)
+add_test(NAME rgsml_l3_product_native_stereo_candidate_tests
+    COMMAND rgsml_l3_product_native_stereo_candidate_tests)
+set_tests_properties(rgsml_l3_product_native_stereo_candidate_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;real_product;s03_s06;single_fft;nonrelease")
