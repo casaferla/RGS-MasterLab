@@ -3233,7 +3233,11 @@ target_include_directories(rgsml_l3_m10_p2_real_native_product_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
         ${CMAKE_SOURCE_DIR}/analysis/src
-        ${CMAKE_SOURCE_DIR}/platform/windows/src)
+        ${CMAKE_SOURCE_DIR}/platform/windows/src
+        # M18 Product owner interfaces reference public Win-platform
+        # declarations even on Linux; only their implementation is Win32.
+        # Expose headers WITHOUT linking the Windows-only platform target.
+        ${CMAKE_SOURCE_DIR}/platform/windows/include)
 target_link_libraries(rgsml_l3_m10_p2_real_native_product_tests
     PRIVATE rgsml_project rgsml_audio rgsml_analysis
             rgsml_dsp rgsml_render Qt6::Test)
