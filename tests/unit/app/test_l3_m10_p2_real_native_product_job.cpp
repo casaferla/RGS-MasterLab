@@ -294,6 +294,36 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         stamp,a::OriginalProductRole::prepared);
     const auto gold_owner=a::native_product_original_identity(
         stamp,a::OriginalProductRole::reference);
+    QVERIFY(!source_owner.resource_identity.empty());
+    QVERIFY(!gold_owner.resource_identity.empty());
+    QVERIFY(source_owner.resource_identity!=gold_owner.resource_identity);
+    QVERIFY(a::authentic_product_source_identity(
+        source_owner,stamp,a::OriginalProductRole::prepared));
+    QVERIFY(a::authentic_product_source_identity(
+        gold_owner,stamp,a::OriginalProductRole::reference));
+    QVERIFY(!a::authentic_product_source_identity(
+        gold_owner,stamp,a::OriginalProductRole::prepared));
+    auto same_generation_other_file=stamp;
+    same_generation_other_file.reference_locator="changed/reference.wav";
+    QVERIFY(!a::authentic_product_source_identity(
+        gold_owner,same_generation_other_file,
+        a::OriginalProductRole::reference));
+    auto new_epoch_same_resource=stamp;
+    ++new_epoch_same_resource.m18_owner_epoch;
+    QVERIFY(!a::authentic_product_source_identity(
+        gold_owner,new_epoch_same_resource,
+        a::OriginalProductRole::reference));
+    // Length delimiting prevents an ambiguous provider/locator split.
+    auto ambiguous_a=stamp;
+    ambiguous_a.source_provider_id="test-provider.";
+    ambiguous_a.source_locator="source";
+    auto ambiguous_b=stamp;
+    ambiguous_b.source_provider_id="test-provider";
+    ambiguous_b.source_locator=".source";
+    QVERIFY(a::native_product_original_identity(
+        ambiguous_a,a::OriginalProductRole::prepared).resource_identity!=
+        a::native_product_original_identity(
+        ambiguous_b,a::OriginalProductRole::prepared).resource_identity);
     QVERIFY(!a::measure_original_prepared_reference_native_once(
         *source.value(),source_owner,spec_for_authoritative_bridge,
         *source.value(),gold_owner,spec_for_authoritative_bridge,
@@ -342,6 +372,14 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         stamp,chosen->typed.base.ticket_identity);
     const auto control_candidate_owner=a::native_product_candidate_identity(
         stamp,"real-p2-cached-canonical-ticket");
+    QVERIFY(a::authentic_product_candidate_identity(
+        owner,stamp,chosen->typed.base.ticket_identity));
+    QVERIFY(!a::authentic_product_candidate_identity(
+        owner,stamp,"a-different-candidate"));
+    QVERIFY(!a::authentic_product_candidate_identity(
+        owner,new_epoch_same_resource,chosen->typed.base.ticket_identity));
+    QVERIFY(owner.resource_identity!=
+        control_candidate_owner.resource_identity);
     // The authentic full-source pair must REPLACE every P/G numerical
     // family. Even after original real P/G/C PCM, missing canonical
     // M07 Phase6 definitions MUST prevent a score.
