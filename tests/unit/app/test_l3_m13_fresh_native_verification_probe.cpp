@@ -1,6 +1,7 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
+#include "internal/l3_m13_p2_owned_full_master_probe.hpp"
 #include "internal/l3_m12_native_terminal_guarded_stage.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
@@ -219,6 +220,40 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
         accepted,*manual.value(),manualBindings,*buffer.value(),
         0.0,true,registry,nodes);
     QVERIFY(stage);
+    // Bind the genuine M10 typed candidate and exact M11 owner before
+    // allowing the final fresh M13 three-stage verification probe.
+    const a::m10_frozen::ExactP2CoordinateNames p2Fields{
+        {0xa1},{0x01},{0x02}};
+    const std::vector<a::m10_frozen::Coordinate> p2Coords{
+        {{0xa1},{0x01},0.5},{{0xa1},{0x02},0.5}};
+    const std::vector<double> trialNormalized{0.4,0.6};
+    const auto m10P2=a::m10_frozen::bind_m10_p2_joint_coordinates(
+        p2Coords,trialNormalized,p2Fields,*manual.value(),manualBindings,
+        p2id,"m10-exact-p2-winner",
+        [&](const a::m10_frozen::Coordinate& coord,double)
+            ->std::optional<double> {
+            return coord.stable_parameter_id==p2Fields.ceiling_parameter_id
+                ?std::optional<double>{-1.0}
+                :std::optional<double>{6.0};
+        });
+    QVERIFY(m10P2);
+    const auto stagedP2=m12::preflight_exact_m12_p2_optimizing_winner(
+        *stage.value(),*manual.value(),manualBindings,*m10P2,
+        "m10-exact-p2-winner","winning-typed-P2",true);
+    QVERIFY(stagedP2);
+    QVERIFY(stagedP2->matches(
+        *stage.value(),*manual.value(),manualBindings));
+    QVERIFY(!stagedP2->authorizes_project_commit());
+    QVERIFY(!stagedP2->is_m13_verified());
+    QVERIFY(!m12::preflight_exact_m12_p2_optimizing_winner(
+        *stage.value(),*manual.value(),manualBindings,*m10P2,
+        "wrong-ticket","winning-typed-P2",true));
+    QVERIFY(!m12::preflight_exact_m12_p2_optimizing_winner(
+        *stage.value(),*manual.value(),manualBindings,*m10P2,
+        "m10-exact-p2-winner","wrong-winner",true));
+    QVERIFY(!m12::preflight_exact_m12_p2_optimizing_winner(
+        *stage.value(),*manual.value(),manualBindings,*m10P2,
+        "m10-exact-p2-winner","winning-typed-P2",false));
     // An active manual P2 without a typed M10 winner must FAIL CLOSED.
     QVERIFY(!m13::probe_fresh_m13_full_native_master_once(
         *stage.value(),*manual.value(),manualBindings,
@@ -231,12 +266,16 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
     const auto first=m13::probe_fresh_m13_full_native_master_once(
         *stage.value(),*manual.value(),manualBindings,
         *prepared.value(),*block.value(),0.0,true,true,*p2.value());
-    const auto second=m13::probe_fresh_m13_full_native_master_once(
-        *stage.value(),*manual.value(),manualBindings,
-        *prepared.value(),*block.value(),0.0,true,true,*actual_m10_p2);
+    const auto second=m13::probe_fresh_m13_full_master_using_exact_p2_winner(
+        *stage.value(),*stagedP2,*manual.value(),manualBindings,
+        *prepared.value(),*block.value(),0.0,true,true);
+    QVERIFY(!m13::probe_fresh_m13_full_master_using_exact_p2_winner(
+        *stage.value(),*stagedP2,*manual.value(),manualBindings,
+        *prepared.value(),*block.value(),0.0,false,true));
     QVERIFY(first&&second);
     QCOMPARE(second.value()->genuine_dsp_segment_passes,
              std::uint32_t{3});
+    QVERIFY(stagedP2->winning_parameters==*actual_m10_p2);
     QCOMPARE(second.value()->independent_match_render.view().
                  frame_count().value(),std::int64_t{48000});
     QCOMPARE(second.value()->independent_match_render.signatures().size(),
