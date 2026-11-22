@@ -1,6 +1,7 @@
 #include "internal/l3_m10_p2_real_native_product_job.hpp"
 #include "internal/l3_product_native_one_pass.hpp"
 #include "internal/l3_m05m06_owned_full_source_native_facts.hpp"
+#include "internal/l3_m05m06_original_prepared_reference_pair.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
@@ -270,6 +271,41 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             {"missing-or-stale-original",0U,false},
             spec_for_authoritative_bridge,
             {20.0,18000.0},1e-12,true));
+    // The REFERENCE is a different genuinely owned PCM buffer, not
+    // a second identity label applied to the PREPARED pointer.
+    auto independent_gold=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*length.value());
+    QVERIFY(independent_gold);
+    auto gold_left=independent_gold.value()->mutable_view().channel(0);
+    auto gold_right=independent_gold.value()->mutable_view().channel(1);
+    QVERIFY(gold_left&&gold_right);
+    for(std::size_t i=0;i<gold_left.value()->size();++i) {
+        const double v=0.3*std::sin(
+            2.0*std::numbers::pi*660.0*
+            static_cast<double>(i)/48000.0);
+        (*gold_left.value())[i]=v;
+        (*gold_right.value())[i]=v;
+    }
+    const auto source_owner=a::m05m06_real::SourceIdentity{
+        "actual-prepared",11U,true};
+    const auto gold_owner=a::m05m06_real::SourceIdentity{
+        "independent-reference",12U,true};
+    QVERIFY(!a::measure_original_prepared_reference_native_once(
+        *source.value(),source_owner,spec_for_authoritative_bridge,
+        *source.value(),gold_owner,spec_for_authoritative_bridge,
+        {20.0,18000.0},1e-12,true,true,true));
+    const auto original_pair=
+        a::measure_original_prepared_reference_native_once(
+            *source.value(),source_owner,spec_for_authoritative_bridge,
+            *independent_gold.value(),gold_owner,spec_for_authoritative_bridge,
+            {20.0,18000.0},1e-12,true,true,true);
+    QVERIFY(original_pair);
+    QCOMPARE(original_pair.value()->prepared.original_m19_m20.
+                 owner.resource_identity,std::string("actual-prepared"));
+    QCOMPARE(original_pair.value()->reference.original_m19_m20.
+                 owner.resource_identity,std::string("independent-reference"));
+    QVERIFY(!original_pair.value()->authorizes_m10_or_m12());
     const auto candidate_native=
         a::measure_real_full_owned_pcm_native_once(
             actual.value()->buffer(),spec_for_authoritative_bridge);
