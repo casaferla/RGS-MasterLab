@@ -223,6 +223,15 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     wrongRevisionProject.referenceMatch=*wrongRevisionPayload.value();
     QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
         wrongRevisionProject,reg));
+    QCOMPARE(productReopen.value()->persisted_linked_chain_id,refChainId);
+    QCOMPARE(productReopen.value()->exact_plan_revision,
+             std::uint64_t{11});
+    QCOMPARE(productReopen.value()->exact_m10_winning_checksum,
+             accepted().exact_m10_result_and_topology_checksum);
+    QCOMPARE(productReopen.value()->exact_m11_protected_fixed_checksum,
+             accepted().exact_m11_fixed_and_protection_checksum);
+    QCOMPARE(productReopen.value()->exact_source_reference_scope_revision,
+             accepted().exact_source_reference_amount_scope_revision);
     QCOMPARE(productReopen.value()->exact_native_chain.instances().size(),
              stage.value()->chain.instances().size());
     QVERIFY(std::equal(
@@ -240,6 +249,24 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!productReopen.value()->is_m12_materialization_receipt());
     // The opt-in runtime factory must still exist when reopened:
     // do not silently drop a required calculated module.
+    // Project decoding must refuse foreign-owned nodes masquerading
+    // as MANUAL and any extra REF_LINKED segment in another stage.
+    auto contaminatedManual=proposed;
+    auto fakeManualNode=carrier.value()->native_project_chain.modules.front();
+    fakeManualNode.instanceId=uuid(
+        "bd000000-0000-4000-8000-000000000001");
+    contaminatedManual.chains.front().modules.push_back(fakeManualNode);
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        contaminatedManual,reg));
+    auto foreignLinkedStage=proposed;
+    project::Chain foreignStage;
+    foreignStage.chainId=uuid(
+        "be000000-0000-4000-8000-000000000001");
+    foreignStage.stage="RESTORE";
+    foreignStage.segment="REF_LINKED";
+    foreignLinkedStage.chains.push_back(foreignStage);
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(
+        foreignLinkedStage,reg));
     const auto minimal=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(minimal);
     const auto noOptin=std::make_shared<const dsp::ModuleRegistry>(

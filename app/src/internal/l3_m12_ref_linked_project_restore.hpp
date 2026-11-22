@@ -34,6 +34,13 @@ struct RestoredM12LinkedProductState final {
     core::Uuid plan_id;
     core::Uuid controller_id;
     std::string exact_plan_checksum;
+    // Canonical persisted provenance is a read-only carried identity,
+    // never a live Project-owner attestation or M13 verifier receipt.
+    core::Uuid persisted_linked_chain_id;
+    std::uint64_t exact_plan_revision{};
+    std::string exact_m10_winning_checksum;
+    std::string exact_m11_protected_fixed_checksum;
+    std::string exact_source_reference_scope_revision;
     [[nodiscard]] constexpr bool authorizes_project_adoption()
         const noexcept{return false;}
     [[nodiscard]] constexpr bool is_m12_materialization_receipt()
@@ -58,6 +65,8 @@ decode_exact_m12_ref_linked_product_state(
     const project::Chain* exact_manual=nullptr;
     const project::Chain* exact_linked=nullptr;
     for(const auto& chain:doc.chains) {
+        if(chain.segment=="REF_LINKED"&&chain.stage!="MASTER")
+            return fail("L3_M12_REOPEN_FOREIGN_LINKED_SEGMENT");
         if(chain.chainId==*doc.pipeline.masteringChainId) {
             if(exact_manual)return fail("L3_M12_REOPEN_DUPLICATE_MANUAL");
             exact_manual=&chain;
@@ -72,6 +81,11 @@ decode_exact_m12_ref_linked_product_state(
        !exact_linked||exact_linked->chainId.is_nil()||
        exact_linked->chainId==exact_manual->chainId)
         return fail("L3_M12_REOPEN_MISSING_MANUAL_OR_LINKED");
+    for(const auto& module:exact_manual->modules)
+        if(module.owner=="REFERENCE_MATCH"||
+           module.provenance=="REFERENCE_MATCH"||
+           module.linkState=="REF_LINKED")
+            return fail("L3_M12_REOPEN_MANUAL_OWNER_CONTAMINATED");
     QJsonParseError parse_error;
     const auto document=QJsonDocument::fromJson(
         QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()),
@@ -95,13 +109,18 @@ decode_exact_m12_ref_linked_product_state(
     // The unsigned revisions were serialized as exact decimal STRINGS,
     // not JSON doubles (which would lose U64 precision).
     const auto exact_revision=std::to_string(exact_linked->revision);
+    const auto winner_checksum=meta.value(
+        QStringLiteral("winnerContentChecksum")).toString().toStdString();
+    const auto protected_checksum=meta.value(
+        QStringLiteral("protectedFixedChecksum")).toString().toStdString();
+    const auto dependency=meta.value(
+        QStringLiteral("sourceReferenceScopeRevision")).toString().toStdString();
     if(!controller||!plan||controller.value()->is_nil()||
        plan.value()->is_nil()||checksum.empty()||
        meta.value(QStringLiteral("policyId")).toString()!=
            QStringLiteral("rgsml.reference-match.materialization-policy/1.0.0")||
-       meta.value(QStringLiteral("winnerContentChecksum")).toString().isEmpty()||
-       meta.value(QStringLiteral("protectedFixedChecksum")).toString().isEmpty()||
-       meta.value(QStringLiteral("sourceReferenceScopeRevision")).toString().isEmpty()||
+       winner_checksum.empty()||protected_checksum.empty()||
+       dependency.empty()||
        meta.value(QStringLiteral("planRevision")).toString().toStdString()!=
            exact_revision||
        meta.value(QStringLiteral("schemaId")).toString()!=
@@ -175,6 +194,8 @@ decode_exact_m12_ref_linked_product_state(
     return R::success(RestoredM12LinkedProductState{
         std::move(registry_owner),std::move(*restored.value()),
         std::move(bindings),*plan.value(),*controller.value(),
-        std::move(checksum)});
+        std::move(checksum),exact_linked->chainId,
+        exact_linked->revision,std::move(winner_checksum),
+        std::move(protected_checksum),std::move(dependency)});
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
