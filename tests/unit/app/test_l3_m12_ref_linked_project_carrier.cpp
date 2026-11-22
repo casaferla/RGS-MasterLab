@@ -363,6 +363,81 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
         *staged.value(),fixed,*manual.value(),manualBindings,
         persisted,false).reason,
         m::P2PersistedSoundReason::missing_or_stale_m10_m12_winner);
+
+    // A genuinely serializable Product Project receives ordinary
+    // MANUAL P2 + ordinary REF_LINKED EQ. An optimized P2 which
+    // changes protected sound is refused BEFORE draft materialization.
+    // An unchanged P2 can be carried through .rgsml byte-identically.
+    const auto descriptor=registry->find_descriptor(
+        "rgsml.dsp.streaming-true-peak-limiter");
+    QVERIFY(descriptor);
+    QVERIFY(descriptor.value()->get().algorithm_version());
+    QVERIFY(descriptor.value()->get().parameter_schema_id());
+    persisted.modules.back().algorithmVersion=std::string{
+        *descriptor.value()->get().algorithm_version()};
+    persisted.modules.back().parameterSchemaId=std::string{
+        *descriptor.value()->get().parameter_schema_id()};
+    project::ProjectDocument doc;
+    doc.projectId=uuid("c4000000-0000-4000-8000-000000000001");
+    doc.displayName="M12 P2 preserved ordinary DSP state";
+    doc.sourceResourceId=uuid("c5000000-0000-4000-8000-000000000001");
+    const auto referenceResource=uuid(
+        "c5000000-0000-4000-8000-000000000002");
+    const auto referenceId=uuid(
+        "c5000000-0000-4000-8000-000000000003");
+    doc.resources.push_back({
+        doc.sourceResourceId,"AUDIO",
+        {{"rgsml.windows.local-file","C:/p2-source.wav","source.wav"}},
+        std::nullopt});
+    doc.resources.push_back({
+        referenceResource,"AUDIO",
+        {{"rgsml.windows.local-file","C:/p2-reference.wav","ref.wav"}},
+        std::nullopt});
+    doc.references.activeReferenceId=referenceId;
+    doc.references.items.push_back({
+        referenceId,"GOLD",referenceResource});
+    doc.pipeline.masteringChainId=persisted.chainId;
+    doc.chains.push_back(persisted);
+    const auto prior=project::ProjectSnapshot::create(doc);
+    QVERIFY(prior);
+    const auto carrier=m::encode_exact_ref_linked_project_carrier(
+        *staged.value(),
+        uuid("c6000000-0000-4000-8000-000000000001"));
+    QVERIFY(carrier);
+    m::M12ProjectTransactionExpected expected{
+        doc.sourceResourceId,referenceId,persisted.chainId,
+        persisted,std::nullopt,true,true};
+    const auto changedDraft=
+        m::prepare_exact_m12_project_transaction_with_p2_sound_guard(
+            *prior.value(),*carrier.value(),*staged.value(),
+            expected,changed,*manual.value(),manualBindings);
+    QVERIFY(!changedDraft);
+    QCOMPARE(prior.value()->document().chains.size(),std::size_t{1});
+    const auto keepFixedDraft=
+        m::prepare_exact_m12_project_transaction_with_p2_sound_guard(
+            *prior.value(),*carrier.value(),*staged.value(),
+            expected,fixed,*manual.value(),manualBindings);
+    QVERIFY(keepFixedDraft);
+    QVERIFY(!keepFixedDraft.value()->authorizes_project_commit());
+    QVERIFY(!keepFixedDraft.value()->is_materialization_receipt());
+    QCOMPARE(keepFixedDraft.value()->
+             candidate_not_yet_committed.document().chains.size(),
+             std::size_t{2});
+    const auto& newManual=keepFixedDraft.value()->
+        candidate_not_yet_committed.document().chains.front();
+    QVERIFY(m::exact_project_chain_equal(newManual,persisted));
+    const auto jsonAfter=project::internal::write_project_json(
+        keepFixedDraft.value()->candidate_not_yet_committed.document());
+    QVERIFY(jsonAfter);
+    const auto reopened=project::internal::parse_project_json(
+        *jsonAfter.value());
+    QVERIFY(reopened);
+    QCOMPARE(reopened.value()->chains.size(),std::size_t{2});
+    QVERIFY(m::exact_project_chain_equal(
+        reopened.value()->chains.front(),persisted));
+    QCOMPARE(reopened.value()->chains.front().modules.back().
+             parameters.canonical_utf8(),
+             canonical.value()->canonical_utf8());
 }
 void M12NativeProjectCarrierTest::
 wrongProjectChainOrUnavailableFactoryCannotBePublished(){
