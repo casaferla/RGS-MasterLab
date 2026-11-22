@@ -230,6 +230,26 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         uuid("bf000000-0000-4000-8000-000000000001"),
         carrier.value()->native_project_chain.chainId,
         m::ControllerSuspensionCause::amount_zero,true));
+    // A caller may rewrite its own expected Project snapshot, but
+    // cannot rewrite the M11 frozen typed manual DSP inside the
+    // accepted M10 plan. The source truth is the accepted stage.
+    auto laundered=currentBefore.value()->document();
+    project::Module illicit_gain;
+    illicit_gain.instanceId=uuid(
+        "bb000000-0000-4000-8000-000000000001");
+    illicit_gain.typeId="rgsml.dsp.gain";
+    illicit_gain.parameters=*project::OpaqueJsonValue::parse(
+        "{\"gainDb\":0.0}").value();
+    laundered.chains.front().modules.push_back(illicit_gain);
+    auto illicit_snapshot=project::ProjectSnapshot::create(
+        laundered);
+    QVERIFY(illicit_snapshot);
+    auto forged_expected=identity;
+    forged_expected.exact_protected_manual_snapshot=
+        laundered.chains.front();
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *illicit_snapshot.value(),*carrier.value(),*stage.value(),
+        *terminal.value(),terminalBindings,0.0,forged_expected));
     auto corrupted=proposed;
     corrupted.chains.front().revision+=1;
     const auto changed=project::ProjectSnapshot::create(corrupted);
