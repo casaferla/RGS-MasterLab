@@ -33,6 +33,7 @@ private slots:
     void stereoMsStrictSchemaAndBoundaryRejections();
     void stereoMsGenericCodecDispatch();
     void dynamicEqOfflineCodecFailClosed();
+    void dynamicEqMultipleFrozenShapeRoutesRoundtrip();
 };
 
 void ModuleParameterCodecTest::gainRoundTripAndBoundaries()
@@ -297,6 +298,60 @@ void ModuleParameterCodecTest::genericModuleParameterCodecApi()
     QVERIFY(!decode_module_parameters_json("rgsml.dsp.unknown.schema/1.0.0", "{}"));
 }
 
+void ModuleParameterCodecTest::
+dynamicEqMultipleFrozenShapeRoutesRoundtrip()
+{
+    DynamicEqBandSpec first;
+    first.band_id=*Uuid::parse(
+        "71111111-7111-4111-8111-711111111111").value();
+    first.filter_type=DynamicEqFilterType::LOW_SHELF;
+    first.shape=DynamicEqShelfShape{120.0,0.55};
+    first.routing=EqRouting::MID;
+    first.control.base_gain_db=-3.0;
+    first.control.range_db=2.0;
+    auto low=DynamicEqBandParameters::create(std::move(first));
+    QVERIFY(low);
+    DynamicEqBandSpec second;
+    second.band_id=*Uuid::parse(
+        "72222222-7222-4222-8222-722222222222").value();
+    second.filter_type=DynamicEqFilterType::BELL;
+    second.shape=DynamicEqBellShape{3200.0,3.4};
+    second.routing=EqRouting::RIGHT;
+    second.enabled=false;
+    second.control.range_db=-8.0;
+    auto bell=DynamicEqBandParameters::create(std::move(second));
+    QVERIFY(bell);
+    std::vector<DynamicEqBandParameters> bands;
+    bands.push_back(std::move(*low.value()));
+    bands.push_back(std::move(*bell.value()));
+    const auto params=DynamicEqParameters::create(std::move(bands));
+    QVERIFY(params);
+    const auto payload=ModuleParameterPayload{*params.value()};
+    const auto encoded=encode_module_parameters_json(payload);
+    QVERIFY(encoded);
+    const auto decoded=decode_module_parameters_json(
+        "rgsml.dsp.dynamic-eq.parameters/1.0.0",*encoded.value());
+    QVERIFY(decoded);
+    const auto* d=std::get_if<DynamicEqParameters>(decoded.value());
+    QVERIFY(d);
+    QCOMPARE(*d,*params.value());
+    QCOMPARE(d->bands().size(),std::size_t{2});
+    QCOMPARE(d->bands()[0].spec().filter_type,
+             DynamicEqFilterType::LOW_SHELF);
+    QCOMPARE(d->bands()[1].spec().filter_type,
+             DynamicEqFilterType::BELL);
+    QVERIFY(!d->bands()[1].spec().enabled);
+    const auto reencoded=encode_module_parameters_json(*decoded.value());
+    QVERIFY(reencoded);
+    QCOMPARE(*reencoded.value(),*encoded.value());
+    std::string malformed=*encoded.value();
+    const auto pos=malformed.find("\"shelfSlope\":");
+    QVERIFY(pos!=std::string::npos);
+    malformed.replace(pos,std::string("\"shelfSlope\"").size(),
+                      "\"q\"");
+    QVERIFY(!decode_module_parameters_json(
+        "rgsml.dsp.dynamic-eq.parameters/1.0.0",malformed));
+}
 void ModuleParameterCodecTest::dynamicEqOfflineCodecFailClosed()
 {
     // Current frozen L3 parameter schemas now persist through the

@@ -67,7 +67,9 @@ realRegistryStagesTypedEqAndProtectsManualInputGain() {
     QCOMPARE(staged.value()->chain.revision(),std::uint64_t{7});
     QCOMPARE(staged.value()->chain.instances().size(),std::size_t{1});
     QCOMPARE(staged.value()->chain.instances()[0].instance_id(),linkId);
-    QCOMPARE(staged.value()->chain.instances()[0].semantic_node_id(),sem);
+    const auto semantic=staged.value()->chain.instances()[0].semantic_node_id();
+    QVERIFY(semantic);
+    QCOMPARE(*semantic,sem);
     QCOMPARE(staged.value()->chain.instances()[0].provenance(),
              dsp::ModuleProvenance::REFERENCE_MATCH);
     QCOMPARE(staged.value()->exact_bindings.size(),std::size_t{1});
