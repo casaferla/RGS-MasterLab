@@ -2,6 +2,7 @@
 #include "internal/l3_product_native_one_pass.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
+#include "internal/l3_m10_p2_actual_m16_guard.hpp"
 #include "internal/l3_m10_p2_real_native_triple_binding.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
@@ -41,6 +42,7 @@ private slots:
     void streamingP2AndIndependentM16RenderAtAllSixRates();
     void canonicalAll27ScoringRequiresRealM11Protection();
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
+    void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
@@ -552,6 +554,32 @@ allNativeTripleOwnersAgreeBeforeBuildingAnyFeature() {
     QCOMPARE(m10::bind_all_original_real_native_p2_triple(all).reason,
              m10::P2RealTripleBindingReason::
                 missing_owner_or_inconsistent_three_way_scope);
+}
+
+void P2RealNativeProductTest::
+m16ActualSafetyRejectsExcessAndInvalidCeilings() {
+    namespace m10=a::m10_frozen;
+    using Why=m10::P2ActualM16SafetyReason;
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(0.5,0.0).reason,
+             Why::within_exact_m11_ceiling);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(1.0,0.0).reason,
+             Why::within_exact_m11_ceiling);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(1.00001,0.0).reason,
+             Why::exceeded);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(0.9,-1.0).reason,
+             Why::exceeded);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(0.8,-1.0).reason,
+             Why::within_exact_m11_ceiling);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(0.9,0.1).reason,
+             Why::invalid_independent_ceiling);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(
+        std::numeric_limits<double>::infinity(),0.0).reason,
+        Why::unbound_or_invalid_source);
+    QCOMPARE(m10::check_actual_p2_m16_linear_peak(
+        0.0,std::numeric_limits<double>::quiet_NaN()).reason,
+        Why::invalid_independent_ceiling);
+    QVERIFY(!m10::check_actual_p2_m16_linear_peak(0.9,-6.0)
+        .authorizes_m12_or_m13());
 }
 } // namespace
 } // namespace rgsml::tests

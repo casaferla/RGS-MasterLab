@@ -7,6 +7,7 @@
 // never acquire an M10 score, even if M21 shows nine plausible values.
 // This does NOT publish a Product graph, alter M17 or verify M13.
 #include "l3_m10_p2_full_native_evidence.hpp"
+#include "l3_m10_p2_actual_m16_guard.hpp"
 #include "l3_m07_existing_native_fragment_collector.hpp"
 #include "l3_m10_authoritative_candidate_cost.hpp"
 #include "l3_m10_cache_aware_evaluator.hpp"
@@ -97,6 +98,7 @@ measure_and_score_m10_p2_full_native_candidate(
     std::string exact_phase6_m07_generation,
     bool current_product_source_reference_and_candidate_attested,
     AuthoritativeCostInput independently_attested_m08_m11,
+    double exact_current_m11_final_tp_safety_ceiling_db_tp,
     ResolveAllRealNativeTripleFragments&& resolve_original_m05m06,
     const std::atomic<bool>* cancellation=nullptr)
 {
@@ -112,6 +114,14 @@ measure_and_score_m10_p2_full_native_candidate(
                 {},{},{} };
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return {P2NativeCostReason::stale_or_unattested_product,
+                {},{},{} };
+    // Independent post-P2 M16 is a mandatory M11 hard constraint,
+    // checked before the expensive 27-slot projection. A claimed
+    // prior/comparison metric or the M17 export ceiling cannot pass.
+    if(!check_m10_p2_native_actual_m16(
+           *measured.value(),
+           exact_current_m11_final_tp_safety_ceiling_db_tp).passes())
+        return {P2NativeCostReason::m08_or_m11_safety_rejected,
                 {},{},{} };
     // Resolver cannot invent the actual P2 PCM: it receives the
     // original immutable render+M16+M19/M20/native events of this job.
