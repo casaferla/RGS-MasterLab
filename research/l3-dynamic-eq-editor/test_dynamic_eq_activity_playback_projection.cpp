@@ -58,7 +58,7 @@ int main() {
                         bool processed=true,bool bypass=false,
                         FrameDomainId domain=
                             FrameDomainId::SOURCE_PROCESSING_RATE,
-                        std::uint32_t actual_fs=fs) {
+                        std::uint32_t actual_fs=48000U) {
         return project_c01_activity(
             history,id,snap,domain,actual_fs,
             revision,processed,bypass);
