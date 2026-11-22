@@ -605,7 +605,7 @@ QString StereoMsModuleAdapter::instance_id() const
         ? QString::fromStdString(state_->stereo_ms_instance_id()->to_string()) : QString{};
 }
 QString StereoMsModuleAdapter::type_id() const { return QStringLiteral("rgsml.dsp.stereo-ms"); }
-QString StereoMsModuleAdapter::display_name() const { return QStringLiteral("Stereo / M-S"); }
+QString StereoMsModuleAdapter::display_name() const { return QStringLiteral("Stereo Imager"); }
 QString StereoMsModuleAdapter::workspace_context_label() const { return context_; }
 QString StereoMsModuleAdapter::configuration_state() const
 {
