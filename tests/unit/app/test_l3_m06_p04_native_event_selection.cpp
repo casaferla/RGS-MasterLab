@@ -1,5 +1,6 @@
 #include "internal/l3_m06_p04_native_event_selection.hpp"
 #include <QtTest/QTest>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 namespace rgsml::tests {
@@ -23,6 +24,7 @@ private slots:
     void fixedMADZeroBackgroundFindsOnlyRawOnset();
     void NmsRankZThenEarlierAndRefractoryThirtyMilliseconds();
     void rejectsBrokenAbsoluteFrameIdentity();
+    void cancelDetectorLeavesNoCandidateEventPopulation();
 };
 void P04EventSelectionTest::
 fixedMADZeroBackgroundFindsOnlyRawOnset(){
@@ -56,6 +58,15 @@ NmsRankZThenEarlierAndRefractoryThirtyMilliseconds(){
              std::uint64_t{411});
     QCOMPARE(out.canonical_events[2].canonical_source_frame_ordinal,
              std::uint64_t{800});
+}
+void P04EventSelectionTest::
+cancelDetectorLeavesNoCandidateEventPopulation() {
+    const auto native=fixture();
+    std::atomic<bool> cancelled{true};
+    const auto result=p::select_p04_canonical_native_events(
+        native,&cancelled);
+    QCOMPARE(result.reason,p::P04SelectionReason::cancelled);
+    QVERIFY(result.canonical_events.empty());
 }
 void P04EventSelectionTest::
 rejectsBrokenAbsoluteFrameIdentity(){

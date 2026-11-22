@@ -2,6 +2,7 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <QtTest/QTest>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -14,7 +15,24 @@ private slots:
     void tiesEvenDirect44100GridNoRoundedHopDrift();
     void silentRealPcmYieldsZeroFluxNotOnsetAtFirstFrame();
     void stereoOppositePhaseHasSamePositiveFluxAsMono();
+    void cancelledPhase6SourceYieldsNoPartialObservations();
 };
+void NativeP04FluxTest::
+cancelledPhase6SourceYieldsNoPartialObservations() {
+    const auto fs=core::SampleRate::create(48000);
+    const auto fmt=audio::AudioFormat::create(
+        *fs.value(),audio::ChannelLayout::MONO_C);
+    const auto length=core::FrameCount::create(48000);
+    auto pcm=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*length.value());
+    QVERIFY(pcm);
+    std::atomic<bool> cancelled{true};
+    const auto r=p::measure_p04_native_positive_flux(
+        pcm.value()->view(),&cancelled);
+    QCOMPARE(r.reason,p::P04NativeReason::cancelled);
+    QVERIFY(r.canonical.empty());
+}
 void NativeP04FluxTest::tiesEvenDirect44100GridNoRoundedHopDrift() {
     QCOMPARE(*p::p04_round_ties_even(44100U,200U),std::uint64_t{220});
     QCOMPARE(*p::p04_round_ties_even(3U*44100U,200U),

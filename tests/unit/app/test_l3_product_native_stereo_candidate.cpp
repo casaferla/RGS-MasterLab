@@ -9,6 +9,7 @@
 #include <rgsml/render/render_preview.hpp>
 #include <QtTest/QTest>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -140,6 +141,13 @@ void ProductNativeStereoTest::realStereoRenderSameM20FftDeliversS03ToS06() {
     QCOMPARE(unified.value()->d07_d09.reason,
              a::m05m06_real::P04ProductObservationReason::ready);
     QVERIFY(!unified.value()->authorizes_m10_or_export());
+    std::atomic<bool> cancelled{true};
+    a::ProductNativeOnePassSpec cancel_spec;
+    cancel_spec.current_full_phase6_source_and_grid=true;
+    cancel_spec.exact_m20_fft_size=4096;
+    cancel_spec.spectral_bands={{0,20,80}};
+    QVERIFY(!a::measure_real_product_candidate_once(
+        *job.value(),std::move(cancel_spec),&cancelled));
     QVERIFY(job.value()->still_current(
         stamp,owned,*live.value(),baseline));
 }
