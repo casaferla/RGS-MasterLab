@@ -210,6 +210,26 @@ Canvas {
             ctx.quadraticCurveTo(12.0, 16.4, 14.9, 15.0)
             ctx.closePath()
             ctx.stroke()
+        } else if (kind === "preset-reset") {
+            // Unambiguous return-to-default: almost-complete circular
+            // arrow around a tiny zero mark. Unlike Undo/Redo this is
+            // a full rotation; no extra halo or accent light.
+            ctx.save()
+            ctx.shadowBlur = 0
+            ctx.lineWidth = 1.7
+            ctx.beginPath()
+            ctx.arc(9.0,9.2,5.9,-2.45,2.65,false)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(3.3,4.8)
+            ctx.lineTo(2.7,9.0)
+            ctx.lineTo(6.6,7.5)
+            ctx.stroke()
+            ctx.lineWidth = 1.4
+            ctx.beginPath()
+            ctx.ellipse(9.0,9.2,1.35,2.05,0,0,2*Math.PI)
+            ctx.stroke()
+            ctx.restore()
         } else if (kind === "preset-open") {
             // Single lightweight folder with an upward-opening lip.
             // Not the native-window Undock icon: this always means
