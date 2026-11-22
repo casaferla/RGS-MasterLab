@@ -13,6 +13,7 @@
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -63,6 +64,18 @@ probe_fresh_m13_full_native_master_once(
        protected_manual.context()!=dsp::ProcessingChainContext{
           dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL}||
        protected_manual.instances().size()!=protected_manual_bindings.size()||
+       protected_manual.revision()!=
+           current_linked.frozen_protected_manual_revision||
+       protected_manual.instances().size()!=
+           current_linked.frozen_protected_manual_instances.size()||
+       !std::equal(protected_manual.instances().begin(),
+                   protected_manual.instances().end(),
+                   current_linked.frozen_protected_manual_instances.begin())||
+       protected_manual_bindings.size()!=
+           current_linked.frozen_protected_manual_bindings.size()||
+       !std::equal(protected_manual_bindings.begin(),
+                   protected_manual_bindings.end(),
+                   current_linked.frozen_protected_manual_bindings.begin())||
        current_linked.chain.instances().size()!=
            current_linked.exact_bindings.size()||
        maximum_block_frames.value()<=0)

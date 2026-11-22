@@ -47,6 +47,12 @@ struct StagedRefLinkedSegment final {
     dsp::ProcessingChain chain;
     std::vector<dsp::ModuleExecutionBinding> exact_bindings;
     AcceptedPlanAndOwner accepted_identity;
+    // Exact frozen M11 current MANUAL source to protect against
+    // an altered Input Gain/MANUAL graph between M10 and M13.
+    std::uint64_t frozen_protected_manual_revision{};
+    std::vector<dsp::ModuleInstance> frozen_protected_manual_instances;
+    std::vector<dsp::ModuleExecutionBinding>
+        frozen_protected_manual_bindings;
     [[nodiscard]] constexpr bool authorizes_project_mutation()
         const noexcept{return false;}
     [[nodiscard]] constexpr bool authorizes_m13_verified()
@@ -131,6 +137,10 @@ stage_exact_m12_native_ref_linked(
     if(!linked)return R::failure(*linked.error());
     return R::success(StagedRefLinkedSegment{
         std::move(live_registry),std::move(*linked.value()),
-        std::move(staged_bindings),accepted});
+        std::move(staged_bindings),accepted,
+        protected_manual.revision(),
+        {protected_manual.instances().begin(),
+         protected_manual.instances().end()},
+        {protected_bindings.begin(),protected_bindings.end()}});
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
