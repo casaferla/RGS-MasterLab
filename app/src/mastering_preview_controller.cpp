@@ -481,15 +481,54 @@ void MasteringPreviewController::worker_loop()
         auto outcome = std::make_shared<core::Result<render::RenderResult>>(std::move(renderResult));
         const auto gen = job.generation;
         const auto preparedForJob = job.preparedSnapshot;
+        // Only the opt-in REF worker needs this extra owner-thread
+        // post-render guard: the queued job may finish AFTER a parameter
+        // edit that did not itself request a new preview generation.
+        const auto linkedTicket = job.m12ReplayTicket;
+        const auto jobRegistry = job.registry;
+        const auto jobRevision = job.chain.revision();
+        const auto jobContext = job.chain.context();
+        const std::vector<dsp::ModuleInstance> jobNodes{
+            job.chain.instances().begin(),job.chain.instances().end()};
+        const auto jobBindings = job.bindings;
 
         QMetaObject::invokeMethod(
             this,
-            [this, gen, outcome, preparedForJob] {
+            [this, gen, outcome, preparedForJob,
+             linkedTicket, jobRegistry, jobRevision, jobContext,
+             jobNodes, jobBindings] {
                 // A source switch may not trigger a new DSP preview; check
                 // the ORIGINAL prepared owner before publishing stale audio.
                 if (!snapshotProvider_ || snapshotProvider_() != preparedForJob) {
                     ++staleResultsDiscarded_;
                     return;
+                }
+                if(linkedTicket) {
+                    const auto* state=chainState_;
+                    const auto nodes=state
+                        ?state->chain().instances()
+                        :std::span<const dsp::ModuleInstance>{};
+                    const bool exact=state &&
+                        m12ReplayTicket_==linkedTicket &&
+                        state->registry_snapshot()==jobRegistry &&
+                        state->chain().revision()==jobRevision &&
+                        state->chain().context()==jobContext &&
+                        nodes.size()==jobNodes.size() &&
+                        std::equal(nodes.begin(),nodes.end(),jobNodes.begin()) &&
+                        state->execution_bindings()==jobBindings;
+                    if(!exact) {
+                        ++staleResultsDiscarded_;
+                        // Never publish a now-stale full REF master.
+                        // The next Product-owned render must begin with a
+                        // newly attested immutable ticket and PCM owner.
+                        if(gen==previewGeneration_) {
+                            previewStatus_=QStringLiteral("IDLE");
+                            previewError_=QStringLiteral(
+                                "L3_M12_LINKED_PREVIEW_OWNER_CHANGED");
+                            emit changed();
+                        }
+                        return;
+                    }
                 }
                 publish_preview_result(gen, outcome);
             },
