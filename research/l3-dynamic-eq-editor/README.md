@@ -45,3 +45,14 @@ The High Pass and Low Pass filter slots are likewise kept as **empty,
 non-selectable spatial placeholders**. Six equal geometric positions
 therefore persist while only three supported filter types appear.
 This is a strict no-drift layout decision, not an exposed DSP mode.
+
+## Six frozen C01 dynamic controls (research)
+
+A separate typed QObject reads accepted DynamicEqParameters with original
+band identity and validates every edited value via DynamicEqBandParameters.
+Range is signed, and Base Gain + Range endpoints are checked by the C01 factory.
+The six numeric/slider pairs reuse StudioNumericSliderPair, drawn as an overlay
+within the flexible graph so all shared Parametric EQ controls remain fixed.
+Manual mutation is locked during L3. An isolated Qt test checks bounds,
+accepted snapshots, manual lock, QML loading, and a screenshot artifact.
+No DSP calculation or Product integration is introduced.

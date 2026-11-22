@@ -81,6 +81,21 @@ jobs:
           RGSML_DYNAMIC_EQ_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-eq-visual" \
             /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
             "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" capture
+      - name: Check frozen C01 Dynamic EQ controls and QML overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dynamic-controls"
+          RGSML_DYNAMIC_CONTROLS_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-controls" \
+            /tmp/rgs-dynamic-qt/dynamic_eq_dynamics_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DynamicsControlsHarness.qml"
+      - name: Upload C01 Dynamic EQ controls screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-eq-c01-controls-research
+          path: ${{ runner.temp }}/dynamic-controls/*.png
+          if-no-files-found: warn
       - name: Upload isolated Dynamic EQ layout
         if: always()
         uses: actions/upload-artifact@v4

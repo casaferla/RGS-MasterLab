@@ -10,6 +10,8 @@ Rectangle {
         && viewModel.manualEditable === true
     property var dynamicActivity: null
     property bool showActivity: false
+    property var dynamicsControls: null
+    property bool showDynamics: false
     readonly property bool activityAvailable: !!dynamicActivity
         && dynamicActivity.available === true
     property var viewModel: null
@@ -287,6 +289,18 @@ Rectangle {
                         hoverEnabled: true
                     }
                 }
+            }
+
+            DynamicEqDynamicsStrip {
+                objectName: "dynamicEqDynamicsStrip"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 8
+                anchors.bottomMargin: 19
+                z: 35
+                visible: root.showDynamics && !!root.dynamicsControls
+                dynamicsViewModel: root.dynamicsControls
             }
         }
 

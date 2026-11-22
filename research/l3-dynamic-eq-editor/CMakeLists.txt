@@ -3,10 +3,26 @@ project(RGSDynamicEqEditorResearch LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-find_package(Qt6 6.8 REQUIRED COMPONENTS Gui Qml Quick QuickControls2)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
 add_executable(dynamic_eq_clone_layout_smoke test_dynamic_eq_layout.cpp)
 target_link_libraries(dynamic_eq_clone_layout_smoke PRIVATE
   Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 if(NOT MSVC)
   target_compile_options(dynamic_eq_clone_layout_smoke PRIVATE -Wall -Wextra -Werror)
+endif()
+
+set(ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+add_executable(dynamic_eq_dynamics_smoke
+  test_dynamic_eq_dynamics.cpp
+  dynamic_eq_research_dynamics_model.hpp
+  "${ROOT}/dsp/src/dynamic_eq_parameters.cpp"
+  "${ROOT}/core/src/error.cpp"
+  "${ROOT}/core/src/uuid.cpp")
+target_include_directories(dynamic_eq_dynamics_smoke PRIVATE
+ "${ROOT}/core/include" "${ROOT}/dsp/include")
+target_link_libraries(dynamic_eq_dynamics_smoke PRIVATE
+ Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+if(NOT MSVC)
+ target_compile_options(dynamic_eq_dynamics_smoke PRIVATE -Wall -Wextra -Werror -fno-fast-math -ffp-contract=off)
 endif()
