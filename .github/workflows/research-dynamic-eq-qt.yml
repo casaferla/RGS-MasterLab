@@ -10,6 +10,9 @@ on:
       - 'research/l3-dynamic-eq-editor/test_dynamic_eq_layout.cpp'
       - 'research/l3-dynamic-eq-editor/test_dynamic_eq_dynamics.cpp'
       - 'research/l3-dynamic-eq-editor/dynamic_eq_research_dynamics_model.hpp'
+      - 'research/l3-dynamic-eq-editor/ActivityHarness.qml'
+      - 'research/l3-dynamic-eq-editor/dynamic_eq_activity_qt_bridge.hpp'
+      - 'research/l3-dynamic-eq-editor/test_dynamic_eq_activity_qml.cpp'
       - 'ui/qml/DynamicEqEditor.qml'
       - 'ui/qml/DynamicEqGraph.qml'
       - '.github/workflows/research-dynamic-eq-qt.yml'
@@ -94,6 +97,21 @@ jobs:
           RGSML_DYNAMIC_CONTROLS_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-controls" \
             /tmp/rgs-dynamic-qt/dynamic_eq_dynamics_smoke \
             "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DynamicsControlsHarness.qml"
+      - name: Exercise authentic C01 Activity in Qt QML
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dynamic-activity"
+          RGSML_DYNAMIC_ACTIVITY_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-activity" \
+            /tmp/rgs-dynamic-qt/dynamic_eq_activity_qml_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/ActivityHarness.qml"
+      - name: Upload authentic C01 Activity QML screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-eq-real-c01-activity
+          path: ${{ runner.temp }}/dynamic-activity/*.png
+          if-no-files-found: warn
       - name: Upload C01 Dynamic EQ controls screenshot
         if: always()
         uses: actions/upload-artifact@v4

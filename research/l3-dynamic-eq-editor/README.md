@@ -124,3 +124,22 @@ wrong sample rate or frame domain, or before immutable history finishes.
 PAUSED and seek/loop position reuse the same full-track actual DSP sidecar;
 no QML timer or invented SRC conversion can authorize Activity.
 This is a tested binding CONTRACT, not yet an installed Product adapter.
+
+## Qt Activity surface — proven C01 output, simulated playback clock
+
+The research-only Activity companion is a separate Qt tool window, so the
+original Parametric EQ graph/axes and Spectrum are never obscured or moved.
+Its five-second, per-band colored traces draw **only** true C01 smoothed
+applied dynamic gain, min/max per completed 20ms bucket, from the approved
+sidecar projection. The Qt bridge validates identity, monotonic sample
+positions, finite gain bounds and fully played buckets; it supplies no
+independent timer and cannot recompute the C01 DSP. Activity is disabled
+and the window hides whenever the accepted audible realization becomes
+stale, bypassed or unavailable.
+
+The isolated Qt smoke processes a deterministic six-second PCM fixture
+through the actual C01 engine and collects 300 true buckets. A simulated
+PlaybackSnapshot at 5s selects exactly 250 actual gain buckets; the harness
+is conspicuously labeled test playback, not a physical listening test.
+It captures the unobstructed main editor and the real C01 Activity window.
+No Product registration, manual fine tuning or merge during L3.

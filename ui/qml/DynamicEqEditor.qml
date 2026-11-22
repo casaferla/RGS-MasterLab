@@ -690,6 +690,20 @@ Rectangle {
     // Research-only detached companion: never covers the graph's plot,
     // frequency axis, Spectrum or the original Parametric EQ controls.
     // During AutoMatch L3 this editor does NOT exist in the Product.
+    DynamicEqActivityCompanion {
+        objectName: "dynamicEqActivityCompanion"
+        activityViewModel: root.dynamicActivity
+        visible: root.showActivity && root.activityAvailable
+        transientParent: root.Window.window
+        x: root.Window.window
+            ? root.Window.window.x + root.Window.window.width + 10 : 0
+        y: root.Window.window
+            ? root.Window.window.y + 246 : 0
+        onVisibleChanged: {
+            if (!visible && root.showActivity) root.showActivity = false
+        }
+    }
+
     DynamicEqDynamicsCompanion {
         id: dynamicCompanion
         objectName: "dynamicEqDynamicsCompanion"

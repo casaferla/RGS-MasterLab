@@ -26,3 +26,22 @@ target_link_libraries(dynamic_eq_dynamics_smoke PRIVATE
 if(NOT MSVC)
  target_compile_options(dynamic_eq_dynamics_smoke PRIVATE -Wall -Wextra -Werror -fno-fast-math -ffp-contract=off)
 endif()
+
+add_executable(dynamic_eq_activity_qml_smoke
+  test_dynamic_eq_activity_qml.cpp
+  dynamic_eq_activity_qt_bridge.hpp
+  "${ROOT}/dsp/src/internal/dynamic_eq_c01_engine.cpp"
+  "${ROOT}/dsp/src/internal/dynamic_eq_c01_coefficients.cpp"
+  "${ROOT}/dsp/src/dynamic_eq_parameters.cpp"
+  "${ROOT}/core/src/error.cpp"
+  "${ROOT}/core/src/uuid.cpp")
+target_include_directories(dynamic_eq_activity_qml_smoke PRIVATE
+  "${ROOT}/core/include" "${ROOT}/dsp/include"
+  "${ROOT}/dsp/src" "${ROOT}/audio/include"
+  "${CMAKE_CURRENT_LIST_DIR}")
+target_link_libraries(dynamic_eq_activity_qml_smoke PRIVATE
+  Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+if(NOT MSVC)
+  target_compile_options(dynamic_eq_activity_qml_smoke PRIVATE
+    -Wall -Wextra -Werror -fno-fast-math -ffp-contract=off)
+endif()
