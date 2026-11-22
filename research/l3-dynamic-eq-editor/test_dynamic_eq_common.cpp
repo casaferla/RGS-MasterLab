@@ -47,6 +47,34 @@ int main(int argc,char** argv) {
     if(common.manualEditable()||common.addAvailable()
        ||common.removeAvailable())return 12;
     if(owner.values().value("range").toDouble()!=4.0)return 13;
-    std::cout<<"Dynamic EQ read-only common C01 view shares selected band: PASS\n";
+    // No edits in L3 unless a TEST explicitly opts into research authoring.
+    common.setFilter("BELL");
+    if(common.filter()!="LOW_SHELF")return 14;
+    owner.setResearchManualEditable(true);
+    if(!common.manualEditable())return 15;
+    common.setDraftFieldText("gain","15"); // 15+range4 exceeds +18.
+    if(common.commitDraft()||common.gain()!=-3.0)return 16;
+    common.setDraftFieldText("gain","10");
+    if(!common.commitDraft()||common.gain()!=10.0
+       ||owner.acceptedBandSpecs()[1].control.base_gain_db!=10.0)
+        return 17;
+    common.setFilter("NOTCH"); // not part of frozen C01
+    if(common.filter()!="LOW_SHELF")return 18;
+    common.setFilter("BELL");
+    if(common.filter()!="BELL"||!common.qApplicable())return 19;
+    common.setDraftFieldValue("q",1.6);
+    if(!common.commitDraft()||common.q()!=1.6)return 20;
+    common.graphDrag(1600.0,22.0); // C01 signed Range limits Base.
+    common.graphRelease();
+    if(common.frequency()!=1600.0||common.gain()!=14.0)return 21;
+    if(!common.setResearchAudioFormat(44100U,2U))return 22;
+    common.setRouting("SIDE");
+    if(common.routing()!="SIDE")return 23;
+    common.setRouting("NOT_A_ROUTE");
+    if(common.routing()!="SIDE")return 24;
+    owner.setResearchManualEditable(false);
+    common.setFilter("LOW_SHELF");
+    if(common.filter()!="BELL"||common.manualEditable())return 25;
+    std::cout<<"Dynamic EQ typed research common + Dynamics single state: PASS\n";
     return 0;
 }

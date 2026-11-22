@@ -18,7 +18,7 @@
 namespace rgsml::research::dynamic_ui {
 class DynamicEqResearchCommonViewModel final:public QObject {
     Q_OBJECT
-    Q_PROPERTY(bool manualEditable READ manualEditable CONSTANT)
+    Q_PROPERTY(bool manualEditable READ manualEditable NOTIFY changed)
     Q_PROPERTY(int bandCount READ bandCount NOTIFY changed)
     Q_PROPERTY(int selectedIndex READ selectedIndex NOTIFY changed)
     Q_PROPERTY(QString selectedBandId READ selectedBandId NOTIFY changed)
@@ -46,8 +46,8 @@ class DynamicEqResearchCommonViewModel final:public QObject {
     Q_PROPERTY(bool bypass READ bypass CONSTANT)
     Q_PROPERTY(QVariantList bandSummaries READ bandSummaries NOTIFY changed)
     Q_PROPERTY(QVariantList selectedBandResponsePoints READ selectedBandResponsePoints NOTIFY changed)
-    Q_PROPERTY(QString validationField READ validationField CONSTANT)
-    Q_PROPERTY(QString validationMessage READ validationMessage CONSTANT)
+    Q_PROPERTY(QString validationField READ validationField NOTIFY changed)
+    Q_PROPERTY(QString validationMessage READ validationMessage NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ previewStatus CONSTANT)
     Q_PROPERTY(QString previewError READ previewError CONSTANT)
     Q_PROPERTY(QString responseSemantics READ responseSemantics CONSTANT)
@@ -58,7 +58,9 @@ public:
         connect(source_,&DynamicEqResearchDynamicsModel::changed,
                 this,&DynamicEqResearchCommonViewModel::changed);
     }
-    [[nodiscard]] bool manualEditable() const noexcept {return false;}
+    [[nodiscard]] bool manualEditable() const noexcept {
+        return source_->manualEditable();
+    }
     [[nodiscard]] int bandCount() const noexcept {return int(bands().size());}
     [[nodiscard]] int selectedIndex() const noexcept {
         return int(source_->selectedBandIndex());
@@ -119,8 +121,12 @@ public:
                &&spec().control.range_db==0.0;
     }
     [[nodiscard]] bool bypass() const noexcept {return false;}
-    [[nodiscard]] QString validationField() const {return {};}
-    [[nodiscard]] QString validationMessage() const {return {};}
+    [[nodiscard]] QString validationField() const {
+        return source_->validationField();
+    }
+    [[nodiscard]] QString validationMessage() const {
+        return source_->validationMessage();
+    }
     [[nodiscard]] QString previewStatus() const {
         return QStringLiteral("RESEARCH_READ_ONLY");
     }
@@ -131,7 +137,8 @@ public:
     [[nodiscard]] QVariantList bandSummaries() const {
         QVariantList out;
         for(std::size_t i=0;i<bands().size();++i) {
-            const auto& b=bands()[i];
+            const auto& b=i==source_->selectedBandIndex()
+                ?source_->presentedBandSpec():bands()[i];
             const auto f=std::visit(
                 [](const auto& s){return s.frequency_hz;},b.shape);
             out.append(QVariantMap{
@@ -185,11 +192,48 @@ public:
             auto b=rgsml::dsp::DynamicEqBandParameters::create(spec);
             if(!b || !b.value()->validate_for_audio(fs,channels))return false;
         }
+        if(!source_->setResearchAudioFormat(fs,channels))return false;
         fs_=fs;channels_=channels;emit changed();return true;
     }
     Q_INVOKABLE void selectBand(int index) {
         if(index>=0&&std::size_t(index)<bands().size())
             static_cast<void>(source_->selectBand(std::size_t(index)));
+    }
+    // Research-only manual opt-in; no Product QML instance during L3.
+    Q_INVOKABLE void setDraftFieldText(QString field,QString text) {
+        source_->setDraftFieldText(std::move(field),std::move(text));
+    }
+    Q_INVOKABLE void setDraftFieldValue(QString field,double value) {
+        source_->setDraftFieldValue(std::move(field),value);
+    }
+    Q_INVOKABLE bool commitDraft() {return source_->commitDraft();}
+    Q_INVOKABLE void cancelDraft() {source_->cancelDraft();}
+    Q_INVOKABLE void setEnabled(bool val) {
+        static_cast<void>(source_->setSelectedEnabled(val));
+    }
+    Q_INVOKABLE void setFilter(const QString& val) {
+        static_cast<void>(source_->setSelectedFilter(val));
+    }
+    Q_INVOKABLE void setRouting(const QString& val) {
+        static_cast<void>(source_->setSelectedRouting(val));
+    }
+    Q_INVOKABLE void resetToFlat() {
+        static_cast<void>(source_->resetResearchToFlat());
+    }
+    Q_INVOKABLE void graphDrag(double f,double g) {
+        source_->setGraphDraft(f,g);
+    }
+    Q_INVOKABLE void graphRelease() {
+        static_cast<void>(source_->commitGraphDraft());
+    }
+    Q_INVOKABLE void adjustSecondaryParameter(int steps,bool fine) {
+        if(!manualEditable()||steps==0)return;
+        const double delta=(fine?0.01:0.1)*steps;
+        if(qApplicable())
+            setDraftFieldValue("q",std::clamp(q()+delta,0.1,12.0));
+        else
+            setDraftFieldValue("shelfSlope",
+                std::clamp(shelfSlope()+delta,0.1,1.0));
     }
 signals:
     void changed();
@@ -198,7 +242,7 @@ private:
     [[nodiscard]] const std::vector<rgsml::dsp::DynamicEqBandSpec>&
     bands() const noexcept {return source_->acceptedBandSpecs();}
     [[nodiscard]] const rgsml::dsp::DynamicEqBandSpec& spec() const {
-        return bands()[source_->selectedBandIndex()];
+        return source_->presentedBandSpec();
     }
     [[nodiscard]] static QString num(double v) {
         return QString::number(v,'g',8);

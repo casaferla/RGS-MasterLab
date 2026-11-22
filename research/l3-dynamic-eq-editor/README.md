@@ -164,3 +164,14 @@ all filter, routing, enable, reset, and frequency/gain/Q/shelf text/slider
 mutations are explicitly disabled. The graph labels its actual C01
 **BASE GAIN RESPONSE** and never labels it dynamic or Overall. The Qt smoke
 now checks both QML context bindings and retains the previous geometry tests.
+
+## Research-only typed common-control transactions
+
+The common EQ presenter delegates Frequency, Base Gain, Q, Shelf Slope,
+Bell/Shelf selection, routing, enabled toggle, graph drag/release and Reset
+through the SAME C01 typed band owner that handles Range and detector timing.
+The frozen `DynamicEqBandParameters` and audio-format validation gate every
+commit, including signed Base Gain+Range endpoints and no Notch/Pass modes.
+The six-controls window and selected-band base-curve update together.
+Manual changes are **only** enabled by explicit research-test opt-in; L3
+Product still contains neither editor and receives no changes.

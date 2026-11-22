@@ -5,6 +5,9 @@
 #include <QString>
 #include <QVariantMap>
 #include <cmath>
+#include <algorithm>
+#include <optional>
+#include <cstdint>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -57,13 +60,97 @@ public:
     }
     [[nodiscard]] bool selectBand(std::size_t n) {
         if(n>=bands_.size())return false;
-        selected_=n; cancelDraft(); emit changed(); return true;
+        selected_=n; cancelDraft(); graph_draft_.reset();
+        emit changed(); return true;
+    }
+    [[nodiscard]] bool setResearchAudioFormat(std::uint32_t fs,
+                                               std::uint32_t channels) {
+        if(fs==0||channels<1||channels>2)return false;
+        for(const auto& spec:bands_) {
+            auto p=rgsml::dsp::DynamicEqBandParameters::create(spec);
+            if(!p||!p.value()->validate_for_audio(fs,channels))return false;
+        }
+        fs_=fs;channels_=channels;cancelDraft();emit changed();
+        return true;
+    }
+    [[nodiscard]] const rgsml::dsp::DynamicEqBandSpec&
+    presentedBandSpec() const {
+        return graph_draft_ ? *graph_draft_ : bands_[selected_];
+    }
+    [[nodiscard]] bool setSelectedEnabled(bool value) {
+        if(!editable_||!loaded())return false;
+        auto next=bands_[selected_];next.enabled=value;
+        return commitCommonCandidate(std::move(next));
+    }
+    [[nodiscard]] bool setSelectedFilter(const QString& token) {
+        if(!editable_||!loaded())return false;
+        using rgsml::dsp::DynamicEqFilterType;
+        using rgsml::dsp::DynamicEqShape;
+        std::optional<DynamicEqFilterType> type;
+        if(token=="BELL")type=DynamicEqFilterType::BELL;
+        if(token=="LOW_SHELF")type=DynamicEqFilterType::LOW_SHELF;
+        if(token=="HIGH_SHELF")type=DynamicEqFilterType::HIGH_SHELF;
+        if(!type)return false;
+        auto next=bands_[selected_];
+        const auto freq=std::visit(
+            [](const auto& s){return s.frequency_hz;},next.shape);
+        next.filter_type=*type;
+        if(*type==DynamicEqFilterType::BELL)
+            next.shape=rgsml::dsp::DynamicEqBellShape{freq,0.707};
+        else
+            next.shape=rgsml::dsp::DynamicEqShelfShape{freq,1.0};
+        return commitCommonCandidate(std::move(next));
+    }
+    [[nodiscard]] bool setSelectedRouting(const QString& token) {
+        if(!editable_||!loaded())return false;
+        using rgsml::dsp::EqRouting;
+        std::optional<EqRouting> route;
+        if(token=="STEREO")route=EqRouting::STEREO;
+        if(token=="LEFT")route=EqRouting::LEFT;
+        if(token=="RIGHT")route=EqRouting::RIGHT;
+        if(token=="MID")route=EqRouting::MID;
+        if(token=="SIDE")route=EqRouting::SIDE;
+        if(!route || (channels_==1&&*route!=EqRouting::STEREO))
+            return false;
+        auto next=bands_[selected_];next.routing=*route;
+        return commitCommonCandidate(std::move(next));
+    }
+    [[nodiscard]] bool resetResearchToFlat() {
+        if(!editable_||!loaded())return false;
+        rgsml::dsp::DynamicEqBandSpec flat;
+        flat.band_id=bands_.front().band_id;
+        auto checked=rgsml::dsp::DynamicEqBandParameters::create(flat);
+        if(!checked)return false;
+        bands_.assign(1,flat);selected_=0;
+        graph_draft_.reset();cancelDraft();emit changed();return true;
+    }
+    void setGraphDraft(double frequency,double gain) {
+        if(!editable_||!loaded()||!std::isfinite(frequency)
+           ||!std::isfinite(gain))return;
+        auto next=bands_[selected_];
+        const auto range=next.control.range_db;
+        const double min_gain=std::max(-18.0,-18.0-range);
+        const double max_gain=std::min(18.0,18.0-range);
+        next.control.base_gain_db=std::clamp(gain,min_gain,max_gain);
+        const double f=std::clamp(
+            frequency,20.0,std::min(20000.0,0.45*double(fs_)));
+        std::visit([&](auto& s){s.frequency_hz=f;},next.shape);
+        graph_draft_=std::move(next);emit changed();
+    }
+    [[nodiscard]] bool commitGraphDraft() {
+        if(!graph_draft_)return false;
+        auto next=*graph_draft_;
+        graph_draft_.reset();
+        return commitCommonCandidate(std::move(next));
     }
     void setResearchManualEditable(bool enabled) {
         editable_=enabled; cancelDraft(); emit changed();
     }
     Q_INVOKABLE void setDraftFieldText(QString key,QString raw) {
-        if(!loaded()||!editable_||!values().contains(key))return;
+        if(!loaded()||!editable_||
+            !(values().contains(key)||key=="frequency"||key=="gain"
+              ||key=="q"||key=="shelfSlope"))return;
+        graph_draft_.reset();
         pending_key_=std::move(key);pending_text_=std::move(raw);
         error_key_.clear();error_text_.clear();emit changed();
     }
@@ -84,15 +171,24 @@ public:
         else if(pending_key_=="rmsTime")c.rms_time_constant_ms=n;
         else if(pending_key_=="attack")c.attack_ms=n;
         else if(pending_key_=="release")c.release_ms=n;
-        else return false;
-        if(!rgsml::dsp::DynamicEqBandParameters::create(next))
-            return fail("C01_OUT_OF_RANGE_OR_ENDPOINT");
-        bands_[selected_]=std::move(next);
-        cancelDraft();emit changed();return true;
+        else if(pending_key_=="gain")c.base_gain_db=n;
+        else if(pending_key_=="frequency")
+            std::visit([&](auto& s){s.frequency_hz=n;},next.shape);
+        else if(pending_key_=="q") {
+            auto* shape=std::get_if<rgsml::dsp::DynamicEqBellShape>(&next.shape);
+            if(!shape)return fail("C01_Q_NOT_APPLICABLE");
+            shape->q=n;
+        } else if(pending_key_=="shelfSlope") {
+            auto* shape=std::get_if<rgsml::dsp::DynamicEqShelfShape>(&next.shape);
+            if(!shape)return fail("C01_SHELF_SLOPE_NOT_APPLICABLE");
+            shape->shelf_slope=n;
+        } else return false;
+        return commitCommonCandidate(std::move(next));
     }
     Q_INVOKABLE void cancelDraft() {
         pending_key_.clear();pending_text_.clear();
-        error_key_.clear();error_text_.clear();emit changed();
+        error_key_.clear();error_text_.clear();graph_draft_.reset();
+        emit changed();
     }
     [[nodiscard]] bool validatedSnapshot() const {
         if(!loaded())return false;
@@ -105,6 +201,15 @@ public:
         return bool(rgsml::dsp::DynamicEqParameters::create(std::move(checked)));
     }
 private:
+    [[nodiscard]] bool commitCommonCandidate(
+        rgsml::dsp::DynamicEqBandSpec next) {
+        if(!editable_||!loaded())return false;
+        auto checked=rgsml::dsp::DynamicEqBandParameters::create(next);
+        if(!checked || !checked.value()->validate_for_audio(fs_,channels_))
+            return fail("C01_OUT_OF_RANGE_OR_ENDPOINT");
+        bands_[selected_]=std::move(next);cancelDraft();emit changed();
+        return true;
+    }
     [[nodiscard]] bool fail(const char* error) {
         error_key_=pending_key_;error_text_=QString::fromLatin1(error);
         emit changed();return false;
@@ -120,6 +225,8 @@ private:
     std::vector<rgsml::dsp::DynamicEqBandSpec> bands_;
     std::size_t selected_{0};
     bool editable_{false};
+    std::uint32_t fs_{48000U},channels_{2U};
+    std::optional<rgsml::dsp::DynamicEqBandSpec> graph_draft_;
     QString pending_key_,pending_text_,error_key_,error_text_;
 };
 }
