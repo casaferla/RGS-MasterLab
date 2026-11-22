@@ -121,11 +121,14 @@ prepare_exact_m12_project_transaction_with_p2_sound_guard(
         expected.current_product_epoch_and_accepted_diff_attested,
         actual_product_execution_anchor_runs_linked_before_p2);
     if(!guard.keeps_exact_frozen_sound()) {
-        const char* error=guard.reason==
-            P2PersistedSoundReason::
+        const char* error=
+            guard.reason==P2PersistedSoundReason::
                 manual_p2_sound_conflict_requires_user_decision
-            ?"L3_M12_MANUAL_P2_CONFLICT_REQUIRES_USER_DECISION"
-            :"L3_M12_P2_WINNER_OR_PERSISTED_MANUAL_STALE";
+            ?"L3_M12_MANUAL_P2_CONFLICT_REQUIRES_USER_DECISION":
+            guard.reason==P2PersistedSoundReason::
+                unverified_p2_terminal_after_linked_execution_order
+            ?"L3_M12_P2_TERMINAL_EXECUTION_ANCHOR_UNATTESTED":
+            "L3_M12_P2_WINNER_OR_PERSISTED_MANUAL_STALE";
         return core::Result<M12PreparedProjectTransaction>::failure(
             core::Error{core::ErrorCode::InvalidState,error});
     }
