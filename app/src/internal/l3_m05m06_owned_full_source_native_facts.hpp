@@ -22,6 +22,10 @@ struct OriginalOwnedNativeSourceFacts final {
     ProductNativeFullResourceObservations full_native;
     m05m06_real::TonalObservationBundle original_t02_t06;
     m05m06_real::LraNativeObservation original_d02_lra;
+    // Retain the COMPLETE 400ms/100ms native window population for
+    // the original D03/D04 paired support. Scalar selectors alone are
+    // insufficient and must never replace a full M07 source series.
+    m05m06_real::D03D04NativeSeries original_d03_d04_window_series;
     m05m06_real::D03D04Selectors original_d03_d04;
     std::int64_t exactly_attested_phase6_active_frames{};
     [[nodiscard]] constexpr bool authorizes_m10_or_m13()
@@ -70,12 +74,16 @@ observe_original_owned_full_source_once(
     auto lra=m05m06_real::observe_lra_from_real_m19(
         *imported.source,active,
         original_file_based_lra_trailing_policy_attested);
-    auto rms=m05m06_real::extract_d03_d04_type7(
-        m05m06_real::observe_d03_d04_real_pcm(exact_full_pcm.view()));
+    auto native_windows=m05m06_real::observe_d03_d04_real_pcm(
+        exact_full_pcm.view());
+    if(native_windows.problem!=m05m06_real::NativeWindowProblem::none)
+        return fail("L3_ORIGINAL_NATIVE_D03_D04_SOURCE_INVALID");
+    auto rms=m05m06_real::extract_d03_d04_type7(native_windows);
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return fail("L3_ORIGINAL_NATIVE_SOURCE_CANCELLED_AFTER_ANALYSIS");
     return R::success(OriginalOwnedNativeSourceFacts{
         std::move(*imported.source),std::move(*native.value()),
-        std::move(tonal),std::move(lra),std::move(rms),active});
+        std::move(tonal),std::move(lra),std::move(native_windows),
+        std::move(rms),active});
 }
 } // namespace rgsml::app::l3_automatch
