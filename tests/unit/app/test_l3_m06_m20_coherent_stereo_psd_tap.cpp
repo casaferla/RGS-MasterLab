@@ -102,7 +102,7 @@ void StereoPsdTapTest::absentStereoTapPreservesOriginalM20() {
     QVERIFY(pcm);
     auto samples=pcm.value()->mutable_view().channel(0);
     QVERIFY(samples);
-    for(auto& v:*samples)v=0.1;
+    for(auto& v:*samples.value())v=0.1;
     const auto untouched=analysis::measure_tonal_stereo_scope(
         pcm.value()->view(),core::FrameIndex{0},*frames.value(),
         audio::FrameDomainId::SOURCE_PROCESSING_RATE);
