@@ -67,9 +67,8 @@ template<typename M09Decode,typename CanonicalKey,
        !owners.frozen_registry||
        !std::isfinite(exact_m11_m16_safety_ceiling_db_tp)||
        exact_m11_m16_safety_ceiling_db_tp>0.0||
-       !verified_candidate_owner.full_track_owner_confirmed||
-       !verified_candidate_owner.generation||
-       verified_candidate_owner.resource_identity.empty()||
+       !authentic_product_candidate_identity(
+           verified_candidate_owner,owners.current_owner,candidate_ticket)||
        !authentic_prepared_reference_native_pair||
        !original_pair_matches_product_owner(
            *authentic_prepared_reference_native_pair,

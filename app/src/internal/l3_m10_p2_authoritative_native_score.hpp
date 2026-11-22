@@ -112,9 +112,16 @@ measure_and_score_m10_p2_full_native_candidate(
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {P2NativeCostReason::stale_or_unattested_product,
                 {},{},{} };
-    // No real once-per-Product PREPARED and independent REFERENCE
-    // native observations: no attempt and no score.
-    if(!authentic_prepared_and_independent_reference)
+    // Bind original P/G to current real resource+selection identity
+    // and C to the exact typed M10 candidate ticket BEFORE rendering.
+    // A reused old generation or fake current identity cannot enter J.
+    if(!authentic_prepared_and_independent_reference||
+       !original_pair_matches_product_owner(
+           *authentic_prepared_and_independent_reference,
+           candidate.owner_stamp())||
+       !authentic_product_candidate_identity(
+           verified_candidate_product_owner,candidate.owner_stamp(),
+           candidate.ticket_identity()))
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
     const auto exact_active_frames=

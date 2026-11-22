@@ -290,10 +290,10 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         (*gold_left.value())[i]=v;
         (*gold_right.value())[i]=v;
     }
-    const auto source_owner=a::m05m06_real::SourceIdentity{
-        "actual-prepared",11U,true};
-    const auto gold_owner=a::m05m06_real::SourceIdentity{
-        "independent-reference",12U,true};
+    const auto source_owner=a::native_product_original_identity(
+        stamp,a::OriginalProductRole::prepared);
+    const auto gold_owner=a::native_product_original_identity(
+        stamp,a::OriginalProductRole::reference);
     QVERIFY(!a::measure_original_prepared_reference_native_once(
         *source.value(),source_owner,spec_for_authoritative_bridge,
         *source.value(),gold_owner,spec_for_authoritative_bridge,
@@ -305,9 +305,9 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             {20.0,18000.0},1e-12,true,true,true);
     QVERIFY(original_pair);
     QCOMPARE(original_pair.value()->prepared.original_m19_m20.
-                 owner.resource_identity,std::string("actual-prepared"));
+                 owner.resource_identity,source_owner.resource_identity);
     QCOMPARE(original_pair.value()->reference.original_m19_m20.
-                 owner.resource_identity,std::string("independent-reference"));
+                 owner.resource_identity,gold_owner.resource_identity);
     QVERIFY(!original_pair.value()->authorizes_m10_or_m12());
     const auto candidate_native=
         a::measure_real_full_owned_pcm_native_once(
@@ -338,8 +338,10 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         *native.value(),0.0).passes());
     QVERIFY(!m10::check_m10_p2_native_actual_m16(
         *native.value(),-90.0).passes());
-    const a::m05m06_real::SourceIdentity owner{
-        "actual-p2-candidate",11U,true};
+    const auto owner=a::native_product_candidate_identity(
+        stamp,chosen->typed.base.ticket_identity);
+    const auto control_candidate_owner=a::native_product_candidate_identity(
+        stamp,"real-p2-cached-canonical-ticket");
     // The authentic full-source pair must REPLACE every P/G numerical
     // family. Even after original real P/G/C PCM, missing canonical
     // M07 Phase6 definitions MUST prevent a score.
@@ -484,7 +486,8 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             "real-p2-cached-canonical-ticket",
             completed_cache,allowed,
             spec_for_authoritative_bridge,&*prefix.value(),
-            "current-phase6-test-generation",{},0.0,owner,&*original_pair.value(),true,
+            "current-phase6-test-generation",{},0.0,
+            control_candidate_owner,&*original_pair.value(),true,
             inverse,exact_key,
             [](const m10::BoundM10P2Candidate&){return true;},
             real_graph,missing_original);
@@ -496,7 +499,8 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         mismatched_scope,inventory,proposed_u,names,p2_id,
         "real-p2-cached-canonical-ticket",completed_cache,true,
         spec_for_authoritative_bridge,&*prefix.value(),
-        "current-phase6-test-generation",{},0.0,owner,
+        "current-phase6-test-generation",{},0.0,
+        control_candidate_owner,
         &*original_pair.value(),true,inverse,exact_key,
         [](const m10::BoundM10P2Candidate&){return true;},
         real_graph,missing_original);

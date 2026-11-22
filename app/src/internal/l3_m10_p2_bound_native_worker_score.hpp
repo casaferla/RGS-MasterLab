@@ -63,9 +63,9 @@ measure_and_score_bound_m10_p2_product_worker(
        !canonical_m09_m10_p2.typed.still_matches(
           current.frozen_manual,current.frozen_manual_bindings)||
        frozen_m07_phase6_dependency_generation.empty()||
-       !exact_candidate_source_owner.full_track_owner_confirmed||
-       exact_candidate_source_owner.resource_identity.empty()||
-       !exact_candidate_source_owner.generation||
+       !authentic_product_candidate_identity(
+           exact_candidate_source_owner,current.current_owner,
+           canonical_m09_m10_p2.typed.base.ticket_identity)||
        !real_prepared_reference_native_pair||
        !original_pair_matches_product_owner(
            *real_prepared_reference_native_pair,current.current_owner)||
