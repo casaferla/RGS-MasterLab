@@ -2942,3 +2942,17 @@ add_test(NAME rgsml_l3_m06_transient_binding_tests
 set_tests_properties(rgsml_l3_m06_transient_binding_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m06;m07;transient_binding;nonrelease")
+
+# L3-M06 D10-D12 exact native E[t,b] STFT spectral dynamics reducer.
+qt_add_executable(rgsml_l3_m06_native_spectral_d10_d12_tests
+    unit/app/test_l3_m06_native_spectral_d10_d12.cpp)
+target_include_directories(rgsml_l3_m06_native_spectral_d10_d12_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_m06_native_spectral_d10_d12_tests
+    PRIVATE rgsml_audio rgsml_analysis Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m06_native_spectral_d10_d12_tests)
+add_test(NAME rgsml_l3_m06_native_spectral_d10_d12_tests
+    COMMAND rgsml_l3_m06_native_spectral_d10_d12_tests)
+set_tests_properties(rgsml_l3_m06_native_spectral_d10_d12_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m06;spectral_dynamics;native_energy;nonrelease")
