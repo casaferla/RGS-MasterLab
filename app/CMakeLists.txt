@@ -15,6 +15,8 @@ qt_add_executable(rgsml_app
     src/dsp_module_adapter.hpp
     src/dsp_chain_adapter_model.cpp
     src/dsp_chain_adapter_model.hpp
+    src/dsp_preset_controller.cpp
+    src/dsp_preset_controller.hpp
     src/eq_view_model.cpp
     src/eq_view_model.hpp
     src/gain_view_model.cpp

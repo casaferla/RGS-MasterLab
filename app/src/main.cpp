@@ -3,6 +3,7 @@
 #include "audition_source_selector.hpp"
 #include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
+#include "dsp_preset_controller.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
@@ -1029,6 +1030,9 @@ int main(int argc, char* argv[])
         &terminalLimiterState, &terminalLimiterViewModel,
         &terminalMonitorViewModel, &previewController};
 
+    rgsml::app::DspPresetController dspPresetController{
+        &masteringChainState,&previewController,&dspChainAdapterModel};
+
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
     // The Gold picker is the ONLY owner of the REFERENCE resource and
@@ -1482,6 +1486,8 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("dspPresetController"),&dspPresetController);
     engine.rootContext()->setContextProperty(
         QStringLiteral("truePeakStatic"), &staticTruePeak);
     engine.rootContext()->setContextProperty(
