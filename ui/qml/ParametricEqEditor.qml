@@ -63,23 +63,7 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
-            StudioButton {
-                objectName: "eqResetFlatButton"
-                text: "Reset Flat"
-                minimumControlWidth: 88
-                enabled: root.viewModel !== null && root.viewModel !== undefined
-                onClicked: if (root.viewModel) root.viewModel.resetToFlat()
-                Accessible.name: "Reset EQ to Flat"
-                ToolTip.text: "Reset all EQ parameters to Flat baseline"
-                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
-                ToolTip.delay: 0
-                StudioTooltipDwell {
-                    id: stationaryTooltipDwell1
-                    anchors.fill: parent
-                }
-            }
-
-            StudioButton {
+StudioButton {
                 objectName: "eqOverallToggleButton"
                 text: "Overall"
                 selected: root.viewModel ? root.viewModel.showCombinedResponse : false

@@ -37,32 +37,7 @@ Item {
 
         // Header Action Bar: the shared DSP host already names "Compressor".
         // UX-003: keep Reset aligned right without a redundant local title.
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-
-            Item { Layout.fillWidth: true }
-
-            // Reset to Default Button
-            StudioButton {
-                id: resetButton
-                objectName: "resetCompressorButton"
-                text: "Reset to Default"
-                minimumControlWidth: 140
-                enabled: root.viewModel !== null
-                onClicked: if (root.viewModel) root.viewModel.resetToDefault()
-                Accessible.name: "Reset Compressor to default parameters"
-                ToolTip.text: "Reset compressor to canonical M13 defaults"
-                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
-                ToolTip.delay: 0
-                StudioTooltipDwell {
-                    id: stationaryTooltipDwell1
-                    anchors.fill: parent
-                }
-            }
-        }
-
-        // Main Editor Body Split
+// Main Editor Body Split
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true

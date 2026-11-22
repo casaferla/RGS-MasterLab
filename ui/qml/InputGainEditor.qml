@@ -43,32 +43,7 @@ Item {
         spacing: 16
 
         // Header Action Bar
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-
-            Item { Layout.fillWidth: true }
-
-            // Reset to Default Button
-            StudioButton {
-                id: resetButton
-                objectName: "resetGainButton"
-                text: "Reset to Default (0.0 dB)"
-                minimumControlWidth: 160
-                enabled: root.viewModel !== null
-                onClicked: if (root.viewModel) root.viewModel.resetToDefault()
-                Accessible.name: "Reset Input Gain to 0.0 dB"
-                ToolTip.text: "Reset gain to canonical 0.0 dB"
-                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
-                ToolTip.delay: 0
-                StudioTooltipDwell {
-                    id: stationaryTooltipDwell1
-                    anchors.fill: parent
-                }
-            }
-        }
-
-        // Center Panel: Large Display, Slider, Direct Numeric Input
+// Center Panel: Large Display, Slider, Direct Numeric Input
         Rectangle {
             id: mainPanel
             objectName: "gainMainPanel"

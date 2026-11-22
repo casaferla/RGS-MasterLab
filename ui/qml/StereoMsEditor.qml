@@ -36,12 +36,9 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            // The Reset StudioButton has 32lp implicit height, so a
-            // preferred-only 23lp RowLayout grew from 30 to 31lp as
-            // available window height increased. Lock the SAME actual
-            // 30lp compact-minimum geometry, and explicitly size Reset
-            // to that row. The 4lp gap keeps its bottom separate from
-            // the response graph; no clipping, scroll, or vertical drift.
+            // The user-approved 30lp SPATIAL CONTROL row is unchanged
+            // after moving Reset to the host's fixed 2x2 utility square.
+            // Preserve its 4lp gap and stable compact top-left anchor.
             Layout.minimumHeight: 30
             Layout.preferredHeight: 30
             Layout.maximumHeight: 30
@@ -84,26 +81,7 @@ Item {
                 }
                 Accessible.name: validationFeedbackText.text
             }
-            StudioButton {
-                objectName: "stereoMsResetButton"
-                text: "Reset to Default"
-                minimumControlWidth: 140
-                Layout.minimumHeight: 30
-                Layout.preferredHeight: 30
-                Layout.maximumHeight: 30
-                enabled: root.viewModel && root.viewModel.available
-                accentColor: root.seaGreen
-                ToolTip.text: "Restore all Stereo/M-S parameters to defaults. This does not change the module bypass state."
-                ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
-                ToolTip.delay: 0
-                StudioTooltipDwell {
-                    id: stationaryTooltipDwell2
-                    anchors.fill: parent
-                }
-                onClicked: if (root.viewModel) root.viewModel.resetToDefault()
-                Accessible.name: "Reset Stereo M/S parameters"
-            }
-        }
+}
 
         RowLayout {
             id: visualWells

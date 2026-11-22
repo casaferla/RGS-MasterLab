@@ -36,24 +36,7 @@ Item {
         spacing: 5
         // Reset belongs to the outer action bar, as in Input Gain and
         // other DSP editors, NEVER buried in the main parameter well.
-        RowLayout {
-            objectName: "streamingP2ActionBar"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            spacing: 8
-            Item { Layout.fillWidth: true }
-            StudioButton {
-                objectName: "streamingP2ResetButton"
-                text: "Reset to Default"
-                minimumControlWidth: 130
-                accentColor: root.copper
-                enabled: !!root.limiterModule
-                onClicked: if(root.limiterModule) root.limiterModule.resetToDefault()
-                Accessible.name: "Reset Streaming TP Limiter to defaults"
-            }
-        }
-
-        Rectangle {
+Rectangle {
             objectName: "streamingP2MainPanel"
             Layout.fillWidth: true
             Layout.fillHeight: true
