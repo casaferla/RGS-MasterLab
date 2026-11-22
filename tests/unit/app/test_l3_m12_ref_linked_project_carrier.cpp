@@ -11,6 +11,7 @@
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <QtTest/QTest>
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -137,8 +138,12 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto productReopen=m::decode_exact_m12_ref_linked_product_state(
         proposed,reg);
     QVERIFY(productReopen);
-    QCOMPARE(productReopen.value()->exact_native_chain.instances(),
-             stage.value()->chain.instances());
+    QCOMPARE(productReopen.value()->exact_native_chain.instances().size(),
+             stage.value()->chain.instances().size());
+    QVERIFY(std::equal(
+        productReopen.value()->exact_native_chain.instances().begin(),
+        productReopen.value()->exact_native_chain.instances().end(),
+        stage.value()->chain.instances().begin()));
     QCOMPARE(productReopen.value()->exact_native_bindings,
              stage.value()->exact_bindings);
     QCOMPARE(productReopen.value()->exact_native_bindings.size(),
@@ -482,8 +487,12 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
              originalAccepted.reference_match_controller_id);
     QCOMPARE(restored.value()->exact_plan_checksum,
              originalAccepted.exact_plan_content_checksum);
-    QCOMPARE(restored.value()->exact_native_chain.instances(),
-             staged.value()->chain.instances());
+    QCOMPARE(restored.value()->exact_native_chain.instances().size(),
+             staged.value()->chain.instances().size());
+    QVERIFY(std::equal(
+        restored.value()->exact_native_chain.instances().begin(),
+        restored.value()->exact_native_chain.instances().end(),
+        staged.value()->chain.instances().begin()));
     QCOMPARE(restored.value()->exact_native_bindings,
              staged.value()->exact_bindings);
     QVERIFY(!restored.value()->authorizes_project_adoption());
