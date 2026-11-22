@@ -147,6 +147,9 @@ public:
         if(token=="HIGH_SHELF")type=DynamicEqFilterType::HIGH_SHELF;
         if(!type)return false;
         auto next=bands_[selected_];
+        // Reselecting the active filter is a true no-op. Reconstructing
+        // its shape would silently erase user-authored Q or Shelf Slope.
+        if(next.filter_type==*type)return true;
         const auto freq=std::visit(
             [](const auto& s){return s.frequency_hz;},next.shape);
         next.filter_type=*type;
@@ -199,6 +202,9 @@ public:
         return commitCommonCandidate(std::move(next));
     }
     void setResearchManualEditable(bool enabled) {
+        if(editable_==enabled)return;
+        // A real permission transition revokes any uncommitted text/drag.
+        // Repeated identical permission notifications must not lose a draft.
         editable_=enabled; cancelDraft(); emit changed();
     }
     Q_INVOKABLE void setDraftFieldText(QString key,QString raw) {

@@ -195,3 +195,12 @@ the same C01 Base Gain edit is accepted by the typed shared-band owner and
 reflected in the Parametric-derived curve, while both windows' editability
 switches together and locks again on completion. The artifact includes four
 PNG files. This is not Product integration or physical audio qualification.
+
+## Idempotent manual gate and filter selection (research)
+
+Repeated research-only `manualEditable=true` notifications now preserve an
+in-progress numeric draft, while an actual relock cancels all pending text and
+graph drag state. Re-selecting BELL / LOW_SHELF / HIGH_SHELF no longer
+reconstructs the shape: the accepted Q or Shelf Slope stays unchanged and no
+phantom Undo snapshot is created. The Qt Core smoke checks filter response,
+Undo/Redo and permission transitions. No Product or L3 integration.

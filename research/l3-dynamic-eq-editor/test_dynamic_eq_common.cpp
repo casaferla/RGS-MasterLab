@@ -52,6 +52,15 @@ int main(int argc,char** argv) {
     if(common.filter()!="LOW_SHELF")return 14;
     owner.setResearchManualEditable(true);
     if(!common.manualEditable())return 15;
+    // Identical permission updates do not discard an in-progress draft.
+    common.setDraftFieldText("gain","12");
+    owner.setResearchManualEditable(true);
+    if(common.gainText()!="12")return 36;
+    // A real relock clears drafts and forbids edits until a new opt-in.
+    owner.setResearchManualEditable(false);
+    if(common.gainText()=="12"||common.manualEditable())return 37;
+    owner.setResearchManualEditable(true);
+    if(!common.manualEditable()||common.gainText()=="12")return 38;
     common.setDraftFieldText("gain","15"); // 15+range4 exceeds +18.
     if(common.gainText()!="15")return 26;
     if(common.commitDraft()||common.gain()!=-3.0)return 16;
@@ -67,6 +76,16 @@ int main(int argc,char** argv) {
     if(common.filter()!="BELL"||!common.qApplicable())return 19;
     common.setDraftFieldValue("q",1.6);
     if(!common.commitDraft()||common.q()!=1.6)return 20;
+    // Re-selecting BELL must retain the accepted Q, not reset it to .707.
+    const auto responseBefore=common.selectedBandResponsePoints();
+    common.setFilter("BELL");
+    if(common.q()!=1.6
+       ||common.selectedBandResponsePoints()!=responseBefore)return 39;
+    // Undo must unwind only the real Q edit, never a phantom filter edit.
+    common.undo();
+    if(common.filter()!="BELL"||common.q()!=0.707)return 40;
+    common.redo();
+    if(common.q()!=1.6)return 41;
     common.graphDrag(1600.0,22.0); // C01 signed Range limits Base.
     common.graphRelease();
     if(common.frequency()!=1600.0||common.gain()!=14.0)return 21;
