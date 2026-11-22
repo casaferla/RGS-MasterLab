@@ -7,6 +7,7 @@
 #include "l3_m06_p04_native_attack_rise.hpp"
 #include "l3_m06_native_transient_descriptors.hpp"
 #include <rgsml/audio/audio_buffer_view.hpp>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -33,7 +34,8 @@ struct P04ProductObservation final {
 measure_product_p04_d07_d09(
     const audio::AudioBufferView& actual_rendered_pcm,
     std::int64_t exact_phase6_active_frames,
-    bool current_full_phase6_owner_and_p04_policy_attested)
+    bool current_full_phase6_owner_and_p04_policy_attested,
+    const std::atomic<bool>* cancellation=nullptr)
 {
     P04ProductObservation out;
     if(!current_full_phase6_owner_and_p04_policy_attested||
@@ -42,12 +44,13 @@ measure_product_p04_d07_d09(
            actual_rendered_pcm.frame_count().value())
         return out;
     out.actual_flux=measure_p04_native_positive_flux(
-        actual_rendered_pcm);
+        actual_rendered_pcm,cancellation);
     if(out.actual_flux.reason!=P04NativeReason::ready) {
         out.reason=P04ProductObservationReason::invalid_native_flux;
         return out;
     }
-    out.detector=select_p04_canonical_native_events(out.actual_flux);
+    out.detector=select_p04_canonical_native_events(
+        out.actual_flux,cancellation);
     if(out.detector.reason!=P04SelectionReason::ready) {
         out.reason=P04ProductObservationReason::invalid_detector;
         return out;
