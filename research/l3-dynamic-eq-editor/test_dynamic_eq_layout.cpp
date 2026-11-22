@@ -56,9 +56,12 @@ int main(int argc,char** argv) {
         "eqBandStripRegion","eqFrequencyControl","eqGainControl",
         "eqQControl","eqFilterGroup","filterButton_BELL",
         "filterButton_LOW_SHELF","filterButton_HIGH_SHELF"}};
-    if(stage==QStringLiteral("common") || stage==QStringLiteral("filter-positions")) {
-        const std::size_t begin=stage==QStringLiteral("common")?0U:7U;
-        const std::size_t end=stage==QStringLiteral("common")?7U:10U;
+    if(stage==QStringLiteral("common")
+       || stage.startsWith(QStringLiteral("filter-position-"))) {
+        std::size_t begin=0U,end=7U;
+        if(stage==QStringLiteral("filter-position-bell")) {begin=7U;end=8U;}
+        else if(stage==QStringLiteral("filter-position-low")) {begin=8U;end=9U;}
+        else if(stage==QStringLiteral("filter-position-high")) {begin=9U;end=10U;}
         for(std::size_t i=begin;i<end;++i) {
             const auto* name=controls[i];
             if(!equal_geometry(item(original,name),item(dynamic,name),name))

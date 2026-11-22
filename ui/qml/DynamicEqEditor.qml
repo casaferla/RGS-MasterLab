@@ -355,7 +355,6 @@ Rectangle {
                                     contentPadding: 4
                                     opacity: modelData.token.startsWith("RESERVED_") ? 0 : 1
                                     enabled: !modelData.token.startsWith("RESERVED_")
-                                        && root.manualEditable
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                     onClicked: {
