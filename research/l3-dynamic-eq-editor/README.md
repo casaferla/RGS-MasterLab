@@ -186,3 +186,12 @@ reflect the actual pending text while typing and revert on Escape/cancel.
 All operations fail closed when `manualEditable=false`, and the Production
 AutoMatch branch is not involved. The isolated Qt Core test exercises these
 branches before any Product editor acceptance.
+
+## Two-mode real Qt editor screenshots
+
+The isolated Qt test now captures both required states: L3 read-only and
+explicitly unlocked **research-only** manual fine tuning. It verifies that
+the same C01 Base Gain edit is accepted by the typed shared-band owner and
+reflected in the Parametric-derived curve, while both windows' editability
+switches together and locks again on completion. The artifact includes four
+PNG files. This is not Product integration or physical audio qualification.

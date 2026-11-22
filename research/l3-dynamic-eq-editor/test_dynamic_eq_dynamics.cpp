@@ -109,6 +109,31 @@ int main(int argc,char** argv) {
             QDir(dir).filePath("DynamicEq-C01-Controls-Companion.png"),"PNG"))
             return 23;
     }
-    std::cout<<"C01 frozen typed controls + detached QML companion: PASS\n";
+    // The manual preview is ONLY research-opt-in. It must toggle BOTH
+    // windows because their C01 typed band owner is the same QObject.
+    model.setResearchManualEditable(true);
+    app.processEvents();
+    if(!ed->property("manualEditable").toBool()
+       ||!strip->property("editable").toBool())return 31;
+    common.setDraftFieldText("gain","10");
+    if(!common.commitDraft() || common.gain()!=10.0
+       ||model.acceptedBandSpecs()[0].control.base_gain_db!=10.0
+       ||common.selectedBandResponsePoints().size()!=257)return 32;
+    app.processEvents();
+    if(!dir.isEmpty()) {
+        const QImage manualMain=window->grabWindow();
+        const QImage manualSide=sideWindow->grabWindow();
+        if(manualMain.isNull()||manualSide.isNull()
+           ||!manualMain.save(
+               QDir(dir).filePath("DynamicEq-C01-Main-Manual-Research.png"),"PNG")
+           ||!manualSide.save(
+               QDir(dir).filePath("DynamicEq-C01-Dynamics-Manual-Research.png"),"PNG"))
+            return 33;
+    }
+    model.setResearchManualEditable(false);
+    app.processEvents();
+    if(ed->property("manualEditable").toBool()
+       ||strip->property("editable").toBool())return 34;
+    std::cout<<"C01 shared-state Qt read-only/manual research gate: PASS\n";
     return 0;
 }
