@@ -545,7 +545,7 @@ optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound() {
         m::PostCommitReadbackReason::
             incomplete_or_noncanonical_readback);
     const std::vector<project::OptionalEntry> unrelatedFiles{{
-        "unrelated/file.txt","text/plain",{
+        "artifacts/unrelated/file.txt","text/plain",{
             std::byte{0x61},std::byte{0x62}}}};
     const auto alteredAttachment=project::ProjectSnapshot::create(
         *reopened.value(),unrelatedFiles);
