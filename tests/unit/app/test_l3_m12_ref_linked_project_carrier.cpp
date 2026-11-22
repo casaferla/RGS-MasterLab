@@ -21,6 +21,11 @@
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include "canonical_json.hpp"
 #include <rgsml/project/project_snapshot.hpp>
+#include <rgsml/project/project_repository.hpp>
+#include <rgsml/core/resource_reference.hpp>
+#include <rgsml/core/resource_reader.hpp>
+#include <rgsml/core/resource_writer.hpp>
+#include <span>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
@@ -36,6 +41,77 @@
 namespace rgsml::tests {
 namespace {
 namespace m=rgsml::app::l3_automatch::m12_frozen;
+// Real RGSML ZIP producer/consumer with an entirely in-memory resource;
+// never use a made-up text serializer as evidence of durable M12 sound.
+struct M12ZipStorage final {std::vector<std::byte> bytes;};
+class M12ZipEndpoint final:public core::IResourceReader,
+                           public core::IResourceWriter {
+public:
+    explicit M12ZipEndpoint(std::shared_ptr<M12ZipStorage> storage)
+        :storage_(std::move(storage)),
+         ref_(*core::ResourceReference::create(
+             "test","m12-zip",true,true).value()) {}
+    [[nodiscard]] const core::ResourceReference& reference()
+        const noexcept override{return ref_;}
+    [[nodiscard]] core::ResourceCapabilities capabilities()
+        const noexcept override {
+        return core::ResourceCapabilities::create(true,true,true,true);
+    }
+    [[nodiscard]] core::Result<std::uint64_t> size_bytes() const override {
+        return core::Result<std::uint64_t>::success(storage_->bytes.size());
+    }
+    [[nodiscard]] core::Result<std::uint64_t> position_bytes() const override {
+        return core::Result<std::uint64_t>::success(position_);
+    }
+    [[nodiscard]] core::Result<std::size_t> read(
+        std::span<std::byte> dst) override {
+        if(closed_||position_>storage_->bytes.size())
+            return core::Result<std::size_t>::failure(
+                core::Error{core::ErrorCode::InvalidState});
+        const auto available=storage_->bytes.size()-position_;
+        const auto count=std::min(dst.size(),available);
+        std::copy_n(storage_->bytes.data()+position_,count,dst.data());
+        position_+=count;
+        return core::Result<std::size_t>::success(count);
+    }
+    [[nodiscard]] core::Result<std::size_t> write(
+        std::span<const std::byte> src) override {
+        if(closed_)return core::Result<std::size_t>::failure(
+            core::Error{core::ErrorCode::InvalidState});
+        if(position_+src.size()>storage_->bytes.size())
+            storage_->bytes.resize(position_+src.size());
+        std::copy(src.begin(),src.end(),
+                  storage_->bytes.begin()+static_cast<std::ptrdiff_t>(position_));
+        position_+=src.size();
+        return core::Result<std::size_t>::success(src.size());
+    }
+    [[nodiscard]] core::Status seek_bytes(std::uint64_t offset) override {
+        if(closed_||offset>storage_->bytes.size())
+            return core::Status::failure(
+                core::Error{core::ErrorCode::OutOfRange});
+        position_=static_cast<std::size_t>(offset);
+        return core::Status::success();
+    }
+    [[nodiscard]] core::Status resize_bytes(std::uint64_t size) override {
+        if(closed_)return core::Status::failure(
+            core::Error{core::ErrorCode::InvalidState});
+        storage_->bytes.resize(static_cast<std::size_t>(size));
+        position_=std::min(position_,storage_->bytes.size());
+        return core::Status::success();
+    }
+    [[nodiscard]] core::Status flush() override {
+        return core::Status::success();
+    }
+    [[nodiscard]] core::Status close() override {
+        closed_=true;
+        return core::Status::success();
+    }
+private:
+    std::shared_ptr<M12ZipStorage> storage_;
+    core::ResourceReference ref_;
+    std::size_t position_{};
+    bool closed_{};
+};
 [[nodiscard]] core::Uuid uuid(const char* s) {
     auto u=core::Uuid::parse(s);Q_ASSERT(u);return *u.value();
 }
@@ -185,6 +261,37 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto& proposed=
         transaction.value()->candidate_not_yet_committed.document();
     QCOMPARE(proposed.chains.size(),std::size_t{2});
+    // Persist actual native .rgsml ZIP bytes and reopen them through the
+    // normal ProjectRepository. The precommit draft remains unadopted,
+    // but the persisted format and exact linked identities are genuine.
+    const auto zipped=std::make_shared<M12ZipStorage>();
+    const auto saved=project::ProjectRepository::save_create_new(
+        transaction.value()->candidate_not_yet_committed,
+        std::make_unique<M12ZipEndpoint>(zipped),
+        [zipped]()->core::Result<std::unique_ptr<core::IResourceReader>>{
+            return core::Result<std::unique_ptr<core::IResourceReader>>::
+                success(std::make_unique<M12ZipEndpoint>(zipped));
+        });
+    QVERIFY(saved);
+    QVERIFY(zipped->bytes.size()>100U);
+    const auto reopenedZip=project::ProjectRepository::open(
+        std::make_unique<M12ZipEndpoint>(zipped));
+    QVERIFY(reopenedZip);
+    const auto& reopenedDocument=reopenedZip.value()->document();
+    QCOMPARE(reopenedDocument.projectId,proposed.projectId);
+    QCOMPARE(reopenedDocument.referenceMatch,proposed.referenceMatch);
+    QCOMPARE(reopenedDocument.chains.size(),std::size_t{2});
+    QVERIFY(m::exact_project_chain_equal(
+        reopenedDocument.chains.front(),manualChain));
+    QVERIFY(m::exact_project_chain_equal(
+        reopenedDocument.chains.back(),proposed.chains.back()));
+    const auto zippedLinked=m::decode_exact_m12_ref_linked_product_state(
+        reopenedDocument,stage.value()->registry_owner);
+    QVERIFY(zippedLinked);
+    QCOMPARE(zippedLinked.value()->plan_id,accepted().plan_id);
+    QCOMPARE(zippedLinked.value()->exact_plan_checksum,
+             accepted().exact_plan_content_checksum);
+    QVERIFY(!zippedLinked.value()->is_m12_materialization_receipt());
     // Until ProjectSession can atomically replay REF_LINKED DSP, even
     // a valid M12 candidate must NOT be silently reopened as MANUAL
     // alone. Legacy projects with no linked segment remain supported.
