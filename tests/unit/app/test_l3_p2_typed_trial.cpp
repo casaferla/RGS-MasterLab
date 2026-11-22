@@ -229,7 +229,7 @@ frozenM10CanonicalPairDecodesAndRejectsInvalidInventory() {
     QVERIFY(manual_identity);
     const auto* same_p2=manual_identity->typed.chosen_p2_parameters();
     QVERIFY(same_p2);
-    QCOMPARE(*same_p2,*p2.value());
+    QVERIFY(*same_p2==*p2.value());
 
     QVERIFY(!bound->authorizes_product_publication());
     const auto previous_calls=calls;
@@ -301,7 +301,6 @@ frozenM10P2ExactCacheAllowsOnlyCompletedCurrentScores() {
     const auto exact_key=[](const m10::BoundM10P2Candidate& bound)
         ->std::optional<m10::ExactExecutionCacheKey> {
         const auto* params=bound.typed.chosen_p2_parameters();
-        if(!params)return std::nullopt;
         if(!params)return std::nullopt;
         // Adversarial test: a broken key-maker returns identical base
         // candidate bytes for two P2 settings. The M10 P2 adapter
