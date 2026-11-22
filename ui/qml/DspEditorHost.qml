@@ -254,45 +254,105 @@ Rectangle {
             Layout.maximumHeight: 40
             spacing: 12
 
-            // Preserve the EXACT old 22px slot: the module title's X
-            // coordinate must not shift when docked/undocked.
+            // User-approved FIXED 2x2 utility square, at the SAME x/y
+            // for every editor and any docked/floating window. The title
+            // shifts right exactly 22px compared with the original grip;
+            // never based on the title length. No extra header height.
+            // Top: Undock | Reset. Bottom: Open | Save.
+            // Read-only analysis preserves empty slots, never fake actions.
             Item {
                 id: dockedDragGrip
                 objectName: "dspHostTearOffGrip"
-                Layout.preferredWidth: 22
-                Layout.minimumWidth: 22
-                Layout.maximumWidth: 22
-                Layout.preferredHeight: 30
-                StudioIcon {
-                    objectName: "dspHostDockToggleIcon"
-                    anchors.horizontalCenter: parent.horizontalCenter
+                Layout.preferredWidth: 44
+                Layout.minimumWidth: 44
+                Layout.maximumWidth: 44
+                Layout.preferredHeight: 40
+                Layout.minimumHeight: 40
+                Layout.maximumHeight: 40
+
+                Row {
                     anchors.top: parent.top
-                    // Optical top alignment with the first title line,
-                    // keeping the 22px slot/X coordinate unchanged.
-                    width: 20
+                    anchors.left: parent.left
+                    anchors.leftMargin: 1
+                    spacing: 2
+                    Item {
+                        width: 19
+                        height: 19
+                        StudioIcon {
+                            objectName: "dspHostDockToggleIcon"
+                            anchors.centerIn: parent
+                            width: 18
+                            height: 18
+                            kind: root.detachedWindow ? "dock" : "undock"
+                            strokeColor: "#77C7EA"
+                            strokeWidth: 1.85
+                        }
+                        MouseArea {
+                            objectName: "dspHostDockToggleButton"
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                            onClicked: root.dockToggleRequested()
+                            Accessible.name: root.detachedWindow
+                                ? "Dock module into workspace"
+                                : "Undock module to native window"
+                        }
+                        StudioTooltipDwell {
+                            id: hostDockActionDwell
+                            anchors.fill: parent
+                        }
+                        ToolTip.text: root.detachedWindow
+                            ? "Dock this module" : "Undock this module"
+                        ToolTip.visible: hostDockActionDwell.ready
+                        ToolTip.delay: 0
+                    }
+                    StudioIconButton {
+                        objectName: "dspHostResetToDefaultButton"
+                        iconKind: "preset-reset"
+                        controlSize: 19
+                        iconSize: 15
+                        visible: !!root.activeModule
+                            && root.activeModule.resetSupported
+                        enabled: visible && (!root.isLimiterEditor
+                            || !root.monitorExclusive)
+                        onClicked: if (root.activeModule)
+                            root.activeModule.resetToDefault()
+                        Accessible.name: root.isLimiterEditor
+                            ? "Reset Export TP Limiter Ceiling to 0.0 dBTP"
+                            : "Reset " + root.moduleTitle + " to defaults"
+                        ToolTip.text: root.isLimiterEditor
+                            ? "Restore Export Ceiling to 0.0 dBTP without changing Active or Bypass"
+                            : root.activeModule
+                                && root.activeModule.editorContentKey === "PARAMETRIC_EQ"
+                                ? "Reset all EQ parameters to Flat baseline"
+                            : "Restore " + root.moduleTitle
+                                + " settings to defaults"
+                        ToolTip.visible: hovered && resetHeaderDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: resetHeaderDwell
+                            anchors.fill: parent
+                        }
+                    }
+                }
+
+                DspPresetHeaderActions {
+                    objectName: "dspModulePresetHeaderActions"
+                    anchors.left: parent.left
+                    anchors.bottom: parent.bottom
+                    width: 42
                     height: 20
-                    kind: root.detachedWindow ? "dock" : "undock"
-                    strokeColor: "#77C7EA"
-                    strokeWidth: 2.0
+                    presetController: root.presetController
+                    moduleInstanceId: root.activeModule
+                        && root.activeModule.editorContentKey !== "TRUE_PEAK_LIMITER"
+                        && root.activeModule.editorContentKey !== "TRUE_PEAK_METER"
+                        && root.activeModule.editorContentKey !== "MASTER_MONITOR"
+                        && root.activeModule.editorContentKey !== "M19_ANALYSIS"
+                        && root.activeModule.editorContentKey !== "M20_ANALYSIS"
+                        && root.activeModule.editorContentKey !== "M21_ANALYSIS"
+                        ? root.activeModule.instanceId : ""
+                    moduleDisplayName: root.moduleTitle
                 }
-                MouseArea {
-                    objectName: "dspHostDockToggleButton"
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    hoverEnabled: true
-                    onClicked: root.dockToggleRequested()
-                    Accessible.name: root.detachedWindow
-                        ? "Dock module into workspace"
-                        : "Undock module to native window"
-                }
-                StudioTooltipDwell {
-                    id: hostDockActionDwell
-                    anchors.fill: parent
-                }
-                ToolTip.text: root.detachedWindow
-                    ? "Dock this module" : "Undock this module"
-                ToolTip.visible: hostDockActionDwell.ready
-                ToolTip.delay: 0
             }
 
             ColumnLayout {
@@ -314,26 +374,6 @@ Rectangle {
                 }
             }
 
-            // Reusable preset operations for every actual editable
-            // MANUAL DSP. M16/M17 and M19/M20/M21 are not interchangeable
-            // user-controlled mastering DSP presets.
-            DspPresetHeaderActions {
-                objectName: "dspModulePresetHeaderActions"
-                Layout.preferredWidth: 45
-                Layout.minimumWidth: visible ? 45 : 0
-                Layout.maximumWidth: visible ? 45 : 0
-                Layout.preferredHeight: 22
-                presetController: root.presetController
-                moduleInstanceId: root.activeModule
-                    && root.activeModule.editorContentKey !== "TRUE_PEAK_LIMITER"
-                    && root.activeModule.editorContentKey !== "TRUE_PEAK_METER"
-                    && root.activeModule.editorContentKey !== "MASTER_MONITOR"
-                    && root.activeModule.editorContentKey !== "M19_ANALYSIS"
-                    && root.activeModule.editorContentKey !== "M20_ANALYSIS"
-                    && root.activeModule.editorContentKey !== "M21_ANALYSIS"
-                    ? root.activeModule.instanceId : ""
-                moduleDisplayName: root.moduleTitle
-            }
             Item { Layout.fillWidth: true }
 
             // M19/M20 are read-only modules: use the SAME top-right
@@ -482,26 +522,6 @@ Rectangle {
                 Item {
                     Layout.preferredWidth: 8
                     visible: true
-                }
-
-                // M17 uses the same top-right Reset affordance as other DSP
-                // editors. It only changes Ceiling; BYPASS and layout stay put.
-                StudioButton {
-                    objectName: "m17ResetToDefaultButton"
-                    text: "Reset to Default"
-                    minimumControlWidth: 140
-                    visible: root.isLimiterEditor
-                    enabled: root.isLimiterEditor && !root.monitorExclusive
-                        && root.activeModule && root.activeModule.resetSupported
-                    onClicked: if (root.activeModule) root.activeModule.resetToDefault()
-                    Accessible.name: "Reset Export TP Limiter Ceiling to 0.0 dBTP"
-                    ToolTip.text: "Restore Export Ceiling to 0.0 dBTP without changing Active or Bypass"
-                    ToolTip.visible: hovered && m17ResetTooltipDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: m17ResetTooltipDwell
-                        anchors.fill: parent
-                    }
                 }
 
                 StudioButton {
