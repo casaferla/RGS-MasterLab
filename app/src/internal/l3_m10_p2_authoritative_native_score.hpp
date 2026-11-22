@@ -101,6 +101,8 @@ measure_and_score_m10_p2_full_native_candidate(
     AuthoritativeCostInput independently_attested_m08_m11,
     double exact_current_m11_final_tp_safety_ceiling_db_tp,
     m05m06_real::SourceIdentity verified_candidate_product_owner,
+    const OriginalPreparedReferenceNativeFacts*
+        authentic_prepared_and_independent_reference,
     bool phase6_file_based_lra_trailing_attested,
     ResolveAllRealNativeTripleFragments&& resolve_original_m05m06,
     const std::atomic<bool>* cancellation=nullptr)
@@ -109,6 +111,11 @@ measure_and_score_m10_p2_full_native_candidate(
        exact_phase6_m07_generation.empty()||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {P2NativeCostReason::stale_or_unattested_product,
+                {},{},{} };
+    // No real once-per-Product PREPARED and independent REFERENCE
+    // native observations: no attempt and no score.
+    if(!authentic_prepared_and_independent_reference)
+        return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
     const auto exact_active_frames=
         static_cast<std::int64_t>(native_spec.phase6_active_pcm_frames);
@@ -139,10 +146,11 @@ measure_and_score_m10_p2_full_native_candidate(
     if(!original_triple)
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
-    auto bound=bind_p2_original_native_triple_from_real_candidate(
-        std::move(*original_triple),*measured.value(),
-        verified_candidate_product_owner,exact_active_frames,
-        phase6_file_based_lra_trailing_attested);
+    auto bound=bind_p2_original_native_triple_from_independent_full_pair(
+        std::move(*original_triple),
+        *authentic_prepared_and_independent_reference,
+        *measured.value(),verified_candidate_product_owner,
+        exact_active_frames,phase6_file_based_lra_trailing_attested);
     if(!bound.fragments)
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };

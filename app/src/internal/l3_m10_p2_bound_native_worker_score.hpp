@@ -46,6 +46,8 @@ measure_and_score_bound_m10_p2_product_worker(
     AuthoritativeCostInput protected_m08_m11_cost,
     double exact_m11_independent_tp_safety_ceiling_db_tp,
     m05m06_real::SourceIdentity exact_candidate_source_owner,
+    const OriginalPreparedReferenceNativeFacts*
+        real_prepared_reference_native_pair,
     bool exact_phase6_file_based_lra_policy_attested,
     ResolveOriginalThreeWayNative&& resolve_original_three_way_native,
     const std::atomic<bool>* cancellation=nullptr)
@@ -64,6 +66,7 @@ measure_and_score_bound_m10_p2_product_worker(
        !exact_candidate_source_owner.full_track_owner_confirmed||
        exact_candidate_source_owner.resource_identity.empty()||
        !exact_candidate_source_owner.generation||
+       !real_prepared_reference_native_pair||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return refused();
 
@@ -85,6 +88,7 @@ measure_and_score_bound_m10_p2_product_worker(
         std::move(protected_m08_m11_cost),
         exact_m11_independent_tp_safety_ceiling_db_tp,
         std::move(exact_candidate_source_owner),
+        real_prepared_reference_native_pair,
         exact_phase6_file_based_lra_policy_attested,
         std::forward<ResolveOriginalThreeWayNative>(
             resolve_original_three_way_native),cancellation);

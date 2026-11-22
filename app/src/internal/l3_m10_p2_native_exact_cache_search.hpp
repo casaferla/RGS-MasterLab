@@ -52,6 +52,8 @@ template<typename M09Decode,typename CanonicalKey,
     AuthoritativeCostInput current_m08_m11_constraints,
     double exact_m11_m16_safety_ceiling_db_tp,
     m05m06_real::SourceIdentity verified_candidate_owner,
+    const OriginalPreparedReferenceNativeFacts*
+        authentic_prepared_reference_native_pair,
     bool exact_file_lra_policy_attested,
     M09Decode&& m09_decode,
     CanonicalKey&& full_exact_execution_key,
@@ -68,6 +70,7 @@ template<typename M09Decode,typename CanonicalKey,
        !verified_candidate_owner.full_track_owner_confirmed||
        !verified_candidate_owner.generation||
        verified_candidate_owner.resource_identity.empty()||
+       !authentic_prepared_reference_native_pair||
        exact_m07_phase6_generation.empty()||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {EvaluationKind::preflight_rejected,{}};
@@ -118,6 +121,7 @@ template<typename M09Decode,typename CanonicalKey,
                 std::move(current_m08_m11_constraints),
                 exact_m11_m16_safety_ceiling_db_tp,
                 std::move(verified_candidate_owner),
+                authentic_prepared_reference_native_pair,
                 exact_file_lra_policy_attested,
                 std::forward<ResolveOriginalTriple>(
                     resolve_original_native_triple),cancellation);

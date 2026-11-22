@@ -395,7 +395,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     const auto unbound=m10::measure_and_score_m10_p2_full_native_candidate(
         *job.value(),spec_for_authoritative_bridge,&*prefix.value(),
         "current-phase6-test-generation",true,{},
-        0.0,owner,true,
+        0.0,owner,&*original_pair.value(),true,
         [](const a::M10P2FullNativeEvidence&)
             ->std::optional<m10::P2OriginalRealNativeTriple>{
             return std::nullopt;
@@ -417,7 +417,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         m10::measure_and_score_bound_m10_p2_product_worker(
             worker,*linked.value(),artistic,*chosen,
             spec_for_authoritative_bridge,&*prefix.value(),
-            "current-phase6-test-generation",{},0.0,owner,true,
+            "current-phase6-test-generation",{},0.0,owner,&*original_pair.value(),true,
             missing_original);
     QCOMPARE(from_bound.reason,
              m10::P2NativeCostReason::missing_triple_native_authority);
@@ -431,7 +431,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         m10::measure_and_score_bound_m10_p2_product_worker(
             unauthenticated_worker,*linked.value(),artistic,*chosen,
             spec_for_authoritative_bridge,&*prefix.value(),
-            "current-phase6-test-generation",{},0.0,owner,true,
+            "current-phase6-test-generation",{},0.0,owner,&*original_pair.value(),true,
             missing_original);
     QCOMPARE(no_owner.reason,
              m10::P2NativeCostReason::stale_or_unattested_product);
@@ -441,7 +441,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         m10::measure_and_score_bound_m10_p2_product_worker(
             worker,*linked.value(),artistic,*chosen,
             spec_for_authoritative_bridge,&*prefix.value(),
-            "current-phase6-test-generation",{},-90.0,owner,true,
+            "current-phase6-test-generation",{},-90.0,owner,&*original_pair.value(),true,
             missing_original);
     QCOMPARE(unsafe_bound.reason,
              m10::P2NativeCostReason::m08_or_m11_safety_rejected);
@@ -469,7 +469,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             "real-p2-cached-canonical-ticket",
             completed_cache,allowed,
             spec_for_authoritative_bridge,&*prefix.value(),
-            "current-phase6-test-generation",{},0.0,owner,true,
+            "current-phase6-test-generation",{},0.0,owner,&*original_pair.value(),true,
             inverse,exact_key,
             [](const m10::BoundM10P2Candidate&){return true;},
             real_graph,missing_original);
