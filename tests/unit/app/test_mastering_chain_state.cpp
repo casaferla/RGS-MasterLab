@@ -1,4 +1,5 @@
 #include "mastering_chain_state.hpp"
+#include "internal/dsp_manual_preset_bundle.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_terminal_candidate_binding.hpp"
 #include "internal/m18_product_private_session_binding.hpp"
@@ -80,6 +81,7 @@ void m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread();
     void gainAndEqParameterUpdates();
     void bypassAndActiveState();
     void executionBindingsGeneration();
+    void explicitUserPresetIsOneAtomicM18GatedDspTransaction();
     void optInStereoMsStateAndBindings();
     void restoredFourNodeStereoMsPreservesTypedIdentityAndBypass();
     void terminalLimiterProductStateAndActualPcm();
@@ -90,6 +92,72 @@ void m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread();
     void terminalPrivateEndToEndRenderInstallAndRollback();
 };
 
+void MasteringChainStateTest::
+explicitUserPresetIsOneAtomicM18GatedDspTransaction() {
+    namespace p=rgsml::app::dsp_presets;
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId=test_uuid("da000000-0000-4000-8000-000000000001");
+    const auto gain=test_instance_id(
+        "da000000-0000-4000-8000-000000000002");
+    const auto eq=test_instance_id(
+        "da000000-0000-4000-8000-000000000003");
+    const auto comp=test_instance_id(
+        "da000000-0000-4000-8000-000000000004");
+    auto state=MasteringChainState::create_default(
+        *registry.value(),chainId,gain,eq,comp);
+    QVERIFY(state);
+    const auto originalGain=state.value()->gain_parameters();
+    const auto originalRevision=state.value()->chain().revision();
+    const auto bindings=state.value()->execution_bindings();
+    auto preset=p::capture(
+        state.value()->chain(),bindings,*registry.value());
+    QVERIFY(preset);
+    auto changed=GainParameters::create(-6.0);
+    QVERIFY(changed);
+    preset.value()->modules[0].parameters=*changed.value();
+    preset.value()->modules[0].user_bypass=true;
+    const auto draft=p::prepare_explicit_manual_preset_restore(
+        *preset.value(),state.value()->chain(),bindings,*registry.value());
+    QVERIFY(draft);
+    std::size_t admissionCalls=0;
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "TEST_BUSY_EPOCH"});
+        });
+    QVERIFY(!state.value()->apply_explicit_manual_preset_draft(
+        draft.value()->proposed_manual_chain,
+        draft.value()->proposed_bindings));
+    QCOMPARE(admissionCalls,std::size_t{1});
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    QVERIFY(!*state.value()->is_bypassed(gain).value());
+    state.value()->set_private_m18_chain_mutation_admission(
+        [&](const char*)->core::Status {
+            ++admissionCalls;
+            return core::Status::success();
+        });
+    QVERIFY(state.value()->apply_explicit_manual_preset_draft(
+        draft.value()->proposed_manual_chain,
+        draft.value()->proposed_bindings));
+    QCOMPARE(admissionCalls,std::size_t{2});
+    QCOMPARE(state.value()->gain_parameters(),*changed.value());
+    QCOMPARE(state.value()->chain().revision(),originalRevision+1U);
+    QVERIFY(*state.value()->is_bypassed(gain).value());
+    QCOMPARE(state.value()->chain_id(),chainId);
+    QCOMPARE(state.value()->eq_instance_id(),eq);
+    QCOMPARE(state.value()->compressor_instance_id(),comp);
+    // Reapplying the same stale draft must NOT cross M18 again.
+    QVERIFY(!state.value()->apply_explicit_manual_preset_draft(
+        draft.value()->proposed_manual_chain,
+        draft.value()->proposed_bindings));
+    QCOMPARE(admissionCalls,std::size_t{2});
+    QCOMPARE(state.value()->execution_bindings()[1].parameters,
+             bindings[1].parameters);
+}
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
 {
     auto registry = ModuleRegistry::create_dsp_package_v1();
