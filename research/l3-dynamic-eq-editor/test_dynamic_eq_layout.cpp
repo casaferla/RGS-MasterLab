@@ -33,8 +33,9 @@ static bool equal_geometry(QQuickItem* a,QQuickItem* b,
 }
 
 int main(int argc,char** argv) {
-    if(argc!=2)return 2;
+    if(argc!=3)return 2;
     QGuiApplication app(argc,argv);
+    const QString stage=QString::fromLocal8Bit(argv[2]);
     QQmlApplicationEngine engine;
     engine.load(QUrl::fromLocalFile(
         QFileInfo(QString::fromLocal8Bit(argv[1])).absoluteFilePath()));
@@ -46,31 +47,42 @@ int main(int argc,char** argv) {
         QStringLiteral("dynamicEqResearch"));
     if(!original || !dynamic)return 4;
     app.processEvents();
+    if(stage==QStringLiteral("load")) {
+        std::cout<<"Dynamic EQ QML scene: PASS\n";
+        return 0;
+    }
     constexpr std::array<const char*,10> controls{{
         "eqTopToolbarRegion","eqSpectrumToggleButton",
         "eqBandStripRegion","eqFrequencyControl","eqGainControl",
         "eqQControl","eqFilterGroup","filterButton_BELL",
         "filterButton_LOW_SHELF","filterButton_HIGH_SHELF"}};
-    for(const auto* name:controls) {
-        if(!equal_geometry(item(original,name),item(dynamic,name),name))
-            return 5;
+    if(stage==QStringLiteral("common") || stage==QStringLiteral("filter")) {
+        const std::size_t begin=stage==QStringLiteral("common")?0U:7U;
+        const std::size_t end=stage==QStringLiteral("common")?7U:10U;
+        for(std::size_t i=begin;i<end;++i) {
+            const auto* name=controls[i];
+            if(!equal_geometry(item(original,name),item(dynamic,name),name))
+                return 5;
+        }
     }
-    if(!equal_geometry(item(original,"eqOverallToggleButton"),
-                       item(dynamic,"dynamicEqActivityToggleButton"),
-                       "Overall-to-Activity toolbar slot"))return 6;
-    if(!equal_geometry(item(original,"parametricEqGraph"),
-                       item(dynamic,"parametricEqGraph"),
-                       "EQ graph"))return 7;
-    if (item(dynamic,"filterButton_NOTCH")
-        || item(dynamic,"filterButton_HIGH_PASS")
-        || item(dynamic,"filterButton_LOW_PASS")
-        || !item(dynamic,"filterButton_RESERVED_NOT_A_FILTER")) {
-        std::cerr<<"Unsupported Dynamic EQ filters or missing slot\n";
-        return 8;
+    if(stage==QStringLiteral("common")) {
+        if(!equal_geometry(item(original,"eqOverallToggleButton"),
+                           item(dynamic,"dynamicEqActivityToggleButton"),
+                           "Overall-to-Activity toolbar slot"))return 6;
+        if(!equal_geometry(item(original,"parametricEqGraph"),
+                           item(dynamic,"parametricEqGraph"),
+                           "EQ graph"))return 7;
+        if(dynamic->property("manualEditable").toBool())return 9;
+        auto* scope=item(dynamic,"parametricEqGraph");
+        if(!scope || scope->property("manualEditable").toBool())return 10;
     }
-    if(dynamic->property("manualEditable").toBool())return 9;
-    auto* scope=item(dynamic,"parametricEqGraph");
-    if(!scope || scope->property("manualEditable").toBool())return 10;
+    if(stage==QStringLiteral("filter")) {
+        if(item(dynamic,"filterButton_NOTCH")
+            || item(dynamic,"filterButton_HIGH_PASS")
+            || item(dynamic,"filterButton_LOW_PASS")
+            || !item(dynamic,"filterButton_RESERVED_NOT_A_FILTER"))
+            return 8;
+    }
     const QString screenshotDir=qEnvironmentVariable(
         "RGSML_DYNAMIC_EQ_SCREENSHOT_DIR");
     if(!screenshotDir.isEmpty()) {
@@ -84,6 +96,6 @@ int main(int argc,char** argv) {
             QStringLiteral("DynamicEq-Structural-Research.png")),"PNG"))
             return 13;
     }
-    std::cout<<"Dynamic EQ clone fixed-position Qt geometry: PASS\n";
+    std::cout<<"Dynamic EQ Qt research stage "<<stage.toStdString()<<" PASS\n";
     return 0;
 }

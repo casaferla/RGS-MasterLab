@@ -30,16 +30,34 @@ jobs:
           sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
           python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
           python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64
-      - name: Test original vs Dynamic EQ control coordinates
+      - name: Compile isolated Dynamic EQ Qt smoke
         shell: bash
         run: |
           set -euo pipefail
           cmake -S research/l3-dynamic-eq-editor -B /tmp/rgs-dynamic-qt -G Ninja \
             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64"
           cmake --build /tmp/rgs-dynamic-qt --parallel 4
+      - name: Load both Qt EQ editors
+        shell: bash
+        run: |
+          /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" load
+      - name: Verify shared toolbar graph and numeric positions
+        shell: bash
+        run: |
+          /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" common
+      - name: Verify Bell and shelf button positions and unsupported filters
+        shell: bash
+        run: |
+          /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" filter
+      - name: Capture isolated Dynamic EQ Qt screenshot
+        shell: bash
+        run: |
           RGSML_DYNAMIC_EQ_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-eq-visual" \
             /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
-            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml"
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" capture
       - name: Upload isolated Dynamic EQ layout
         if: always()
         uses: actions/upload-artifact@v4
