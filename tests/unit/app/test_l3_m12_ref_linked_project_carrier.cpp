@@ -624,10 +624,15 @@ userManualChainAndSingleModulePresetsAreStrictlyTyped() {
         std::string("rgsml.dsp.manual-preset/1.0.0").size(),
         "rgsml.dsp.manual-preset/999.0.0");
     QVERIFY(!p::decode_json(wrongSchema,*registry));
-    auto differentOrder=*manual.value();
-    QVERIFY(differentOrder.move(p2,0));
+    auto incompatible=dsp::ProcessingChain::create(*registry,{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(incompatible);
+    QVERIFY(incompatible.value()->add(gain,"rgsml.dsp.gain",0));
+    QVERIFY(incompatible.value()->add(
+        id("cb000000-0000-4000-8000-000000000003"),
+        "rgsml.dsp.parametric-eq",1));
     QVERIFY(!p::matches_exact_manual_topology(
-        *reopened.value(),differentOrder));
+        *reopened.value(),*incompatible.value()));
 }
 void M12NativeProjectCarrierTest::
 wrongProjectChainOrUnavailableFactoryCannotBePublished(){
