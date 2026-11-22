@@ -3,6 +3,7 @@
 // new artistic target/safety mass. All numbers originate from the
 // same-FFT coherent signed L/R/cross-power native producer.
 #include "l3_m06_m20_coherent_stereo_band_sink.hpp"
+#include "l3_m05m06_real_analysis_port.hpp"
 #include "l3_m08_frozen_targeted_population.hpp"
 #include <algorithm>
 #include <array>
