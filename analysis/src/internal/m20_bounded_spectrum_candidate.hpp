@@ -130,7 +130,8 @@ private:
       if(!std::isfinite(denominator)||denominator<=0.0 ||
          left_fft_half_.size()!=psd_l_.size()||
          cross_psd_.size()!=psd_r_.size())return false;
-      const double inv=1.0/denominator;
+      const volatile double checked_positive_denominator=denominator;
+      const double inv=1.0/checked_positive_denominator;
       const auto nyquist=static_cast<std::size_t>(geometry_.fft/2);
       for(std::size_t k=0;k<cross_psd_.size();++k) {
         const auto cross=std::real(

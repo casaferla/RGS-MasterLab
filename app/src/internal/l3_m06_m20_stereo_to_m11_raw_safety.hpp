@@ -68,6 +68,31 @@ bind_actual_m20_stereo_safety_to_m11(
        p.scope_frame_count<=0||c.scope_frame_count<=0||
        p.channel_count!=2U||c.channel_count!=2U)
         return {};
+    // The native 400-ms/Grid100 safety history is a complete,
+    // absolute frame-0 population; never pair a scalar P10 from one
+    // scope with an unrelated truncated or shifted occupancy series.
+    const auto complete_grid=[](
+        const analysis::TonalStereoAnalysisResult& source) {
+        const auto fs=source.sample_rate_hz;
+        const auto length=source.scope_frame_count;
+        if(fs<=0||fs%10!=0||length<=0)return false;
+        const auto hop=fs/10;
+        const auto window=4*hop;
+        const auto expected=length<window?std::int64_t{0}:
+            1+(length-window)/hop;
+        if(expected<=0||
+           source.correlation_grid100.size()!=
+               static_cast<std::size_t>(expected))
+            return false;
+        for(std::size_t i=0;i<source.correlation_grid100.size();++i)
+            if(source.correlation_grid100[i].absolute_window_start!=
+                static_cast<std::uint64_t>(i)*
+                static_cast<std::uint64_t>(hop))
+                return false;
+        return true;
+    };
+    if(!complete_grid(p)||!complete_grid(c))
+        return {{},StereoSafetyBridgeFailure::missing_raw_local_corr};
     if(!input.exact_native_low_end_frame_gate_equal_to_m19||
        !input.prepared_low.numerical_source_valid||
        !input.candidate_low.numerical_source_valid||

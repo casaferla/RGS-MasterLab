@@ -17,7 +17,7 @@ namespace m=rgsml::app::l3_automatch::m11_frozen;
         x.channel_count=2;
         x.correlation_p10={0.2,
             rgsml::analysis::TonalStereoMetricState::AVAILABLE};
-        for(std::size_t i=0;i<7U;++i)
+        for(std::size_t i=0;i<27U;++i)
             x.correlation_grid100.push_back({
                 4800U*i,{i==0? -0.01:0.5,
                     rgsml::analysis::TonalStereoMetricState::AVAILABLE}});
