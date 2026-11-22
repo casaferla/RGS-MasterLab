@@ -47,7 +47,7 @@ public:
         std::uint64_t last_end=0;
         // Reject malformed sidecars before notifying QML of availability.
         // Do not rely on the scene graph to validate or sanitize audio data.
-        const validTriple=[](double minimum,double last,double maximum) {
+        const auto validTriple=[](double minimum,double last,double maximum) {
             constexpr double bound=12.000001;
             return std::isfinite(minimum) && std::isfinite(last)
                 && std::isfinite(maximum)
