@@ -337,6 +337,9 @@ Rectangle {
                             Repeater {
                                 model: [
                                     { label: "Bell", token: "BELL" },
+                                    // Invisible slot retains the EXACT historical
+                                    // Low Shelf and High Shelf button positions.
+                                    { label: "", token: "RESERVED_NOT_A_FILTER" },
                                     { label: "Low Shelf", token: "LOW_SHELF" },
                                     { label: "High Shelf", token: "HIGH_SHELF" }
                                 ]
@@ -346,9 +349,16 @@ Rectangle {
                                     text: modelData.label
                                     minimumControlWidth: 88
                                     contentPadding: 4
+                                    opacity: modelData.token === "RESERVED_NOT_A_FILTER" ? 0 : 1
+                                    enabled: modelData.token !== "RESERVED_NOT_A_FILTER"
+                                        && root.manualEditable
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
-                                    onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
+                                    onClicked: {
+                                        if (root.manualEditable && root.viewModel
+                                            && modelData.token !== "RESERVED_NOT_A_FILTER")
+                                            root.viewModel.setFilter(modelData.token)
+                                    }
                                     Accessible.name: "Filter type " + modelData.label
                                     ToolTip.text: "Set filter type to " + modelData.label
                                     ToolTip.visible: (hovered) && stationaryTooltipDwell8.ready

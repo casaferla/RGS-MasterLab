@@ -1,0 +1,49 @@
+name: Dynamic EQ isolated Qt geometry parity (nonrelease)
+on:
+  push:
+    branches:
+      - research/l3-dynamic-eq-editor-isolated-20261122
+    paths:
+      - 'research/l3-dynamic-eq-editor/**'
+      - 'ui/qml/DynamicEqEditor.qml'
+      - 'ui/qml/DynamicEqGraph.qml'
+      - '.github/workflows/research-dynamic-eq-qt.yml'
+permissions:
+  contents: read
+jobs:
+  qt-geometry-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      QT_QUICK_CONTROLS_STYLE: Basic
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt Quick 6.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64
+      - name: Test original vs Dynamic EQ control coordinates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S research/l3-dynamic-eq-editor -B /tmp/rgs-dynamic-qt -G Ninja \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64"
+          cmake --build /tmp/rgs-dynamic-qt --parallel 4
+          RGSML_DYNAMIC_EQ_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-eq-visual" \
+            /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml"
+      - name: Upload isolated Dynamic EQ layout
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-eq-structural-layout
+          path: \${{ runner.temp }}/dynamic-eq-visual/*.png
+          if-no-files-found: warn

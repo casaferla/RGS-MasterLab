@@ -26,3 +26,17 @@ controls; genuine band dynamic-gain curve and envelope history
 bound to the accepted audio realization; isolated Qt smoke/visual test.
 No separate QML detector, duplicate C01 math or fictional live telemetry.
 All common controls must stay in the exact L1 locations.
+
+## Qt geometry parity test
+
+The invisible `RESERVED_NOT_A_FILTER` layout slot replaces only the
+Notch BUTTON AREA, preserving the original exact coordinates for Bell,
+Low Shelf, High Shelf, Spectrum, Frequency, Base Gain, Q and graph.
+It cannot be selected and never reaches a Dynamic EQ parameter setter.
+The research-only dual-editor Qt harness asserts geometric equality
+of these controls at 1184x688 and ensures no unsupported filter buttons.
+The widget is still fully manual-locked until after L3; Activity
+is disabled until authoritative DSP telemetry exists.
+
+The dedicated CI produces a Qt screenshot in `dynamic-eq-structural-layout`;
+this is a geometry smoke, NOT a running C01 DSP or accepted editor.
