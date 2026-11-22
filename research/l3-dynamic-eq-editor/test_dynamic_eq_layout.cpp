@@ -56,7 +56,7 @@ int main(int argc,char** argv) {
         "eqBandStripRegion","eqFrequencyControl","eqGainControl",
         "eqQControl","eqFilterGroup","filterButton_BELL",
         "filterButton_LOW_SHELF","filterButton_HIGH_SHELF"}};
-    if(stage==QStringLiteral("common") || stage==QStringLiteral("filter")) {
+    if(stage==QStringLiteral("common") || stage==QStringLiteral("filter-positions")) {
         const std::size_t begin=stage==QStringLiteral("common")?0U:7U;
         const std::size_t end=stage==QStringLiteral("common")?7U:10U;
         for(std::size_t i=begin;i<end;++i) {
@@ -76,7 +76,7 @@ int main(int argc,char** argv) {
         auto* scope=item(dynamic,"parametricEqGraph");
         if(!scope || scope->property("manualEditable").toBool())return 10;
     }
-    if(stage==QStringLiteral("filter")) {
+    if(stage==QStringLiteral("filter-safe")) {
         if(item(dynamic,"filterButton_NOTCH")
             || item(dynamic,"filterButton_HIGH_PASS")
             || item(dynamic,"filterButton_LOW_PASS")

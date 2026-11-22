@@ -47,11 +47,16 @@ jobs:
         run: |
           /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
             "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" common
-      - name: Verify Bell and shelf button positions and unsupported filters
+      - name: Verify Bell and shelf button positions
         shell: bash
         run: |
           /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
-            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" filter
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" filter-positions
+      - name: Verify unsupported filters cannot be selected
+        shell: bash
+        run: |
+          /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
+            "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" filter-safe
       - name: Capture isolated Dynamic EQ Qt screenshot
         shell: bash
         run: |

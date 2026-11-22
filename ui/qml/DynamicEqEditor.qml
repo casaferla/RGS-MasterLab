@@ -339,13 +339,13 @@ Rectangle {
                                     { label: "Bell", token: "BELL" },
                                     // Invisible slot retains the EXACT historical
                                     // Low Shelf and High Shelf button positions.
-                                    { label: "", token: "RESERVED_NOT_A_FILTER" },
+                                    { label: "Notch", token: "RESERVED_NOT_A_FILTER" },
                                     { label: "Low Shelf", token: "LOW_SHELF" },
                                     { label: "High Shelf", token: "HIGH_SHELF" },
                                     // No pass filters exist in C01. Retain
                                     // only their old spatial slots, invisible.
-                                    { label: "", token: "RESERVED_HP" },
-                                    { label: "", token: "RESERVED_LP" }
+                                    { label: "High Pass", token: "RESERVED_HP" },
+                                    { label: "Low Pass", token: "RESERVED_LP" }
                                 ]
                                 delegate: StudioSegmentButton {
                                     required property var modelData
