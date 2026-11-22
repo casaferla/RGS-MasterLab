@@ -31,7 +31,8 @@ The future render-sidecar supplies `activityHistory`, each bucket:
 sustainMinDb,sustainMaxDb,sustainLastDb}` in dB. The same accepted
 audible `RealizationId` must be visible via two identity properties.
 `audibleFrame` comes ONLY from the authentic playback snapshot; changing
-it scrolls the five-second view, and pause freezes it. When identities
+it scrolls the five-second view, and pause freezes it. Only fully consumed telemetry buckets are displayed;
+no unseen portion of the current bucket may leak into the playback scope.\nWhen identities
 differ, bypass is active, or the sidecar is missing, the graph says
 TELEMETRY UNAVAILABLE. No independent animation clock in production.
 

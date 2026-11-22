@@ -18,6 +18,8 @@ Item {
     readonly property color attackHue: "#C4774A"
     readonly property color sustainHue: "#45BFAE"
 
+    // Display only buckets COMPLETED before the audible playhead boundary:
+    // do not expose future gain data from the remainder of an active bucket.
     // Future renderer sidecar contract: ascending absolute half-open frame
     // buckets containing six real per-bucket statistics. Last values are
     // actual DSP states from the LAST sample of each bucket.
@@ -51,14 +53,16 @@ Item {
                 || p.sustainLastDb > p.sustainMaxDb) return false
             prevEnd = p.frameEndExclusive
         }
-        return true
+        // Reject sidecars which contain no data in the audible 5-second window.
+        return history[history.length - 1].frameEndExclusive >
+            audibleFrame - sampleRateHz * secondsVisible
     }
     readonly property bool graphAvailable: identityCurrent && bucketsValid
     function currentValue(field) {
         if (!graphAvailable) return NaN
         for (let i = history.length - 1; i >= 0; --i) {
             const p = history[i]
-            if (p.frameBegin <= audibleFrame && audibleFrame < p.frameEndExclusive)
+            if (p.frameEndExclusive <= audibleFrame)
                 return p[field]
         }
         return NaN
@@ -161,9 +165,9 @@ Item {
                 for (let i = 0; i < root.history.length; ++i) {
                     const p = root.history[i]
                     if (p.frameEndExclusive <= windowStart
-                        || p.frameBegin > root.audibleFrame) continue
+                        || p.frameEndExclusive > root.audibleFrame) continue
                     const x0 = Math.max(left, xAt(p.frameBegin))
-                    const x1 = Math.min(right, xAt(Math.min(p.frameEndExclusive, root.audibleFrame)))
+                    const x1 = Math.min(right, xAt(p.frameEndExclusive))
                     if (x1 < left || x0 > right) continue
                     const yTop = mapY(p[maxKey]), yBottom = mapY(p[minKey])
                     ctx.fillRect(x0, yTop, Math.max(1.0, x1 - x0), Math.max(1.0, yBottom-yTop))

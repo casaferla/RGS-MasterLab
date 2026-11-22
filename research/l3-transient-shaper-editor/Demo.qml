@@ -68,7 +68,7 @@ ApplicationWindow {
         activityTelemetryAvailable: true
         telemetryRealizationId: "synthetic-demo-only"
         audibleRealizationId: "synthetic-demo-only"
-        audibleFrame: demo.tick * demo.framesPerBucket - 1
+        audibleFrame: demo.tick * demo.framesPerBucket
         activitySampleRateHz: 48000
         auditioningProcessed: true
         shaperBypassed: false

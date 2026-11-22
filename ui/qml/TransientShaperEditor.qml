@@ -34,7 +34,7 @@ Item {
     // Numeric drafts never trigger DSP work on each keystroke. Same 120x32,
     // Consolas 16, GAIN-field visual grammar as InputGainEditor.
     function commitNumeric(control, low, high, current, setter) {
-        if(!root.transientModule) return
+        if(!root.editorEnabled) return
         const parsed=Number(control.text.trim().replace(",","."))
         if(!Number.isFinite(parsed) || parsed<low || parsed>high) {
             control.text=current.toFixed(1)
@@ -122,7 +122,7 @@ Item {
                         Layout.preferredHeight: 13
                         Text { text: "−12.0 dB"; color: "#586773"; font.family: "Consolas"; font.pixelSize: 10 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "0.0 dB"; color: "#A1B5C9"; font.family: "Consolas"; font.pixelSize: 11; font.weight: Font.Bold }
+                        Text { text: "0.0 dB"; color: root.attackDb === 0.0 ? root.copper : "#A1B5C9"; font.family: "Consolas"; font.pixelSize: 11; font.weight: Font.Bold }
                         Item { Layout.fillWidth: true }
                         Text { text: "+12.0 dB"; color: "#586773"; font.family: "Consolas"; font.pixelSize: 10 }
                     }
@@ -138,6 +138,7 @@ Item {
                         // Signed Attack fill starts at neutral 0 dB.
                         fillFromOrigin: true
                         positionFillOrigin: 0
+                        showOriginTick: true
                         positionFillColor: Qt.alpha(root.copper, 0.38)
                         accentColor: root.copper
                         value: root.attackDb
@@ -167,6 +168,7 @@ Item {
                                 ? root.copper : "#2C5A78"
                             TextInput {
                                 id: attackEntry
+                                enabled: root.editorEnabled
                                 objectName: "transientShaperAttackNumericInput"
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
@@ -309,6 +311,7 @@ Item {
                                 ? root.copper : "#2C5A78"
                             TextInput {
                                 id: sustainEntry
+                                enabled: root.editorEnabled
                                 objectName: "transientShaperSustainNumericInput"
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
