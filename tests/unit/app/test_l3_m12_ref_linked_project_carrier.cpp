@@ -445,7 +445,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!workerTicket.value()->authorizes_m12_receipt());
     QVERIFY(!workerTicket.value()->authorizes_m13_verified());
     rgsml::app::MasteringPreviewController::PreviewJob validJob{
-        1U,ownedPrepared,*manualGain.value(),gainBindings,reg};
+        1U,ownedPrepared,*manualGain.value(),gainBindings,reg,{}};
     const auto ownedWorkerRender=m::render_m12_exact_product_preview_job(
         *workerTicket.value(),validJob,*maxBlock.value());
     QVERIFY(ownedWorkerRender);
@@ -626,7 +626,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         p2SharedPlan,ownedPrepared,*manualWithP2.value(),manualP2Bindings);
     QVERIFY(p2Ticket);
     rgsml::app::MasteringPreviewController::PreviewJob p2Job{
-        2U,ownedPrepared,*manualWithP2.value(),manualP2Bindings,optRegistry};
+        2U,ownedPrepared,*manualWithP2.value(),manualP2Bindings,optRegistry,{}};
     QVERIFY(m::render_m12_exact_product_preview_job(
         *p2Ticket.value(),p2Job,*maxBlock.value()));
     const auto alternateP2=dsp::StreamingTruePeakLimiterParameters::create(
