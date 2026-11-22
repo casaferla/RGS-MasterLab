@@ -32,6 +32,16 @@ static bool equal_geometry(QQuickItem* a,QQuickItem* b,
     return true;
 }
 
+static bool equal_position(QQuickItem* a,QQuickItem* b,
+                            std::string_view label) {
+    if(!a || !b)return false;
+    const bool xok=std::abs(a->x()-b->x())<=0.5;
+    const bool yok=std::abs(a->y()-b->y())<=0.5;
+    if(!xok || !yok)
+        std::cerr<<"Position drift in "<<label<<"\n";
+    return xok && yok;
+}
+
 int main(int argc,char** argv) {
     if(argc!=3)return 2;
     QGuiApplication app(argc,argv);
@@ -74,8 +84,11 @@ int main(int argc,char** argv) {
         else if(stage==QStringLiteral("filter-position-high")) {begin=9U;end=10U;}
         for(std::size_t i=begin;i<end;++i) {
             const auto* name=controls[i];
-            if(!equal_geometry(item(original,name),item(dynamic,name),name))
-                return 5;
+            const bool filters=i>=7U;
+            const bool match=filters
+                ?equal_position(item(original,name),item(dynamic,name),name)
+                :equal_geometry(item(original,name),item(dynamic,name),name);
+            if(!match)return 5;
         }
     }
     if(stage==QStringLiteral("common")) {

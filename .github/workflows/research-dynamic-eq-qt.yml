@@ -68,6 +68,7 @@ jobs:
           /tmp/rgs-dynamic-qt/dynamic_eq_clone_layout_smoke \
             "$GITHUB_WORKSPACE/research/l3-dynamic-eq-editor/DualEditorLayoutHarness.qml" filter-safe
       - name: Capture isolated Dynamic EQ Qt screenshot
+        if: always()
         shell: bash
         run: |
           RGSML_DYNAMIC_EQ_SCREENSHOT_DIR="$RUNNER_TEMP/dynamic-eq-visual" \
