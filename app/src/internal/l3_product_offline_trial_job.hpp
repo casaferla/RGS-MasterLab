@@ -16,6 +16,7 @@
 #include "l3_m06_native_spectral_d10_d12.hpp"
 #include "l3_m06_m20_native_frame_energy_sink.hpp"
 #include "l3_m06_m20_coherent_stereo_band_sink.hpp"
+#include "l3_m06_p04_real_product_observation.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -141,6 +142,12 @@ struct OfflineProductNativeStereoCandidate final {
     OfflineProductCandidateMeasurement measurement;
     m05m06_real::StereoCoherentNativeResult native_s03_s06;
     [[nodiscard]] constexpr bool authorizes_export_or_plan()
+        const noexcept{return false;}
+};
+struct OfflineProductNativeTransientCandidate final {
+    OfflineProductCandidateMeasurement measurement;
+    m05m06_real::P04ProductObservation actual_p04;
+    [[nodiscard]] constexpr bool authorizes_product_publication()
         const noexcept{return false;}
 };
 class OfflineProductTrialJob final {
@@ -372,6 +379,34 @@ public:
         return R::success(OfflineProductNativeStereoCandidate{
             {std::move(*rendered.value()),std::move(*levels.value()),
              std::move(*tonal.value())},std::move(observed)});
+    }
+    // P04's native 20-ms/5-ms detector differs from the M20 FFT.
+    // Still exactly ONE Product render; M19/M20 is reused once and
+    // distinct native P04 is measured directly on its output PCM.
+    [[nodiscard]] core::Result<OfflineProductNativeTransientCandidate>
+    evaluate_with_native_p04_d07_d09(
+        std::int64_t exact_phase6_active_frames,
+        bool exact_current_p04_policy_and_product_source_attested) const
+    {
+        using R=core::Result<OfflineProductNativeTransientCandidate>;
+        if(!exact_current_p04_policy_and_product_source_attested||
+           !prepared_||
+           exact_phase6_active_frames<0||
+           exact_phase6_active_frames>
+              prepared_->view().frame_count().value())
+            return R::failure(
+                failed("L3_P04_SOURCE_OR_POLICY_NOT_CURRENT"));
+        auto basic=evaluate();
+        if(!basic)return R::failure(*basic.error());
+        auto observed=m05m06_real::measure_product_p04_d07_d09(
+            basic.value()->rendered.view(),
+            exact_phase6_active_frames,true);
+        if(observed.reason!=
+              m05m06_real::P04ProductObservationReason::ready)
+            return R::failure(
+                failed("L3_P04_REAL_DETECTOR_OR_DESCRIPTOR_INVALID"));
+        return R::success(OfflineProductNativeTransientCandidate{
+            std::move(*basic.value()),std::move(observed)});
     }
     // Caller MUST obtain all current arguments from live Qt Product owner
     // when the worker result returns, never from the worker itself. This

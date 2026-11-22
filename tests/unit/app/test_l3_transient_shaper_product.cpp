@@ -237,6 +237,21 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
     QCOMPARE(nativeSpectrum.value()->measurement.tonal.mean_linear_psd,
              calculated.value()->tonal.mean_linear_psd);
     QVERIFY(!nativeSpectrum.value()->authorizes_product_publication());
+    // Same canonical RenderPreview also supplies a REAL distinct P04
+    // native detector. The short source has no reference-grade 5s/8
+    // transient population and does not get falsely "achieved" status.
+    const auto p04=job.value()->evaluate_with_native_p04_d07_d09(
+        4096,true);
+    QVERIFY(p04);
+    QCOMPARE(p04.value()->actual_p04.reason,
+        a::m05m06_real::P04ProductObservationReason::ready);
+    QVERIFY(!p04.value()->actual_p04.actual_flux.canonical.empty());
+    QVERIFY(p04.value()->actual_p04.detector.canonical_events.empty());
+    QCOMPARE(p04.value()->measurement.rendered.view().frame_count(),
+             calculated.value()->rendered.view().frame_count());
+    QVERIFY(!p04.value()->authorizes_product_publication());
+    QVERIFY(!job.value()->evaluate_with_native_p04_d07_d09(
+        4096,false));
     // A mono Product source must not be silently duplicated into a
     // stereo M/S source merely to populate S03-S06.
     QVERIFY(!job.value()->evaluate_with_native_stereo_s03_s06(
