@@ -247,8 +247,8 @@ void TransientProductTest::nonPublishingProductCandidateUsesExistingM03() {
         a::m05m06_real::P04ProductObservationReason::ready);
     QVERIFY(!p04.value()->actual_p04.actual_flux.canonical.empty());
     QVERIFY(p04.value()->actual_p04.detector.canonical_events.empty());
-    QCOMPARE(p04.value()->measurement.rendered.view().frame_count(),
-             calculated.value()->rendered.view().frame_count());
+    QCOMPARE(p04.value()->measurement.rendered.view().frame_count().value(),
+             calculated.value()->rendered.view().frame_count().value());
     QVERIFY(!p04.value()->authorizes_product_publication());
     QVERIFY(!job.value()->evaluate_with_native_p04_d07_d09(
         4096,false));
