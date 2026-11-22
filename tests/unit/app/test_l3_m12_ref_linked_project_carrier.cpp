@@ -23,8 +23,7 @@
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/project/project_repository.hpp>
 #include <rgsml/core/resource_reference.hpp>
-#include <rgsml/core/resource_reader.hpp>
-#include <rgsml/core/resource_writer.hpp>
+#include <rgsml/core/resource_io.hpp>
 #include <span>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
