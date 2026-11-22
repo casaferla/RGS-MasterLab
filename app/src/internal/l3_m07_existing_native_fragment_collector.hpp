@@ -11,6 +11,7 @@
 #include "l3_m06_d10_d12_native_binding.hpp"
 #include "l3_m19_native_macro_loudness_bindings.hpp"
 #include "l3_m20_native_stereo_bindings.hpp"
+#include "l3_m06_s03_s06_native_binding.hpp"
 #include "l3_m20_tonal_scalar_bindings.hpp"
 #include "l3_m20_t01_primary_binding.hpp"
 #include <array>
@@ -29,6 +30,8 @@ struct ExistingNativeSourceFragments final {
     std::optional<m05m06_real::SpectralSlotProjection> spectral_frame_energy;
     std::optional<m05m06_real::M19NativeSlotProjection> macro_loudness;
     std::optional<m05m06_real::M20StereoProjection> stereo_broadband;
+    std::optional<m05m06_real::CoherentStereoBindingProjection>
+        stereo_coherent_bands_and_lowend;
 };
 enum class NativeFragmentAdmission:std::uint8_t {
     accepted_partial,accepted_complete,missing_upstream_authority,
@@ -72,6 +75,10 @@ collect_existing_m05m06_native_fragments(
         for(const auto& s:*fragments.macro_loudness->feature_slots)add(s);
     if(fragments.stereo_broadband&&fragments.stereo_broadband->feature_slots)
         for(const auto& s:*fragments.stereo_broadband->feature_slots)add(s);
+    if(fragments.stereo_coherent_bands_and_lowend&&
+       fragments.stereo_coherent_bands_and_lowend->feature_bindings)
+        for(const auto& s:*
+            fragments.stereo_coherent_bands_and_lowend->feature_bindings)add(s);
     const auto inventory=generation.current_inventory();
     if(invalid||inventory.entire_generation_poisoned)
         return {NativeFragmentAdmission::conflicting_or_invalid_source,

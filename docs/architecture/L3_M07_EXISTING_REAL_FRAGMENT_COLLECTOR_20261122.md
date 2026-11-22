@@ -19,3 +19,11 @@ four are S03–S06. Crucially the P04 event detector and full per-frame
 Phase6 canonical STFT source are NOT yet implemented here; these six
 new fragments can only be supplied by independent authentic producers.
 No population readiness or AutoMatch convergence is asserted.
+
+S03–S06 original Stereo source projections now join the native
+fragment collector. All 27 original FeatureBinding identities have
+source-layer adapters. This means neither all 27 features are actually
+measured and reference-grade nor a valid full solver population exists:
+a missing native event detector, stale Phase6 source, forbidden
+low-end gate substitution, or unverified feature definition blocks
+admission. No new fifth DSP, dynamic target or M12 plan is invented.

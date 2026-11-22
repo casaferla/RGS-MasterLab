@@ -26,6 +26,7 @@ private slots:
     void existingNativeSubsetRemainsExplicitlyIncomplete();
     void duplicateCannotOverwriteOrDoubleCountFeature();
     void missingAllFragmentsReportsExactMissingIds();
+    void coherentStereoCompletesRemainingOriginalFourSlots();
     void certifiedNativeEventAndSpectralFragmentsKeepFourStereoMissing();
 };
 void M07NativeFragmentCollectorTest::
@@ -77,6 +78,33 @@ missingAllFragmentsReportsExactMissingIds() {
              std::size_t{27});
     QCOMPARE(result.inventory.missing_original_binding_ids.front(),
              m07::kBindings[0].binding_id);
+}
+void M07NativeFragmentCollectorTest::
+coherentStereoCompletesRemainingOriginalFourSlots() {
+    m07::ExactTwentySevenFeatureAssembler generation{
+        "exact-test-only-Phase6-feature-content",true};
+    m07::ExistingNativeSourceFragments native;
+    std::array<m08::AuthenticatedPairSlot,4> stereo{
+        binding(m07::kBindings[20]),binding(m07::kBindings[21]),
+        binding(m07::kBindings[22]),binding(m07::kBindings[23])};
+    // The two multiband vectors retain their canonical N
+    // configured components, and low-end preserves three cutoffs.
+    for(std::size_t k=0;k<4U;++k) {
+        auto& parts=stereo[k].configured;
+        const auto count=k<2U?4U:3U;
+        while(parts.size()<count)parts.push_back(parts.front());
+    }
+    native.stereo_coherent_bands_and_lowend=
+        m05::CoherentStereoBindingProjection{
+            stereo,m05::CoherentStereoBindingFailure::none};
+    const auto collected=m07::collect_existing_m05m06_native_fragments(
+        generation,native);
+    QCOMPARE(collected.status,
+             m07::NativeFragmentAdmission::accepted_partial);
+    QCOMPARE(collected.inventory.populated_count,std::size_t{4});
+    QCOMPARE(collected.inventory.missing_original_binding_ids.size(),
+             std::size_t{23});
+    QVERIFY(!generation.complete_canonical_population());
 }
 void M07NativeFragmentCollectorTest::
 certifiedNativeEventAndSpectralFragmentsKeepFourStereoMissing() {
