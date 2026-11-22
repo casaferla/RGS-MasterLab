@@ -1,6 +1,7 @@
 #include "internal/l3_m10_p2_real_native_product_job.hpp"
 #include "internal/l3_product_native_one_pass.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
+#include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
@@ -37,6 +38,7 @@ private slots:
     void adaptiveRamCacheBudgetPreservesColdRender();
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
     void streamingP2AndIndependentM16RenderAtAllSixRates();
+    void canonicalAll27ScoringRequiresRealM11Protection();
 };
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
@@ -366,6 +368,130 @@ streamingP2AndIndependentM16RenderAtAllSixRates() {
     QVERIFY(tp);
     QVERIFY(std::isfinite(tp.value()->global_linear_peak()));
     QVERIFY(tp.value()->global_linear_peak()<=1.0);
+}
+
+void P2RealNativeProductTest::
+canonicalAll27ScoringRequiresRealM11Protection() {
+    // Fixtures here are synthetic ONLY to verify gate wiring and mass.
+    // Product M10 calls the ten actual source-specific native binders.
+    namespace m07=a::m07_frozen;
+    namespace m08=a::m08_frozen;
+    namespace m10=a::m10_frozen;
+    namespace native=a::m05m06_real;
+    auto slot=[&](std::size_t index) {
+        const auto& b=m07::kBindings[index];
+        m08::AuthenticatedPairSlot out{
+            std::string{b.binding_id},std::string{b.source_feature_id},
+            "unit-test-m07-digest",true,{}};
+        const auto n=b.component_share==m07::ComponentShare::thirds
+            ?std::size_t{3}:b.component_share==
+                m07::ComponentShare::configured_n
+                ?std::size_t{2}:std::size_t{1};
+        for(std::size_t i=0;i<n;++i)
+            out.configured.push_back({
+                true,1.0,{12.0,m08::Endpoint::ordinary},
+                {9.0,m08::Endpoint::ordinary},10.5,true});
+        return out;
+    };
+    const std::array<m08::DomainAmount,4> domains{{
+        {m07::kDomainIds[0],1.0},{m07::kDomainIds[1],1.0},
+        {m07::kDomainIds[2],1.0},{m07::kDomainIds[3],1.0}}};
+    const auto config=m08::create_amount_config(0.5,domains,11);
+    QVERIFY(config.config);
+    m10::AuthoritativeCostInput independent;
+    independent.amount=*config.config;
+    independent.m08_corrective_mask={{true,true,true,true}};
+    independent.optimization_target_equals_desired_attested=true;
+    independent.exact_m05_m06_source_and_m07_dependency_current=true;
+    independent.m11_fixed_and_protected_snapshot_current=true;
+    independent.fresh_candidate_render_and_analysis_current=true;
+    independent.hard_m11_and_independent_safety_preflight_passed=true;
+    independent.m11_full_k_dependency_and_order_attested=true;
+    independent.active_owned_modules=2;
+    independent.enabled_artistic_bands=3;
+    independent.canonical_current_tuple={0x01};
+    independent.exact_topology_evidence_identity={0x02};
+    for(const auto& b:m07::kBindings) {
+        const auto n=b.component_share==m07::ComponentShare::thirds
+            ?std::size_t{3}:b.component_share==
+                m07::ComponentShare::configured_n
+                ?std::size_t{2}:std::size_t{1};
+        for(std::size_t i=0;i<n;++i)
+            independent.protected_full_k.push_back({
+                true,true,true,12.0,9.0,10.5,10.5,0.5});
+    }
+    native::T01BindingProjection t1{
+        slot(0),native::T01BindingFailure::none};
+    m07::ExistingNativeSourceFragments fragments;
+    fragments.tonal_primary=std::move(t1);
+    // Intentionally absent 26 slots: no M10 numeric score.
+    const auto incomplete=m10::score_complete_p2_native_fragment_set(
+        fragments,independent,"exact-test-phase6",true);
+    QCOMPARE(incomplete.reason,
+             m10::P2NativeCostReason::incomplete_or_conflicting_m07);
+    QCOMPARE(incomplete.m07.populated_count,std::size_t{1});
+    QVERIFY(!incomplete.measured);
+    QVERIFY(!incomplete.as_exact_cache_evidence().measured);
+    QVERIFY(!m10::score_complete_p2_native_fragment_set(
+        fragments,independent,"exact-test-phase6",false).measured);
+    // Populate all original canonical feature families (no M21 values).
+    std::array<m08::AuthenticatedPairSlot,5> tonal{
+        slot(1),slot(2),slot(3),slot(4),slot(5)};
+    fragments.tonal_scalar=native::TonalBindingProjection{
+        tonal,native::TonalBindingProblem::none};
+    fragments.macro_d01=native::D01BindingProjection{
+        slot(6),native::D01BindingFailure::none};
+    fragments.macro_lra=native::LraBindingProjection{
+        slot(7),native::LraBindingReason::ready};
+    fragments.macro_windowed=native::D03D04SlotProjection{
+        std::array<m08::AuthenticatedPairSlot,2>{slot(8),slot(9)},
+        native::D03D04SlotFailure::none};
+    fragments.micro_events=native::TransientBindingProjection{
+        std::array<m08::AuthenticatedPairSlot,3>{
+            slot(12),slot(13),slot(14)},
+        native::TransientBindingFailure::none};
+    fragments.spectral_frame_energy=native::SpectralSlotProjection{
+        std::array<m08::AuthenticatedPairSlot,3>{
+            slot(15),slot(16),slot(17)},
+        native::SpectralSlotFailure::none};
+    fragments.macro_loudness=native::M19NativeSlotProjection{
+        std::array<m08::AuthenticatedPairSlot,5>{
+            slot(10),slot(11),slot(24),slot(25),slot(26)},
+        native::M19SlotFailure::none};
+    fragments.stereo_broadband=native::M20StereoProjection{
+        std::array<m08::AuthenticatedPairSlot,2>{slot(18),slot(19)},
+        native::M20StereoFailure::none};
+    fragments.stereo_coherent_bands_and_lowend=
+        native::CoherentStereoBindingProjection{
+            std::array<m08::AuthenticatedPairSlot,4>{
+                slot(20),slot(21),slot(22),slot(23)},
+            native::CoherentStereoBindingFailure::none};
+    const auto full=m10::score_complete_p2_native_fragment_set(
+        fragments,independent,"exact-test-phase6",true);
+    QCOMPARE(full.m07.populated_count,std::size_t{27});
+    QCOMPARE(full.reason,m10::P2NativeCostReason::measured);
+    QVERIFY(full.complete_measured());
+    QVERIFY(full.as_exact_cache_evidence().
+        full_current_render_analysis_hard_gates_attested);
+    QVERIFY(!full.authorizes_m12_or_m13());
+    // Independent M11/owner denial must veto, despite 27 plausible
+    // features and a valid exact numerical objective.
+    independent.hard_m11_and_independent_safety_preflight_passed=false;
+    const auto denied=m10::score_complete_p2_native_fragment_set(
+        fragments,independent,"exact-test-phase6",true);
+    QCOMPARE(denied.reason,
+             m10::P2NativeCostReason::m08_or_m11_safety_rejected);
+    QVERIFY(!denied.measured);
+    QVERIFY(!denied.as_exact_cache_evidence().
+        full_current_render_analysis_hard_gates_attested);
+    // A duplicated slot is rejected, never overwritten by a
+    // first-wins or count-based pseudo-complete result.
+    auto wrong=fragments;
+    wrong.macro_loudness->feature_slots->at(0)=slot(0);
+    const auto duplicate=m10::score_complete_p2_native_fragment_set(
+        wrong,independent,"exact-test-phase6",true);
+    QCOMPARE(duplicate.reason,
+             m10::P2NativeCostReason::incomplete_or_conflicting_m07);
 }
 } // namespace
 } // namespace rgsml::tests
