@@ -32,33 +32,46 @@ struct ProductNativeOnePassResult final {
     [[nodiscard]] constexpr bool authorizes_m10_or_export()
         const noexcept{return false;}
 };
-// Reusable native analyzer for any genuine immutable Product job that
-// exposes execute()/result_has_expected_scope(). The specialized M10/P2
-// three-segment job renders once and reuses this exact FFT/feature path.
-template<typename ProductJob>
-[[nodiscard]] inline core::Result<ProductNativeOnePassResult>
-measure_real_product_candidate_once(
-    const ProductJob& job,ProductNativeOnePassSpec spec,
-    const std::atomic<bool>* cancellation=nullptr) {
-    using R=core::Result<ProductNativeOnePassResult>;
-    const auto fail=[](const char* text) {
+// This is a FULL, real, owning PCM source analyzer. Unlike the candidate
+// entry point below, it does not render a DSP graph and can be reused for
+// the once-per-generation PREPARED and independent decoded REFERENCE.
+// Reuse exact M19/M20 original producers and the exact M20 frame sinks;
+// no M21 display proxy and no second/surrogate Phase6 FFT definitions.
+struct ProductNativeFullResourceObservations final {
+    analysis::BasicLevelAnalysisResult levels;
+    analysis::TonalStereoAnalysisResult tonal;
+    m05m06_real::SpectralD10D12Native d10_d12;
+    m05m06_real::StereoCoherentNativeResult s03_s06;
+    m05m06_real::P04ProductObservation d07_d09;
+    std::vector<std::uint64_t> selected_original_m20_ordinals;
+    [[nodiscard]] constexpr bool authorizes_m10_or_m12()const noexcept {
+        return false;
+    }
+};
+[[nodiscard]] inline core::Result<ProductNativeFullResourceObservations>
+measure_real_full_owned_pcm_native_once(
+    const audio::AudioBuffer& full_resource,
+    ProductNativeOnePassSpec spec,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    using R=core::Result<ProductNativeFullResourceObservations>;
+    const auto fail=[](const char* msg){
         return R::failure(core::Error{
-            core::ErrorCode::InvalidState,text});
+            core::ErrorCode::InvalidState,msg});
     };
+    const auto geometry=full_resource.view();
     if(!spec.current_full_phase6_source_and_grid||
        spec.exact_m20_fft_size<2U||spec.spectral_bands.empty()||
        spec.source_support.selected_native_frame_sink||
-       spec.source_support.selected_stereo_frame_sink)
+       spec.source_support.selected_stereo_frame_sink||
+       geometry.absolute_start_frame().value()!=0||
+       geometry.frame_count().value()<=0||
+       geometry.timebase().frame_domain_id()!=
+           audio::FrameDomainId::SOURCE_PROCESSING_RATE)
         return fail("L3_ONCE_MISSING_SOURCE_OR_GRID");
     if(cancellation&&cancellation->load(std::memory_order_acquire))
-        return fail("L3_ONCE_CANCELLED_BEFORE_RENDER");
-    auto rendered=job.execute();
-    if(!rendered)return R::failure(*rendered.error());
-    if(cancellation&&cancellation->load(std::memory_order_acquire))
-        return fail("L3_ONCE_CANCELLED_AFTER_RENDER");
-    if(!job.result_has_expected_scope(*rendered.value()))
-        return fail("L3_ONCE_RENDER_SCOPE_STALE");
-    const auto view=rendered.value()->view();
+        return fail("L3_ONCE_CANCELLED_BEFORE_NATIVE_ANALYSIS");
+    const auto view=full_resource.view();
     const auto rate=static_cast<std::uint32_t>(
         view.format().sample_rate().value());
     const auto channels=view.format().channel_count();
@@ -66,7 +79,7 @@ measure_real_product_candidate_once(
        static_cast<std::uint64_t>(view.frame_count().value()))
         return fail("L3_ONCE_ACTIVE_SCOPE_NOT_CURRENT");
     auto levels=analysis::measure_basic_level_full_resource(
-        rendered.value()->buffer());
+        full_resource);
     if(!levels)return R::failure(*levels.error());
     m05m06_real::AuthenticM20FrameEnergySink spectral{
         rate,spec.exact_m20_fft_size,
@@ -117,10 +130,48 @@ measure_real_product_candidate_once(
         true,cancellation);
     if(p04.reason!=m05m06_real::P04ProductObservationReason::ready)
         return fail("L3_ONCE_NATIVE_P04_INVALID");
-    return R::success(ProductNativeOnePassResult{
-        {std::move(*rendered.value()),std::move(*levels.value()),
-         std::move(*tonal.value())},
+    return R::success(ProductNativeFullResourceObservations{
+        std::move(*levels.value()),std::move(*tonal.value()),
         std::move(d10),std::move(s03),std::move(p04),
         spectral.canonical_original_ordinals()});
+}
+// Reusable native analyzer for any genuine immutable Product job that
+// exposes execute()/result_has_expected_scope(). The specialized M10/P2
+// three-segment job renders ONCE, then shares the same full PCM native
+// analysis entry point as PREPARED and decoded REFERENCE.
+template<typename ProductJob>
+[[nodiscard]] inline core::Result<ProductNativeOnePassResult>
+measure_real_product_candidate_once(
+    const ProductJob& job,ProductNativeOnePassSpec spec,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    using R=core::Result<ProductNativeOnePassResult>;
+    const auto fail=[](const char* text){
+        return R::failure(core::Error{core::ErrorCode::InvalidState,text});
+    };
+    if(!spec.current_full_phase6_source_and_grid||
+       spec.exact_m20_fft_size<2U||spec.spectral_bands.empty()||
+       spec.source_support.selected_native_frame_sink||
+       spec.source_support.selected_stereo_frame_sink)
+        return fail("L3_ONCE_MISSING_SOURCE_OR_GRID");
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_ONCE_CANCELLED_BEFORE_RENDER");
+    auto rendered=job.execute();
+    if(!rendered)return R::failure(*rendered.error());
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_ONCE_CANCELLED_AFTER_RENDER");
+    if(!job.result_has_expected_scope(*rendered.value()))
+        return fail("L3_ONCE_RENDER_SCOPE_STALE");
+    auto observed=measure_real_full_owned_pcm_native_once(
+        rendered.value()->buffer(),std::move(spec),cancellation);
+    if(!observed)return R::failure(*observed.error());
+    return R::success(ProductNativeOnePassResult{
+        {std::move(*rendered.value()),
+         std::move(observed.value()->levels),
+         std::move(observed.value()->tonal)},
+        std::move(observed.value()->d10_d12),
+        std::move(observed.value()->s03_s06),
+        std::move(observed.value()->d07_d09),
+        std::move(observed.value()->selected_original_m20_ordinals)});
 }
 } // namespace rgsml::app::l3_automatch
