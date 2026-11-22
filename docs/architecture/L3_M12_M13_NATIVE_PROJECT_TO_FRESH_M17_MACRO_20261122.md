@@ -1,3 +1,13 @@
+# SUPERSEDED IMPLEMENTATION NOTE — 2026-11-22
+
+The subsequent Product Owner clarification explicitly separates M16
+TruePeak analysis from M17 WAV Export. **The M17-as-mandatory-M13
+stage and M17-ceiling coupling described below were WRONG and have
+been removed from current writer code.** See
+L3_M16_ANALYZER_M17_WAV_EXPORT_SEPARATION_20261122.md.
+
+---
+
 # L3 M12 / M13 real Product-native coherence macro — 22 November 2026
 
 Last qualified focused C01: CI #31, SHA 18245bf0d6253a9cbfebc5b5e75d0b394e2869b3.
