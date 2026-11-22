@@ -123,19 +123,29 @@ Result<ModuleInstance> ModuleInstance::create(ModuleInstanceSpec spec)
             "MODULE_TYPE_NOT_FOUND",
             "Module instance type ID is not canonical."));
     }
-    if (spec.provenance != ModuleProvenance::MANUAL
-        || spec.owner != ModuleOwner::USER) {
+    const bool manual =
+        spec.provenance == ModuleProvenance::MANUAL &&
+        spec.owner == ModuleOwner::USER;
+    const bool linked =
+        spec.provenance == ModuleProvenance::REFERENCE_MATCH &&
+        spec.owner == ModuleOwner::REFERENCE_MATCH;
+    if (!manual && !linked) {
         return Result<ModuleInstance>::failure(dsp_error(
             ErrorCode::InvalidArgument,
             "MODULE_OWNERSHIP_INVALID",
-            "Task 010 instances must have MANUAL/USER ownership."));
+            "Ownership must be an exact MANUAL/USER or ReferenceMatch pair."));
     }
-    if (spec.link_state != ModuleLinkState::UNLINKED
-        || spec.semantic_node_id.has_value()) {
+    if ((manual &&
+          (spec.link_state != ModuleLinkState::UNLINKED ||
+           spec.semantic_node_id.has_value())) ||
+        (linked &&
+          (spec.link_state != ModuleLinkState::REF_LINKED ||
+           !spec.semantic_node_id ||
+           spec.semantic_node_id->is_nil()))) {
         return Result<ModuleInstance>::failure(dsp_error(
             ErrorCode::InvalidArgument,
             "MODULE_LINK_STATE_INVALID",
-            "Task 010 instances must be UNLINKED without a semantic node."));
+            "MANUAL must be unlinked; REF_LINKED requires a nonnil semantic node."));
     }
     return Result<ModuleInstance>::success(ModuleInstance{std::move(spec)});
 }
@@ -285,6 +295,20 @@ Status ProcessingChain::validate(std::span<const ModuleInstance> candidate) cons
 
     for (std::size_t index = 0; index < candidate.size(); ++index) {
         const auto& instance = candidate[index];
+        if (context_.segment == ChainSegment::REF_LINKED) {
+            if (instance.provenance() != ModuleProvenance::REFERENCE_MATCH ||
+                instance.owner() != ModuleOwner::REFERENCE_MATCH ||
+                instance.link_state() != ModuleLinkState::REF_LINKED ||
+                !instance.semantic_node_id()) {
+                return Status::failure(dsp_error(
+                    ErrorCode::InvalidArgument, "MODULE_LINK_STATE_INVALID",
+                    "REF_LINKED chain contains an unowned or unlinked module."));
+            }
+        } else if (instance.link_state() == ModuleLinkState::REF_LINKED) {
+            return Status::failure(dsp_error(
+                ErrorCode::InvalidArgument, "MODULE_LINK_STATE_INVALID",
+                "A linked module cannot occupy a non-REF_LINKED segment."));
+        }
         const auto descriptorResult = registry_->find_descriptor(instance.module_type_id());
         if (!descriptorResult) {
             return Status::failure(*descriptorResult.error());
@@ -429,6 +453,13 @@ Status ProcessingChain::add(
     std::string_view module_type_id,
     std::size_t final_index)
 {
+    // M12 owns REF_LINKED structure. Ordinary manual mutation APIs
+    // cannot insert, replace, reorder or delete linked modules.
+    if (context_.segment == ChainSegment::REF_LINKED)
+        return Status::failure(dsp_error(
+            ErrorCode::InvalidState, "REF_LINKED_CONTROLLER_REQUIRED",
+            "Use the atomic M12 controller materialization transaction."));
+
     if (final_index > instances_.size()) {
         return Status::failure(dsp_error(
             ErrorCode::OutOfRange,
@@ -460,6 +491,13 @@ Status ProcessingChain::add(
 
 Status ProcessingChain::remove(const ModuleInstanceId& instance_id)
 {
+    // M12 owns REF_LINKED structure. Ordinary manual mutation APIs
+    // cannot insert, replace, reorder or delete linked modules.
+    if (context_.segment == ChainSegment::REF_LINKED)
+        return Status::failure(dsp_error(
+            ErrorCode::InvalidState, "REF_LINKED_CONTROLLER_REQUIRED",
+            "Use the atomic M12 controller materialization transaction."));
+
     const auto index = find_index(instances_, instance_id);
     if (!index.has_value()) {
         return Status::failure(dsp_error(
@@ -476,6 +514,13 @@ Status ProcessingChain::move(
     const ModuleInstanceId& instance_id,
     std::size_t final_index)
 {
+    // M12 owns REF_LINKED structure. Ordinary manual mutation APIs
+    // cannot insert, replace, reorder or delete linked modules.
+    if (context_.segment == ChainSegment::REF_LINKED)
+        return Status::failure(dsp_error(
+            ErrorCode::InvalidState, "REF_LINKED_CONTROLLER_REQUIRED",
+            "Use the atomic M12 controller materialization transaction."));
+
     const auto sourceIndex = find_index(instances_, instance_id);
     if (!sourceIndex.has_value()) {
         return Status::failure(dsp_error(
@@ -506,6 +551,13 @@ Status ProcessingChain::duplicate(
     ModuleInstanceId new_id,
     std::size_t final_index)
 {
+    // M12 owns REF_LINKED structure. Ordinary manual mutation APIs
+    // cannot insert, replace, reorder or delete linked modules.
+    if (context_.segment == ChainSegment::REF_LINKED)
+        return Status::failure(dsp_error(
+            ErrorCode::InvalidState, "REF_LINKED_CONTROLLER_REQUIRED",
+            "Use the atomic M12 controller materialization transaction."));
+
     const auto sourceIndex = find_index(instances_, source_id);
     if (!sourceIndex.has_value()) {
         return Status::failure(dsp_error(

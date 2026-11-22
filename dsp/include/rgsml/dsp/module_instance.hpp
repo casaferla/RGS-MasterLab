@@ -17,14 +17,17 @@ using ModuleInstanceId = rgsml::core::StrongId<ModuleInstanceIdTag>;
 
 enum class ModuleProvenance : std::uint8_t {
     MANUAL,
+    REFERENCE_MATCH,
 };
 
 enum class ModuleOwner : std::uint8_t {
     USER,
+    REFERENCE_MATCH,
 };
 
 enum class ModuleLinkState : std::uint8_t {
     UNLINKED,
+    REF_LINKED,
 };
 
 struct ModuleParameterState final {

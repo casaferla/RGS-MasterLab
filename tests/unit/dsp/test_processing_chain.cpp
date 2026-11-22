@@ -34,8 +34,65 @@ private slots:
     void hardAdvisoryAndSingleActiveConstraints();
     void terminalOrderAndRevisionOverflow();
     void restorePreservesRevisionAndControlState();
+    void refLinkedOwnershipRestoreAndManualMutationBarrier();
 };
 
+void ProcessingChainTest::refLinkedOwnershipRestoreAndManualMutationBarrier()
+{
+    const auto registry = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto rawSemantic = core::Uuid::parse(
+        "10000000-0000-4000-8000-000000000211");
+    QVERIFY(rawSemantic);
+    const auto id = make_id("10000000-0000-4000-8000-000000000201");
+    auto linked = ModuleInstance::create(ModuleInstanceSpec{
+        id, "rgsml.dsp.parametric-eq", true, false, false, false,
+        ModuleProvenance::REFERENCE_MATCH,
+        ModuleOwner::REFERENCE_MATCH,
+        ModuleLinkState::REF_LINKED,
+        *rawSemantic.value(), {}});
+    QVERIFY(linked);
+    QCOMPARE(linked.value()->provenance(),
+             ModuleProvenance::REFERENCE_MATCH);
+    QCOMPARE(linked.value()->link_state(),ModuleLinkState::REF_LINKED);
+    QVERIFY(linked.value()->active());
+    auto chain=ProcessingChain::restore(
+        *registry.value(),
+        {ProcessingStage::MASTER,ChainSegment::REF_LINKED},
+        7,{*linked.value()});
+    QVERIFY(chain);
+    QCOMPARE(chain.value()->revision(),std::uint64_t{7});
+    QVERIFY(!chain.value()->remove(id));
+    QVERIFY(!chain.value()->move(id,0));
+    QVERIFY(!chain.value()->duplicate(
+        id,make_id("10000000-0000-4000-8000-000000000202"),1));
+    QVERIFY(!chain.value()->add(
+        make_id("10000000-0000-4000-8000-000000000203"),
+        "rgsml.dsp.parametric-eq",1));
+    QCOMPARE(chain.value()->revision(),std::uint64_t{7});
+    // User bypass remains an independent existing activation dimension.
+    QVERIFY(chain.value()->set_user_bypass(id,true));
+    QVERIFY(!chain.value()->instances()[0].active());
+    QVERIFY(!chain.value()->instances()[0].controller_suspended());
+    QVERIFY(!chain.value()->instances()[0].domain_suspended());
+    auto manual=ModuleInstance::create_manual(
+        make_id("10000000-0000-4000-8000-000000000204"),
+        "rgsml.dsp.parametric-eq");
+    QVERIFY(manual);
+    QVERIFY(!ProcessingChain::restore(
+        *registry.value(),
+        {ProcessingStage::MASTER,ChainSegment::REF_LINKED},
+        8,{*manual.value()}));
+    QVERIFY(!ProcessingChain::restore(
+        *registry.value(),
+        {ProcessingStage::MASTER,ChainSegment::MANUAL},
+        8,{*linked.value()}));
+    auto inconsistent=ModuleInstance::create(ModuleInstanceSpec{
+        id,"rgsml.dsp.parametric-eq",true,false,false,false,
+        ModuleProvenance::MANUAL,ModuleOwner::USER,
+        ModuleLinkState::REF_LINKED,*rawSemantic.value(),{}});
+    QVERIFY(!inconsistent);
+}
 void ProcessingChainTest::moduleInstanceControlState()
 {
     const auto id = make_id("00000000-0000-0000-0000-000000000001");
