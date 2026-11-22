@@ -8,6 +8,7 @@
 #include <rgsml/analysis/fft.hpp>
 #include <rgsml/analysis/hann.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -29,7 +30,7 @@ struct P04RawNativeFrame final {
 };
 enum class P04NativeReason:std::uint8_t {
     ready,invalid_or_partial_audio_source,unsupported_rate,
-    invalid_geometry_or_numeric,no_complete_native_frames
+    invalid_geometry_or_numeric,no_complete_native_frames,cancelled
 };
 struct P04RawFluxPopulation final {
     std::vector<P04RawNativeFrame> canonical;
@@ -51,7 +52,9 @@ p04_round_ties_even(std::uint64_t numerator,std::uint64_t denominator) {
         greater||(tie&&(q&1U)!=0U));
 }
 [[nodiscard]] inline P04RawFluxPopulation
-measure_p04_native_positive_flux(const audio::AudioBufferView& pcm)
+measure_p04_native_positive_flux(
+    const audio::AudioBufferView& pcm,
+    const std::atomic<bool>* cancellation=nullptr)
 {
     P04RawFluxPopulation out;
     if(pcm.absolute_start_frame().value()!=0||
@@ -115,6 +118,12 @@ measure_p04_native_positive_flux(const audio::AudioBufferView& pcm)
     // No sample-rate conversion, per-channel mean FFT POWER before
     // frozen sqrt / L2 normalization / positive-difference flux.
     for(std::uint64_t j=0U;;++j) {
+        if(cancellation&&cancellation->load(
+              std::memory_order_acquire)) {
+            out.canonical.clear();
+            out.reason=P04NativeReason::cancelled;
+            return out;
+        }
         if(j>std::numeric_limits<std::uint64_t>::max()/fs) {
             out.reason=P04NativeReason::invalid_geometry_or_numeric;
             return out;
