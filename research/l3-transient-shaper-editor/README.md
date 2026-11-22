@@ -55,6 +55,12 @@ real Qt/QML editor creation, locks, actual-gain values, stale revision,
 stale realization and pause. The isolated Qt 6.8 CI runs an offscreen
 QtQuick load and uploads its rendered research screenshot as a run artifact.
 
+The Qt screenshot fixture spans six seconds of ACTUAL C00 processing
+of deterministic 48 kHz, beat-rich generated PCM, with a five-second
+display window and 250 genuine 20-ms Attack/Sustain buckets. Only the
+playback position is simulated for this automated test; the animated
+applied-gain traces are not generated from an invented UI curve.
+
 These green gates do NOT claim an audible physical listening test or a
 Product-accepted visual editor. Do not merge with the active L3 writer.
 
