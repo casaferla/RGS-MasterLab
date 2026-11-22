@@ -3,6 +3,7 @@
 #include "internal/l3_m12_p2_persisted_sound_guard.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_ref_linked_project_restore.hpp"
+#include "internal/l3_m12_ref_linked_native_replay_plan.hpp"
 #include "internal/l3_m12_ref_linked_project_open_gate.hpp"
 #include "internal/dsp_manual_preset_bundle.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
@@ -232,6 +233,15 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
              accepted().exact_m11_fixed_and_protection_checksum);
     QCOMPARE(productReopen.value()->exact_source_reference_scope_revision,
              accepted().exact_source_reference_amount_scope_revision);
+    // Read-only Product preflight requires the exact protected MANUAL
+    // snapshot. The original synthetic fixture has no Gain, so neither
+    // a forged owner-attestation nor a linked-only graph may play.
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        proposed,*productReopen.value(),
+        manualChain.chainId,*manual.value(),none,true));
+    QVERIFY(!m::prepare_restored_m12_native_replay_plan(
+        proposed,*productReopen.value(),
+        manualChain.chainId,*manual.value(),none,false));
     QCOMPARE(productReopen.value()->exact_native_chain.instances().size(),
              stage.value()->chain.instances().size());
     QVERIFY(std::equal(
