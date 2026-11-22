@@ -154,6 +154,24 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto baseline=control.value()->execute();
     QVERIFY(actual&&baseline);
     QVERIFY(job.value()->result_has_expected_scope(*actual.value()));
+    // Reject a prefix whose REF_LINKED graph revision has changed.
+    auto another_linked=dsp::ProcessingChain::restore(
+        *product_registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+        2U,{*linked_instance.value()});
+    QVERIFY(another_linked);
+    const auto stale_job=a::M10P2RealNativeProductJob::create(
+        stamp,prepared_owner,product_registry,*active_manual.value(),
+        manual_bindings,*another_linked.value(),artistic,*chosen,
+        *block.value(),true);
+    QVERIFY(stale_job);
+    const auto prefix_for_original=job.value()->prepare_exact_pre_p2_prefix();
+    QVERIFY(prefix_for_original);
+    QVERIFY(!stale_job.value()->execute_with_exact_pre_p2_prefix(
+        *prefix_for_original.value()));
+    // An overly tight RAM budget rejects only caching, never normal
+    // P2 Product rendering or the real native analysis path.
+    QVERIFY(!job.value()->prepare_exact_pre_p2_prefix(8U));
     const auto prefix=job.value()->prepare_exact_pre_p2_prefix();
     QVERIFY(prefix);
     QVERIFY(!prefix.value()->authorizes_m10_score());
