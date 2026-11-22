@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <utility>
@@ -62,7 +63,7 @@ core::Result<C01FrameEngine> C01FrameEngine::create(
                 if(!coeff)return R::failure(*coeff.error());
                 fixed_audio=*coeff.value();
             }
-            bands.push_back(Band{spec.routing,c,std::move(*gen.value()),
+            bands.push_back(Band{spec.band_id,spec.routing,c,std::move(*gen.value()),
                                  *detector.value(),fixed_audio,ar,aa,al});
         }
         return R::success(C01FrameEngine(channels,std::move(bands)));
@@ -198,7 +199,8 @@ bool C01FrameEngine::apply_audio(
 core::Status C01FrameEngine::run(
     std::span<const double> input_left,std::span<const double> input_right,
     std::vector<double>& out_left,std::vector<double>& out_right,
-    std::vector<C01BandState>& staged) const
+    std::vector<C01BandState>& staged,
+    std::span<C01FrameActivitySample> observed) const
 {
     std::array<double,6> gains{};
     for(std::size_t i=0;i<input_left.size();++i) {
@@ -244,10 +246,12 @@ core::Status C01FrameEngine::run(
             // Exact P=0 bypasses log10; level is a tagged nonfinite
             // mathematical state and never enters numeric computation.
             double excursion=0.0;
+            double detector_level_dbfs=0.0;
             if(power>0.0) {
-                const double level=10.0*std::log10(power);
-                excursion=std::max(0.0,level-band.control.threshold_dbfs);
-                if(!std::isfinite(level)||!std::isfinite(excursion))
+                detector_level_dbfs=10.0*std::log10(power);
+                excursion=std::max(0.0,
+                    detector_level_dbfs-band.control.threshold_dbfs);
+                if(!std::isfinite(detector_level_dbfs)||!std::isfinite(excursion))
                     return core::Status::failure(fail("NONFINITE_DETECTOR_LEVEL"));
             }
             const double slope=1.0-1.0/band.control.ratio;
@@ -265,6 +269,16 @@ core::Status C01FrameEngine::run(
             gains[j]=band.control.base_gain_db+sign*magnitude;
             if(!std::isfinite(gains[j]))
                 return core::Status::failure(fail("NONFINITE_GAIN"));
+            if(!observed.empty()) {
+                // No second detector, no additional gain computation and
+                // no heap use. Scratch is caller-owned and preallocated.
+                auto& sample=observed[i];
+                sample.band_count=bands_.size();
+                sample.bands[j]=C01BandActivitySample{
+                    band.band_id,band.routing,power,power>0.0,
+                    detector_level_dbfs,target,sign*target,
+                    sign*magnitude,gains[j]};
+            }
         }
 
         // C01: audio is serial in persisted order; per-frame coefficients
@@ -282,7 +296,10 @@ core::Status C01FrameEngine::run(
 }
 core::Status C01FrameEngine::process_block(
     std::span<const double> in_l,std::span<const double> in_r,
-    std::span<double> out_l,std::span<double> out_r)
+    std::span<double> out_l,std::span<double> out_r,
+    IC01ActivitySink* activity_sink,
+    std::uint64_t absolute_first_frame,
+    std::span<C01FrameActivitySample> activity_scratch)
 {
     if(out_l.size()!=in_l.size()
        ||(channels_==1&&(!in_r.empty()||!out_r.empty()))
@@ -292,17 +309,31 @@ core::Status C01FrameEngine::process_block(
        ||overlaps(in_r,out_l)||overlaps(in_r,out_r)
        ||overlaps(out_l,out_r))
         return core::Status::failure(fail("INVALID_OR_OVERLAPPING_PLANES"));
+    if ((activity_sink && (activity_scratch.size()<in_l.size() ||
+                          in_l.size()>std::numeric_limits<std::uint64_t>::max()
+                              -absolute_first_frame))
+        || (!activity_sink && !activity_scratch.empty()))
+        return core::Status::failure(fail("INVALID_ACTIVITY_SCRATCH_OR_FRAME_RANGE"));
     try {
         // Transactional staging: neither public PCM nor live recursive
         // states advance unless EVERY frame passes finite checks.
         auto staged=states_;
         std::vector<double> left(in_l.size(),0.0);
         std::vector<double> right(channels_==2?in_l.size():0,0.0);
-        auto status=run(in_l,in_r,left,right,staged);
+        const auto observed=activity_sink
+            ?activity_scratch.first(in_l.size())
+            :std::span<C01FrameActivitySample>{};
+        auto status=run(in_l,in_r,left,right,staged,observed);
         if(!status)return status;
         std::copy(left.begin(),left.end(),out_l.begin());
         if(channels_==2)std::copy(right.begin(),right.end(),out_r.begin());
         states_=std::move(staged);
+        // Only a successful C01 audio transaction can publish activity.
+        if(activity_sink)
+            activity_sink->on_successful_block(
+                absolute_first_frame,
+                std::span<const C01FrameActivitySample>(
+                    observed.data(),observed.size()));
         return core::Status::success();
     }catch(...) {
         return core::Status::failure(fail("TRANSACTIONAL_PROCESS_FAILURE"));

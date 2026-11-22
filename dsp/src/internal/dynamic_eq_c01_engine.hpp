@@ -30,6 +30,34 @@ struct C01BandState final {
     friend bool operator==(const C01BandState&,const C01BandState&)=default;
 };
 
+// Isolated research-only observational carrier: the six arrays preserve
+// ENABLED-band execution order, each with its frozen UUID and routing.
+// Zero power is tagged by has_detector_level=false, never -inf or NaN.
+// These are C01 engine states, NOT a Qt/QML detector or inferred response.
+struct C01BandActivitySample final {
+    core::Uuid band_id{};
+    EqRouting routing{EqRouting::STEREO};
+    double linked_power{0.0};
+    bool has_detector_level{false};
+    double detector_level_dbfs{0.0};
+    double unsigned_target_db{0.0};
+    double signed_target_dynamic_gain_db{0.0};
+    double applied_dynamic_gain_db{0.0};
+    double effective_gain_db{0.0};
+};
+struct C01FrameActivitySample final {
+    std::size_t band_count{0};
+    std::array<C01BandActivitySample,6> bands{};
+};
+struct IC01ActivitySink {
+    virtual ~IC01ActivitySink() = default;
+    // SUCCESS-ONLY callback, after all PCM + DSP states were committed.
+    // The caller supplies preallocated scratch; sink may not retain it.
+    virtual void on_successful_block(
+        std::uint64_t absolute_first_frame,
+        std::span<const C01FrameActivitySample> observed) noexcept=0;
+};
+
 class C01FrameEngine final {
 public:
     [[nodiscard]] static core::Result<C01FrameEngine> create(
@@ -44,7 +72,10 @@ public:
         std::span<const double> input_left,
         std::span<const double> input_right,
         std::span<double> output_left,
-        std::span<double> output_right);
+        std::span<double> output_right,
+        IC01ActivitySink* activity_sink=nullptr,
+        std::uint64_t absolute_first_frame=0,
+        std::span<C01FrameActivitySample> activity_scratch={});
 
     void reset() noexcept;
     [[nodiscard]] const std::vector<C01BandState>& states() const noexcept;
@@ -55,6 +86,7 @@ public:
         const std::vector<C01BandState>& candidate);
 private:
     struct Band final {
+        core::Uuid band_id;
         EqRouting routing;
         DynamicEqControl control;
         C01CoefficientGenerator generator;
@@ -68,7 +100,8 @@ private:
     [[nodiscard]] core::Status run(
         std::span<const double> left,std::span<const double> right,
         std::vector<double>& out_left,std::vector<double>& out_right,
-        std::vector<C01BandState>& staged) const;
+        std::vector<C01BandState>& staged,
+        std::span<C01FrameActivitySample> observed) const;
     [[nodiscard]] static bool update_lane(
         const Band& band,C01LaneState& lane,double x);
     [[nodiscard]] static bool process_section(

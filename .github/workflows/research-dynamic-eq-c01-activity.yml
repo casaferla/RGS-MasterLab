@@ -1,0 +1,32 @@
+name: Dynamic EQ C01 authentic activity research (nonrelease)
+on:
+  push:
+    branches:
+      - research/l3-dynamic-eq-editor-isolated-20261122
+    paths:
+      - 'dsp/src/internal/dynamic_eq_c01_engine.*'
+      - 'research/l3-dynamic-eq-editor/test_dynamic_eq_c01_activity.cpp'
+      - '.github/workflows/research-dynamic-eq-c01-activity.yml'
+permissions:
+  contents: read
+jobs:
+  authentic-c01-activity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile actual C01 observation and assert PCM parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -fno-fast-math -ffp-contract=off -UNDEBUG \
+            -Icore/include -Idsp/include -Idsp/src \
+            research/l3-dynamic-eq-editor/test_dynamic_eq_c01_activity.cpp \
+            dsp/src/internal/dynamic_eq_c01_engine.cpp \
+            dsp/src/internal/dynamic_eq_c01_coefficients.cpp \
+            dsp/src/dynamic_eq_parameters.cpp core/src/error.cpp core/src/uuid.cpp \
+            -o /tmp/dynamic_eq_c01_activity_research
+          /tmp/dynamic_eq_c01_activity_research

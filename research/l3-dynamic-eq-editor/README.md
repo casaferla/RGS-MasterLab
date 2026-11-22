@@ -78,3 +78,20 @@ Spectrum, Filter, Routing and Frequency/Gain/Q at their original positions.
 It opens/closes the separate C01 controls window and cannot become a Product
 manual editor before the end of L3. Qt tests toggle the window twice, confirm
 it is a child of the real editor host window, and verify the manual lock.
+
+## Authentic C01 Activity tap — isolated offline research
+
+The research branch adds an optional **success-only** observer directly to
+its own copy of `C01FrameEngine::process_block`. Every enabled band exposes
+true C01 detector linked power, tagged detector level (undefined for P=0),
+unsigned target, signed targetDynamicGain, smoothed applied dynamic gain,
+and effective per-frame gain, with persistent UUID and routed execution order.
+It uses caller-preallocated per-frame scratch, not a QML duplicate detector.
+The old four-argument engine call is unchanged; Product and AutoMatch do not
+request observation. The sink receives a callback only after the whole PCM
+block and DSP states commit, never for a rejected/rolled-back block.
+
+The dedicated Linux native test compares bit-identical PCM, checkpoint state,
+band identity and frame continuity across 44.1/48/96/192 kHz, mono/stereo,
+and error/overflow paths. This is **not** yet a QML Activity animation,
+an accepted playback-sidecar identity, or a post-L3 editor integration.
