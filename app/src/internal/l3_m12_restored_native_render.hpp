@@ -29,6 +29,45 @@ struct M12NativeStageExecutionWitness final {
         return false;
     }
 };
+// Independent of PCM and Project writes: inspect the signatures produced
+// by the REAL rendering engine and require each to match the frozen
+// persisted DSP identity. A signature list is not a verifier receipt.
+[[nodiscard]] inline bool m12_native_stage_witness_matches_replay_plan(
+    const RestoredM12NativeReplayPlan& plan,
+    const M12NativeStageExecutionWitness& witness)
+{
+    if(!plan.registry_owner)return false;
+    const auto match=[&](
+        const dsp::ProcessingChain& chain,
+        const std::span<const render::ModuleExecutionSignature> signatures){
+        if(chain.instances().size()!=signatures.size())return false;
+        for(std::size_t i=0;i<signatures.size();++i) {
+            const auto& node=chain.instances()[i];
+            const auto& signature=signatures[i];
+            if(signature.instance_id!=node.instance_id()||
+               signature.type_id!=node.module_type_id()||
+               signature.disposition!=(node.active()
+                   ?render::ModuleExecutionDisposition::PROCESSED
+                   :render::ModuleExecutionDisposition::BYPASS_IDENTITY))
+                return false;
+            const auto descriptor=plan.registry_owner->find_descriptor(
+                node.module_type_id());
+            if(!descriptor)return false;
+            const auto& registered=descriptor.value()->get();
+            if(!registered.algorithm_version()||
+               !registered.parameter_schema_id()||
+               signature.algorithm_version!=*registered.algorithm_version()||
+               signature.parameter_schema_id!=*registered.parameter_schema_id())
+                return false;
+        }
+        return true;
+    };
+    return match(plan.manual_prefix,witness.protected_manual)&&
+           match(plan.reference_linked,witness.reference_linked)&&
+           (plan.terminal_p2
+               ?match(*plan.terminal_p2,witness.user_terminal_p2)
+               :witness.user_terminal_p2.empty());
+}
 [[nodiscard]] inline core::Result<render::RenderResult>
 render_restored_m12_full_native_pcm_once(
     const RestoredM12NativeReplayPlan& plan,
@@ -155,8 +194,11 @@ render_restored_m12_full_native_pcm_once(
                     plan.reference_bindings);
     if(!linked)return linked;
     if(!plan.terminal_p2) {
-        if(stage_witness)*stage_witness={
+        M12NativeStageExecutionWitness observed{
             manual.value()->signatures(),linked.value()->signatures(),{}};
+        if(!m12_native_stage_witness_matches_replay_plan(plan,observed))
+            return fail("L3_M12_NATIVE_STAGE_EXECUTION_WITNESS_STALE");
+        if(stage_witness)*stage_witness=std::move(observed);
         return linked;
     }
     if(plan.terminal_p2_bindings.size()!=1U||
@@ -167,9 +209,12 @@ render_restored_m12_full_native_pcm_once(
     auto final=run(linked.value()->view(),*plan.terminal_p2,
                    plan.terminal_p2_bindings);
     if(!final)return final;
-    if(stage_witness)*stage_witness={
+    M12NativeStageExecutionWitness observed{
         manual.value()->signatures(),linked.value()->signatures(),
         final.value()->signatures()};
+    if(!m12_native_stage_witness_matches_replay_plan(plan,observed))
+        return fail("L3_M12_NATIVE_STAGE_EXECUTION_WITNESS_STALE");
+    if(stage_witness)*stage_witness=std::move(observed);
     return final;
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
