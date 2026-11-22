@@ -8,6 +8,7 @@
 // This does NOT publish a Product graph, alter M17 or verify M13.
 #include "l3_m10_p2_full_native_evidence.hpp"
 #include "l3_m10_p2_actual_m16_guard.hpp"
+#include "l3_m10_p2_verified_candidate_triple.hpp"
 #include "l3_m07_existing_native_fragment_collector.hpp"
 #include "l3_m10_authoritative_candidate_cost.hpp"
 #include "l3_m10_cache_aware_evaluator.hpp"
@@ -99,6 +100,8 @@ measure_and_score_m10_p2_full_native_candidate(
     bool current_product_source_reference_and_candidate_attested,
     AuthoritativeCostInput independently_attested_m08_m11,
     double exact_current_m11_final_tp_safety_ceiling_db_tp,
+    m05m06_real::SourceIdentity verified_candidate_product_owner,
+    bool phase6_file_based_lra_trailing_attested,
     ResolveAllRealNativeTripleFragments&& resolve_original_m05m06,
     const std::atomic<bool>* cancellation=nullptr)
 {
@@ -107,6 +110,8 @@ measure_and_score_m10_p2_full_native_candidate(
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {P2NativeCostReason::stale_or_unattested_product,
                 {},{},{} };
+    const auto exact_active_frames=
+        static_cast<std::int64_t>(native_spec.phase6_active_pcm_frames);
     auto measured=measure_m10_p2_full_native_once(
         candidate,std::move(native_spec),exact_pre_p2_prefix,cancellation);
     if(!measured)
@@ -123,16 +128,26 @@ measure_and_score_m10_p2_full_native_candidate(
            exact_current_m11_final_tp_safety_ceiling_db_tp).passes())
         return {P2NativeCostReason::m08_or_m11_safety_rejected,
                 {},{},{} };
-    // Resolver cannot invent the actual P2 PCM: it receives the
-    // original immutable render+M16+M19/M20/native events of this job.
-    auto real_triple=std::invoke(
+    // Resolver delivers the original owner-checked native Prepared/G
+    // family and all source-specific feature definitions. Rebind EVERY
+    // candidate family from this exact real P2 render, not from any
+    // callback-supplied numerical C. M11 retains independent hard gates.
+    // The resolver MUST return optional<P2OriginalRealNativeTriple>.
+    auto original_triple=std::invoke(
         std::forward<ResolveAllRealNativeTripleFragments>(
             resolve_original_m05m06),*measured.value());
-    if(!real_triple)
+    if(!original_triple)
+        return {P2NativeCostReason::missing_triple_native_authority,
+                {},{},{} };
+    auto bound=bind_p2_original_native_triple_from_real_candidate(
+        std::move(*original_triple),*measured.value(),
+        verified_candidate_product_owner,exact_active_frames,
+        phase6_file_based_lra_trailing_attested);
+    if(!bound.fragments)
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
     return score_complete_p2_native_fragment_set(
-        std::move(*real_triple),
+        std::move(*bound.fragments),
         std::move(independently_attested_m08_m11),
         std::move(exact_phase6_m07_generation),true);
 }
