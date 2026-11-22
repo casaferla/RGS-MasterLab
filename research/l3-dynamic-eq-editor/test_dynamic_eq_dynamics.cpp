@@ -64,9 +64,23 @@ int main(int argc,char** argv) {
         model.setDraftFieldText(bad.first,bad.second);
         if(model.commitDraft())return 11;
     }
-    model.setDraftFieldText("attack","48.5");
+    // Locale-friendly editing: comma is a decimal separator, never a
+    // grouping separator, and malformed/mixed numbers fail closed.
+    model.setDraftFieldText("attack","48,5");
     if(!model.commitDraft()||!model.validatedSnapshot()
        ||model.values().value("attack").toDouble()!=48.5)return 12;
+    model.setDraftFieldText("threshold","-47,5");
+    if(!model.commitDraft()
+       ||model.values().value("threshold").toDouble()!=-47.5)return 69;
+    for(const auto& malformed: {"", "   ", "1,2.3", "1,,2", "NaN", "Infinity"}) {
+        model.setDraftFieldText("threshold",malformed);
+        if(model.commitDraft()
+           ||model.validationField()!=QStringLiteral("threshold")
+           ||model.values().value("threshold").toDouble()!=-47.5)
+            return 70;
+    }
+    model.cancelDraft();
+    if(!model.validationMessage().isEmpty())return 71;
     model.setResearchManualEditable(false);
     DynamicEqResearchCommonViewModel common(model);
     if(common.bandCount()!=1 || common.gain()!=8.0

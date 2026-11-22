@@ -224,8 +224,15 @@ public:
     }
     Q_INVOKABLE bool commitDraft() {
         if(!loaded()||!editable_||pending_key_.isEmpty())return false;
+        // The rest of RGS numeric editors accept an Italian decimal comma.
+        // Normalize exactly ONE decimal separator, never grouping/mixed
+        // separators; QString::toDouble then enforces the numeric grammar.
+        QString numeric=pending_text_.trimmed();
+        if(numeric.isEmpty() || (numeric.contains(',') && numeric.contains('.'))
+           || numeric.count(',')>1)return fail("INVALID_NUMBER");
+        numeric.replace(',', '.');
         bool valid=false;
-        const double n=pending_text_.toDouble(&valid);
+        const double n=numeric.toDouble(&valid);
         if(!valid||!std::isfinite(n))return fail("INVALID_NUMBER");
         auto next=bands_[selected_];
         auto& c=next.control;

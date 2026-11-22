@@ -276,3 +276,13 @@ clamped overlap fallback on very small displays. The companion remains
 freely movable after opening. Pure placement examples are exercised in the
 actual Qt QML smoke for Full HD, wide-screen and below-main cases. No
 Product-owned persisted window placement or docking behavior is changed.
+
+## Numeric locale normalization and rejection gate
+
+The C01 research typed-value owner now accepts one comma as a decimal
+separator (for instance Threshold `-47,5` and Attack `48,5`) without
+changing accepted numeric storage or DSP. Empty inputs, mixed dot/comma,
+repeated commas and nonfinite strings are rejected as `INVALID_NUMBER`;
+rejected drafts never modify an accepted C01 band. Real Qt smoke checks
+these cases under the same six-pair UI owner and confirms explicit cancel
+clears validation. Product integration and L3 authoring remain untouched.
