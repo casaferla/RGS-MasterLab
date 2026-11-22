@@ -192,6 +192,12 @@ Item {
                                         if(!attackEntry.activeFocus)
                                             attackEntry.text=root.attackDb.toFixed(1)
                                     }
+                                    function onEditorEnabledChanged() {
+                                        // A revoked edit gate invalidates an unfinished draft,
+                                        // even if the text field still has keyboard focus.
+                                        if(!root.editorEnabled)
+                                            attackEntry.text=root.attackDb.toFixed(1)
+                                    }
                                 }
                                 Component.onCompleted: text=root.attackDb.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
@@ -333,6 +339,10 @@ Item {
                                     target: root
                                     function onSustainDbChanged() {
                                         if(!sustainEntry.activeFocus)
+                                            sustainEntry.text=root.sustainDb.toFixed(1)
+                                    }
+                                    function onEditorEnabledChanged() {
+                                        if(!root.editorEnabled)
                                             sustainEntry.text=root.sustainDb.toFixed(1)
                                     }
                                 }

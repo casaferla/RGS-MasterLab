@@ -156,3 +156,14 @@ its real-gain telemetry checks. The isolated Qt workflow builds in Release
 mode and checks 250 complete 20-ms C00 buckets, the five-second playback
 projection, editable/read-only lock, stale provenance and a Qt screenshot.
 No production module or L3 AutoMatch branch is changed.
+
+## Research editor lock/recovery and malformed telemetry gate
+
+A revoked research-only edit gate now discards any uncommitted Attack/Sustain
+numeric text, whether or not the input retains focus; accepted parameters
+remain unchanged and the activity graph is independent of manual edit rights.
+The Qt bridge refuses nonfinite, out-of-range or unordered C00 min/last/max
+triplets before advertising history as valid. A rejected/stale frame clears
+history, identity and playback position, and a later genuine matched C00
+projection restores the scope without inventing gain or timing. The Release
+Qt smoke exercises those transitions. Production L3 remains untouched.

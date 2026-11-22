@@ -7,6 +7,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <cstdint>
+#include <cmath>
 
 namespace rgsml::research::transient_ui {
 class TransientActivityQtBridge final : public QObject {
@@ -44,7 +45,21 @@ public:
         candidate.reserve(static_cast<qsizetype>(p.history.size()));
         bool first=true;
         std::uint64_t last_end=0;
+        // Reject malformed sidecars before notifying QML of availability.
+        // Do not rely on the scene graph to validate or sanitize audio data.
+        const validTriple=[](double minimum,double last,double maximum) {
+            constexpr double bound=12.000001;
+            return std::isfinite(minimum) && std::isfinite(last)
+                && std::isfinite(maximum)
+                && minimum>=-bound && maximum<=bound
+                && minimum<=last && last<=maximum;
+        };
         for(const auto& b:p.history) {
+            if(!validTriple(b.attack_min_db,b.attack_last_db,b.attack_max_db)
+               ||!validTriple(b.sustain_min_db,b.sustain_last_db,b.sustain_max_db)) {
+                clear(PlaybackActivityStatus::INCOMPLETE_TELEMETRY);
+                return;
+            }
             if(b.frame_begin>safe || b.frame_end_exclusive>safe
                || b.frame_end_exclusive<=b.frame_begin
                || (!first && last_end!=b.frame_begin)

@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <numbers>
 #include <span>
 
@@ -149,11 +150,54 @@ int main(int argc,char** argv) {
         if(!image.save(output, "PNG"))return 14;
         std::cout<<"Qt research screenshot saved\n";
     }
+    // Reject an unfinished numeric draft when research authoring is revoked.
+    QObject* attackInput=root->findChild<QObject*>(
+        QStringLiteral("transientShaperAttackNumericInput"));
+    QObject* sustainInput=root->findChild<QObject*>(
+        QStringLiteral("transientShaperSustainNumericInput"));
+    CHECK(attackInput && sustainInput);
+    attackInput->setProperty("text",QStringLiteral("11.9"));
+    sustainInput->setProperty("text",QStringLiteral("-10.1"));
     controls.setResearchManualEditable(false);
+    app.processEvents();
+    CHECK(!editor->property("editorEnabled").toBool());
+    CHECK(controls.attackAmountDb()==6.0 && controls.sustainAmountDb()==-3.0);
+    CHECK(attackInput->property("text").toString()==QStringLiteral("6.0"));
+    CHECK(sustainInput->property("text").toString()==QStringLiteral("-3.0"));
+    CHECK(scope->property("graphAvailable").toBool());
+
+    // Corrupt render telemetry must fail closed at the C++/Qt boundary,
+    // erase the previous 250 buckets, and recover on the next valid snapshot.
+    auto malformed=project();
+    CHECK(!malformed.history.empty());
+    malformed.history.front().attack_last_db=
+        std::numeric_limits<double>::quiet_NaN();
+    telemetry.apply(malformed);
+    app.processEvents();
+    CHECK(!telemetry.activityTelemetryAvailable());
+    CHECK(telemetry.activityHistory().empty());
+    CHECK(telemetry.telemetryRealizationId().isEmpty());
+    CHECK(telemetry.audibleFrame()==-1.0);
+    CHECK(!scope->property("graphAvailable").toBool());
+
+    malformed=project();
+    malformed.history.front().sustain_min_db=13.0;
+    telemetry.apply(malformed);
+    app.processEvents();
+    CHECK(!telemetry.activityTelemetryAvailable());
+    CHECK(!scope->property("graphAvailable").toBool());
+
+    telemetry.apply(project());
+    app.processEvents();
+    CHECK(telemetry.activityTelemetryAvailable());
+    CHECK(telemetry.activityHistory().size()==250);
+    CHECK(scope->property("graphAvailable").toBool());
 
     telemetry.apply(project(8));
     app.processEvents();
-    if(scope->property("graphAvailable").toBool())return 8;
+    CHECK(!scope->property("graphAvailable").toBool());
+    CHECK(telemetry.activityHistory().empty());
+    CHECK(telemetry.telemetryRealizationId().isEmpty());
     snap.audibleRealization.realizationId=core::RealizationId{99};
     telemetry.apply(project());
     app.processEvents();
