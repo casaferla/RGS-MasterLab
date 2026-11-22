@@ -55,7 +55,8 @@ score_complete_p2_native_fragment_set(
 {
     if(!current_product_source_reference_and_candidate_attested||
        exact_phase6_m07_generation.empty())
-        return {P2NativeCostReason::stale_or_unattested_product};
+        return {P2NativeCostReason::stale_or_unattested_product,
+                {},{},{} };
     m07_frozen::ExactTwentySevenFeatureAssembler generation{
         std::move(exact_phase6_m07_generation),true};
     const auto admitted=m07_frozen::collect_existing_m05m06_native_fragments(
@@ -63,11 +64,11 @@ score_complete_p2_native_fragment_set(
     if(admitted.status!=
        m07_frozen::NativeFragmentAdmission::accepted_complete)
         return {P2NativeCostReason::incomplete_or_conflicting_m07,
-                admitted.inventory};
+                admitted.inventory,{},{} };
     auto exact=generation.complete_canonical_population();
     if(!exact)
         return {P2NativeCostReason::incomplete_or_conflicting_m07,
-                admitted.inventory};
+                admitted.inventory,{},{} };
     // The Product callback must never be allowed to replace the
     // authenticated native M07 slots with unrelated numerical scores.
     independently_attested_m08_m11.exact_pair_slots=std::move(*exact);
@@ -76,7 +77,7 @@ score_complete_p2_native_fragment_set(
     if(cost.reason!=AuthoritativeCostReason::measured||
        !cost.measured||!valid_key(*cost.measured))
         return {P2NativeCostReason::m08_or_m11_safety_rejected,
-                admitted.inventory};
+                admitted.inventory,{},{} };
     return {P2NativeCostReason::measured,admitted.inventory,
             cost.measured,cost.target_evidence};
 }
@@ -102,20 +103,24 @@ measure_and_score_m10_p2_full_native_candidate(
     if(!current_product_source_reference_and_candidate_attested||
        exact_phase6_m07_generation.empty()||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
-        return {P2NativeCostReason::stale_or_unattested_product};
+        return {P2NativeCostReason::stale_or_unattested_product,
+                {},{},{} };
     auto measured=measure_m10_p2_full_native_once(
         candidate,std::move(native_spec),exact_pre_p2_prefix,cancellation);
     if(!measured)
-        return {P2NativeCostReason::real_render_or_analysis_failed};
+        return {P2NativeCostReason::real_render_or_analysis_failed,
+                {},{},{} };
     if(cancellation&&cancellation->load(std::memory_order_acquire))
-        return {P2NativeCostReason::stale_or_unattested_product};
+        return {P2NativeCostReason::stale_or_unattested_product,
+                {},{},{} };
     // Resolver cannot invent the actual P2 PCM: it receives the
     // original immutable render+M16+M19/M20/native events of this job.
     auto real_triple=std::invoke(
         std::forward<ResolveAllRealNativeTripleFragments>(
             resolve_original_m05m06),*measured.value());
     if(!real_triple)
-        return {P2NativeCostReason::missing_triple_native_authority};
+        return {P2NativeCostReason::missing_triple_native_authority,
+                {},{},{} };
     return score_complete_p2_native_fragment_set(
         std::move(*real_triple),
         std::move(independently_attested_m08_m11),
