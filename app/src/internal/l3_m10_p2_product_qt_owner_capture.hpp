@@ -16,8 +16,12 @@
 #include <QThread>
 #include <cstdint>
 #include <memory>
+#include <new>
+#include <set>
 #include <span>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace rgsml::app::l3_automatch {
 class ProductQtP2NativeAdmission final {
@@ -101,6 +105,74 @@ public:
         return R::success(Accepted{
             std::move(*source.value()),std::move(*reference.value()),
             live_registry,std::move(*job.value())});
+    }
+
+    struct BatchCandidate final {
+        // These are short-lived references valid only for the
+        // synchronous owner-thread capture. Each returned job owns
+        // immutable copies of its actual graph and typed parameters.
+        const dsp::ProcessingChain* exact_linked{};
+        std::span<const dsp::ModuleExecutionBinding> linked_bindings;
+        const m10_frozen::BoundM10P2Candidate* selected_p2{};
+    };
+
+    // Capture a coherent M10 evaluation batch without walking QML,
+    // SOURCE or REFERENCE for every candidate. Zero attempted renders
+    // and zero Product mutations occur here. The frozen 800 cap is a
+    // maximum, NOT a target or permission to skip native analysis.
+    [[nodiscard]] static core::Result<
+        std::vector<M10P2RealNativeProductJob>>
+    create_batch_on_owner(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,
+        const GoldSelectionViewModel& gold,
+        const Accepted& accepted,
+        const dsp::ProcessingChain& original_ref_linked,
+        std::span<const dsp::ModuleExecutionBinding> original_bindings,
+        std::span<const BatchCandidate> candidates,
+        core::FrameCount max_block_frames,
+        bool exact_current_m09_m10_m11_candidate_batch_attested)
+    {
+        using R=core::Result<std::vector<M10P2RealNativeProductJob>>;
+        if(!exact_current_m09_m10_m11_candidate_batch_attested||
+           candidates.empty()||candidates.size()>800U||
+           !still_current_on_owner(
+               product,fanout,selector,gold,accepted,
+               original_ref_linked,original_bindings))
+            return R::failure(
+                error("L3_P2_QT_BATCH_OWNER_OR_INVENTORY_STALE"));
+        try {
+            std::vector<M10P2RealNativeProductJob> jobs;
+            jobs.reserve(candidates.size());
+            std::set<std::string> seen_tickets;
+            const auto& manual=product.upstream.chain.chain();
+            const auto manual_bindings=
+                product.upstream.chain.execution_bindings();
+            for(const auto& item:candidates) {
+                if(!item.exact_linked||!item.selected_p2||
+                   item.selected_p2->typed.base.ticket_identity.empty()||
+                   !seen_tickets.insert(
+                       item.selected_p2->typed.base.ticket_identity).second)
+                    return R::failure(
+                        error("L3_P2_QT_BATCH_DUPLICATE_OR_MISSING_CANDIDATE"));
+                auto job=M10P2RealNativeProductJob::create(
+                    accepted.job.owner_stamp(),accepted.source.prepared,
+                    accepted.live_registry,manual,manual_bindings,
+                    *item.exact_linked,item.linked_bindings,
+                    *item.selected_p2,max_block_frames,true);
+                if(!job)return R::failure(*job.error());
+                jobs.push_back(std::move(*job.value()));
+            }
+            if(!still_current_on_owner(
+                product,fanout,selector,gold,accepted,
+                original_ref_linked,original_bindings)||
+               product.upstream.chain.execution_bindings()!=manual_bindings)
+                return R::failure(
+                    error("L3_P2_QT_BATCH_OWNER_CHANGED_DURING_CAPTURE"));
+            return R::success(std::move(jobs));
+        }catch(const std::bad_alloc&) {
+            return R::failure(error("L3_P2_QT_BATCH_ALLOCATION_FAILED"));
+        }
     }
 
     // MUST run on the original Qt thread after a worker returns, before
