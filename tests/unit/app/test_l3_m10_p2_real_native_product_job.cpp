@@ -39,9 +39,9 @@ namespace a=rgsml::app::l3_automatch;
 }
 // Compile the real Qt owner admission surface in the same Windows/Linux
 // native product gate. This is NOT a Qt Product GUI integration test.
-static_assert(std::is_member_function_pointer_v<
+static_assert(std::is_pointer_v<
     decltype(&a::ProductQtP2NativeAdmission::capture_on_owner)>);
-static_assert(std::is_member_function_pointer_v<
+static_assert(std::is_pointer_v<
     decltype(&a::ProductQtP2NativeAdmission::still_current_on_owner)>);
 class P2RealNativeProductTest final:public QObject {
     Q_OBJECT
