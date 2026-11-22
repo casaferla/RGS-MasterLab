@@ -40,3 +40,8 @@ is disabled until authoritative DSP telemetry exists.
 
 The dedicated CI produces a Qt screenshot in `dynamic-eq-structural-layout`;
 this is a geometry smoke, NOT a running C01 DSP or accepted editor.
+
+The High Pass and Low Pass filter slots are likewise kept as **empty,
+non-selectable spatial placeholders**. Six equal geometric positions
+therefore persist while only three supported filter types appear.
+This is a strict no-drift layout decision, not an exposed DSP mode.

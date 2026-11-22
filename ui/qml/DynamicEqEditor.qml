@@ -341,7 +341,11 @@ Rectangle {
                                     // Low Shelf and High Shelf button positions.
                                     { label: "", token: "RESERVED_NOT_A_FILTER" },
                                     { label: "Low Shelf", token: "LOW_SHELF" },
-                                    { label: "High Shelf", token: "HIGH_SHELF" }
+                                    { label: "High Shelf", token: "HIGH_SHELF" },
+                                    // No pass filters exist in C01. Retain
+                                    // only their old spatial slots, invisible.
+                                    { label: "", token: "RESERVED_HP" },
+                                    { label: "", token: "RESERVED_LP" }
                                 ]
                                 delegate: StudioSegmentButton {
                                     required property var modelData
@@ -349,14 +353,14 @@ Rectangle {
                                     text: modelData.label
                                     minimumControlWidth: 88
                                     contentPadding: 4
-                                    opacity: modelData.token === "RESERVED_NOT_A_FILTER" ? 0 : 1
-                                    enabled: modelData.token !== "RESERVED_NOT_A_FILTER"
+                                    opacity: modelData.token.startsWith("RESERVED_") ? 0 : 1
+                                    enabled: !modelData.token.startsWith("RESERVED_")
                                         && root.manualEditable
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                     onClicked: {
                                         if (root.manualEditable && root.viewModel
-                                            && modelData.token !== "RESERVED_NOT_A_FILTER")
+                                            && !modelData.token.startsWith("RESERVED_"))
                                             root.viewModel.setFilter(modelData.token)
                                     }
                                     Accessible.name: "Filter type " + modelData.label
