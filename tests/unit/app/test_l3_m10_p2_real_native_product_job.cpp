@@ -1,5 +1,6 @@
 #include "internal/l3_m10_p2_real_native_product_job.hpp"
 #include "internal/l3_product_native_one_pass.hpp"
+#include "internal/l3_m05m06_owned_full_source_native_facts.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
@@ -45,6 +46,11 @@ static_assert(std::is_pointer_v<
     decltype(&a::ProductQtP2NativeAdmission::capture_on_owner)>);
 static_assert(std::is_pointer_v<
     decltype(&a::ProductQtP2NativeAdmission::still_current_on_owner)>);
+static_assert(std::is_same_v<
+    decltype(std::declval<
+        const a::ProductQtP2NativeAdmission::Accepted&>().
+        native_worker_scope()),
+    a::m10_frozen::P2NativeProductWorkerScope>);
 class P2RealNativeProductTest final:public QObject {
     Q_OBJECT
 private slots:
@@ -246,6 +252,24 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QCOMPARE(prepared_native.value()->tonal.sample_rate_hz,48000U);
     QVERIFY(prepared_native.value()->tonal.selected_spectral_windows>0U);
     QVERIFY(!prepared_native.value()->authorizes_m10_or_m12());
+    const auto once_per_original_owner=
+        a::observe_original_owned_full_source_once(
+            *source.value(),
+            {"real-prepared-full-track-owner",11U,true},
+            spec_for_authoritative_bridge,
+            {20.0,18000.0},1e-12,true);
+    QVERIFY(once_per_original_owner);
+    QCOMPARE(once_per_original_owner.value()->original_m19_m20.
+                 scope_frame_count,std::int64_t{48000*3});
+    QCOMPARE(once_per_original_owner.value()->full_native.
+                 tonal.selected_spectral_windows,
+             prepared_native.value()->tonal.selected_spectral_windows);
+    QVERIFY(!once_per_original_owner.value()->authorizes_m10_or_m13());
+    QVERIFY(!a::observe_original_owned_full_source_once(
+            *source.value(),
+            {"missing-or-stale-original",0U,false},
+            spec_for_authoritative_bridge,
+            {20.0,18000.0},1e-12,true));
     const auto candidate_native=
         a::measure_real_full_owned_pcm_native_once(
             actual.value()->buffer(),spec_for_authoritative_bridge);
