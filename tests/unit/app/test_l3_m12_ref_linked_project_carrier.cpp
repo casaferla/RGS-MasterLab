@@ -12,6 +12,7 @@
 #include <rgsml/dsp/streaming_true_peak_limiter_parameters.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
+#include <bit>
 #include <cmath>
 #include <numbers>
 #include "internal/l3_m12_ref_linked_project_open_gate.hpp"
@@ -489,6 +490,48 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
              std::string("rgsml.dsp.streaming-true-peak-limiter"));
     QCOMPARE(p2RealReplay.value()->view().frame_count().value(),
              std::int64_t{48000});
+    // Independent native oracle: explicitly render each real DSP
+    // segment in the frozen order, then compare *every* output sample
+    // bit-for-bit. A signature alone cannot prove the true audio.
+    const auto manualReq=render::RenderRequest::create(
+        prepared.value()->view(),prepared.value()->view().absolute_range(),
+        p2Plan.value()->manual_prefix,p2Plan.value()->manual_bindings,
+        *maxBlock.value());
+    QVERIFY(manualReq);
+    const auto manualPCM=render::render_preview(
+        *manualReq.value(),*optRegistry);
+    QVERIFY(manualPCM);
+    const auto refReq=render::RenderRequest::create(
+        manualPCM.value()->view(),manualPCM.value()->view().absolute_range(),
+        p2Plan.value()->reference_linked,p2Plan.value()->reference_bindings,
+        *maxBlock.value());
+    QVERIFY(refReq);
+    const auto refPCM=render::render_preview(
+        *refReq.value(),*optRegistry);
+    QVERIFY(refPCM);
+    const auto p2Req=render::RenderRequest::create(
+        refPCM.value()->view(),refPCM.value()->view().absolute_range(),
+        *p2Plan.value()->terminal_p2,p2Plan.value()->terminal_p2_bindings,
+        *maxBlock.value());
+    QVERIFY(p2Req);
+    const auto oraclePCM=render::render_preview(
+        *p2Req.value(),*optRegistry);
+    QVERIFY(oraclePCM);
+    const auto actualView=p2RealReplay.value()->view();
+    const auto oracleView=oraclePCM.value()->view();
+    QCOMPARE(actualView.absolute_range(),oracleView.absolute_range());
+    QCOMPARE(actualView.format(),oracleView.format());
+    for(std::size_t ch=0;ch<actualView.format().channel_count();++ch) {
+        const auto actualSamples=actualView.channel(ch);
+        const auto oracleSamples=oracleView.channel(ch);
+        QVERIFY(actualSamples&&oracleSamples);
+        QCOMPARE(actualSamples.value()->size(),oracleSamples.value()->size());
+        for(std::size_t frame=0;frame<actualSamples.value()->size();++frame)
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                         (*actualSamples.value())[frame]),
+                     std::bit_cast<std::uint64_t>(
+                         (*oracleSamples.value())[frame]));
+    }
     // P2 parameters are part of the same immutable MANUAL worker key:
     // a later dial adjustment invalidates the old linked replay ticket.
     const auto p2SharedPlan=
