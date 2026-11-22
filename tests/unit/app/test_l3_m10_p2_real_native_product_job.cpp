@@ -34,6 +34,7 @@ class P2RealNativeProductTest final:public QObject {
     Q_OBJECT
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
+    void adaptiveRamCacheBudgetPreservesColdRender();
 };
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
@@ -237,6 +238,33 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(!job.value()->still_current(
         stamp,prepared_owner,*active_manual.value(),manual_bindings,
         *linked.value(),artistic));
+}
+
+void P2RealNativeProductTest::adaptiveRamCacheBudgetPreservesColdRender() {
+    using namespace a::m10_p2_memory;
+    constexpr std::uint64_t mib=1024ULL*1024ULL;
+    // The 256 MiB default used in preview is NOT a frozen
+    // limitation for AutoMatch. On sufficient RAM, 96/192 kHz whole
+    // resource prefixes can be cached without a fixed 256 MiB veto.
+    QCOMPARE(budget_from_available_ram(0U),std::size_t{0});
+    QCOMPARE(budget_from_available_ram(512ULL*mib),std::size_t{0});
+    QCOMPARE(budget_from_available_ram(2048ULL*mib),
+             std::size_t{384ULL*mib});
+    QCOMPARE(budget_from_available_ram(4096ULL*mib),
+             std::size_t{896ULL*mib});
+    QCOMPARE(budget_from_available_ram(32768ULL*mib),
+             std::size_t{2048ULL*mib});
+    QCOMPARE(budget_from_available_ram(4096ULL*mib,8U),
+             std::size_t{8U});
+    QCOMPARE(budget_from_available_ram(4096ULL*mib,0U),
+             std::size_t{0U});
+    constexpr std::uint64_t sample_bytes_5m_96k=
+        5ULL*60ULL*96000ULL*2ULL*sizeof(double);
+    QVERIFY(sample_bytes_5m_96k>
+            static_cast<std::uint64_t>(256ULL*mib));
+    QVERIFY(sample_bytes_5m_96k<
+            static_cast<std::uint64_t>(
+                budget_from_available_ram(4096ULL*mib)));
 }
 } // namespace
 } // namespace rgsml::tests
