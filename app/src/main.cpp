@@ -32,6 +32,9 @@
 #include "m18_product_export_view_model.hpp"
 #include "m21_product_status_view_model.hpp"
 #include "internal/m21_private_product_analysis_coordinator.hpp"
+// Compile-check L3 Product Qt owner admission in the genuine app target,
+// not an unrelated standalone PreviewController unit target.
+#include "internal/l3_product_qt_owner_admission.hpp"
 #include "internal/m18_product_complete_binding.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"

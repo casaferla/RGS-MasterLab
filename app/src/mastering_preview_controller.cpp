@@ -1,7 +1,7 @@
 #include "mastering_preview_controller.hpp"
-// Compile-check Qt Product admission on the Windows app build. No UI
-// activation, background work or automatic AutoMatch launch here.
-#include "internal/l3_product_qt_owner_admission.hpp"
+// M12 worker only needs the native linked replay ticket. Product-wide
+// M21 owner admission remains compile-checked at the actual app boundary
+// and by its dedicated isolated dual-platform tests.
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 
 #include <rgsml/audio/audio_buffer_view.hpp>

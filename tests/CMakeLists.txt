@@ -1422,14 +1422,6 @@ qt_add_executable(rgsml_mastering_preview_controller_tests
 target_include_directories(rgsml_mastering_preview_controller_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
-        # M21 Product owner analysis imports the internal M20 native
-        # candidate declaration through its private source include root.
-        ${CMAKE_SOURCE_DIR}/analysis/src
-        ${CMAKE_SOURCE_DIR}/platform/windows/src
-        # Header-only Product admission helpers include the Windows
-        # platform contract, but Linux tests must NEVER compile the
-        # actual Windows-only exporter implementation (Windows.h).
-        ${CMAKE_SOURCE_DIR}/platform/windows/include
 )
 target_link_libraries(rgsml_mastering_preview_controller_tests
     PRIVATE
@@ -1441,12 +1433,6 @@ target_link_libraries(rgsml_mastering_preview_controller_tests
         Qt6::Core
         Qt6::Test
 )
-# Linux compiles the Product admission contract without Windows exporter
-# implementation; Windows retains the native library for resolved symbols.
-if(WIN32)
-    target_link_libraries(rgsml_mastering_preview_controller_tests
-        PRIVATE rgsml_platform)
-endif()
 rgsml_apply_project_warnings(rgsml_mastering_preview_controller_tests)
 add_test(NAME rgsml_mastering_preview_controller_tests COMMAND rgsml_mastering_preview_controller_tests)
 set_tests_properties(rgsml_mastering_preview_controller_tests PROPERTIES
