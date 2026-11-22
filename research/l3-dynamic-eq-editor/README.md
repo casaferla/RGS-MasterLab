@@ -112,3 +112,15 @@ remain to be implemented post-L3.
 
 The research-only Qt geometry workflow now triggers only for the QML/Qt
 source files it actually tests, not every native C01 history experiment.
+
+## Accepted audible PCM provenance (research-only)
+
+The typed `C01ActivityRenderProvenance` and
+`project_c01_activity()` insist on the authoritative Product
+`PlaybackSnapshot` plus accepted PCM RealizationId, chain revision,
+frame domain, sample rate, selected PROCESSED audition, and bypass state.
+No chart is available during OLD/TRANSITION handoff, stop, stale revision,
+wrong sample rate or frame domain, or before immutable history finishes.
+PAUSED and seek/loop position reuse the same full-track actual DSP sidecar;
+no QML timer or invented SRC conversion can authorize Activity.
+This is a tested binding CONTRACT, not yet an installed Product adapter.

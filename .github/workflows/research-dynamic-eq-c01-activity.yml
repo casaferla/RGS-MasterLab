@@ -7,6 +7,8 @@ on:
       - 'dsp/src/internal/dynamic_eq_c01_engine.*'
       - 'research/l3-dynamic-eq-editor/test_dynamic_eq_c01_activity.cpp'
       - 'research/l3-dynamic-eq-editor/test_dynamic_eq_activity_history.cpp'
+      - 'research/l3-dynamic-eq-editor/dynamic_eq_activity_playback_projection.hpp'
+      - 'research/l3-dynamic-eq-editor/test_dynamic_eq_activity_playback_projection.cpp'
       - 'research/l3-dynamic-eq-editor/dynamic_eq_activity_history.hpp'
       - '.github/workflows/research-dynamic-eq-c01-activity.yml'
 permissions:
@@ -41,3 +43,12 @@ jobs:
             dsp/src/dynamic_eq_parameters.cpp core/src/error.cpp core/src/uuid.cpp \
             -o /tmp/dynamic_eq_c01_history_research
           /tmp/dynamic_eq_c01_history_research
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -fno-fast-math -ffp-contract=off -UNDEBUG \
+            -Icore/include -Idsp/include -Idsp/src -Iaudio/include \
+            research/l3-dynamic-eq-editor/test_dynamic_eq_activity_playback_projection.cpp \
+            dsp/src/internal/dynamic_eq_c01_engine.cpp \
+            dsp/src/internal/dynamic_eq_c01_coefficients.cpp \
+            dsp/src/dynamic_eq_parameters.cpp core/src/error.cpp core/src/uuid.cpp \
+            -o /tmp/dynamic_eq_c01_playback_projection
+          /tmp/dynamic_eq_c01_playback_projection
