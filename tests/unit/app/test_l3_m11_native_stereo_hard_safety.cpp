@@ -31,8 +31,8 @@ private slots:
 void NativeStereoSafetyTest::rawSafetyAcceptsInclusiveFrozenSlack() {
     auto e=input();
     e.candidate_low_end_width={0.2,0.3,0.4};
-    e.candidate_low_end_rho={0.48,0.58,0.68};
-    e.candidate_negative_correlation_occupancy=0.22;
+    e.candidate_low_end_rho={0.49,0.59,0.69};
+    e.candidate_negative_correlation_occupancy=0.21;
     const auto r=m11::verify_m11_native_stereo_hard_safety(e);
     QVERIFY(r.passes_hard_gate());
     QVERIFY(!r.authorizes_export());

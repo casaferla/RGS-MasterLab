@@ -224,7 +224,13 @@ private:
             const bool grade=external_grade&&corr_valid>0U&&
                 (!per_band||(corr_valid>=20U&&out.native_support>=0.50));
             if(!grade||corr_l<=0.0||corr_r<=0.0)return out;
-            const double r=corr_c/std::sqrt(corr_l*corr_r);
+            const double divisor=std::sqrt(corr_l*corr_r);
+            if(!std::isfinite(divisor)||divisor<=0.0)
+                return out;
+            // Explicit guarded positive divisor remains visible under
+            // aggressive MSVC fast release analysis (C4723).
+            const volatile double checked_positive_divisor=divisor;
+            const double r=corr_c/checked_positive_divisor;
             if(!std::isfinite(r)||r< -1.0-1e-10||r>1.0+1e-10)
                 return out;
             const double bounded=std::clamp(r,-1.0,1.0);
