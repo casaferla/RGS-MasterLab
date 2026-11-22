@@ -3166,3 +3166,18 @@ add_test(NAME rgsml_l3_m12_ref_linked_native_stage_tests
 set_tests_properties(rgsml_l3_m12_ref_linked_native_stage_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m12;real_dsp;ref_linked;protected;nonrelease")
+
+# L3 M12 exact native project carrier serialization; no Product commit.
+qt_add_executable(rgsml_l3_m12_project_carrier_tests
+    unit/app/test_l3_m12_ref_linked_project_carrier.cpp)
+target_include_directories(rgsml_l3_m12_project_carrier_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src
+    ${CMAKE_SOURCE_DIR}/project/src/internal)
+target_link_libraries(rgsml_l3_m12_project_carrier_tests
+    PRIVATE rgsml_dsp rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_m12_project_carrier_tests)
+add_test(NAME rgsml_l3_m12_project_carrier_tests
+    COMMAND rgsml_l3_m12_project_carrier_tests)
+set_tests_properties(rgsml_l3_m12_project_carrier_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m12;native_project;ref_linked;nonrelease")
