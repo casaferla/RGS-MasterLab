@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <string>
 #include <span>
 #include <utility>
 #include <vector>

@@ -44,3 +44,15 @@ Source references:
 - `900bb0d9`: the guarded fresh M13 probe now fails closed if an active P2 lacks an explicit typed M10 winner. It renders the protected MANUAL prefix, then REF_LINKED and only then the genuine P2 suffix. M16 measures the actual P2-processed output, not an M17 export result.
 - `c68681ef`: native synthetic regression tests for active P2, altered Drive, wrong Margin, output difference, segment count and no false VERIFIED/export grant. Same existing M13 test target.
 - These changes are incremental. The canonical M10 whole-resource evaluator, accepted P2 winner receipt/ownership in persistent REF_LINKED Product, and full physical timing budget are NOT yet completed or qualified. A single CI gate will cover the staged compilation and tests when the macro-lot is promoted.
+
+## M10 typed P2 bridge / writer checkpoint (2026-11-22)
+
+The completed CI #35 `685ffbef` is GREEN on Windows and Linux. Since that gate, the writer has accumulated a coherent nonrelease M10/P2 integration lot:
+
+- `l3_m10_p2_canonical_coordinate_port.hpp`: both exact canonical P2 field IDs are required in the frozen full-coordinate inventory. The real inverse transform is provided by the authoritative M09 owner, *not* invented as a dB normalization here. Unknown/duplicate/missing/nonfinite P2 coordinates reject before rendering.
+- Effective typed P2 bindings may equal the protected MANUAL settings when other artistic coordinates change; those valid full candidates are not spuriously rejected.
+- `l3_m10_p2_exact_cache_evaluator.hpp`: candidate-specific, correctly typed Ceiling/Drive go through existing M10 attempted/complete/cache-hit accounting. Every hit still requires current Product owner preflight; no 801st full execution. The full canonical M07-M11 key remains mandatory, with a length-delimited codec-verified P2 payload appended to avoid cross-parameter cache aliasing.
+- `l3_m12_p2_exact_winner_preflight.hpp` and `l3_m13_p2_owned_full_master_probe.hpp`: exact nonpublishing winner guard binds the P2 typed settings, winner ticket/checksum, plan, M11 frozen MANUAL snapshot and current scope to the fresh M13 full PCM probe, which executes P2 after REF_LINKED and runs real M16. This guard is **NOT** an actual Qt Product M12 committed Project receipt.
+- Added QT tests (synthetic fixture only for M10 cache/coordinate adapter, fresh genuine Product DSP PCM for M13) to the existing focused macro suite. No claim yet of an L3 runtime 27-feature worker, verified Product persistence, 20–30-minute end-to-end proof, release authority or M17 intervention.
+
+Remaining must-do: the real M09 inverse/field registry, full Product M10 in-memory 27-feature worker, explicit approved P2 owned effective/REF_LINKED persistence after manual changes, M12 committed receipt + independent final M13 verified publication, and physical 5-minute benchmark. Do not close these tasks on the basis of the focused gate.

@@ -103,7 +103,7 @@ ceilingAndDriveAreRealTypedIndependentCandidates() {
     QVERIFY(identity);
     const auto* same=identity->chosen_p2_parameters();
     QVERIFY(same);
-    QCOMPARE(*same,*original.value());
+    QVERIFY(*same==*original.value());
     QVERIFY(identity->still_matches(*chain.value(),binds));
     QVERIFY(!a::make_p2_joint_trial(
         *chain.value(),binds,p2,-13.0,9.0,"out-of-range"));
