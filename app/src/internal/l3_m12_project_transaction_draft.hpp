@@ -5,12 +5,17 @@
 // may adopt/persist it and then issue a true materialization receipt.
 // A prepared document is NOT an M12 receipt, M13 VERIFIED, or export.
 #include "l3_m12_ref_linked_project_carrier.hpp"
-#include "l3_m12_terminal_native_hard_preflight.hpp"
+
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/project/opaque_json_value.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
-#include <nlohmann/json.hpp>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
+#include <QByteArray>
+#include <QString>
 #include <span>
 #include <algorithm>
 #include <cstddef>
@@ -77,9 +82,6 @@ prepare_exact_m12_project_transaction(
     const project::ProjectSnapshot& current_project,
     const FrozenProjectLinkedCarrier& exact_native_carrier,
     const StagedRefLinkedSegment& accepted_stage,
-    const dsp::ProcessingChain& current_actual_terminal,
-    std::span<const dsp::ModuleExecutionBinding> current_terminal_bindings,
-    double frozen_accepted_ceiling_db_tp,
     M12ProjectTransactionExpected expected)
 {
     using R=core::Result<M12PreparedProjectTransaction>;
@@ -105,13 +107,6 @@ prepare_exact_m12_project_transaction(
        exact_native_carrier.native_project_chain.segment!="REF_LINKED"||
        exact_native_carrier.native_project_chain.chainId.is_nil())
         return fail("L3_M12_PROJECT_TRANSACTION_WRONG_OWNER_OR_PLAN");
-    const auto terminal=verify_current_m12_terminal_limiter_composition(
-        current_actual_terminal,current_terminal_bindings,
-        frozen_accepted_ceiling_db_tp,
-        expected.current_product_epoch_and_accepted_diff_attested&&
-        expected.full_m11_protected_safety_current);
-    if(!terminal.admissible_without_new_terminal_action())
-        return fail("L3_M12_PROJECT_TRANSACTION_TERMINAL_NOT_ADMISSIBLE");
     // Independently reconstruct the actual native codec carrier.
     // A caller cannot present alternate linked PCM/parameters with the
     // same accepted plan checksum.
@@ -250,53 +245,56 @@ prepare_exact_m12_project_transaction(
     // Reuse project::OpaqueJsonValue canonical JSON and the existing
     // project writer. No duplicate plan hash or experimental JSON
     // serialization. All durable metadata is tied to the SAME stage.
-    nlohmann::json record=nlohmann::json::object();
-    try {
-        if(live.referenceMatch.canonical_utf8()!="{}") {
-            record=nlohmann::json::parse(
-                live.referenceMatch.canonical_utf8());
-            if(!record.is_object())return fail(
-                "L3_M12_PROJECT_TRANSACTION_METADATA_INVALID");
-            // Unknown existing owned/foreign materialization is not
-            // overwritten by a guessed controller identity.
-            if(record.contains("materialization")) {
-                const auto& prior=record.at("materialization");
-                if(!prior.is_object()||
-                   !expected.exact_existing_linked_snapshot||
-                   !prior.contains("controllerId")||
-                   !prior.at("controllerId").is_string()||
-                   prior.at("controllerId").get<std::string>()!=
-                     exact_native_carrier.exact_owner_controller.to_string()||
-                   !prior.contains("linkedChainId")||
-                   !prior.at("linkedChainId").is_string()||
-                   prior.at("linkedChainId").get<std::string>()!=
-                     exact_native_carrier.native_project_chain.chainId.to_string())
-                    return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_CONTROLLER");
-            } else if(expected.exact_existing_linked_snapshot)
-                return fail("L3_M12_PROJECT_TRANSACTION_MISSING_PRIOR_OWNER");
+    QJsonObject record;
+    if(live.referenceMatch.canonical_utf8()!="{}") {
+        QJsonParseError err;
+        const auto doc=QJsonDocument::fromJson(
+            QByteArray::fromStdString(live.referenceMatch.canonical_utf8()),
+            &err);
+        if(err.error!=QJsonParseError::NoError||!doc.isObject())
+            return fail("L3_M12_PROJECT_TRANSACTION_METADATA_INVALID");
+        record=doc.object();
+        const auto priorValue=record.value(QStringLiteral("materialization"));
+        if(!priorValue.isUndefined()) {
+            if(!priorValue.isObject()||
+               !expected.exact_existing_linked_snapshot)
+                return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_CONTROLLER");
+            const auto prior=priorValue.toObject();
+            if(prior.value(QStringLiteral("controllerId")).toString()!=
+               QString::fromStdString(
+                   exact_native_carrier.exact_owner_controller.to_string())||
+               prior.value(QStringLiteral("linkedChainId")).toString()!=
+               QString::fromStdString(
+                   exact_native_carrier.native_project_chain.chainId.to_string()))
+                return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_CONTROLLER");
         }else if(expected.exact_existing_linked_snapshot)
-            return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_META_ABSENT");
-    }catch(const nlohmann::json::exception&) {
-        return fail("L3_M12_PROJECT_TRANSACTION_METADATA_INVALID");
-    }
+            return fail("L3_M12_PROJECT_TRANSACTION_MISSING_PRIOR_OWNER");
+    }else if(expected.exact_existing_linked_snapshot)
+        return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_META_ABSENT");
     const auto& ident=accepted_stage.accepted_identity;
-    record["materialization"]={
-        {"schemaId","rgsml.reference-match.materialization.schema/1.0.0"},
-        {"policyId","rgsml.reference-match.materialization-policy/1.0.0"},
-        {"controllerId",ident.reference_match_controller_id.to_string()},
-        {"planId",ident.plan_id.to_string()},
-        {"planRevision",ident.exact_accepted_plan_revision},
-        {"planContentChecksum",ident.exact_plan_content_checksum},
-        {"winnerContentChecksum",ident.exact_m10_result_and_topology_checksum},
-        {"protectedFixedChecksum",ident.exact_m11_fixed_and_protection_checksum},
-        {"sourceReferenceScopeRevision",ident.exact_source_reference_amount_scope_revision},
-        {"linkedChainId",exact_native_carrier.native_project_chain.chainId.to_string()},
-        {"linkedChainRevision",exact_native_carrier.native_project_chain.revision},
-        {"materializationState","MATERIALIZED"},
-        {"verificationState","NOT_VERIFIED"}
+    const auto q=[](const std::string& value){
+        return QString::fromStdString(value);
     };
+    // JSON stores exact revision integers as decimal *strings* to
+    // avoid losing U64 bits in the Qt/JSON double representation.
+    QJsonObject materialization{
+        {"schemaId",QStringLiteral("rgsml.reference-match.materialization.schema/1.0.0")},
+        {"policyId",QStringLiteral("rgsml.reference-match.materialization-policy/1.0.0")},
+        {"controllerId",q(ident.reference_match_controller_id.to_string())},
+        {"planId",q(ident.plan_id.to_string())},
+        {"planRevision",q(std::to_string(ident.exact_accepted_plan_revision))},
+        {"planContentChecksum",q(ident.exact_plan_content_checksum)},
+        {"winnerContentChecksum",q(ident.exact_m10_result_and_topology_checksum)},
+        {"protectedFixedChecksum",q(ident.exact_m11_fixed_and_protection_checksum)},
+        {"sourceReferenceScopeRevision",q(ident.exact_source_reference_amount_scope_revision)},
+        {"linkedChainId",q(exact_native_carrier.native_project_chain.chainId.to_string())},
+        {"linkedChainRevision",q(std::to_string(exact_native_carrier.native_project_chain.revision))},
+        {"materializationState",QStringLiteral("MATERIALIZED")},
+        {"verificationState",QStringLiteral("NOT_VERIFIED")}
+    };
+    record.insert(QStringLiteral("materialization"),materialization);
     const auto canonical_record=project::OpaqueJsonValue::parse(
-        record.dump(-1,' ',false,nlohmann::json::error_handler_t::strict));
+        QJsonDocument(record).toJson(QJsonDocument::Compact).toStdString());
     if(!canonical_record)return R::failure(*canonical_record.error());
     candidate.referenceMatch=*canonical_record.value();
     auto snapshot=project::ProjectSnapshot::create(
