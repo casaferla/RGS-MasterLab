@@ -33,14 +33,22 @@ Item {
     readonly property double sustainDb: transientModule ? transientModule.sustainAmountDb : 0.0
     // Numeric drafts never trigger DSP work on each keystroke. Same 120x32,
     // Consolas 16, GAIN-field visual grammar as InputGainEditor.
+    // Empty/whitespace text is not zero: do not accidentally reset Attack
+    // or Sustain when a selected numeric field is erased and loses focus.
+    function parseNumeric(text, low, high) {
+        const trimmed=String(text).trim()
+        if(trimmed.length === 0) return NaN
+        const parsed=Number(trimmed.replace(",","."))
+        if(!Number.isFinite(parsed) || parsed<low || parsed>high) return NaN
+        return Math.round(parsed*10)/10
+    }
     function commitNumeric(control, low, high, current, setter) {
         if(!root.editorEnabled) return
-        const parsed=Number(control.text.trim().replace(",","."))
-        if(!Number.isFinite(parsed) || parsed<low || parsed>high) {
+        const canonical=root.parseNumeric(control.text,low,high)
+        if(!Number.isFinite(canonical)) {
             control.text=current.toFixed(1)
             return
         }
-        const canonical=Math.round(parsed*10)/10
         if(canonical!==current) setter(canonical)
         control.text=canonical.toFixed(1)
     }

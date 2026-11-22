@@ -167,3 +167,13 @@ triplets before advertising history as valid. A rejected/stale frame clears
 history, identity and playback position, and a later genuine matched C00
 projection restores the scope without inventing gain or timing. The Release
 Qt smoke exercises those transitions. Production L3 remains untouched.
+
+## Numeric blank safety and compact Qt geometry
+
+A cleared/whitespace Attack or Sustain numeric well is now treated as an
+invalid draft instead of an implicit 0.0 dB reset. The real QML parser
+accepts decimal commas, rejects malformed/out-of-domain input, and retains
+0.1-dB quantization. The isolated Qt Release smoke verifies those parser
+semantics in the actual QML scene, checks usable controls and authentic
+C00 history at 760x570, and captures an additional compact-size screenshot.
+This is editor research only; no audio/product integration.

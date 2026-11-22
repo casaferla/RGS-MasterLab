@@ -11,6 +11,15 @@ ApplicationWindow {
     visible: true
     color: "#081824"
     title: "RGS Transient Shaper — actual DSP / test playback snapshot"
+    // Exact parser regression in real QML, not an independent JS mock.
+    readonly property bool numericDraftParsingSafe:
+        !isFinite(researchEditor.parseNumeric("", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("   ", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("13", -12, 12))
+        && !isFinite(researchEditor.parseNumeric("1,2,3", -12, 12))
+        && Math.abs(researchEditor.parseNumeric("1,2", -12, 12) - 1.2) < 1e-9
+        && Math.abs(researchEditor.parseNumeric("-12.0", -12, 12) + 12) < 1e-9
+        && Math.abs(researchEditor.parseNumeric("12.0", -12, 12) - 12) < 1e-9
     Text {
         x: 16; y: 12
         text: "REAL C00 DSP — SIMULATED PLAYBACK SNAPSHOT — RESEARCH ONLY"
@@ -20,6 +29,7 @@ ApplicationWindow {
         font.bold: true
     }
     Studio.TransientShaperEditor {
+        id: researchEditor
         objectName: "transientShaperEditorResearch"
         x: 16; y: 44
         width: parent.width - 32

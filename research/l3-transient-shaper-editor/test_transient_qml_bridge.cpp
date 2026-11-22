@@ -125,6 +125,7 @@ int main(int argc,char** argv) {
         QStringLiteral("transientShaperActivityScope"));
     if(!editor || !scope)return 4;
     app.processEvents();
+    CHECK(root->property("numericDraftParsingSafe").toBool());
     if(editor->property("editorEnabled").toBool()
         || !scope->property("graphAvailable").toBool())return 5;
     if(!(scope->property("currentAttackDb").toDouble()>0.0))return 6;
@@ -149,6 +150,24 @@ int main(int argc,char** argv) {
             QStringLiteral("TransientShaper-Research-QML.png"));
         if(!image.save(output, "PNG"))return 14;
         std::cout<<"Qt research screenshot saved\n";
+    }
+    // The editor must still leave usable graph real estate in its compact
+    // standalone research size, without scrolling or overlapping controls.
+    auto* quick=qobject_cast<QQuickWindow*>(root);
+    CHECK(quick);
+    quick->setWidth(760);
+    quick->setHeight(570);
+    app.processEvents();
+    CHECK(editor->property("width").toDouble()>=700.0);
+    CHECK(editor->property("height").toDouble()>=500.0);
+    CHECK(scope->property("width").toDouble()>=400.0);
+    CHECK(scope->property("height").toDouble()>=110.0);
+    CHECK(scope->property("graphAvailable").toBool());
+    if(!screenshotDir.isEmpty()) {
+        const QImage compact=quick->grabWindow();
+        CHECK(!compact.isNull());
+        CHECK(compact.save(QDir(screenshotDir).filePath(
+            QStringLiteral("TransientShaper-Research-Compact.png")),"PNG"));
     }
     // Reject an unfinished numeric draft when research authoring is revoked.
     QObject* attackInput=root->findChild<QObject*>(
