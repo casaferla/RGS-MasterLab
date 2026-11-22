@@ -3209,3 +3209,19 @@ add_test(NAME rgsml_l3_m12_terminal_hard_preflight_tests
 set_tests_properties(rgsml_l3_m12_terminal_hard_preflight_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m12;terminal_tp;nonrelease")
+
+# L3 P2 explicit Product-owned Ceiling/Drive coordinate trial.
+# Nonrelease: this tests authentic typed bindings and fail-closed epochs,
+# not a completed M10 worker or Product M13 qualification.
+qt_add_executable(rgsml_l3_p2_typed_trial_tests
+    unit/app/test_l3_p2_typed_trial.cpp)
+target_include_directories(rgsml_l3_p2_typed_trial_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_l3_p2_typed_trial_tests
+    PRIVATE rgsml_dsp Qt6::Test)
+rgsml_apply_project_warnings(rgsml_l3_p2_typed_trial_tests)
+add_test(NAME rgsml_l3_p2_typed_trial_tests
+    COMMAND rgsml_l3_p2_typed_trial_tests)
+set_tests_properties(rgsml_l3_p2_typed_trial_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l3;m10;p2;typed_parameters;nonrelease")
