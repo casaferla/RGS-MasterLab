@@ -70,6 +70,34 @@ Rectangle {
                 Accessible.name: "Enable or disable band"
             }
 
+            // C01-only Undo/Redo live in unused elastic toolbar space.
+            // Existing Parametric EQ controls remain in their original slots.
+            StudioButton {
+                objectName: "dynamicEqUndoButton"
+                text: "Undo"
+                minimumControlWidth: 64
+                contentPadding: 10
+                enabled: root.manualEditable && !!root.viewModel
+                         && root.viewModel.canUndo
+                onClicked: if (root.manualEditable && root.viewModel)
+                    root.viewModel.undo()
+                Accessible.name: "Undo the last Dynamic EQ edit"
+                ToolTip.text: "Undo the last accepted manual C01 edit"
+            }
+
+            StudioButton {
+                objectName: "dynamicEqRedoButton"
+                text: "Redo"
+                minimumControlWidth: 64
+                contentPadding: 10
+                enabled: root.manualEditable && !!root.viewModel
+                         && root.viewModel.canRedo
+                onClicked: if (root.manualEditable && root.viewModel)
+                    root.viewModel.redo()
+                Accessible.name: "Redo the last Dynamic EQ edit"
+                ToolTip.text: "Redo the last undone manual C01 edit"
+            }
+
             Item { Layout.fillWidth: true }
 
             StudioButton {

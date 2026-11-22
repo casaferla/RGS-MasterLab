@@ -55,6 +55,12 @@ int main(int argc,char** argv) {
     if(common.bandCount()!=1 || common.gain()!=8.0
        ||common.selectedBandResponsePoints().size()!=257
        ||common.manualEditable())return 29;
+    // The research harness supplies deterministic unique IDs so Add/Remove
+    // can actually be exercised in the visible QML editor.
+    const auto secondId=core::Uuid::parse(
+        "a1000000-0000-4000-8000-000000000002");
+    if(!secondId)return 38;
+    model.setResearchIdGenerator([id=*secondId.value()](){return id;});
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("researchDynamics",&model);
     engine.rootContext()->setContextProperty("researchCommon",&common);
@@ -87,6 +93,15 @@ int main(int argc,char** argv) {
         "dynamicEqDynamicsWindowButton");
     if(!openButton || !openButton->property("enabled").toBool())
         return 24;
+    QObject* undoButton=ed->findChild<QObject*>("dynamicEqUndoButton");
+    QObject* redoButton=ed->findChild<QObject*>("dynamicEqRedoButton");
+    QObject* addButton=ed->findChild<QObject*>("addBandButton");
+    QObject* removeButton=ed->findChild<QObject*>("removeBandButton");
+    if(!undoButton || !redoButton || !addButton || !removeButton
+       ||undoButton->property("enabled").toBool()
+       ||redoButton->property("enabled").toBool()
+       ||addButton->property("enabled").toBool()
+       ||removeButton->property("enabled").toBool())return 39;
     // Panel can be hidden and restored without resizing or obscuring
     // the Parametric-derived graph or unlocking the manual DSP editor.
     ed->setProperty("showDynamics", false);
@@ -120,6 +135,10 @@ int main(int argc,char** argv) {
        ||model.acceptedBandSpecs()[0].control.base_gain_db!=10.0
        ||common.selectedBandResponsePoints().size()!=257)return 32;
     app.processEvents();
+    if(!undoButton->property("enabled").toBool()
+       ||redoButton->property("enabled").toBool()
+       ||!addButton->property("enabled").toBool()
+       ||removeButton->property("enabled").toBool())return 40;
     if(!dir.isEmpty()) {
         const QImage manualMain=window->grabWindow();
         const QImage manualSide=sideWindow->grabWindow();
@@ -130,10 +149,36 @@ int main(int argc,char** argv) {
                QDir(dir).filePath("DynamicEq-C01-Dynamics-Manual-Research.png"),"PNG"))
             return 33;
     }
+    // Trigger the ACTUAL QML Button clicked signals, not only C++ methods:
+    // Add, Undo, Redo and Remove must share the single C01 typed owner.
+    if(!QMetaObject::invokeMethod(addButton,"clicked",Qt::DirectConnection))
+        return 41;
+    app.processEvents();
+    if(common.bandCount()!=2 || common.selectedIndex()!=1
+       ||!removeButton->property("enabled").toBool()
+       ||!undoButton->property("enabled").toBool())return 42;
+    if(!QMetaObject::invokeMethod(undoButton,"clicked",Qt::DirectConnection))
+        return 43;
+    app.processEvents();
+    if(common.bandCount()!=1 || !redoButton->property("enabled").toBool())
+        return 44;
+    if(!QMetaObject::invokeMethod(redoButton,"clicked",Qt::DirectConnection))
+        return 45;
+    app.processEvents();
+    if(common.bandCount()!=2 || common.selectedIndex()!=1)return 46;
+    if(!QMetaObject::invokeMethod(removeButton,"clicked",Qt::DirectConnection))
+        return 47;
+    app.processEvents();
+    if(common.bandCount()!=1 || removeButton->property("enabled").toBool())
+        return 48;
     model.setResearchManualEditable(false);
     app.processEvents();
     if(ed->property("manualEditable").toBool()
        ||strip->property("editable").toBool())return 34;
+    if(undoButton->property("enabled").toBool()
+       ||redoButton->property("enabled").toBool()
+       ||addButton->property("enabled").toBool()
+       ||removeButton->property("enabled").toBool())return 49;
     // Closing the transient tool window must synchronize its toggle,
     // leave the main response plot untouched and permit reopening.
     const auto graphWidth=graph->property("width").toDouble();

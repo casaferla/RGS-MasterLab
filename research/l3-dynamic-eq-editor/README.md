@@ -224,3 +224,14 @@ undo restoration of all three accepted band identities. The actual Qt dual
 window smoke tests hide/reopen synchronization and asserts that dismissing
 the separate Dynamics tool window does not resize the original EQ graph or
 unlock either control surface. No production or L3 writer changes.
+
+## Visible C01 Undo/Redo and real QML band actions
+
+The C01-only Undo and Redo buttons now appear in the main editor's unused
+elastic toolbar area, leaving all inherited Parametric EQ control slots
+unchanged. Both are disabled in L3 research read-only mode and wired to the
+same typed C01 band owner as the separate Dynamics window. The isolated Qt
+research harness injects a unique deterministic UUID provider and exercises
+actual QML Add Band, Undo, Redo and Remove Band signals, then proves all
+mutation actions relock. Production UUID allocation and Product ownership
+remain post-L3 integration responsibilities.
