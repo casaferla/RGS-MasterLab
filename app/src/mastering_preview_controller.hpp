@@ -116,6 +116,7 @@ private:
     // extended REF_LINKED execution registry. Fence the former when
     // accepting worker results; execute the full replay with the latter.
     std::shared_ptr<const dsp::ModuleRegistry> m12ManualRegistryOwner_;
+    MasteringChainState* m12ManualChainOwner_{nullptr};
     dsp::ModuleRegistry registry_{*dsp::ModuleRegistry::create_dsp_package_v1().value()};
 
     std::uint64_t previewGeneration_{0};
