@@ -1803,8 +1803,13 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
                ticket.exact_manual_bindings||
            currentBindings!=ticket.exact_manual_bindings||
            !ticket.replay||
-           !m::decode_exact_m12_ref_linked_product_state(
-               snapshot.value()->document(),ticket.replay->registry_owner)) {
+           !m::m12_reopened_persisted_replay_matches_exact_ticket(
+               snapshot.value()->document(),*ticket.replay)||
+           masteringChainState_->chain().instances().size()!=
+               ticket.exact_manual_nodes.size()||
+           !std::equal(masteringChainState_->chain().instances().begin(),
+                       masteringChainState_->chain().instances().end(),
+                       ticket.exact_manual_nodes.begin())) {
             publish_error(core::Error{core::ErrorCode::InvalidState,
                 "L3_M12_PROJECT_SAVE_CURRENT_REF_LINKED_OWNER_STALE"});
             return;
