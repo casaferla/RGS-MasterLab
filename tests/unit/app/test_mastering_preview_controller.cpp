@@ -3,6 +3,7 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
@@ -111,6 +112,7 @@ private slots:
     void testPublisherFailureReportsErrorWithoutCorruptingState();
     void testPreparedInputRemainsImmutable();
     void testM12OptInTicketFencesAcceptedPCM();
+    void testM12ExtendedRefRegistryPreservesProductManualOwner();
 };
 
 void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
@@ -938,6 +940,124 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     controller.request_preview();
     QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
     QVERIFY(controller.published_preview_matches_current_bindings());
+}
+
+void MasteringPreviewControllerTest::
+testM12ExtendedRefRegistryPreservesProductManualOwner()
+{
+    // A real Product MANUAL chain may have a base registry, while the
+    // calculated REF segment needs the opt-in offline DSP factories.
+    // Those registry pointers are intentionally different.
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    const auto id=[](const char* s) {
+        return *core::Uuid::parse(s).value();
+    };
+    const auto module_id=[&](const char* s) {
+        return *dsp::ModuleInstanceId::from_uuid(id(s)).value();
+    };
+    const auto chainId=id("ec000000-0000-4000-8000-000000000001");
+    const auto gainId=module_id("ec000000-0000-4000-8000-000000000002");
+    const auto eqId=module_id("ec000000-0000-4000-8000-000000000003");
+    auto state=MasteringChainState::create_default(
+        *base.value(),chainId,gainId,eqId);
+    QVERIFY(state);
+    auto manualRegistry=state.value()->registry_snapshot();
+    auto withDynamic=dsp::ModuleRegistry::with_dynamic_eq_offline(
+        *manualRegistry);
+    QVERIFY(withDynamic);
+    auto withTransient=dsp::ModuleRegistry::with_transient_shaper_offline(
+        std::move(*withDynamic.value()));
+    QVERIFY(withTransient);
+    auto extended=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*withTransient.value()));
+    QVERIFY(manualRegistry!=extended);
+    auto prepared=make_transient_prepared_result(
+        *core::SampleRate::create(48000).value(),4800);
+    auto bindings=state.value()->execution_bindings();
+    namespace m=l3_automatch::m12_frozen;
+    m::AcceptedPlanAndOwner plan{
+        id("ec000000-0000-4000-8000-000000000004"),
+        id("ec000000-0000-4000-8000-000000000005"),
+        "exact-plan-checksum","exact-winner-checksum",
+        "protected-fixed-checksum","source-ref-scope",11U,
+        true,true,true,false};
+    auto transient=dsp::TransientShaperParameters::create_default();
+    QVERIFY(transient);
+    const m::ExactLinkedNode node{
+        module_id("ec000000-0000-4000-8000-000000000006"),
+        id("ec000000-0000-4000-8000-000000000007"),
+        "rgsml.dsp.transient-shaper",*transient.value()};
+    auto linked=m::stage_exact_m12_native_ref_linked(
+        plan,state.value()->chain(),bindings,extended,{node});
+    QVERIFY(linked);
+    const auto manualNodes=state.value()->chain().instances();
+    std::vector<dsp::ModuleInstance> originalNodes(
+        manualNodes.begin(),manualNodes.end());
+    auto prefix=dsp::ProcessingChain::restore(
+        *extended,state.value()->chain().context(),
+        state.value()->chain().revision(),std::move(originalNodes));
+    QVERIFY(prefix);
+    auto replay=std::make_shared<const m::RestoredM12NativeReplayPlan>(
+        m::RestoredM12NativeReplayPlan{
+            extended,std::move(*prefix.value()),bindings,
+            linked.value()->chain,linked.value()->exact_bindings,
+            std::nullopt,{},
+            id("ec000000-0000-4000-8000-000000000008"),
+            id("ec000000-0000-4000-8000-000000000009"),
+            id("ec000000-0000-4000-8000-00000000000a"),
+            plan.plan_id,
+            id("ec000000-0000-4000-8000-00000000000b"),
+            plan.exact_plan_content_checksum,
+            plan.exact_m10_result_and_topology_checksum,
+            plan.exact_m11_fixed_and_protection_checksum,
+            plan.exact_source_reference_amount_scope_revision});
+    auto ticket=m::prepare_m12_immutable_product_preview_ticket(
+        replay,prepared,state.value()->chain(),bindings);
+    QVERIFY(ticket);
+    auto ownedTicket=std::make_shared<const
+        m::M12ImmutableProductPreviewTicket>(std::move(*ticket.value()));
+    std::shared_ptr<render::RenderResult> published;
+    MasteringPreviewController controller{
+        state.value(),[prepared]{return prepared;},
+        [&published](render::RenderResult output) {
+            published=std::make_shared<render::RenderResult>(
+                std::move(output));
+            return core::Status::success();
+        }};
+    controller.set_accepted_processed_provider(
+        [&published]{return published;});
+    controller.set_private_m12_product_preview_ticket(ownedTicket);
+    QVERIFY(controller.has_private_m12_product_preview_ticket());
+    controller.request_preview();
+    QTRY_COMPARE_WITH_TIMEOUT(
+        controller.preview_status(),QStringLiteral("READY"),10000);
+    QVERIFY(published);
+    QVERIFY(controller.published_preview_matches_current_bindings());
+    const auto maxBlock=*core::FrameCount::create(4096).value();
+    const auto oracle=m::render_restored_m12_full_native_pcm_once(
+        *replay,*prepared,maxBlock);
+    QVERIFY(oracle);
+    const auto actual=published->view();
+    const auto expected=oracle.value()->view();
+    QCOMPARE(actual.format(),expected.format());
+    QCOMPARE(actual.absolute_range(),expected.absolute_range());
+    for(std::size_t ch=0;ch<actual.format().channel_count();++ch) {
+        const auto a=actual.channel(ch),b=expected.channel(ch);
+        QVERIFY(a&&b);
+        QCOMPARE(a.value()->size(),b.value()->size());
+        for(std::size_t i=0;i<a.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*a.value())[i]),
+                     std::bit_cast<std::uint64_t>((*b.value())[i]));
+    }
+    // Linked registry opt-in never changes or replaces the Product
+    // MANUAL registry; it is exclusively the worker's native factory.
+    QVERIFY(state.value()->registry_snapshot()==manualRegistry);
+    QVERIFY(replay->registry_owner==extended);
+    controller.set_private_m12_product_preview_ticket({});
+    controller.request_preview();
+    QTRY_COMPARE_WITH_TIMEOUT(
+        controller.preview_status(),QStringLiteral("READY"),10000);
 }
 
 void MasteringPreviewControllerTest::testPreparedInputRemainsImmutable()
