@@ -4900,6 +4900,31 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(imported.previewController->
         private_m12_product_preview_ticket()==priorOwner);
 
+    // Retiring just the genuine immutable PREPARED audio owner must
+    // invalidate an imported REF plan too. No MANUAL-only SaveAs.
+    imported.previewController->set_snapshot_provider(
+        []{return std::shared_ptr<const render::RenderResult>{};});
+    QVERIFY(!imported.project.can_save_project());
+    const auto staleImported=dir.filePath(QStringLiteral(
+        "m12-imported-stale-prepared-must-not-save.rgsml"));
+    imported.project.saveProjectAs(QUrl::fromLocalFile(staleImported));
+    QVERIFY(!QFileInfo::exists(staleImported));
+    imported.previewController->set_snapshot_provider(
+        [&imported]{return imported.selector.prepared_realization_snapshot();});
+    QVERIFY(imported.project.can_save_project());
+
+    // An ordinary Project Open with the SAME SOURCE is a different
+    // ownership transaction. It must retire the imported REF graph and
+    // any stale reopened readback before a new MANUAL preview is made.
+    imported.project.openProject(QUrl::fromLocalFile(baseline));
+    QVERIFY2(imported.project.error_message().isEmpty(),
+             imported.project.error_message().toUtf8().constData());
+    QVERIFY(!imported.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(imported.project.can_save_project());
+    QVERIFY(!imported.project.undo_private_m12_materialization());
+    QVERIFY(!importedLease);
+
     QVERIFY(session.project.undo_private_m12_materialization());
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
