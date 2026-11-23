@@ -36,11 +36,15 @@ private:
     friend class ::rgsml::app::ProjectSessionViewModel;
     explicit M13ImmutableProductFreshProbeRequest(
         std::shared_ptr<const m12_frozen::M12ImmutableProductPreviewTicket>
-            owner,double ceiling)
-        :ticket_(std::move(owner)),ceilingDbTp_(ceiling){}
+            owner,double ceiling,std::uint64_t product_epoch)
+        :ticket_(std::move(owner)),ceilingDbTp_(ceiling),
+         exactProductEpoch_(product_epoch){}
     std::shared_ptr<const m12_frozen::M12ImmutableProductPreviewTicket>
         ticket_;
     double ceilingDbTp_{};
+    // Guards ABA: an Undo/Redo or same-SOURCE Project Open can restore
+    // exactly equal DSP/PCM but never revive an earlier M13 worker result.
+    std::uint64_t exactProductEpoch_{};
 };
 
 struct M13FreshProductMasterProbe final {
