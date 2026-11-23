@@ -1030,7 +1030,8 @@ testM12ExtendedRefRegistryPreservesProductManualOwner()
             plan.exact_plan_content_checksum,
             plan.exact_m10_result_and_topology_checksum,
             plan.exact_m11_fixed_and_protection_checksum,
-            plan.exact_source_reference_amount_scope_revision});
+            plan.exact_source_reference_amount_scope_revision,
+            plan.reference_match_controller_id});
     auto ticket=m::prepare_m12_immutable_product_preview_ticket(
         replay,prepared,state.value()->chain(),bindings);
     QVERIFY(ticket);
