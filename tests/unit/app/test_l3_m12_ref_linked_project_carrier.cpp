@@ -757,6 +757,53 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *productBefore.value(),falsifiedDraft,reg,
         manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
         true));
+    // A manufactured M12 C++ candidate must not alter unrelated
+    // Project fields or optional bytes under a genuine before-snapshot.
+    auto changedOutput=productDraft.value()->candidate_not_yet_committed.document();
+    auto outputChoice=project::OpaqueJsonValue::parse(
+        "{\\"unauthorizedOutputChoice\\":true}");
+    QVERIFY(outputChoice);
+    changedOutput.output=*outputChoice.value();
+    auto changedOutputSnapshot=project::ProjectSnapshot::create(changedOutput);
+    QVERIFY(changedOutputSnapshot);
+    auto changedDraft=*productDraft.value();
+    changedDraft.candidate_not_yet_committed=
+        std::move(*changedOutputSnapshot.value());
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),changedDraft,reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
+    auto changedMetadata=productDraft.value()->candidate_not_yet_committed.document();
+    auto metaObj=QJsonDocument::fromJson(
+        QByteArray::fromStdString(
+            changedMetadata.referenceMatch.canonical_utf8())).object();
+    metaObj.insert(QStringLiteral("foreignFutureState"),true);
+    auto foreignJson=project::OpaqueJsonValue::parse(
+        QJsonDocument(metaObj).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(foreignJson);
+    changedMetadata.referenceMatch=*foreignJson.value();
+    auto changedMetaSnapshot=project::ProjectSnapshot::create(changedMetadata);
+    QVERIFY(changedMetaSnapshot);
+    changedDraft=*productDraft.value();
+    changedDraft.candidate_not_yet_committed=
+        std::move(*changedMetaSnapshot.value());
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),changedDraft,reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
+    const std::vector<project::OptionalEntry> extraneousFile{{
+        "artifacts/unrelated.txt","text/plain",{std::byte{0x42}}}};
+    auto foreignOptional=project::ProjectSnapshot::create(
+        productDraft.value()->candidate_not_yet_committed.document(),
+        extraneousFile);
+    QVERIFY(foreignOptional);
+    changedDraft=*productDraft.value();
+    changedDraft.candidate_not_yet_committed=
+        std::move(*foreignOptional.value());
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),changedDraft,reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
     auto changedManualBindings=gainBindings;
     changedManualBindings.front().parameters=
         *dsp::GainParameters::create(-8.0).value();
