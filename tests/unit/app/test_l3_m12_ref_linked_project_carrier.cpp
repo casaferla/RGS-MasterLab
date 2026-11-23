@@ -1013,6 +1013,48 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(updated);
     QCOMPARE(updated.value()->candidate_not_yet_committed.document().
              chains.size(),std::size_t{2});
+    // P02/P04: UPDATE retains both semantic and instance identities.
+    // Reusing an old instance for a different semantic node is a
+    // forbidden disguised REPLACE, even with the same type and payload.
+    auto stolenConcrete=nodes;
+    stolenConcrete.front().semantic_node_id=uuid(
+        "b4000000-0000-4000-8000-000000000099");
+    auto stolenStage=m::stage_exact_m12_native_ref_linked(
+        accepted(),*manual.value(),none,reg,stolenConcrete);
+    QVERIFY(stolenStage);
+    auto stolenCarrier=m::encode_exact_ref_linked_project_carrier(
+        *stolenStage.value(),refChainId);
+    QVERIFY(stolenCarrier);
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *stolenCarrier.value(),*stolenStage.value(),update));
+    // Conversely, re-allocating a compatible UPDATE's instance is
+    // not a permissible identity rewrite: the stable ID must survive.
+    auto recreatedSameSemantic=nodes;
+    recreatedSameSemantic.front().allocated_instance_id=id(
+        "b3000000-0000-4000-8000-000000000099");
+    auto recreatedStage=m::stage_exact_m12_native_ref_linked(
+        accepted(),*manual.value(),none,reg,recreatedSameSemantic);
+    QVERIFY(recreatedStage);
+    auto recreatedCarrier=m::encode_exact_ref_linked_project_carrier(
+        *recreatedStage.value(),refChainId);
+    QVERIFY(recreatedCarrier);
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *recreatedCarrier.value(),*recreatedStage.value(),update));
+    // A genuinely new semantic node carrying a fresh concrete ID may
+    // enter only as an explicit replacement in a newly accepted plan.
+    recreatedSameSemantic.front().semantic_node_id=uuid(
+        "b4000000-0000-4000-8000-000000000099");
+    auto freshStage=m::stage_exact_m12_native_ref_linked(
+        accepted(),*manual.value(),none,reg,recreatedSameSemantic);
+    QVERIFY(freshStage);
+    auto freshCarrier=m::encode_exact_ref_linked_project_carrier(
+        *freshStage.value(),refChainId);
+    QVERIFY(freshCarrier);
+    QVERIFY(m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *freshCarrier.value(),*freshStage.value(),update));
     // Amount=0 preserves the actual LINKED node, the unrelated MANUAL
     // chain, and all user/domains/bypass flags independently.
     const auto zero=m::prepare_m12_owned_controller_suspension(
