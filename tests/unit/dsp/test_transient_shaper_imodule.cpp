@@ -54,6 +54,7 @@ class TransientShaperIModuleTest final:public QObject {
     Q_OBJECT
 private slots:
     void fullPrefixCheckpointAndEffectiveContext();
+    void fullSixRateMonoStereoRuntimeAndCheckpoint();
     void corruptStateAndBadTimelineRollback();
     void resetNeutralAndFinalizedCheckpointGate();
 };
@@ -134,6 +135,106 @@ void TransientShaperIModuleTest::fullPrefixCheckpointAndEffectiveContext() {
     QVERIFY(after_eos.error()->code()==core::ErrorCode::UnsupportedOperation);
     QVERIFY(has_category(*after_eos.error(),
         "RUNTIME_CHECKPOINT_DURING_FINALIZE_UNSUPPORTED"));
+}
+void TransientShaperIModuleTest::fullSixRateMonoStereoRuntimeAndCheckpoint() {
+    const auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto descriptor=registry.value()->find_descriptor(
+        "rgsml.dsp.transient-shaper");
+    QVERIFY(descriptor);
+    const auto amount=TransientShaperParameters::create(9.0,-3.0);
+    QVERIFY(amount);
+    const auto left=signal(127,false);
+    const auto right=signal(127,true);
+    const std::size_t cut=41U;
+    for(const int fs:{44100,48000,88200,96000,176400,192000})
+        for(const auto layout:{
+                audio::ChannelLayout::MONO_C,
+                audio::ChannelLayout::STEREO_LR}) {
+            const bool stereo=layout==audio::ChannelLayout::STEREO_LR;
+            const DspProcessSpec spec{
+                format(layout,fs),
+                audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                frame_count(127)};
+            auto direct=make(descriptor.value()->get(),*amount.value());
+            auto prefix=make(descriptor.value()->get(),*amount.value());
+            auto resumed=make(descriptor.value()->get(),*amount.value());
+            const auto needs=direct->runtime_requirements(spec);
+            QVERIFY(needs);
+            QCOMPARE(needs.value()->algorithmic_latency_frames.value(),
+                     std::int64_t{0});
+            QVERIFY(needs.value()->pre_context_frames.value()>0);
+            QVERIFY(direct->prepare(spec));
+            QVERIFY(prefix->prepare(spec));
+            QVERIFY(resumed->prepare(spec));
+            auto src=make_buffer(
+                spec.audio_format,0,left,
+                stereo?std::span<const double>(right):
+                       std::span<const double>{});
+            auto dst=make_buffer(
+                spec.audio_format,0,left,
+                stereo?std::span<const double>(right):
+                       std::span<const double>{});
+            QVERIFY(src&&dst);
+            QVERIFY(direct->process(
+                src.value()->view(),dst.value()->mutable_view(),
+                DspProcessContext{frame_range(0,127),true,true}));
+            const auto expected=bits(dst.value()->view());
+            QVERIFY(expected!=bits(src.value()->view()));
+            auto prefixIn=make_buffer(
+                spec.audio_format,0,
+                std::span<const double>(left).first(cut),
+                stereo?std::span<const double>(right).first(cut):
+                       std::span<const double>{});
+            auto prefixOut=make_buffer(
+                spec.audio_format,0,
+                std::span<const double>(left).first(cut),
+                stereo?std::span<const double>(right).first(cut):
+                       std::span<const double>{});
+            QVERIFY(prefixIn&&prefixOut);
+            QVERIFY(prefix->process(
+                prefixIn.value()->view(),prefixOut.value()->mutable_view(),
+                DspProcessContext{
+                    frame_range(0,static_cast<std::int64_t>(cut)),
+                    true,false}));
+            const auto checkpoint=prefix->runtime_checkpoint();
+            QVERIFY(checkpoint);
+            QCOMPARE(checkpoint.value()->payload.size(),std::size_t{48});
+            QVERIFY(resumed->restore_runtime_checkpoint(*checkpoint.value()));
+            auto suffixIn=make_buffer(
+                spec.audio_format,static_cast<std::int64_t>(cut),
+                std::span<const double>(left).subspan(cut),
+                stereo?std::span<const double>(right).subspan(cut):
+                       std::span<const double>{});
+            auto suffixOut=make_buffer(
+                spec.audio_format,static_cast<std::int64_t>(cut),
+                std::span<const double>(left).subspan(cut),
+                stereo?std::span<const double>(right).subspan(cut):
+                       std::span<const double>{});
+            QVERIFY(suffixIn&&suffixOut);
+            QVERIFY(resumed->process(
+                suffixIn.value()->view(),
+                suffixOut.value()->mutable_view(),
+                DspProcessContext{
+                    frame_range(static_cast<std::int64_t>(cut),127),
+                    false,true}));
+            const auto first=bits(prefixOut.value()->view());
+            const auto second=bits(suffixOut.value()->view());
+            // bits() is planar per segment; compare each channel's
+            // full uninterrupted audio with the two checkpoint pieces.
+            for(std::size_t channel=0;channel<
+                spec.audio_format.channel_count();++channel) {
+                const auto whole=dst.value()->view().channel(channel);
+                const auto firstPart=prefixOut.value()->view().channel(channel);
+                const auto secondPart=suffixOut.value()->view().channel(channel);
+                QVERIFY(whole&&firstPart&&secondPart);
+                QVERIFY(byte_same(
+                    *firstPart.value(),whole.value()->first(cut)));
+                QVERIFY(byte_same(
+                    *secondPart.value(),whole.value()->subspan(cut)));
+            }
+            QVERIFY(!first.empty()&&!second.empty());
+        }
 }
 void TransientShaperIModuleTest::corruptStateAndBadTimelineRollback() {
     const auto registry=ModuleRegistry::create_dsp_package_v1();
