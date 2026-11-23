@@ -306,16 +306,41 @@ prepare_exact_m12_project_transaction(
            linked->chainId!=
                exact_native_carrier.native_project_chain.chainId)
             return fail("L3_M12_PROJECT_TRANSACTION_STALE_UPDATE");
-        for(const auto& node:exact_native_carrier.native_project_chain.modules)
-            if(occupied_module_ids.contains(node.instanceId)) {
-                const auto old=std::find_if(
-                    linked->modules.begin(),linked->modules.end(),
-                    [&](const project::Module& x){
-                        return x.instanceId==node.instanceId;
-                    });
-                if(old==linked->modules.end())
-                    return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_NODE_ID");
+        // P02/P04: an UPDATE is the same semantic node, same registered
+        // type/algorithm/schema AND the same concrete instance. A REPLACE
+        // requires a fresh instance whenever any of those identities
+        // changes. Never smuggle a different semantic node into the old
+        // instance just because it belonged to this controller.
+        for(const auto& node:exact_native_carrier.native_project_chain.modules) {
+            const auto semantic=std::find_if(
+                linked->modules.begin(),linked->modules.end(),
+                [&](const project::Module& prior){
+                    return prior.semanticNodeId==node.semanticNodeId;
+                });
+            const auto concrete=std::find_if(
+                linked->modules.begin(),linked->modules.end(),
+                [&](const project::Module& prior){
+                    return prior.instanceId==node.instanceId;
+                });
+            if(concrete!=linked->modules.end()&&
+               (concrete->semanticNodeId!=node.semanticNodeId||
+                concrete->typeId!=node.typeId||
+                concrete->algorithmVersion!=node.algorithmVersion||
+                concrete->parameterSchemaId!=node.parameterSchemaId))
+                return fail("L3_M12_PROJECT_TRANSACTION_REPLACE_REUSED_ID");
+            if(semantic!=linked->modules.end()) {
+                const bool compatible=
+                    semantic->typeId==node.typeId&&
+                    semantic->algorithmVersion==node.algorithmVersion&&
+                    semantic->parameterSchemaId==node.parameterSchemaId;
+                const bool retained=semantic->instanceId==node.instanceId;
+                if(compatible!=retained)
+                    return fail("L3_M12_PROJECT_TRANSACTION_UPDATE_ID_MISMATCH");
             }
+            if(occupied_module_ids.contains(node.instanceId)&&
+               concrete==linked->modules.end())
+                return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_NODE_ID");
+        }
         *linked=exact_native_carrier.native_project_chain;
     } else {
         if(linked!=candidate.chains.end())
