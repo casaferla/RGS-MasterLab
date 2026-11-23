@@ -4808,6 +4808,23 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     const auto importedTicket=
         imported.previewController->private_m12_product_preview_ticket();
     QVERIFY(importedTicket&&importedTicket->replay);
+    QVERIFY(m::m12_reopened_persisted_replay_matches_exact_ticket(
+        saved.value()->document(),*importedTicket->replay));
+    // A foreign controller cannot borrow another controller's exact
+    // replay ticket even if the DSP audio and plan checksum are unchanged.
+    auto forgedOwnership=saved.value()->document();
+    auto rawRecord=forgedOwnership.referenceMatch.canonical_utf8();
+    const auto oldController=plan.reference_match_controller_id.to_string();
+    const auto newController=id(
+        "e5000000-0000-4000-8000-0000000000ff").to_string();
+    const auto controllerPos=rawRecord.find(oldController);
+    QVERIFY(controllerPos!=std::string::npos);
+    rawRecord.replace(controllerPos,oldController.size(),newController);
+    auto forgedRecord=project::OpaqueJsonValue::parse(rawRecord);
+    QVERIFY(forgedRecord);
+    forgedOwnership.referenceMatch=std::move(*forgedRecord.value());
+    QVERIFY(!m::m12_reopened_persisted_replay_matches_exact_ticket(
+        forgedOwnership,*importedTicket->replay));
     const auto importedPrepared=
         imported.selector.prepared_realization_snapshot();
     QVERIFY(importedPrepared);
