@@ -185,6 +185,12 @@ public:
         M13ImmutableProductFreshProbeRequest>
     capture_private_m13_fresh_postmaterialization_probe(
         double independent_m16_safety_ceiling_db_tp);
+    // Reauthentication AFTER numerical worker completion, on the Qt
+    // Product owner. A stale job may retain its immutable PCM for audit
+    // but must never be accepted as current verification evidence.
+    [[nodiscard]] bool private_m13_fresh_probe_still_current(
+        const l3_automatch::m13_frozen::
+            M13ImmutableProductFreshProbeRequest& completed_request);
 
 signals:
     void changed();
