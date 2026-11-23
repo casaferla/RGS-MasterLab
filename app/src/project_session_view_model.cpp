@@ -1155,22 +1155,20 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
     Q_UNUSED(projectMutationBatch); // RAII lifetime extends to function exit.
     isCommittingProjectOpen_ = true;
-    // An already accepted calculated master belongs to the PREVIOUS
-    // Project identity. Even opening an ordinary Project that points to
-    // precisely the SAME physical SOURCE and REFERENCE must revoke it:
-    // SOURCE/REFERENCE changed-signals can legitimately be no-ops.
-    // Do this only after preflight and the actual M18 exclusive lease;
-    // a rejected Open must leave the old immutable linked ticket intact.
-    if(previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket())
-        previewController_->set_private_m12_product_preview_ticket({});
-
     auto stopped = playback_->stop_and_clear();
     if (!stopped) {
         isCommittingProjectOpen_ = false;
         publish_error(*stopped.error());
         return;
     }
+    // An already accepted calculated master belongs to the PREVIOUS
+    // Project identity. An ordinary Project pointing to the SAME SOURCE
+    // and REFERENCE still cannot retain its older REF_LINKED ticket.
+    // Revoke only AFTER transport-stop success and the M18 Project lease;
+    // rejected preflights and failed stop requests preserve the prior owner.
+    if(previewController_ &&
+       previewController_->has_private_m12_product_preview_ticket())
+        previewController_->set_private_m12_product_preview_ticket({});
 
     const auto adoptedSource=
         source_->adopt_probed_source(std::move(*sourceCandidate.value()));
