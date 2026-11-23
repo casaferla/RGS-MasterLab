@@ -3,6 +3,7 @@
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/project/m18_master_wav_preference.hpp>
 #include "internal/l3_m12_product_materialization_receipt.hpp"
+#include "internal/l3_m13_product_fresh_postmaterialization_probe.hpp"
 #include <rgsml/core/resource_reference.hpp>
 
 #include <QObject>
@@ -175,6 +176,15 @@ public:
         std::shared_ptr<const render::RenderResult> preparedOwner);
     [[nodiscard]] core::Status undo_private_m12_materialization();
     [[nodiscard]] core::Status redo_private_m12_materialization();
+
+    // M13 PRE-verifier: capture only on Product Qt owner, then run the
+    // immutable full-Master DSP/analysis probe on a separate worker.
+    // This does not perform M13 27-feature/QTP verification or qualify
+    // the result as VERIFIED.
+    [[nodiscard]] core::Result<l3_automatch::m13_frozen::
+        M13ImmutableProductFreshProbeRequest>
+    capture_private_m13_fresh_postmaterialization_probe(
+        double independent_m16_safety_ceiling_db_tp);
 
 signals:
     void changed();
