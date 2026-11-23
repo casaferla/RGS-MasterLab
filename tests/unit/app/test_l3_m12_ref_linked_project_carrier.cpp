@@ -761,7 +761,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     // Project fields or optional bytes under a genuine before-snapshot.
     auto changedOutput=productDraft.value()->candidate_not_yet_committed.document();
     auto outputChoice=project::OpaqueJsonValue::parse(
-        "{\\"unauthorizedOutputChoice\\":true}");
+        "{\"unauthorizedOutputChoice\":true}");
     QVERIFY(outputChoice);
     changedOutput.output=*outputChoice.value();
     auto changedOutputSnapshot=project::ProjectSnapshot::create(changedOutput);
