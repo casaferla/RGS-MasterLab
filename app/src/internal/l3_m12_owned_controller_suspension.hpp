@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -61,8 +62,15 @@ prepare_m12_owned_controller_suspension(
            QString::fromStdString(original_ref_chain_id.to_string())||
        data.value(QStringLiteral("materializationState")).toString()!=
            QStringLiteral("MATERIALIZED")||
-       !data.value(QStringLiteral("planId")).isString()||
-       !data.value(QStringLiteral("planContentChecksum")).isString())
+       data.value(QStringLiteral("schemaId")).toString()!=
+           QStringLiteral("rgsml.reference-match.materialization.schema/1.0.0")||
+       data.value(QStringLiteral("policyId")).toString()!=
+           QStringLiteral("rgsml.reference-match.materialization-policy/1.0.0")||
+       data.value(QStringLiteral("planId")).toString().isEmpty()||
+       data.value(QStringLiteral("planContentChecksum")).toString().isEmpty()||
+       data.value(QStringLiteral("winnerContentChecksum")).toString().isEmpty()||
+       data.value(QStringLiteral("protectedFixedChecksum")).toString().isEmpty()||
+       data.value(QStringLiteral("sourceReferenceScopeRevision")).toString().isEmpty())
         return fail("L3_M12_CONTROLLER_SUSPENSION_NOT_OWNED");
     auto it=std::find_if(doc.chains.begin(),doc.chains.end(),
         [&](const project::Chain& chain) {
@@ -71,6 +79,36 @@ prepare_m12_owned_controller_suspension(
         });
     if(it==doc.chains.end())
         return fail("L3_M12_CONTROLLER_SUSPENSION_NO_OWNED_CHAIN");
+    // A controller cannot suspend/reactivate a partly replaced graph,
+    // duplicated REF segment or one whose persisted revision has drifted
+    // from its accepted materialization. Never trust owner names alone.
+    const auto revision=QString::fromStdString(std::to_string(it->revision));
+    if(data.value(QStringLiteral("linkedChainRevision")).toString()!=revision||
+       data.value(QStringLiteral("planRevision")).toString()!=revision)
+        return fail("L3_M12_CONTROLLER_SUSPENSION_REVISION_STALE");
+    for(const auto& chain:doc.chains) {
+        if(&chain==&*it)continue;
+        if(chain.segment=="REF_LINKED"||
+           std::any_of(chain.modules.begin(),chain.modules.end(),
+                [](const project::Module& node) {
+                    return node.provenance=="REFERENCE_MATCH"||
+                           node.owner=="REFERENCE_MATCH"||
+                           node.linkState=="REF_LINKED";
+                }))
+            return fail("L3_M12_CONTROLLER_SUSPENSION_FOREIGN_SEGMENT");
+    }
+    std::set<core::Uuid> linked_semantic_ids;
+    for(const auto& module:it->modules) {
+        if(module.instanceId.is_nil()||!module.semanticNodeId||
+           module.semanticNodeId->is_nil()||
+           !linked_semantic_ids.insert(*module.semanticNodeId).second||
+           !module.algorithmVersion||!module.parameterSchemaId||
+           module.typeId=="rgsml.dsp.gain"||
+           module.typeId=="rgsml.dsp.true-peak-limiter"||
+           module.typeId=="rgsml.dsp.streaming-true-peak-limiter"||
+           module.typeId=="rgsml.dsp.dither")
+            return fail("L3_M12_CONTROLLER_SUSPENSION_INVALID_LINKED_NODE");
+    }
     const bool suspend=cause!=ControllerSuspensionCause::
         current_amount_restored;
     if(cause==ControllerSuspensionCause::current_amount_restored) {
