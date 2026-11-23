@@ -413,8 +413,9 @@ prepare_exact_m12_project_transaction(
             bool parsed_revision=false;
             const auto prior_revision=prior_revision_text.toULongLong(
                 &parsed_revision);
-            const auto prior_linked_revision=QString::number(
-                expected.exact_existing_linked_snapshot->revision);
+            const auto prior_linked_revision=QString::fromStdString(
+                std::to_string(
+                    expected.exact_existing_linked_snapshot->revision));
             if(!parsed_revision||prior_id.isEmpty()||
                prior_checksum.isEmpty()||
                prior.value(QStringLiteral("materializationState")).toString()!=
