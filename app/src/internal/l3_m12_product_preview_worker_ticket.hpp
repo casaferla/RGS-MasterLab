@@ -80,6 +80,72 @@ prepare_m12_immutable_product_preview_ticket(
         current_manual.revision(),{nodes.begin(),nodes.end()},
         {current_manual_bindings.begin(),current_manual_bindings.end()}});
 }
+// Prepublication Product seam: bind one accepted immutable Project
+// after-state to its exact live precommit snapshot and the one PREPARED
+// PCM owner. No second chain, implicit DSP re-selection or adoption.
+// ProductSession must still acquire its exclusive Qt mutation lease,
+// recheck the before-state, install the whole project atomically and
+// issue a real receipt. This function intentionally cannot do that.
+[[nodiscard]] inline core::Result<M12ImmutableProductPreviewTicket>
+prepare_m12_product_prepublication_preview_ticket(
+    const project::ProjectSnapshot& current_project,
+    const M12PreparedProjectTransaction& uncommitted,
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    core::Uuid current_manual_chain_id,
+    const dsp::ProcessingChain& current_manual,
+    std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
+    std::shared_ptr<const render::RenderResult> current_prepared,
+    bool exact_product_owner_epoch_and_accepted_diff_attested)
+{
+    using R=core::Result<M12ImmutableProductPreviewTicket>;
+    const auto fail=[](const char* reason) {
+        return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    if(!exact_product_owner_epoch_and_accepted_diff_attested||
+       !uncommitted.matches_exact_precommit(current_project)||
+       !registry||!current_prepared||
+       uncommitted.plan_id.is_nil()||
+       uncommitted.controller_id.is_nil()||
+       uncommitted.ref_linked_chain_id.is_nil()||
+       uncommitted.accepted_plan_checksum.empty()||
+       uncommitted.pre_commit_project_revision_dependency.empty())
+        return fail("L3_M12_PRODUCT_PRECOMMIT_OWNER_STALE");
+    const auto& before=current_project.document();
+    const auto& candidate=uncommitted.candidate_not_yet_committed.document();
+    if(candidate.projectId!=before.projectId||
+       candidate.sourceResourceId!=before.sourceResourceId||
+       candidate.references.activeReferenceId!=
+           before.references.activeReferenceId||
+       candidate.pipeline.masteringChainId!=
+           before.pipeline.masteringChainId||
+       !candidate.pipeline.masteringChainId||
+       *candidate.pipeline.masteringChainId!=current_manual_chain_id)
+        return fail("L3_M12_PRODUCT_PRECOMMIT_PROJECT_CHANGED");
+    // Decode again from the ACTUAL persistent Project carrier, not from
+    // caller-supplied typed nodes. Missing factories or mismatched
+    // algorithm/parameter schemas must fail, never silently drop a DSP.
+    auto restored=decode_exact_m12_ref_linked_product_state(
+        candidate,registry);
+    if(!restored)return R::failure(*restored.error());
+    if(restored.value()->plan_id!=uncommitted.plan_id||
+       restored.value()->controller_id!=uncommitted.controller_id||
+       restored.value()->persisted_linked_chain_id!=
+           uncommitted.ref_linked_chain_id||
+       restored.value()->exact_plan_checksum!=
+           uncommitted.accepted_plan_checksum||
+       restored.value()->exact_source_reference_scope_revision!=
+           uncommitted.pre_commit_project_revision_dependency)
+        return fail("L3_M12_PRODUCT_PRECOMMIT_PLAN_SUBSTITUTED");
+    auto replay=prepare_restored_m12_native_replay_plan(
+        candidate,*restored.value(),current_manual_chain_id,
+        current_manual,current_manual_bindings,true);
+    if(!replay)return R::failure(*replay.error());
+    return prepare_m12_immutable_product_preview_ticket(
+        std::make_shared<const RestoredM12NativeReplayPlan>(
+            std::move(*replay.value())),
+        std::move(current_prepared),current_manual,
+        current_manual_bindings);
+}
 [[nodiscard]] inline core::Result<render::RenderResult>
 render_m12_exact_product_preview_job(
     const M12ImmutableProductPreviewTicket& ticket,
