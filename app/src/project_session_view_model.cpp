@@ -1426,7 +1426,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Exact IDs are captured by frame domain, not vector order.
     const auto persistedRegionId=persistedSourceRegionId;
     const auto persistedName = doc.displayName;
-    const bool isDegraded = has_future_semantics(doc);
+    const bool isDegraded = linkedRequested
+        ?has_unsupported_semantics_after_native_m12_reopen(doc)
+        :has_future_semantics(doc);
     // Publish the validated WAV preference only after the entire
     // Project/source/chain commit succeeded under the M18 physical lease.
     m18OutputPreference_=std::move(*m18Choice.value());
