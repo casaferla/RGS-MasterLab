@@ -144,6 +144,22 @@ private:
     return false;
 }
 
+// A fully rehydrated native REF_LINKED segment is no longer an
+// unsupported "future" processor. Other opaque processing/history
+// semantics remain honestly degraded and are never thrown away.
+[[nodiscard]] bool has_unsupported_semantics_after_native_m12_reopen(
+    const project::ProjectDocument& saved)
+{
+    auto withoutKnownLinked=saved;
+    std::erase_if(withoutKnownLinked.chains,
+        [](const project::Chain& chain) {
+            return chain.stage=="MASTER"&&chain.segment=="REF_LINKED";
+        });
+    withoutKnownLinked.referenceMatch=
+        project::OpaqueJsonValue::empty_object();
+    return has_future_semantics(withoutKnownLinked);
+}
+
 struct MasteringChainCandidate final {
     std::optional<MasteringChainState> chainState;
     bool isMaterialized{false};
