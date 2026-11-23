@@ -34,6 +34,10 @@ struct RestoredM12NativeReplayPlan final {
     std::string exact_m10_winner_checksum;
     std::string exact_m11_protection_checksum;
     std::string exact_source_reference_scope_revision;
+    // Persisted controller ownership must survive execution replay.
+    // A controller change with identical PCM and plan checksums is NOT
+    // the same materialized ownership or a legal Product SaveAs.
+    core::Uuid controller_id;
     [[nodiscard]] constexpr bool authorizes_project_adoption() const noexcept {
         return false;
     }
@@ -195,6 +199,7 @@ prepare_restored_m12_native_replay_plan(
         linked.persisted_linked_chain_id,linked.exact_plan_checksum,
         linked.exact_m10_winning_checksum,
         linked.exact_m11_protected_fixed_checksum,
-        linked.exact_source_reference_scope_revision});
+        linked.exact_source_reference_scope_revision,
+        linked.controller_id});
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
