@@ -2,6 +2,7 @@
 #include "internal/l3_m12_ref_linked_project_open_gate.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
+#include "internal/l3_m12_product_reopen_preflight.hpp"
 
 #include "audition_region_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
@@ -1057,17 +1058,21 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     auto opened = project::ProjectRepository::open(std::move(*reader.value()));
     if (!opened) { publish_error(*opened.error()); return; }
     const auto& doc = opened.value()->document();
-    // L3-M12: ProjectSession currently restores MANUAL only. A saved
-    // REF_LINKED Master must NOT silently sound different on reopening.
-    // Block on the Qt owner BEFORE probing or adopting SOURCE/Gold,
-    // until Product has a genuine atomic linked-chain replay path.
-    if(l3_automatch::m12_frozen::
-         assess_current_product_ref_linked_open_safety(doc)!=
-       l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
-         ordinary_project_without_ref_linked) {
+    // A saved REF_LINKED plan may be reopened only with a live Product
+    // owner, a physical exclusive Project batch and the real PCM Preview
+    // controller. All native DSP schemas and factories are preflighted
+    // before stopping transport or touching SOURCE/GOLD/MANUAL.
+    const bool linkedRequested=
+        l3_automatch::m12_frozen::
+        assess_current_product_ref_linked_open_safety(doc)!=
+        l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
+            ordinary_project_without_ref_linked;
+    if(linkedRequested&&(!m18ProjectOpenBatchBegin_||
+        !m18ProjectSaveBatchBegin_||!previewController_||
+        !masteringChainState_)) {
         publish_error(core::Error{
             core::ErrorCode::InvalidState,
-            "L3_M12_PROJECT_OPEN_REF_LINKED_REPLAY_NOT_YET_INTEGRATED"});
+            "L3_M12_PROJECT_OPEN_REQUIRES_EXCLUSIVE_PRODUCT_REPLAY"});
         return;
     }
     // Fail-closed preflight before transport/Source/chain mutation.
