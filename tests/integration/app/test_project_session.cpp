@@ -4740,6 +4740,27 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(restoredAfter);
     QVERIFY(m::m12_exact_project_snapshot_equal(
         *restoredAfter.value(),*saved.value()));
+
+    // A manual parameter-only edit leaves the structural revision
+    // unchanged, but must forbid both a stale M12 Undo and an incorrect
+    // REF_LINKED disk save. No partial output may be created.
+    const auto previousRevision=
+        session.masteringChainState->chain().revision();
+    const auto editedGain=dsp::GainParameters::create(-3.0);
+    QVERIFY(editedGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(
+        *editedGain.value()));
+    QCOMPARE(session.masteringChainState->chain().revision(),
+             previousRevision);
+    const auto forbidden=dir.filePath(QStringLiteral(
+        "m12-stale-manual-must-not-save.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(forbidden));
+    QVERIFY(!QFileInfo::exists(forbidden));
+    QCOMPARE(session.project.error_message(),QStringLiteral(
+        "L3_M12_PROJECT_SAVE_CURRENT_REF_LINKED_OWNER_STALE"));
+    QVERIFY(!session.project.undo_private_m12_materialization());
+    QVERIFY(session.previewController->
+        has_private_m12_product_preview_ticket());
 }
 
 void ProjectSessionTest::
