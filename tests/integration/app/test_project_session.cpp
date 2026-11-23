@@ -4770,6 +4770,39 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(committed.value()->materialized_not_verified());
     QVERIFY(!committed.value()->authorizes_m13_verified());
     QCOMPARE(committed.value()->plan_id(),plan.plan_id);
+    // M13 may capture a fresh numerical job ONLY from the actual
+    // Product receipt, never an uncommitted native REF staging ticket.
+    const auto m13Owner=session.project.
+        capture_private_m13_fresh_postmaterialization_probe(0.0);
+    QVERIFY2(m13Owner,
+             m13Owner.error()?m13Owner.error()->message().c_str():"");
+    QVERIFY(!m13Owner.value()->authorizes_m13_verified());
+    QVERIFY(!m13Owner.value()->authorizes_wav_export());
+    const auto m13Result=
+        app::l3_automatch::m13_frozen::
+        run_fresh_m13_product_postmaterialization_probe(
+            *m13Owner.value(),*core::FrameCount::create(4096).value());
+    QVERIFY2(m13Result,
+             m13Result.error()?m13Result.error()->message().c_str():"");
+    QCOMPARE(m13Result.value()->fresh_m16.sample_rate_hz(),
+             static_cast<std::int64_t>(sampleRateHz));
+    QCOMPARE(m13Result.value()->fresh_m19.sample_rate_hz,
+             static_cast<std::int64_t>(sampleRateHz));
+    QCOMPARE(m13Result.value()->fresh_m20.sample_rate_hz,
+             static_cast<std::int64_t>(sampleRateHz));
+    QCOMPARE(m13Result.value()->logical_verification_evaluations,
+             std::uint32_t{1});
+    QVERIFY(!m13Result.value()->is_m13_verified());
+    QVERIFY(!m13Result.value()->is_qualification_receipt());
+    QVERIFY(!m13Result.value()->authorizes_wav_export());
+    // The same frozen audio under an impossible *independent* M16
+    // ceiling is a failed probe, not a silent request to adjust M17.
+    const auto tooStrict=session.project.
+        capture_private_m13_fresh_postmaterialization_probe(-60.0);
+    QVERIFY(tooStrict);
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        run_fresh_m13_product_postmaterialization_probe(
+            *tooStrict.value(),*core::FrameCount::create(4096).value()));
     QVERIFY(session.previewController->
         has_private_m12_product_preview_ticket());
     QCOMPARE(session.project.status_text(),
