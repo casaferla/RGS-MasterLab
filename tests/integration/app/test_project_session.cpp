@@ -4838,6 +4838,68 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(m::m12_exact_project_snapshot_equal(
         *importedRoundtrip.value(),*saved.value()));
 
+    // Without the physical exclusive Product lease, even an otherwise
+    // valid saved REF chain is rejected BEFORE replacing SOURCE.
+    Session withoutOwner;
+    const auto unrelatedSource=wav(dir,QStringLiteral(
+        "m12-preexisting-source.wav"),66);
+    QVERIFY(!unrelatedSource.isEmpty());
+    withoutOwner.source.selectSource(QUrl::fromLocalFile(
+        unrelatedSource));
+    QVERIFY(withoutOwner.source.has_source());
+    const auto originalLocator=withoutOwner.source.source_resource()->
+        reference().locator();
+    withoutOwner.project.openProject(QUrl::fromLocalFile(accepted));
+    QCOMPARE(withoutOwner.project.error_message(),QStringLiteral(
+        "L3_M12_PROJECT_OPEN_REQUIRES_EXCLUSIVE_PRODUCT_REPLAY"));
+    QCOMPARE(withoutOwner.source.source_resource()->reference().locator(),
+             originalLocator);
+    QVERIFY(!withoutOwner.previewController->
+        has_private_m12_product_preview_ticket());
+
+    // Missing materialization metadata and unregistered DSP factories
+    // are preflight failures. They must retain the currently accepted
+    // linked PCM, Source and exact replay owner of the live Product.
+    const auto priorOwner=imported.previewController->
+        private_m12_product_preview_ticket();
+    const auto priorSource=imported.source.source_resource()->
+        reference().locator();
+    auto orphanDoc=saved.value()->document();
+    orphanDoc.referenceMatch=project::OpaqueJsonValue::empty_object();
+    auto orphanSnapshot=project::ProjectSnapshot::create(orphanDoc);
+    QVERIFY(orphanSnapshot);
+    const auto orphanPath=dir.filePath(QStringLiteral(
+        "m12-orphan-without-metadata.rgsml"));
+    QVERIFY(write_project(orphanPath,*orphanSnapshot.value()));
+    imported.project.openProject(QUrl::fromLocalFile(orphanPath));
+    QVERIFY(!imported.project.error_message().isEmpty());
+    QCOMPARE(imported.source.source_resource()->reference().locator(),
+             priorSource);
+    QVERIFY(imported.previewController->
+        private_m12_product_preview_ticket()==priorOwner);
+
+    auto unknownDoc=saved.value()->document();
+    auto linkedIt=std::find_if(
+        unknownDoc.chains.begin(),unknownDoc.chains.end(),
+        [](const project::Chain& chain){
+            return chain.segment=="REF_LINKED";
+        });
+    QVERIFY(linkedIt!=unknownDoc.chains.end());
+    QVERIFY(!linkedIt->modules.empty());
+    linkedIt->modules.front().typeId="rgsml.dsp.missing-factory";
+    auto unknownSnapshot=project::ProjectSnapshot::create(
+        std::move(unknownDoc));
+    QVERIFY(unknownSnapshot);
+    const auto unknownPath=dir.filePath(QStringLiteral(
+        "m12-unknown-native-dsp.rgsml"));
+    QVERIFY(write_project(unknownPath,*unknownSnapshot.value()));
+    imported.project.openProject(QUrl::fromLocalFile(unknownPath));
+    QVERIFY(!imported.project.error_message().isEmpty());
+    QCOMPARE(imported.source.source_resource()->reference().locator(),
+             priorSource);
+    QVERIFY(imported.previewController->
+        private_m12_product_preview_ticket()==priorOwner);
+
     QVERIFY(session.project.undo_private_m12_materialization());
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
