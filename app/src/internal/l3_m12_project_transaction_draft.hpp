@@ -299,6 +299,7 @@ prepare_exact_m12_project_transaction(
             });
     if(second!=candidate.chains.end())
         return fail("L3_M12_PROJECT_TRANSACTION_AMBIGUOUS_LINKED_OWNER");
+    bool existing_linked_content_changed=false;
     if(expected.exact_existing_linked_snapshot) {
         if(linked==candidate.chains.end()||
            !exact_project_chain_equal(
@@ -360,6 +361,8 @@ prepare_exact_m12_project_transaction(
                concrete==linked->modules.end())
                 return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_NODE_ID");
         }
+        existing_linked_content_changed=!exact_project_chain_equal(
+            *linked,exact_native_carrier.native_project_chain);
         *linked=exact_native_carrier.native_project_chain;
     } else {
         if(linked!=candidate.chains.end())
@@ -400,6 +403,41 @@ prepare_exact_m12_project_transaction(
                QString::fromStdString(
                    exact_native_carrier.native_project_chain.chainId.to_string()))
                 return fail("L3_M12_PROJECT_TRANSACTION_FOREIGN_CONTROLLER");
+            // A mutation of immutable plan content must carry new
+            // accepted plan evidence, not old M10/M12 checksum bytes.
+            const auto prior_id=prior.value(QStringLiteral("planId")).toString();
+            const auto prior_checksum=prior.value(
+                QStringLiteral("planContentChecksum")).toString();
+            const auto prior_revision_text=prior.value(
+                QStringLiteral("planRevision")).toString();
+            bool parsed_revision=false;
+            const auto prior_revision=prior_revision_text.toULongLong(
+                &parsed_revision);
+            const auto prior_linked_revision=QString::number(
+                expected.exact_existing_linked_snapshot->revision);
+            if(!parsed_revision||prior_id.isEmpty()||
+               prior_checksum.isEmpty()||
+               prior.value(QStringLiteral("materializationState")).toString()!=
+                   QStringLiteral("MATERIALIZED")||
+               prior.value(QStringLiteral("schemaId")).toString()!=
+                   QStringLiteral("rgsml.reference-match.materialization.schema/1.0.0")||
+               prior.value(QStringLiteral("policyId")).toString()!=
+                   QStringLiteral("rgsml.reference-match.materialization-policy/1.0.0")||
+               prior.value(QStringLiteral("linkedChainRevision")).toString()!=
+                   prior_linked_revision||
+               prior_revision_text!=prior_linked_revision)
+                return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_PLAN_STALE");
+            if(existing_linked_content_changed) {
+                const auto& next=accepted_stage.accepted_identity;
+                const auto next_id=QString::fromStdString(
+                    next.plan_id.to_string());
+                const auto next_checksum=QString::fromStdString(
+                    next.exact_plan_content_checksum);
+                if(next_checksum==prior_checksum||
+                   (next_id==prior_id&&
+                    next.exact_accepted_plan_revision<=prior_revision))
+                    return fail("L3_M12_PROJECT_TRANSACTION_PLAN_IDENTITY_REUSED");
+            }
         }else if(expected.exact_existing_linked_snapshot)
             return fail("L3_M12_PROJECT_TRANSACTION_MISSING_PRIOR_OWNER");
     }else if(expected.exact_existing_linked_snapshot)
