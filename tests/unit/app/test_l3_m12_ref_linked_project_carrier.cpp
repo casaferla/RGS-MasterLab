@@ -1141,6 +1141,44 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     for(const auto& module:restored.value()->
             updated_project_not_committed.document().chains.back().modules)
         QVERIFY(!module.controllerSuspended);
+    // RESUME is a guarded transition, not a generic command that
+    // happens to set every controllerSuspended bit to false.
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        transaction.value()->candidate_not_yet_committed,
+        carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::current_amount_restored,true));
+    auto incompleteSuspension=suspended;
+    incompleteSuspension.chains.back().modules.front().
+        controllerSuspended=false;
+    auto incompleteSnapshot=project::ProjectSnapshot::create(
+        incompleteSuspension);
+    QVERIFY(incompleteSnapshot);
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        *incompleteSnapshot.value(),carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::current_amount_restored,true));
+    auto unresolvedSuspension=suspended;
+    auto unresolvedMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        unresolvedSuspension.referenceMatch.canonical_utf8())).object();
+    auto unresolvedRecord=unresolvedMeta.value(
+        QStringLiteral("materialization")).toObject();
+    unresolvedRecord.insert(QStringLiteral("freshnessState"),
+                            QStringLiteral("UNRESOLVED_DEPENDENCIES"));
+    unresolvedMeta.insert(QStringLiteral("materialization"),
+                          unresolvedRecord);
+    auto unresolvedJson=project::OpaqueJsonValue::parse(
+        QJsonDocument(unresolvedMeta).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(unresolvedJson);
+    unresolvedSuspension.referenceMatch=*unresolvedJson.value();
+    auto unresolvedSnapshot=project::ProjectSnapshot::create(
+        unresolvedSuspension);
+    QVERIFY(unresolvedSnapshot);
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        *unresolvedSnapshot.value(),carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::current_amount_restored,true));
     const auto stale_suspension=m::prepare_m12_owned_controller_suspension(
         zero.value()->updated_project_not_committed,
         carrier.value()->exact_owner_controller,
