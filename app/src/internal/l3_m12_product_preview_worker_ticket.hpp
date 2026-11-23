@@ -4,6 +4,7 @@
 // acquire a real owner transaction before future live installation.
 // The worker never chooses a source, ref, DSP, P2 value or M17 ceiling.
 #include "l3_m12_restored_native_render.hpp"
+#include "l3_m12_project_transaction_draft.hpp"
 #include "mastering_preview_controller.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
