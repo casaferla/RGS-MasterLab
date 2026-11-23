@@ -4702,6 +4702,26 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     };
     session.project.set_private_m18_project_open_batch_begin(begin);
     session.project.set_private_m18_project_save_batch_begin(begin);
+    // Even a real exclusive epoch cannot make a doctored candidate
+    // legitimate. A foreign output preference must not be smuggled
+    // through an otherwise exact REF_LINKED draft.
+    auto falsified=*draft.value();
+    auto altered=falsified.candidate_not_yet_committed.document();
+    auto outputInjection=project::OpaqueJsonValue::parse(
+        "{\"unauthorizedM12OutputRewrite\":true}");
+    QVERIFY(outputInjection);
+    altered.output=*outputInjection.value();
+    auto alteredSnapshot=project::ProjectSnapshot::create(
+        std::move(altered));
+    QVERIFY(alteredSnapshot);
+    falsified.candidate_not_yet_committed=
+        std::move(*alteredSnapshot.value());
+    QVERIFY(!session.project.apply_private_m12_materialization(
+        falsified,registry,prepared));
+    QVERIFY(!session.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(!leased);
+    QVERIFY(session.project.can_save_project());
     auto committed=session.project.apply_private_m12_materialization(
         *draft.value(),registry,prepared);
     QVERIFY2(committed,
