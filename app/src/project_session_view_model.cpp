@@ -1749,10 +1749,18 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
         m12UndoHistory_.back().afterTicket==linkedTicket&&
         linkedTicket)
         ?&m12UndoHistory_.back():nullptr;
+    // An imported Project may have a persisted MATERIALIZED record and
+    // a complete rehydrated native REF replay, but it must not be given
+    // a fresh receipt or an invented Undo entry by Project Open.
+    const bool imported=(opened_&&m12ReopenedReadback_&&linkedTicket&&
+        linkedTicket->replay&&
+        m::m12_exact_project_snapshot_equal(
+            *opened_,*m12ReopenedReadback_));
     if((linkedTicket||persistedLinked)&&
-       (!materialized||!opened_||
-        !m::m12_exact_project_snapshot_equal(
-            *opened_,materialized->after))) {
+       (!opened_||(!materialized&&!imported)||
+        (materialized&&
+         !m::m12_exact_project_snapshot_equal(
+            *opened_,materialized->after)))) {
         publish_error(core::Error{core::ErrorCode::InvalidState,
             "L3_M12_PROJECT_SAVE_REF_LINKED_SERIALIZER_NOT_YET_INTEGRATED"});
         return;
@@ -1773,17 +1781,20 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }
-    if(materialized) {
+    if(materialized||imported) {
         // The native carrier is already in the Project model. Serialize
         // precisely that graph, never a MANUAL-only stand-in and never a
         // stale REF snapshot after a Source / DSP / parameter edit.
         const auto& provider=previewController_->snapshot_provider();
-        const auto& ticket=*materialized->afterTicket;
+        const auto& ticket=materialized
+            ?*materialized->afterTicket:*linkedTicket;
+        const auto& expected=materialized
+            ?materialized->after:*m12ReopenedReadback_;
         const auto currentBindings=masteringChainState_
             ?masteringChainState_->execution_bindings()
             :std::vector<dsp::ModuleExecutionBinding>{};
         if(!m::m12_exact_project_snapshot_equal(
-                *snapshot.value(),materialized->after)||
+                *snapshot.value(),expected)||
            !provider||provider()!=ticket.exact_prepared_owner||
            !masteringChainState_||
            masteringChainState_->chain().revision()!=
