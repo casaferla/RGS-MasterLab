@@ -311,6 +311,25 @@ prepare_exact_m12_project_transaction(
         // requires a fresh instance whenever any of those identities
         // changes. Never smuggle a different semantic node into the old
         // instance just because it belonged to this controller.
+        // Existing linked materialization is not trusted merely because
+        // the caller copied it into expected.exact_existing_linked_snapshot.
+        // Corrupt/foreign provenance or duplicate semantic identities must
+        // never be silently overwritten by a new controller-owned stage.
+        std::set<core::Uuid> existing_semantics;
+        for(const auto& prior:linked->modules) {
+            if(prior.instanceId.is_nil()||!prior.semanticNodeId||
+               prior.semanticNodeId->is_nil()||
+               !existing_semantics.insert(*prior.semanticNodeId).second||
+               prior.provenance!="REFERENCE_MATCH"||
+               prior.owner!="REFERENCE_MATCH"||
+               prior.linkState!="REF_LINKED"||
+               !prior.algorithmVersion||!prior.parameterSchemaId||
+               prior.typeId=="rgsml.dsp.gain"||
+               prior.typeId=="rgsml.dsp.true-peak-limiter"||
+               prior.typeId=="rgsml.dsp.streaming-true-peak-limiter"||
+               prior.typeId=="rgsml.dsp.dither")
+                return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_LINKED_CORRUPT");
+        }
         for(const auto& node:exact_native_carrier.native_project_chain.modules) {
             const auto semantic=std::find_if(
                 linked->modules.begin(),linked->modules.end(),
