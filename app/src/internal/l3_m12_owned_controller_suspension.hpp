@@ -112,9 +112,17 @@ prepare_m12_owned_controller_suspension(
     const bool suspend=cause!=ControllerSuspensionCause::
         current_amount_restored;
     if(cause==ControllerSuspensionCause::current_amount_restored) {
-        if(data.value(QStringLiteral("freshnessState")).toString()==
-              QStringLiteral("STALE"))
-            return fail("L3_M12_CONTROLLER_STALE_PLAN_CANNOT_REACTIVATE");
+        // A restored positive Amount is not proof that a STALE or
+        // unresolved plan became current. Nor may a caller use RESUME
+        // to override an unsuspended or partly-corrupt controller graph.
+        if(data.value(QStringLiteral("freshnessState")).toString()!=
+              QStringLiteral("CURRENT")||
+           it->modules.empty()||
+           std::any_of(it->modules.begin(),it->modules.end(),
+               [](const project::Module& module) {
+                   return !module.controllerSuspended;
+               }))
+            return fail("L3_M12_CONTROLLER_NOT_CURRENTLY_SUSPENDED");
     }
     for(auto& module:it->modules) {
         if(module.provenance!="REFERENCE_MATCH"||
