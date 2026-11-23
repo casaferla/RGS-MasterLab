@@ -550,9 +550,20 @@ bool ProjectSessionViewModel::can_save_project() const noexcept
             opened_->document())!=
             l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
                 ordinary_project_without_ref_linked;
-    return source_ && source_->source_resource() && !persistedLinked &&
-        !(previewController_ &&
-          previewController_->has_private_m12_product_preview_ticket());
+    const auto ticket=previewController_
+        ?previewController_->private_m12_product_preview_ticket()
+        :nullptr;
+    if(persistedLinked||ticket) {
+        // A native draft / orphaned read-only Project never grants SaveAs.
+        // The actual Product M12 model publication and receipt are required.
+        return source_&&source_->source_resource()&&opened_&&ticket&&
+            !m12UndoHistory_.empty()&&
+            m12UndoHistory_.back().receipt.has_value()&&
+            m12UndoHistory_.back().afterTicket==ticket&&
+            l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
+                *opened_,m12UndoHistory_.back().after);
+    }
+    return source_&&source_->source_resource();
 }
 
 core::Uuid ProjectSessionViewModel::next_id() { return uuidFactory_(); }
@@ -1583,21 +1594,25 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     // Until an atomic REF_LINKED Project serializer is installed, writing
     // only MANUAL here would irreversibly misrepresent the sound. Reject
     // BEFORE file creation or any SaveAs epoch/acquisition.
-    if(previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket()) {
-        publish_error(core::Error{
-            core::ErrorCode::InvalidState,
+    namespace m=l3_automatch::m12_frozen;
+    const auto linkedTicket=previewController_
+        ?previewController_->private_m12_product_preview_ticket()
+        :nullptr;
+    const bool persistedLinked=opened_ &&
+        m::assess_current_product_ref_linked_open_safety(
+            opened_->document())!=
+            m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
+    const auto* materialized=(!m12UndoHistory_.empty()&&
+        m12UndoHistory_.back().receipt.has_value()&&
+        m12UndoHistory_.back().afterTicket==linkedTicket&&
+        linkedTicket)
+        ?&m12UndoHistory_.back():nullptr;
+    if((linkedTicket||persistedLinked)&&
+       (!materialized||!opened_||
+        !m::m12_exact_project_snapshot_equal(
+            *opened_,materialized->after))) {
+        publish_error(core::Error{core::ErrorCode::InvalidState,
             "L3_M12_PROJECT_SAVE_REF_LINKED_SERIALIZER_NOT_YET_INTEGRATED"});
-        return;
-    }
-    if(opened_ &&l3_automatch::m12_frozen::
-           assess_current_product_ref_linked_open_safety(
-               opened_->document())!=
-           l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
-               ordinary_project_without_ref_linked) {
-        publish_error(core::Error{
-            core::ErrorCode::InvalidState,
-            "L3_M12_PROJECT_SAVE_PERSISTED_LINKED_REPLAY_NOT_YET_INTEGRATED"});
         return;
     }
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
@@ -1616,6 +1631,32 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }
+    if(materialized) {
+        // The native carrier is already in the Project model. Serialize
+        // precisely that graph, never a MANUAL-only stand-in and never a
+        // stale REF snapshot after a Source / DSP / parameter edit.
+        const auto& provider=previewController_->snapshot_provider();
+        const auto& ticket=*materialized->afterTicket;
+        const auto currentBindings=masteringChainState_
+            ?masteringChainState_->execution_bindings()
+            :std::vector<dsp::ModuleExecutionBinding>{};
+        if(!m::m12_exact_project_snapshot_equal(
+                *snapshot.value(),materialized->after)||
+           !provider||provider()!=ticket.exact_prepared_owner||
+           !masteringChainState_||
+           masteringChainState_->chain().revision()!=
+               ticket.exact_manual_chain_revision||
+           masteringChainState_->execution_bindings()!=
+               ticket.exact_manual_bindings||
+           currentBindings!=ticket.exact_manual_bindings||
+           !ticket.replay||
+           !m::decode_exact_m12_ref_linked_product_state(
+               snapshot.value()->document(),ticket.replay->registry_owner)) {
+            publish_error(core::Error{core::ErrorCode::InvalidState,
+                "L3_M12_PROJECT_SAVE_CURRENT_REF_LINKED_OWNER_STALE"});
+            return;
+        }
+    }
     const auto path = selectedFile.toLocalFile().toUtf8().toStdString();
     const auto name = file.fileName().toUtf8().toStdString();
     auto writeRef = platform::windows::WindowsResourceWriter::make_write_reference(path, name);
