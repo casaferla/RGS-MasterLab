@@ -660,6 +660,7 @@ void ProjectSessionViewModel::on_source_changed()
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
     if(resourceChanged) {
+        ++m12ProductOwnershipEpoch_;
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
         // Persisted REF replay is tied to the exact original owners,
@@ -683,6 +684,7 @@ void ProjectSessionViewModel::on_gold_changed()
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
     if(resourceChanged) {
+        ++m12ProductOwnershipEpoch_;
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
         // Persisted REF replay is tied to the exact original owners,
@@ -1482,6 +1484,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             "Project opened in degraded mode; unsupported processing is not active.")
             :QStringLiteral("Project opened.");
     }
+    ++m12ProductOwnershipEpoch_;
     clear_error();
 }
 
