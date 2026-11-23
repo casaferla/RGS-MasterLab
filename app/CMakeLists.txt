@@ -108,6 +108,9 @@ qt_add_resources(rgsml_app "rgsml_window_icon" PREFIX "/rgsml"
 )
 
 target_include_directories(rgsml_app PRIVATE
+    # M12's post-publication audit uses the ONE canonical Project writer.
+    # No duplicate JSON serializer or second reference-match carrier.
+    ${CMAKE_SOURCE_DIR}/project/src/internal
     ${CMAKE_SOURCE_DIR}/audio/src
     # M18 Product's private worker bridge consumes the same Windows
     # internal epoch ticket header as its already qualified QtTest target.
