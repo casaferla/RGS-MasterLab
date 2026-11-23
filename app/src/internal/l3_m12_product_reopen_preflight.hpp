@@ -42,7 +42,7 @@ prepare_m12_product_reopen_preflight(
        !persisted.references.activeReferenceId)
         return fail("L3_M12_REOPEN_NO_EXCLUSIVE_MANUAL_PRODUCT_OWNER");
     auto expanded=*manualRegistry;
-    const auto requires=[](const project::ProjectDocument& doc,
+    const auto contains_linked_type=[](const project::ProjectDocument& doc,
                            std::string_view type) {
         for(const auto& chain:doc.chains)
             if(chain.stage=="MASTER"&&chain.segment=="REF_LINKED")
@@ -50,14 +50,14 @@ prepare_m12_product_reopen_preflight(
                     if(node.typeId==type)return true;
         return false;
     };
-    if(requires(persisted,"rgsml.dsp.dynamic-eq")&&
+    if(contains_linked_type(persisted,"rgsml.dsp.dynamic-eq")&&
        !expanded.has_factory("rgsml.dsp.dynamic-eq")) {
         auto added=dsp::ModuleRegistry::with_dynamic_eq_offline(
             std::move(expanded));
         if(!added)return R::failure(*added.error());
         expanded=std::move(*added.value());
     }
-    if(requires(persisted,"rgsml.dsp.transient-shaper")&&
+    if(contains_linked_type(persisted,"rgsml.dsp.transient-shaper")&&
        !expanded.has_factory("rgsml.dsp.transient-shaper")) {
         auto added=dsp::ModuleRegistry::with_transient_shaper_offline(
             std::move(expanded));
