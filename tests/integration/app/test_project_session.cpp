@@ -1,4 +1,5 @@
 #include "project_session_view_model.hpp"
+#include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -298,6 +299,7 @@ class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void m12LinkedTicketCannotSaveManualOnlyAndOrdinaryOpenRevokes();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
     void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
@@ -4564,6 +4566,72 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
     QCOMPARE(restored.rate_revision(),oldRevision);
     QCOMPARE(restored.master_rate_hz(),qint64{192000});
     QCOMPARE(reopened.source.source_resource()->reference().locator(),oldSource);
+}
+
+void ProjectSessionTest::
+m12LinkedTicketCannotSaveManualOnlyAndOrdinaryOpenRevokes()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m12-owner-source.wav"),77);
+    QVERIFY(!source.isEmpty());
+    const auto base=dir.filePath(QStringLiteral("m12-ordinary.rgsml"));
+    const auto rejected=dir.filePath(QStringLiteral("m12-no-manual-only.rgsml"));
+    const auto next=dir.filePath(QStringLiteral("m12-next-ordinary.rgsml"));
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(session.source.has_source());
+    session.project.saveProjectAs(QUrl::fromLocalFile(base));
+    QVERIFY2(QFileInfo::exists(base),
+             session.project.error_message().toUtf8().constData());
+
+    QSignalSpy notify(&session.project,
+                      &app::ProjectSessionViewModel::changed);
+    auto linked=std::make_shared<const
+        app::l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>();
+    session.previewController->set_private_m12_product_preview_ticket(
+        linked);
+    QVERIFY(session.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(!session.project.can_save_project());
+    QVERIFY(!notify.isEmpty()); // Q_PROPERTY canSaveProject updated
+
+    session.project.saveProjectAs(QUrl::fromLocalFile(rejected));
+    QCOMPARE(session.project.error_message(),
+             QStringLiteral(
+                 "L3_M12_PROJECT_SAVE_REF_LINKED_SERIALIZER_NOT_YET_INTEGRATED"));
+    QVERIFY(!QFileInfo::exists(rejected));
+    QVERIFY(session.previewController->
+        has_private_m12_product_preview_ticket());
+
+    // A failed Open must preserve the current linked owner intact:
+    // neither the ticket nor SOURCE may be revoked on preflight error.
+    const auto before=session.source.source_resource()->reference().locator();
+    session.project.openProject(QUrl::fromLocalFile(
+        dir.filePath(QStringLiteral("m12-not-on-disk.rgsml"))));
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY(session.previewController->
+        has_private_m12_product_preview_ticket());
+    QCOMPARE(session.source.source_resource()->reference().locator(),before);
+
+    // A valid ordinary project with the SAME source is a different
+    // Project owner. SourceChanged need not detect it as a new resource:
+    // the Project-Open commit itself must revoke stale REF_LINKED PCM.
+    session.project.openProject(QUrl::fromLocalFile(base));
+    QVERIFY2(session.project.error_message().isEmpty(),
+             session.project.error_message().toUtf8().constData());
+    QVERIFY(!session.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(session.project.can_save_project());
+    QCOMPARE(session.source.source_resource()->reference().locator(),before);
+    session.project.saveProjectAs(QUrl::fromLocalFile(next));
+    QVERIFY2(QFileInfo::exists(next),
+             session.project.error_message().toUtf8().constData());
+    const auto reopened=load_project(next);
+    QVERIFY(reopened);
+    QCOMPARE(reopened.value()->document().chains.size(),std::size_t{1});
+    QCOMPARE(reopened.value()->document().chains.front().segment,
+             std::string("MANUAL"));
 }
 
 void ProjectSessionTest::source_save_open_existing_fail()
