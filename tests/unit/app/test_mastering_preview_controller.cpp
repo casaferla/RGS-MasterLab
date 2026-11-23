@@ -842,6 +842,15 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     controller.request_preview();
     QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
     QVERIFY(controller.published_preview_matches_current_bindings());
+    // The source PREPARED PCM is an independent immutable input owner.
+    // No extra preview request is needed to invalidate a stale M21
+    // PROCESSED analysis after Source replacement.
+    const auto unrelatedPreparedAtReady=make_unit_prepared_result();
+    controller.set_snapshot_provider(
+        [unrelatedPreparedAtReady]{return unrelatedPreparedAtReady;});
+    QVERIFY(!controller.published_preview_matches_current_bindings());
+    controller.set_snapshot_provider([prepared]{return prepared;});
+    QVERIFY(controller.published_preview_matches_current_bindings());
     const auto priorGeneration=controller.preview_generation();
     const auto oldPCM=accepted;
 
@@ -937,6 +946,16 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     QVERIFY(!controller.has_private_m12_product_preview_ticket());
     QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
     controller.set_preview_executor({});
+    controller.request_preview();
+    QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
+    QVERIFY(controller.published_preview_matches_current_bindings());
+    // Enabled/bypass flags can change a module's sound without changing
+    // its typed parameter bindings. The accepted PCM must not be
+    // treated as current even if every execution binding is identical.
+    const auto oldBindings=state.value()->execution_bindings();
+    QVERIFY(state.value()->set_user_bypass(gainId,true));
+    QCOMPARE(state.value()->execution_bindings(),oldBindings);
+    QVERIFY(!controller.published_preview_matches_current_bindings());
     controller.request_preview();
     QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
     QVERIFY(controller.published_preview_matches_current_bindings());
