@@ -8,6 +8,10 @@
 #include "mastering_preview_controller.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
+#include <QByteArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QString>
 #include <algorithm>
 #include <cstdint>
 #include <memory>
