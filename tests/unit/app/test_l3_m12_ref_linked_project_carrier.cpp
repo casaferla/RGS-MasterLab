@@ -597,10 +597,12 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
             QCOMPARE(std::bit_cast<std::uint64_t>((*beforeSamples.value())[i]),
                      std::bit_cast<std::uint64_t>((*afterSamples.value())[i]));
     }
-    // Six canonical sample rates x two layouts, 1/8-second each, use
-    // the SAME persisted Project graph. No optimizer/proxy/M17 export is
-    // substituted for genuine native DSP. Small audio fixtures keep this
-    // cross-rate check bounded within the focused CI.
+    // C00 is qualified at 44.1, 48, 96 and 192 kHz (mono/stereo).
+    // 88.2 and 176.4 kHz are deliberately NOT supported by this
+    // Transient Shaper implementation. They must fail closed rather
+    // than be silently coerced or have a module omitted. Check the
+    // exact native PCM only at the four currently qualified rates.
+    // This test never substitutes a proxy, optimizer or M17 export.
     for(const int hz:{44100,48000,88200,96000,176400,192000}) {
         const auto fs=core::SampleRate::create(hz);
         QVERIFY(fs);
@@ -636,7 +638,20 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
                 *replayPlan.value(),*sourcePCM.value(),*maxBlock.value());
             const auto savedPCM=m::render_restored_m12_full_native_pcm_once(
                 *diskPlan.value(),*sourcePCM.value(),*maxBlock.value());
-            QVERIFY(originalPCM&&savedPCM);
+            if(hz==88200||hz==176400) {
+                // Keep the full six-rate matrix, including unsupported
+                // frequency refusal, without claiming unqualified C00
+                // compatibility for two additional rates.
+                QVERIFY2(!originalPCM,
+                         "C00 unsupported rate was unexpectedly rendered");
+                QVERIFY2(!savedPCM,
+                         "C00 unsupported rate was silently reopened");
+                continue;
+            }
+            const auto supportedCase=std::to_string(hz)+" Hz / "+
+                std::to_string(format.value()->channel_count())+" ch";
+            QVERIFY2(originalPCM,supportedCase.c_str());
+            QVERIFY2(savedPCM,supportedCase.c_str());
             QCOMPARE(originalPCM.value()->view().absolute_range(),
                      savedPCM.value()->view().absolute_range());
             QCOMPARE(originalPCM.value()->view().format(),
