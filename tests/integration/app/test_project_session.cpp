@@ -312,6 +312,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m12LinkedTicketCannotSaveManualOnlyAndOrdinaryOpenRevokes();
+    void m12RealProductAtomicMaterializationUndoRedoAndSaveAs_data();
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
     void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
@@ -4582,13 +4583,28 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
 }
 
 void ProjectSessionTest::
+m12RealProductAtomicMaterializationUndoRedoAndSaveAs_data()
+{
+    QTest::addColumn<std::uint32_t>("sampleRateHz");
+    QTest::newRow("44k1")<<std::uint32_t{44100};
+    QTest::newRow("48k")<<std::uint32_t{48000};
+    QTest::newRow("88k2")<<std::uint32_t{88200};
+    QTest::newRow("96k")<<std::uint32_t{96000};
+    QTest::newRow("176k4")<<std::uint32_t{176400};
+    QTest::newRow("192k")<<std::uint32_t{192000};
+}
+
+void ProjectSessionTest::
 m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
 {
+    QFETCH(std::uint32_t,sampleRateHz);
     namespace m=app::l3_automatch::m12_frozen;
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    const auto source=wav(dir,QStringLiteral("m12-physical-source.wav"),23);
-    const auto reference=wav(dir,QStringLiteral("m12-physical-reference.wav"),51);
+    const auto source=wav(dir,QStringLiteral("m12-physical-source.wav"),23,
+                          sampleRateHz);
+    const auto reference=wav(dir,QStringLiteral("m12-physical-reference.wav"),51,
+                             sampleRateHz);
     QVERIFY(!source.isEmpty()&&!reference.isEmpty());
     Session session;
     session.source.selectSource(QUrl::fromLocalFile(source));
@@ -4649,7 +4665,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
 
     // Genuine immutable PCM owner fed through the existing Product
     // Preview Controller. Never fabricate a Product M12 receipt from it.
-    auto rate=core::SampleRate::create(48000);
+    auto rate=core::SampleRate::create(sampleRateHz);
     auto frames=core::FrameCount::create(512);
     auto fmt=audio::AudioFormat::create(
         *rate.value(),audio::ChannelLayout::STEREO_LR);
