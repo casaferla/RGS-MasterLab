@@ -122,6 +122,47 @@ prepare_m12_product_prepublication_preview_ticket(
        !candidate.pipeline.masteringChainId||
        *candidate.pipeline.masteringChainId!=current_manual_chain_id)
         return fail("L3_M12_PRODUCT_PRECOMMIT_PROJECT_CHANGED");
+    // A prepared C++ carrier is not a Product mutation lease. It cannot
+    // use REF_LINKED as camouflage for changing output choices, history,
+    // ordinary MANUAL/other chains, resource locators or attachments.
+    // Remove ONLY the exact controller-owned MASTER REF segment for a
+    // whole-document comparison; the linked segment is checked below by
+    // the original strict decoder. Other REF segments are never stripped.
+    auto beforeUnowned=before;
+    auto afterUnowned=candidate;
+    const auto remove_owned=[](project::ProjectDocument& doc) {
+        std::erase_if(doc.chains,[](const project::Chain& chain) {
+            return chain.stage=="MASTER"&&chain.segment=="REF_LINKED";
+        });
+    };
+    remove_owned(beforeUnowned);
+    remove_owned(afterUnowned);
+    const auto beforeMeta=QJsonDocument::fromJson(
+        QByteArray::fromStdString(before.referenceMatch.canonical_utf8()));
+    const auto afterMeta=QJsonDocument::fromJson(
+        QByteArray::fromStdString(candidate.referenceMatch.canonical_utf8()));
+    if(!beforeMeta.isObject()||!afterMeta.isObject())
+        return fail("L3_M12_PRODUCT_PRECOMMIT_METADATA_CORRUPT");
+    auto beforeOther=beforeMeta.object();
+    auto afterOther=afterMeta.object();
+    beforeOther.remove(QStringLiteral("materialization"));
+    afterOther.remove(QStringLiteral("materialization"));
+    if(beforeOther!=afterOther)
+        return fail("L3_M12_PRODUCT_PRECOMMIT_FOREIGN_META_CHANGED");
+    beforeUnowned.referenceMatch=project::OpaqueJsonValue::empty_object();
+    afterUnowned.referenceMatch=project::OpaqueJsonValue::empty_object();
+    const auto safeBefore=project::ProjectSnapshot::create(
+        std::move(beforeUnowned),
+        {current_project.optional_entries().begin(),
+         current_project.optional_entries().end()});
+    const auto safeAfter=project::ProjectSnapshot::create(
+        std::move(afterUnowned),
+        {uncommitted.candidate_not_yet_committed.optional_entries().begin(),
+         uncommitted.candidate_not_yet_committed.optional_entries().end()});
+    if(!safeBefore||!safeAfter||
+       !m12_exact_project_snapshot_equal(
+           *safeBefore.value(),*safeAfter.value()))
+        return fail("L3_M12_PRODUCT_PRECOMMIT_FIXED_PROJECT_CHANGED");
     // Decode again from the ACTUAL persistent Project carrier, not from
     // caller-supplied typed nodes. Missing factories or mismatched
     // algorithm/parameter schemas must fail, never silently drop a DSP.
