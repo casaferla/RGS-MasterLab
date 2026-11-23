@@ -1395,6 +1395,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // across a different Project Open, even with identical SOURCE WAV.
     m12UndoHistory_.clear();
     m12RedoHistory_.clear();
+    m12ReopenedReadback_.reset();
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
@@ -1409,8 +1410,35 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     degraded_ = isDegraded;
     projectDisplayName_ = QString::fromUtf8(persistedName.data(),
         static_cast<qsizetype>(persistedName.size()));
-    statusText_ = degraded_ ? QStringLiteral("Project opened in degraded mode; unsupported processing is not active.") :
-                             QStringLiteral("Project opened.");
+    if(linkedRequested) {
+        // This is a REAL owner projection after Source, Gold, MANUAL and
+        // the immutable REF replay ticket were installed. Reopening a
+        // persisted MATERIALIZED plan creates NO NEW receipt.
+        const auto readback=current_snapshot(
+            QString::fromStdString(persistedName));
+        if(!readback||
+           !l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
+               *readback.value(),*opened_)||
+           !previewController_||
+           !previewController_->has_private_m12_product_preview_ticket()) {
+            m12ReopenedReadback_.reset();
+            previewController_->set_private_m12_product_preview_ticket(
+                std::make_shared<const l3_automatch::m12_frozen::
+                    M12ImmutableProductPreviewTicket>());
+            statusText_=QStringLiteral(
+                "REF_LINKED reopen quarantined: Product readback mismatch.");
+            publish_error(core::Error{core::ErrorCode::InvalidState,
+                "L3_M12_PROJECT_OPEN_REF_LINKED_READBACK_MISMATCH"});
+            return;
+        }
+        m12ReopenedReadback_=std::move(*readback.value());
+        statusText_=QStringLiteral(
+            "Project reopened: REF_LINKED MATERIALIZED / NOT_VERIFIED.");
+    } else {
+        statusText_ = degraded_ ?QStringLiteral(
+            "Project opened in degraded mode; unsupported processing is not active.")
+            :QStringLiteral("Project opened.");
+    }
     clear_error();
 }
 
