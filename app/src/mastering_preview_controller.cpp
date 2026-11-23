@@ -361,8 +361,18 @@ bool MasteringPreviewController::published_preview_matches_current_bindings() co
     // identities. A background DSP worker cannot call this accessor.
     if(QThread::currentThread()!=thread())return false;
     const auto published=acceptedPreviewOwner_.lock();
-    return chainState_ &&acceptedProcessedProvider_&&published
-        && (!m12ReplayTicket_ ||
+    const auto prepared=acceptedPreviewPreparedOwner_.lock();
+    const auto currentNodes=chainState_
+        ?chainState_->chain().instances()
+        :std::span<const dsp::ModuleInstance>{};
+    return chainState_ &&acceptedProcessedProvider_&&published&&
+        prepared&&snapshotProvider_&&snapshotProvider_()==prepared &&
+        chainState_==acceptedPreviewChainOwner_ &&
+        chainState_->chain().revision()==acceptedPreviewChainRevision_ &&
+        currentNodes.size()==acceptedPreviewNodes_.size() &&
+        std::equal(currentNodes.begin(),currentNodes.end(),
+                   acceptedPreviewNodes_.begin()) &&
+        (!m12ReplayTicket_ ||
             (chainState_==m12ManualChainOwner_ &&
              m12ManualRegistryOwner_ &&
              chainState_->registry_snapshot()==m12ManualRegistryOwner_))
@@ -447,6 +457,11 @@ void MasteringPreviewController::request_preview()
     // preview request; unlike structural chain revision, it detects
     // parameter-only edits even while a prior PROCESSED owner survives.
     pendingPreviewBindings_=job.bindings;
+    pendingPreviewPreparedOwner_=job.preparedSnapshot;
+    pendingPreviewNodes_.assign(
+        job.chain.instances().begin(),job.chain.instances().end());
+    pendingPreviewChainRevision_=job.chain.revision();
+    pendingPreviewChainOwner_=chainState_;
     {
         const std::lock_guard<std::mutex> lock(workerMutex_);
         pendingJob_ = std::move(job);
@@ -640,6 +655,10 @@ void MasteringPreviewController::publish_preview_result(
         ?acceptedProcessedProvider_()
         :std::shared_ptr<const render::RenderResult>{};
     acceptedPreviewBindings_=pendingPreviewBindings_;
+    acceptedPreviewPreparedOwner_=pendingPreviewPreparedOwner_;
+    acceptedPreviewNodes_=pendingPreviewNodes_;
+    acceptedPreviewChainRevision_=pendingPreviewChainRevision_;
+    acceptedPreviewChainOwner_=pendingPreviewChainOwner_;
     acceptedPreviewGeneration_=generation;
     previewStatus_ = QStringLiteral("READY");
     previewError_.clear();
