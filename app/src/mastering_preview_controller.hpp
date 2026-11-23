@@ -112,6 +112,10 @@ private:
     PreviewExecutor previewExecutor_;
     std::shared_ptr<const l3_automatch::m12_frozen::
         M12ImmutableProductPreviewTicket> m12ReplayTicket_;
+    // The immutable MANUAL Product registry is not necessarily the
+    // extended REF_LINKED execution registry. Fence the former when
+    // accepting worker results; execute the full replay with the latter.
+    std::shared_ptr<const dsp::ModuleRegistry> m12ManualRegistryOwner_;
     dsp::ModuleRegistry registry_{*dsp::ModuleRegistry::create_dsp_package_v1().value()};
 
     std::uint64_t previewGeneration_{0};
