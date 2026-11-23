@@ -5038,6 +5038,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!importedLease);
 
     QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(!session.project.private_m13_fresh_probe_still_current(
+        *m13Owner.value()));
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
     QVERIFY(session.project.can_save_project());
@@ -5049,6 +5051,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(m::m12_exact_project_snapshot_equal(
         *restoredBefore.value(),*before.value()));
     QVERIFY(session.project.redo_private_m12_materialization());
+    // Undo/Redo can restore bit-identical linked PCM and the SAME
+    // original ticket pointer. Still, prior verification is NOT fresh.
+    QVERIFY(!session.project.private_m13_fresh_probe_still_current(
+        *m13Owner.value()));
+    const auto postRedo=session.project.
+        capture_private_m13_fresh_postmaterialization_probe(0.0);
+    QVERIFY(postRedo);
+    QVERIFY(session.project.private_m13_fresh_probe_still_current(
+        *postRedo.value()));
     QVERIFY(session.previewController->
         has_private_m12_product_preview_ticket());
     QVERIFY(session.project.can_save_project());
