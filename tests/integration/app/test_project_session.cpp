@@ -35,6 +35,7 @@
 #include "playback_transport_view_model.hpp"
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -300,6 +301,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m12LinkedTicketCannotSaveManualOnlyAndOrdinaryOpenRevokes();
+    void m12RealProductAtomicMaterializationUndoRedoAndSaveAs();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
     void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
@@ -4566,6 +4568,178 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
     QCOMPARE(restored.rate_revision(),oldRevision);
     QCOMPARE(restored.master_rate_hz(),qint64{192000});
     QCOMPARE(reopened.source.source_resource()->reference().locator(),oldSource);
+}
+
+void ProjectSessionTest::
+m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
+{
+    namespace m=app::l3_automatch::m12_frozen;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("m12-physical-source.wav"),23);
+    const auto reference=wav(dir,QStringLiteral("m12-physical-reference.wav"),51);
+    QVERIFY(!source.isEmpty()&&!reference.isEmpty());
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+    session.gold.selectGold(QUrl::fromLocalFile(reference));
+    QVERIFY(session.source.has_source());
+    QVERIFY(session.gold.has_gold());
+    const auto baseline=dir.filePath(QStringLiteral("m12-physical-before.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(baseline));
+    QVERIFY2(QFileInfo::exists(baseline),
+             session.project.error_message().toUtf8().constData());
+    auto before=load_project(baseline);
+    QVERIFY(before);
+    const auto& beforeDoc=before.value()->document();
+    QVERIFY(beforeDoc.references.activeReferenceId);
+    QVERIFY(beforeDoc.pipeline.masteringChainId);
+    QCOMPARE(beforeDoc.chains.size(),std::size_t{1});
+
+    const auto id=[](const char* s) {
+        return *core::Uuid::parse(s).value();
+    };
+    const auto mid=[&](const char* s) {
+        return *dsp::ModuleInstanceId::from_uuid(id(s)).value();
+    };
+    auto baseRegistry=session.masteringChainState->registry_snapshot();
+    auto extended=dsp::ModuleRegistry::with_transient_shaper_offline(
+        *baseRegistry);
+    QVERIFY(extended);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(
+        std::move(*extended.value()));
+    const auto plan=m::AcceptedPlanAndOwner{
+        id("e5000000-0000-4000-8000-000000000001"),
+        id("e5000000-0000-4000-8000-000000000002"),
+        "accepted-product-plan","frozen-m10-winner",
+        "frozen-m11-fixed","exact-source-reference-dependencies",
+        1U,true,true,true,false};
+    const auto transient=dsp::TransientShaperParameters::create(2.0,-1.0);
+    QVERIFY(transient);
+    const std::vector<m::ExactLinkedNode> winningNodes{{
+        mid("e5000000-0000-4000-8000-000000000003"),
+        id("e5000000-0000-4000-8000-000000000004"),
+        "rgsml.dsp.transient-shaper",*transient.value()}};
+    const auto bindings=session.masteringChainState->execution_bindings();
+    auto stage=m::stage_exact_m12_native_ref_linked(
+        plan,session.masteringChainState->chain(),bindings,
+        registry,winningNodes);
+    QVERIFY(stage);
+    const auto linkedId=id("e5000000-0000-4000-8000-000000000005");
+    auto carrier=m::encode_exact_ref_linked_project_carrier(
+        *stage.value(),linkedId);
+    QVERIFY(carrier);
+    const m::M12ProjectTransactionExpected expected{
+        beforeDoc.sourceResourceId,*beforeDoc.references.activeReferenceId,
+        *beforeDoc.pipeline.masteringChainId,beforeDoc.chains.front(),
+        std::nullopt,true,true};
+    auto draft=m::prepare_exact_m12_project_transaction(
+        *before.value(),*carrier.value(),*stage.value(),expected);
+    QVERIFY(draft);
+
+    // Genuine immutable PCM owner fed through the existing Product
+    // Preview Controller. Never fabricate a Product M12 receipt from it.
+    auto rate=core::SampleRate::create(48000);
+    auto frames=core::FrameCount::create(512);
+    auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(rate&&frames&&fmt);
+    auto pcm=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(pcm);
+    for(std::size_t channel=0;channel<2U;++channel) {
+        const auto values=pcm.value()->mutable_view().channel(channel);
+        QVERIFY(values);
+        for(std::size_t i=0;i<values.value()->size();++i)
+            (*values.value())[i]=0.45*std::sin(
+                (static_cast<double>(i)+static_cast<double>(channel))
+                *0.033);
+    }
+    auto empty=dsp::ProcessingChain::create(
+        *registry,{dsp::ProcessingStage::MASTER,
+                   dsp::ChainSegment::MANUAL});
+    QVERIFY(empty);
+    auto renderRequest=render::RenderRequest::create(
+        pcm.value()->view(),pcm.value()->view().absolute_range(),
+        *empty.value(),{},*core::FrameCount::create(4096).value());
+    QVERIFY(renderRequest);
+    auto rendered=render::render_preview(
+        *renderRequest.value(),*registry);
+    QVERIFY(rendered);
+    auto prepared=std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    session.previewController->set_snapshot_provider(
+        [prepared]{return prepared;});
+
+    // A scoped, single-writer lease (shared by Project Open and Save) is
+    // required. No M18 batch means no Project publication or receipt.
+    QVERIFY(!session.project.apply_private_m12_materialization(
+        *draft.value(),registry,prepared));
+    QVERIFY(!session.previewController->
+        has_private_m12_product_preview_ticket());
+    bool leased=false;
+    const auto begin=[&leased]()
+        ->core::Result<std::shared_ptr<const void>> {
+        using R=core::Result<std::shared_ptr<const void>>;
+        if(leased)return R::failure(core::Error{
+            core::ErrorCode::InvalidState,"already leased"});
+        leased=true;
+        return R::success(std::shared_ptr<const void>{
+            new int{1},[&leased](const void* owner) {
+                delete static_cast<const int*>(owner);
+                leased=false;
+            }});
+    };
+    session.project.set_private_m18_project_open_batch_begin(begin);
+    session.project.set_private_m18_project_save_batch_begin(begin);
+    auto committed=session.project.apply_private_m12_materialization(
+        *draft.value(),registry,prepared);
+    QVERIFY2(committed,
+        committed.error()?committed.error()->message().c_str():"");
+    QVERIFY(committed.value()->materialized_not_verified());
+    QVERIFY(!committed.value()->authorizes_m13_verified());
+    QCOMPARE(committed.value()->plan_id(),plan.plan_id);
+    QVERIFY(session.previewController->
+        has_private_m12_product_preview_ticket());
+    QCOMPARE(session.project.status_text(),
+             QStringLiteral("MATERIALIZED / NOT_VERIFIED"));
+    QVERIFY(session.project.can_save_project());
+    QVERIFY(!leased);
+
+    const auto accepted=dir.filePath(QStringLiteral("m12-linked-accepted.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(accepted));
+    QVERIFY2(QFileInfo::exists(accepted),
+             session.project.error_message().toUtf8().constData());
+    auto saved=load_project(accepted);
+    QVERIFY(saved);
+    auto reopened=m::decode_exact_m12_ref_linked_product_state(
+        saved.value()->document(),registry);
+    QVERIFY(reopened);
+    QCOMPARE(reopened.value()->plan_id,plan.plan_id);
+    QCOMPARE(reopened.value()->persisted_linked_chain_id,linkedId);
+
+    QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(!session.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(session.project.can_save_project());
+    const auto undone=dir.filePath(QStringLiteral("m12-linked-undone.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(undone));
+    QVERIFY(QFileInfo::exists(undone));
+    auto restoredBefore=load_project(undone);
+    QVERIFY(restoredBefore);
+    QVERIFY(m::m12_exact_project_snapshot_equal(
+        *restoredBefore.value(),*before.value()));
+    QVERIFY(session.project.redo_private_m12_materialization());
+    QVERIFY(session.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(session.project.can_save_project());
+    const auto redone=dir.filePath(QStringLiteral("m12-linked-redone.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(redone));
+    QVERIFY(QFileInfo::exists(redone));
+    auto restoredAfter=load_project(redone);
+    QVERIFY(restoredAfter);
+    QVERIFY(m::m12_exact_project_snapshot_equal(
+        *restoredAfter.value(),*saved.value()));
 }
 
 void ProjectSessionTest::
