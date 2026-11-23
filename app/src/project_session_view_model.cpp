@@ -513,6 +513,13 @@ ProjectSessionViewModel::ProjectSessionViewModel(
             this, &ProjectSessionViewModel::on_gold_changed);
     connect(region_, &AuditionRegionViewModel::changed,
             this, &ProjectSessionViewModel::on_region_changed);
+    if(previewController_) {
+        // A newly installed/revoked M12 ticket changes whether SaveAs
+        // can persist the actual audible graph. Qt/QML must re-evaluate
+        // canSaveProject immediately, even with unchanged SOURCE.
+        connect(previewController_,&MasteringPreviewController::changed,
+                this,&ProjectSessionViewModel::changed);
+    }
 }
 
 void ProjectSessionViewModel::set_reference_region_view_model(
