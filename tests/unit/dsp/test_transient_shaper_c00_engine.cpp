@@ -20,18 +20,19 @@ using namespace rgsml;
 using dsp::TransientShaperParameters;
 using dsp::internal::TransientShaperC00Engine;
 using dsp::internal::TransientShaperC00State;
-[[nodiscard]] std::vector<double> programme(std::size_t n) {
+[[nodiscard]] std::vector<double> programme(
+    std::size_t n,double fs=48000.0) {
     std::vector<double> out(n);
     for(std::size_t i=0;i<n;++i) {
         const auto x=static_cast<double>(i);
-        out[i]=0.28*std::sin(2.0*std::numbers::pi*220.0*x/48000.0)
-              +0.11*std::sin(2.0*std::numbers::pi*3451.0*x/48000.0);
+        out[i]=0.28*std::sin(2.0*std::numbers::pi*220.0*x/fs)
+              +0.11*std::sin(2.0*std::numbers::pi*3451.0*x/fs);
     }
     return out;
 }
 [[nodiscard]] std::vector<double> independent_oracle(
-    const std::vector<double>& in,double attack,double sustain) {
-    constexpr double fs=48000.0;
+    const std::vector<double>& in,double attack,double sustain,
+    double fs=48000.0) {
     const double af=std::exp(-1.0/(0.030*fs));
     const double am=std::exp(-1.0/(0.010*fs));
     const double al=std::exp(-1.0/(0.150*fs));
@@ -63,6 +64,7 @@ private slots:
     void parametersAndRates();
     void exactNeutralSignedZero();
     void frozenImpulseAndIndependentOracle();
+    void allSixRatesMonoStereoIndependentOracle();
     void chunkingResetAndStateRestore();
     void stereoLinkAndTransactionalFailures();
 };
@@ -78,7 +80,7 @@ void TransientShaperC00Test::parametersAndRates() {
         std::numeric_limits<double>::quiet_NaN(),0.0));
     QVERIFY(!TransientShaperParameters::create(
         0.0,std::numeric_limits<double>::infinity()));
-    for(const auto fs:{44100U,48000U,96000U,192000U})
+    for(const auto fs:{44100U,48000U,88200U,96000U,176400U,192000U})
         for(const auto channels:{1U,2U}) {
             const auto e=TransientShaperC00Engine::create(
                 *neutral.value(),fs,channels,4096);
@@ -99,16 +101,22 @@ void TransientShaperC00Test::parametersAndRates() {
     QCOMPARE(h48.value()->value(),std::int64_t{5397190});
     const auto h44=dsp::internal::
         transient_shaper_conservative_precontext_frames(44100);
+    const auto h88=dsp::internal::
+        transient_shaper_conservative_precontext_frames(88200);
     const auto h96=dsp::internal::
         transient_shaper_conservative_precontext_frames(96000);
+    const auto h176=dsp::internal::
+        transient_shaper_conservative_precontext_frames(176400);
     const auto h192=dsp::internal::
         transient_shaper_conservative_precontext_frames(192000);
-    QVERIFY(h44&&h96&&h192);
+    QVERIFY(h44&&h88&&h96&&h176&&h192);
     QVERIFY(h44.value()->value()<h48.value()->value());
-    QVERIFY(h48.value()->value()<h96.value()->value());
-    QVERIFY(h96.value()->value()<h192.value()->value());
+    QVERIFY(h48.value()->value()<h88.value()->value());
+    QVERIFY(h88.value()->value()<h96.value()->value());
+    QVERIFY(h96.value()->value()<h176.value()->value());
+    QVERIFY(h176.value()->value()<h192.value()->value());
     QVERIFY(!dsp::internal::
-        transient_shaper_conservative_precontext_frames(88200));
+        transient_shaper_conservative_precontext_frames(22050));
 }
 void TransientShaperC00Test::exactNeutralSignedZero() {
     auto params=TransientShaperParameters::create_default();
@@ -139,10 +147,11 @@ void TransientShaperC00Test::exactNeutralSignedZero() {
 void TransientShaperC00Test::frozenImpulseAndIndependentOracle() {
     const auto attack=TransientShaperParameters::create(6.0,0.0);
     QVERIFY(attack);
-    const std::array<double,4> expected{{0.5191,0.4787,0.2446,0.1236}};
-    for(std::size_t i=0;i<4;++i) {
-        constexpr std::array<std::uint32_t,4> rates{{
-            44100U,48000U,96000U,192000U}};
+    const std::array<double,6> expected{{
+        0.5191,0.4787,0.2657,0.2446,0.1344,0.1236}};
+    for(std::size_t i=0;i<6;++i) {
+        constexpr std::array<std::uint32_t,6> rates{{
+            44100U,48000U,88200U,96000U,176400U,192000U}};
         auto e=TransientShaperC00Engine::create(
             *attack.value(),rates[i],1,1);
         QVERIFY(e);
@@ -166,6 +175,57 @@ void TransientShaperC00Test::frozenImpulseAndIndependentOracle() {
         QVERIFY(std::abs(out[i]-ref[i])<1e-10);
     QVERIFY(std::abs(e.value()->state().g_attack_db)<=8.0+1e-10);
     QVERIFY(std::abs(e.value()->state().g_sustain_db)<=5.0+1e-10);
+}
+void TransientShaperC00Test::allSixRatesMonoStereoIndependentOracle() {
+    // The same continuous-time law must run at every Product rate; no
+    // transient DSP bypass, SRC or substitute PCM is permitted at 88.2/176.4k.
+    const auto p=TransientShaperParameters::create(8.0,-5.0);
+    QVERIFY(p);
+    for(const std::uint32_t fs:{
+            44100U,48000U,88200U,96000U,176400U,192000U}) {
+        const auto input=programme(2048,static_cast<double>(fs));
+        const auto reference=independent_oracle(
+            input,8.0,-5.0,static_cast<double>(fs));
+        const std::vector<double> opposite=[&]{
+            auto oppositeSamples=input;
+            for(auto& x:oppositeSamples)x=-x;
+            return oppositeSamples;
+        }();
+        for(const unsigned channels:{1U,2U}) {
+            auto engine=TransientShaperC00Engine::create(
+                *p.value(),fs,channels,256);
+            QVERIFY(engine);
+            std::vector<double> left(input.size(),-9.0);
+            std::vector<double> right(
+                channels==2U?input.size():0U,-8.0);
+            std::size_t begin=0;
+            while(begin<input.size()) {
+                const std::size_t count=std::min<std::size_t>(
+                    47U+(begin%13U),input.size()-begin);
+                const std::span<const double> inL(input.data()+begin,count);
+                const std::span<const double> inR=channels==2U
+                    ?std::span<const double>(opposite.data()+begin,count)
+                    :std::span<const double>{};
+                const std::span<double> outL(left.data()+begin,count);
+                const std::span<double> outR=channels==2U
+                    ?std::span<double>(right.data()+begin,count)
+                    :std::span<double>{};
+                QVERIFY(engine.value()->process_block(inL,inR,outL,outR));
+                begin+=count;
+            }
+            for(std::size_t i=0;i<input.size();++i) {
+                QVERIFY(std::isfinite(left[i]));
+                QVERIFY(std::abs(left[i]-reference[i])<1e-10);
+                if(channels==2U) {
+                    QVERIFY(std::isfinite(right[i]));
+                    QVERIFY(std::abs(right[i]+reference[i])<1e-10);
+                }
+            }
+            QVERIFY(engine.value()->state().f>0.0);
+            QVERIFY(engine.value()->state().m>0.0);
+            QVERIFY(engine.value()->state().l>0.0);
+        }
+    }
 }
 void TransientShaperC00Test::chunkingResetAndStateRestore() {
     const auto p=TransientShaperParameters::create(6.0,4.0);
