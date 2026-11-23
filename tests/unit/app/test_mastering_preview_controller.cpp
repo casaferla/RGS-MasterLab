@@ -1054,6 +1054,20 @@ testM12ExtendedRefRegistryPreservesProductManualOwner()
     // MANUAL registry; it is exclusively the worker's native factory.
     QVERIFY(state.value()->registry_snapshot()==manualRegistry);
     QVERIFY(replay->registry_owner==extended);
+    // A different Product MANUAL registry allocation is a new owner,
+    // even when its visible nodes/parameters are byte-identical.
+    auto replacement=MasteringChainState::create_default(
+        *base.value(),chainId,gainId,eqId);
+    QVERIFY(replacement);
+    state.value()->adopt_chain_after_authorized_project_open(
+        std::move(*replacement.value()));
+    QVERIFY(state.value()->registry_snapshot()!=manualRegistry);
+    const auto acceptedOldPCM=published;
+    controller.request_preview();
+    QCOMPARE(controller.preview_status(),QStringLiteral("ERROR"));
+    QCOMPARE(controller.preview_error(),QStringLiteral(
+        "L3_M12_LINKED_PREVIEW_MANUAL_OR_PREPARED_CHANGED"));
+    QVERIFY(published==acceptedOldPCM);
     controller.set_private_m12_product_preview_ticket({});
     controller.request_preview();
     QTRY_COMPARE_WITH_TIMEOUT(
