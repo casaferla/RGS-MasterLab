@@ -4797,6 +4797,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!m13Result.value()->is_m13_verified());
     QVERIFY(!m13Result.value()->is_qualification_receipt());
     QVERIFY(!m13Result.value()->authorizes_wav_export());
+    QVERIFY(session.project.private_m13_fresh_probe_still_current(
+        *m13Owner.value()));
     // The same frozen audio under an impossible *independent* M16
     // ceiling is a failed probe, not a silent request to adjust M17.
     const auto tooStrict=session.project.
@@ -4876,6 +4878,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY2(importedM13,
              importedM13.error()?importedM13.error()->message().c_str():"");
     QVERIFY(!importedM13.value()->authorizes_m13_verified());
+    QVERIFY(imported.project.private_m13_fresh_probe_still_current(
+        *importedM13.value()));
     QVERIFY(!imported.project.
         capture_private_m13_fresh_postmaterialization_probe(
             std::numeric_limits<double>::quiet_NaN()));
@@ -4999,6 +5003,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     imported.previewController->set_snapshot_provider(
         []{return std::shared_ptr<const render::RenderResult>{};});
     QVERIFY(!imported.project.can_save_project());
+    QVERIFY(!imported.project.private_m13_fresh_probe_still_current(
+        *importedM13.value()));
     const auto staleImported=dir.filePath(QStringLiteral(
         "m12-imported-stale-prepared-must-not-save.rgsml"));
     imported.project.saveProjectAs(QUrl::fromLocalFile(staleImported));
@@ -5006,6 +5012,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     imported.previewController->set_snapshot_provider(
         [&imported]{return imported.selector.prepared_realization_snapshot();});
     QVERIFY(imported.project.can_save_project());
+    QVERIFY(imported.project.private_m13_fresh_probe_still_current(
+        *importedM13.value()));
 
     // An ordinary Project Open with the SAME SOURCE is a different
     // ownership transaction. It must retire the imported REF graph and
@@ -5015,6 +5023,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              imported.project.error_message().toUtf8().constData());
     QVERIFY(!imported.previewController->
         has_private_m12_product_preview_ticket());
+    QVERIFY(!imported.project.private_m13_fresh_probe_still_current(
+        *importedM13.value()));
     QVERIFY(imported.project.can_save_project());
     QVERIFY(!imported.project.undo_private_m12_materialization());
     QVERIFY(!importedLease);
@@ -5071,6 +5081,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!session.project.can_save_project());
     QVERIFY(!session.project.
         capture_private_m13_fresh_postmaterialization_probe(0.0));
+    QVERIFY(!session.project.private_m13_fresh_probe_still_current(
+        *m13Owner.value()));
     const auto forbidden=dir.filePath(QStringLiteral(
         "m12-stale-manual-must-not-save.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(forbidden));
