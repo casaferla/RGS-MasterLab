@@ -307,6 +307,14 @@ void MasteringPreviewController::set_private_m12_product_preview_ticket(
     acceptedPreviewOwner_.reset();
     acceptedPreviewBindings_.clear();
     pendingPreviewBindings_.clear();
+    // A queued job belongs to the PREVIOUS immutable ticket. Drop it
+    // before it needlessly consumes a full-song DSP pass. A job already
+    // executing remains fenced by generation, owner and binding checks
+    // on its eventual Qt publication callback.
+    {
+        const std::lock_guard<std::mutex> lock(workerMutex_);
+        pendingJob_.reset();
+    }
     m12ReplayTicket_=std::move(ticket);
     previewStatus_=QStringLiteral("IDLE");
     previewError_.clear();
