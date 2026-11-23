@@ -723,6 +723,9 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *reg,manualGain.value()->context(),
         manualGain.value()->revision()+1U,std::move(identicalNodes));
     QVERIFY(revisedChain);
+    QVERIFY(!m::prepare_m12_immutable_product_preview_ticket(
+        ownedReplayPlan,ownedPrepared,
+        *revisedChain.value(),gainBindings));
     auto revisedOnly=validJob;
     revisedOnly.chain=*revisedChain.value();
     QVERIFY(!m::render_m12_exact_product_preview_job(

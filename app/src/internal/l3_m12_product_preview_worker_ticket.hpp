@@ -46,6 +46,11 @@ prepare_m12_immutable_product_preview_ticket(
     if(!replay||!replay->registry_owner||!exact_current_prepared||
        current_manual.context()!=dsp::ProcessingChainContext{
            dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL}||
+       // A new Product structural revision cannot borrow an old
+       // materialization even when the modules and values match exactly.
+       replay->manual_prefix.revision()!=current_manual.revision()||
+       (replay->terminal_p2 &&
+        replay->terminal_p2->revision()!=current_manual.revision())||
        current_manual.instances().size()!=current_manual_bindings.size())
         return fail("L3_M12_WORKER_NO_EXACT_PRODUCT_OWNERS");
     const auto nodes=current_manual.instances();
