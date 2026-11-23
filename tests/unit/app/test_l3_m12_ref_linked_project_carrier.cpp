@@ -790,12 +790,12 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         true));
     // A manufactured M12 C++ candidate must not alter unrelated
     // Project fields or optional bytes under a genuine before-snapshot.
-    auto changedOutput=productDraft.value()->candidate_not_yet_committed.document();
+    auto alteredProductOutput=productDraft.value()->candidate_not_yet_committed.document();
     auto outputChoice=project::OpaqueJsonValue::parse(
         "{\"unauthorizedOutputChoice\":true}");
     QVERIFY(outputChoice);
-    changedOutput.output=*outputChoice.value();
-    auto changedOutputSnapshot=project::ProjectSnapshot::create(changedOutput);
+    alteredProductOutput.output=*outputChoice.value();
+    auto changedOutputSnapshot=project::ProjectSnapshot::create(alteredProductOutput);
     QVERIFY(changedOutputSnapshot);
     auto changedDraft=*productDraft.value();
     changedDraft.candidate_not_yet_committed=
