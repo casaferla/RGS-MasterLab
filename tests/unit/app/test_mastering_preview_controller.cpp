@@ -954,7 +954,7 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     // treated as current even if every execution binding is identical.
     const auto oldBindings=state.value()->execution_bindings();
     QVERIFY(state.value()->set_user_bypass(gainId,true));
-    QCOMPARE(state.value()->execution_bindings(),oldBindings);
+    QVERIFY(state.value()->execution_bindings()==oldBindings);
     QVERIFY(!controller.published_preview_matches_current_bindings());
     controller.request_preview();
     QTRY_COMPARE(controller.preview_status(),QStringLiteral("READY"));
