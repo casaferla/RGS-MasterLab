@@ -4722,6 +4722,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         has_private_m12_product_preview_ticket());
     QVERIFY(!leased);
     QVERIFY(session.project.can_save_project());
+    // A foreign in-flight writer owns the physical batch: neither
+    // a syntactically accepted plan nor a fresh PREPARED grants permission
+    // to mutate this Product while its shared epoch is unavailable.
+    leased=true;
+    QVERIFY(!session.project.apply_private_m12_materialization(
+        *draft.value(),registry,prepared));
+    QVERIFY(!session.previewController->
+        has_private_m12_product_preview_ticket());
+    leased=false;
     auto committed=session.project.apply_private_m12_materialization(
         *draft.value(),registry,prepared);
     QVERIFY2(committed,
