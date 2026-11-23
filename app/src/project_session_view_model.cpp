@@ -1,5 +1,7 @@
 #include "project_session_view_model.hpp"
 #include "internal/l3_m12_ref_linked_project_open_gate.hpp"
+#include "internal/l3_m12_product_preview_worker_ticket.hpp"
+#include "internal/l3_m12_exact_postcommit_readback.hpp"
 
 #include "audition_region_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
@@ -1320,6 +1322,132 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     statusText_ = degraded_ ? QStringLiteral("Project opened in degraded mode; unsupported processing is not active.") :
                              QStringLiteral("Project opened.");
     clear_error();
+}
+
+core::Result<l3_automatch::m12_frozen::M12ProductMaterializationReceipt>
+ProjectSessionViewModel::apply_private_m12_materialization(
+    const l3_automatch::m12_frozen::M12PreparedProjectTransaction& draft,
+    std::shared_ptr<const dsp::ModuleRegistry> executionRegistry,
+    std::shared_ptr<const render::RenderResult> preparedOwner)
+{
+    namespace m=l3_automatch::m12_frozen;
+    using R=core::Result<m::M12ProductMaterializationReceipt>;
+    const auto fail=[](const char* code) {
+        return R::failure(core::Error{core::ErrorCode::InvalidState,code});
+    };
+    // A caller-held "accepted" boolean is never an exclusive epoch.
+    // Reuse the already installed real Product Open+Save single-writer
+    // fanout. No physical lease => no model publication, no receipt.
+    if(QThread::currentThread()!=thread()||
+       m18ProjectOperationActive_||isCommittingProjectOpen_||
+       !m18ProjectOpenBatchBegin_||!m18ProjectSaveBatchBegin_||
+       !opened_||!sessionChainMaterialized_||
+       !previewController_||!masteringChainState_||
+       !source_||!source_->source_resource()||
+       !gold_||!gold_->gold_resource()||
+       !projectId_||!sourceId_||!referenceId_||
+       !executionRegistry||!preparedOwner)
+        return fail("L3_M12_PRODUCT_COMMIT_NO_EXCLUSIVE_CURRENT_OWNER");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())
+        return fail("L3_M12_PRODUCT_COMMIT_EPOCH_UNAVAILABLE");
+    // The physical Product M18 lease must stay alive through actual
+    // memory installation, fresh readback, receipt and history adoption.
+    const auto heldLease=*lease.value();
+    Q_UNUSED(heldLease);
+    const auto stem=QString::fromStdString(opened_->document().displayName);
+    auto live=current_snapshot(stem);
+    if(!live||!m::m12_exact_project_snapshot_equal(
+        *live.value(),*opened_)||
+       live.value()->document().projectId!=*projectId_||
+       live.value()->document().sourceResourceId!=*sourceId_||
+       live.value()->document().references.activeReferenceId!=referenceId_||
+       !draft.matches_exact_precommit(*live.value()))
+        return fail("L3_M12_PRODUCT_COMMIT_PRECOMMIT_PROJECT_STALE");
+    const auto& snapshotProvider=previewController_->snapshot_provider();
+    if(!snapshotProvider||snapshotProvider()!=preparedOwner)
+        return fail("L3_M12_PRODUCT_COMMIT_PREPARED_OWNER_CHANGED");
+    const auto beforeTicket=
+        previewController_->private_m12_product_preview_ticket();
+    const bool beforeHasLinked=m::assess_current_product_ref_linked_open_safety(
+        live.value()->document())!=
+        m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
+    if(beforeHasLinked) {
+        // An update is legal only for this Product's most recent actual
+        // materialization, never an arbitrary imported/foreign REF graph.
+        if(!beforeTicket||m12UndoHistory_.empty()||
+           !m12RedoHistory_.empty()||
+           m12UndoHistory_.back().afterTicket!=beforeTicket||
+           !m::m12_exact_project_snapshot_equal(
+               m12UndoHistory_.back().after,*live.value()))
+            return fail("L3_M12_PRODUCT_COMMIT_PRIOR_OWNER_NOT_CURRENT");
+    } else if(beforeTicket)
+        return fail("L3_M12_PRODUCT_COMMIT_ORPHANED_PREVIEW_OWNER");
+    const auto bindings=masteringChainState_->execution_bindings();
+    auto ticket=m::prepare_m12_product_prepublication_preview_ticket(
+        *live.value(),draft,std::move(executionRegistry),
+        masteringChainState_->chain_id(),masteringChainState_->chain(),
+        bindings,preparedOwner,true);
+    if(!ticket)return R::failure(*ticket.error());
+    auto afterTicket=std::make_shared<const m::M12ImmutableProductPreviewTicket>(
+        std::move(*ticket.value()));
+    M12MaterializationHistoryEntry entry{
+        *live.value(),draft.candidate_not_yet_committed,
+        beforeTicket,afterTicket,std::nullopt};
+    // Allocate history capacity before the one coherent publication.
+    // A failed allocation may never leave half of REF in the Product.
+    m12UndoHistory_.reserve(m12UndoHistory_.size()+1U);
+    // Recheck the exact owner and source metadata IMMEDIATELY before
+    // publication, not merely at the start of the review/preflight.
+    auto second=current_snapshot(stem);
+    if(!second||!m::m12_exact_project_snapshot_equal(
+        *second.value(),entry.before)||
+       previewController_->private_m12_product_preview_ticket()!=
+           beforeTicket||
+       !snapshotProvider||snapshotProvider()!=preparedOwner||
+       masteringChainState_->execution_bindings()!=bindings)
+        return fail("L3_M12_PRODUCT_COMMIT_RACED_BEFORE_PUBLICATION");
+
+    // Atomic Qt owner state: one complete ProjectDocument replaces the
+    // previous snapshot. No in-place REF node insertion or manual merge.
+    opened_.emplace(entry.after);
+    previewController_->set_private_m12_product_preview_ticket(afterTicket);
+    // Read back via the ACTUAL Product projection. Merely inspecting the
+    // caller's draft or the preview ticket would be false positive proof.
+    auto readback=current_snapshot(stem);
+    const auto audited=readback
+        ?m::audit_exact_m12_postcommit_project_readback(
+            entry.before,draft,*readback.value(),true)
+        :m::M12PostCommitReadbackAudit{};
+    if(!audited.exact_after_state_observed()||
+       !m::m12_exact_project_snapshot_equal(
+           *opened_,entry.after)) {
+        // Readback failure cannot emit a successful materialization.
+        // Recover the entire prior Project and its exact preview owner.
+        opened_.emplace(entry.before);
+        previewController_->set_private_m12_product_preview_ticket(
+            beforeTicket);
+        return fail("L3_M12_PRODUCT_COMMIT_READBACK_REJECTED_ROLLED_BACK");
+    }
+    const auto& adopted=opened_->document();
+    if(!adopted.references.activeReferenceId) {
+        opened_.emplace(entry.before);
+        previewController_->set_private_m12_product_preview_ticket(
+            beforeTicket);
+        return fail("L3_M12_PRODUCT_COMMIT_REFERENCE_LOST");
+    }
+    m::M12ProductMaterializationReceipt receipt{
+        adopted.projectId,adopted.sourceResourceId,
+        *adopted.references.activeReferenceId,draft.plan_id,
+        draft.controller_id,draft.ref_linked_chain_id,
+        draft.accepted_plan_checksum};
+    entry.receipt.emplace(receipt);
+    m12RedoHistory_.clear();
+    m12UndoHistory_.push_back(std::move(entry));
+    statusText_=QStringLiteral("MATERIALIZED / NOT_VERIFIED");
+    clear_error();
+    return R::success(std::move(receipt));
 }
 
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
