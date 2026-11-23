@@ -20,7 +20,8 @@ namespace {
         {{"category",std::string(why)}}});
 }
 [[nodiscard]] bool supported_rate(std::uint32_t fs) noexcept {
-    return fs==44100U||fs==48000U||fs==96000U||fs==192000U;
+    return fs==44100U||fs==48000U||fs==88200U||
+           fs==96000U||fs==176400U||fs==192000U;
 }
 [[nodiscard]] double coefficient(double fs,double tau_s) {
     return std::exp(-1.0/(tau_s*fs));

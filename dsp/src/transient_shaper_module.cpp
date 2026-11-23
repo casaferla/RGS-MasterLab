@@ -41,7 +41,8 @@ constexpr auto kBackend="rgsml.dsp.backend.default.v1";
     const auto layout=s.audio_format.channel_layout();
     if(!domain(s.frame_domain_id)||s.maximum_block_frames.value()<=0
        ||fs<=0||fs>std::numeric_limits<std::uint32_t>::max()
-       ||(fs!=44100&&fs!=48000&&fs!=96000&&fs!=192000)
+       ||(fs!=44100&&fs!=48000&&fs!=88200&&
+        fs!=96000&&fs!=176400&&fs!=192000)
        ||(layout!=audio::ChannelLayout::MONO_C
           &&layout!=audio::ChannelLayout::STEREO_LR))
         return invalid("INVALID_PROCESS_SPEC");

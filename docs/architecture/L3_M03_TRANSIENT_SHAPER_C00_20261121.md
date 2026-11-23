@@ -18,7 +18,7 @@ clarification. These contracts are **not changed** in this staging lot.
 - Normalized positive rise/decay descriptors with epsilon=1e-9,
   contributions in dB separately smoothed at 0.25 ms, shared
   same-frame audio multiplication at original Fs.
-- Supported Fs exactly 44.1/48/96/192 kHz, mono/stereo only,
+- Supported Fs exactly 44.1/48/88.2/96/176.4/192 kHz, mono/stereo only,
   latency=0, lookahead=0, drained audio frames=0, no clipping,
   normalization, event classifier or oversampling.
 - At Attack=Sustain=0, current-frame output is an exact
@@ -44,7 +44,7 @@ clarification. These contracts are **not changed** in this staging lot.
 ## Native focused gate and exclusions
 
 Focused Windows/Linux gate includes C00 core and IModule Qt tests:
-frozen first-sample impulses at 44.1/48/96/192k, independent
+frozen first-sample impulses at 44.1/48/88.2/96/176.4/192k, independent
 per-frame binary64 oracle, ragged chunks/in-place, signed zero,
 stereo swap/antiphase, reset, exact checkpoint continuation,
 source-frame timeline/true-EOS and strict transactional failures.
@@ -90,3 +90,22 @@ M03 C00 sound-law/performance and checkpoint tests are distinct from
 M04 independent musical listening. No test here proves M04 acceptance,
 the full 27-feature frozen M10 optimizer, or the user-desired 20–30-min
 AutoMatch duration.
+
+## Product Owner compatibility extension — 2026-11-23
+
+The Product Owner explicitly requires **all six** established MasterLab PCM
+sample rates (44.1, 48, 88.2, 96, 176.4 and 192 kHz) throughout every
+processing DSP, including Transient Shaper C00. The prior four-rate
+admission list was too restrictive for the application and has been
+extended at all three C00 admission boundaries (native engine, effective
+pre-context estimator and IModule). This changes neither the underlying
+continuous-time attack/decay law nor parameter ranges, DSP ordering,
+checkpoint encoding, mono/stereo behavior or zero-latency contract.
+Time constants continue to be computed from each actual Fs without
+resampling or bypass. Six-rate native independent-oracle and persisted
+Project PCM roundtrip regressions are mandatory; four-rate-only acceptance
+must no longer be treated as a Product qualification gate.
+
+This explicit PO compatibility correction supersedes the former four-rate
+list in the present implementation note without retroactively claiming a
+new FQ or that other DSP and SRC end-to-end paths have been qualified.

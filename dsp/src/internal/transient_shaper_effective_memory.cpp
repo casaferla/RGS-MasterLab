@@ -10,7 +10,8 @@ core::Result<core::FrameCount>
 transient_shaper_conservative_precontext_frames(std::uint32_t fs)
 {
     using R=core::Result<core::FrameCount>;
-    if(fs!=44100U&&fs!=48000U&&fs!=96000U&&fs!=192000U)
+    if(fs!=44100U&&fs!=48000U&&fs!=88200U&&
+       fs!=96000U&&fs!=176400U&&fs!=192000U)
         return R::failure(core::Error{
             core::ErrorCode::UnsupportedOperation,
             "L3_M03_EFFECTIVE_CONTEXT_UNSUPPORTED_RATE"});
