@@ -1450,6 +1450,122 @@ ProjectSessionViewModel::apply_private_m12_materialization(
     return R::success(std::move(receipt));
 }
 
+core::Status ProjectSessionViewModel::undo_private_m12_materialization()
+{
+    namespace m=l3_automatch::m12_frozen;
+    const auto fail=[](const char* why) {
+        return core::Status::failure(
+            core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||!m18ProjectOpenBatchBegin_||
+       !m18ProjectSaveBatchBegin_||!previewController_||
+       !masteringChainState_||!opened_||m12UndoHistory_.empty())
+        return fail("L3_M12_UNDO_NO_EXCLUSIVE_OWNER_OR_HISTORY");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())
+        return fail("L3_M12_UNDO_EPOCH_UNAVAILABLE");
+    const auto heldLease=*lease.value();
+    Q_UNUSED(heldLease);
+    const auto& last=m12UndoHistory_.back();
+    auto live=current_snapshot(
+        QString::fromStdString(last.after.document().displayName));
+    const auto& provider=previewController_->snapshot_provider();
+    if(!live||!m::m12_exact_project_snapshot_equal(
+        *live.value(),last.after)||
+       !m::m12_exact_project_snapshot_equal(*opened_,last.after)||
+       previewController_->private_m12_product_preview_ticket()!=
+           last.afterTicket||
+       !last.afterTicket||!provider||
+       provider()!=last.afterTicket->exact_prepared_owner)
+        return fail("L3_M12_UNDO_CURRENT_PRODUCT_STATE_STALE");
+    m12RedoHistory_.reserve(m12RedoHistory_.size()+1U);
+    // Commit a FULL prior snapshot. A former linked controller's
+    // binding is restored only from its exact historical ticket, never
+    // inferred from a matching module name/type.
+    opened_.emplace(last.before);
+    previewController_->set_private_m12_product_preview_ticket(
+        last.beforeTicket);
+    auto readback=current_snapshot(
+        QString::fromStdString(last.before.document().displayName));
+    if(!readback||!m::m12_exact_project_snapshot_equal(
+        *readback.value(),last.before)) {
+        opened_.emplace(last.after);
+        previewController_->set_private_m12_product_preview_ticket(
+            last.afterTicket);
+        return fail("L3_M12_UNDO_READBACK_FAILED_ROLLED_BACK");
+    }
+    m12RedoHistory_.push_back(std::move(m12UndoHistory_.back()));
+    m12UndoHistory_.pop_back();
+    statusText_=m12RedoHistory_.back().beforeTicket
+        ?QStringLiteral("MATERIALIZED / NOT_VERIFIED")
+        :QStringLiteral("M12 UNDO / MANUAL");
+    clear_error();
+    return core::Status::success();
+}
+
+core::Status ProjectSessionViewModel::redo_private_m12_materialization()
+{
+    namespace m=l3_automatch::m12_frozen;
+    const auto fail=[](const char* why) {
+        return core::Status::failure(
+            core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||!m18ProjectOpenBatchBegin_||
+       !m18ProjectSaveBatchBegin_||!previewController_||
+       !masteringChainState_||!opened_||m12RedoHistory_.empty())
+        return fail("L3_M12_REDO_NO_EXCLUSIVE_OWNER_OR_HISTORY");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())
+        return fail("L3_M12_REDO_EPOCH_UNAVAILABLE");
+    const auto heldLease=*lease.value();
+    Q_UNUSED(heldLease);
+    const auto& next=m12RedoHistory_.back();
+    auto live=current_snapshot(
+        QString::fromStdString(next.before.document().displayName));
+    const auto& provider=previewController_->snapshot_provider();
+    if(!live||!m::m12_exact_project_snapshot_equal(
+        *live.value(),next.before)||
+       !m::m12_exact_project_snapshot_equal(*opened_,next.before)||
+       previewController_->private_m12_product_preview_ticket()!=
+           next.beforeTicket||
+       !next.afterTicket||!next.afterTicket->replay||!provider||
+       provider()!=next.afterTicket->exact_prepared_owner)
+        return fail("L3_M12_REDO_CURRENT_PRODUCT_STATE_STALE");
+    const auto bindings=masteringChainState_->execution_bindings();
+    const auto replay=m::prepare_m12_immutable_product_preview_ticket(
+        next.afterTicket->replay,
+        next.afterTicket->exact_prepared_owner,
+        masteringChainState_->chain(),bindings);
+    if(!replay||
+       replay.value()->exact_manual_nodes!=
+           next.afterTicket->exact_manual_nodes||
+       replay.value()->exact_manual_bindings!=
+           next.afterTicket->exact_manual_bindings)
+        return fail("L3_M12_REDO_MANUAL_OR_PREPARED_OWNER_STALE");
+    m12UndoHistory_.reserve(m12UndoHistory_.size()+1U);
+    opened_.emplace(next.after);
+    previewController_->set_private_m12_product_preview_ticket(
+        next.afterTicket);
+    auto readback=current_snapshot(
+        QString::fromStdString(next.after.document().displayName));
+    if(!readback||!m::m12_exact_project_snapshot_equal(
+        *readback.value(),next.after)) {
+        opened_.emplace(next.before);
+        previewController_->set_private_m12_product_preview_ticket(
+            next.beforeTicket);
+        return fail("L3_M12_REDO_READBACK_FAILED_ROLLED_BACK");
+    }
+    m12UndoHistory_.push_back(std::move(m12RedoHistory_.back()));
+    m12RedoHistory_.pop_back();
+    statusText_=QStringLiteral("MATERIALIZED / NOT_VERIFIED");
+    clear_error();
+    return core::Status::success();
+}
+
 void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
 {
     const bool m18Guarded=static_cast<bool>(m18ProjectOpenBatchBegin_
