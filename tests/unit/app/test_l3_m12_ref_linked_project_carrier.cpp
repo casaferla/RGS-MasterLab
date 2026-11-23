@@ -1034,6 +1034,19 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     ++nextPlan.exact_accepted_plan_revision;
     nextPlan.exact_plan_content_checksum="full-current-plan-sha-v2";
     nextPlan.exact_m10_result_and_topology_checksum="full-m10-winning-sha-v2";
+    // Changing checksum alone, while reusing the existing planId and
+    // revision, is still an invalid immutable-plan transition.
+    auto badRevisionPlan=nextPlan;
+    --badRevisionPlan.exact_accepted_plan_revision;
+    auto badRevisionStage=m::stage_exact_m12_native_ref_linked(
+        badRevisionPlan,*manual.value(),none,reg,adjustedNodes);
+    QVERIFY(badRevisionStage);
+    auto badRevisionCarrier=m::encode_exact_ref_linked_project_carrier(
+        *badRevisionStage.value(),refChainId);
+    QVERIFY(badRevisionCarrier);
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *badRevisionCarrier.value(),*badRevisionStage.value(),update));
     auto adjustedStage=m::stage_exact_m12_native_ref_linked(
         nextPlan,*manual.value(),none,reg,adjustedNodes);
     QVERIFY(adjustedStage);
