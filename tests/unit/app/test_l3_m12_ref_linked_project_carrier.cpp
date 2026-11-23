@@ -705,6 +705,68 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!workerTicket.value()->authorizes_product_installation());
     QVERIFY(!workerTicket.value()->authorizes_m12_receipt());
     QVERIFY(!workerTicket.value()->authorizes_m13_verified());
+    // Exercise the combined nonpublishing Product precommit bridge:
+    // exact M11 protected MANUAL, immutable M10/M12 winning plan,
+    // canonical Project after-state, real PREPARED PCM and one registry.
+    auto productBeforeDocument=replayDocument;
+    productBeforeDocument.chains.pop_back();
+    productBeforeDocument.referenceMatch=
+        project::OpaqueJsonValue::empty_object();
+    const auto productBefore=project::ProjectSnapshot::create(
+        productBeforeDocument);
+    QVERIFY(productBefore);
+    const auto exactProductStage=m::stage_exact_m12_native_ref_linked(
+        accepted(),*manualGain.value(),gainBindings,reg,nodes);
+    QVERIFY(exactProductStage);
+    const auto exactProductCarrier=m::encode_exact_ref_linked_project_carrier(
+        *exactProductStage.value(),refChainId);
+    QVERIFY(exactProductCarrier);
+    m::M12ProjectTransactionExpected productExpected{
+        doc.sourceResourceId,activeReference,manualChain.chainId,
+        productBeforeDocument.chains.front(),std::nullopt,true,true};
+    const auto productDraft=m::prepare_exact_m12_project_transaction(
+        *productBefore.value(),*exactProductCarrier.value(),
+        *exactProductStage.value(),productExpected);
+    QVERIFY(productDraft);
+    const auto combinedTicket=m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),*productDraft.value(),reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true);
+    QVERIFY(combinedTicket);
+    QVERIFY(!combinedTicket.value()->authorizes_product_installation());
+    QVERIFY(!combinedTicket.value()->authorizes_m12_receipt());
+    QVERIFY(!combinedTicket.value()->authorizes_m13_verified());
+    QVERIFY(combinedTicket.value()->replay);
+    QCOMPARE(combinedTicket.value()->replay->plan_id,accepted().plan_id);
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),*productDraft.value(),reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        false));
+    auto changedProductBefore=productBeforeDocument;
+    changedProductBefore.displayName="changed while calculating";
+    auto staleProductBefore=project::ProjectSnapshot::create(
+        changedProductBefore);
+    QVERIFY(staleProductBefore);
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *staleProductBefore.value(),*productDraft.value(),reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
+    auto falsifiedDraft=*productDraft.value();
+    falsifiedDraft.accepted_plan_checksum="different-accepted-checksum";
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),falsifiedDraft,reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
+    auto changedManualBindings=gainBindings;
+    changedManualBindings.front().parameters=
+        *dsp::GainParameters::create(-8.0).value();
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),*productDraft.value(),reg,
+        manualChain.chainId,*manualGain.value(),changedManualBindings,
+        ownedPrepared,true));
+    // A successful preflight remains just a worker candidate: real Qt
+    // installation, persistent commit/readback and M12 receipt are
+    // separate transactions, and M13 has not run.
     rgsml::app::MasteringPreviewController::PreviewJob validJob{
         1U,ownedPrepared,*manualGain.value(),gainBindings,reg,{}};
     const auto ownedWorkerRender=m::render_m12_exact_product_preview_job(
