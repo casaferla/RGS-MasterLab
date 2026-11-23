@@ -80,6 +80,12 @@ public:
     // revoke a linked realization before an unrelated Project loads.
     [[nodiscard]] bool has_private_m12_product_preview_ticket()
         const noexcept {return static_cast<bool>(m12ReplayTicket_);}
+    // Owner-only immutable identity for ProjectSession's atomic M12
+    // commit / Undo / Redo. Never a QML-visible mutation capability.
+    [[nodiscard]] std::shared_ptr<const l3_automatch::m12_frozen::
+        M12ImmutableProductPreviewTicket>
+    private_m12_product_preview_ticket() const noexcept
+    {return m12ReplayTicket_;}
     // Research-only timing evidence, never used in ordinary Product builds.
     // Call once on the owner thread before scheduling any preview jobs.
     void set_research_p2_timing_log_path(QString path);
