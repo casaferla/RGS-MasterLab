@@ -4807,6 +4807,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!m13Result.value()->authorizes_wav_export());
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
+    // The existing shared M18 epoch must exclude BOTH M13 capture
+    // and postworker acceptance while an independent writer is active.
+    leased=true;
+    QVERIFY(!session.project.
+        capture_private_m13_fresh_postmaterialization_probe(0.0));
+    QVERIFY(!session.project.private_m13_fresh_probe_still_current(
+        *m13Owner.value()));
+    leased=false;
+    QVERIFY(session.project.private_m13_fresh_probe_still_current(
+        *m13Owner.value()));
     // The same frozen audio under an impossible *independent* M16
     // ceiling is a failed probe, not a silent request to adjust M17.
     const auto tooStrict=session.project.
