@@ -558,12 +558,26 @@ bool ProjectSessionViewModel::can_save_project() const
         // A native draft / orphaned read-only Project never grants SaveAs.
         // The actual Product M12 model publication and receipt are required.
         if(!source_||!source_->source_resource()||!opened_||
-           !ticket||!previewController_||!masteringChainState_||
-           m12UndoHistory_.empty()||
-           !m12UndoHistory_.back().receipt||
-           m12UndoHistory_.back().afterTicket!=ticket||
-           !l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
-               *opened_,m12UndoHistory_.back().after))
+           !ticket||!ticket->replay||!previewController_||
+           !masteringChainState_)return false;
+        const bool receiptFromThisSession=
+            !m12UndoHistory_.empty()&&
+            m12UndoHistory_.back().receipt.has_value()&&
+            m12UndoHistory_.back().afterTicket==ticket&&
+            l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
+                *opened_,m12UndoHistory_.back().after);
+        const bool importedWithExactReadback=
+            m12ReopenedReadback_.has_value()&&
+            l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
+                *opened_,*m12ReopenedReadback_);
+        if(!receiptFromThisSession&&!importedWithExactReadback)
+            return false;
+        const auto& persisted=opened_->document();
+        if(ticket->replay->project_id!=persisted.projectId||
+           ticket->replay->source_id!=persisted.sourceResourceId||
+           !persisted.references.activeReferenceId||
+           ticket->replay->reference_id!=
+               *persisted.references.activeReferenceId)
             return false;
         const auto& provider=previewController_->snapshot_provider();
         const auto& chain=masteringChainState_->chain();
