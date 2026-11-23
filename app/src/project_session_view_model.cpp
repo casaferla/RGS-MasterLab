@@ -1339,6 +1339,41 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             eqViewModel_->refreshFromAuthority();
         }
     }
+    if(linkedRequested) {
+        // SOURCE adoption has synchronously published its new PREPARED
+        // realization through the Product's real source-committed path.
+        // Do not reuse PCM captured before the Project identity switch.
+        const auto& provider=previewController_->snapshot_provider();
+        const auto currentPrepared=provider?provider():
+            std::shared_ptr<const render::RenderResult>{};
+        auto ticket=currentPrepared
+            ?l3_automatch::m12_frozen::
+                prepare_m12_immutable_product_preview_ticket(
+                    reopeningReplay,currentPrepared,
+                    masteringChainState_->chain(),
+                    masteringChainState_->execution_bindings())
+            :core::Result<
+                l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>::
+                failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "L3_M12_PROJECT_OPEN_PREPARED_NOT_OWNED"});
+        if(!ticket) {
+            // A completed source handoff must NEVER fall back to a
+            // MANUAL-only PROCESSED audition. A deliberately invalid
+            // private linked ticket holds the replay path fail-closed
+            // until a later valid Project transaction replaces it.
+            previewController_->set_private_m12_product_preview_ticket(
+                std::make_shared<const l3_automatch::m12_frozen::
+                    M12ImmutableProductPreviewTicket>());
+            isCommittingProjectOpen_=false;
+            publish_error(*ticket.error());
+            return;
+        }
+        previewController_->set_private_m12_product_preview_ticket(
+            std::make_shared<const l3_automatch::m12_frozen::
+                M12ImmutableProductPreviewTicket>(
+                    std::move(*ticket.value())));
+    }
     if (previewController_) {
         previewController_->request_preview();
     }
