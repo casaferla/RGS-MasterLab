@@ -50,6 +50,9 @@ struct M13FreshProductMasterProbe final {
     analysis::TruePeakMeasurement fresh_m16;
     analysis::BasicLevelAnalysisResult fresh_m19;
     analysis::TonalStereoAnalysisResult fresh_m20;
+    // Ordinary DSP execution signatures from the REAL Product engine
+    // for MANUAL, REF_LINKED and optional terminal P2 in strict order.
+    m12_frozen::M12NativeStageExecutionWitness stage_witness;
     double independent_m16_ceiling_db_tp{};
     std::uint32_t logical_verification_evaluations{1U};
     [[nodiscard]] constexpr bool is_m13_verified() const noexcept
@@ -83,8 +86,10 @@ run_fresh_m13_product_postmaterialization_probe(
     // One NEW full native traversal in the Product-approved order:
     // PREPARED -> protected MANUAL -> REF_LINKED -> optional user P2.
     // No WAV Export, no reuse of the already accepted PROCESSED render.
+    m12_frozen::M12NativeStageExecutionWitness witness;
     auto render=m12_frozen::render_restored_m12_full_native_pcm_once(
-        *owner.replay,*owner.exact_prepared_owner,maximum_block_frames);
+        *owner.replay,*owner.exact_prepared_owner,maximum_block_frames,
+        &witness);
     if(!render)return R::failure(*render.error());
     auto m16=analysis::measure_true_peak_full_resource(
         render.value()->buffer());
@@ -104,7 +109,8 @@ run_fresh_m13_product_postmaterialization_probe(
     if(!m20)return R::failure(*m20.error());
     return R::success(M13FreshProductMasterProbe{
         std::move(*render.value()),std::move(*m16.value()),
-        std::move(*m19.value()),std::move(*m20.value()),ceiling,1U});
+        std::move(*m19.value()),std::move(*m20.value()),
+        std::move(witness),ceiling,1U});
 }
 } // namespace l3_automatch::m13_frozen
 } // namespace rgsml::app
