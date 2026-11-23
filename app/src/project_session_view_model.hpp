@@ -232,6 +232,10 @@ private:
     bool m18ProjectOperationActive_{false};
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
+    // Product session-local M12 ownership epoch. Not a project schema
+    // revision or a DSP parameter counter. Invalidates M13 worker
+    // results across Undo/Redo and identical-source Project reopen.
+    std::uint64_t m12ProductOwnershipEpoch_{1U};
     std::optional<project::ProjectSnapshot> opened_;
     struct M12MaterializationHistoryEntry final {
         project::ProjectSnapshot before;
