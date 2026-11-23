@@ -1,5 +1,6 @@
 #include "project_session_view_model.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
+#include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
