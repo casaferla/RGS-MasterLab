@@ -2,6 +2,7 @@
 
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/project/m18_master_wav_preference.hpp>
+#include "internal/l3_m12_product_materialization_receipt.hpp"
 #include <rgsml/core/resource_reference.hpp>
 
 #include <QObject>
@@ -14,8 +15,15 @@
 #include <optional>
 #include <memory>
 #include <utility>
+#include <vector>
 
+namespace rgsml::dsp { class ModuleRegistry; }
+namespace rgsml::render { class RenderResult; }
 namespace rgsml::app {
+namespace l3_automatch::m12_frozen {
+struct M12PreparedProjectTransaction;
+struct M12ImmutableProductPreviewTicket;
+}
 
 class SourceSelectionViewModel;
 class GoldSelectionViewModel;
@@ -156,6 +164,18 @@ public:
     Q_INVOKABLE void cancelProjectOpen() noexcept;
     Q_INVOKABLE void cancelProjectSave() noexcept;
 
+    // M12 PRIVATE Qt-Product transaction, never directly Q_INVOKABLE.
+    // Requires the existing real exclusive M18 Project mutation batch,
+    // a pre-reviewed exact draft and the current immutable PREPARED PCM.
+    // Failure must leave Project, ticket and Undo history unchanged.
+    [[nodiscard]] core::Result<l3_automatch::m12_frozen::
+        M12ProductMaterializationReceipt> apply_private_m12_materialization(
+        const l3_automatch::m12_frozen::M12PreparedProjectTransaction& draft,
+        std::shared_ptr<const dsp::ModuleRegistry> executionRegistry,
+        std::shared_ptr<const render::RenderResult> preparedOwner);
+    [[nodiscard]] core::Status undo_private_m12_materialization();
+    [[nodiscard]] core::Status redo_private_m12_materialization();
+
 signals:
     void changed();
 
@@ -197,6 +217,18 @@ private:
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
+    struct M12MaterializationHistoryEntry final {
+        project::ProjectSnapshot before;
+        project::ProjectSnapshot after;
+        std::shared_ptr<const l3_automatch::m12_frozen::
+            M12ImmutableProductPreviewTicket> beforeTicket;
+        std::shared_ptr<const l3_automatch::m12_frozen::
+            M12ImmutableProductPreviewTicket> afterTicket;
+        l3_automatch::m12_frozen::M12ProductMaterializationReceipt receipt;
+    };
+    // Product-owned exact snapshots, not a parallel DSP engine.
+    std::vector<M12MaterializationHistoryEntry> m12UndoHistory_;
+    std::vector<M12MaterializationHistoryEntry> m12RedoHistory_;
     std::optional<core::Uuid> projectId_;
     std::optional<core::Uuid> sourceId_;
     std::optional<core::Uuid> goldId_;
