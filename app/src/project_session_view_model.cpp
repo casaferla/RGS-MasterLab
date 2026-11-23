@@ -534,7 +534,7 @@ void ProjectSessionViewModel::set_reference_region_view_model(
             this,&ProjectSessionViewModel::on_reference_region_changed);
 }
 
-bool ProjectSessionViewModel::can_save_project() const noexcept
+bool ProjectSessionViewModel::can_save_project() const
 {
     // The I2 fifth MANUAL module now has a distinct typed JSON codec and
     // opt-in restore path. SaveAs preflights the exact complete chain before
@@ -556,12 +556,24 @@ bool ProjectSessionViewModel::can_save_project() const noexcept
     if(persistedLinked||ticket) {
         // A native draft / orphaned read-only Project never grants SaveAs.
         // The actual Product M12 model publication and receipt are required.
-        return source_&&source_->source_resource()&&opened_&&ticket&&
-            !m12UndoHistory_.empty()&&
-            m12UndoHistory_.back().receipt.has_value()&&
-            m12UndoHistory_.back().afterTicket==ticket&&
-            l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
-                *opened_,m12UndoHistory_.back().after);
+        if(!source_||!source_->source_resource()||!opened_||
+           !ticket||!previewController_||!masteringChainState_||
+           m12UndoHistory_.empty()||
+           !m12UndoHistory_.back().receipt||
+           m12UndoHistory_.back().afterTicket!=ticket||
+           !l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
+               *opened_,m12UndoHistory_.back().after))
+            return false;
+        const auto& provider=previewController_->snapshot_provider();
+        const auto& chain=masteringChainState_->chain();
+        const auto nodes=chain.instances();
+        return provider&&provider()==ticket->exact_prepared_owner&&
+            chain.revision()==ticket->exact_manual_chain_revision&&
+            nodes.size()==ticket->exact_manual_nodes.size()&&
+            std::equal(nodes.begin(),nodes.end(),
+                       ticket->exact_manual_nodes.begin())&&
+            masteringChainState_->execution_bindings()==
+                ticket->exact_manual_bindings;
     }
     return source_&&source_->source_resource();
 }
