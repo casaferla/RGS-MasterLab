@@ -893,6 +893,8 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
         currentNodes.begin(),currentNodes.end());
     guarded->exact_manual_bindings=state.value()->execution_bindings();
     guarded->exact_prepared_owner=prepared;
+    guarded->exact_manual_chain_revision=
+        state.value()->chain().revision();
     controller.set_private_m12_product_preview_ticket(guarded);
     const auto guardedGeneration=controller.preview_generation();
     const auto guardedStale=controller.stale_results_discarded();

@@ -388,6 +388,8 @@ void MasteringPreviewController::request_preview()
         const bool exact=preparedSnapshot==ticket.exact_prepared_owner &&
             chainState_->chain().context()==dsp::ProcessingChainContext{
                 dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL} &&
+            chainState_->chain().revision()==
+                ticket.exact_manual_chain_revision &&
             nodes.size()==ticket.exact_manual_nodes.size() &&
             std::equal(nodes.begin(),nodes.end(),
                        ticket.exact_manual_nodes.begin()) &&

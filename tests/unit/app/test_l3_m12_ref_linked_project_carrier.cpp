@@ -712,6 +712,21 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(ownedWorkerRender);
     QCOMPARE(ownedWorkerRender.value()->view().frame_count().value(),
              std::int64_t{48000});
+    QCOMPARE(workerTicket.value()->exact_manual_chain_revision,
+             manualGain.value()->revision());
+    // Same DSP nodes and parameters are NOT sufficient when the
+    // underlying MANUAL chain's structural revision has advanced.
+    std::vector<dsp::ModuleInstance> identicalNodes{
+        manualGain.value()->instances().begin(),
+        manualGain.value()->instances().end()};
+    auto revisedChain=dsp::ProcessingChain::restore(
+        *reg,manualGain.value()->context(),
+        manualGain.value()->revision()+1U,std::move(identicalNodes));
+    QVERIFY(revisedChain);
+    auto revisedOnly=validJob;
+    revisedOnly.chain=*revisedChain.value();
+    QVERIFY(!m::render_m12_exact_product_preview_job(
+        *workerTicket.value(),revisedOnly,*maxBlock.value()));
     auto staleJob=validJob;
     staleJob.generation=0;
     QVERIFY(!m::render_m12_exact_product_preview_job(

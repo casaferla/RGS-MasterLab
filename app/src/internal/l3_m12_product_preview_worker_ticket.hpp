@@ -8,6 +8,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <utility>
@@ -17,6 +18,8 @@ namespace rgsml::app::l3_automatch::m12_frozen {
 struct M12ImmutableProductPreviewTicket final {
     std::shared_ptr<const RestoredM12NativeReplayPlan> replay;
     std::shared_ptr<const render::RenderResult> exact_prepared_owner;
+    // Structural revisions can advance with identical node parameters.
+    std::uint64_t exact_manual_chain_revision{};
     std::vector<dsp::ModuleInstance> exact_manual_nodes;
     std::vector<dsp::ModuleExecutionBinding> exact_manual_bindings;
     [[nodiscard]] constexpr bool authorizes_product_installation() const noexcept {
@@ -69,7 +72,7 @@ prepare_m12_immutable_product_preview_ticket(
         return fail("L3_M12_WORKER_PREPARED_INVALID");
     return R::success(M12ImmutableProductPreviewTicket{
         std::move(replay),std::move(exact_current_prepared),
-        {nodes.begin(),nodes.end()},
+        current_manual.revision(),{nodes.begin(),nodes.end()},
         {current_manual_bindings.begin(),current_manual_bindings.end()}});
 }
 [[nodiscard]] inline core::Result<render::RenderResult>
@@ -85,6 +88,7 @@ render_m12_exact_product_preview_job(
        job.preparedSnapshot!=ticket.exact_prepared_owner||
        job.chain.context()!=dsp::ProcessingChainContext{
            dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL}||
+       job.chain.revision()!=ticket.exact_manual_chain_revision||
        job.chain.instances().size()!=ticket.exact_manual_nodes.size()||
        !std::equal(job.chain.instances().begin(),
                    job.chain.instances().end(),
