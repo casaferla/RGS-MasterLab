@@ -1013,6 +1013,32 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(updated);
     QCOMPARE(updated.value()->candidate_not_yet_committed.document().
              chains.size(),std::size_t{2});
+    // A genuine UPDATE can change DSP parameters without losing the
+    // same semantic identity, instance ID, or protected MANUAL snapshot.
+    auto adjustedNodes=nodes;
+    auto adjustedTransient=dsp::TransientShaperParameters::create(4.0,-2.0);
+    QVERIFY(adjustedTransient);
+    adjustedNodes[1].exact_m10_winning_parameters=*adjustedTransient.value();
+    auto adjustedStage=m::stage_exact_m12_native_ref_linked(
+        accepted(),*manual.value(),none,reg,adjustedNodes);
+    QVERIFY(adjustedStage);
+    auto adjustedCarrier=m::encode_exact_ref_linked_project_carrier(
+        *adjustedStage.value(),refChainId);
+    QVERIFY(adjustedCarrier);
+    const auto adjusted=m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *adjustedCarrier.value(),*adjustedStage.value(),update);
+    QVERIFY(adjusted);
+    const auto& beforeUpdate=proposed.chains.back().modules[1];
+    const auto& afterUpdate=adjusted.value()->
+        candidate_not_yet_committed.document().chains.back().modules[1];
+    QCOMPARE(afterUpdate.instanceId,beforeUpdate.instanceId);
+    QCOMPARE(afterUpdate.semanticNodeId,beforeUpdate.semanticNodeId);
+    QVERIFY(afterUpdate.parameters.canonical_utf8()!=
+            beforeUpdate.parameters.canonical_utf8());
+    QVERIFY(m::exact_project_chain_equal(
+        adjusted.value()->candidate_not_yet_committed.document().chains.front(),
+        manualChain));
     // P02/P04: UPDATE retains both semantic and instance identities.
     // Reusing an old instance for a different semantic node is a
     // forbidden disguised REPLACE, even with the same type and payload.
