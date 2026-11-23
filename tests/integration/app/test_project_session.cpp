@@ -4771,6 +4771,21 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(m::m12_exact_project_snapshot_equal(
         *restoredAfter.value(),*saved.value()));
 
+    // Retiring just the immutable PREPARED PCM owner must invalidate
+    // SaveAs/Undo before any disk write, even when the ProjectDocument
+    // and all DSP parameter bytes are otherwise unchanged.
+    session.previewController->set_snapshot_provider(
+        []{return std::shared_ptr<const render::RenderResult>{};});
+    QVERIFY(!session.project.can_save_project());
+    const auto noPrepared=dir.filePath(QStringLiteral(
+        "m12-removed-prepared-must-not-save.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(noPrepared));
+    QVERIFY(!QFileInfo::exists(noPrepared));
+    QVERIFY(!session.project.undo_private_m12_materialization());
+    session.previewController->set_snapshot_provider(
+        [prepared]{return prepared;});
+    QVERIFY(session.project.can_save_project());
+
     // A manual parameter-only edit leaves the structural revision
     // unchanged, but must forbid both a stale M12 Undo and an incorrect
     // REF_LINKED disk save. No partial output may be created.
