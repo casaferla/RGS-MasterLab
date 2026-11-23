@@ -613,6 +613,10 @@ void ProjectSessionViewModel::on_source_changed()
     if(resourceChanged&&previewController_ &&
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
+    if(resourceChanged) {
+        m12UndoHistory_.clear();
+        m12RedoHistory_.clear();
+    }
     if (source && lastSource_ &&
         !lastSource_->same_resource_identity(source->reference())) sourceId_.reset();
     if (source) lastSource_ = source->reference();
@@ -629,6 +633,10 @@ void ProjectSessionViewModel::on_gold_changed()
     if(resourceChanged&&previewController_ &&
        previewController_->has_private_m12_product_preview_ticket())
         previewController_->set_private_m12_product_preview_ticket({});
+    if(resourceChanged) {
+        m12UndoHistory_.clear();
+        m12RedoHistory_.clear();
+    }
     if (!gold) {
         goldId_.reset(); referenceId_.reset();
         referenceRegionId_.reset(); lastGold_.reset();
@@ -1316,6 +1324,10 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Project/source/chain commit succeeded under the M18 physical lease.
     m18OutputPreference_=std::move(*m18Choice.value());
     opened_.emplace(std::move(*opened.value()));
+    // The previous controller's Undo/Redo must never be applicable
+    // across a different Project Open, even with identical SOURCE WAV.
+    m12UndoHistory_.clear();
+    m12RedoHistory_.clear();
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
