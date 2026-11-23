@@ -89,6 +89,12 @@ static_assert(!std::is_default_constructible_v<
 static_assert(!std::is_aggregate_v<
     rgsml::app::l3_automatch::m12_frozen::
         M12ProductMaterializationReceipt>);
+static_assert(!std::is_default_constructible_v<
+    rgsml::app::l3_automatch::m13_frozen::
+        M13ImmutableProductFreshProbeRequest>);
+static_assert(!std::is_aggregate_v<
+    rgsml::app::l3_automatch::m13_frozen::
+        M13ImmutableProductFreshProbeRequest>);
 
 static_assert(std::is_same_v<
     decltype(&rgsml::app::internal::M18ProductCompleteBinding::bind),
