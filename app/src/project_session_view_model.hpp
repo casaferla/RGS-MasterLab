@@ -134,7 +134,7 @@ public:
     void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
         masterOutputRateState_ = state;
     }
-    [[nodiscard]] bool can_save_project() const noexcept;
+    [[nodiscard]] bool can_save_project() const;
     [[nodiscard]] bool is_committing_project_open() const noexcept { return isCommittingProjectOpen_; }
     [[nodiscard]] QString error_message() const { return errorMessage_; }
     [[nodiscard]] bool degraded() const noexcept { return degraded_; }
