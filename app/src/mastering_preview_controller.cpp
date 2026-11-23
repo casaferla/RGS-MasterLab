@@ -316,6 +316,7 @@ void MasteringPreviewController::set_private_m12_product_preview_ticket(
         pendingJob_.reset();
     }
     m12ReplayTicket_=std::move(ticket);
+    m12ManualChainOwner_=m12ReplayTicket_?chainState_:nullptr;
     // Capture the actual Product MANUAL registry at the same Qt-owner
     // transition that installs the REF ticket. It remains independent of
     // the extended factory registry required to execute calculated DSPs.
@@ -401,6 +402,7 @@ void MasteringPreviewController::request_preview()
         const auto& ticket=*m12ReplayTicket_;
         const bool exact=preparedSnapshot==ticket.exact_prepared_owner &&
             m12ManualRegistryOwner_ &&
+            chainState_==m12ManualChainOwner_ &&
             chainState_->registry_snapshot()==m12ManualRegistryOwner_ &&
             chainState_->chain().context()==dsp::ProcessingChainContext{
                 dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL} &&
@@ -564,6 +566,7 @@ void MasteringPreviewController::worker_loop()
                     const bool exact=state &&
                         m12ReplayTicket_==linkedTicket &&
                         m12ManualRegistryOwner_ &&
+                        state==m12ManualChainOwner_ &&
                         state->registry_snapshot()==m12ManualRegistryOwner_ &&
                         (linkedTicket->replay
                             ?jobRegistry==linkedTicket->replay->registry_owner
