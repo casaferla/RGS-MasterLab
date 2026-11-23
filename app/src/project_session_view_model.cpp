@@ -537,7 +537,18 @@ bool ProjectSessionViewModel::can_save_project() const noexcept
     // The I2 fifth MANUAL module now has a distinct typed JSON codec and
     // opt-in restore path. SaveAs preflights the exact complete chain before
     // any on-disk project publication; legacy sessions remain unchanged.
-    return source_ && source_->source_resource() &&
+    // A persisted calculated Project cannot be re-exported as an
+    // ordinary MANUAL snapshot just because a private preview ticket
+    // was revoked. Detect both native REF nodes and orphaned / damaged
+    // materialization metadata; opening such a Project is separately
+    // gated until full REF replay is installed.
+    const bool persistedLinked=opened_ &&
+        l3_automatch::m12_frozen::
+        assess_current_product_ref_linked_open_safety(
+            opened_->document())!=
+            l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
+                ordinary_project_without_ref_linked;
+    return source_ && source_->source_resource() && !persistedLinked &&
         !(previewController_ &&
           previewController_->has_private_m12_product_preview_ticket());
 }
@@ -1333,6 +1344,16 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
         publish_error(core::Error{
             core::ErrorCode::InvalidState,
             "L3_M12_PROJECT_SAVE_REF_LINKED_SERIALIZER_NOT_YET_INTEGRATED"});
+        return;
+    }
+    if(opened_ &&l3_automatch::m12_frozen::
+           assess_current_product_ref_linked_open_safety(
+               opened_->document())!=
+           l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
+               ordinary_project_without_ref_linked) {
+        publish_error(core::Error{
+            core::ErrorCode::InvalidState,
+            "L3_M12_PROJECT_SAVE_PERSISTED_LINKED_REPLAY_NOT_YET_INTEGRATED"});
         return;
     }
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
