@@ -1054,6 +1054,24 @@ testM12ExtendedRefRegistryPreservesProductManualOwner()
     // MANUAL registry; it is exclusively the worker's native factory.
     QVERIFY(state.value()->registry_snapshot()==manualRegistry);
     QVERIFY(replay->registry_owner==extended);
+    // A different Product chain STATE pointer is a foreign owner even
+    // when it shares the exact registry, IDs, revision and parameters.
+    auto twin=MasteringChainState::restore(
+        manualRegistry,chainId,state.value()->chain(),
+        gainId,state.value()->gain_parameters(),
+        eqId,state.value()->parametric_eq_parameters());
+    QVERIFY(twin);
+    controller.set_chain_state(twin.value());
+    const auto priorPCM=published;
+    controller.request_preview();
+    QCOMPARE(controller.preview_status(),QStringLiteral("ERROR"));
+    QCOMPARE(controller.preview_error(),QStringLiteral(
+        "L3_M12_LINKED_PREVIEW_MANUAL_OR_PREPARED_CHANGED"));
+    QVERIFY(published==priorPCM);
+    controller.set_chain_state(state.value());
+    controller.request_preview();
+    QTRY_COMPARE_WITH_TIMEOUT(
+        controller.preview_status(),QStringLiteral("READY"),10000);
     // A different Product MANUAL registry allocation is a new owner,
     // even when its visible nodes/parameters are byte-identical.
     auto replacement=MasteringChainState::create_default(
