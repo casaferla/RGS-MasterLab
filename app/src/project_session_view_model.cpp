@@ -629,6 +629,9 @@ void ProjectSessionViewModel::on_source_changed()
     if(resourceChanged) {
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
+        // Persisted REF replay is tied to the exact original owners,
+        // not merely to the same displayed Source/Reference names.
+        m12ReopenedReadback_.reset();
     }
     if (source && lastSource_ &&
         !lastSource_->same_resource_identity(source->reference())) sourceId_.reset();
@@ -649,6 +652,9 @@ void ProjectSessionViewModel::on_gold_changed()
     if(resourceChanged) {
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
+        // Persisted REF replay is tied to the exact original owners,
+        // not merely to the same displayed Source/Reference names.
+        m12ReopenedReadback_.reset();
     }
     if (!gold) {
         goldId_.reset(); referenceId_.reset();
