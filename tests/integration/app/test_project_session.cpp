@@ -4794,6 +4794,14 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              static_cast<std::int64_t>(sampleRateHz));
     QCOMPARE(m13Result.value()->logical_verification_evaluations,
              std::uint32_t{1});
+    QCOMPARE(m13Result.value()->stage_witness.protected_manual.size(),
+             session.masteringChainState->chain().instances().size());
+    QCOMPARE(m13Result.value()->stage_witness.reference_linked.size(),
+             winningNodes.size());
+    QVERIFY(m13Result.value()->stage_witness.user_terminal_p2.empty());
+    QVERIFY(m::m12_native_stage_witness_matches_replay_plan(
+        *m13Owner.value()->exact_materialized_preview_owner().replay,
+        m13Result.value()->stage_witness));
     QVERIFY(!m13Result.value()->is_m13_verified());
     QVERIFY(!m13Result.value()->is_qualification_receipt());
     QVERIFY(!m13Result.value()->authorizes_wav_export());
