@@ -738,6 +738,37 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!combinedTicket.value()->authorizes_m13_verified());
     QVERIFY(combinedTicket.value()->replay);
     QCOMPARE(combinedTicket.value()->replay->plan_id,accepted().plan_id);
+    // A same-controller UPDATE with a fresh immutable plan revision
+    // must remain admissible after an earlier REF segment was saved.
+    auto nextProductPlan=accepted();
+    ++nextProductPlan.exact_accepted_plan_revision;
+    nextProductPlan.exact_plan_content_checksum="product-plan-v2-checksum";
+    nextProductPlan.exact_m10_result_and_topology_checksum=
+        "product-winning-v2-checksum";
+    const auto nextProductStage=m::stage_exact_m12_native_ref_linked(
+        nextProductPlan,*manualGain.value(),gainBindings,reg,nodes);
+    QVERIFY(nextProductStage);
+    const auto nextProductCarrier=m::encode_exact_ref_linked_project_carrier(
+        *nextProductStage.value(),refChainId);
+    QVERIFY(nextProductCarrier);
+    auto currentLinkedExpected=productExpected;
+    currentLinkedExpected.exact_existing_linked_snapshot=
+        productDraft.value()->candidate_not_yet_committed.document().
+            chains.back();
+    const auto acceptedNextDraft=m::prepare_exact_m12_project_transaction(
+        productDraft.value()->candidate_not_yet_committed,
+        *nextProductCarrier.value(),*nextProductStage.value(),
+        currentLinkedExpected);
+    QVERIFY(acceptedNextDraft);
+    const auto updatedProductTicket=
+        m::prepare_m12_product_prepublication_preview_ticket(
+            productDraft.value()->candidate_not_yet_committed,
+            *acceptedNextDraft.value(),reg,manualChain.chainId,
+            *manualGain.value(),gainBindings,ownedPrepared,true);
+    QVERIFY(updatedProductTicket);
+    QCOMPARE(updatedProductTicket.value()->replay->plan_id,
+             nextProductPlan.plan_id);
+    QVERIFY(!updatedProductTicket.value()->authorizes_m12_receipt());
     QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
         *productBefore.value(),*productDraft.value(),reg,
         manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
