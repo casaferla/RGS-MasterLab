@@ -316,6 +316,12 @@ void MasteringPreviewController::set_private_m12_product_preview_ticket(
         pendingJob_.reset();
     }
     m12ReplayTicket_=std::move(ticket);
+    // Capture the actual Product MANUAL registry at the same Qt-owner
+    // transition that installs the REF ticket. It remains independent of
+    // the extended factory registry required to execute calculated DSPs.
+    m12ManualRegistryOwner_=m12ReplayTicket_&&chainState_
+        ?chainState_->registry_snapshot()
+        :std::shared_ptr<const dsp::ModuleRegistry>{};
     previewStatus_=QStringLiteral("IDLE");
     previewError_.clear();
     emit changed();
@@ -394,6 +400,8 @@ void MasteringPreviewController::request_preview()
         const auto nodes=chainState_->chain().instances();
         const auto& ticket=*m12ReplayTicket_;
         const bool exact=preparedSnapshot==ticket.exact_prepared_owner &&
+            m12ManualRegistryOwner_ &&
+            chainState_->registry_snapshot()==m12ManualRegistryOwner_ &&
             chainState_->chain().context()==dsp::ProcessingChainContext{
                 dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL} &&
             chainState_->chain().revision()==
@@ -423,7 +431,9 @@ void MasteringPreviewController::request_preview()
         std::move(preparedSnapshot),
         chainState_->chain(),
         chainState_->execution_bindings(),
-        chainState_->registry_snapshot(),
+        (m12ReplayTicket_&&m12ReplayTicket_->replay
+            ?m12ReplayTicket_->replay->registry_owner
+            :chainState_->registry_snapshot()),
         m12ReplayTicket_
     };
 
@@ -553,7 +563,11 @@ void MasteringPreviewController::worker_loop()
                         :std::span<const dsp::ModuleInstance>{};
                     const bool exact=state &&
                         m12ReplayTicket_==linkedTicket &&
-                        state->registry_snapshot()==jobRegistry &&
+                        m12ManualRegistryOwner_ &&
+                        state->registry_snapshot()==m12ManualRegistryOwner_ &&
+                        (linkedTicket->replay
+                            ?jobRegistry==linkedTicket->replay->registry_owner
+                            :jobRegistry==m12ManualRegistryOwner_) &&
                         state->chain().revision()==jobRevision &&
                         state->chain().context()==jobContext &&
                         nodes.size()==jobNodes.size() &&
