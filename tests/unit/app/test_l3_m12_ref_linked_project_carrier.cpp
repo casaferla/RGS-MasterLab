@@ -1019,8 +1019,23 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     auto adjustedTransient=dsp::TransientShaperParameters::create(4.0,-2.0);
     QVERIFY(adjustedTransient);
     adjustedNodes[1].exact_m10_winning_parameters=*adjustedTransient.value();
-    auto adjustedStage=m::stage_exact_m12_native_ref_linked(
+    // An immutable plan cannot carry retuned parameters under its old
+    // plan revision/checksum. Refuse such a forged M10/M12 handoff.
+    auto staleAdjustedStage=m::stage_exact_m12_native_ref_linked(
         accepted(),*manual.value(),none,reg,adjustedNodes);
+    QVERIFY(staleAdjustedStage);
+    auto staleAdjustedCarrier=m::encode_exact_ref_linked_project_carrier(
+        *staleAdjustedStage.value(),refChainId);
+    QVERIFY(staleAdjustedCarrier);
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        transaction.value()->candidate_not_yet_committed,
+        *staleAdjustedCarrier.value(),*staleAdjustedStage.value(),update));
+    auto nextPlan=accepted();
+    ++nextPlan.exact_accepted_plan_revision;
+    nextPlan.exact_plan_content_checksum="full-current-plan-sha-v2";
+    nextPlan.exact_m10_result_and_topology_checksum="full-m10-winning-sha-v2";
+    auto adjustedStage=m::stage_exact_m12_native_ref_linked(
+        nextPlan,*manual.value(),none,reg,adjustedNodes);
     QVERIFY(adjustedStage);
     auto adjustedCarrier=m::encode_exact_ref_linked_project_carrier(
         *adjustedStage.value(),refChainId);
@@ -1046,7 +1061,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     stolenConcrete.front().semantic_node_id=uuid(
         "b4000000-0000-4000-8000-000000000099");
     auto stolenStage=m::stage_exact_m12_native_ref_linked(
-        accepted(),*manual.value(),none,reg,stolenConcrete);
+        nextPlan,*manual.value(),none,reg,stolenConcrete);
     QVERIFY(stolenStage);
     auto stolenCarrier=m::encode_exact_ref_linked_project_carrier(
         *stolenStage.value(),refChainId);
@@ -1060,7 +1075,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     recreatedSameSemantic.front().allocated_instance_id=id(
         "b3000000-0000-4000-8000-000000000099");
     auto recreatedStage=m::stage_exact_m12_native_ref_linked(
-        accepted(),*manual.value(),none,reg,recreatedSameSemantic);
+        nextPlan,*manual.value(),none,reg,recreatedSameSemantic);
     QVERIFY(recreatedStage);
     auto recreatedCarrier=m::encode_exact_ref_linked_project_carrier(
         *recreatedStage.value(),refChainId);
@@ -1073,7 +1088,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     recreatedSameSemantic.front().semantic_node_id=uuid(
         "b4000000-0000-4000-8000-000000000099");
     auto freshStage=m::stage_exact_m12_native_ref_linked(
-        accepted(),*manual.value(),none,reg,recreatedSameSemantic);
+        nextPlan,*manual.value(),none,reg,recreatedSameSemantic);
     QVERIFY(freshStage);
     auto freshCarrier=m::encode_exact_ref_linked_project_carrier(
         *freshStage.value(),refChainId);
