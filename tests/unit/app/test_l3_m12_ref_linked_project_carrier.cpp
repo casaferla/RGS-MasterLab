@@ -1160,6 +1160,49 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         uuid("bf000000-0000-4000-8000-000000000001"),
         carrier.value()->native_project_chain.chainId,
         m::ControllerSuspensionCause::amount_zero,true));
+    // P04: even Amount-zero must not change a stale/foreign stored
+    // REF graph, since restoring positive Amount would revive it.
+    auto obsoleteRevision=proposed;
+    auto oldMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        obsoleteRevision.referenceMatch.canonical_utf8())).object();
+    auto oldRecord=oldMeta.value(QStringLiteral("materialization")).toObject();
+    oldRecord.insert(QStringLiteral("linkedChainRevision"),
+                     QStringLiteral("999"));
+    oldMeta.insert(QStringLiteral("materialization"),oldRecord);
+    auto oldJson=project::OpaqueJsonValue::parse(
+        QJsonDocument(oldMeta).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(oldJson);
+    obsoleteRevision.referenceMatch=*oldJson.value();
+    auto obsoleteSnapshot=project::ProjectSnapshot::create(obsoleteRevision);
+    QVERIFY(obsoleteSnapshot);
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        *obsoleteSnapshot.value(),carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::amount_zero,true));
+
+    auto duplicateSuspension=proposed;
+    duplicateSuspension.chains.back().modules[1].semanticNodeId=
+        duplicateSuspension.chains.back().modules[0].semanticNodeId;
+    auto duplicatedSnapshot=project::ProjectSnapshot::create(
+        duplicateSuspension);
+    QVERIFY(duplicatedSnapshot);
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        *duplicatedSnapshot.value(),carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::amount_zero,true));
+
+    auto doubleLinked=proposed;
+    project::Chain extra;
+    extra.chainId=uuid("cf000000-0000-4000-8000-000000000001");
+    extra.stage="MASTER";
+    extra.segment="REF_LINKED";
+    doubleLinked.chains.push_back(extra);
+    auto doubleSnapshot=project::ProjectSnapshot::create(doubleLinked);
+    QVERIFY(doubleSnapshot);
+    QVERIFY(!m::prepare_m12_owned_controller_suspension(
+        *doubleSnapshot.value(),carrier.value()->exact_owner_controller,
+        carrier.value()->native_project_chain.chainId,
+        m::ControllerSuspensionCause::amount_zero,true));
     // A caller may rewrite its own expected Project snapshot, but
     // cannot rewrite the M11 frozen typed manual DSP inside the
     // accepted M10 plan. The source truth is the accepted stage.
