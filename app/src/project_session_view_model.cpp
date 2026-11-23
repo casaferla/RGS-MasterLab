@@ -609,6 +609,8 @@ bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
             :std::nullopt};
     if(m18OutputPreference_&&*m18OutputPreference_==next)return true;
     m18OutputPreference_=next;
+    // M12 imported proof binds the entire OUTPUT/project content.
+    m12ReopenedReadback_.reset();
     emit changed();
     return true;
 }
@@ -672,6 +674,7 @@ void ProjectSessionViewModel::on_gold_changed()
 
 void ProjectSessionViewModel::on_region_changed()
 {
+    if(!isCommittingProjectOpen_)m12ReopenedReadback_.reset();
     if (!region_->region() && regionId_) {
         clearedRegionId_ = regionId_;
         regionId_.reset();
@@ -681,6 +684,7 @@ void ProjectSessionViewModel::on_region_changed()
 
 void ProjectSessionViewModel::on_reference_region_changed()
 {
+    if(!isCommittingProjectOpen_)m12ReopenedReadback_.reset();
     if(referenceRegion_ &&!referenceRegion_->region())
         referenceRegionId_.reset();
     emit changed();
