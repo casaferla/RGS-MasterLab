@@ -1609,6 +1609,7 @@ ProjectSessionViewModel::apply_private_m12_materialization(
     entry.receipt.emplace(receipt);
     m12RedoHistory_.clear();
     m12UndoHistory_.push_back(std::move(entry));
+    ++m12ProductOwnershipEpoch_;
     statusText_=QStringLiteral("MATERIALIZED / NOT_VERIFIED");
     clear_error();
     return R::success(std::move(receipt));
@@ -1691,7 +1692,8 @@ ProjectSessionViewModel::capture_private_m13_fresh_postmaterialization_probe(
        masteringChainState_->execution_bindings()!=actualBindings)
         return fail("L3_M13_PRODUCT_FRESH_EPOCH_RACED");
     return R::success(m13::M13ImmutableProductFreshProbeRequest{
-        ticket,independent_m16_safety_ceiling_db_tp});
+        ticket,independent_m16_safety_ceiling_db_tp,
+        m12ProductOwnershipEpoch_});
 }
 
 bool ProjectSessionViewModel::private_m13_fresh_probe_still_current(
@@ -1715,6 +1717,8 @@ bool ProjectSessionViewModel::private_m13_fresh_probe_still_current(
     const auto ticket=previewController_->
         private_m12_product_preview_ticket();
     if(!ticket||ticket!=completed_request.ticket_||
+       completed_request.exactProductEpoch_!=
+           m12ProductOwnershipEpoch_||
        !ticket->replay||!ticket->exact_prepared_owner)
         return false;
     const auto committedHere=!m12UndoHistory_.empty()&&
@@ -1805,6 +1809,7 @@ core::Status ProjectSessionViewModel::undo_private_m12_materialization()
     }
     m12RedoHistory_.push_back(std::move(m12UndoHistory_.back()));
     m12UndoHistory_.pop_back();
+    ++m12ProductOwnershipEpoch_;
     statusText_=m12RedoHistory_.back().beforeTicket
         ?QStringLiteral("MATERIALIZED / NOT_VERIFIED")
         :QStringLiteral("M12 UNDO / MANUAL");
@@ -1872,6 +1877,7 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
     }
     m12UndoHistory_.push_back(std::move(m12RedoHistory_.back()));
     m12RedoHistory_.pop_back();
+    ++m12ProductOwnershipEpoch_;
     statusText_=QStringLiteral("MATERIALIZED / NOT_VERIFIED");
     clear_error();
     return core::Status::success();
