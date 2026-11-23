@@ -881,8 +881,54 @@ void MasteringPreviewControllerTest::testM12OptInTicketFencesAcceptedPCM()
     QVERIFY(accepted==oldPCM);
     QVERIFY(!controller.published_preview_matches_current_bindings());
 
+    // A populated linked Product ticket must refuse parameter-only
+    // changes SYNCHRONOUSLY on the Qt owner without queueing a costly
+    // REF/P2 DSP job. Its MANUAL graph revision does not need to change.
+    // The dummy replay pointer stays absent: this is deliberately a
+    // pre-worker owner test, not a fake materialization or M13 receipt.
+    auto guarded=std::make_shared<
+        l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>();
+    const auto currentNodes=state.value()->chain().instances();
+    guarded->exact_manual_nodes.assign(
+        currentNodes.begin(),currentNodes.end());
+    guarded->exact_manual_bindings=state.value()->execution_bindings();
+    guarded->exact_prepared_owner=prepared;
+    controller.set_private_m12_product_preview_ticket(guarded);
+    const auto guardedGeneration=controller.preview_generation();
+    const auto guardedStale=controller.stale_results_discarded();
+    const auto ownerRevision=state.value()->chain().revision();
+    const auto newerGain=dsp::GainParameters::create(-4.5);
+    QVERIFY(newerGain);
+    QVERIFY(state.value()->set_gain_parameters(*newerGain.value()));
+    QCOMPARE(state.value()->chain().revision(),ownerRevision);
+    controller.request_preview();
+    QCOMPARE(controller.preview_generation(),guardedGeneration+1U);
+    QCOMPARE(controller.preview_status(),QStringLiteral("ERROR"));
+    QCOMPARE(controller.preview_error(),QStringLiteral(
+        "L3_M12_LINKED_PREVIEW_MANUAL_OR_PREPARED_CHANGED"));
+    QCOMPARE(controller.stale_results_discarded(),guardedStale);
+    QVERIFY(accepted==oldPCM);
+    QVERIFY(controller.has_private_m12_product_preview_ticket());
+    QVERIFY(!controller.published_preview_matches_current_bindings());
+
+    // Restoring the MANUAL parameters is not enough when the physical
+    // PREPARED realization has been replaced by a different owner with
+    // indistinguishable PCM content and the same sample-rate geometry.
+    QVERIFY(state.value()->set_gain_parameters(*revisedGain.value()));
+    const auto unrelatedPrepared=make_unit_prepared_result();
+    controller.set_snapshot_provider(
+        [unrelatedPrepared]{return unrelatedPrepared;});
+    const auto priorPreparedGeneration=controller.preview_generation();
+    controller.request_preview();
+    QCOMPARE(controller.preview_generation(),priorPreparedGeneration+1U);
+    QCOMPARE(controller.preview_status(),QStringLiteral("ERROR"));
+    QCOMPARE(controller.preview_error(),QStringLiteral(
+        "L3_M12_LINKED_PREVIEW_MANUAL_OR_PREPARED_CHANGED"));
+    QVERIFY(accepted==oldPCM);
+
     // Explicitly clearing the opt-in restores the unchanged ordinary
     // MANUAL preview path. No REF_LINKED adoption was ever authorized.
+    controller.set_snapshot_provider([prepared]{return prepared;});
     controller.set_private_m12_product_preview_ticket({});
     QVERIFY(!controller.has_private_m12_product_preview_ticket());
     QCOMPARE(controller.preview_status(),QStringLiteral("IDLE"));
