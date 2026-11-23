@@ -1694,6 +1694,65 @@ ProjectSessionViewModel::capture_private_m13_fresh_postmaterialization_probe(
         ticket,independent_m16_safety_ceiling_db_tp});
 }
 
+bool ProjectSessionViewModel::private_m13_fresh_probe_still_current(
+    const l3_automatch::m13_frozen::
+        M13ImmutableProductFreshProbeRequest& completed_request)
+{
+    namespace m12=l3_automatch::m12_frozen;
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||!m18ProjectOpenBatchBegin_||
+       !m18ProjectSaveBatchBegin_||!opened_||
+       !source_||!source_->source_resource()||
+       !gold_||!gold_->gold_resource()||
+       !previewController_||!masteringChainState_||
+       !std::isfinite(completed_request.ceilingDbTp_))
+        return false;
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return false;
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto ticket=previewController_->
+        private_m12_product_preview_ticket();
+    if(!ticket||ticket!=completed_request.ticket_||
+       !ticket->replay||!ticket->exact_prepared_owner)
+        return false;
+    const auto committedHere=!m12UndoHistory_.empty()&&
+        m12UndoHistory_.back().receipt.has_value()&&
+        m12UndoHistory_.back().afterTicket==ticket&&
+        m12::m12_exact_project_snapshot_equal(
+            *opened_,m12UndoHistory_.back().after);
+    const auto reopenedCurrent=m12ReopenedReadback_&&
+        m12::m12_exact_project_snapshot_equal(
+            *opened_,*m12ReopenedReadback_);
+    if(!committedHere&&!reopenedCurrent)return false;
+    const auto& doc=opened_->document();
+    if(!projectId_||!sourceId_||!referenceId_||
+       doc.projectId!=*projectId_||
+       doc.sourceResourceId!=*sourceId_||
+       doc.references.activeReferenceId!=referenceId_||
+       !m12::m12_reopened_persisted_replay_matches_exact_ticket(
+           doc,*ticket->replay))
+        return false;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto& chain=masteringChainState_->chain();
+    const auto instances=chain.instances();
+    if(!provider||provider()!=ticket->exact_prepared_owner||
+       instances.size()!=ticket->exact_manual_nodes.size()||
+       chain.revision()!=ticket->exact_manual_chain_revision||
+       !std::equal(instances.begin(),instances.end(),
+                   ticket->exact_manual_nodes.begin())||
+       masteringChainState_->execution_bindings()!=
+           ticket->exact_manual_bindings)
+        return false;
+    const auto stem=QString::fromStdString(doc.displayName);
+    auto live=current_snapshot(stem);
+    return live&&m12::m12_exact_project_snapshot_equal(
+        *live.value(),*opened_)&&
+        previewController_->private_m12_product_preview_ticket()==
+            ticket&&provider&&provider()==ticket->exact_prepared_owner;
+}
+
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
 {
     namespace m=l3_automatch::m12_frozen;
