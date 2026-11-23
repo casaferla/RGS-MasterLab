@@ -129,7 +129,9 @@ private:
     // An accepted output is a function of the EXACT PREPARED PCM owner,
     // complete instance activation/structural revision, and Product
     // MANUAL chain owner, not just the parameter execution bindings.
-    std::shared_ptr<const render::RenderResult> pendingPreviewPreparedOwner_;
+    // Observe Product PCM ownership without pinning a previous song
+    // in RAM after Source replacement or Preview cancellation.
+    std::weak_ptr<const render::RenderResult> pendingPreviewPreparedOwner_;
     std::weak_ptr<const render::RenderResult> acceptedPreviewPreparedOwner_;
     std::vector<dsp::ModuleInstance> pendingPreviewNodes_;
     std::vector<dsp::ModuleInstance> acceptedPreviewNodes_;
