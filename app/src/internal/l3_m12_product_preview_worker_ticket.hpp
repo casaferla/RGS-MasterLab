@@ -145,6 +145,24 @@ prepare_m12_product_prepublication_preview_ticket(
         return fail("L3_M12_PRODUCT_PRECOMMIT_METADATA_CORRUPT");
     auto beforeOther=beforeMeta.object();
     auto afterOther=afterMeta.object();
+    // An earlier materialization cannot be erased or usurped just by
+    // making the non-REF Project envelope match. Validate its persisted
+    // controller/plan with the SAME canonical decoder before replacing it.
+    const bool existing_ref=std::any_of(
+        before.chains.begin(),before.chains.end(),
+        [](const project::Chain& chain) {
+            return chain.stage=="MASTER"&&chain.segment=="REF_LINKED";
+        });
+    if(existing_ref) {
+        const auto prior=decode_exact_m12_ref_linked_product_state(
+            before,registry);
+        if(!prior||prior.value()->controller_id!=uncommitted.controller_id||
+           prior.value()->persisted_linked_chain_id!=
+               uncommitted.ref_linked_chain_id)
+            return fail("L3_M12_PRODUCT_PRECOMMIT_PRIOR_OWNER_CONFLICT");
+    } else if(beforeOther.contains(QStringLiteral("materialization"))) {
+        return fail("L3_M12_PRODUCT_PRECOMMIT_ORPHANED_PRIOR_PLAN");
+    }
     beforeOther.remove(QStringLiteral("materialization"));
     afterOther.remove(QStringLiteral("materialization"));
     if(beforeOther!=afterOther)
