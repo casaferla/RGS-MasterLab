@@ -1444,6 +1444,9 @@ ProjectSessionViewModel::apply_private_m12_materialization(
             entry.before,draft,*readback.value(),true)
         :m::M12PostCommitReadbackAudit{};
     if(!audited.exact_after_state_observed()||
+       previewController_->private_m12_product_preview_ticket()!=
+           afterTicket||
+       !snapshotProvider||snapshotProvider()!=preparedOwner||
        !m::m12_exact_project_snapshot_equal(
            *opened_,entry.after)) {
         // Readback failure cannot emit a successful materialization.
@@ -1512,8 +1515,12 @@ core::Status ProjectSessionViewModel::undo_private_m12_materialization()
         last.beforeTicket);
     auto readback=current_snapshot(
         QString::fromStdString(last.before.document().displayName));
-    if(!readback||!m::m12_exact_project_snapshot_equal(
-        *readback.value(),last.before)) {
+    if(!readback||
+       previewController_->private_m12_product_preview_ticket()!=
+           last.beforeTicket||
+       !provider||provider()!=last.afterTicket->exact_prepared_owner||
+       !m::m12_exact_project_snapshot_equal(
+           *readback.value(),last.before)) {
         opened_.emplace(last.after);
         previewController_->set_private_m12_product_preview_ticket(
             last.afterTicket);
@@ -1575,8 +1582,12 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
         next.afterTicket);
     auto readback=current_snapshot(
         QString::fromStdString(next.after.document().displayName));
-    if(!readback||!m::m12_exact_project_snapshot_equal(
-        *readback.value(),next.after)) {
+    if(!readback||
+       previewController_->private_m12_product_preview_ticket()!=
+           next.afterTicket||
+       !provider||provider()!=next.afterTicket->exact_prepared_owner||
+       !m::m12_exact_project_snapshot_equal(
+           *readback.value(),next.after)) {
         opened_.emplace(next.before);
         previewController_->set_private_m12_product_preview_ticket(
             next.beforeTicket);
