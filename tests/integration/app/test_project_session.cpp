@@ -4717,6 +4717,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     // required. No M18 batch means no Project publication or receipt.
     QVERIFY(!session.project.apply_private_m12_materialization(
         *draft.value(),registry,prepared));
+    QVERIFY(!session.project.
+        capture_private_m13_fresh_postmaterialization_probe(0.0));
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
     bool leased=false;
@@ -4867,6 +4869,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(imported.project.can_save_project());
     QVERIFY(!imported.project.undo_private_m12_materialization());
     QVERIFY(!imported.project.redo_private_m12_materialization());
+    // A reopened historic M12 materialization has a real current native
+    // PCM owner, but is NEVER a newly issued materialization receipt.
+    const auto importedM13=imported.project.
+        capture_private_m13_fresh_postmaterialization_probe(0.0);
+    QVERIFY2(importedM13,
+             importedM13.error()?importedM13.error()->message().c_str():"");
+    QVERIFY(!importedM13.value()->authorizes_m13_verified());
+    QVERIFY(!imported.project.
+        capture_private_m13_fresh_postmaterialization_probe(
+            std::numeric_limits<double>::quiet_NaN()));
     QTRY_COMPARE_WITH_TIMEOUT(imported.previewController->preview_status(),
                               QStringLiteral("READY"),10000);
     QVERIFY(importedProcessed);
@@ -5057,6 +5069,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QCOMPARE(session.masteringChainState->chain().revision(),
              previousRevision);
     QVERIFY(!session.project.can_save_project());
+    QVERIFY(!session.project.
+        capture_private_m13_fresh_postmaterialization_probe(0.0));
     const auto forbidden=dir.filePath(QStringLiteral(
         "m12-stale-manual-must-not-save.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(forbidden));
