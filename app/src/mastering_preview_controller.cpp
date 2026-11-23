@@ -374,6 +374,37 @@ void MasteringPreviewController::request_preview()
         return;
     }
 
+    // A genuine M12 ticket captures the immutable MANUAL input graph
+    // AND the exact PREPARED PCM owner. A parameter-only edit does not
+    // necessarily change ProcessingChain::revision(). Reject it here on
+    // the Qt owner, BEFORE launching any full native REF/P2 render.
+    // Keep the linked ticket so SaveAs cannot silently persist MANUAL
+    // while an un-reconciled calculated master is still associated
+    // with this session. Explicit owner revocation remains separate.
+    if(m12ReplayTicket_ &&
+       !m12ReplayTicket_->exact_manual_bindings.empty()) {
+        const auto nodes=chainState_->chain().instances();
+        const auto& ticket=*m12ReplayTicket_;
+        const bool exact=preparedSnapshot==ticket.exact_prepared_owner &&
+            chainState_->chain().context()==dsp::ProcessingChainContext{
+                dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL} &&
+            nodes.size()==ticket.exact_manual_nodes.size() &&
+            std::equal(nodes.begin(),nodes.end(),
+                       ticket.exact_manual_nodes.begin()) &&
+            chainState_->execution_bindings()==ticket.exact_manual_bindings;
+        if(!exact) {
+            acceptedPreviewGeneration_=0;
+            acceptedPreviewOwner_.reset();
+            acceptedPreviewBindings_.clear();
+            pendingPreviewBindings_.clear();
+            previewStatus_=QStringLiteral("ERROR");
+            previewError_=QStringLiteral(
+                "L3_M12_LINKED_PREVIEW_MANUAL_OR_PREPARED_CHANGED");
+            emit changed();
+            return;
+        }
+    }
+
     previewStatus_ = QStringLiteral("RENDERING");
     previewError_.clear();
 
