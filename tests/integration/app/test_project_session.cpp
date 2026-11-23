@@ -4757,6 +4757,87 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QCOMPARE(reopened.value()->plan_id,plan.plan_id);
     QCOMPARE(reopened.value()->persisted_linked_chain_id,linkedId);
 
+    // A second real Product instance must reopen the saved native REF
+    // graph, not silently fall back to an ordinary MANUAL-only preview.
+    // Reopening is NOT a fresh M12 materialization and creates no Undo
+    // entry / new receipt.
+    Session imported;
+    std::shared_ptr<const render::RenderResult> importedProcessed;
+    imported.previewController->set_snapshot_provider([&imported] {
+        return imported.selector.prepared_realization_snapshot();
+    });
+    imported.previewController->set_publisher(
+        [&importedProcessed](render::RenderResult result) {
+            importedProcessed=std::make_shared<const render::RenderResult>(
+                std::move(result));
+            return core::Status::success();
+        });
+    imported.previewController->set_accepted_processed_provider(
+        [&importedProcessed]{return importedProcessed;});
+    bool importedLease=false;
+    const auto importedBegin=[&importedLease]()
+        ->core::Result<std::shared_ptr<const void>> {
+        using R=core::Result<std::shared_ptr<const void>>;
+        if(importedLease)return R::failure(core::Error{
+            core::ErrorCode::InvalidState,"FOREIGN_M12_OPEN_LEASE_BUSY"});
+        importedLease=true;
+        return R::success(std::shared_ptr<const void>{
+            new int{1},[&importedLease](const void* owner) {
+                delete static_cast<const int*>(owner);
+                importedLease=false;
+            }});
+    };
+    imported.project.set_private_m18_project_open_batch_begin(
+        importedBegin);
+    imported.project.set_private_m18_project_save_batch_begin(
+        importedBegin);
+    imported.project.openProject(QUrl::fromLocalFile(accepted));
+    QVERIFY2(imported.project.error_message().isEmpty(),
+             imported.project.error_message().toUtf8().constData());
+    QVERIFY(!importedLease);
+    QVERIFY(imported.previewController->
+        has_private_m12_product_preview_ticket());
+    QVERIFY(imported.project.status_text().contains(
+        QStringLiteral("MATERIALIZED / NOT_VERIFIED")));
+    QVERIFY(imported.project.can_save_project());
+    QVERIFY(!imported.project.undo_private_m12_materialization());
+    QVERIFY(!imported.project.redo_private_m12_materialization());
+    QTRY_COMPARE_WITH_TIMEOUT(imported.previewController->preview_status(),
+                              QStringLiteral("READY"),10000);
+    QVERIFY(importedProcessed);
+    const auto importedTicket=
+        imported.previewController->private_m12_product_preview_ticket();
+    QVERIFY(importedTicket&&importedTicket->replay);
+    const auto importedPrepared=
+        imported.selector.prepared_realization_snapshot();
+    QVERIFY(importedPrepared);
+    auto oracle=m::render_restored_m12_full_native_pcm_once(
+        *importedTicket->replay,*importedPrepared,
+        *core::FrameCount::create(4096).value());
+    QVERIFY(oracle);
+    const auto actualView=importedProcessed->view();
+    const auto oracleView=oracle.value()->view();
+    QCOMPARE(actualView.format(),oracleView.format());
+    QCOMPARE(actualView.absolute_range(),oracleView.absolute_range());
+    for(std::size_t channel=0;channel<
+        actualView.format().channel_count();++channel) {
+        auto a=actualView.channel(channel),b=oracleView.channel(channel);
+        QVERIFY(a&&b);
+        QCOMPARE(a.value()->size(),b.value()->size());
+        for(std::size_t i=0;i<a.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*a.value())[i]),
+                     std::bit_cast<std::uint64_t>((*b.value())[i]));
+    }
+    const auto importedCopy=dir.filePath(QStringLiteral(
+        "m12-reopened-native-identical.rgsml"));
+    imported.project.saveProjectAs(QUrl::fromLocalFile(importedCopy));
+    QVERIFY2(QFileInfo::exists(importedCopy),
+             imported.project.error_message().toUtf8().constData());
+    auto importedRoundtrip=load_project(importedCopy);
+    QVERIFY(importedRoundtrip);
+    QVERIFY(m::m12_exact_project_snapshot_equal(
+        *importedRoundtrip.value(),*saved.value()));
+
     QVERIFY(session.project.undo_private_m12_materialization());
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
