@@ -78,4 +78,42 @@ prepare_m12_product_reopen_preflight(
         std::make_shared<const RestoredM12NativeReplayPlan>(
             std::move(*replay.value()))});
 }
+// Recheck the persisted REF identity again before every Product SaveAs.
+// A valid but DIFFERENT linked graph (or reused historical checksum)
+// must never borrow the currently accepted immutable Preview ticket.
+[[nodiscard]] inline bool
+m12_reopened_persisted_replay_matches_exact_ticket(
+    const project::ProjectDocument& persisted,
+    const RestoredM12NativeReplayPlan& ticketReplay)
+{
+    if(!ticketReplay.registry_owner||persisted.projectId!=
+        ticketReplay.project_id||persisted.sourceResourceId!=
+        ticketReplay.source_id||
+       !persisted.references.activeReferenceId||
+       *persisted.references.activeReferenceId!=
+        ticketReplay.reference_id||
+       !persisted.pipeline.masteringChainId)
+        return false;
+    const auto linked=decode_exact_m12_ref_linked_product_state(
+        persisted,ticketReplay.registry_owner);
+    if(!linked)return false;
+    const auto& restored=*linked.value();
+    const auto now=restored.exact_native_chain.instances();
+    const auto expected=ticketReplay.reference_linked.instances();
+    return restored.plan_id==ticketReplay.plan_id&&
+        restored.persisted_linked_chain_id==ticketReplay.linked_chain_id&&
+        restored.exact_plan_checksum==ticketReplay.exact_plan_checksum&&
+        restored.exact_m10_winning_checksum==
+            ticketReplay.exact_m10_winner_checksum&&
+        restored.exact_m11_protected_fixed_checksum==
+            ticketReplay.exact_m11_protection_checksum&&
+        restored.exact_source_reference_scope_revision==
+            ticketReplay.exact_source_reference_scope_revision&&
+        restored.exact_native_chain.revision()==
+            ticketReplay.reference_linked.revision()&&
+        restored.exact_native_bindings==
+            ticketReplay.reference_bindings&&
+        now.size()==expected.size()&&
+        std::equal(now.begin(),now.end(),expected.begin());
+}
 } // namespace rgsml::app::l3_automatch::m12_frozen
