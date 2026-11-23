@@ -1062,6 +1062,7 @@ testM12ExtendedRefRegistryPreservesProductManualOwner()
         eqId,state.value()->parametric_eq_parameters());
     QVERIFY(twin);
     controller.set_chain_state(twin.value());
+    QVERIFY(!controller.published_preview_matches_current_bindings());
     const auto priorPCM=published;
     controller.request_preview();
     QCOMPARE(controller.preview_status(),QStringLiteral("ERROR"));
