@@ -772,6 +772,22 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto ownedWorkerRender=m::render_m12_exact_product_preview_job(
         *workerTicket.value(),validJob,*maxBlock.value());
     QVERIFY(ownedWorkerRender);
+    const auto combinedWorkerRender=m::render_m12_exact_product_preview_job(
+        *combinedTicket.value(),validJob,*maxBlock.value());
+    QVERIFY(combinedWorkerRender);
+    const auto combinedPCM=combinedWorkerRender.value()->view();
+    const auto separatePCM=ownedWorkerRender.value()->view();
+    QCOMPARE(combinedPCM.absolute_range(),separatePCM.absolute_range());
+    QCOMPARE(combinedPCM.format(),separatePCM.format());
+    for(std::size_t ch=0;ch<combinedPCM.format().channel_count();++ch) {
+        const auto actual=combinedPCM.channel(ch);
+        const auto original=separatePCM.channel(ch);
+        QVERIFY(actual&&original);
+        QCOMPARE(actual.value()->size(),original.value()->size());
+        for(std::size_t i=0;i<actual.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*actual.value())[i]),
+                     std::bit_cast<std::uint64_t>((*original.value())[i]));
+    }
     QCOMPARE(ownedWorkerRender.value()->view().frame_count().value(),
              std::int64_t{48000});
     QCOMPARE(workerTicket.value()->exact_manual_chain_revision,
