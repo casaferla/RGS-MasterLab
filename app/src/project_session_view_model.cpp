@@ -530,7 +530,9 @@ bool ProjectSessionViewModel::can_save_project() const noexcept
     // The I2 fifth MANUAL module now has a distinct typed JSON codec and
     // opt-in restore path. SaveAs preflights the exact complete chain before
     // any on-disk project publication; legacy sessions remain unchanged.
-    return source_ && source_->source_resource();
+    return source_ && source_->source_resource() &&
+        !(previewController_ &&
+          previewController_->has_private_m12_product_preview_ticket());
 }
 
 core::Uuid ProjectSessionViewModel::next_id() { return uuidFactory_(); }
@@ -1146,6 +1148,15 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
     Q_UNUSED(projectMutationBatch); // RAII lifetime extends to function exit.
     isCommittingProjectOpen_ = true;
+    // An already accepted calculated master belongs to the PREVIOUS
+    // Project identity. Even opening an ordinary Project that points to
+    // precisely the SAME physical SOURCE and REFERENCE must revoke it:
+    // SOURCE/REFERENCE changed-signals can legitimately be no-ops.
+    // Do this only after preflight and the actual M18 exclusive lease;
+    // a rejected Open must leave the old immutable linked ticket intact.
+    if(previewController_ &&
+       previewController_->has_private_m12_product_preview_ticket())
+        previewController_->set_private_m12_product_preview_ticket({});
 
     auto stopped = playback_->stop_and_clear();
     if (!stopped) {
@@ -1308,6 +1319,17 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     // The fifth P2 DSP is now serialized by current_snapshot with strict
     // typed algorithm/schema identity, under the existing M18 SaveAs batch.
     // A malformed, absent or incoherent P2 module fails before file creation.
+    // M12's calculated REF_LINKED ticket is a distinct audible DSP owner.
+    // Until an atomic REF_LINKED Project serializer is installed, writing
+    // only MANUAL here would irreversibly misrepresent the sound. Reject
+    // BEFORE file creation or any SaveAs epoch/acquisition.
+    if(previewController_ &&
+       previewController_->has_private_m12_product_preview_ticket()) {
+        publish_error(core::Error{
+            core::ErrorCode::InvalidState,
+            "L3_M12_PROJECT_SAVE_REF_LINKED_SERIALIZER_NOT_YET_INTEGRATED"});
+        return;
+    }
     if (!selectedFile.isValid() || !selectedFile.isLocalFile() ||
         !selectedFile.toLocalFile().endsWith(QStringLiteral(".rgsml"), Qt::CaseInsensitive)) {
         publish_error(invalid("destination")); return;
