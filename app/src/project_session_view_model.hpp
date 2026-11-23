@@ -224,7 +224,8 @@ private:
             M12ImmutableProductPreviewTicket> beforeTicket;
         std::shared_ptr<const l3_automatch::m12_frozen::
             M12ImmutableProductPreviewTicket> afterTicket;
-        l3_automatch::m12_frozen::M12ProductMaterializationReceipt receipt;
+        std::optional<l3_automatch::m12_frozen::
+            M12ProductMaterializationReceipt> receipt;
     };
     // Product-owned exact snapshots, not a parallel DSP engine.
     std::vector<M12MaterializationHistoryEntry> m12UndoHistory_;
