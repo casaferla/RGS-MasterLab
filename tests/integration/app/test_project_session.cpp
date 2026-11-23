@@ -78,6 +78,16 @@
 #endif
 #include <Windows.h>
 
+// Preflight carriers can be constructed, but an M12 Product receipt
+// cannot be forged with a default constructor or aggregate initialization.
+// Only actual Qt Product publication/readback owns its private constructor.
+static_assert(!std::is_default_constructible_v<
+    rgsml::app::l3_automatch::m12_frozen::
+        M12ProductMaterializationReceipt>);
+static_assert(!std::is_aggregate_v<
+    rgsml::app::l3_automatch::m12_frozen::
+        M12ProductMaterializationReceipt>);
+
 static_assert(std::is_same_v<
     decltype(&rgsml::app::internal::M18ProductCompleteBinding::bind),
     rgsml::core::Status (*)(
