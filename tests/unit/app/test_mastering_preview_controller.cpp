@@ -1059,7 +1059,9 @@ testM12ExtendedRefRegistryPreservesProductManualOwner()
     auto twin=MasteringChainState::restore(
         manualRegistry,chainId,state.value()->chain(),
         gainId,state.value()->gain_parameters(),
-        eqId,state.value()->parametric_eq_parameters());
+        eqId,state.value()->parametric_eq_parameters(),
+        state.value()->compressor_instance_id(),
+        state.value()->compressor_parameters());
     QVERIFY(twin);
     controller.set_chain_state(twin.value());
     QVERIFY(!controller.published_preview_matches_current_bindings());
