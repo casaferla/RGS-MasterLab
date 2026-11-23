@@ -1055,6 +1055,31 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(m::prepare_exact_m12_project_transaction(
         transaction.value()->candidate_not_yet_committed,
         *freshCarrier.value(),*freshStage.value(),update));
+    // A self-consistent caller-supplied before-snapshot cannot launder
+    // a corrupted old REF owner into an accepted current-controller UPDATE.
+    auto foreignPrior=proposed;
+    foreignPrior.chains.back().modules.front().owner="USER";
+    auto foreignSnapshot=project::ProjectSnapshot::create(foreignPrior);
+    QVERIFY(foreignSnapshot);
+    auto foreignExpected=update;
+    foreignExpected.exact_existing_linked_snapshot=
+        foreignPrior.chains.back();
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *foreignSnapshot.value(),*carrier.value(),*stage.value(),
+        foreignExpected));
+    // Duplicate old semantic identities are likewise not a valid
+    // replaceable linked segment, even with distinct concrete IDs.
+    auto duplicatePrior=proposed;
+    duplicatePrior.chains.back().modules[1].semanticNodeId=
+        duplicatePrior.chains.back().modules[0].semanticNodeId;
+    auto duplicateSnapshot=project::ProjectSnapshot::create(duplicatePrior);
+    QVERIFY(duplicateSnapshot);
+    auto duplicateExpected=update;
+    duplicateExpected.exact_existing_linked_snapshot=
+        duplicatePrior.chains.back();
+    QVERIFY(!m::prepare_exact_m12_project_transaction(
+        *duplicateSnapshot.value(),*carrier.value(),*stage.value(),
+        duplicateExpected));
     // Amount=0 preserves the actual LINKED node, the unrelated MANUAL
     // chain, and all user/domains/bypass flags independently.
     const auto zero=m::prepare_m12_owned_controller_suspension(
