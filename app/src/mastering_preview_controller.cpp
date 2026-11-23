@@ -362,6 +362,10 @@ bool MasteringPreviewController::published_preview_matches_current_bindings() co
     if(QThread::currentThread()!=thread())return false;
     const auto published=acceptedPreviewOwner_.lock();
     return chainState_ &&acceptedProcessedProvider_&&published
+        && (!m12ReplayTicket_ ||
+            (chainState_==m12ManualChainOwner_ &&
+             m12ManualRegistryOwner_ &&
+             chainState_->registry_snapshot()==m12ManualRegistryOwner_))
         && acceptedPreviewGeneration_!=0
         && acceptedPreviewGeneration_==previewGeneration_
         && previewStatus_==QStringLiteral("READY")
