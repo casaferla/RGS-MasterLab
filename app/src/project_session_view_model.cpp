@@ -28,6 +28,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1611,6 +1612,86 @@ ProjectSessionViewModel::apply_private_m12_materialization(
     statusText_=QStringLiteral("MATERIALIZED / NOT_VERIFIED");
     clear_error();
     return R::success(std::move(receipt));
+}
+
+core::Result<l3_automatch::m13_frozen::
+    M13ImmutableProductFreshProbeRequest>
+ProjectSessionViewModel::capture_private_m13_fresh_postmaterialization_probe(
+    double independent_m16_safety_ceiling_db_tp)
+{
+    namespace m12=l3_automatch::m12_frozen;
+    namespace m13=l3_automatch::m13_frozen;
+    using R=core::Result<m13::M13ImmutableProductFreshProbeRequest>;
+    const auto fail=[](const char* why){
+        return R::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||!m18ProjectOpenBatchBegin_||
+       !m18ProjectSaveBatchBegin_||!opened_||
+       !previewController_||!masteringChainState_||
+       !source_||!source_->source_resource()||
+       !gold_||!gold_->gold_resource()||
+       !projectId_||!sourceId_||!referenceId_||
+       !std::isfinite(independent_m16_safety_ceiling_db_tp))
+        return fail("L3_M13_PRODUCT_FRESH_NO_CURRENT_M12_OWNER");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    // A read-only capture must also respect an active M18 worker's
+    // physical Project mutation epoch. The lease ends with this method;
+    // the numerical worker owns only frozen PCM and DSP snapshots.
+    auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())
+        return fail("L3_M13_PRODUCT_FRESH_EPOCH_UNAVAILABLE");
+    const auto exclusiveOwner=*lease.value();
+    Q_UNUSED(exclusiveOwner);
+    const auto ticket=
+        previewController_->private_m12_product_preview_ticket();
+    if(!ticket||!ticket->replay||!ticket->exact_prepared_owner)
+        return fail("L3_M13_PRODUCT_FRESH_LINKED_REPLAY_ABSENT");
+    const auto receiptFromCurrentSession=
+        !m12UndoHistory_.empty()&&
+        m12UndoHistory_.back().receipt.has_value()&&
+        m12UndoHistory_.back().afterTicket==ticket&&
+        m12::m12_exact_project_snapshot_equal(
+            *opened_,m12UndoHistory_.back().after);
+    const auto reopenedWithExactOwner=
+        m12ReopenedReadback_&&
+        m12::m12_exact_project_snapshot_equal(
+            *opened_,*m12ReopenedReadback_);
+    if(!receiptFromCurrentSession&&!reopenedWithExactOwner)
+        return fail("L3_M13_PRODUCT_FRESH_NO_M12_RECEIPT_OR_REOPEN_PROOF");
+    const auto& doc=opened_->document();
+    if(doc.projectId!=*projectId_||
+       doc.sourceResourceId!=*sourceId_||
+       doc.references.activeReferenceId!=referenceId_||
+       !m12::m12_reopened_persisted_replay_matches_exact_ticket(
+           doc,*ticket->replay))
+        return fail("L3_M13_PRODUCT_FRESH_PERSISTED_REF_OWNER_STALE");
+    const auto& provider=previewController_->snapshot_provider();
+    if(!provider||provider()!=ticket->exact_prepared_owner)
+        return fail("L3_M13_PRODUCT_FRESH_PREPARED_OWNER_CHANGED");
+    const auto& actualChain=masteringChainState_->chain();
+    const auto actualBindings=masteringChainState_->execution_bindings();
+    const auto accepted=m12::prepare_m12_immutable_product_preview_ticket(
+        ticket->replay,ticket->exact_prepared_owner,
+        actualChain,actualBindings);
+    if(!accepted||
+       accepted.value()->exact_manual_chain_revision!=
+           ticket->exact_manual_chain_revision||
+       accepted.value()->exact_manual_nodes!=ticket->exact_manual_nodes||
+       accepted.value()->exact_manual_bindings!=
+           ticket->exact_manual_bindings)
+        return fail("L3_M13_PRODUCT_FRESH_PROTECTED_MANUAL_CHANGED");
+    const auto stem=QString::fromStdString(doc.displayName);
+    const auto live=current_snapshot(stem);
+    if(!live||!m12::m12_exact_project_snapshot_equal(
+        *live.value(),*opened_)||
+       previewController_->private_m12_product_preview_ticket()!=
+           ticket||!provider||
+       provider()!=ticket->exact_prepared_owner||
+       masteringChainState_->execution_bindings()!=actualBindings)
+        return fail("L3_M13_PRODUCT_FRESH_EPOCH_RACED");
+    return R::success(m13::M13ImmutableProductFreshProbeRequest{
+        ticket,independent_m16_safety_ceiling_db_tp});
 }
 
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
