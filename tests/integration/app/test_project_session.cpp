@@ -4786,6 +4786,14 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             *m13Owner.value(),*core::FrameCount::create(4096).value());
     QVERIFY2(m13Result,
              m13Result.error()?m13Result.error()->message().c_str():"");
+    // A *new* owning PCM allocation is mandatory: neither a previous
+    // PREPARED buffer nor the accepted M10 candidate is a verifier render.
+    QVERIFY(&m13Result.value()->fresh_full_master_pcm.buffer()!=
+            &prepared->buffer());
+    QCOMPARE(m13Result.value()->fresh_full_master_pcm.view().format(),
+             prepared->view().format());
+    QCOMPARE(m13Result.value()->fresh_full_master_pcm.view().
+                 absolute_range(),prepared->view().absolute_range());
     QCOMPARE(m13Result.value()->fresh_m16.sample_rate_hz(),
              static_cast<std::int64_t>(sampleRateHz));
     QCOMPARE(m13Result.value()->fresh_m19.sample_rate_hz,
