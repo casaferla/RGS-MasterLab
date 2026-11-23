@@ -37,6 +37,7 @@
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -4629,8 +4630,11 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         return *dsp::ModuleInstanceId::from_uuid(id(s)).value();
     };
     auto baseRegistry=session.masteringChainState->registry_snapshot();
-    auto extended=dsp::ModuleRegistry::with_transient_shaper_offline(
+    auto expanded=dsp::ModuleRegistry::with_dynamic_eq_offline(
         *baseRegistry);
+    QVERIFY(expanded);
+    auto extended=dsp::ModuleRegistry::with_transient_shaper_offline(
+        std::move(*expanded.value()));
     QVERIFY(extended);
     auto registry=std::make_shared<const dsp::ModuleRegistry>(
         std::move(*extended.value()));
@@ -4641,11 +4645,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         "frozen-m11-fixed","exact-source-reference-dependencies",
         1U,true,true,true,false};
     const auto transient=dsp::TransientShaperParameters::create(2.0,-1.0);
-    QVERIFY(transient);
-    const std::vector<m::ExactLinkedNode> winningNodes{{
-        mid("e5000000-0000-4000-8000-000000000003"),
-        id("e5000000-0000-4000-8000-000000000004"),
-        "rgsml.dsp.transient-shaper",*transient.value()}};
+    const auto dynamic=dsp::DynamicEqParameters::create_default(
+        id("e5000000-0000-4000-8000-000000000008"));
+    QVERIFY(transient&&dynamic);
+    const std::vector<m::ExactLinkedNode> winningNodes{
+        {mid("e5000000-0000-4000-8000-000000000003"),
+         id("e5000000-0000-4000-8000-000000000004"),
+         "rgsml.dsp.transient-shaper",*transient.value()},
+        {mid("e5000000-0000-4000-8000-000000000006"),
+         id("e5000000-0000-4000-8000-000000000007"),
+         "rgsml.dsp.dynamic-eq",*dynamic.value()}};
     const auto bindings=session.masteringChainState->execution_bindings();
     auto stage=m::stage_exact_m12_native_ref_linked(
         plan,session.masteringChainState->chain(),bindings,
