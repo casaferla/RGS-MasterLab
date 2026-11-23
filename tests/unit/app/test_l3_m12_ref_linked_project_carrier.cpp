@@ -912,6 +912,23 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto p2Ticket=m::prepare_m12_immutable_product_preview_ticket(
         p2SharedPlan,ownedPrepared,*manualWithP2.value(),manualP2Bindings);
     QVERIFY(p2Ticket);
+    QCOMPARE(p2Ticket.value()->exact_manual_chain_revision,
+             manualWithP2.value()->revision());
+    QCOMPARE(p2Plan.value()->terminal_p2->revision(),
+             manualWithP2.value()->revision());
+    // The protected user P2 terminal shares MANUAL's structural epoch.
+    // Even identical Ceiling/Drive/Margin must not bypass it after a
+    // new MANUAL revision; no reoptimization or silent P2 replacement.
+    std::vector<dsp::ModuleInstance> laterP2Nodes{
+        manualWithP2.value()->instances().begin(),
+        manualWithP2.value()->instances().end()};
+    auto laterP2Chain=dsp::ProcessingChain::restore(
+        *optRegistry,manualWithP2.value()->context(),
+        manualWithP2.value()->revision()+1U,std::move(laterP2Nodes));
+    QVERIFY(laterP2Chain);
+    QVERIFY(!m::prepare_m12_immutable_product_preview_ticket(
+        p2SharedPlan,ownedPrepared,
+        *laterP2Chain.value(),manualP2Bindings));
     rgsml::app::MasteringPreviewController::PreviewJob p2Job{
         2U,ownedPrepared,*manualWithP2.value(),manualP2Bindings,optRegistry,{}};
     QVERIFY(m::render_m12_exact_product_preview_job(
