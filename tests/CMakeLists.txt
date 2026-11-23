@@ -162,6 +162,8 @@ qt_add_executable(rgsml_project_session_tests
 # M19–M21 real Product owners use the original M20 canonical spectral
 # geometry through the private, non-GUI implementation adapter.
 target_include_directories(rgsml_project_session_tests PRIVATE
+    # Match the actual Product target's canonical M12 readback dependency.
+    ${CMAKE_SOURCE_DIR}/project/src/internal
     ${CMAKE_SOURCE_DIR}/app/src
     ${CMAKE_SOURCE_DIR}/analysis/src
     ${CMAKE_SOURCE_DIR}/audio/src/internal)
