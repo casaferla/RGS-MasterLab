@@ -126,6 +126,17 @@ private:
     std::uint64_t acceptedPreviewGeneration_{0};
     std::vector<dsp::ModuleExecutionBinding> pendingPreviewBindings_{};
     std::vector<dsp::ModuleExecutionBinding> acceptedPreviewBindings_{};
+    // An accepted output is a function of the EXACT PREPARED PCM owner,
+    // complete instance activation/structural revision, and Product
+    // MANUAL chain owner, not just the parameter execution bindings.
+    std::shared_ptr<const render::RenderResult> pendingPreviewPreparedOwner_;
+    std::weak_ptr<const render::RenderResult> acceptedPreviewPreparedOwner_;
+    std::vector<dsp::ModuleInstance> pendingPreviewNodes_;
+    std::vector<dsp::ModuleInstance> acceptedPreviewNodes_;
+    std::uint64_t pendingPreviewChainRevision_{};
+    std::uint64_t acceptedPreviewChainRevision_{};
+    MasteringChainState* pendingPreviewChainOwner_{nullptr};
+    MasteringChainState* acceptedPreviewChainOwner_{nullptr};
     std::weak_ptr<const render::RenderResult> acceptedPreviewOwner_{};
 
     std::mutex workerMutex_;
