@@ -804,6 +804,45 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *productBefore.value(),changedDraft,reg,
         manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
         true));
+    // A half-persisted old plan with metadata but no linked segment
+    // cannot be treated as a fresh unowned project.
+    auto orphanBefore=productBeforeDocument;
+    orphanBefore.referenceMatch=
+        productDraft.value()->candidate_not_yet_committed.document().
+            referenceMatch;
+    auto orphanSnapshot=project::ProjectSnapshot::create(orphanBefore);
+    QVERIFY(orphanSnapshot);
+    auto orphanDraft=*productDraft.value();
+    orphanDraft.exact_precommit_project=*orphanSnapshot.value();
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *orphanSnapshot.value(),orphanDraft,reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
+    // Even a syntactically valid existing REF graph belongs to its
+    // original controller. A different controller cannot take it over.
+    auto foreignOwnerBefore=
+        productDraft.value()->candidate_not_yet_committed.document();
+    auto oldOwnerMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        foreignOwnerBefore.referenceMatch.canonical_utf8())).object();
+    auto oldOwnerRecord=oldOwnerMeta.value(
+        QStringLiteral("materialization")).toObject();
+    oldOwnerRecord.insert(QStringLiteral("controllerId"),
+        QStringLiteral("cf000000-0000-4000-8000-000000000099"));
+    oldOwnerMeta.insert(QStringLiteral("materialization"),oldOwnerRecord);
+    auto otherOwnerJson=project::OpaqueJsonValue::parse(
+        QJsonDocument(oldOwnerMeta).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(otherOwnerJson);
+    foreignOwnerBefore.referenceMatch=*otherOwnerJson.value();
+    auto foreignOwnerSnapshot=project::ProjectSnapshot::create(
+        foreignOwnerBefore);
+    QVERIFY(foreignOwnerSnapshot);
+    auto ownerHijackDraft=*productDraft.value();
+    ownerHijackDraft.exact_precommit_project=*foreignOwnerSnapshot.value();
+    QVERIFY(!m::prepare_m12_product_prepublication_preview_ticket(
+        *foreignOwnerSnapshot.value(),ownerHijackDraft,reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,
+        true));
     auto changedManualBindings=gainBindings;
     changedManualBindings.front().parameters=
         *dsp::GainParameters::create(-8.0).value();
