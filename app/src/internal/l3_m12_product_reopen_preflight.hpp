@@ -100,7 +100,9 @@ m12_reopened_persisted_replay_matches_exact_ticket(
     const auto& restored=*linked.value();
     const auto now=restored.exact_native_chain.instances();
     const auto expected=ticketReplay.reference_linked.instances();
-    return restored.plan_id==ticketReplay.plan_id&&
+    return !ticketReplay.controller_id.is_nil()&&
+        restored.controller_id==ticketReplay.controller_id&&
+        restored.plan_id==ticketReplay.plan_id&&
         restored.persisted_linked_chain_id==ticketReplay.linked_chain_id&&
         restored.exact_plan_checksum==ticketReplay.exact_plan_checksum&&
         restored.exact_m10_winning_checksum==
