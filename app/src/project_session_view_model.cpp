@@ -1203,6 +1203,21 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         if(!admission) {publish_error(*admission.error());return;}
     }
     Q_UNUSED(projectMutationBatch); // RAII lifetime extends to function exit.
+    std::shared_ptr<const
+        l3_automatch::m12_frozen::RestoredM12NativeReplayPlan>
+        reopeningReplay;
+    if(linkedRequested) {
+        if(!projectMutationBatch||!chainCandidate.value()->chainState) {
+            publish_error(core::Error{core::ErrorCode::InvalidState,
+                "L3_M12_PROJECT_OPEN_NO_REAL_OWNER_OR_MANUAL_CHAIN"});
+            return;
+        }
+        auto preflight=l3_automatch::m12_frozen::
+            prepare_m12_product_reopen_preflight(
+                doc,*chainCandidate.value()->chainState,true);
+        if(!preflight) {publish_error(*preflight.error());return;}
+        reopeningReplay=std::move(preflight.value()->replay);
+    }
     isCommittingProjectOpen_ = true;
     auto stopped = playback_->stop_and_clear();
     if (!stopped) {
