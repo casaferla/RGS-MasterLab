@@ -95,6 +95,8 @@ public:
     [[nodiscard]] const auto& exact_e_tb() const noexcept {
         return native_frame_energies_;
     }
+    [[nodiscard]] const auto& canonical_grid() const noexcept {return bands_;}
+    [[nodiscard]] auto take_native_energies() && noexcept {return std::move(native_frame_energies_);}
     [[nodiscard]] std::size_t configured_bands() const noexcept{
         return bands_.size();
     }
