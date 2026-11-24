@@ -28,6 +28,7 @@ enum class SpectralNativeReason:std::uint8_t {
 };
 struct SpectralBandD10D12 final {
     std::array<std::optional<double>,3> d10_d11_d12_z{};
+    std::optional<double> d12_raw_rho;
     std::array<std::uint64_t,3> valid_native_counts{};
     std::array<double,3> native_support{};
     std::array<SpectralNativeReason,3> reason{
@@ -194,6 +195,7 @@ reduce_native_spectral_d10_d12(
             band.reason[2]=SpectralNativeReason::invalid_arithmetic;
             continue;
         }
+        band.d12_raw_rho=bounded;
         band.d10_d11_d12_z[2]=z;
         band.reason[2]=SpectralNativeReason::ready;
     }
