@@ -24,6 +24,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace rgsml::app::l3_automatch::m13_frozen {
 inline constexpr std::string_view kProvisionalDiagnosticSchema=
@@ -116,10 +117,10 @@ m13_provisional_payload_without_own_checksum(
             {"predicate",static_cast<int>(reason.predicate)},
             {"measuredDelta",reason.measured_delta
                 ?QJsonValue(m13_decimal_from_binary64(*reason.measured_delta))
-                :QJsonValue::Null},
+                :QJsonValue(QJsonValue::Null)},
             {"allowedBound",reason.allowed_bound
                 ?QJsonValue(m13_decimal_from_binary64(*reason.allowed_bound))
-                :QJsonValue::Null}
+                :QJsonValue(QJsonValue::Null)}
         };
         if((reason.measured_delta&&!std::isfinite(*reason.measured_delta))||
            (reason.allowed_bound&&!std::isfinite(*reason.allowed_bound)))
@@ -176,7 +177,7 @@ m13_provisional_payload_without_own_checksum(
         {"freshEvidence",evidence},
         {"canonicalReasons",orderedReasons},
         {"primaryReason",orderedReasons.isEmpty()
-            ?QJsonValue::Null:QJsonValue(orderedReasons[0].toObject())}
+            ?QJsonValue(QJsonValue::Null):QJsonValue(orderedReasons[0].toObject())}
     };
 }
 [[nodiscard]] inline core::Result<M13ProvisionalDiagnosticEnvelope>
@@ -257,7 +258,9 @@ encode_m13_provisional_diagnostic(
     decodedReasons.reserve(static_cast<std::size_t>(reasons.size()));
     const auto decode_number=[](const QJsonValue& item)->
         std::optional<std::optional<double>> {
-        if(item.isNull())return std::optional<double>{};
+        if(item.isNull())return
+            std::optional<std::optional<double>>{
+                std::optional<double>{}};
         if(!item.isString())return std::nullopt;
         const auto str=item.toString().toStdString();
         double decoded{};
@@ -266,7 +269,8 @@ encode_m13_provisional_diagnostic(
             std::chars_format::general);
         if(err!=std::errc{}||end!=str.data()+str.size()||
            !std::isfinite(decoded)||decoded<0.0)return std::nullopt;
-        return std::optional<double>{decoded};
+        return std::optional<std::optional<double>>{
+            std::optional<double>{decoded}};
     };
     for(const auto& value:reasons) {
         if(!value.isObject())return false;
