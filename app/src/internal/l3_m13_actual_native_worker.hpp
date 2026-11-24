@@ -62,6 +62,14 @@ public:
                                                   prediction.exact_candidate_ticket))
             return R::failure(core::Error{core::ErrorCode::InvalidState,
                 "L3_M13_ACTUAL_WORKER_ACCEPTED_PREDICTION_STALE"});
+        const auto& prepared=input.request.exact_materialized_preview_owner().exact_prepared_owner;
+        const auto& original=input.independent_pair->prepared.original_m19_m20;
+        if(!prepared||
+           prepared->view().format().sample_rate().value()!=original.sample_rate_hz||
+           prepared->view().frame_count().value()!=original.scope_frame_count||
+           prepared->view().format().channel_count()!=original.channels)
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_PREPARED_SCOPE_MISMATCH"});
         auto fresh=run_fresh_m13_product_postmaterialization_probe(
             input.request,maximum_block_frames,input.native_spec.borrow(),cancellation);
         if(!fresh)return R::failure(*fresh.error());
