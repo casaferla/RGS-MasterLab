@@ -117,6 +117,8 @@ struct TonalStereoAnalysisResult final {
     TonalStereoValue correlation_p50{};
     TonalStereoValue correlation_p90{};
     std::vector<CorrelationMeasurement> correlation_grid100{};
+    std::uint64_t width_selected_frames{};
+    std::vector<TonalStereoRetainedInterval> width_selected_union{};
 };
 
 // Uses the existing AudioBufferView absolute-domain subview. Native,
