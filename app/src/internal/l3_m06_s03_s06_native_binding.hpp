@@ -48,7 +48,8 @@ bind_real_s03_s06(const CoherentStereoTripleAuthority& e) {
         const auto& observed=e.observed[j];
         if(!owner.full_track_owner_confirmed||!owner.generation||
            owner.resource_identity.empty()||
-           !observed.numerical_source_valid||
+           (!observed.numerical_source_valid&&
+            !observed.source_observation_complete)||
            observed.multiband.size()!=n)
             return {{},CoherentStereoBindingFailure::unbound_or_stale_source};
         for(std::size_t k=0;k<j;++k)
@@ -92,7 +93,8 @@ bind_real_s03_s06(const CoherentStereoTripleAuthority& e) {
                 else if(i==1U)scalar=&observed.multiband[k].correlation;
                 else if(i==2U)scalar=&observed.low_end_width[k];
                 else scalar=&observed.low_end_correlation[k];
-                const bool eligible=e.source_phase6_reference_grade[i][j]&&
+                const bool eligible=observed.numerical_source_valid&&
+                    e.source_phase6_reference_grade[i][j]&&
                     (!lowend||
                      observed.low_end_gate_current_and_identical);
                 if(!eligible||!scalar->transformed_z)continue;
