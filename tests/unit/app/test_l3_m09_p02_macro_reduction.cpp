@@ -11,7 +11,7 @@ namespace m09=rgsml::app::l3_automatch::m09_frozen;
 [[nodiscard]] std::array<m09::MacroGroup,6> valid_groups() {
     std::array<m09::MacroGroup,6> groups;
     groups[0].components.resize(3);
-    for(std::size_t g=1;g<6;++g)groups[g].components.resize(1);
+    for(std::size_t g=1;g<6;++g)groups[g].components.resize(g==3U?3U:1U);
     for(std::size_t g=0;g<groups.size();++g)
         for(std::size_t j=0;j<groups[g].components.size();++j)
             groups[g].components[j]={
@@ -33,6 +33,7 @@ class M09MacroTest final:public QObject {
 private slots:
     void twoDistinctCoherentGroupsAndWeightedMovement();
     void d01AloneDoesNotCountAsThreeGroups();
+    void d04CrestIsOneCoherentVectorGroup();
     void expansionAndMissingFixedFailClosed();
     void supportAppliedOnceAndDeadbandProtectedDoNotVote();
     void thresholdNativeType7P75AndNoFabricatedSeries();
@@ -53,6 +54,19 @@ void M09MacroTest::d01AloneDoesNotCountAsThreeGroups() {
              m09::MacroSeedReason::insufficient_coherent_distinct_groups);
     QCOMPARE(result.coherent_distinct_groups,std::uint32_t{1});
     QVERIFY(!result.required_movement);
+}
+void M09MacroTest::d04CrestIsOneCoherentVectorGroup() {
+    auto groups=valid_groups();
+    groups[1].components[0].requested=false;
+    for(auto& c:groups[0].components)c.requested=false;
+    for(auto& c:groups[3].components)c.requested=true;
+    const auto one=m09::reduce_macro_p02(groups,true);
+    QCOMPARE(one.coherent_distinct_groups,std::uint32_t{1});
+    QVERIFY(!one.required_movement);
+    groups[1].components[0].requested=true;
+    QVERIFY(m09::reduce_macro_p02(groups,true).required_movement);
+    groups[3].components[2].z_optimization=11.0;
+    QCOMPARE(m09::reduce_macro_p02(groups,true).reason,m09::MacroSeedReason::contradictory_expansion);
 }
 void M09MacroTest::expansionAndMissingFixedFailClosed() {
     auto groups=valid_groups();
