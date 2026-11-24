@@ -889,6 +889,20 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(changed_graph.linked.set_user_bypass(linked_id,true));
     QVERIFY(!m12::stage_preserved_native_measured_winner(
         accepted_fixture,measured_fixture,worker,changed_graph,generation));
+    auto scope_variant=spec_for_authoritative_bridge;
+    const auto native_scope=m10::exact_native_analysis_scope_content(scope_variant);
+    QVERIFY(native_scope);
+    ++scope_variant.phase6_active_pcm_frames;
+    QVERIFY(native_scope!=m10::exact_native_analysis_scope_content(scope_variant));
+    scope_variant=spec_for_authoritative_bridge;
+    scope_variant.source_support.has_width_gate=!scope_variant.source_support.has_width_gate;
+    QVERIFY(native_scope!=m10::exact_native_analysis_scope_content(scope_variant));
+    scope_variant=spec_for_authoritative_bridge;
+    scope_variant.spectral_bands.front().high_hz+=0.125;
+    QVERIFY(native_scope!=m10::exact_native_analysis_scope_content(scope_variant));
+    scope_variant=spec_for_authoritative_bridge;
+    scope_variant.current_full_phase6_source_and_grid=false;
+    QVERIFY(!m10::exact_native_analysis_scope_content(scope_variant));
     const auto from_bound=
         m10::measure_and_score_bound_m10_p2_product_worker(
             worker,*linked.value(),artistic,*chosen,
