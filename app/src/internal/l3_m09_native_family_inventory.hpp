@@ -106,4 +106,34 @@ derive_native_family_coordinate_requests(const NativeFamilySeedBank& bank,
     if(consumed_bands!=band_keys.size())return {};
     return out;
 }
+// Derive bounds from the exact contiguous eligible run, intersecting
+// the original common bandwidth. Missing cells are hard run boundaries.
+[[nodiscard]] inline std::optional<NativeFrequencyBounds>
+native_eq_band_run_bounds(const NativeEqPrefix& prefix,
+    std::span<const m05m06_real::T01ConfiguredBand> grid,const core::Uuid& band,
+    double common_low,double common_high)
+{
+    if(grid.size()!=prefix.exact_eligible_grid.size()||
+       !std::isfinite(common_low)||!std::isfinite(common_high)||
+       common_low<20.0||common_high<=common_low)return {};
+    const auto it=std::find_if(prefix.greedy_order.begin(),prefix.greedy_order.end(),
+        [&](const auto& atom){return atom.payload.band_id()==band;});
+    if(it==prefix.greedy_order.end())return {};
+    const double center=it->fit.atom.canonical_frequency_hz;
+    const auto position=std::find_if(grid.begin(),grid.end(),
+        [&](const auto& cell){return cell.center_hz==center;});
+    if(position==grid.end())return {};
+    const auto i=static_cast<std::size_t>(position-grid.begin());
+    if(!prefix.exact_eligible_grid[i])return {};
+    auto lo=i,hi=i;
+    while(lo>0U&&prefix.exact_eligible_grid[lo-1U]&&
+          grid[lo-1U].canonical_index+1==grid[lo].canonical_index)--lo;
+    while(hi+1U<grid.size()&&prefix.exact_eligible_grid[hi+1U]&&
+          grid[hi].canonical_index+1==grid[hi+1U].canonical_index)++hi;
+    const double lower=std::max(common_low,grid[lo].low_hz);
+    const double upper=std::min(common_high,grid[hi].high_hz);
+    if(!std::isfinite(lower)||!std::isfinite(upper)||
+       lower>=upper||center<lower||center>upper)return {};
+    return NativeFrequencyBounds{lower,upper};
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
