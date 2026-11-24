@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -74,6 +75,10 @@ struct SourceReadings final {
     std::vector<Band> profile_1_12; // T1 partial, no 1/3 fallback
     std::string short_term_population_identity{};
     std::string correlation_population_identity{};
+    std::string full_pcm_population_identity{};
+    std::string selected_spectral_population_identity{};
+    std::uint64_t complete_spectral_frames{};
+    std::uint64_t selected_spectral_frames{};
 };
 enum class ImportProblem:std::uint8_t {
     none,owner_unconfirmed,scope_mismatch,invalid_geometry
@@ -166,7 +171,8 @@ struct Import final {
 [[nodiscard]] inline Import import_actual_full_source(
     const analysis::BasicLevelAnalysisResult& levels,
     const analysis::TonalStereoAnalysisResult& tonal,
-    SourceIdentity owner)
+    SourceIdentity owner,
+    std::span<const std::uint64_t> exact_selected_m20_ordinals={})
 {
     const auto fail=[](ImportProblem problem) {
         return Import{{},problem};
@@ -192,6 +198,30 @@ struct Import final {
     value.sample_rate_hz=levels.sample_rate_hz;
     value.scope_frame_count=levels.scope_frame_count;
     value.channels=levels.channel_count;
+    NativeMembershipIdentity full{"native-full-PCM-scope/1"};
+    full.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
+    full.append(static_cast<std::uint64_t>(levels.scope_begin_frame));
+    full.append(static_cast<std::uint64_t>(levels.scope_frame_count));
+    full.append(levels.channel_count);
+    value.full_pcm_population_identity=full.finish();
+    value.complete_spectral_frames=tonal.complete_spectral_windows;
+    value.selected_spectral_frames=tonal.selected_spectral_windows;
+    if(!exact_selected_m20_ordinals.empty()) {
+        if(exact_selected_m20_ordinals.size()!=tonal.selected_spectral_windows||
+           tonal.selected_spectral_windows>tonal.complete_spectral_windows||
+           std::adjacent_find(exact_selected_m20_ordinals.begin(),
+             exact_selected_m20_ordinals.end(),[](auto a,auto b){return a>=b;})!=
+             exact_selected_m20_ordinals.end())
+            return fail(ImportProblem::invalid_geometry);
+        NativeMembershipIdentity spectral{"M20-selected-PSD-scope/1"};
+        spectral.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
+        spectral.append(static_cast<std::uint64_t>(levels.scope_frame_count));
+        spectral.append(tonal.complete_spectral_windows);
+        spectral.append(tonal.spectral_all_frames_fallback?1U:0U);
+        spectral.append(tonal.mean_linear_psd.size());
+        for(auto ordinal:exact_selected_m20_ordinals)spectral.append(ordinal);
+        value.selected_spectral_population_identity=spectral.finish();
+    }
     value.k_weighting_bank_member_id=
         std::string{levels.k_weighting_bank_member_id};
     value.k_weighting_bank_sha256=
