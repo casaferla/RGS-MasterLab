@@ -9,6 +9,7 @@
 #include "l3_m10_native_prediction_snapshot.hpp"
 #include <memory>
 #include "l3_m11_p03_protected_no_regression.hpp"
+#include "l3_m11_native_fixed_population.hpp"
 #include "l3_m11_native_stereo_hard_safety.hpp"
 #include <array>
 #include <cstdint>
@@ -58,6 +59,7 @@ struct AuthoritativeCostInput final {
     std::uint64_t native_candidate_generation{};
     std::string native_candidate_ticket{};
     std::string native_m07_generation{};
+    std::optional<m11_frozen::NativeFixedPopulation> independently_measured_fixed;
 };
 struct AuthoritativeCostResult final {
     std::optional<MeasuredOrderKey> measured;
@@ -102,10 +104,18 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
     if(!population.value)
         return {{},{},
             AuthoritativeCostReason::invalid_27_slot_population};
+    std::vector<m11_frozen::ProtectedComponent> bound_k=input.protected_full_k;
+    if(input.independently_measured_fixed) {
+        auto bound=m11_frozen::bind_native_fixed_to_candidate(
+            *input.independently_measured_fixed,input.exact_pair_slots,input.amount);
+        if(!bound)return {{},{},AuthoritativeCostReason::missing_actual_candidate_or_protection};
+        bound_k=std::move(*bound);
+    }
+    std::vector<m11_frozen::ProtectedComponent> required_k;
     std::size_t expected_k_size=0U;
     for(const auto& slot:input.exact_pair_slots)
         expected_k_size+=slot.configured.size();
-    if(expected_k_size!=input.protected_full_k.size())
+    if(expected_k_size!=bound_k.size())
         return {{},{},
             AuthoritativeCostReason::missing_actual_candidate_or_protection};
     // Cardinality alone does not bind the protected K to the scored
@@ -114,9 +124,17 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
     // In particular, a second fabricated benign K must never be
     // allowed to vouch for an unrelated regressing candidate.
     std::size_t canonical_index=0U;
-    for(const auto& slot:input.exact_pair_slots) {
+    std::array<std::size_t,4> domain_ordinals{};
+    for(std::size_t i=0;i<input.exact_pair_slots.size();++i) {
+        const auto& slot=input.exact_pair_slots[i];
+        const auto d=static_cast<std::size_t>(m07_frozen::kBindings[i].domain);
         for(const auto& feature:slot.configured) {
-            const auto& guard=input.protected_full_k[canonical_index++];
+            const auto& guard=bound_k[canonical_index++];
+            auto& objective=population.value->objective_input[d].configured[domain_ordinals[d]++];
+            if(input.independently_measured_fixed) {
+                if(!guard.required_in_frozen_k)continue;
+                objective.protected_from_correction=guard.protected_by_m11_mask;
+            }
             if(!feature.prepared.z||!feature.reference.z||
                !feature.current_candidate_z||
                !guard.exact_current||!guard.required_in_frozen_k||
@@ -126,11 +144,12 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
                 return {{},{},
                     AuthoritativeCostReason::
                         missing_actual_candidate_or_protection};
+            required_k.push_back(guard);
         }
     }
     const auto protected_check=
         m11_frozen::verify_frozen_protected_no_regression(
-            input.protected_full_k,
+            required_k,
             input.m11_full_k_dependency_and_order_attested,
             input.hard_m11_and_independent_safety_preflight_passed);
     if(!protected_check.is_admissible())
@@ -148,7 +167,7 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
         return {{},measured,
             AuthoritativeCostReason::invalid_reference_or_complexity};
     key->native_prediction=std::make_shared<const NativePredictionSnapshot>(
-        NativePredictionSnapshot{input.exact_pair_slots,input.protected_full_k,
+        NativePredictionSnapshot{input.exact_pair_slots,std::move(bound_k),
                                  input.m08_reporting_requested_domains,
                                  input.native_candidate_resource_identity,
                                  input.native_candidate_generation,
