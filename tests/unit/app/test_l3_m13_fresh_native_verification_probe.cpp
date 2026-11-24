@@ -1,6 +1,7 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
 #include "internal/l3_m13_qtp_27_projection.hpp"
 #include "internal/l3_m13_predicted_vs_verified_proximity.hpp"
+#include "internal/l3_m13_verification_state_reasons.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
 #include "internal/l3_m13_p2_owned_full_master_probe.hpp"
@@ -39,6 +40,7 @@ private slots:
     void frozenQtpTwentySevenCanonicalCategories();
     void frozenQtpNativeScalarBoundaries();
     void sameRunPredictedVerifiedRawProximity();
+    void frozenVerificationStatePrecedence();
 };
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
@@ -444,5 +446,32 @@ void M13FreshNativeProbeTest::sameRunPredictedVerifiedRawProximity()
     QVERIFY(!partial.full_global_population);
 }
 
+void M13FreshNativeProbeTest::frozenVerificationStatePrecedence()
+{
+    using namespace m13;
+    VerificationStateEvidence e;
+    QCOMPARE(project_verification_state(e),
+             VerificationState::verification_unavailable);
+    e.materialization_exists=true;
+    QCOMPARE(project_verification_state(e),VerificationState::not_verified);
+    e.any_attempt=true;
+    QCOMPARE(project_verification_state(e),
+             VerificationState::verification_unavailable);
+    e.all_complete_conjunction_passed=true;
+    e.report_integrity_passed=true;
+    // A genuinely completed measurement is NOT a profile approval.
+    QCOMPARE(project_verification_state(e),
+             VerificationState::verification_unavailable);
+    e.qtp_qualified_for_claimed_scope=true;
+    QCOMPARE(project_verification_state(e),VerificationState::verified);
+    e.mandatory_evidence_missing=true;
+    QCOMPARE(project_verification_state(e),
+             VerificationState::verification_unavailable);
+    e.evaluated_predicate_failed=true;
+    QCOMPARE(project_verification_state(e),
+             VerificationState::verification_failed);
+    e.exact_dependency_known_changed=true;
+    QCOMPARE(project_verification_state(e),VerificationState::stale);
+}
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
 #include "test_l3_m13_fresh_native_verification_probe.moc"
