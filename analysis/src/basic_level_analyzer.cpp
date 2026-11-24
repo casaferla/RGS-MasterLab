@@ -79,6 +79,8 @@ core::Result<BasicLevelAnalysisResult> measure_basic_level_scope(
                 :s.short_term_3s_complete_windows==0U
                     ?BasicLevelValueState::INSUFFICIENT_DURATION
                     :BasicLevelValueState::SILENCE};
+    out.complete_loudness_block_count=s.complete_loudness_block_count;
+    out.final_loudness_block_starts=s.final_loudness_block_starts;
     out.integrated_lufs=BasicLevelValue{
         s.integrated_lufs,loudness_reason(s.loudness_state)};
     out.full_scope_rms_dbfs=mapped(s.full_scope_rms_dbfs);
