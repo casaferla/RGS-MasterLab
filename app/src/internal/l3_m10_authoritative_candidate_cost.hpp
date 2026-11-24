@@ -59,6 +59,8 @@ struct AuthoritativeCostInput final {
     std::uint64_t native_candidate_generation{};
     std::string native_candidate_ticket{};
     std::string native_m07_generation{};
+    std::vector<std::uint8_t> native_linked_graph_content{};
+    std::vector<std::uint8_t> native_execution_graph_content{};
     std::optional<m11_frozen::NativeFixedPopulation> independently_measured_fixed;
 };
 struct AuthoritativeCostResult final {
