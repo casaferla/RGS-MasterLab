@@ -6,6 +6,7 @@
 #include "l3_m11_p03_protected_no_regression.hpp"
 #include "l3_m11_native_stereo_hard_safety.hpp"
 #include "l3_m06_real_windowed_rms_crest.hpp"
+#include "l3_product_native_one_pass.hpp"
 #include <cmath>
 #include <optional>
 #include <memory>
@@ -29,6 +30,7 @@ struct NativeFixedPopulation final {
     bool stereo_safety_required{};
     std::optional<NativeStereoRawSafety> measured_stereo_safety{};
     std::optional<m05m06_real::D03D04NativeSeries> measured_fixed_native_windows{};
+    std::optional<NativeSpectralSeedCarrier> measured_fixed_spectral_energy{};
 };
 [[nodiscard]] inline std::optional<std::vector<ProtectedComponent>>
 bind_native_fixed_to_candidate(
