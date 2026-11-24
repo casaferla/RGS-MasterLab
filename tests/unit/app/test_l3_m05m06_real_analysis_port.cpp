@@ -26,6 +26,7 @@ private slots:
     void realNativeM19ShortTermP50PairedSupportAndNoReanalysis();
     void frozenD01Type7AndThreeComponentMassNativeOracles();
     void frozenT2T6ExternalFloorAndUnweightedOlsOracle();
+    void nativePopulationRequiresExactSelectedOrdinals();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
     double scale,double harmonic,int seconds=1) {
@@ -49,6 +50,39 @@ private slots:
         (*r.value())[i]=scale*(0.64*a-0.8*harmonic*b);
     }
     return source;
+}
+void M05M06RealPortTest::nativePopulationRequiresExactSelectedOrdinals()
+{
+    auto pcm=example(0.4,0.15);
+    QVERIFY(pcm);
+    const auto levels=analysis::measure_basic_level_full_resource(*pcm.value());
+    const auto tonal=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{0},pcm.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(levels&&tonal);
+    const auto without=real::import_actual_full_source(
+        *levels.value(),*tonal.value(),{"native-test",1,true});
+    QVERIFY(without.source);
+    QVERIFY(!without.source->full_pcm_population_identity.empty());
+    QVERIFY(without.source->selected_spectral_population_identity.empty());
+    auto fixture=*tonal.value();
+    // Synthetic exact ordinals exercise only the import contract.
+    fixture.complete_spectral_windows=4;
+    fixture.selected_spectral_windows=2;
+    fixture.spectral_all_frames_fallback=false;
+    const std::array<std::uint64_t,2> a{{0,2}},b{{1,3}},bad{{2,2}};
+    const auto first=real::import_actual_full_source(
+        *levels.value(),fixture,{"native-test",1,true},a);
+    const auto second=real::import_actual_full_source(
+        *levels.value(),fixture,{"native-test",2,true},b);
+    QVERIFY(first.source&&second.source);
+    QCOMPARE(first.source->full_pcm_population_identity,
+             second.source->full_pcm_population_identity);
+    QVERIFY(!first.source->selected_spectral_population_identity.empty());
+    QVERIFY(first.source->selected_spectral_population_identity!=
+            second.source->selected_spectral_population_identity);
+    QVERIFY(!real::import_actual_full_source(
+        *levels.value(),fixture,{"native-test",1,true},bad).source);
 }
 void M05M06RealPortTest::
 actualM19M16M20FullResourceAndFrozenFeatureReadiness() {
