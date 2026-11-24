@@ -4,6 +4,7 @@
 // It extracts only facts those producers ACTUALLY contain; it never
 // generates the missing M05/M06 features, Phase-6 status, authoritative
 // M08 optimizationTarget, or M10 J/achieved/verified labels.
+#include "l3_native_membership_identity.hpp"
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/audio/audio_buffer_view.hpp>
@@ -71,6 +72,8 @@ struct SourceReadings final {
         Value power_fraction_db; // 10log10(f), not raw linear fraction
     };
     std::vector<Band> profile_1_12; // T1 partial, no 1/3 fallback
+    std::string short_term_population_identity;
+    std::string correlation_population_identity;
 };
 enum class ImportProblem:std::uint8_t {
     none,owner_unconfirmed,scope_mismatch,invalid_geometry
@@ -201,6 +204,9 @@ struct Import final {
         if(levels.short_term_3s_grid100.size()!=
            levels.short_term_3s_complete_windows)
             return fail(ImportProblem::scope_mismatch);
+        NativeMembershipIdentity membership{"M19-ST-grid100/1"};
+        membership.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
+        membership.append(static_cast<std::uint64_t>(levels.scope_frame_count));
         value.short_term_3s_grid100.reserve(
             levels.short_term_3s_grid100.size());
         const std::int64_t quarter=levels.sample_rate_hz/10;
@@ -216,10 +222,13 @@ struct Import final {
             const Value observed=reading.lufs?
                 Value{reading.lufs,Readiness::measured}:
                 Value{{},Readiness::missing};
+            membership.append(static_cast<std::uint64_t>(reading.absolute_start_frame));
+            membership.append(observed.ready()?1U:0U);
             if(observed.ready())++value.short_term_valid_windows;
             value.short_term_3s_grid100.push_back({
                 reading.absolute_start_frame,observed});
         }
+        value.short_term_population_identity=membership.finish();
         if(value.short_term_complete_windows>0)
             value.short_term_native_support=
                 static_cast<double>(value.short_term_valid_windows)/
@@ -248,9 +257,16 @@ struct Import final {
         correlation_fisher_z(value.correlation_p90)};
     value.complete_correlation_windows=
         static_cast<std::uint64_t>(tonal.correlation_grid100.size());
-    for(const auto& window:tonal.correlation_grid100)
-        if(from_m20(window.correlation).ready())
-            ++value.valid_correlation_windows;
+    NativeMembershipIdentity correlation_membership{"M20-correlation-grid100/1"};
+    correlation_membership.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
+    correlation_membership.append(static_cast<std::uint64_t>(levels.scope_frame_count));
+    for(const auto& window:tonal.correlation_grid100) {
+        const bool ready=from_m20(window.correlation).ready();
+        correlation_membership.append(window.absolute_window_start);
+        correlation_membership.append(ready?1U:0U);
+        if(ready)++value.valid_correlation_windows;
+    }
+    value.correlation_population_identity=correlation_membership.finish();
     if(value.complete_correlation_windows>0)
         value.correlation_native_support=
             static_cast<double>(value.valid_correlation_windows)/
