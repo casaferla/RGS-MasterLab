@@ -19,7 +19,7 @@
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
 #include "internal/l3_m09_native_covered_proxy.hpp"
-#include "internal/l3_m09_native_eq_dictionary.hpp"
+#include "internal/l3_m09_native_automatic_seed_bank.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -335,6 +335,16 @@ void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpol
     QCOMPARE(split_dictionary->size(),std::size_t{8});
     for(const auto& atom:*split_dictionary)
         QVERIFY(atom.frequency_hz!=grid[1].center_hz);
+    const auto automatic_bank=m09::derive_native_automatic_seed_bank(fixed,amount,requested,
+        {},grid,3,20.0,20000.0,*core::SampleRate::create(48000).value(),2U,0.0,
+        false,false,{},[&](auto role,const auto& key)->std::optional<core::Uuid>{
+            if(role!=m09::IntentRole::stereo_side_eq)return {};
+            return allocate(key);
+        });
+    QVERIFY(automatic_bank);
+    QVERIFY(!automatic_bank->side.empty());
+    QVERIFY(automatic_bank->tonal.empty());
+    QVERIFY(automatic_bank->exact_side_grid.size()==grid.size());
     QCOMPARE(pop->active.size(),std::size_t{3});
     QVERIFY(std::abs(pop->active.front().residual_db-10.0*std::log10(2.0))<1e-12);
     QVERIFY(!m09::native_side_fit_population(fixed,amount,requested,grid,12));
