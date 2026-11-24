@@ -4,7 +4,7 @@
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
 #include "internal/l3_m13_fresh_original_native_import.hpp"
-#include "internal/l3_m13_actual_native_assessment.hpp"
+#include "internal/l3_m13_actual_native_worker.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -4859,6 +4859,25 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              m13Owner.error()?m13Owner.error()->message().c_str():"");
     QVERIFY(!m13Owner.value()->authorizes_m13_verified());
     QVERIFY(!m13Owner.value()->authorizes_wav_export());
+    // Even a real M12 owner and a valid native grid cannot manufacture
+    // an accepted M10 prediction or substitute its independent P/G pair.
+    app::l3_automatch::ProductNativeOnePassSpec workerSpec;
+    workerSpec.current_full_phase6_source_and_grid=true;
+    workerSpec.exact_m20_fft_size=4096;
+    workerSpec.spectral_bands={{0,20,80}};
+    auto ownedWorkerSpec=app::l3_automatch::m13_frozen::
+        M13OwnedNativeSpec::capture(std::move(workerSpec));
+    QVERIFY(ownedWorkerSpec);
+    app::l3_automatch::m13_frozen::M13ActualNativeWorkerInputs rejectedWorker{
+        *m13Owner.value(),std::move(*ownedWorkerSpec),{}, {}, {},
+        "", "", {}, "", "", false,false,false,false,
+        app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable};
+    const auto noPrediction=app::l3_automatch::m13_frozen::
+        M13ActualNativeWorkerCompletion::execute(
+            std::move(rejectedWorker),*core::FrameCount::create(4096).value());
+    QVERIFY(!noPrediction);
+    QCOMPARE(noPrediction.error()->message(),
+             std::string("L3_M13_ACTUAL_WORKER_MISSING_ACCEPTED_NATIVE_EVIDENCE"));
     // Native observation requests cannot fall back to the partial path
     // if the original Phase6 configuration was not authenticated.
     auto missingNativeSpec=app::l3_automatch::ProductNativeOnePassSpec{};
