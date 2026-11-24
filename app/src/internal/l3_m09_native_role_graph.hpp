@@ -40,10 +40,17 @@ native_artistic_role_type(IntentRole role) noexcept {
         const bool side=seed.role==IntentRole::stereo_side_eq;
         const auto count=side?family.stereo_side_eq_prefix:family.tonal_eq_prefix;
         if(!eq||count==0U||eq->bands().size()!=count)return false;
-        for(const auto& band:eq->bands())
-            if(!band.enabled()||band.routing()!=(side?dsp::EqRouting::SIDE:dsp::EqRouting::STEREO)||
-               !(std::holds_alternative<dsp::BellPayload>(band.payload())||
-                 std::holds_alternative<dsp::ShelfPayload>(band.payload())))return false;
+        for(const auto& band:eq->bands()) {
+            if(!band.enabled()||band.routing()!=(side?dsp::EqRouting::SIDE:dsp::EqRouting::STEREO))
+                return false;
+            if(const auto* bell=std::get_if<dsp::BellPayload>(&band.payload())) {
+                if(std::abs(bell->gain_db)>(side?1.5:3.0)||
+                   bell->q<0.1||bell->q>(side?1.0:1.5))return false;
+            } else if(const auto* shelf=std::get_if<dsp::ShelfPayload>(&band.payload())) {
+                if(std::abs(shelf->gain_db)>(side?1.5:3.0)||
+                   shelf->shelf_slope<0.1||shelf->shelf_slope>1.0)return false;
+            } else return false;
+        }
         return true;
     }
     case IntentRole::spectral_dynamic_eq: {
