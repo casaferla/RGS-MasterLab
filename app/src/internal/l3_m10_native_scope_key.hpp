@@ -18,7 +18,7 @@ exact_native_analysis_scope_content(const ProductNativeOnePassSpec& spec)
     using namespace p2_cache_detail;
     const auto integer=[&](auto x){append_exact_field(out,std::to_string(x));};
     const auto real=[&](double x){integer(std::bit_cast<std::uint64_t>(x));};
-    append_exact_field(out,"rgsml.l3.actual-native-analysis-scope/1");
+    append_exact_field(out,"rgsml.l3.actual-native-analysis-scope/2");
     integer(spec.exact_m20_fft_size);
     integer(spec.derive_own_m19_temporal_gate);
     integer(spec.phase6_active_pcm_frames);
@@ -39,6 +39,11 @@ exact_native_analysis_scope_content(const ProductNativeOnePassSpec& spec)
     integer(support.retained_width_blocks.size());
     for(const auto& block:support.retained_width_blocks) {
         integer(block.begin);integer(block.end);
+    }
+    integer(support.profile_common_bandwidth.has_value());
+    if(support.profile_common_bandwidth) {
+        real(support.profile_common_bandwidth->low_hz);
+        real(support.profile_common_bandwidth->high_hz);
     }
     integer(support.authoritative_band_eligibility.size());
     for(auto v:support.authoritative_band_eligibility)out.push_back(v);
