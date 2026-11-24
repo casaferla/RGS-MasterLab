@@ -85,6 +85,7 @@ private slots:
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
     void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
     void nativeStereoSeedUsesFixedWidthAndCutoffEvidence();
+    void nativeSideSeedUsesSelectedWidthGridWithoutInterpolation();
     void nativeEqAtomUsesRealBoundedFrequencyResponse();
     void nativeEqPrefixesPreserveStoredOrder();
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
@@ -286,6 +287,49 @@ void P2RealNativeProductTest::nativeEqAtomUsesRealBoundedFrequencyResponse() {
         const std::array<m09::NativeEqFitCell,1> unavailable{{{21000.0,8.0,1.0}}};
         QVERIFY(!m09::fit_native_eq_atom(atom,unavailable,*rate.value(),false));
     }
+}
+void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpolation() {
+    namespace m09=a::m09_frozen;
+    namespace m07=a::m07_frozen;
+    namespace m08=a::m08_frozen;
+    a::m11_frozen::NativeFixedPopulation fixed;
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    for(const auto& binding:m07::kBindings) {
+        const bool side=binding.binding_id=="rgsml.reference-match.binding.stereo.s03";
+        m08::AuthenticatedPairSlot slot{std::string(binding.binding_id),
+            std::string(binding.source_feature_id),"fixture-only",true,{}};
+        const auto n=side?3U:binding.component_share==m07::ComponentShare::thirds?3U:
+            binding.component_share==m07::ComponentShare::configured_n?2U:1U;
+        for(unsigned i=0;i<n;++i) {
+            slot.configured.push_back({true,1.0,{0.0,m08::Endpoint::ordinary},
+                {side?0.5:0.0,m08::Endpoint::ordinary},0.0,true});
+            if(side) {
+                slot.configured.back().candidate_native.value=1.0;
+                slot.configured.back().candidate_native.selector=std::to_string(i);
+            }
+        }
+        fixed.measured_fixed.push_back(std::move(slot));
+    }
+    const m08::AmountConfig amount{1.0,{1.0,1.0,1.0,1.0},1U};
+    const std::array<bool,4> requested{false,false,true,false};
+    std::vector<a::m05m06_real::T01ConfiguredBand> grid;
+    for(int i=0;i<3;++i)grid.push_back({i,1000.0*std::exp2((i-0.5)/3.0),
+        1000.0*std::exp2(i/3.0),1000.0*std::exp2((i+0.5)/3.0)});
+    const auto pop=m09::native_side_fit_population(fixed,amount,requested,grid,3);
+    QVERIFY(pop);
+    QCOMPARE(pop->active.size(),std::size_t{3});
+    QVERIFY(std::abs(pop->active.front().residual_db-10.0*std::log10(2.0))<1e-12);
+    QVERIFY(!m09::native_side_fit_population(fixed,amount,requested,grid,12));
+    const std::array<m09::NativeEqAtom,1> dictionary{{
+        {uuid("bd000000-0000-4000-8000-000000000053"),m09::AtomFilter::bell,grid[1].center_hz,0.707}}};
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto prefixes=m09::derive_native_side_prefixes(fixed,amount,requested,grid,3,dictionary,*rate.value());
+    QVERIFY(!prefixes.empty());
+    QVERIFY(prefixes.front().payload.bands().front().routing()==dsp::EqRouting::SIDE);
+    for(auto& slot:fixed.measured_fixed)if(slot.binding_id=="rgsml.reference-match.binding.stereo.s03")
+        slot.configured[1].candidate_native.endpoint=m08::Endpoint::mono_side_muted;
+    QVERIFY(!m09::native_side_fit_population(fixed,amount,requested,grid,3));
 }
 void P2RealNativeProductTest::nativeStereoSeedUsesFixedWidthAndCutoffEvidence() {
     namespace m09=a::m09_frozen;
