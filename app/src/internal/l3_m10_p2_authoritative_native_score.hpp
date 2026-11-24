@@ -125,6 +125,12 @@ measure_and_score_m10_p2_full_native_candidate(
            candidate.ticket_identity()))
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
+    const auto linked_graph=candidate.exact_linked_graph_content();
+    const auto execution_graph=candidate.exact_execution_graph_content();
+    if(!linked_graph||!execution_graph)
+        return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
+    independently_attested_m08_m11.native_linked_graph_content=*linked_graph;
+    independently_attested_m08_m11.native_execution_graph_content=*execution_graph;
     const auto exact_active_frames=
         static_cast<std::int64_t>(native_spec.phase6_active_pcm_frames);
     auto measured=measure_m10_p2_full_native_once(
