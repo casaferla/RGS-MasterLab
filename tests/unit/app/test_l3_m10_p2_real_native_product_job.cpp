@@ -14,6 +14,7 @@
 #include "internal/l3_m09_native_micro_seed.hpp"
 #include "internal/l3_m09_native_macro_seed.hpp"
 #include "internal/l3_m09_native_stereo_seed.hpp"
+#include "internal/l3_m09_native_eq_atom.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -78,6 +79,7 @@ private slots:
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
     void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
     void nativeStereoSeedUsesFixedWidthAndCutoffEvidence();
+    void nativeEqAtomUsesRealBoundedFrequencyResponse();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
@@ -205,6 +207,27 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeEqAtomUsesRealBoundedFrequencyResponse() {
+    namespace m09=a::m09_frozen;
+    const m09::NativeEqAtom atom{uuid("bd000000-0000-4000-8000-000000000033"),
+        m09::AtomFilter::bell,1000.0,0.707};
+    for(const auto fs:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
+        const auto rate=core::SampleRate::create(fs);
+        QVERIFY(rate);
+        const std::array<m09::NativeEqFitCell,1> cells{{{1000.0,8.0,1.0}}};
+        const auto stereo=m09::fit_native_eq_atom(atom,cells,*rate.value(),false);
+        const auto side=m09::fit_native_eq_atom(atom,cells,*rate.value(),true);
+        QVERIFY(stereo&&side);
+        QCOMPARE(std::get<dsp::BellPayload>(stereo->payload.payload()).gain_db,3.0);
+        QCOMPARE(std::get<dsp::BellPayload>(side->payload.payload()).gain_db,1.5);
+        QVERIFY(m09::usable_greedy_atom(stereo->fit));
+        QVERIFY(m09::usable_greedy_atom(side->fit));
+        QVERIFY(std::abs(stereo->fit.atom.exact_canonical_response_at_limited_gain.front()-3.0)<1e-8);
+        QVERIFY(std::abs(side->fit.atom.exact_canonical_response_at_limited_gain.front()-1.5)<1e-8);
+        const std::array<m09::NativeEqFitCell,1> unavailable{{{21000.0,8.0,1.0}}};
+        QVERIFY(!m09::fit_native_eq_atom(atom,unavailable,*rate.value(),false));
+    }
 }
 void P2RealNativeProductTest::nativeStereoSeedUsesFixedWidthAndCutoffEvidence() {
     namespace m09=a::m09_frozen;
