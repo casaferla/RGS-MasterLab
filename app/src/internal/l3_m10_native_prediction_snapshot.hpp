@@ -10,7 +10,7 @@
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 struct NativePredictionSnapshot final {
-    std::vector<m08_frozen::AuthenticatedPairSlot> slots;
+    std::vector<m08_frozen::AuthenticatedPairSlot> native_population;
     std::vector<m11_frozen::ProtectedComponent> protected_k;
     // Reporting requested set is independent of the corrective mask and
     // Amount. Missing authority remains absent, not assumed FULL.
