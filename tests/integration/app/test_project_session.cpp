@@ -4900,6 +4900,27 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(tampered);
     QVERIFY(!app::l3_automatch::m13_frozen::
         verify_m13_provisional_diagnostic_integrity(*tampered.value()));
+    // Even a newly computed unkeyed checksum cannot turn a
+    // provisional diagnostic into a qualified VERIFIED assertion.
+    const auto validJson=QJsonDocument::fromJson(
+        QByteArray::fromStdString(
+            sealedM13.value()->canonical_report.canonical_utf8()));
+    QVERIFY(validJson.isObject());
+    auto forged=validJson.object();
+    forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
+    forged.remove("VerificationContentChecksum");
+    const auto forgedBase=project::OpaqueJsonValue::parse(
+        QJsonDocument(forged).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(forgedBase);
+    forged.insert("VerificationContentChecksum",
+        QString::fromStdString(app::l3_automatch::m13_frozen::
+            m13_digest_canonical_json(*forgedBase.value())));
+    auto forgedValidHash=project::OpaqueJsonValue::parse(
+        QJsonDocument(forged).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(forgedValidHash);
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(
+            *forgedValidHash.value()));
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     // The existing shared M18 epoch must exclude BOTH M13 capture
