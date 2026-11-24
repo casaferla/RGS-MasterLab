@@ -53,6 +53,10 @@ measure_product_qt_original_pair_native_worker(
         captured.reference.sample_rate_hz);
     if(!common||!m05m06_real::native_common_contains(*common,exact_m07_common_tonal))
         return fail("L3_PRODUCT_NATIVE_PAIR_COMMON_BANDWIDTH_INVALID");
+    if(!bind_product_native_fft_metadata(exact_prepared_native_spec,
+          static_cast<std::uint32_t>(captured.source.prepared->view().format().sample_rate().value()))||
+       !bind_product_native_fft_metadata(exact_reference_native_spec,captured.reference.sample_rate_hz))
+        return fail("L3_PRODUCT_NATIVE_PAIR_FFT_METADATA_INVALID");
     auto prepared=observe_original_owned_full_source_once(
         captured.source.prepared->buffer(),
         native_product_original_identity(
