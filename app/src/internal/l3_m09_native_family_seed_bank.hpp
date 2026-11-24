@@ -16,6 +16,8 @@ struct NativeFamilySeedBank final {
     std::vector<NativeEqPrefix> side;
     std::array<std::optional<NativeStereoSeed>,7> stereo;
     std::optional<NativeLoudnessGainSeed> gain;
+    std::vector<m05m06_real::T01ConfiguredBand> exact_tonal_grid;
+    std::vector<m05m06_real::T01ConfiguredBand> exact_side_grid;
 };
 struct NativeRoleAllocation final {
     IntentRole role;
@@ -98,6 +100,7 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
 {
     NativeFamilySeedBank bank;
     if(channels<1U||channels>2U)return bank;
+    bank.exact_tonal_grid.assign(tonal_grid.begin(),tonal_grid.end());
     bank.tonal=derive_native_tonal_prefixes(fixed,amount,requested,
         tonal_grid,tonal_dictionary,rate);
     if(fixed.measured_fixed_spectral_energy&&
@@ -110,6 +113,7 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     for(std::size_t i=0;i<bank.micro.size();++i)
         bank.micro[i]=native_micro_variant_payload(micro,static_cast<MicroMode>(i+1U));
     if(channels==2U) {
+        bank.exact_side_grid.assign(side_grid.begin(),side_grid.end());
         bank.side=derive_native_side_prefixes(fixed,amount,requested,side_grid,
             side_grid_denominator,side_dictionary,rate);
         for(std::size_t i=0;i<bank.stereo.size();++i)
