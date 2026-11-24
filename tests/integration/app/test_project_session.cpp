@@ -2,6 +2,7 @@
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
+#include "internal/l3_m13_provisional_report_codec.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -4849,6 +4850,42 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              app::l3_automatch::m13_frozen::
                  VerificationState::verification_unavailable);
     QVERIFY(!currentProductDiagnosis.canonical_reasons.empty());
+    const auto diagnosticId=core::Uuid::parse(
+        "ee001100-1122-4455-8899-001122334455");
+    QVERIFY(diagnosticId);
+    const auto sealedM13=app::l3_automatch::m13_frozen::
+        encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),
+            currentProductDiagnosis,*diagnosticId.value());
+    QVERIFY2(sealedM13,
+        sealedM13.error()?sealedM13.error()->message().c_str():"");
+    QVERIFY(app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(
+            sealedM13.value()->canonical_report));
+    QVERIFY(!sealedM13.value()->is_m13_verified());
+    QVERIFY(!sealedM13.value()->authorizes_wav_export());
+    QVERIFY(!sealedM13.value()->is_final_p01_report());
+    auto roundtripDiagnostic=project::OpaqueJsonValue::parse(
+        sealedM13.value()->canonical_report.canonical_utf8());
+    QVERIFY(roundtripDiagnostic);
+    QCOMPARE(roundtripDiagnostic.value()->canonical_utf8(),
+             sealedM13.value()->canonical_report.canonical_utf8());
+    QVERIFY(app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(
+            *roundtripDiagnostic.value()));
+    // Recompute independent SHA over the exact canonical payload, not
+    // over a cached report digest or any decoded Qt double quantity.
+    auto tamperedBytes=roundtripDiagnostic.value()->canonical_utf8();
+    const auto altered=std::string{
+        "\\"verificationEvaluations\\":\\"1\\""};
+    const auto at=tamperedBytes.find(altered);
+    QVERIFY(at!=std::string::npos);
+    tamperedBytes.replace(at,altered.size(),
+        "\\"verificationEvaluations\\":\\"2\\"");
+    auto tampered=project::OpaqueJsonValue::parse(tamperedBytes);
+    QVERIFY(tampered);
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(*tampered.value()));
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     // The existing shared M18 epoch must exclude BOTH M13 capture
