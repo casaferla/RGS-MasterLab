@@ -129,23 +129,29 @@ verify_m13_fresh_protected_population(
        !m13_same_accepted_native_population(accepted,fresh))
         return {};
     std::size_t ordinal=0;
+    std::vector<m11_frozen::ProtectedComponent> required_k;
     for(const auto& slot:*fresh.native_population) {
         for(const auto& c:slot.configured) {
-            if(ordinal>=accepted_k.size()||
-               !c.prepared.z||!c.reference.z||!c.current_candidate_z)
-                return {};
+            if(ordinal>=accepted_k.size())return {};
             auto& guard=accepted_k[ordinal++];
-            if(!guard.exact_current||!guard.required_in_frozen_k||
+            if(!guard.required_in_frozen_k) {
+                if(!guard.exact_current||guard.protected_by_m11_mask||
+                   (c.current_valid&&c.paired_native_support>0.0))return {};
+                continue;
+            }
+            if(!c.prepared.z||!c.reference.z||!c.current_candidate_z||
+               !guard.exact_current||
                guard.prepared_z!=*c.prepared.z||
                guard.gold_z!=*c.reference.z||
                !std::isfinite(*c.current_candidate_z))
                 return {};
             guard.candidate_z=*c.current_candidate_z;
+            required_k.push_back(guard);
         }
     }
     if(ordinal!=accepted_k.size())return {};
     return m11_frozen::verify_frozen_protected_no_regression(
-        accepted_k,true,true);
+        required_k,true,true);
 }
 // Same-run prediction and verification are measured against the same
 // original reference and comparison population. A stale source or
