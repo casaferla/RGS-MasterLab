@@ -69,6 +69,11 @@ measure_original_prepared_reference_native_once(
         static_cast<std::uint32_t>(exact_independent_reference.view().format().sample_rate().value()));
     if(!common||!m05m06_real::native_common_contains(*common,exact_m07_common_bandwidth))
         return fail("L3_ORIGINAL_PAIR_COMMON_NATIVE_BANDWIDTH_INVALID");
+    if(!bind_product_native_fft_metadata(prepared_native_spec,
+           static_cast<std::uint32_t>(exact_current_prepared.view().format().sample_rate().value()))||
+       !bind_product_native_fft_metadata(reference_native_spec,
+           static_cast<std::uint32_t>(exact_independent_reference.view().format().sample_rate().value())))
+        return fail("L3_ORIGINAL_PAIR_FFT_METADATA_INVALID");
     auto prepared=observe_original_owned_full_source_once(
         exact_current_prepared,std::move(prepared_current_product_owner),
         std::move(prepared_native_spec),exact_m07_common_bandwidth,
