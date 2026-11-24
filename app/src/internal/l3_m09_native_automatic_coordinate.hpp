@@ -95,4 +95,34 @@ native_automatic_coordinate_rule(
     default:return std::nullopt;
     }
 }
+[[nodiscard]] inline std::optional<NativeSeedCoordinate>
+make_native_seed_coordinate(
+    const dsp::ModuleInstance& node,const dsp::ModuleExecutionBinding& binding,
+    std::vector<std::uint8_t> exact_semantic_node_key,
+    std::vector<std::uint8_t> exact_stable_parameter_key,
+    NativeField field,std::optional<core::Uuid> band_id,
+    std::optional<NativeFrequencyBounds> exact_frequency_bounds,
+    std::int64_t sample_rate_hz)
+{
+    const auto semantic=node.semantic_node_id();
+    if(!semantic||semantic->is_nil()||!node.active()||
+       node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
+       node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
+       exact_semantic_node_key.empty()||exact_stable_parameter_key.empty()||
+       !binding_matches_instance(node,binding))
+        return std::nullopt;
+    const auto rule=native_automatic_coordinate_rule(binding.parameters,field,
+        band_id,exact_frequency_bounds,sample_rate_hz);
+    const auto seed=read_native_physical_field(binding.parameters,field,band_id);
+    if(!rule||!seed)return std::nullopt;
+    const auto transform=m10_frozen::CoordinateTransform::create(
+        rule->kind,rule->lower,rule->upper);
+    if(!transform)return std::nullopt;
+    const auto u=transform->to_normalized(*seed);
+    const auto reference=transform->to_normalized(rule->fixed_reference.value_or(*seed));
+    if(!u||!reference)return std::nullopt;
+    return NativeSeedCoordinate{
+        {std::move(exact_semantic_node_key),std::move(exact_stable_parameter_key),*u},
+        *transform,node.instance_id(),field,band_id,*reference,rule->reference_weight,*semantic};
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
