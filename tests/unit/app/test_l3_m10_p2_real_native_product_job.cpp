@@ -10,6 +10,7 @@
 #include "internal/l3_m12_preserved_native_winner.hpp"
 #include "internal/l3_m09_native_selected_search.hpp"
 #include "internal/l3_m09_native_role_graph.hpp"
+#include "internal/l3_m09_native_loudness_seed.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -70,6 +71,7 @@ private slots:
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
+    void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
@@ -197,6 +199,45 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp() {
+    namespace m09=a::m09_frozen;
+    namespace m07=a::m07_frozen;
+    namespace m08=a::m08_frozen;
+    a::m11_frozen::NativeFixedPopulation fixed;
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    fixed.measured_m16_linear_peak=std::pow(10.0,-7.0/20.0);
+    for(const auto& binding:m07::kBindings) {
+        const bool integrated=binding.binding_id=="rgsml.reference-match.binding.loudness.l01";
+        m08::AuthenticatedPairSlot slot{std::string(binding.binding_id),
+            std::string(binding.source_feature_id),"fixture-only",true,{}};
+        const auto n=binding.component_share==m07::ComponentShare::thirds?3U:
+            binding.component_share==m07::ComponentShare::configured_n?2U:1U;
+        for(unsigned i=0;i<n;++i)
+            slot.configured.push_back({true,1.0,{-20.0,m08::Endpoint::ordinary},
+                {integrated?-10.0:-20.0,m08::Endpoint::ordinary},-20.0,true});
+        fixed.measured_fixed.push_back(std::move(slot));
+    }
+    m08::AmountConfig amount{1.0,{1.0,1.0,1.0,1.0},1U};
+    const std::array<bool,4> requested{false,false,false,true};
+    const auto full=m09::derive_native_loudness_gain_seed(fixed,amount,requested,-0.9);
+    QVERIFY(full);
+    QCOMPARE(full->raw_gain_db,10.0);
+    QCOMPARE(full->payload.gain_db(),6.0);
+    QVERIFY(full->seed_parameter_limited);
+    QVERIFY(!full->terminal_branch_requested);
+    const auto limited=m09::derive_native_loudness_gain_seed(fixed,amount,requested,-2.0);
+    QVERIFY(limited&&limited->terminal_branch_requested);
+    amount.global=0.5;
+    const auto half=m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0);
+    QVERIFY(half);
+    QCOMPARE(half->payload.gain_db(),5.0);
+    QVERIFY(!half->seed_parameter_limited);
+    fixed.measured_fixed[24].configured.front().current_candidate_z=-15.0;
+    QVERIFY(!m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0));
+    fixed.measured_fixed[24].configured.front().current_candidate_z=-20.0;
+    fixed.measured_m16_linear_peak.reset();
+    QVERIFY(!m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0));
 }
 void P2RealNativeProductTest::nativeRoleAssemblyCreatesActualTypedSeed() {
     namespace m09=a::m09_frozen;
