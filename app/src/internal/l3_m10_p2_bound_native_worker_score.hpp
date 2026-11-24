@@ -95,4 +95,50 @@ measure_and_score_bound_m10_p2_product_worker(
         std::forward<ResolveOriginalThreeWayNative>(
             resolve_original_three_way_native),cancellation);
 }
+// Product path: only REF_LINKED parameters participate in the solver.
+// The original user terminal is preserved whether active, bypassed or absent.
+template<class ResolveOriginalThreeWayNative>
+[[nodiscard]] inline P2NativeCostResult
+measure_and_score_preserved_terminal_product_worker(
+    const P2NativeProductWorkerScope& current,
+    const dsp::ProcessingChain& exact_ref_linked_artistic,
+    std::span<const dsp::ModuleExecutionBinding> linked_bindings,
+    std::string exact_candidate_ticket,
+    ProductNativeOnePassSpec exact_m05m06_native_spec,
+    std::string frozen_m07_phase6_dependency_generation,
+    AuthoritativeCostInput protected_m08_m11_cost,
+    double exact_m11_independent_tp_safety_ceiling_db_tp,
+    m05m06_real::SourceIdentity exact_candidate_source_owner,
+    const OriginalPreparedReferenceNativeFacts* real_prepared_reference_native_pair,
+    bool exact_phase6_file_based_lra_policy_attested,
+    ResolveOriginalThreeWayNative&& resolve_original_three_way_native,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    if(!current.current_qt_product_epoch_and_m09_m11_attested||
+       !protected_m08_m11_cost.independently_measured_fixed||
+       !current.current_owner.populated()||!current.current_prepared||
+       !current.frozen_registry||exact_candidate_ticket.empty()||
+       frozen_m07_phase6_dependency_generation.empty()||
+       !authentic_product_candidate_identity(exact_candidate_source_owner,
+           current.current_owner,exact_candidate_ticket)||
+       !real_prepared_reference_native_pair||
+       !original_pair_matches_product_owner(*real_prepared_reference_native_pair,
+                                            current.current_owner)||
+       (cancellation&&cancellation->load(std::memory_order_acquire)))
+        return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
+    auto job=M10P2RealNativeProductJob::create_preserving_user_terminal(
+        current.current_owner,current.current_prepared,current.frozen_registry,
+        current.frozen_manual,current.frozen_manual_bindings,exact_ref_linked_artistic,
+        linked_bindings,std::move(exact_candidate_ticket),
+        current.maximum_block_frames,true);
+    if(!job)return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
+    return measure_and_score_m10_p2_full_native_candidate(
+        *job.value(),std::move(exact_m05m06_native_spec),nullptr,
+        std::move(frozen_m07_phase6_dependency_generation),true,
+        std::move(protected_m08_m11_cost),exact_m11_independent_tp_safety_ceiling_db_tp,
+        std::move(exact_candidate_source_owner),real_prepared_reference_native_pair,
+        exact_phase6_file_based_lra_policy_attested,
+        std::forward<ResolveOriginalThreeWayNative>(resolve_original_three_way_native),
+        cancellation);
+}
 } // namespace rgsml::app::l3_automatch::m10_frozen
