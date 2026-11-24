@@ -65,7 +65,8 @@ observe_original_owned_full_source_once(
     if(!native)return R::failure(*native.error());
     auto imported=m05m06_real::import_actual_full_source(
         native.value()->levels,native.value()->tonal,
-        std::move(original_product_owner));
+        std::move(original_product_owner),
+        native.value()->selected_original_m20_ordinals);
     if(!imported.source)
         return fail("L3_ORIGINAL_NATIVE_M19_M20_PROVENANCE_INVALID");
     auto tonal=m05m06_real::observe_m05_tonal_bundle(
