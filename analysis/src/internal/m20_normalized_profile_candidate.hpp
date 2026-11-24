@@ -48,7 +48,8 @@ struct NormalizedProfileCandidate {
     std::uint64_t fft,
     int denominator,
     std::span<const std::uint8_t> supplied_eligibility,
-    std::optional<Bandwidth> explicit_common_bandwidth = std::nullopt)
+    std::optional<Bandwidth> explicit_common_bandwidth = std::nullopt,
+    bool use_all_common_band_power = false)
 {
   NormalizedProfileCandidate out;
   out.sample_rate = fs;
@@ -74,7 +75,9 @@ struct NormalizedProfileCandidate {
   if (supplied_eligibility.size() != grid.size())
     return out;
 
+  if(use_all_common_band_power&&!explicit_common_bandwidth)return out;
   double sum = 0.0;
+  double common_sum=0.0;
   out.bands.reserve(grid.size());
   for (std::size_t i=0; i<grid.size(); ++i) {
     const auto token = supplied_eligibility[i];
@@ -89,8 +92,9 @@ struct NormalizedProfileCandidate {
       (!explicit_common_bandwidth ||
        (grid[i].low >= explicit_common_bandwidth->low &&
         grid[i].high <= explicit_common_bandwidth->high));
-    if (band.supplied == SuppliedBandEligibility::eligible &&
-        (!explicit_common_bandwidth || band.fully_in_common_comparison)) {
+    const bool eligible=band.supplied == SuppliedBandEligibility::eligible &&
+        (!explicit_common_bandwidth || band.fully_in_common_comparison);
+    if (eligible || (use_all_common_band_power&&band.fully_in_common_comparison)) {
       const double low = explicit_common_bandwidth ?
         std::max(grid[i].low,explicit_common_bandwidth->low) :
         grid[i].covered_low;
@@ -100,9 +104,15 @@ struct NormalizedProfileCandidate {
       if (high > low) {
         const auto e = band_energy(canonical_mean_psd,fs,fft,low,high);
         if (!e) return out;
-        band.measured_energy = *e;
-        sum += *e;
-        if (!std::isfinite(sum)) return out;
+        if(use_all_common_band_power) {
+          common_sum+=*e;
+          if(!std::isfinite(common_sum))return out;
+        }
+        if(eligible) {
+          band.measured_energy = *e;
+          sum += *e;
+          if (!std::isfinite(sum)) return out;
+        }
       }
     }
     out.bands.push_back(band);
@@ -114,7 +124,13 @@ struct NormalizedProfileCandidate {
   out.eligible_power_sum = sum;
   for (auto& band : out.bands) {
     if (band.measured_energy) {
-      band.fraction = *band.measured_energy / sum;
+      const double divisor=use_all_common_band_power?common_sum:sum;
+      if(!(divisor>0.0))return out;
+      const double fraction=*band.measured_energy/divisor;
+      // Phase6 comparison floor: below -120 dB of the full common power
+      // is missing, not a clamped number or a renormalized population.
+      if(use_all_common_band_power&&fraction<1e-12)continue;
+      band.fraction = fraction;
       if (!std::isfinite(*band.fraction)) {
         out.diagnostic = ProfileDiagnostic::invalid_input;
         out.eligible_power_sum.reset();
