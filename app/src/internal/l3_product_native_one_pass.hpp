@@ -26,6 +26,17 @@ struct ProductNativeOnePassSpec final {
     // never reuse the PREPARED or another candidate's retained intervals.
     bool derive_own_m19_temporal_gate{};
 };
+// Resolve an omitted FFT size from the actual source rate, without
+// granting any missing Phase6 grid/grade or changing caller definitions.
+// A supplied conflicting size is an error, never silently overwritten.
+[[nodiscard]] inline bool bind_product_native_fft_metadata(
+    ProductNativeOnePassSpec& spec,std::uint32_t source_rate) noexcept {
+    const auto geometry=analysis::native_tonal_frame_geometry(source_rate);
+    if(!geometry||(spec.exact_m20_fft_size!=0U&&
+                   spec.exact_m20_fft_size!=geometry->fft))return false;
+    spec.exact_m20_fft_size=geometry->fft;
+    return true;
+}
 struct ProductNativeOnePassResult final {
     OfflineProductCandidateMeasurement actual;
     m05m06_real::SpectralD10D12Native d10_d12;
