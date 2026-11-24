@@ -59,7 +59,7 @@ reduce_native_spectral_d10_d12(
 {
     SpectralD10D12Native out;
     if(!exact_current_stft_frame_energy_and_grid_attested||
-       active_e_tb.empty()||canonical_configured_band_count==0U||
+       canonical_configured_band_count==0U||
        sample_rate_hz==0U)
         return out;
     const std::size_t n=active_e_tb.size();
@@ -87,7 +87,7 @@ reduce_native_spectral_d10_d12(
     }
     out.candidate_active_frames=n;
     out.canonical_band_results.resize(canonical_configured_band_count);
-    if(active_duration_frames<2U*sample_rate_hz) {
+    if(n==0U||active_duration_frames<2U*sample_rate_hz) {
         for(auto& band:out.canonical_band_results)
             band.reason.fill(
                 SpectralNativeReason::insufficient_band_frame_support);
