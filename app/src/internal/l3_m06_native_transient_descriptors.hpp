@@ -32,6 +32,7 @@ enum class TransientDescriptorFailure:std::uint8_t {
 };
 struct NativeTransientDescriptor final {
     std::array<std::optional<double>,3> canonical_type7_p10_p50_p90{};
+    std::array<std::optional<double>,3> native_type7_p10_p50_p90{};
     std::uint64_t valid_descriptor_events{};
     std::uint64_t canonical_events{};
     std::optional<double> native_support;
@@ -128,10 +129,14 @@ observe_phase6_native_transient_descriptors(
                 break;
             }
             out.canonical_type7_p10_p50_p90[k]=z;
+            out.native_type7_p10_p50_p90[k]=*q;
         }
         out.reason=good?TransientDescriptorFailure::ready:
             TransientDescriptorFailure::invalid_descriptor_or_numeric;
-        if(!good)out.canonical_type7_p10_p50_p90={};
+        if(!good) {
+            out.canonical_type7_p10_p50_p90={};
+            out.native_type7_p10_p50_p90={};
+        }
     }
     return result;
 }
