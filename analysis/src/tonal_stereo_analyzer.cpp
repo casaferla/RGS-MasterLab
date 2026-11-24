@@ -217,9 +217,19 @@ core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
         }
         result.mean_linear_psd=std::move(spectrum.average_psd);
     } else if(!supplied.authoritative_band_eligibility.empty()) {
-        // A claimed support vector cannot invent power when no complete
-        // analysis window is available. Fail closed, not a fake profile.
-        return R::failure(invalid("M20_REAL_PROFILE_NO_COMPLETE_SPECTRAL_FRAME"));
+        // A valid configured grid is still present when the actual gate
+        // selected no complete window. No numerical energy/fraction is
+        // inferred: every fraction remains explicitly unavailable.
+        const auto grid=m20_private::fractional_band_geometry(fs,12);
+        if(grid.size()!=supplied.authoritative_band_eligibility.size()||
+           std::any_of(supplied.authoritative_band_eligibility.begin(),
+                       supplied.authoritative_band_eligibility.end(),
+                       [](auto v){return v>2U;}))
+            return R::failure(invalid("M20_REAL_PROFILE_SUPPORT_INVALID"));
+        for(const auto& b:grid)
+            result.primary_bands_1_12.push_back({
+                b.index,b.center,b.low,b.high,b.fully_supported,0.0,
+                {std::nullopt,State::INSUFFICIENT_CONTENT}});
     }
     return R::success(std::move(result));
 }
