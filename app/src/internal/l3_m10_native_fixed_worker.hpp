@@ -68,12 +68,16 @@ measure_native_fixed_once(
             *actual.source,measured.value()->native.s03_s06,
             exact_current_fixed_and_endpoint_safety_attested,
             exact_current_fixed_and_endpoint_safety_attested);
+    std::shared_ptr<const NativeSpectralSeedCarrier> spectral;
+    if(measured.value()->native.spectral_seed_carrier)
+        spectral=std::make_shared<const NativeSpectralSeedCarrier>(
+            std::move(*measured.value()->native.spectral_seed_carrier));
     return m11_frozen::NativeFixedPopulation{std::move(*population),true,
         fixed_job.ticket_identity(),fixed_owner.resource_identity,
         fixed_owner.generation,exact_generation,*fixed_graph,
         std::move(authority),std::move(authority_content),
         measured.value()->m16_actual_p2_output.global_linear_peak(),
         stereo_required,std::move(stereo),std::move(native_windows),
-        std::move(measured.value()->native.spectral_seed_carrier)};
+        std::move(spectral)};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
