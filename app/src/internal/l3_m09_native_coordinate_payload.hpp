@@ -215,4 +215,71 @@ apply_native_physical_fields(
     if(const auto* p=std::get_if<dsp::DynamicEqParameters>(&seed))return apply_dynamic_eq(*p,fields);
     return std::nullopt; // P2 and WAV Export are outside AutoMatch
 }
+[[nodiscard]] inline std::optional<double>
+read_native_physical_field(const dsp::ModuleParameterPayload& seed,
+                           NativeField field,const std::optional<core::Uuid>& band_id)
+{
+    if(const auto* p=std::get_if<dsp::GainParameters>(&seed)) {
+        if(!band_id&&field==NativeField::gain_db)return p->gain_db();
+    } else if(const auto* p=std::get_if<dsp::TransientShaperParameters>(&seed)) {
+        if(!band_id&&field==NativeField::attack_amount_db)return p->attack_amount_db();
+        if(!band_id&&field==NativeField::sustain_amount_db)return p->sustain_amount_db();
+    } else if(const auto* p=std::get_if<dsp::StereoMsParameters>(&seed)) {
+        if(!band_id&&field==NativeField::mid_gain_db)return p->mid_gain_db();
+        if(!band_id&&field==NativeField::side_gain_db&&!p->side_muted())return p->side_gain_db();
+        if(!band_id&&field==NativeField::low_width_percent&&p->mono_bass_mode()!=dsp::MonoBassMode::OFF)
+            return p->low_band_width_percent();
+    } else if(const auto* p=std::get_if<dsp::CompressorParameters>(&seed)) {
+        if(band_id)return std::nullopt;
+        switch(field) {
+        case NativeField::threshold_dbfs:return p->threshold_dbfs();
+        case NativeField::ratio:return p->ratio();
+        case NativeField::knee_db:return p->knee_db();
+        case NativeField::attack_ms:return p->attack_ms();
+        case NativeField::release_ms:return p->release_ms();
+        case NativeField::rms_ms:return p->rms_time_constant_ms();
+        case NativeField::look_ahead_ms:return p->look_ahead_ms();
+        case NativeField::mix_percent:return p->mix_percent();
+        default:return std::nullopt;
+        }
+    } else if(const auto* p=std::get_if<dsp::ParametricEqParameters>(&seed)) {
+        if(!band_id)return std::nullopt;
+        for(const auto& b:p->bands()) {
+            if(b.band_id()!=*band_id||!b.enabled())continue;
+            if(const auto* bell=std::get_if<dsp::BellPayload>(&b.payload())) {
+                if(field==NativeField::frequency_hz)return bell->frequency_hz;
+                if(field==NativeField::gain_db)return bell->gain_db;
+                if(field==NativeField::q)return bell->q;
+            } else if(const auto* shelf=std::get_if<dsp::ShelfPayload>(&b.payload())) {
+                if(field==NativeField::frequency_hz)return shelf->frequency_hz;
+                if(field==NativeField::gain_db)return shelf->gain_db;
+                if(field==NativeField::shelf_slope)return shelf->shelf_slope;
+            }
+        }
+    } else if(const auto* p=std::get_if<dsp::DynamicEqParameters>(&seed)) {
+        if(!band_id)return std::nullopt;
+        for(const auto& b:p->bands()) {
+            const auto& s=b.spec();
+            if(s.band_id!=*band_id||!s.enabled)continue;
+            const auto* bell=std::get_if<dsp::DynamicEqBellShape>(&s.shape);
+            const auto* shelf=std::get_if<dsp::DynamicEqShelfShape>(&s.shape);
+            switch(field) {
+            case NativeField::frequency_hz:
+                if(bell)return bell->frequency_hz;
+                if(shelf)return shelf->frequency_hz;
+                return std::nullopt;
+            case NativeField::q:if(bell)return bell->q;return std::nullopt;
+            case NativeField::shelf_slope:if(shelf)return shelf->shelf_slope;return std::nullopt;
+            case NativeField::range_db:return s.control.range_db;
+            case NativeField::threshold_dbfs:return s.control.threshold_dbfs;
+            case NativeField::ratio:return s.control.ratio;
+            case NativeField::rms_ms:return s.control.rms_time_constant_ms;
+            case NativeField::attack_ms:return s.control.attack_ms;
+            case NativeField::release_ms:return s.control.release_ms;
+            default:return std::nullopt;
+            }
+        }
+    }
+    return std::nullopt;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
