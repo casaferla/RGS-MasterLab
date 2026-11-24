@@ -4621,20 +4621,20 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
         accepted,fresh,acceptedK,true,true).is_admissible());
     // A fresh regression must fail even when the original M10
     // prediction was safe. Never use the stale candidate in K.
-    fresh.slots->front().configured.front().current_candidate_z=0.1;
+    fresh.native_population->front().configured.front().current_candidate_z=0.1;
     QCOMPARE(m13::verify_m13_fresh_protected_population(
         accepted,fresh,acceptedK,true,true).reason,
         a::m11_frozen::NoRegressionReason::protected_component_regressed);
-    fresh.slots->front().configured.front().current_candidate_z.reset();
+    fresh.native_population->front().configured.front().current_candidate_z.reset();
     QVERIFY(!m13::verify_m13_fresh_protected_population(
         accepted,fresh,acceptedK,true,true).is_admissible());
-    fresh.slots=accepted;
-    fresh.slots->back().configured.front().paired_native_support=0.5;
+    fresh.native_population=accepted;
+    fresh.native_population->back().configured.front().paired_native_support=0.5;
     QVERIFY(!m13::m13_same_accepted_native_population(accepted,fresh));
-    fresh.slots=accepted;
-    fresh.slots->back().exact_feature_dependency="different-definition";
+    fresh.native_population=accepted;
+    fresh.native_population->back().exact_feature_dependency="different-definition";
     QVERIFY(!m13::m13_same_accepted_native_population(accepted,fresh));
-    fresh.slots=accepted;
+    fresh.native_population=accepted;
     QVERIFY(!m13::verify_m13_fresh_protected_population(
         accepted,fresh,acceptedK,false,true).is_admissible());
     // The L02 raw scalar must satisfy the native QTP tolerance and
@@ -4645,8 +4645,8 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
     native.population_identity="test-only-membership";
     native.valid_count=10U;
     native.configured_count=10U;
-    fresh.slots=accepted;
-    auto& actual=fresh.slots->at(25).configured.front();
+    fresh.native_population=accepted;
+    auto& actual=fresh.native_population->at(25).configured.front();
     actual.current_candidate_z=0.805;
     actual.candidate_native.value=0.805;
     QCOMPARE(m13::compare_m13_accepted_and_fresh_native_bindings(
