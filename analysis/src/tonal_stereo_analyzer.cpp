@@ -1,6 +1,7 @@
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <rgsml/analysis/basic_level_analyzer.hpp>
 #include <limits>
+#include <cmath>
 #include "internal/m20_bounded_spectrum_candidate.hpp"
 #include "internal/m20_normalized_profile_candidate.hpp"
 #include <rgsml/core/error.hpp>
@@ -142,6 +143,16 @@ core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
         right=*r.value();
     }
     const auto fs=static_cast<std::uint32_t>(rate);
+    std::optional<m20_private::Bandwidth> profile_common;
+    if(supplied.profile_common_bandwidth) {
+        const auto requested=*supplied.profile_common_bandwidth;
+        const auto native=m20_private::available_bandwidth(fs);
+        if(!std::isfinite(requested.low_hz)||!std::isfinite(requested.high_hz)||
+           requested.low_hz<native.low||requested.high_hz>native.high||
+           !(requested.high_hz>requested.low_hz))
+            return R::failure(invalid("M20_REAL_PROFILE_COMMON_BANDWIDTH_INVALID"));
+        profile_common=m20_private::Bandwidth{requested.low_hz,requested.high_hz};
+    }
     const auto origin=static_cast<std::uint64_t>(absoluteScopeBegin.value());
     const auto frames=static_cast<std::uint64_t>(scopeFrames.value());
     std::vector<m20_private::Interval> retained;
@@ -217,7 +228,7 @@ core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
         if(!supplied.authoritative_band_eligibility.empty()) {
             const auto profile=m20_private::make_profile_candidate(
                 spectrum.average_psd,fs,spectrum.geometry.fft,12,
-                supplied.authoritative_band_eligibility);
+                supplied.authoritative_band_eligibility,profile_common);
             if(profile.diagnostic==m20_private::ProfileDiagnostic::invalid_input
                ||profile.bands.size()!=result.primary_bands_1_12.size())
                 return R::failure(invalid("M20_REAL_PROFILE_SUPPORT_INVALID"));
