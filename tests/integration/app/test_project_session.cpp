@@ -4,6 +4,7 @@
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
 #include "internal/l3_m13_fresh_original_native_import.hpp"
+#include "internal/l3_m13_fresh_native_population.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -322,6 +323,7 @@ class ProjectSessionTest final : public QObject {
 private slots:
     void source_save_open_existing_fail();
     void m12LinkedTicketCannotSaveManualOnlyAndOrdinaryOpenRevokes();
+    void m13FreshProtectedPopulationUsesActualNotPredictedCandidate();
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs_data();
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
@@ -4590,6 +4592,52 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
     QCOMPARE(restored.rate_revision(),oldRevision);
     QCOMPARE(restored.master_rate_hz(),qint64{192000});
     QCOMPARE(reopened.source.source_resource()->reference().locator(),oldSource);
+}
+
+void ProjectSessionTest::
+m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
+{
+    namespace a=app::l3_automatch;
+    namespace m13=a::m13_frozen;
+    std::vector<a::m08_frozen::AuthenticatedPairSlot> accepted;
+    std::vector<a::m11_frozen::ProtectedComponent> acceptedK;
+    for(const auto& binding:a::m07_frozen::kBindings) {
+        a::m08_frozen::AuthenticatedPairSlot slot;
+        slot.binding_id=std::string(binding.binding_id);
+        slot.source_feature_id=std::string(binding.source_feature_id);
+        slot.exact_feature_dependency="test-only-immutable-definition";
+        slot.feature_authority_attested=true;
+        const std::size_t count=binding.component_share==
+            a::m07_frozen::ComponentShare::thirds?3U:1U;
+        for(std::size_t i=0;i<count;++i) {
+            slot.configured.push_back({true,1.0,{0.0},{1.0},0.8,true});
+            acceptedK.push_back({true,true,true,0.0,1.0,0.5,0.8,0.01});
+        }
+        accepted.push_back(std::move(slot));
+    }
+    m13::M13FreshNativePopulation fresh{{},accepted};
+    QVERIFY(m13::m13_same_accepted_native_population(accepted,fresh));
+    QVERIFY(m13::verify_m13_fresh_protected_population(
+        accepted,fresh,acceptedK,true,true).is_admissible());
+    // A fresh regression must fail even when the original M10
+    // prediction was safe. Never use the stale candidate in K.
+    fresh.slots->front().configured.front().current_candidate_z=0.1;
+    QCOMPARE(m13::verify_m13_fresh_protected_population(
+        accepted,fresh,acceptedK,true,true).reason,
+        a::m11_frozen::NoRegressionReason::protected_component_regressed);
+    fresh.slots->front().configured.front().current_candidate_z.reset();
+    QVERIFY(!m13::verify_m13_fresh_protected_population(
+        accepted,fresh,acceptedK,true,true).is_admissible());
+    fresh.slots=accepted;
+    fresh.slots->back().configured.front().paired_native_support=0.5;
+    QVERIFY(!m13::m13_same_accepted_native_population(accepted,fresh));
+    fresh.slots=accepted;
+    fresh.slots->back().exact_feature_dependency="different-definition";
+    QVERIFY(!m13::m13_same_accepted_native_population(accepted,fresh));
+    fresh.slots=accepted;
+    QVERIFY(!m13::verify_m13_fresh_protected_population(
+        accepted,fresh,acceptedK,false,true).is_admissible());
+    QVERIFY(!fresh.authorizes_m13_verified());
 }
 
 void ProjectSessionTest::
