@@ -97,4 +97,49 @@ decode_native_typed_seed(
     return DecodedNativeSeedTrial{
         {seed.seed.linked,std::move(bindings)},std::move(reference)};
 }
+[[nodiscard]] inline std::optional<std::vector<m10_frozen::Coordinate>>
+native_seed_inventory(const NativeTypedSeed& seed)
+{
+    std::vector<m10_frozen::Coordinate> inventory;
+    inventory.reserve(seed.coordinates.size());
+    for(const auto& coordinate:seed.coordinates)
+        inventory.push_back(coordinate.canonical);
+    const auto sorted=m10_frozen::m10_sort_exact_inventory(inventory);
+    if(!sorted)return std::nullopt;
+    std::vector<double> u;
+    for(const auto& coordinate:*sorted)u.push_back(coordinate.normalized_u);
+    const auto decoded=decode_native_typed_seed(seed,*sorted,u);
+    if(!decoded||decoded->graph.bindings!=seed.seed.bindings)
+        return std::nullopt;
+    return sorted;
+}
+struct NativeArtisticComplexity final {
+    std::uint32_t modules{},bands{};
+};
+[[nodiscard]] inline std::optional<NativeArtisticComplexity>
+native_artistic_complexity(const m10_frozen::PreservedNativeGraph& graph)
+{
+    NativeArtisticComplexity out;
+    const auto nodes=graph.linked.instances();
+    if(nodes.size()!=graph.bindings.size())return std::nullopt;
+    for(std::size_t i=0;i<nodes.size();++i) {
+        if(!binding_matches_instance(nodes[i],graph.bindings[i])||
+           nodes[i].owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
+           nodes[i].link_state()!=dsp::ModuleLinkState::REF_LINKED)
+            return std::nullopt;
+        if(!nodes[i].active())continue;
+        ++out.modules;
+        const auto& p=graph.bindings[i].parameters;
+        if(const auto* eq=std::get_if<dsp::ParametricEqParameters>(&p))
+            for(const auto& band:eq->bands()) {
+                if(band.enabled())++out.bands;
+            }
+        if(const auto* deq=std::get_if<dsp::DynamicEqParameters>(&p))
+            for(const auto& band:deq->bands()) {
+                if(band.spec().enabled)++out.bands;
+            }
+    }
+    if(!m10_frozen::complexity_cost(out.modules,out.bands))return std::nullopt;
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
