@@ -189,6 +189,50 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto actual=job.value()->execute();
     auto baseline=control.value()->execute();
     QVERIFY(actual&&baseline);
+    // Product admission keeps the user's P2 settings, never the
+    // explicit research optimizer override used by the older path.
+    auto preserved=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+        stamp,prepared_owner,product_registry,*active_manual.value(),
+        manual_bindings,*linked.value(),artistic,"preserved-user-p2",
+        *block.value(),true);
+    QVERIFY(preserved);
+    auto unchanged=preserved.value()->execute();
+    QVERIFY(unchanged);
+    QVERIFY(preserved.value()->result_has_expected_scope(*unchanged.value()));
+    for(std::size_t c=0;c<2;++c) {
+        const auto expected=baseline.value()->view().channel(c);
+        const auto observed=unchanged.value()->view().channel(c);
+        QVERIFY(expected&&observed);
+        QVERIFY(std::equal(expected.value()->begin(),expected.value()->end(),
+                           observed.value()->begin(),observed.value()->end()));
+    }
+
+    QVERIFY(manual.value()->add(gain_id,"rgsml.dsp.gain",0));
+    const auto gain_only=std::span<const dsp::ModuleExecutionBinding>{manual_bindings}.first(1);
+    auto without_p2=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+        stamp,prepared_owner,product_registry,*manual.value(),gain_only,
+        *linked.value(),artistic,"without-user-p2",*block.value(),true);
+    QVERIFY(without_p2);
+    auto no_terminal=without_p2.value()->execute();
+    QVERIFY(no_terminal);
+    QVERIFY(without_p2.value()->result_has_expected_scope(*no_terminal.value()));
+    QVERIFY(!without_p2.value()->prepare_exact_pre_p2_prefix());
+    auto bypassed=*active_manual.value();
+    QVERIFY(bypassed.set_user_bypass(p2_id,true));
+    auto bypass_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+        stamp,prepared_owner,product_registry,bypassed,manual_bindings,
+        *linked.value(),artistic,"bypassed-user-p2",*block.value(),true);
+    QVERIFY(bypass_job);
+    auto bypass_pcm=bypass_job.value()->execute();
+    QVERIFY(bypass_pcm);
+    QVERIFY(bypass_job.value()->result_has_expected_scope(*bypass_pcm.value()));
+    for(std::size_t c=0;c<2;++c) {
+        const auto expected=no_terminal.value()->view().channel(c);
+        const auto observed=bypass_pcm.value()->view().channel(c);
+        QVERIFY(expected&&observed);
+        QVERIFY(std::equal(expected.value()->begin(),expected.value()->end(),
+                           observed.value()->begin(),observed.value()->end()));
+    }
     QVERIFY(job.value()->result_has_expected_scope(*actual.value()));
     // Reject a prefix whose REF_LINKED graph revision has changed.
     auto another_linked=dsp::ProcessingChain::restore(
