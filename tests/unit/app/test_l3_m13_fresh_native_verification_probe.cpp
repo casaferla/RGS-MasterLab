@@ -607,6 +607,13 @@ completeFreshNativeTwentySevenBindingComparison()
     QVERIFY(comparison.rows[0].t1_profile);
     QCOMPARE(comparison.rows[0].t1_profile->outcome,
              QtpOutcome::mismatch); // RMS, despite .008<.01
+    QVERIFY(comparison.rows[0].component_comparisons[0].absolute_delta);
+    QVERIFY(std::abs(*comparison.rows[0].component_comparisons[0].absolute_delta-
+                     0.008)<1e-12);
+    QCOMPARE(comparison.rows[0].component_comparisons[0].outcome,QtpOutcome::pass);
+    all[0].configured[0].actual_fresh_native=0.52;
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QCOMPARE(comparison.rows[0].component_comparisons[0].outcome,QtpOutcome::mismatch);
     all[0].configured[0].actual_fresh_native=0.5;
     // Support and selector membership are exact categorical invariants
     // even if an allowed numeric error is zero.
