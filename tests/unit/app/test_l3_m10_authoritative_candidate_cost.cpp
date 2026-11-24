@@ -59,6 +59,7 @@ private slots:
     void m11HardGuardAppliesBeforeAnyNumericScore();
     void independentGuardAndCandidateCannotDisagree();
     void currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost();
+    void independentFixedRemovesOnlyProtectedResidualMass();
 };
 void M10AuthoritativeCostTest::
 currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost() {
@@ -167,6 +168,35 @@ independentGuardAndCandidateCannotDisagree() {
     QCOMPARE(m10::score_exact_candidate_population(input).reason,
              m10::AuthoritativeCostReason::
                  missing_actual_candidate_or_protection);
+}
+void M10AuthoritativeCostTest::independentFixedRemovesOnlyProtectedResidualMass() {
+    auto input=source();
+    input.independently_measured_fixed.emplace();
+    auto& fixed=*input.independently_measured_fixed;
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    fixed.measured_fixed=input.exact_pair_slots;
+    for(auto& slot:fixed.measured_fixed)
+        for(auto& c:slot.configured)c.current_candidate_z=c.prepared.z;
+    // One already satisfied component remains in coverage, but its
+    // residual target error cannot attract subsequent corrections.
+    fixed.measured_fixed[0].configured[0].current_candidate_z=9.0;
+    input.exact_pair_slots[0].configured[0].current_candidate_z=9.0;
+    input.protected_full_k.clear(); // no precomputed candidate guard
+    const auto measured=m10::score_exact_candidate_population(input);
+    QVERIFY(measured.measured&&measured.target_evidence);
+    QVERIFY(measured.target_evidence->valid_measured());
+    QVERIFY(std::abs(*measured.target_evidence->j_target)<1e-12);
+    QVERIFY(measured.target_evidence->effective_coverage[0].has_value());
+    QVERIFY(std::abs(*measured.target_evidence->effective_coverage[0]-1.0)<1e-12);
+    QVERIFY(measured.measured->native_prediction->protected_k.front().protected_by_m11_mask);
+    // Actual candidate drops a protected coordinate: never improve J.
+    input.exact_pair_slots[0].configured[0].current_candidate_z.reset();
+    QVERIFY(!m10::score_exact_candidate_population(input).measured);
+    input.exact_pair_slots[0].configured[0].current_candidate_z=12.0;
+    QVERIFY(!m10::score_exact_candidate_population(input).measured);
+    input.exact_pair_slots[0].configured[0].current_candidate_z=9.0;
+    fixed.measured_fixed[0].exact_feature_dependency="different-fixed-generation";
+    QVERIFY(!m10::score_exact_candidate_population(input).measured);
 }
 void M10AuthoritativeCostTest::
 noCorrectionNeedsIndependentFixedProofNotNoneTop8() {
