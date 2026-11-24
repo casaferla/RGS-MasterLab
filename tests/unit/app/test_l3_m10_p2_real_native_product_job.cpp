@@ -747,10 +747,10 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(m10::exact_source_owner_equal(resolved->s03_s06.independent_source_owners[2],
                                          resolved_owner));
     QVERIFY(!resolved->t01.actual_sources[2].integrated_lufs.ready());
-    auto mismatched_scope=*resolved;
-    mismatched_scope.t02_t06.exact_common.high_hz=19000.0;
+    auto mismatched_profile_definition=*resolved;
+    mismatched_profile_definition.t02_t06.exact_common.high_hz=19000.0;
     QVERIFY(!m10::rebind_independent_original_native_pair(
-        mismatched_scope,*original_pair.value(),resolved_owner));
+        mismatched_profile_definition,*original_pair.value(),resolved_owner));
     QVERIFY(!m10::resolve_original_definitions_from_fixed(
         fixed_definition_fixture,*original_pair.value(),stamp,"stale-generation","new-candidate"));
     QVERIFY(!m10::resolve_original_definitions_from_fixed(
