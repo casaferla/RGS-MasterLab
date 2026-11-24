@@ -1782,6 +1782,37 @@ ProjectSessionViewModel::assess_private_m13_completed_fresh_worker(
             m11_protected,other_hard_safety);
 }
 
+core::Result<l3_automatch::m13_frozen::
+    M13ProvisionalDiagnosticEnvelope>
+ProjectSessionViewModel::seal_private_m13_provisional_diagnostic(
+    const l3_automatch::m13_frozen::
+        M13ImmutableProductFreshProbeRequest& request,
+    const l3_automatch::m13_frozen::M13FreshProductMasterProbe& result,
+    const l3_automatch::m13_frozen::M13TwentySevenConformance& native,
+    const l3_automatch::m13_frozen::FullM08Comparison& proximity,
+    bool independent_reference_and_scopes_current,
+    l3_automatch::m13_frozen::MandatoryHardPredicate m11_protected,
+    l3_automatch::m13_frozen::MandatoryHardPredicate other_hard_safety)
+{
+    namespace m13=l3_automatch::m13_frozen;
+    using R=core::Result<m13::M13ProvisionalDiagnosticEnvelope>;
+    if(!private_m13_fresh_probe_still_current(request))
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "L3_M13_DIAGNOSTIC_NO_CURRENT_PRODUCT_OWNER"});
+    // A report may truthfully show analysis or profile UNAVAILABLE.
+    // It cannot be issued for an expired M12 Materialization epoch.
+    const auto diagnosis=m13::assess_provisional_m13_product_fresh_evidence(
+        request,result,native,proximity,true,
+        independent_reference_and_scopes_current,
+        m11_protected,other_hard_safety);
+    if(diagnosis.state==m13::VerificationState::stale)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "L3_M13_DIAGNOSTIC_STALE_PRODUCT_OWNER"});
+    const auto id=next_id();
+    return m13::encode_m13_provisional_diagnostic(
+        request,result,diagnosis,id);
+}
+
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
 {
     namespace m=l3_automatch::m12_frozen;
