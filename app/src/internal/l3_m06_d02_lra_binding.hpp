@@ -67,6 +67,7 @@ bind_real_d02_lra(const LraTripleEvidence& e)
     native.selector="EBU-P95-P10";
     native.valid_count=e.actual_candidate.relative_retained_windows;
     native.configured_count=e.actual_candidate.absolute_gated_windows;
+    native.population_identity=e.actual_candidate.exact_gate_population_identity;
     return {std::move(result),LraBindingReason::ready};
 }
 } // namespace rgsml::app::l3_automatch::m05m06_real
