@@ -4,6 +4,7 @@
 #include "l3_m10_p2_bound_native_worker_score.hpp"
 #include "l3_m10_exact_native_graph_content.hpp"
 #include "l3_m10_p2_canonical_trial_ticket.hpp"
+#include "l3_m11_native_fixed_assessment.hpp"
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 struct PreservedNativeGraph final {
@@ -84,6 +85,13 @@ template<class ResolveOriginalTriple>
         original_definitions=resolve_original_definitions_from_fixed(
             fixed,env.originals,owners.current_owner,env.generation,ticket);
         if(!original_definitions)return rejected();
+        if(!cost.m08_reporting_requested_domains)return rejected();
+        const auto fixed_targets=m11_frozen::assess_native_fixed_targets(
+            fixed,cost.amount,*cost.m08_reporting_requested_domains);
+        if(!fixed_targets.valid_current||fixed_targets.all_requested_targets_met)
+            return rejected(); // distinct no-correction owner path
+        cost.m08_corrective_mask=fixed_targets.corrective;
+        cost.m11_no_correction_full_evidence_attested=false;
     }
     cost.independently_measured_fixed=fixed;
     const auto execution=job.value()->exact_execution_graph_content();
