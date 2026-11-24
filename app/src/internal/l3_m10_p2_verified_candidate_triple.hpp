@@ -13,6 +13,32 @@
 #include <utility>
 
 namespace rgsml::app::l3_automatch::m10_frozen {
+// M13 changes only the candidate owner of the already accepted definitions.
+// All candidate observations are discarded/rebuilt by the real binder below.
+[[nodiscard]] inline bool rebind_original_candidate_owner(
+    P2OriginalRealNativeTriple& original,
+    const m05m06_real::SourceIdentity& accepted,
+    const m05m06_real::SourceIdentity& fresh)
+{
+    if(!fresh.full_track_owner_confirmed||!fresh.generation||
+       fresh.resource_identity.empty()||
+       fresh.resource_identity==accepted.resource_identity)return false;
+    std::array<m05m06_real::SourceIdentity*,10> owners{{
+        &original.m19.actual_candidate.owner,
+        &original.s01_s02.actual_candidate.owner,
+        &original.t01.actual_sources[2].owner,
+        &original.t02_t06.sources[2].owner,
+        &original.d01.source[2].owner,
+        &original.d02.candidate_owner,
+        &original.d03_d04.candidate_owner,
+        &original.d07_d09.current_sources[2].owner,
+        &original.d10_d12.source_owner[2],
+        &original.s03_s06.independent_source_owners[2]}};
+    for(const auto* owner:owners)
+        if(!exact_source_owner_equal(*owner,accepted))return false;
+    for(auto* owner:owners)*owner=fresh;
+    return true;
+}
 [[nodiscard]] inline P2RealTripleBindingResult
 bind_original_native_triple_from_measured_source(
     P2OriginalRealNativeTriple original,
