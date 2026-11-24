@@ -142,4 +142,34 @@ native_artistic_complexity(const m10_frozen::PreservedNativeGraph& graph)
     if(!m10_frozen::complexity_cost(out.modules,out.bands))return std::nullopt;
     return out;
 }
+// The existing canonical M07-M09 serializer is supplied as the
+// exact-key producer. It receives the actual decoded typed graph;
+// it cannot inject a numerical objective or an artificial DSP count.
+template<class SerializeCanonicalCurrent>
+[[nodiscard]] inline std::optional<m10_frozen::PreservedNativeTrial>
+build_native_typed_trial(
+    const NativeTypedSeed& seed,
+    std::span<const m10_frozen::Coordinate> inventory,
+    std::span<const double> normalized,
+    const m10_frozen::AuthoritativeCostInput& frozen_constraints,
+    SerializeCanonicalCurrent&& serialize_current)
+{
+    auto decoded=decode_native_typed_seed(seed,inventory,normalized);
+    if(!decoded)return std::nullopt;
+    const auto complexity=native_artistic_complexity(decoded->graph);
+    if(!complexity)return std::nullopt;
+    auto key=std::invoke(std::forward<SerializeCanonicalCurrent>(serialize_current),
+                         decoded->graph,inventory,normalized);
+    if(!key||key->immutable_generation_and_policy.empty()||
+       key->candidate_execution_content.empty()||key->canonical_current_tuple.empty()||
+       key->topology_evidence_identity.empty())return std::nullopt;
+    auto cost=frozen_constraints;
+    cost.active_coordinates=std::move(decoded->references);
+    cost.active_owned_modules=complexity->modules;
+    cost.enabled_artistic_bands=complexity->bands;
+    cost.canonical_current_tuple=key->canonical_current_tuple;
+    cost.exact_topology_evidence_identity=key->topology_evidence_identity;
+    return m10_frozen::PreservedNativeTrial{
+        std::move(decoded->graph),std::move(*key),std::move(cost),true};
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
