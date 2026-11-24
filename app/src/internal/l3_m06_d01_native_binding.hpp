@@ -77,6 +77,7 @@ struct D01BindingProjection final {
         if(candidate) {
             native.valid_count=candidate->valid_windows;
             native.configured_count=candidate->complete_windows;
+            native.population_identity=e.source[2].short_term_population_identity;
         }
     }
     return {std::move(result),D01BindingFailure::none};
