@@ -28,13 +28,13 @@ enum class SpectralNativeReason:std::uint8_t {
 };
 struct SpectralBandD10D12 final {
     std::array<std::optional<double>,3> d10_d11_d12_z{};
-    std::optional<double> d12_raw_rho;
     std::array<std::uint64_t,3> valid_native_counts{};
     std::array<double,3> native_support{};
     std::array<SpectralNativeReason,3> reason{
         SpectralNativeReason::missing_exact_stft_or_grid,
         SpectralNativeReason::missing_exact_stft_or_grid,
         SpectralNativeReason::missing_exact_stft_or_grid};
+    std::optional<double> d12_raw_rho{};
 };
 struct SpectralD10D12Native final {
     std::vector<SpectralBandD10D12> canonical_band_results;
