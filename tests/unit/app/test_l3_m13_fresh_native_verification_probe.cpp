@@ -316,8 +316,6 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
     QVERIFY(!second.value()->is_m13_verified());
     QVERIFY(!second.value()->authorizes_master_export());
 }
-} // namespace
-} // namespace rgsml::tests
 void M13FreshNativeProbeTest::frozenQtpTwentySevenCanonicalCategories()
 {
     using namespace m13;
@@ -606,6 +604,9 @@ completeFreshNativeTwentySevenBindingComparison()
     comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
     QVERIFY(!comparison.every_required_binding_complete);
 }
+
+} // namespace
+} // namespace rgsml::tests
 
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
 #include "test_l3_m13_fresh_native_verification_probe.moc"
