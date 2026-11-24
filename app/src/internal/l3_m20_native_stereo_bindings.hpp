@@ -84,6 +84,10 @@ struct M20StereoProjection final {
         static_cast<bool>(valid_width),
         valid_width?1.0:0.0,
         pw,rw,cw.z,true});
+    auto& width_native=out[0].configured.back().candidate_native;
+    if(cw.z)width_native.value=in.actual_candidate.broadband_width.unrounded;
+    width_native.endpoint=cw.endpoint;
+    width_native.selector="broadband-width";
     // S02: transformed Fisher-Z Type7 native P10/P50/P90 and
     // independent one-time valid/complete native correlation support.
     double pair_support=0.0;
@@ -108,6 +112,15 @@ struct M20StereoProjection final {
             {z[0],m08_frozen::Endpoint::ordinary},
             {z[1],m08_frozen::Endpoint::ordinary},
             z[2],true});
+        auto& native=out[1].configured.back().candidate_native;
+        const std::array<const Value*,3> raw{{
+            &in.actual_candidate.correlation_p10,
+            &in.actual_candidate.correlation_p50,
+            &in.actual_candidate.correlation_p90}};
+        if(z[2])native.value=raw[i]->unrounded;
+        native.valid_count=in.actual_candidate.valid_correlation_windows;
+        native.configured_count=in.actual_candidate.complete_correlation_windows;
+        native.selector=std::array<const char*,3>{{"P10","P50","P90"}}[i];
     }
     return {std::move(out),M20StereoFailure::none};
 }
