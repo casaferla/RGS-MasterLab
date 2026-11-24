@@ -4,6 +4,7 @@
 // partial FFT metrics, verifier-tolerated numeric similarity or old
 // source/target/Fixed/owner generations. Cache is nonpersistent.
 #include "l3_m10_frozen_coordinate_refiner.hpp"
+#include "l3_m10_native_prediction_snapshot.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -73,7 +74,11 @@ public:
                old.total_j!=measured.total_j||
                old.target_j!=measured.target_j||
                old.processing_r!=measured.processing_r||
-               old.active_owned_modules!=measured.active_owned_modules) {
+               old.active_owned_modules!=measured.active_owned_modules||
+               static_cast<bool>(old.native_prediction)!=
+                   static_cast<bool>(measured.native_prediction)||
+               (old.native_prediction&&measured.native_prediction&&
+                *old.native_prediction!=*measured.native_prediction)) {
                 poisoned_=true;
                 completed_.clear();
                 return CacheInsert::deterministic_result_collision;
