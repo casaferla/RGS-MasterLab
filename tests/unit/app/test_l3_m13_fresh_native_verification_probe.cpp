@@ -1,4 +1,5 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
+#include "internal/l3_m13_qtp_27_projection.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
 #include "internal/l3_m13_p2_owned_full_master_probe.hpp"
@@ -34,6 +35,7 @@ private slots:
     void noM12ReceiptCannotPretendFreshVerification();
     void newRealRenderAndIndependentAnalysisRemainNonverified();
     void optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput();
+    void frozenQtpTwentySevenCanonicalCategories();
 };
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
@@ -307,5 +309,39 @@ optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput() {
 }
 } // namespace
 } // namespace rgsml::tests
+void M13FreshNativeProbeTest::frozenQtpTwentySevenCanonicalCategories()
+{
+    using namespace m13;
+    static_assert(kQtpBindings.size()==m07_frozen::kBindings.size());
+    QCOMPARE(kQtpState,std::string_view("PROVISIONAL"));
+    QCOMPARE(kQtpBindings[0].category,QtpCategory::band_profile_db);
+    QCOMPARE(kQtpBindings[1].category,QtpCategory::slope_db_per_octave);
+    QCOMPARE(kQtpBindings[5].category,QtpCategory::slope_db_per_octave);
+    QCOMPARE(kQtpBindings[14].category,QtpCategory::positive_ms);
+    QCOMPARE(kQtpBindings[15].category,QtpCategory::generic_db);
+    QCOMPARE(kQtpBindings[16].category,QtpCategory::generic_db);
+    QCOMPARE(kQtpBindings[17].category,QtpCategory::correlation_raw_rho);
+    QCOMPARE(kQtpBindings[22].category,QtpCategory::positive_width_ratio);
+    QCOMPARE(kQtpBindings[26].category,QtpCategory::true_peak_db_tp);
+    for(std::size_t i=0;i<kQtpBindings.size();++i) {
+        QCOMPARE(kQtpBindings[i].binding_id,m07_frozen::kBindings[i].binding_id);
+        QCOMPARE(kQtpBindings[i].source_transform,
+                 m07_frozen::kBindings[i].transform);
+    }
+    constexpr std::array<double,3> equal{0.0,1.0,2.0};
+    constexpr std::array<double,3> uniformlySmall{.002,.998,2.002};
+    const auto goodProfile=compare_qtp_t1_profile(equal,uniformlySmall);
+    QCOMPARE(goodProfile.outcome,QtpOutcome::pass);
+    constexpr std::array<double,3> singleTooLarge{.0101,1.0,2.0};
+    QCOMPARE(compare_qtp_t1_profile(equal,singleTooLarge).outcome,
+             QtpOutcome::mismatch);
+    constexpr std::array<double,3> eachInsideButRmsTooLarge{
+        .004,1.004,2.004};
+    QCOMPARE(compare_qtp_t1_profile(equal,eachInsideButRmsTooLarge).outcome,
+             QtpOutcome::mismatch);
+    QCOMPARE(compare_qtp_t1_profile(equal,std::span<const double>{}).outcome,
+             QtpOutcome::unavailable);
+}
+
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
 #include "test_l3_m13_fresh_native_verification_probe.moc"
