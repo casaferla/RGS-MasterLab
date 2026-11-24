@@ -535,6 +535,34 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         ->std::optional<m10::P2OriginalRealNativeTriple>{
         return std::nullopt;
     };
+    // The Product route requires a separately measured Fixed and
+    // checks its generation before invoking the native resolver.
+    bool unexpected_resolution=false;
+    const auto must_not_resolve=[&](const a::M10P2FullNativeEvidence&)
+        ->std::optional<m10::P2OriginalRealNativeTriple>{
+        unexpected_resolution=true;return std::nullopt;
+    };
+    const auto preserved_owner=a::native_product_candidate_identity(stamp,"preserved");
+    m10::AuthoritativeCostInput protected_input;
+    auto rejected=m10::measure_and_score_preserved_terminal_product_worker(
+        worker,*linked.value(),artistic,"preserved",spec_for_authoritative_bridge,
+        "current-phase6-test-generation",protected_input,0.0,preserved_owner,
+        &*original_pair.value(),true,must_not_resolve);
+    QCOMPARE(rejected.reason,m10::P2NativeCostReason::stale_or_unattested_product);
+    protected_input.independently_measured_fixed.emplace();
+    auto& stale_fixed=*protected_input.independently_measured_fixed;
+    stale_fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    stale_fixed.exact_fixed_ticket="fixed";
+    auto stale_owner=a::native_product_candidate_identity(newer_source_stamp,"fixed");
+    stale_fixed.exact_fixed_resource_identity=stale_owner.resource_identity;
+    stale_fixed.exact_fixed_source_generation=stale_owner.generation;
+    stale_fixed.exact_m07_generation="current-phase6-test-generation";
+    rejected=m10::measure_and_score_preserved_terminal_product_worker(
+        worker,*linked.value(),artistic,"preserved",spec_for_authoritative_bridge,
+        "current-phase6-test-generation",protected_input,0.0,preserved_owner,
+        &*original_pair.value(),true,must_not_resolve);
+    QCOMPARE(rejected.reason,m10::P2NativeCostReason::stale_or_unattested_product);
+    QVERIFY(!unexpected_resolution);
     const auto from_bound=
         m10::measure_and_score_bound_m10_p2_product_worker(
             worker,*linked.value(),artistic,*chosen,
