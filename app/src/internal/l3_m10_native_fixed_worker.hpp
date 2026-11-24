@@ -30,6 +30,7 @@ measure_native_fixed_once(
     const auto fixed_graph=fixed_job.exact_fixed_graph_content();
     if(!fixed_graph||candidate.exact_fixed_graph_content()!=fixed_graph)
         return std::nullopt;
+    if(!bind_original_pair_profile_common(spec,originals))return std::nullopt;
     auto measured=measure_m10_p2_full_native_once(
         fixed_job,std::move(spec),nullptr,cancellation);
     if(!measured||(cancellation&&cancellation->load(std::memory_order_acquire)))
