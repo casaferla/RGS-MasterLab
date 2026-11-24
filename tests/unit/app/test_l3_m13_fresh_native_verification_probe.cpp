@@ -2,6 +2,7 @@
 #include "internal/l3_m13_qtp_27_projection.hpp"
 #include "internal/l3_m13_predicted_vs_verified_proximity.hpp"
 #include "internal/l3_m13_verification_state_reasons.hpp"
+#include "internal/l3_m13_27_binding_conformance.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
 #include "internal/l3_m13_p2_owned_full_master_probe.hpp"
@@ -43,6 +44,7 @@ private slots:
     void sameRunPredictedVerifiedRawProximity();
     void frozenVerificationStatePrecedence();
     void reasonsOrderAndExactDuplicateSemantics();
+    void completeFreshNativeTwentySevenBindingComparison();
 };
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
@@ -513,5 +515,56 @@ void M13FreshNativeProbeTest::reasonsOrderAndExactDuplicateSemantics()
     retained.component_key="left";
     QVERIFY(normalize_verification_reasons({safety,retained})->size()==2U);
 }
+void M13FreshNativeProbeTest::
+completeFreshNativeTwentySevenBindingComparison()
+{
+    using namespace m13;
+    std::vector<M13BindingNativeEvidence> all;
+    all.reserve(m07_frozen::kBindings.size());
+    for(std::size_t i=0;i<m07_frozen::kBindings.size();++i) {
+        M13BindingNativeEvidence slot;
+        const auto& b=m07_frozen::kBindings[i];
+        slot.binding_id=std::string(b.binding_id);
+        slot.selected_source_feature_id=std::string(b.source_feature_id);
+        slot.exact_phase6_feature_dependency="real-phase6-identity";
+        slot.current_authoritative_source_and_config=true;
+        const auto n=b.component_share==m07_frozen::ComponentShare::thirds
+            ?3U:(b.component_share==m07_frozen::ComponentShare::configured_n
+                 ?2U:1U);
+        for(std::size_t k=0;k<n;++k) {
+            ExpectedFreshNativeComponent comp;
+            comp.expected_selector="canonical-"+std::to_string(k);
+            comp.fresh_selector=comp.expected_selector;
+            comp.expected_population_id="phase6-full-population";
+            comp.fresh_population_id=comp.expected_population_id;
+            comp.predicted_native=0.5;
+            comp.actual_fresh_native=0.5;
+            comp.expected_support_numerator=9;
+            comp.expected_support_denominator=10;
+            comp.actual_support_numerator=9;
+            comp.actual_support_denominator=10;
+            comp.exact_fresh_native_transform_attested=true;
+            slot.configured.push_back(std::move(comp));
+        }
+        all.push_back(std::move(slot));
+    }
+    auto comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QVERIFY(comparison.every_required_binding_complete);
+    QVERIFY(comparison.every_required_binding_passed);
+    QCOMPARE(comparison.rows.size(),std::size_t{27});
+    QVERIFY(comparison.required_components>27U);
+    QVERIFY(!comparison.authorizes_release_verified());
+    for(const auto& row:comparison.rows)
+        QCOMPARE(row.outcome,BindingConformance::passed);
+    QCOMPARE(comparison.rows[0].t1_profile->outcome,QtpOutcome::pass);
+    all[0].configured[0].actual_fresh_native=0.508;
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QVERIFY(!comparison.every_required_binding_passed);
+    QCOMPARE(comparison.rows[0].outcome,BindingConformance::failed);
+    QVERIFY(comparison.rows[0].t1_profile);
+    QCOMPARE(comparison.rows[0].t1_profile->outcome,
+             QtpOutcome::mismatch); // RMS, despite .008<.01
+}
+
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
 #include "test_l3_m13_fresh_native_verification_probe.moc"
