@@ -84,13 +84,58 @@ public:
         core::FrameCount max_block_frames,
         bool current_m09_m10_m11_candidate_graph_attested)
     {
+        if(!selected_p2.typed.still_matches(current_manual,current_manual_bindings)||
+           !selected_p2.typed.chosen_p2_parameters())
+            return core::Result<M10P2RealNativeProductJob>::failure(
+                error("L3_M10_P2_PRODUCT_SNAPSHOT_INVALID"));
+        return create_common(std::move(owner),std::move(current_prepared),
+            std::move(current_registry),current_manual,current_manual_bindings,
+            exact_candidate_linked,linked_bindings,
+            selected_p2.typed.base.ticket_identity,max_block_frames,
+            current_m09_m10_m11_candidate_graph_attested,
+            selected_p2.typed.chosen_p2_parameters());
+    }
+
+    // Product AutoMatch does not require or optimize a MANUAL P2.
+    // If present, preserve its exact parameters and activation state,
+    // and place it after the REF_LINKED artistic chain.
+    [[nodiscard]] static core::Result<M10P2RealNativeProductJob>
+    create_preserving_user_terminal(
+        OfflineProductOwnerStamp owner,
+        std::shared_ptr<const render::RenderResult> current_prepared,
+        std::shared_ptr<const dsp::ModuleRegistry> current_registry,
+        const dsp::ProcessingChain& current_manual,
+        std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
+        const dsp::ProcessingChain& exact_candidate_linked,
+        std::span<const dsp::ModuleExecutionBinding> linked_bindings,
+        std::string candidate_ticket,
+        core::FrameCount max_block_frames,
+        bool current_m09_m10_m11_candidate_graph_attested)
+    {
+        return create_common(std::move(owner),std::move(current_prepared),
+            std::move(current_registry),current_manual,current_manual_bindings,
+            exact_candidate_linked,linked_bindings,std::move(candidate_ticket),
+            max_block_frames,current_m09_m10_m11_candidate_graph_attested,nullptr);
+    }
+private:
+    [[nodiscard]] static core::Result<M10P2RealNativeProductJob> create_common(
+        OfflineProductOwnerStamp owner,
+        std::shared_ptr<const render::RenderResult> current_prepared,
+        std::shared_ptr<const dsp::ModuleRegistry> current_registry,
+        const dsp::ProcessingChain& current_manual,
+        std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
+        const dsp::ProcessingChain& exact_candidate_linked,
+        std::span<const dsp::ModuleExecutionBinding> linked_bindings,
+        std::string candidate_ticket,core::FrameCount max_block_frames,
+        bool current_m09_m10_m11_candidate_graph_attested,
+        const dsp::StreamingTruePeakLimiterParameters* explicitly_selected_research_p2)
+    {
         using R=core::Result<M10P2RealNativeProductJob>;
         if(!current_m09_m10_m11_candidate_graph_attested||
            !owner.populated()||!current_prepared||!current_registry||
            max_block_frames.value()<=0||
-           !selected_p2.typed.still_matches(
-               current_manual,current_manual_bindings)||
-           selected_p2.typed.base.ticket_identity.empty()||
+           current_manual.instances().size()!=current_manual_bindings.size()||
+           candidate_ticket.empty()||
            current_manual.context()!=dsp::ProcessingChainContext{
                dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL}||
            exact_candidate_linked.context()!=dsp::ProcessingChainContext{
@@ -101,15 +146,18 @@ public:
            current_prepared->view().timebase().frame_domain_id()!=
                audio::FrameDomainId::SOURCE_PROCESSING_RATE)
             return R::failure(error("L3_M10_P2_PRODUCT_SNAPSHOT_INVALID"));
-        const auto* effective_p2=
-            selected_p2.typed.chosen_p2_parameters();
         const auto manual_nodes=current_manual.instances();
-        if(!effective_p2||manual_nodes.empty()||
-           manual_nodes.back().instance_id()!=
-               selected_p2.typed.base.p2_id||
-           !manual_nodes.back().active()||
-           manual_nodes.back().module_type_id()!=
-               "rgsml.dsp.streaming-true-peak-limiter")
+        bool has_terminal=false;
+        for(std::size_t i=0;i<manual_nodes.size();++i) {
+            const auto& node=manual_nodes[i];
+            if(node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter") {
+                if(has_terminal||i+1U!=manual_nodes.size())
+                    return R::failure(error("L3_M10_P2_FINAL_MODULE_INVALID"));
+                has_terminal=true;
+            }
+        }
+        if(explicitly_selected_research_p2&&
+           (!has_terminal||!manual_nodes.back().active()))
             return R::failure(error("L3_M10_P2_FINAL_MODULE_INVALID"));
         for(std::size_t i=0;i<manual_nodes.size();++i)
             if(!binding_matches_instance(
@@ -144,7 +192,7 @@ public:
                     if(n.module_type_id()==name)return true;
                 return false;
             };
-            if(!registry->has_factory(
+            if(has_terminal&&!registry->has_factory(
                  "rgsml.dsp.streaming-true-peak-limiter")) {
                 auto opt=dsp::ModuleRegistry::with_streaming_true_peak_preview(
                     *registry);
@@ -170,29 +218,35 @@ public:
             }
             auto fixed=dsp::ProcessingChain::restore(
                 *registry,current_manual.context(),current_manual.revision(),
-                {manual_nodes.begin(),manual_nodes.end()-1});
+                {manual_nodes.begin(),manual_nodes.end()-(has_terminal?1:0)});
             if(!fixed)return R::failure(*fixed.error());
             auto linked=dsp::ProcessingChain::restore(
                 *registry,exact_candidate_linked.context(),
                 exact_candidate_linked.revision(),
                 {linked_nodes.begin(),linked_nodes.end()});
             if(!linked)return R::failure(*linked.error());
+            std::vector<dsp::ModuleInstance> terminal_nodes;
+            if(has_terminal)terminal_nodes.push_back(manual_nodes.back());
             auto p2=dsp::ProcessingChain::restore(
                 *registry,current_manual.context(),current_manual.revision(),
-                {manual_nodes.back()});
+                std::move(terminal_nodes));
             if(!p2)return R::failure(*p2.error());
             std::vector<dsp::ModuleExecutionBinding> fixed_bindings{
-                current_manual_bindings.begin(),current_manual_bindings.end()-1};
+                current_manual_bindings.begin(),current_manual_bindings.end()-(has_terminal?1:0)};
             std::vector<dsp::ModuleExecutionBinding> linked_values{
                 linked_bindings.begin(),linked_bindings.end()};
-            std::vector<dsp::ModuleExecutionBinding> p2_binding{{
-                manual_nodes.back().instance_id(),*effective_p2}};
+            std::vector<dsp::ModuleExecutionBinding> p2_binding;
+            if(has_terminal) {
+                p2_binding.push_back(current_manual_bindings.back());
+                if(explicitly_selected_research_p2)
+                    p2_binding.back().parameters=*explicitly_selected_research_p2;
+            }
             return R::success(M10P2RealNativeProductJob{
                 std::move(owner),std::move(current_prepared),
                 std::move(registry),std::move(*fixed.value()),
                 std::move(*linked.value()),std::move(*p2.value()),
                 std::move(fixed_bindings),std::move(linked_values),
-                std::move(p2_binding),selected_p2.typed.base.ticket_identity,
+                std::move(p2_binding),std::move(candidate_ticket),
                 max_block_frames,current_manual.revision(),
                 {manual_nodes.begin(),manual_nodes.end()},
                 {current_manual_bindings.begin(),current_manual_bindings.end()}});
@@ -201,6 +255,7 @@ public:
         }
     }
 
+public:
     // Optional exact PCM prefix cache uses available physical RAM at the
     // time of creation. Never compromise entire-resource output if the
     // budget is too small: execute() takes the correct cold path.
@@ -209,7 +264,7 @@ public:
         std::optional<std::size_t> requested_maximum=std::nullopt) const
     {
         using R=core::Result<M10P2ExactPrefix>;
-        if(!prepared_||!registry_)
+        if(!prepared_||!registry_||p2_bindings_.empty())
             return R::failure(error("L3_M10_P2_MISSING_IMMUTABLE_OWNER"));
         const auto v=prepared_->view();
         const auto frames=v.frame_count().value();
@@ -243,7 +298,7 @@ public:
     execute_with_exact_pre_p2_prefix(const M10P2ExactPrefix& prefix) const
     {
         using R=core::Result<render::RenderResult>;
-        if(!prefix.rendered_||prefix.owner_!=owner_||
+        if(p2_bindings_.empty()||!prefix.rendered_||prefix.owner_!=owner_||
            prefix.prepared_!=prepared_||prefix.registry_!=registry_||
            prefix.block_!=max_block_frames_||
            prefix.manual_revision_!=baseline_manual_revision_||
@@ -273,6 +328,7 @@ public:
         // depend on whether an optional bounded prefix fits RAM.
         auto upstream=render_pre_p2();
         if(!upstream)return R::failure(*upstream.error());
+        if(p2_bindings_.empty())return upstream;
         auto limited=render_segment(
             upstream.value()->view(),final_p2_,p2_bindings_);
         if(!limited)return R::failure(*limited.error());
@@ -290,10 +346,12 @@ public:
                out.view().format()==prepared_->view().format()&&
                out.view().timebase().frame_domain_id()==
                    audio::FrameDomainId::SOURCE_PROCESSING_RATE&&
-               !signatures.empty()&&
-               signatures.back().instance_id==p2_bindings_.front().instance_id&&
-               signatures.back().type_id==
-                   "rgsml.dsp.streaming-true-peak-limiter";
+               (p2_bindings_.empty()
+                ? signatures.size()==linked_.instances().size()&&
+                  out.chain_revision()==linked_.revision()
+                : signatures.size()==1U&&
+                  signatures.back().instance_id==p2_bindings_.front().instance_id&&
+                  signatures.back().type_id=="rgsml.dsp.streaming-true-peak-limiter");
     }
     [[nodiscard]] bool still_current(
         const OfflineProductOwnerStamp& current_owner,
