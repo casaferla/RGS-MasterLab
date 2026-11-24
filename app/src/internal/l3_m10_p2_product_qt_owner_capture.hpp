@@ -65,6 +65,46 @@ public:
         core::FrameCount max_block_frames,
         bool exact_current_m09_m10_m11_candidate_attested)
     {
+        return capture_impl(product,fanout,selector,gold,
+            exact_candidate_ref_linked,linked_bindings,max_block_frames,
+            exact_current_m09_m10_m11_candidate_attested,
+            [&typed_m10_p2](const auto& stamp,const auto& prepared,
+                const auto& registry,const auto& manual,const auto& bindings,
+                const auto& linked,const auto& linked_params,auto block) {
+                return M10P2RealNativeProductJob::create(stamp,prepared,registry,
+                    manual,bindings,linked,linked_params,typed_m10_p2,block,true);
+            });
+    }
+
+    [[nodiscard]] static core::Result<Accepted> capture_preserving_user_terminal(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
+        const dsp::ProcessingChain& exact_candidate_ref_linked,
+        std::span<const dsp::ModuleExecutionBinding> linked_bindings,
+        const std::string& candidate_ticket,core::FrameCount max_block_frames,
+        bool exact_current_m09_m10_m11_candidate_attested)
+    {
+        return capture_impl(product,fanout,selector,gold,
+            exact_candidate_ref_linked,linked_bindings,max_block_frames,
+            exact_current_m09_m10_m11_candidate_attested,
+            [&candidate_ticket](const auto& stamp,const auto& prepared,
+                const auto& registry,const auto& manual,const auto& bindings,
+                const auto& linked,const auto& linked_params,auto block) {
+                return M10P2RealNativeProductJob::create_preserving_user_terminal(
+                    stamp,prepared,registry,manual,bindings,linked,linked_params,
+                    candidate_ticket,block,true);
+            });
+    }
+private:
+    template<class CreateJob>
+    [[nodiscard]] static core::Result<Accepted> capture_impl(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
+        const dsp::ProcessingChain& exact_candidate_ref_linked,
+        std::span<const dsp::ModuleExecutionBinding> linked_bindings,
+        core::FrameCount max_block_frames,
+        bool exact_current_m09_m10_m11_candidate_attested,CreateJob create_job)
+    {
         using R=core::Result<Accepted>;
         if(QThread::currentThread()!=product.session.thread()||
            QThread::currentThread()!=selector.thread()||
@@ -101,10 +141,8 @@ public:
             source.value()->source.locator(),
             reference.value()->gold.provider_id(),
             reference.value()->gold.locator()};
-        auto job=M10P2RealNativeProductJob::create(
-            stamp,source.value()->prepared,live_registry,
-            manual,bindings,exact_candidate_ref_linked,linked_bindings,
-            typed_m10_p2,max_block_frames,true);
+        auto job=create_job(stamp,source.value()->prepared,live_registry,
+            manual,bindings,exact_candidate_ref_linked,linked_bindings,max_block_frames);
         if(!job)return R::failure(*job.error());
         // Capture can only return an immutable worker after the same
         // Qt owner thread revalidates current SOURCE, GOLD and MANUAL.
@@ -122,6 +160,7 @@ public:
             std::move(*job.value())});
     }
 
+public:
     struct BatchCandidate final {
         // These are short-lived references valid only for the
         // synchronous owner-thread capture. Each returned job owns
