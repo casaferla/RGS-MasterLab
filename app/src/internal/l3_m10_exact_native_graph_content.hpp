@@ -34,8 +34,10 @@ exact_native_graph_content(
             return std::nullopt;
         append_exact_field(out,n.instance_id().uuid().to_string());
         append_exact_field(out,n.module_type_id());
-        append_exact_field(out,descriptor.value()->get().algorithm_version());
-        append_exact_field(out,descriptor.value()->get().parameter_schema_id());
+        const auto& registered=descriptor.value()->get();
+        if(!registered.algorithm_version()||!registered.parameter_schema_id())return std::nullopt;
+        append_exact_field(out,*registered.algorithm_version());
+        append_exact_field(out,*registered.parameter_schema_id());
         append_exact_field(out,n.semantic_node_id()?n.semantic_node_id()->to_string():"");
         out.push_back(n.enabled()?1U:0U);
         out.push_back(n.user_bypass()?1U:0U);
@@ -46,6 +48,19 @@ exact_native_graph_content(
         out.push_back(static_cast<std::uint8_t>(n.link_state()));
         append_exact_field(out,*params.value());
     }
+    return out;
+}
+[[nodiscard]] inline ExactCacheBytes exact_native_execution_segments(
+    std::int64_t maximum_block_frames,const ExactCacheBytes& fixed,
+    const ExactCacheBytes& linked,const ExactCacheBytes& terminal)
+{
+    ExactCacheBytes out;
+    using namespace p2_cache_detail;
+    append_exact_field(out,"rgsml.l3.native-execution-graph/1");
+    append_exact_field(out,std::to_string(maximum_block_frames));
+    append_exact_byte_field(out,fixed);
+    append_exact_byte_field(out,linked);
+    append_exact_byte_field(out,terminal);
     return out;
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
