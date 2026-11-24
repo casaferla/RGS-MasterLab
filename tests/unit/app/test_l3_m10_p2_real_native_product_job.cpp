@@ -609,10 +609,16 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         *source.value(),source_owner,spec_for_authoritative_bridge,
         *source.value(),gold_owner,spec_for_authoritative_bridge,
         {20.0,18000.0},1e-12,true,true,true));
+    auto pair_metadata_spec=spec_for_authoritative_bridge;
+    pair_metadata_spec.exact_m20_fft_size=0U; // derive separately from owned PCM
+    QVERIFY(!a::measure_original_prepared_reference_native_once(
+            *source.value(),source_owner,pair_metadata_spec,
+            *independent_gold.value(),gold_owner,pair_metadata_spec,
+            {20.0,20001.0},1e-12,true,true,true));
     const auto original_pair=
         a::measure_original_prepared_reference_native_once(
-            *source.value(),source_owner,spec_for_authoritative_bridge,
-            *independent_gold.value(),gold_owner,spec_for_authoritative_bridge,
+            *source.value(),source_owner,pair_metadata_spec,
+            *independent_gold.value(),gold_owner,pair_metadata_spec,
             {20.0,18000.0},1e-12,true,true,true);
     QVERIFY(original_pair);
     QCOMPARE(original_pair.value()->prepared.original_m19_m20.
