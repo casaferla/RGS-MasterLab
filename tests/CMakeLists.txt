@@ -2729,7 +2729,7 @@ qt_add_executable(rgsml_l3_m10_exact_cache_tests
     unit/app/test_l3_m10_exact_completed_result_cache.cpp)
 target_include_directories(rgsml_l3_m10_exact_cache_tests
     PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
-target_link_libraries(rgsml_l3_m10_exact_cache_tests PRIVATE Qt6::Test)
+target_link_libraries(rgsml_l3_m10_exact_cache_tests PRIVATE rgsml_dsp Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m10_exact_cache_tests)
 add_test(NAME rgsml_l3_m10_exact_cache_tests
     COMMAND rgsml_l3_m10_exact_cache_tests)
@@ -2742,7 +2742,7 @@ qt_add_executable(rgsml_l3_m10_cache_evaluator_tests
     unit/app/test_l3_m10_cache_aware_evaluator.cpp)
 target_include_directories(rgsml_l3_m10_cache_evaluator_tests
     PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
-target_link_libraries(rgsml_l3_m10_cache_evaluator_tests PRIVATE Qt6::Test)
+target_link_libraries(rgsml_l3_m10_cache_evaluator_tests PRIVATE rgsml_dsp Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m10_cache_evaluator_tests)
 add_test(NAME rgsml_l3_m10_cache_evaluator_tests
     COMMAND rgsml_l3_m10_cache_evaluator_tests)
