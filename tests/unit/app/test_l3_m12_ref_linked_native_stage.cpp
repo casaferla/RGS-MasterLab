@@ -35,7 +35,7 @@ class M12NativeStageTest final:public QObject {
     Q_OBJECT
 private slots:
     void realRegistryStagesTypedEqAndProtectsManualInputGain();
-    void forbiddenInputGainCollisionsStalenessAndUnavailableAreAtomic();
+    void protectedInputGainCollisionsStalenessAndUnavailableAreAtomic();
     void noCorrectionEmptyArtisticSectionMustBeExplicit();
     void linkedSuspensionAndUserBypassAreIndependent();
     void frozenInsertionAnchorPrecedesNativeProtectedP2();
@@ -83,7 +83,7 @@ realRegistryStagesTypedEqAndProtectsManualInputGain() {
     QVERIFY(!staged.value()->authorizes_m13_verified());
 }
 void M12NativeStageTest::
-forbiddenInputGainCollisionsStalenessAndUnavailableAreAtomic() {
+protectedInputGainCollisionsStalenessAndUnavailableAreAtomic() {
     auto base=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(base);
     auto registry=std::make_shared<const dsp::ModuleRegistry>(
@@ -107,8 +107,19 @@ forbiddenInputGainCollisionsStalenessAndUnavailableAreAtomic() {
         id("a5000000-0000-4000-8000-000000000022");
     node.exact_registered_type_id="rgsml.dsp.gain";
     node.exact_m10_winning_parameters=*gain.value();
+    // Distinct REFERENCE_MATCH loudness gain is legal. The MANUAL
+    // Input Gain identity remains protected, even for the same type.
+    const auto ownedGain=m::stage_exact_m12_native_ref_linked(
+        approved(),*manual.value(),protectedParams,registry,{node});
+    QVERIFY(ownedGain);
+    QCOMPARE(ownedGain.value()->chain.instances().front().instance_id(),
+             node.allocated_instance_id);
+    QCOMPARE(ownedGain.value()->chain.instances().front().owner(),
+             dsp::ModuleOwner::REFERENCE_MATCH);
+    node.allocated_instance_id=manualId;
     QVERIFY(!m::stage_exact_m12_native_ref_linked(
         approved(),*manual.value(),protectedParams,registry,{node}));
+    node.allocated_instance_id=id("a5000000-0000-4000-8000-000000000022");
     // No AutoMatch mutation of independently user-owned P2/M17.
     node.exact_registered_type_id="rgsml.dsp.streaming-true-peak-limiter";
     QVERIFY(!m::stage_exact_m12_native_ref_linked(
