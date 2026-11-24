@@ -4926,7 +4926,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     auto reordered=validJson.object();
     auto causeList=reordered.value("canonicalReasons").toArray();
     QVERIFY(causeList.size()>1);
-    const auto firstCause=causeList[0];
+    const QJsonValue firstCause=causeList.at(0);
     causeList[0]=causeList[causeList.size()-1];
     causeList[causeList.size()-1]=firstCause;
     reordered.insert("canonicalReasons",causeList);
