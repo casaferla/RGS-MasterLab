@@ -74,6 +74,13 @@ void M13FreshNativeProbeTest::ownedNativeSpecRetainsGateBytesAcrossDispatch()
     QCOMPARE(worker.source_support.spectral_frame_mask[0],std::uint8_t{1});
     QCOMPARE(worker.source_support.authoritative_band_eligibility[1],std::uint8_t{2});
     QCOMPARE(worker.source_support.retained_width_blocks[0].begin,std::uint64_t{10});
+    // Available-but-empty is not an unavailable ALL_SCOPE fallback.
+    spec.source_support.retained_width_blocks={};
+    auto explicitlyEmpty=m13::M13OwnedNativeSpec::capture(spec);
+    QVERIFY(explicitlyEmpty);
+    const auto empty=explicitlyEmpty->borrow();
+    QVERIFY(empty.source_support.has_width_gate);
+    QVERIFY(empty.source_support.retained_width_blocks.empty());
     spec.current_full_phase6_source_and_grid=false;
     QVERIFY(!m13::M13OwnedNativeSpec::capture(spec));
 }
