@@ -72,4 +72,29 @@ struct NativeDynamicSeed final {
     }
     return derive_cluster_type7_p75(rows,count,true);
 }
+// Validate the retained carrier against the actual measured Fixed D10
+// population before using it for any threshold. Selectors are positions
+// in the exact ordered canonical grid, not arbitrary band UUIDs.
+[[nodiscard]] inline bool native_fixed_spectral_carrier_matches(
+    const NativeSpectralSeedCarrier& carrier,
+    const m08_frozen::AuthenticatedPairSlot& d10)
+{
+    if(carrier.grid.size()!=d10.configured.size()||carrier.energy.empty()||
+       carrier.ordinals.size()!=carrier.energy.size())return false;
+    const auto measured=m05m06_real::reduce_native_spectral_d10_d12(
+        carrier.energy,carrier.grid.size(),true,carrier.active_pcm_frames,
+        carrier.sample_rate,carrier.ordinals);
+    if(measured.source_reason!=m05m06_real::SpectralNativeReason::ready||
+       measured.canonical_band_results.size()!=d10.configured.size())return false;
+    for(std::size_t i=0;i<d10.configured.size();++i) {
+        const auto& p=d10.configured[i];const auto& b=measured.canonical_band_results[i];
+        if(p.candidate_native.selector!=std::to_string(i)||
+           p.candidate_native.population_identity!=b.exact_frame_population_identity||
+           p.candidate_native.valid_count!=std::optional<std::uint64_t>{b.valid_native_counts[0]}||
+           p.candidate_native.configured_count!=std::optional<std::uint64_t>{measured.candidate_active_frames})
+            return false;
+        if(p.current_candidate_z&&p.current_candidate_z!=b.d10_d11_d12_z[0])return false;
+    }
+    return true;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
