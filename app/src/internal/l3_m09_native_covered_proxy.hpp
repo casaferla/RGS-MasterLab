@@ -147,4 +147,41 @@ bind_native_family_candidate(
     result.recipe.constraints=std::move(constraints);
     return result;
 }
+struct BoundNativeSelectedBatch final {
+    m10_frozen::BoundLegalCombinedResult selected;
+    std::vector<SelectedNativeFamilyRecipe> recipes;
+};
+// Preserve the exact deduplication and top32 ordering from M10. The
+// canonical selected ordinal indexes the deduplicated stream, not the
+// original input recipe position.
+[[nodiscard]] inline std::optional<BoundNativeSelectedBatch>
+select_bound_native_family_batch(const ExactBytes& generation,
+    std::span<const BoundNativeFamilyCandidate> candidates)
+{
+    if(generation.empty()||candidates.empty())return {};
+    std::vector<m10_frozen::BoundLegalCombinedCandidate> legal;
+    legal.reserve(candidates.size());
+    for(const auto& c:candidates) {
+        if(!same_selected_family_identity(c.legal.description,c.recipe.exact_description)||
+           c.legal.description.generation_snapshot!=generation||
+           c.legal.exact_active_coordinate_count!=c.recipe.exact_inventory.size())return {};
+        legal.push_back(c.legal);
+    }
+    auto selected=m10_frozen::bind_exact_legal_combined_and_select_top32(generation,legal,true);
+    if(selected.status!=m10_frozen::BoundLegalStatus::selected)return {};
+    BoundNativeSelectedBatch result;
+    for(const auto ordinal:selected.combined_consumer.numeric_selected_indices) {
+        if(ordinal>=selected.exact_descriptions.size())return {};
+        const auto& description=selected.exact_descriptions[ordinal];
+        const auto it=std::find_if(candidates.begin(),candidates.end(),[&](const auto& c){
+            return same_selected_family_identity(description,c.recipe.exact_description);});
+        if(it==candidates.end())return {};
+        auto recipe=it->recipe;
+        recipe.ordinal=ordinal;
+        recipe.exact_description=description;
+        result.recipes.push_back(std::move(recipe));
+    }
+    result.selected=std::move(selected);
+    return result;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
