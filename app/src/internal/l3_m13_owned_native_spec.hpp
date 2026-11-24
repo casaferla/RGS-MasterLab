@@ -3,6 +3,7 @@
 // but an M13 worker must own every gate and eligibility byte.
 #include "l3_product_native_one_pass.hpp"
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -29,14 +30,16 @@ public:
         return out;
     }
 private:
+    template<class T>
+    [[nodiscard]] static std::vector<T> copy_span(std::span<const T> source) {
+        if(source.empty())return {};
+        return {source.begin(),source.end()};
+    }
     explicit M13OwnedNativeSpec(ProductNativeOnePassSpec spec)
         :spec_(std::move(spec)),
-         spectral_mask_(spec_.source_support.spectral_frame_mask.begin(),
-                        spec_.source_support.spectral_frame_mask.end()),
-         width_blocks_(spec_.source_support.retained_width_blocks.begin(),
-                       spec_.source_support.retained_width_blocks.end()),
-         band_eligibility_(spec_.source_support.authoritative_band_eligibility.begin(),
-                           spec_.source_support.authoritative_band_eligibility.end())
+         spectral_mask_(copy_span(spec_.source_support.spectral_frame_mask)),
+         width_blocks_(copy_span(spec_.source_support.retained_width_blocks)),
+         band_eligibility_(copy_span(spec_.source_support.authoritative_band_eligibility))
     {
         spec_.source_support.spectral_frame_mask={};
         spec_.source_support.retained_width_blocks={};
