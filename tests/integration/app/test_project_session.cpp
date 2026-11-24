@@ -4891,10 +4891,11 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     // Recompute independent SHA over the exact canonical payload, not
     // over a cached report digest or any decoded Qt double quantity.
     auto tamperedBytes=roundtripDiagnostic.value()->canonical_utf8();
-    const auto altered=std::string{R"("verificationEvaluations":"1")"};
-    const auto at=tamperedBytes.find(altered);
+    const auto diagnosticFieldToTamper=
+        std::string{R"("verificationEvaluations":"1")"};
+    const auto at=tamperedBytes.find(diagnosticFieldToTamper);
     QVERIFY(at!=std::string::npos);
-    tamperedBytes.replace(at,altered.size(),
+    tamperedBytes.replace(at,diagnosticFieldToTamper.size(),
         R"("verificationEvaluations":"2")");
     auto tampered=project::OpaqueJsonValue::parse(tamperedBytes);
     QVERIFY(tampered);
