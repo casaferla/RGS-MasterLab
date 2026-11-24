@@ -4783,6 +4783,24 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              m13Owner.error()?m13Owner.error()->message().c_str():"");
     QVERIFY(!m13Owner.value()->authorizes_m13_verified());
     QVERIFY(!m13Owner.value()->authorizes_wav_export());
+    // Native observation requests cannot fall back to the partial path
+    // if the original Phase6 configuration was not authenticated.
+    auto missingNativeSpec=app::l3_automatch::ProductNativeOnePassSpec{};
+    const auto rejectedNative=app::l3_automatch::m13_frozen::
+        run_fresh_m13_product_postmaterialization_probe(
+            *m13Owner.value(),*core::FrameCount::create(4096).value(),
+            std::move(missingNativeSpec));
+    QVERIFY(!rejectedNative);
+    QCOMPARE(rejectedNative.error()->message(),
+             std::string("L3_M13_PRODUCT_FRESH_NATIVE_GRID_UNAVAILABLE"));
+    const std::atomic<bool> cancelledBeforeFresh{true};
+    const auto cancelledFresh=app::l3_automatch::m13_frozen::
+        run_fresh_m13_product_postmaterialization_probe(
+            *m13Owner.value(),*core::FrameCount::create(4096).value(),
+            std::nullopt,&cancelledBeforeFresh);
+    QVERIFY(!cancelledFresh);
+    QCOMPARE(cancelledFresh.error()->message(),
+             std::string("L3_M13_PRODUCT_FRESH_CANCELLED_BEFORE_RENDER"));
     // Mutable only for the negative analyzer-Fs test below; restore it
     // before evaluating or sealing any genuine fresh evidence.
     auto m13Result=
@@ -4791,6 +4809,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             *m13Owner.value(),*core::FrameCount::create(4096).value());
     QVERIFY2(m13Result,
              m13Result.error()?m13Result.error()->message().c_str():"");
+    QVERIFY(!m13Result.value()->additional_native);
     // A *new* owning PCM allocation is mandatory: neither a previous
     // PREPARED buffer nor the accepted M10 candidate is a verifier render.
     QVERIFY(&m13Result.value()->fresh_full_master_pcm.buffer()!=
