@@ -93,7 +93,7 @@ m13_provisional_payload_without_own_checksum(
     const auto& plan=*admitted.exact_materialized_preview_owner().replay;
     if(plan.project_id.is_nil()||plan.controller_id.is_nil()||
        plan.plan_id.is_nil()||plan.linked_chain_id.is_nil()||
-       plan.accepted_plan_checksum.empty()||
+       plan.exact_plan_checksum.empty()||
        !std::isfinite(fresh.fresh_m16.global_linear_peak())||
        !std::isfinite(admitted.frozen_independent_m16_ceiling_db_tp()))
         return std::nullopt;
@@ -170,7 +170,7 @@ m13_provisional_payload_without_own_checksum(
         {"controllerId",QString::fromStdString(plan.controller_id.to_string())},
         {"linkedChainId",QString::fromStdString(plan.linked_chain_id.to_string())},
         {"acceptedPlanContentChecksum",
-            QString::fromStdString(plan.accepted_plan_checksum)},
+            QString::fromStdString(plan.exact_plan_checksum)},
         {"freshEvidence",evidence},
         {"canonicalReasons",orderedReasons},
         {"primaryReason",orderedReasons.isEmpty()
