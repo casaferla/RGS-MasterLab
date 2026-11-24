@@ -38,6 +38,9 @@ measure_native_fixed_once(
     auto definitions=std::invoke(std::forward<ResolveOriginalNativeTriple>(resolve),
                                   *measured.value());
     if(!definitions)return std::nullopt;
+    auto authority=std::make_shared<const P2OriginalRealNativeTriple>(
+        retain_original_native_definitions(*definitions));
+    auto authority_content=exact_original_native_definition_content(*authority);
     auto bound=bind_p2_original_native_triple_from_independent_full_pair(
         std::move(*definitions),originals,*measured.value(),fixed_owner,
         active_frames,file_based_lra_attested);
@@ -51,6 +54,7 @@ measure_native_fixed_once(
     if(!population)return std::nullopt;
     return m11_frozen::NativeFixedPopulation{std::move(*population),true,
         fixed_job.ticket_identity(),fixed_owner.resource_identity,
-        fixed_owner.generation,exact_generation,*fixed_graph};
+        fixed_owner.generation,exact_generation,*fixed_graph,
+        std::move(authority),std::move(authority_content)};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
