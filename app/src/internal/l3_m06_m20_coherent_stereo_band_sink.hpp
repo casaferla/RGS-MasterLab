@@ -39,6 +39,8 @@ struct StereoCoherentNativeResult final {
     std::uint64_t native_selected_frames{};
     bool numerical_source_valid{};
     bool low_end_gate_current_and_identical{};
+    bool source_observation_complete{};
+    std::size_t source_channel_count{};
     [[nodiscard]] constexpr bool authorizes_m10_or_stereo_safety()
         const noexcept{return false;}
 };
@@ -132,7 +134,13 @@ public:
         out.native_selected_frames=frames_;
         out.low_end_gate_current_and_identical=low_gate_current_;
         out.numerical_source_valid=valid_&&frames_>0U;
-        if(!out.numerical_source_valid||fs_==0U)return out;
+        out.source_observation_complete=valid_&&fs_>0U;
+        out.source_channel_count=2U;
+        if(!out.source_observation_complete)return out;
+        if(frames_==0U) {
+            for(const auto& b:bands_)out.multiband.push_back({b.index,{},{}});
+            return out;
+        }
         if(!per_band_exact_zero_side_attested.empty()&&
            per_band_exact_zero_side_attested.size()!=bands_.size()) {
             out.numerical_source_valid=false;
