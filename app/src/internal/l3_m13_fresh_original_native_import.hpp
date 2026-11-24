@@ -108,7 +108,9 @@ import_m13_product_fresh_original_native_source(
         return fail("L3_M13_FRESH_NATIVE_IDENTITY_INVALID");
     auto observed=m05m06_real::import_actual_full_source(
         fresh.fresh_m19,fresh.fresh_m20,
-        exact_owner);
+        exact_owner,fresh.additional_native?
+            std::span<const std::uint64_t>{fresh.additional_native->selected_original_m20_ordinals}:
+            std::span<const std::uint64_t>{});
     if(!observed.source)
         return fail("L3_M13_FRESH_NATIVE_ORIGINAL_M19_M20_UNAVAILABLE");
     M13FreshOriginalNativeSource output{
