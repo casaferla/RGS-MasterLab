@@ -3,6 +3,7 @@
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
+#include "internal/l3_m13_actual_native_worker.hpp"
 
 #include "audition_region_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
@@ -1811,6 +1812,35 @@ ProjectSessionViewModel::seal_private_m13_provisional_diagnostic(
     const auto id=next_id();
     return m13::encode_m13_provisional_diagnostic(
         request,result,diagnosis,id);
+}
+
+core::Result<l3_automatch::m13_frozen::M13ProvisionalDiagnosticEnvelope>
+ProjectSessionViewModel::seal_private_m13_actual_native_completion(
+    const l3_automatch::m13_frozen::M13ActualNativeWorkerCompletion& completion)
+{
+    namespace m13=l3_automatch::m13_frozen;
+    using R=core::Result<m13::M13ProvisionalDiagnosticEnvelope>;
+    const auto fail=[](const char* why) {
+        return R::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    const auto& fresh=completion.fresh();
+    const auto& request=fresh.executed_request;
+    if(!private_m13_fresh_probe_still_current(request))
+        return fail("L3_M13_ACTUAL_COMPLETION_STALE_PRODUCT");
+    const auto& owner=completion.source_reference_owner();
+    const auto& p=source_->source_resource()->reference();
+    const auto& g=gold_->gold_resource()->reference();
+    if(!owner.populated()||
+       owner.source_provider_id!=p.provider_id()||
+       owner.source_locator!=p.locator()||
+       owner.reference_provider_id!=g.provider_id()||
+       owner.reference_locator!=g.locator()||
+       owner.reference_selection_revision!=gold_->selection_revision())
+        return fail("L3_M13_ACTUAL_COMPLETION_STALE_REFERENCE");
+    if(completion.assessment().state==m13::VerificationState::stale)
+        return fail("L3_M13_ACTUAL_COMPLETION_STALE_EVIDENCE");
+    return m13::encode_m13_provisional_diagnostic(
+        request,fresh,completion.assessment(),next_id());
 }
 
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
