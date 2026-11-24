@@ -87,6 +87,8 @@ native_side_fit_population(const m11_frozen::NativeFixedPopulation& fixed,
     }
     const auto* binding=m07_frozen::find_binding("rgsml.reference-match.binding.stereo.s03");
     if(!binding)return {};
-    return fit_native_eq_prefixes(active,legal,rate,true,20.0*std::log10(2.0)*binding->deadband);
+    auto prefixes=fit_native_eq_prefixes(active,legal,rate,true,20.0*std::log10(2.0)*binding->deadband);
+    for(auto& prefix:prefixes)prefix.exact_eligible_grid=population->eligible_grid;
+    return prefixes;
 }
 } // namespace rgsml::app::l3_automatch::m09_frozen

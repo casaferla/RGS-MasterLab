@@ -88,6 +88,8 @@ native_tonal_fit_population(const m11_frozen::NativeFixedPopulation& fixed,
         const auto& smoothed=population->eligible_grid[static_cast<std::size_t>(it-grid.begin())];
         if(smoothed)cell.residual_db=*smoothed;
     }
-    return fit_native_eq_prefixes(active,legal,rate,false,m07_frozen::kBindings.front().deadband);
+    auto prefixes=fit_native_eq_prefixes(active,legal,rate,false,m07_frozen::kBindings.front().deadband);
+    for(auto& prefix:prefixes)prefix.exact_eligible_grid=population->eligible_grid;
+    return prefixes;
 }
 } // namespace rgsml::app::l3_automatch::m09_frozen
