@@ -96,6 +96,8 @@ enum class Endpoint:std::uint8_t{
 struct CanonicalCoordinate final {
     std::optional<double> z;
     Endpoint endpoint{Endpoint::ordinary};
+    friend bool operator==(const CanonicalCoordinate&,
+                           const CanonicalCoordinate&)=default;
 };
 enum class TargetFailure:std::uint8_t {
     none,invalid_amount_domain,missing_or_nonfinite_input,
