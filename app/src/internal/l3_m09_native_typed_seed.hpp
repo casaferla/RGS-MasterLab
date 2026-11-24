@@ -56,6 +56,7 @@ decode_native_typed_seed(
         };
         const auto found=std::find_if(seed.coordinates.begin(),seed.coordinates.end(),same);
         if(found==seed.coordinates.end()||
+           found->canonical.normalized_u!=c.normalized_u||
            std::count_if(seed.coordinates.begin(),seed.coordinates.end(),same)!=1||
            !used.emplace(c.semantic_node_id,c.stable_parameter_id).second||
            !std::isfinite(found->reference_weight)||found->reference_weight<=0.0||
