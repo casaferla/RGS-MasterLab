@@ -62,6 +62,11 @@ bind_real_d02_lra(const LraTripleEvidence& e)
         e.actual_candidate.is_reference_grade()
             ?e.actual_candidate.lra_lu:std::nullopt,
         true});
+    auto& native=result.configured.back().candidate_native;
+    native.value=result.configured.back().current_candidate_z;
+    native.selector="EBU-P95-P10";
+    native.valid_count=e.actual_candidate.relative_retained_windows;
+    native.configured_count=e.actual_candidate.absolute_gated_windows;
     return {std::move(result),LraBindingReason::ready};
 }
 } // namespace rgsml::app::l3_automatch::m05m06_real
