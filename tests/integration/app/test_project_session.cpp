@@ -5361,6 +5361,28 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             m13Owner.value()->exact_product_ownership_epoch());
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *postRedo.value()));
+    // A new CURRENT request cannot launder an OLD worker result,
+    // even when Undo/Redo restored the exact same immutable DSP ticket.
+    QVERIFY(!m13Result.value()->matches_executed_request(*postRedo.value()));
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        import_m13_product_fresh_original_native_source(
+            *postRedo.value(),*m13Result.value(),
+            {20.0,16000.0},1e-12,0,false,false));
+    const auto mismatchedCurrentRequest=session.project.
+        assess_private_m13_completed_fresh_worker(
+            *postRedo.value(),*m13Result.value(),
+            app::l3_automatch::m13_frozen::M13TwentySevenConformance{},
+            app::l3_automatch::m13_frozen::FullM08Comparison{},true,
+            app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable,
+            app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable);
+    QCOMPARE(mismatchedCurrentRequest.state,
+        app::l3_automatch::m13_frozen::VerificationState::stale);
+    QVERIFY(!session.project.seal_private_m13_provisional_diagnostic(
+        *postRedo.value(),*m13Result.value(),
+        app::l3_automatch::m13_frozen::M13TwentySevenConformance{},
+        app::l3_automatch::m13_frozen::FullM08Comparison{},true,
+        app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable,
+        app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable));
     QVERIFY(session.previewController->
         has_private_m12_product_preview_ticket());
     QVERIFY(session.project.can_save_project());
