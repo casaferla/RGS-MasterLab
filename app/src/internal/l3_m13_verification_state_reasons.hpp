@@ -50,9 +50,12 @@ struct ReasonDescriptor final {
     std::string_view code;
     VerificationStage stage;
 };
-inline constexpr std::array<ReasonDescriptor,20> kReasonDescriptors{{
+inline constexpr std::array<ReasonDescriptor,21> kReasonDescriptors{{
     {"STALE_DEPENDENCY",VerificationStage::dependency_currentness},
     {"SIGNATURE_MISMATCH",VerificationStage::input_integrity},
+    // Recovered SIGNATURE_MISMATCH is also a structural-payload cause,
+    // not a newly minted materialization-specific code.
+    {"SIGNATURE_MISMATCH",VerificationStage::materialization_structure},
     {"VERIFICATION_INPUT_UNAVAILABLE",VerificationStage::input_integrity},
     {"VERIFICATION_ARTIFACT_INTEGRITY_FAILURE",
         VerificationStage::input_integrity},
@@ -92,7 +95,7 @@ inline constexpr std::array<ReasonDescriptor,20> kReasonDescriptors{{
     const VerificationReason& reason) noexcept
 {
     for(const auto& d:kReasonDescriptors)
-        if(d.code==reason.code)return d.stage==reason.stage;
+        if(d.code==reason.code&&d.stage==reason.stage)return true;
     return false;
 }
 [[nodiscard]] inline bool unsigned_utf8_less(
@@ -109,7 +112,7 @@ inline constexpr std::array<ReasonDescriptor,20> kReasonDescriptors{{
     if(a.stage!=b.stage)return
         static_cast<std::uint8_t>(a.stage)<
         static_cast<std::uint8_t>(b.stage);
-    for(const auto [left,right]:std::array<std::pair<std::string_view,
+    for(const auto& [left,right]:std::array<std::pair<std::string_view,
              std::string_view>,5>{{
              {a.code,b.code},{a.field_path,b.field_path},
              {a.binding_key,b.binding_key},
