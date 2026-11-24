@@ -126,6 +126,15 @@ measure_and_score_preserved_terminal_product_worker(
                                             current.current_owner)||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
+    const auto& fixed=*protected_m08_m11_cost.independently_measured_fixed;
+    const m05m06_real::SourceIdentity fixed_identity{
+        fixed.exact_fixed_resource_identity,fixed.exact_fixed_source_generation,true};
+    if(!fixed.exact_independent_fixed_and_endpoint_safety_attested||
+       fixed.exact_fixed_ticket==exact_candidate_ticket||
+       fixed.exact_m07_generation!=frozen_m07_phase6_dependency_generation||
+       !authentic_product_candidate_identity(fixed_identity,current.current_owner,
+                                             fixed.exact_fixed_ticket))
+        return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
     auto job=M10P2RealNativeProductJob::create_preserving_user_terminal(
         current.current_owner,current.current_prepared,current.frozen_registry,
         current.frozen_manual,current.frozen_manual_bindings,exact_ref_linked_artistic,
