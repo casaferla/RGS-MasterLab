@@ -120,6 +120,12 @@ struct T01BindingProjection final {
         auto& native=slot.configured.back().candidate_native;
         native.value=z[2]; // POWER_FRACTION_DB is the frozen QTP native unit
         native.selector=std::to_string(expected.canonical_index);
+        const auto& source=e.actual_sources[2];
+        if(native.value&&!source.selected_spectral_population_identity.empty()) {
+            native.population_identity=source.selected_spectral_population_identity;
+            native.valid_count=source.selected_spectral_frames;
+            native.configured_count=source.complete_spectral_frames;
+        }
     }
     return {std::move(slot),T01BindingFailure::none};
 }
