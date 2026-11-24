@@ -107,5 +107,37 @@ apply_compressor(const dsp::CompressorParameters& seed,
     return as_payload(dsp::CompressorParameters::create(seed.detector_mode(),
         seed.channel_link(),threshold,ratio,knee,attack,release,rms,look,mix,makeup));
 }
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_eq(const dsp::ParametricEqParameters& seed,
+         std::span<const NativePhysicalField> fields)
+{
+    auto bands=seed.bands();
+    std::size_t matched=0U;
+    for(auto& band:bands) {
+        auto payload=band.payload();
+        for(const auto& f:fields) {
+            if(!f.band_id||*f.band_id!=band.band_id())continue;
+            if(!band.enabled())return std::nullopt;
+            if(auto* bell=std::get_if<dsp::BellPayload>(&payload)) {
+                if(f.field==NativeField::frequency_hz)bell->frequency_hz=f.value;
+                else if(f.field==NativeField::gain_db)bell->gain_db=f.value;
+                else if(f.field==NativeField::q)bell->q=f.value;
+                else return std::nullopt;
+            }else if(auto* shelf=std::get_if<dsp::ShelfPayload>(&payload)) {
+                if(f.field==NativeField::frequency_hz)shelf->frequency_hz=f.value;
+                else if(f.field==NativeField::gain_db)shelf->gain_db=f.value;
+                else if(f.field==NativeField::shelf_slope)shelf->shelf_slope=f.value;
+                else return std::nullopt;
+            }else return std::nullopt;
+            ++matched;
+        }
+        auto updated=dsp::EqBandParameters::create(band.band_id(),band.enabled(),
+            band.filter_type(),band.routing(),std::move(payload));
+        if(!updated)return std::nullopt;
+        band=std::move(*updated.value());
+    }
+    if(matched!=fields.size())return std::nullopt;
+    return as_payload(dsp::ParametricEqParameters::create(std::move(bands)));
+}
 } // namespace native_payload_detail
 } // namespace rgsml::app::l3_automatch::m09_frozen
