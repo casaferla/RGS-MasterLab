@@ -137,6 +137,24 @@ struct TonalBindingProjection final {
             {scalar[0],m08_frozen::Endpoint::ordinary},
             {scalar[1],m08_frozen::Endpoint::ordinary},
             scalar[2],true});
+        auto& native=feature_slots[i].configured.back().candidate_native;
+        if(scalar[2]) {
+            const auto& b=evidence.sources[2].observed_from_real_m20;
+            switch(i) {
+            case 0:native.value=b.t2_spectral_tilt->slope_db_per_octave;break;
+            case 1:native.value=b.t3_centroid_t4t5_rolloffs->centroid_hz;break;
+            case 2:native.value=b.t3_centroid_t4t5_rolloffs->rolloff85_hz;break;
+            case 3:native.value=b.t3_centroid_t4t5_rolloffs->rolloff95_hz;break;
+            case 4:native.value=b.t6_high_frequency_slope->slope_db_per_octave;break;
+            default:break;
+            }
+            if(i==0U||i==4U) {
+                const auto& slope=i==0U?*b.t2_spectral_tilt:*b.t6_high_frequency_slope;
+                native.valid_count=slope.above_floor_bands;
+                native.configured_count=slope.configured_bands;
+            }
+        }
+        native.selector=feature_slots[i].binding_id;
     }
     return {std::move(feature_slots),TonalBindingProblem::none};
 }
