@@ -25,6 +25,7 @@ struct LraNativeObservation final {
     std::uint64_t absolute_gated_windows{};
     std::uint64_t relative_retained_windows{};
     LraNativeReason reason{LraNativeReason::missing_native_short_term};
+    std::string exact_gate_population_identity{};
     [[nodiscard]] bool is_reference_grade() const noexcept {
         return reason==LraNativeReason::ready&&lra_lu.has_value();
     }
@@ -119,6 +120,17 @@ struct LraNativeObservation final {
     for(const auto v:absolute_gate)
         if(v>relative_gate)retained.push_back(v);
     out.relative_retained_windows=retained.size();
+    NativeMembershipIdentity membership{"D02-EBU-discrete-gates/1"};
+    membership.append(static_cast<std::uint64_t>(src.sample_rate_hz));
+    membership.append(static_cast<std::uint64_t>(src.scope_frame_count));
+    for(const auto& window:src.short_term_3s_grid100) {
+        membership.append(static_cast<std::uint64_t>(window.absolute_start_frame));
+        const bool valid=window.lufs.ready();
+        const bool absolute=valid&&*window.lufs.unrounded> -70.0;
+        const bool relative=absolute&&*window.lufs.unrounded>relative_gate;
+        membership.append((valid?1U:0U)|(absolute?2U:0U)|(relative?4U:0U));
+    }
+    out.exact_gate_population_identity=membership.finish();
     if(retained.empty()) {
         out.reason=LraNativeReason::no_absolute_or_relative_retained;
         return out;
