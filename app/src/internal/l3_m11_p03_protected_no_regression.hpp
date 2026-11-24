@@ -23,6 +23,8 @@ struct ProtectedComponent final {
     double fixed_z{};
     double candidate_z{};
     double frozen_deadband{};
+    friend bool operator==(const ProtectedComponent&,
+                           const ProtectedComponent&)=default;
 };
 enum class NoRegressionReason:std::uint8_t {
     pass,missing_canonical_population_or_dependency,
