@@ -65,5 +65,22 @@ apply_transient(const dsp::TransientShaperParameters& seed,
     }
     return as_payload(dsp::TransientShaperParameters::create(attack,sustain));
 }
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_stereo(const dsp::StereoMsParameters& seed,
+             std::span<const NativePhysicalField> fields)
+{
+    double mid=seed.mid_gain_db(),side=seed.side_gain_db();
+    double width=seed.low_band_width_percent();
+    for(const auto& f:fields) {
+        if(f.band_id)return std::nullopt;
+        if(f.field==NativeField::mid_gain_db)mid=f.value;
+        else if(f.field==NativeField::side_gain_db&&!seed.side_muted())side=f.value;
+        else if(f.field==NativeField::low_width_percent&&
+                seed.mono_bass_mode()!=dsp::MonoBassMode::OFF)width=f.value;
+        else return std::nullopt;
+    }
+    return as_payload(dsp::StereoMsParameters::create(mid,side,seed.side_muted(),
+        seed.mono_bass_mode(),seed.mono_bass_cutoff_hz(),width));
+}
 } // namespace native_payload_detail
 } // namespace rgsml::app::l3_automatch::m09_frozen
