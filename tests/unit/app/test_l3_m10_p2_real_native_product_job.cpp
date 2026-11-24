@@ -9,6 +9,7 @@
 #include "internal/l3_m10_native_fixed_worker.hpp"
 #include "internal/l3_m12_preserved_native_winner.hpp"
 #include "internal/l3_m09_native_selected_search.hpp"
+#include "internal/l3_m09_native_role_graph.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -68,6 +69,7 @@ private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeTypedSeedBuildsRealRefinementTrial();
+    void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
@@ -195,6 +197,43 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeRoleAssemblyCreatesActualTypedSeed() {
+    namespace m09=a::m09_frozen;
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*base.value()));
+    m09::AbstractFamilyChoice family;
+    family.loudness=m09::LoudnessMode::gain;
+    const auto gain=dsp::GainParameters::create(2.0);
+    QVERIFY(gain);
+    const std::vector<m09::NativeRoleSeed> roles{{
+        m09::IntentRole::loudness_gain,id("bd000000-0000-4000-8000-000000000021"),
+        uuid("bd000000-0000-4000-8000-000000000022"),*gain.value()}};
+    const std::vector<m09::NativeRoleCoordinateRequest> coordinates{{
+        m09::IntentRole::loudness_gain,{0x01},{0x02},m09::NativeField::gain_db,{},{}}};
+    for(const auto rate:std::array<std::int64_t,6>{44100,48000,88200,96000,176400,192000}) {
+        const auto seed=m09::assemble_native_artistic_typed_seed(registry,family,roles,coordinates,1U,rate);
+        QVERIFY(seed);
+        QCOMPARE(seed->seed.linked.instances().size(),std::size_t{1});
+        QVERIFY(seed->seed.linked.instances().front().owner()==dsp::ModuleOwner::REFERENCE_MATCH);
+        const auto inventory=m09::native_seed_inventory(*seed);
+        QVERIFY(inventory);
+        const std::array<double,1> proposal{0.75};
+        const auto actual=m09::decode_native_typed_seed(*seed,*inventory,proposal);
+        QVERIFY(actual);
+        QCOMPARE(std::get<dsp::GainParameters>(actual->graph.bindings.front().parameters).gain_db(),3.0);
+    }
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(registry,family,roles,coordinates,1U,32000));
+    auto wrong=family;
+    wrong.loudness=m09::LoudnessMode::gain_with_terminal_limiter;
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(registry,wrong,roles,coordinates,1U,48000));
+    auto wrong_roles=roles;
+    wrong_roles.front().role=m09::IntentRole::macro_compressor;
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(registry,family,wrong_roles,coordinates,1U,48000));
+    auto wrong_coordinates=coordinates;
+    wrong_coordinates.front().role=m09::IntentRole::tonal_eq;
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(registry,family,roles,wrong_coordinates,1U,48000));
 }
 void P2RealNativeProductTest::nativeTypedSeedBuildsRealRefinementTrial() {
     namespace m09=a::m09_frozen;
