@@ -18,6 +18,7 @@ class TonalStereoAnalyzerTest final : public QObject {
 private slots:
     void boundedRealPsdAndStereoSixRates();
     void explicitGateAndNormalizedSupportAreNeverInferred();
+    void commonProfileDenominatorDoesNotShrinkWithMissingSupport();
     void monoScopeAndOutOfScopePoison();
     void emptyRealM19GateNeverFallsBackToAllStereoSamples();
     void realM19RetainedBlocksDriveP06WidthAtSixRates();
@@ -140,6 +141,57 @@ explicitGateAndNormalizedSupportAreNeverInferred()
         owner.value()->view(),core::FrameIndex{0},*count.value(),
         audio::FrameDomainId::OUTPUT_RATE,
         TonalStereoTrustedSupport{false,{},false,{},malformed}));
+}
+
+void TonalStereoAnalyzerTest::commonProfileDenominatorDoesNotShrinkWithMissingSupport()
+{
+    using namespace analysis;
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const auto format=audio::AudioFormat::create(*rate.value(),audio::ChannelLayout::MONO_C);
+    const auto count=core::FrameCount::create(24000);
+    QVERIFY(format&&count);
+    auto pcm=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},*count.value());
+    QVERIFY(pcm);
+    auto samples=pcm.value()->mutable_view().channel(0);
+    QVERIFY(samples);
+    for(std::size_t i=0;i<samples.value()->size();++i) {
+        const double t=static_cast<double>(i)/48000.0;
+        (*samples.value())[i]=0.2*std::sin(2.0*std::numbers::pi*1000.0*t)
+            +0.2*std::sin(2.0*std::numbers::pi*4000.0*t);
+    }
+    const auto grid=native_tonal_fractional_grid(48000,12);
+    std::vector<std::uint8_t> eligible(grid.size(),1U);
+    TonalStereoTrustedSupport support;
+    support.authoritative_band_eligibility=eligible;
+    support.profile_common_bandwidth=NativeTonalBandwidth{20.0,8000.0};
+    const auto measure=[&](){
+        return measure_tonal_stereo_scope(pcm.value()->view(),core::FrameIndex{0},
+            *count.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,support);
+    };
+    const auto first=measure();
+    QVERIFY(first);
+    const auto& bands=first.value()->primary_bands_1_12;
+    const auto strongest=std::max_element(bands.begin(),bands.end(),[](const auto& x,const auto& y){
+        return x.normalized_fraction.value.value_or(0.0)<y.normalized_fraction.value.value_or(0.0);
+    });
+    QVERIFY(strongest!=bands.end()&&strongest->normalized_fraction.value);
+    const auto missing=static_cast<std::size_t>(strongest-bands.begin());
+    eligible[missing]=2U;
+    const auto second=measure();
+    QVERIFY(second);
+    QCOMPARE(second.value()->mean_linear_psd,first.value()->mean_linear_psd);
+    QVERIFY(!second.value()->primary_bands_1_12[missing].normalized_fraction.value);
+    std::size_t unchanged=0;
+    for(std::size_t i=0;i<bands.size();++i) {
+        if(i==missing)continue;
+        const auto& fraction=second.value()->primary_bands_1_12[i].normalized_fraction.value;
+        QCOMPARE(fraction,bands[i].normalized_fraction.value);
+        if(fraction)++unchanged;
+        if(bands[i].high_hz>8000.0)QVERIFY(!fraction);
+    }
+    QVERIFY(unchanged>0U);
 }
 
 void TonalStereoAnalyzerTest::monoScopeAndOutOfScopePoison()
