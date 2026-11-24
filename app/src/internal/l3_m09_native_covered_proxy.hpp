@@ -281,9 +281,10 @@ struct BoundNativeSelectedBatch final {
 // original input recipe position.
 [[nodiscard]] inline std::optional<BoundNativeSelectedBatch>
 select_bound_native_family_batch(const ExactBytes& generation,
-    std::span<const BoundNativeFamilyCandidate> candidates)
+    std::span<const BoundNativeFamilyCandidate> candidates,
+    bool exact_complete_legal_combined_stream_attested)
 {
-    if(generation.empty()||candidates.empty())return {};
+    if(!exact_complete_legal_combined_stream_attested||generation.empty()||candidates.empty())return {};
     std::vector<m10_frozen::BoundLegalCombinedCandidate> legal;
     legal.reserve(candidates.size());
     for(const auto& c:candidates) {
