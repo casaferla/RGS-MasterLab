@@ -97,4 +97,41 @@ struct NativeDynamicSeed final {
     }
     return true;
 }
+struct NativeRankedCluster final {
+    std::size_t first{},count{};
+    SpectralClusterSeed seed;
+};
+[[nodiscard]] inline std::vector<NativeRankedCluster> rank_native_spectral_clusters(
+    std::span<const SpectralSeedCell> cells)
+{
+    std::vector<NativeRankedCluster> out;
+    const auto sign=[](const SpectralSeedCell& c){
+        if(!c.d10_requested||!c.d10_exact_current||!c.d11_exact_current||
+           !c.d12_exact_compatible||!std::isfinite(c.d10_optimization_minus_fixed)||
+           std::abs(c.d10_optimization_minus_fixed)<=c.d10_deadband||
+           c.d10_pair_support<=0.0)return 0;
+        const int d=c.d10_optimization_minus_fixed>0.0?1:-1;
+        if(std::abs(c.d11_optimization_minus_fixed)>c.d11_deadband&&
+           (c.d11_optimization_minus_fixed>0.0?1:-1)!=d)return 0;
+        return d;
+    };
+    for(std::size_t i=0;i<cells.size();) {
+        const int d=sign(cells[i]);
+        if(!d){++i;continue;}
+        std::size_t end=i+1;
+        while(end<cells.size()&&sign(cells[end])==d&&
+              cells[end-1].canonical_high_edge_hz==cells[end].canonical_low_edge_hz)++end;
+        auto seed=derive_d10_spectral_cluster_p02(cells.subspan(i,end-i),true,
+            i==0U&&end==cells.size());
+        if(seed.selection_score)out.push_back({i,end-i,std::move(seed)});
+        i=end;
+    }
+    std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){
+        if(a.seed.selection_score!=b.seed.selection_score)
+            return a.seed.selection_score>b.seed.selection_score;
+        return a.first<b.first;
+    });
+    if(out.size()>3U)out.resize(3U);
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
