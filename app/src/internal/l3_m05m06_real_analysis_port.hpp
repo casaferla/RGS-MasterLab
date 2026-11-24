@@ -75,6 +75,7 @@ struct SourceReadings final {
     std::vector<Band> profile_1_12; // T1 partial, no 1/3 fallback
     std::string short_term_population_identity{};
     std::string correlation_population_identity{};
+    std::optional<double> negative_correlation_occupancy{};
     std::string width_population_identity{};
     std::uint64_t width_selected_frames{};
     std::string full_pcm_population_identity{};
@@ -357,13 +358,23 @@ struct Import final {
     NativeMembershipIdentity correlation_membership{"M20-correlation-grid100/1"};
     correlation_membership.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
     correlation_membership.append(static_cast<std::uint64_t>(levels.scope_frame_count));
+    std::uint64_t negative_correlation_windows=0U;
     for(const auto& window:tonal.correlation_grid100) {
-        const bool ready=from_m20(window.correlation).ready();
+        const auto observed=from_m20(window.correlation);
+        const bool ready=observed.ready();
         correlation_membership.append(window.absolute_window_start);
         correlation_membership.append(ready?1U:0U);
-        if(ready)++value.valid_correlation_windows;
+        if(ready) {
+            ++value.valid_correlation_windows;
+            if(*observed.unrounded<0.0)++negative_correlation_windows;
+        }
     }
     value.correlation_population_identity=correlation_membership.finish();
+    if(value.valid_correlation_windows>0U) {
+        const volatile double count=static_cast<double>(value.valid_correlation_windows);
+        value.negative_correlation_occupancy=
+            static_cast<double>(negative_correlation_windows)/count;
+    }
     if(value.complete_correlation_windows>0)
         value.correlation_native_support=
             static_cast<double>(value.valid_correlation_windows)/
