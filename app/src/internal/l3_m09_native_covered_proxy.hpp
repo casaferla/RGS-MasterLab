@@ -106,6 +106,79 @@ native_gain_coverage(const m11_frozen::NativeFixedPopulation& fixed,
     }
     return out;
 }
+// Bind explicit component capability only from an authenticated seed
+// bank and the direction selected by M09. In particular D09/D12,
+// correlation and unrelated loudness features are never side-effect coverage.
+[[nodiscard]] inline std::optional<std::vector<NativeComponentCoverage>>
+native_family_coverage(const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    const NativeTypedSeed& typed,const NativeFamilySeedBank& bank,
+    const AbstractFamilyChoice& family)
+{
+    const auto assessment=m11_frozen::assess_native_fixed_targets(fixed,amount,requested);
+    const auto guards=m11_frozen::bind_native_fixed_to_candidate(fixed,fixed.measured_fixed,amount);
+    if(!assessment.valid_current||!guards||!native_seed_inventory(typed))return {};
+    const auto roles=ordered_abstract_roles(family);
+    if(roles.size()!=typed.seed.bindings.size())return {};
+    for(std::size_t i=0;i<roles.size();++i) {
+        const auto payload=native_family_role_payload(bank,family,roles[i]);
+        if(!payload||*payload!=typed.seed.bindings[i].parameters)return {};
+    }
+    std::vector<NativeComponentCoverage> out;
+    std::size_t offset=0;
+    for(std::size_t i=0;i<fixed.measured_fixed.size();++i) {
+        const auto& slot=fixed.measured_fixed[i];
+        const auto& binding=m07_frozen::kBindings[i];
+        const auto d=static_cast<std::size_t>(binding.domain);
+        NativeComponentCoverage c{slot.binding_id,slot.exact_feature_dependency,
+            std::vector<bool>(slot.configured.size(),false)};
+        for(std::size_t k=0;k<slot.configured.size();++k) {
+            const auto& guard=(*guards)[offset+k];
+            const auto& p=slot.configured[k];
+            if(!assessment.corrective[d]||!guard.required_in_frozen_k||
+               !guard.exact_current||guard.protected_by_m11_mask)continue;
+            const auto target=m08_frozen::desired_for_component(amount,d,p.prepared,p.reference);
+            if(!target.value||!p.current_candidate_z)return {};
+            const double delta=target.value->constraint_adjusted_z.value_or(target.value->desired_z)-*p.current_candidate_z;
+            if(std::abs(delta)<=binding.deadband)continue;
+            const auto matches=[&](double movement){return (delta>0.0&&movement>0.0)||(delta<0.0&&movement<0.0);};
+            const auto name=std::string_view(slot.binding_id);
+            if(name.ends_with(".l01")&&family.loudness==LoudnessMode::gain&&bank.gain)
+                c.covered[k]=matches(bank.gain->payload.gain_db());
+            if((name.ends_with(".d07")||name.ends_with(".d08"))&&family.micro!=MicroMode::none) {
+                const auto& micro=bank.micro[static_cast<std::size_t>(family.micro)-1U];
+                if(micro)c.covered[k]=matches(micro->attack_amount_db()-micro->sustain_amount_db());
+            }
+            if((name.ends_with(".d01")||name.ends_with(".d02")||name.ends_with(".d03")||
+                name.ends_with(".d04")||name.ends_with(".d05")||name.ends_with(".d06"))&&
+               family.macro!=MacroMode::none) {
+                const auto& macro=bank.macro[static_cast<std::size_t>(family.macro)-1U];
+                // D01 lower-tail movement is opposite to upper-tail compression.
+                const double direction=name.ends_with(".d01")&&k==0U?1.0:-1.0;
+                if(macro&&macro->payload.ratio()>1.0)c.covered[k]=matches(direction);
+            }
+            if(name.ends_with(".d10")&&family.spectral_dynamic_eq_prefix) {
+                const auto& prefix=bank.spectral[family.spectral_dynamic_eq_prefix-1U];
+                for(std::size_t j=0;j<prefix.ranked_clusters.size();++j) {
+                    const auto& cluster=prefix.ranked_clusters[j];
+                    if(k>=cluster.first&&k-cluster.first<cluster.count&&j<prefix.seeds.size())
+                        c.covered[k]=matches(prefix.seeds[j].payload.spec().control.range_db);
+                }
+            }
+            if(family.stereo_mode_index&&family.stereo_side_eq_prefix==0U) {
+                const auto& ms=bank.stereo[family.stereo_mode_index-1U];
+                if(ms&&name.ends_with(".s01"))
+                    c.covered[k]=matches(ms->payload.side_muted()?-1.0:
+                        ms->payload.side_gain_db()-ms->payload.mid_gain_db());
+                if(ms&&name.ends_with(".s05")&&ms->payload.mono_bass_mode()!=dsp::MonoBassMode::OFF&&
+                   p.candidate_native.selector==std::to_string(static_cast<int>(ms->payload.mono_bass_cutoff_hz()))&&
+                   ms->payload.low_band_width_percent()<100.0)c.covered[k]=delta<0.0;
+            }
+        }
+        offset+=slot.configured.size();out.push_back(std::move(c));
+    }
+    return out;
+}
 struct BoundNativeFamilyCandidate final {
     m10_frozen::BoundLegalCombinedCandidate legal;
     SelectedNativeFamilyRecipe recipe;
@@ -133,7 +206,7 @@ bind_native_family_candidate(
     const auto bytes=exact_family_seed_content(typed->seed,*registry,*inventory);
     if(!bytes||(!identity.seed_exact_content.empty()&&identity.seed_exact_content!=*bytes))return {};
     identity.seed_exact_content=*bytes;
-    const auto coverage=native_gain_coverage(fixed,amount,requested,*typed);
+    const auto coverage=native_family_coverage(fixed,amount,requested,*typed,bank,family);
     if(!coverage)return {};
     const auto proxy=native_covered_proxy(fixed,amount,requested,*typed,*coverage,identity.semantic_tuple);
     if(!proxy.is_bound())return {};
