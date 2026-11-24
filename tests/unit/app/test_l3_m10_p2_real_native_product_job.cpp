@@ -839,6 +839,21 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         selected,wrong_selection,0U,env,serializer,resolve_native_trial);
     QCOMPARE(invalid_selection.reason,m10::RefinementBatchReason::invalid_inventory);
     QVERIFY(!serialized_unavailable);
+    // The production entry may not promote a provenance-only fixture
+    // or a selected empty graph to NO_CORRECTION_REQUIRED.
+    const a::m08_frozen::AmountConfig requested_amount{0.5,{1.0,1.0,1.0,1.0},11U};
+    const std::array<bool,4> requested_domains{{true,true,true,true}};
+    const auto production_unready=m09::run_current_native_product_search(
+        selected,unavailable,env,requested_amount,requested_domains,true,serializer);
+    QCOMPARE(production_unready.status,m09::NativeProductSearchStatus::unavailable);
+    QVERIFY(!production_unready.refinement);
+    QVERIFY(!serialized_unavailable);
+    std::atomic<bool> cancelled{true};
+    const auto production_cancelled=m09::run_current_native_product_search(
+        selected,unavailable,env,requested_amount,requested_domains,true,serializer,&cancelled);
+    QCOMPARE(production_cancelled.status,m09::NativeProductSearchStatus::cancelled);
+    QVERIFY(!production_cancelled.refinement);
+    QVERIFY(!serialized_unavailable);
     // This synthetic measured score exercises only the M12 graph
     // equality guard. It is NOT a successful native 27-feature run.
     namespace m12=a::m12_frozen;
