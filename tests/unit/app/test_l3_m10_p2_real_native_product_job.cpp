@@ -18,6 +18,7 @@
 #include "internal/l3_m09_native_tonal_seed.hpp"
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
+#include "internal/l3_m09_native_selected_family_search.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -79,6 +80,7 @@ private slots:
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
+    void nativeSelectedFamilyChecksExactSeedIdentity();
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
     void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
@@ -457,6 +459,46 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     fixed.measured_fixed[24].configured.front().current_candidate_z=-20.0;
     fixed.measured_m16_linear_peak.reset();
     QVERIFY(!m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0));
+}
+void P2RealNativeProductTest::nativeSelectedFamilyChecksExactSeedIdentity() {
+    namespace m09=a::m09_frozen;
+    namespace m10=a::m10_frozen;
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*base.value()));
+    const auto gain=dsp::GainParameters::create(0.0);
+    QVERIFY(gain);
+    m09::NativeFamilySeedBank bank;
+    bank.gain=m09::NativeLoudnessGainSeed{*gain.value(),0.0,-3.0,false,false};
+    m09::SelectedNativeFamilyRecipe recipe;
+    recipe.exact_description={{0x11},{0x12},{0x13},{0x14},{"fixture"}};
+    recipe.family.loudness=m09::LoudnessMode::gain;
+    recipe.allocations.push_back({m09::IntentRole::loudness_gain,
+        id("bd000000-0000-4000-8000-000000000051"),
+        uuid("bd000000-0000-4000-8000-000000000052")});
+    recipe.coordinates.push_back({m09::IntentRole::loudness_gain,
+        {0x21},{0x22},m09::NativeField::gain_db,{},{}});
+    recipe.exact_inventory.push_back({{0x21},{0x22},0.5});
+    m10::BoundLegalCombinedResult selected;
+    selected.status=m10::BoundLegalStatus::selected;
+    selected.exact_descriptions.push_back(recipe.exact_description);
+    selected.combined_consumer.status=m10::ConsumerStatus::ready;
+    selected.combined_consumer.numeric_selected_indices={0U};
+    selected.combined_consumer.ledger={{0U,m10::ConsumerReason::selected,false}};
+    const std::array<m09::SelectedNativeFamilyRecipe,1> recipes{recipe};
+    const auto matching=[](const auto&,const auto&)->std::optional<m09::ExactBytes>{
+        return m09::ExactBytes{0x12};};
+    const auto mismatching=[](const auto&,const auto&)->std::optional<m09::ExactBytes>{
+        return m09::ExactBytes{0x99};};
+    const auto bound=m09::bind_selected_native_families(selected,recipes,registry,bank,1U,48000,matching);
+    QVERIFY(bound&&bound->front().typed);
+    QVERIFY(!m09::bind_selected_native_families(selected,recipes,registry,bank,1U,48000,mismatching));
+    selected.combined_consumer.ledger.front().selected_but_unavailable=true;
+    const auto absent=m09::bind_selected_native_families(selected,recipes,registry,bank,1U,48000,mismatching);
+    QVERIFY(absent&&!absent->front().typed);
+    auto stale=recipes;
+    stale.front().exact_description.dependency_tuple={0xff};
+    QVERIFY(!m09::bind_selected_native_families(selected,stale,registry,bank,1U,48000,matching));
 }
 void P2RealNativeProductTest::nativeFamilyBankDoesNotSubstituteUnavailableRoles() {
     namespace m09=a::m09_frozen;
