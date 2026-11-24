@@ -219,32 +219,32 @@ apply_native_physical_fields(
 read_native_physical_field(const dsp::ModuleParameterPayload& seed,
                            NativeField field,const std::optional<core::Uuid>& band_id)
 {
-    if(const auto* p=std::get_if<dsp::GainParameters>(&seed)) {
-        if(!band_id&&field==NativeField::gain_db)return p->gain_db();
-    } else if(const auto* p=std::get_if<dsp::TransientShaperParameters>(&seed)) {
-        if(!band_id&&field==NativeField::attack_amount_db)return p->attack_amount_db();
-        if(!band_id&&field==NativeField::sustain_amount_db)return p->sustain_amount_db();
-    } else if(const auto* p=std::get_if<dsp::StereoMsParameters>(&seed)) {
-        if(!band_id&&field==NativeField::mid_gain_db)return p->mid_gain_db();
-        if(!band_id&&field==NativeField::side_gain_db&&!p->side_muted())return p->side_gain_db();
-        if(!band_id&&field==NativeField::low_width_percent&&p->mono_bass_mode()!=dsp::MonoBassMode::OFF)
-            return p->low_band_width_percent();
-    } else if(const auto* p=std::get_if<dsp::CompressorParameters>(&seed)) {
+    if(const auto* gain=std::get_if<dsp::GainParameters>(&seed)) {
+        if(!band_id&&field==NativeField::gain_db)return gain->gain_db();
+    } else if(const auto* transient=std::get_if<dsp::TransientShaperParameters>(&seed)) {
+        if(!band_id&&field==NativeField::attack_amount_db)return transient->attack_amount_db();
+        if(!band_id&&field==NativeField::sustain_amount_db)return transient->sustain_amount_db();
+    } else if(const auto* stereo=std::get_if<dsp::StereoMsParameters>(&seed)) {
+        if(!band_id&&field==NativeField::mid_gain_db)return stereo->mid_gain_db();
+        if(!band_id&&field==NativeField::side_gain_db&&!stereo->side_muted())return stereo->side_gain_db();
+        if(!band_id&&field==NativeField::low_width_percent&&stereo->mono_bass_mode()!=dsp::MonoBassMode::OFF)
+            return stereo->low_band_width_percent();
+    } else if(const auto* compressor=std::get_if<dsp::CompressorParameters>(&seed)) {
         if(band_id)return std::nullopt;
         switch(field) {
-        case NativeField::threshold_dbfs:return p->threshold_dbfs();
-        case NativeField::ratio:return p->ratio();
-        case NativeField::knee_db:return p->knee_db();
-        case NativeField::attack_ms:return p->attack_ms();
-        case NativeField::release_ms:return p->release_ms();
-        case NativeField::rms_ms:return p->rms_time_constant_ms();
-        case NativeField::look_ahead_ms:return p->look_ahead_ms();
-        case NativeField::mix_percent:return p->mix_percent();
+        case NativeField::threshold_dbfs:return compressor->threshold_dbfs();
+        case NativeField::ratio:return compressor->ratio();
+        case NativeField::knee_db:return compressor->knee_db();
+        case NativeField::attack_ms:return compressor->attack_ms();
+        case NativeField::release_ms:return compressor->release_ms();
+        case NativeField::rms_ms:return compressor->rms_time_constant_ms();
+        case NativeField::look_ahead_ms:return compressor->look_ahead_ms();
+        case NativeField::mix_percent:return compressor->mix_percent();
         default:return std::nullopt;
         }
-    } else if(const auto* p=std::get_if<dsp::ParametricEqParameters>(&seed)) {
+    } else if(const auto* eq=std::get_if<dsp::ParametricEqParameters>(&seed)) {
         if(!band_id)return std::nullopt;
-        for(const auto& b:p->bands()) {
+        for(const auto& b:eq->bands()) {
             if(b.band_id()!=*band_id||!b.enabled())continue;
             if(const auto* bell=std::get_if<dsp::BellPayload>(&b.payload())) {
                 if(field==NativeField::frequency_hz)return bell->frequency_hz;
@@ -256,9 +256,9 @@ read_native_physical_field(const dsp::ModuleParameterPayload& seed,
                 if(field==NativeField::shelf_slope)return shelf->shelf_slope;
             }
         }
-    } else if(const auto* p=std::get_if<dsp::DynamicEqParameters>(&seed)) {
+    } else if(const auto* dynamic_eq=std::get_if<dsp::DynamicEqParameters>(&seed)) {
         if(!band_id)return std::nullopt;
-        for(const auto& b:p->bands()) {
+        for(const auto& b:dynamic_eq->bands()) {
             const auto& s=b.spec();
             if(s.band_id!=*band_id||!s.enabled)continue;
             const auto* bell=std::get_if<dsp::DynamicEqBellShape>(&s.shape);
