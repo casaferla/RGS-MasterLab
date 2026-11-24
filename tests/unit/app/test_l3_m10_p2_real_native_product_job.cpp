@@ -621,6 +621,13 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             *independent_gold.value(),gold_owner,pair_metadata_spec,
             {20.0,18000.0},1e-12,true,true,true);
     QVERIFY(original_pair);
+    auto same_profile=spec_for_authoritative_bridge;
+    QVERIFY(a::bind_original_pair_profile_common(same_profile,*original_pair.value()));
+    QVERIFY(same_profile.source_support.profile_common_bandwidth);
+    QCOMPARE(same_profile.source_support.profile_common_bandwidth->high_hz,18000.0);
+    auto wrong_profile=same_profile;
+    wrong_profile.source_support.profile_common_bandwidth->high_hz=19000.0;
+    QVERIFY(!a::bind_original_pair_profile_common(wrong_profile,*original_pair.value()));
     QCOMPARE(original_pair.value()->prepared.original_m19_m20.
                  owner.resource_identity,source_owner.resource_identity);
     QCOMPARE(original_pair.value()->reference.original_m19_m20.
