@@ -7,6 +7,7 @@
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_native_fixed_worker.hpp"
+#include "internal/l3_m12_preserved_native_winner.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -235,6 +236,16 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(fixed_pcm);
     QVERIFY(fixed_job.value()->result_has_expected_scope(*fixed_pcm.value()));
     QVERIFY(fixed_pcm.value()->signatures().empty());
+    // Actual native graph identity changes with user P2 state or
+    // a distinct linked segment, but Fixed excludes that segment.
+    const auto fixed_graph=fixed_job.value()->exact_fixed_graph_content();
+    const auto unlinked_graph=without_p2.value()->exact_linked_graph_content();
+    QVERIFY(fixed_graph&&unlinked_graph);
+    QVERIFY(fixed_graph==without_p2.value()->exact_fixed_graph_content());
+    QVERIFY(fixed_graph!=preserved.value()->exact_fixed_graph_content());
+    QVERIFY(fixed_job.value()->exact_execution_graph_content()!=
+            without_p2.value()->exact_execution_graph_content());
+    QVERIFY(unlinked_graph==preserved.value()->exact_linked_graph_content());
     auto bypassed=*active_manual.value();
     QVERIFY(bypassed.set_user_bypass(p2_id,true));
     auto bypass_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
@@ -562,6 +573,43 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         "current-phase6-test-generation",protected_input,0.0,preserved_owner,
         &*original_pair.value(),true,must_not_resolve);
     QCOMPARE(rejected.reason,m10::P2NativeCostReason::stale_or_unattested_product);
+    QVERIFY(!unexpected_resolution);
+    // Unit-only Fixed provenance fixture; the original feature
+    // resolver remains absent, so NO measured candidate is possible.
+    auto current_fixed=stale_fixed;
+    const auto current_fixed_owner=a::native_product_candidate_identity(stamp,"fixed");
+    current_fixed.exact_fixed_resource_identity=current_fixed_owner.resource_identity;
+    current_fixed.exact_fixed_source_generation=current_fixed_owner.generation;
+    const auto current_fixed_graph=preserved.value()->exact_fixed_graph_content();
+    QVERIFY(current_fixed_graph);
+    current_fixed.exact_fixed_graph_content=*current_fixed_graph;
+    m10::ExactCompletedEvaluationCache preserved_cache{{0x41}};
+    const std::string generation="current-phase6-test-generation";
+    const m10::PreservedNativeSearchEnvironment env{
+        worker,*original_pair.value(),current_fixed,
+        spec_for_authoritative_bridge,generation,preserved_cache,0.0,true};
+    const m10::PreservedNativeGraph native_graph{*linked.value(),artistic};
+    m10::AuthoritativeCostInput native_cost;
+    native_cost.canonical_current_tuple={0x43};
+    native_cost.exact_topology_evidence_identity={0x44};
+    const m10::ExactExecutionCacheKey key{{0x41},{0x42},{0x43},{0x44}};
+    const auto bound_key=m10::bind_preserved_native_execution_key(
+        key,*preserved.value(),native_cost);
+    QVERIFY(bound_key);
+    QVERIFY(bound_key->candidate_execution_content!=key.candidate_execution_content);
+    QCOMPARE(m10::evaluate_preserved_native_cached(
+        env,native_graph,"preserved-test",key,native_cost,true,false,
+        must_not_resolve).kind,m10::EvaluationKind::needs_new_attempt);
+    QVERIFY(!unexpected_resolution);
+    QCOMPARE(m10::evaluate_preserved_native_cached(
+        env,native_graph,"preserved-test",key,native_cost,true,true,
+        missing_original).kind,m10::EvaluationKind::attempted_failure);
+    QCOMPARE(preserved_cache.size(),std::size_t{0});
+    auto changed_key=key;
+    changed_key.canonical_current_tuple={0x99};
+    QCOMPARE(m10::evaluate_preserved_native_cached(
+        env,native_graph,"preserved-test",changed_key,native_cost,true,true,
+        must_not_resolve).kind,m10::EvaluationKind::preflight_rejected);
     QVERIFY(!unexpected_resolution);
     const auto from_bound=
         m10::measure_and_score_bound_m10_p2_product_worker(
