@@ -253,6 +253,55 @@ encode_m13_provisional_diagnostic(
        outcome!="VERIFICATION_UNAVAILABLE"&&outcome!="STALE")
         return false;
     const auto reasons=root.value("canonicalReasons").toArray();
+    std::vector<VerificationReason> decodedReasons;
+    decodedReasons.reserve(static_cast<std::size_t>(reasons.size()));
+    const auto decode_number=[](const QJsonValue& item)->
+        std::optional<std::optional<double>> {
+        if(item.isNull())return std::optional<double>{};
+        if(!item.isString())return std::nullopt;
+        const auto str=item.toString().toStdString();
+        double decoded{};
+        const auto [end,err]=std::from_chars(
+            str.data(),str.data()+str.size(),decoded,
+            std::chars_format::general);
+        if(err!=std::errc{}||end!=str.data()+str.size()||
+           !std::isfinite(decoded)||decoded<0.0)return std::nullopt;
+        return std::optional<double>{decoded};
+    };
+    for(const auto& value:reasons) {
+        if(!value.isObject())return false;
+        const auto item=value.toObject();
+        if(item.size()!=12U||!item.value("stage").isDouble()||
+           !item.value("predicate").isDouble())return false;
+        const auto st=item.value("stage").toInt(-1);
+        const auto pr=item.value("predicate").toInt(-1);
+        if(st<0||st>static_cast<int>(VerificationStage::proximity)||
+           pr<0||pr>static_cast<int>(PredicateState::stale))
+            return false;
+        for(const auto field:{"code","fieldPath","bindingKey",
+            "componentKey","dependencyRef","expected","actual",
+            "numericCategory"})
+            if(!item.value(field).isString())return false;
+        const auto delta=decode_number(item.value("measuredDelta"));
+        const auto bound=decode_number(item.value("allowedBound"));
+        if(!delta||!bound)return false;
+        VerificationReason record;
+        record.stage=static_cast<VerificationStage>(st);
+        record.code=item.value("code").toString().toStdString();
+        record.field_path=item.value("fieldPath").toString().toStdString();
+        record.binding_key=item.value("bindingKey").toString().toStdString();
+        record.component_key=item.value("componentKey").toString().toStdString();
+        record.dependency_ref=item.value("dependencyRef").toString().toStdString();
+        record.expected_ref_or_value=item.value("expected").toString().toStdString();
+        record.actual_ref_or_value=item.value("actual").toString().toStdString();
+        record.numeric_category=item.value("numericCategory").toString().toStdString();
+        record.predicate=static_cast<PredicateState>(pr);
+        record.measured_delta=*delta;
+        record.allowed_bound=*bound;
+        decodedReasons.push_back(std::move(record));
+    }
+    const auto normalized=normalize_verification_reasons(decodedReasons);
+    if(!normalized||*normalized!=decodedReasons)return false;
     const auto first=root.value("primaryReason");
     if(reasons.isEmpty()) {
         if(!first.isNull())return false;
