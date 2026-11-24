@@ -529,6 +529,18 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     const auto bound=m09::bind_native_family_candidate(registry,bank,family,allocations,coordinates,1U,
         48000,identity,fixed,amount,requested,{});
     QVERIFY(bound&&bound->legal.pre_render_proxy.is_bound());
+    const std::array<m09::NativeRoleCoordinateAuthority,1> role_keys{{
+        {m09::IntentRole::loudness_gain,{0x31}}}};
+    const auto auto_inventory=m09::derive_native_family_coordinate_requests(bank,family,role_keys,{},48000);
+    QVERIFY(auto_inventory);
+    QCOMPARE(auto_inventory->size(),std::size_t{1});
+    QVERIFY(auto_inventory->front().field==m09::NativeField::gain_db);
+    const auto generated=m09::bind_native_family_candidate_with_inventory(registry,bank,family,
+        allocations,role_keys,{},1U,48000,identity,fixed,amount,requested,{});
+    QVERIFY(generated);
+    QCOMPARE(generated->recipe.exact_inventory.front().normalized_u,
+        bound->recipe.exact_inventory.front().normalized_u);
+    QVERIFY(!m09::derive_native_family_coordinate_requests(bank,family,{},{},48000));
     QVERIFY(!bound->recipe.exact_description.seed_exact_content.empty());
     const m09::AbstractFamilyChoice no_action;
     const m09::CandidateCarrier none_identity{{0x30},{},{0x32},{0x33},{"fixture"}};
