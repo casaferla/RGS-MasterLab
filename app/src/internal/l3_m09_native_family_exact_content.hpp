@@ -52,4 +52,26 @@ exact_family_trial_key(const CandidateCarrier& description,
     append_exact_byte_field(topology,description.dependency_tuple);
     return m10_frozen::ExactExecutionCacheKey{description.generation_snapshot,*current,*current,std::move(topology)};
 }
+// The Product path uses the actual typed codec for both seed and
+// refinement keys. No caller-provided arbitrary current tuple.
+[[nodiscard]] inline NativeProductSearchResult run_exact_selected_native_family_search(
+    const m10_frozen::BoundLegalCombinedResult& selected,
+    std::span<const SelectedNativeFamilyRecipe> recipes,
+    const NativeFamilySeedBank& bank,std::uint64_t revision,std::int64_t rate,
+    const m10_frozen::PreservedNativeSearchEnvironment& env,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    bool independent_fixed_safety_scope_current,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    const auto registry=env.owners.frozen_registry;
+    if(!registry)return {};
+    return run_selected_native_family_search(selected,recipes,registry,bank,revision,rate,
+        env,amount,requested,independent_fixed_safety_scope_current,
+        [&](const auto& graph,const auto& inventory){
+            return exact_family_seed_content(graph,*registry,inventory);
+        },
+        [&](const auto& description,const auto& graph,const auto& inventory,const auto& values){
+            return exact_family_trial_key(description,graph,*registry,inventory,values);
+        },cancellation);
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
