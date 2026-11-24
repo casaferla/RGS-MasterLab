@@ -32,6 +32,7 @@ struct ProductNativeOnePassResult final {
     m05m06_real::StereoCoherentNativeResult s03_s06;
     m05m06_real::P04ProductObservation d07_d09;
     std::vector<std::uint64_t> selected_original_m20_ordinals;
+    std::uint64_t exact_observed_active_frames{};
     [[nodiscard]] constexpr bool authorizes_m10_or_export()
         const noexcept{return false;}
 };
@@ -47,6 +48,7 @@ struct ProductNativeFullResourceObservations final {
     m05m06_real::StereoCoherentNativeResult s03_s06;
     m05m06_real::P04ProductObservation d07_d09;
     std::vector<std::uint64_t> selected_original_m20_ordinals;
+    std::uint64_t exact_observed_active_frames{};
     [[nodiscard]] constexpr bool authorizes_m10_or_m12()const noexcept {
         return false;
     }
@@ -154,7 +156,7 @@ measure_real_full_owned_pcm_native_once(
     return R::success(ProductNativeFullResourceObservations{
         std::move(*levels.value()),std::move(*tonal.value()),
         std::move(d10),std::move(s03),std::move(p04),
-        spectral.canonical_original_ordinals()});
+        spectral.canonical_original_ordinals(),spec.phase6_active_pcm_frames});
 }
 // Reusable native analyzer for any genuine immutable Product job that
 // exposes execute()/result_has_expected_scope(). The specialized M10/P2
@@ -193,6 +195,7 @@ measure_real_product_candidate_once(
         std::move(observed.value()->d10_d12),
         std::move(observed.value()->s03_s06),
         std::move(observed.value()->d07_d09),
-        std::move(observed.value()->selected_original_m20_ordinals)});
+        std::move(observed.value()->selected_original_m20_ordinals),
+        observed.value()->exact_observed_active_frames});
 }
 } // namespace rgsml::app::l3_automatch
