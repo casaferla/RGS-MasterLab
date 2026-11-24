@@ -12,6 +12,7 @@
 #include "internal/l3_m09_native_role_graph.hpp"
 #include "internal/l3_m09_native_loudness_seed.hpp"
 #include "internal/l3_m09_native_micro_seed.hpp"
+#include "internal/l3_m09_native_macro_seed.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -74,6 +75,7 @@ private slots:
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
+    void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
@@ -201,6 +203,63 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups() {
+    namespace m09=a::m09_frozen;
+    namespace m07=a::m07_frozen;
+    namespace m08=a::m08_frozen;
+    namespace native=a::m05m06_real;
+    a::m11_frozen::NativeFixedPopulation fixed;
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    native::D03D04NativeSeries series;
+    series.problem=native::NativeWindowProblem::none;
+    native::NativeMembershipIdentity membership{"D03-RMS-grid400-hop100/1"};
+    for(std::int64_t i=0;i<5;++i) {
+        const auto start=i*4800;
+        series.complete_native_windows.push_back({start,-20.0+4.0*static_cast<double>(i),{}});
+        membership.append(static_cast<std::uint64_t>(start));
+        membership.append(1U);
+    }
+    series.valid_rms_windows=5U;
+    const auto selectors=native::extract_d03_d04_type7(series);
+    QVERIFY(selectors.d03_type7_rms_p95_minus_p10_db);
+    fixed.measured_fixed_native_windows=series;
+    for(const auto& binding:m07::kBindings) {
+        const bool lra=binding.binding_id=="rgsml.reference-match.binding.dynamics.d02";
+        const bool rms=binding.binding_id=="rgsml.reference-match.binding.dynamics.d03";
+        const double measured=rms?*selectors.d03_type7_rms_p95_minus_p10_db:lra?10.0:0.0;
+        m08::AuthenticatedPairSlot slot{std::string(binding.binding_id),
+            std::string(binding.source_feature_id),"fixture-only",true,{}};
+        const auto n=binding.component_share==m07::ComponentShare::thirds?3U:
+            binding.component_share==m07::ComponentShare::configured_n?2U:1U;
+        for(unsigned i=0;i<n;++i)
+            slot.configured.push_back({true,1.0,{measured,m08::Endpoint::ordinary},
+                {measured-((lra||rms)?4.0:0.0),m08::Endpoint::ordinary},measured,true});
+        if(rms) {
+            auto& observation=slot.configured.front().candidate_native;
+            observation.value=measured;
+            observation.valid_count=5U;
+            observation.configured_count=5U;
+            observation.selector="P95-P10";
+            observation.population_identity=membership.finish();
+        }
+        fixed.measured_fixed.push_back(std::move(slot));
+    }
+    const m08::AmountConfig amount{1.0,{1.0,1.0,1.0,1.0},1U};
+    const std::array<bool,4> requested{false,true,false,false};
+    const auto seed=m09::derive_native_macro_seed(fixed,amount,requested,m09::MacroMode::linked_max,false);
+    QVERIFY(seed);
+    QCOMPARE(seed->payload.threshold_dbfs(),-11.0);
+    QCOMPARE(seed->payload.ratio(),2.0);
+    QCOMPARE(seed->payload.makeup_gain_db(),0.0);
+    QVERIFY(seed->payload.channel_link()==dsp::CompressorChannelLink::LINKED_MAX);
+    QVERIFY(!m09::derive_native_macro_seed(fixed,amount,requested,m09::MacroMode::stereo_mean,false));
+    const auto stereo=m09::derive_native_macro_seed(fixed,amount,requested,m09::MacroMode::stereo_mean,true);
+    QVERIFY(stereo&&stereo->payload.channel_link()==dsp::CompressorChannelLink::LINKED_MEAN);
+    fixed.measured_fixed_native_windows->complete_native_windows.front().absolute_start_frame=1;
+    QVERIFY(!m09::derive_native_macro_seed(fixed,amount,requested,m09::MacroMode::linked_max,false));
+    fixed.measured_fixed_native_windows.reset();
+    QVERIFY(!m09::derive_native_macro_seed(fixed,amount,requested,m09::MacroMode::linked_max,false));
 }
 void P2RealNativeProductTest::nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload() {
     namespace m09=a::m09_frozen;
