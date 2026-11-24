@@ -6,8 +6,10 @@
 #include "l3_m11_p03_protected_no_regression.hpp"
 #include <cmath>
 #include <optional>
+#include <memory>
 #include <vector>
 
+namespace rgsml::app::l3_automatch::m10_frozen { struct P2OriginalRealNativeTriple; }
 namespace rgsml::app::l3_automatch::m11_frozen {
 struct NativeFixedPopulation final {
     std::vector<m08_frozen::AuthenticatedPairSlot> measured_fixed;
@@ -19,6 +21,8 @@ struct NativeFixedPopulation final {
     std::uint64_t exact_fixed_source_generation{};
     std::string exact_m07_generation{};
     std::vector<std::uint8_t> exact_fixed_graph_content{};
+    std::shared_ptr<const m10_frozen::P2OriginalRealNativeTriple> original_definition_authority{};
+    std::vector<std::uint8_t> exact_definition_authority_content{};
 };
 [[nodiscard]] inline std::optional<std::vector<ProtectedComponent>>
 bind_native_fixed_to_candidate(
