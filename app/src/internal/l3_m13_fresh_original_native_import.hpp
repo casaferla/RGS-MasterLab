@@ -17,6 +17,36 @@
 #include <utility>
 
 namespace rgsml::app::l3_automatch::m13_frozen {
+// Canonical fresh-Master identity, also used to resolve the original
+// ten native binding families. Never reuse the accepted M10 identity.
+[[nodiscard]] inline m05m06_real::SourceIdentity
+m13_fresh_master_native_identity(
+    const M13ImmutableProductFreshProbeRequest& admitted)
+{
+    const auto& owner=admitted.exact_materialized_preview_owner();
+    if(!owner.replay||admitted.exact_product_ownership_epoch()==0U||
+       owner.replay->project_id.is_nil()||owner.replay->source_id.is_nil()||
+       owner.replay->reference_id.is_nil()||owner.replay->controller_id.is_nil()||
+       owner.replay->plan_id.is_nil()||owner.replay->linked_chain_id.is_nil()||
+       owner.replay->exact_plan_checksum.empty())
+        return {};
+    std::string exact_identity{"rgsml.l3.native.m13.fresh-master/1;"};
+    const auto append=[&](const std::string& part){
+        exact_identity+=std::to_string(part.size());
+        exact_identity+=':';
+        exact_identity+=part;
+    };
+    append(std::to_string(admitted.exact_product_ownership_epoch()));
+    append(owner.replay->project_id.to_string());
+    append(owner.replay->source_id.to_string());
+    append(owner.replay->reference_id.to_string());
+    append(owner.replay->controller_id.to_string());
+    append(owner.replay->plan_id.to_string());
+    append(owner.replay->exact_plan_checksum);
+    append(owner.replay->linked_chain_id.to_string());
+    return {std::move(exact_identity),
+            admitted.exact_product_ownership_epoch(),true};
+}
 struct M13FreshOriginalNativeSource final {
     // Native M19/M20 source observations from the *actual new* DSP PCM.
     m05m06_real::SourceReadings fresh_full_m19_m20;
@@ -72,26 +102,12 @@ import_m13_product_fresh_original_native_source(
        fresh.fresh_m19.scope_begin_frame!=0||
        fresh.fresh_m20.scope_begin_frame!=0)
         return fail("L3_M13_FRESH_NATIVE_TIMELINE_OR_RATE_MISMATCH");
-    // Length-delimited identity from the immutable Product replay.
-    // Distinct from the earlier M10 candidate and original REFERENCE.
-    std::string exact_identity{"rgsml.l3.native.m13.fresh-master/1;"};
-    const auto append=[&](const std::string& part){
-        exact_identity+=std::to_string(part.size());
-        exact_identity+=':';
-        exact_identity+=part;
-    };
-    append(std::to_string(admitted.exact_product_ownership_epoch()));
-    append(owner.replay->project_id.to_string());
-    append(owner.replay->source_id.to_string());
-    append(owner.replay->reference_id.to_string());
-    append(owner.replay->controller_id.to_string());
-    append(owner.replay->plan_id.to_string());
-    append(owner.replay->exact_plan_checksum);
-    append(owner.replay->linked_chain_id.to_string());
+    auto exact_owner=m13_fresh_master_native_identity(admitted);
+    if(!exact_owner.full_track_owner_confirmed)
+        return fail("L3_M13_FRESH_NATIVE_IDENTITY_INVALID");
     auto observed=m05m06_real::import_actual_full_source(
         fresh.fresh_m19,fresh.fresh_m20,
-        m05m06_real::SourceIdentity{exact_identity,
-            admitted.exact_product_ownership_epoch(),true});
+        exact_owner);
     if(!observed.source)
         return fail("L3_M13_FRESH_NATIVE_ORIGINAL_M19_M20_UNAVAILABLE");
     M13FreshOriginalNativeSource output{
@@ -107,9 +123,7 @@ import_m13_product_fresh_original_native_source(
         output.original_native_additional_facts=
             m05m06_real::bundle_actual_product_m05m06(
                 view,fresh.fresh_m19,fresh.fresh_m20,
-                m05m06_real::SourceIdentity{
-                    std::move(exact_identity),
-                    admitted.exact_product_ownership_epoch(),true},
+                std::move(exact_owner),
                 common_tonal,exact_phase6_density_floor,
                 phase6_active_frames,
                 phase6_file_based_lra_trailing_attested);
