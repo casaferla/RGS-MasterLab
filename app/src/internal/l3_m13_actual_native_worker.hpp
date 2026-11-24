@@ -45,6 +45,23 @@ public:
            !input.independent_source_reference_and_scopes_attested)
             return R::failure(core::Error{core::ErrorCode::InvalidState,
                 "L3_M13_ACTUAL_WORKER_MISSING_ACCEPTED_NATIVE_EVIDENCE"});
+        const auto& replay=input.request.exact_materialized_preview_owner().replay;
+        const auto& prediction=*input.accepted_winner.native_prediction;
+        const m05m06_real::SourceIdentity accepted{
+            prediction.candidate_resource_identity,prediction.candidate_generation,true};
+        if(!replay||!m10_frozen::valid_key(input.accepted_winner)||
+           input.accepted_scope_revision.empty()||
+           replay->exact_source_reference_scope_revision!=input.accepted_scope_revision||
+           input.accepted_winner_checksum.empty()||
+           input.accepted_winner_checksum!=replay->exact_m10_winner_checksum||
+           input.accepted_protection_checksum.empty()||
+           input.accepted_protection_checksum!=replay->exact_m11_protection_checksum||
+           input.exact_m07_generation.empty()||
+           input.exact_m07_generation!=prediction.exact_m07_generation||
+           !authentic_product_candidate_identity(accepted,input.source_reference_owner,
+                                                  prediction.exact_candidate_ticket))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_ACCEPTED_PREDICTION_STALE"});
         auto fresh=run_fresh_m13_product_postmaterialization_probe(
             input.request,maximum_block_frames,input.native_spec.borrow(),cancellation);
         if(!fresh)return R::failure(*fresh.error());
