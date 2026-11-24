@@ -3,6 +3,7 @@
 #include "internal/l3_m13_predicted_vs_verified_proximity.hpp"
 #include "internal/l3_m13_verification_state_reasons.hpp"
 #include "internal/l3_m13_27_binding_conformance.hpp"
+#include "internal/l3_m13_owned_native_spec.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
 #include "internal/l3_m13_p2_owned_full_master_probe.hpp"
@@ -47,7 +48,35 @@ private slots:
     void frozenVerificationStatePrecedence();
     void reasonsOrderAndExactDuplicateSemantics();
     void completeFreshNativeTwentySevenBindingComparison();
+    void ownedNativeSpecRetainsGateBytesAcrossDispatch();
 };
+void M13FreshNativeProbeTest::ownedNativeSpecRetainsGateBytesAcrossDispatch()
+{
+    a::ProductNativeOnePassSpec spec;
+    spec.current_full_phase6_source_and_grid=true;
+    spec.exact_m20_fft_size=4096;
+    spec.spectral_bands={{0,20,80}};
+    std::vector<std::uint8_t> mask{1,0,1},eligibility{1,2,0};
+    std::vector<analysis::TonalStereoRetainedInterval> width{{10,20},{30,40}};
+    spec.source_support.has_spectral_gate=true;
+    spec.source_support.has_width_gate=true;
+    spec.source_support.spectral_frame_mask=mask;
+    spec.source_support.authoritative_band_eligibility=eligibility;
+    spec.source_support.retained_width_blocks=width;
+    auto owned=m13::M13OwnedNativeSpec::capture(spec);
+    QVERIFY(owned);
+    mask[0]=0;eligibility[1]=0;width[0].begin=15;
+    auto copied=*owned;
+    owned.reset();
+    const auto worker=copied.borrow();
+    QVERIFY(worker.source_support.has_spectral_gate);
+    QVERIFY(worker.source_support.has_width_gate);
+    QCOMPARE(worker.source_support.spectral_frame_mask[0],std::uint8_t{1});
+    QCOMPARE(worker.source_support.authoritative_band_eligibility[1],std::uint8_t{2});
+    QCOMPARE(worker.source_support.retained_width_blocks[0].begin,std::uint64_t{10});
+    spec.current_full_phase6_source_and_grid=false;
+    QVERIFY(!m13::M13OwnedNativeSpec::capture(spec));
+}
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
