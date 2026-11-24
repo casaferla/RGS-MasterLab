@@ -66,7 +66,7 @@ stage_preserved_native_measured_winner(
     }
     auto stage=stage_exact_m12_native_ref_linked(
         accepted,owners.frozen_manual,owners.frozen_manual_bindings,
-        owners.frozen_registry,std::move(nodes));
+        job.value()->execution_registry_snapshot(),std::move(nodes));
     if(!stage)return stage;
     const auto staged=m10_frozen::exact_native_graph_content(
         stage.value()->chain,stage.value()->exact_bindings,*stage.value()->registry_owner);
