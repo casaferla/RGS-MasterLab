@@ -128,6 +128,7 @@ bind_real_s03_s06(const CoherentStereoTripleAuthority& e) {
             native.endpoint=z[2].endpoint;
             native.valid_count=raw->valid_frames;
             native.configured_count=actual.native_selected_frames;
+            native.population_identity=raw->exact_frame_population_identity;
             constexpr std::array<int,3> cutoffs{{80,120,200}};
             native.selector=lowend?
                 std::to_string(cutoffs[k]):
