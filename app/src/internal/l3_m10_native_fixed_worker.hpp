@@ -27,6 +27,9 @@ measure_native_fixed_once(
                                              fixed_job.ticket_identity())||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return std::nullopt;
+    const auto fixed_graph=fixed_job.exact_fixed_graph_content();
+    if(!fixed_graph||candidate.exact_fixed_graph_content()!=fixed_graph)
+        return std::nullopt;
     const auto active_frames=static_cast<std::int64_t>(spec.phase6_active_pcm_frames);
     auto measured=measure_m10_p2_full_native_once(
         fixed_job,std::move(spec),nullptr,cancellation);
