@@ -121,6 +121,20 @@ struct M19NativeSlotProjection final {
             native.valid_count=e.actual_candidate.short_term_valid_windows;
             native.configured_count=e.actual_candidate.short_term_complete_windows;
             native.population_identity=e.actual_candidate.short_term_population_identity;
+        } else if(i==0U||i==2U) {
+            // PLR depends on both full-track TP and the integrated gate.
+            const auto& source=e.actual_candidate;
+            if(!source.integrated_gate_population_identity.empty()) {
+                native.population_identity=source.integrated_gate_population_identity;
+                if(i==0U)native.population_identity+=":"+source.full_pcm_population_identity;
+                native.valid_count=source.final_loudness_blocks;
+                native.configured_count=source.complete_loudness_blocks;
+            }
+        } else if(native.value&&!e.actual_candidate.full_pcm_population_identity.empty()) {
+            // Crest and true peak are whole-resource native observations.
+            native.population_identity=e.actual_candidate.full_pcm_population_identity;
+            native.valid_count=static_cast<std::uint64_t>(e.actual_candidate.scope_frame_count);
+            native.configured_count=native.valid_count;
         }
     }
     return {std::move(feature_slots),M19SlotFailure::none};
