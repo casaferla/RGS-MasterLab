@@ -155,7 +155,17 @@ struct TonalBindingProjection final {
                 const auto& slope=i==0U?*b.t2_spectral_tilt:*b.t6_high_frequency_slope;
                 native.valid_count=slope.above_floor_bands;
                 native.configured_count=slope.configured_bands;
-                native.population_identity=slope.exact_ols_population_identity;
+                if(!slope.exact_ols_population_identity.empty()&&
+                   !evidence.sources[2].selected_spectral_population_identity.empty())
+                    native.population_identity=slope.exact_ols_population_identity+
+                        ":"+evidence.sources[2].selected_spectral_population_identity;
+            } else {
+                const auto& source=evidence.sources[2];
+                if(!source.selected_spectral_population_identity.empty()) {
+                    native.population_identity=source.selected_spectral_population_identity;
+                    native.valid_count=source.selected_spectral_frames;
+                    native.configured_count=source.complete_spectral_frames;
+                }
             }
         }
         native.selector=feature_slots[i].binding_id;
