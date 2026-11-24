@@ -1,6 +1,7 @@
 #include "project_session_view_model.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
+#include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -4813,6 +4814,26 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!m13Result.value()->is_m13_verified());
     QVERIFY(!m13Result.value()->is_qualification_receipt());
     QVERIFY(!m13Result.value()->authorizes_wav_export());
+    // Even with a genuine independent fresh Product rendering, no
+    // fabricated M05/M06 27-feature or QTP-qualified result may escape.
+    const auto provisional=app::l3_automatch::m13_frozen::
+        assess_provisional_m13_product_fresh_evidence(
+            *m13Owner.value(),*m13Result.value(),
+            app::l3_automatch::m13_frozen::
+                M13TwentySevenConformance{},
+            app::l3_automatch::m13_frozen::FullM08Comparison{},
+            true,true,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable);
+    QCOMPARE(provisional.state,app::l3_automatch::m13_frozen::
+        VerificationState::verification_unavailable);
+    QVERIFY(provisional.fresh_master_execution_attested);
+    QVERIFY(!provisional.actual_27_binding_population_attested);
+    QVERIFY(!provisional.verified_profile_approval_exists);
+    QVERIFY(!provisional.authorizes_product_verified());
+    QVERIFY(!provisional.authorizes_master_wav_export());
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     // The existing shared M18 epoch must exclude BOTH M13 capture
