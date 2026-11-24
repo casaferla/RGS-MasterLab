@@ -6,6 +6,7 @@ namespace rgsml::app::l3_automatch::m09_frozen {
 struct NativeEqPrefix final {
     dsp::ParametricEqParameters payload;
     std::vector<NativeEqAtomFit> greedy_order;
+    std::vector<double> exact_active_frequencies_hz;
 };
 // The dictionary must contain the exact legal canonical atoms and their
 // allocated band IDs. The full active population stays in the fit.
@@ -50,7 +51,9 @@ struct NativeEqPrefix final {
         for(const auto& item:stored)bands.push_back(item.payload);
         auto payload=dsp::ParametricEqParameters::create(std::move(bands));
         if(!payload)return {};
-        prefixes.push_back({std::move(*payload.value()),selected});
+        std::vector<double> frequencies;
+        for(const auto& cell:active)frequencies.push_back(cell.frequency_hz);
+        prefixes.push_back({std::move(*payload.value()),selected,std::move(frequencies)});
     }
     return prefixes;
 }
