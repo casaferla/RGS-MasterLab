@@ -235,6 +235,31 @@ encode_m13_provisional_diagnostic(
        !root.value("canonicalReasons").isArray()||
        !root.value("freshEvidence").isObject())
         return false;
+    if(root.value("reportRevision").toString()!=QStringLiteral("1")||
+       root.value("reportId").toString().isEmpty()||
+       root.value("acceptedPlanContentChecksum").toString().isEmpty()||
+       root.value("reportRunOutcome").toString().isEmpty())
+        return false;
+    const auto check_id=[&](const char* field)->bool {
+        const auto id=core::Uuid::parse(
+            root.value(QString::fromLatin1(field)).toString().toStdString());
+        return id&&!id.value()->is_nil();
+    };
+    if(!check_id("reportId")||!check_id("projectId")||
+       !check_id("acceptedPlanId")||!check_id("controllerId")||
+       !check_id("linkedChainId"))return false;
+    const auto outcome=root.value("reportRunOutcome").toString();
+    if(outcome!="NOT_VERIFIED"&&outcome!="VERIFICATION_FAILED"&&
+       outcome!="VERIFICATION_UNAVAILABLE"&&outcome!="STALE")
+        return false;
+    const auto reasons=root.value("canonicalReasons").toArray();
+    const auto first=root.value("primaryReason");
+    if(reasons.isEmpty()) {
+        if(!first.isNull())return false;
+    } else if(!first.isObject()||first.toObject()!=
+              reasons.first().toObject()) {
+        return false;
+    }
     const auto digest=root.take("VerificationContentChecksum").toString();
     if(digest.size()!=64)return false;
     for(const auto ch:digest)
