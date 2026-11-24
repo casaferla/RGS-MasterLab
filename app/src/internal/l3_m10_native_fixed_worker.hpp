@@ -31,6 +31,7 @@ measure_native_fixed_once(
     if(!fixed_graph||candidate.exact_fixed_graph_content()!=fixed_graph)
         return std::nullopt;
     if(!bind_original_pair_profile_common(spec,originals))return std::nullopt;
+    spec.retain_native_spectral_energy=true;
     auto measured=measure_m10_p2_full_native_once(
         fixed_job,std::move(spec),nullptr,cancellation);
     if(!measured||(cancellation&&cancellation->load(std::memory_order_acquire)))
@@ -72,6 +73,7 @@ measure_native_fixed_once(
         fixed_owner.generation,exact_generation,*fixed_graph,
         std::move(authority),std::move(authority_content),
         measured.value()->m16_actual_p2_output.global_linear_peak(),
-        stereo_required,std::move(stereo),std::move(native_windows)};
+        stereo_required,std::move(stereo),std::move(native_windows),
+        std::move(measured.value()->native.spectral_seed_carrier)};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
