@@ -119,6 +119,10 @@ core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
     result.width_all_scope_fallback=width.used_all_scope_fallback;
     result.spectrum_state=state(spectrum.diagnostic);
     result.width_ratio=metric(width.ratio,width.diagnostic);
+    result.width_selected_frames=width.selected_frames;
+    result.width_selected_union.reserve(width.exact_selected_union.size());
+    for(const auto& part:width.exact_selected_union)
+        result.width_selected_union.push_back({part.begin,part.end});
     result.correlation_p10=metric(correlation.p10,correlation.diagnostic);
     result.correlation_p50=metric(correlation.p50,correlation.diagnostic);
     result.correlation_p90=metric(correlation.p90,correlation.diagnostic);
