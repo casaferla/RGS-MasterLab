@@ -4,6 +4,7 @@
 #include "l3_m08_frozen_targeted_population.hpp"
 #include "l3_m11_p03_protected_no_regression.hpp"
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,6 +16,10 @@ struct NativePredictionSnapshot final {
     // Reporting requested set is independent of the corrective mask and
     // Amount. Missing authority remains absent, not assumed FULL.
     std::optional<std::array<bool,4>> requested_reporting_domains;
+    std::string candidate_resource_identity{};
+    std::uint64_t candidate_generation{};
+    std::string exact_candidate_ticket{};
+    std::string exact_m07_generation{};
     friend bool operator==(const NativePredictionSnapshot&,
                            const NativePredictionSnapshot&)=default;
 };
