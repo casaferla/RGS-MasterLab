@@ -47,7 +47,8 @@ struct SpectralSlotProjection final {
         if(!owner.full_track_owner_confirmed||owner.generation==0||
            owner.resource_identity.empty()||
            a.observed[j].canonical_band_results.size()!=n||
-           a.observed[j].source_reason!=SpectralNativeReason::ready)
+           (a.observed[j].source_reason!=SpectralNativeReason::ready&&
+            a.observed[j].source_reason!=SpectralNativeReason::insufficient_band_frame_support))
             return {{},SpectralSlotFailure::unbound_or_stale_stft};
         for(std::size_t k=0;k<j;++k)
             if(owner.resource_identity==a.source_owner[k].resource_identity)
