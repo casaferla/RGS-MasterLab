@@ -120,6 +120,7 @@ struct M20StereoProjection final {
         if(z[2])native.value=raw[i]->unrounded;
         native.valid_count=in.actual_candidate.valid_correlation_windows;
         native.configured_count=in.actual_candidate.complete_correlation_windows;
+        native.population_identity=in.actual_candidate.correlation_population_identity;
         native.selector=std::array<const char*,3>{{"P10","P50","P90"}}[i];
     }
     return {std::move(out),M20StereoFailure::none};
