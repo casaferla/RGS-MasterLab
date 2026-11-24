@@ -389,6 +389,23 @@ public:
     }
     [[nodiscard]] const OfflineProductOwnerStamp& owner_stamp()
         const noexcept{return owner_;}
+    [[nodiscard]] bool preserves_user_terminal() const noexcept {
+        return p2_bindings_.empty()||
+            (p2_bindings_.size()==1U&&!baseline_manual_bindings_.empty()&&
+             p2_bindings_.front()==baseline_manual_bindings_.back());
+    }
+    [[nodiscard]] bool fixed_only() const noexcept {
+        return linked_.instances().empty()&&preserves_user_terminal();
+    }
+    [[nodiscard]] bool same_fixed_baseline_as(
+        const M10P2RealNativeProductJob& other) const noexcept {
+        return owner_==other.owner_&&prepared_==other.prepared_&&
+            baseline_manual_revision_==other.baseline_manual_revision_&&
+            baseline_manual_nodes_==other.baseline_manual_nodes_&&
+            baseline_manual_bindings_==other.baseline_manual_bindings_&&
+            max_block_frames_==other.max_block_frames_&&
+            preserves_user_terminal()&&other.preserves_user_terminal();
+    }
     // Expose only the non-effective manual baseline for testing freshness.
     [[nodiscard]] bool identical_upstream_to(
         const M10P2RealNativeProductJob& other) const noexcept
