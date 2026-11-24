@@ -32,12 +32,12 @@ enum class TransientDescriptorFailure:std::uint8_t {
 };
 struct NativeTransientDescriptor final {
     std::array<std::optional<double>,3> canonical_type7_p10_p50_p90{};
-    std::array<std::optional<double>,3> native_type7_p10_p50_p90{};
     std::uint64_t valid_descriptor_events{};
     std::uint64_t canonical_events{};
     std::optional<double> native_support;
     TransientDescriptorFailure reason{
         TransientDescriptorFailure::missing_detector_policy_or_source_identity};
+    std::array<std::optional<double>,3> native_type7_p10_p50_p90{};
     [[nodiscard]] bool reference_grade() const noexcept {
         return reason==TransientDescriptorFailure::ready;
     }
