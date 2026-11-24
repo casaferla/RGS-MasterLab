@@ -333,7 +333,8 @@ void M13FreshNativeProbeTest::frozenQtpTwentySevenCanonicalCategories()
     QCOMPARE(kQtpBindings[22].category,QtpCategory::positive_width_ratio);
     QCOMPARE(kQtpBindings[26].category,QtpCategory::true_peak_db_tp);
     for(std::size_t i=0;i<kQtpBindings.size();++i) {
-        QCOMPARE(kQtpBindings[i].binding_id,m07_frozen::kBindings[i].binding_id);
+        QVERIFY(kQtpBindings[i].binding_id==
+                m07_frozen::kBindings[i].binding_id);
         QCOMPARE(kQtpBindings[i].source_transform,
                  m07_frozen::kBindings[i].transform);
     }
