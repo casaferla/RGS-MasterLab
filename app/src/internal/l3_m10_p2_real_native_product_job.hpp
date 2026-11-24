@@ -390,6 +390,8 @@ public:
     }
     [[nodiscard]] const OfflineProductOwnerStamp& owner_stamp()
         const noexcept{return owner_;}
+    [[nodiscard]] const std::shared_ptr<const dsp::ModuleRegistry>&
+    execution_registry_snapshot() const noexcept {return registry_;}
     [[nodiscard]] std::optional<m10_frozen::ExactCacheBytes>
     exact_linked_graph_content() const {
         if(!registry_)return std::nullopt;
