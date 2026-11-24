@@ -26,6 +26,8 @@ struct ProductNativeOnePassSpec final {
     // Opt-in Product path: derive temporal gates from this rendered PCM,
     // never reuse the PREPARED or another candidate's retained intervals.
     bool derive_own_m19_temporal_gate{};
+    // Fixed-only retention; ordinary candidates do not retain the matrix.
+    bool retain_native_spectral_energy{};
 };
 // Resolve an omitted FFT size from the actual source rate, without
 // granting any missing Phase6 grid/grade or changing caller definitions.
@@ -48,6 +50,13 @@ struct ProductNativeOnePassSpec final {
     spec.source_support.profile_common_bandwidth=common;
     return true;
 }
+struct NativeSpectralSeedCarrier final {
+    std::vector<m05m06_real::NativeFrameBand> grid;
+    std::vector<std::vector<std::optional<double>>> energy;
+    std::vector<std::uint64_t> ordinals;
+    std::uint64_t active_pcm_frames{};
+    std::uint32_t sample_rate{};
+};
 struct ProductNativeOnePassResult final {
     OfflineProductCandidateMeasurement actual;
     m05m06_real::SpectralD10D12Native d10_d12;
@@ -55,6 +64,7 @@ struct ProductNativeOnePassResult final {
     m05m06_real::P04ProductObservation d07_d09;
     std::vector<std::uint64_t> selected_original_m20_ordinals;
     std::uint64_t exact_observed_active_frames{};
+    std::optional<NativeSpectralSeedCarrier> spectral_seed_carrier{};
     [[nodiscard]] constexpr bool authorizes_m10_or_export()
         const noexcept{return false;}
 };
@@ -71,6 +81,7 @@ struct ProductNativeFullResourceObservations final {
     m05m06_real::P04ProductObservation d07_d09;
     std::vector<std::uint64_t> selected_original_m20_ordinals;
     std::uint64_t exact_observed_active_frames{};
+    std::optional<NativeSpectralSeedCarrier> spectral_seed_carrier{};
     [[nodiscard]] constexpr bool authorizes_m10_or_m12()const noexcept {
         return false;
     }
@@ -185,10 +196,15 @@ measure_real_full_owned_pcm_native_once(
         true,cancellation);
     if(p04.reason!=m05m06_real::P04ProductObservationReason::ready)
         return fail("L3_ONCE_NATIVE_P04_INVALID");
+    std::optional<NativeSpectralSeedCarrier> carrier;
+    if(spec.retain_native_spectral_energy)
+        carrier=NativeSpectralSeedCarrier{spectral.canonical_grid(),
+            std::move(spectral).take_native_energies(),spectral.canonical_original_ordinals(),
+            spec.phase6_active_pcm_frames,rate};
     return R::success(ProductNativeFullResourceObservations{
         std::move(*levels.value()),std::move(*tonal.value()),
         std::move(d10),std::move(s03),std::move(p04),
-        spectral.canonical_original_ordinals(),spec.phase6_active_pcm_frames});
+        spectral.canonical_original_ordinals(),spec.phase6_active_pcm_frames,std::move(carrier)});
 }
 // Reusable native analyzer for any genuine immutable Product job that
 // exposes execute()/result_has_expected_scope(). The specialized M10/P2
@@ -228,6 +244,6 @@ measure_real_product_candidate_once(
         std::move(observed.value()->s03_s06),
         std::move(observed.value()->d07_d09),
         std::move(observed.value()->selected_original_m20_ordinals),
-        observed.value()->exact_observed_active_frames});
+        observed.value()->exact_observed_active_frames,std::move(observed.value()->spectral_seed_carrier)});
 }
 } // namespace rgsml::app::l3_automatch
