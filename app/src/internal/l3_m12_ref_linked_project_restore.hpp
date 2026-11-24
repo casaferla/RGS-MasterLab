@@ -142,7 +142,6 @@ decode_exact_m12_ref_linked_product_state(
            m.owner!="REFERENCE_MATCH"||
            m.linkState!="REF_LINKED"||
            !m.semanticNodeId||m.semanticNodeId->is_nil()||
-           m.typeId=="rgsml.dsp.gain"||
            m.typeId=="rgsml.dsp.true-peak-limiter"||
            m.typeId=="rgsml.dsp.streaming-true-peak-limiter"||
            m.typeId=="rgsml.dsp.dither")
