@@ -4865,6 +4865,21 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!sealedM13.value()->is_m13_verified());
     QVERIFY(!sealedM13.value()->authorizes_wav_export());
     QVERIFY(!sealedM13.value()->is_final_p01_report());
+    const auto productOwnedReport=session.project.
+        seal_private_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),
+            app::l3_automatch::m13_frozen::M13TwentySevenConformance{},
+            app::l3_automatch::m13_frozen::FullM08Comparison{},true,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable);
+    QVERIFY2(productOwnedReport,
+        productOwnedReport.error()?
+            productOwnedReport.error()->message().c_str():"");
+    QVERIFY(app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(
+            productOwnedReport.value()->canonical_report));
     auto roundtripDiagnostic=project::OpaqueJsonValue::parse(
         sealedM13.value()->canonical_report.canonical_utf8());
     QVERIFY(roundtripDiagnostic);
@@ -5145,6 +5160,14 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              std::string("STALE_DEPENDENCY"));
     QVERIFY(!session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
+    QVERIFY(!session.project.seal_private_m13_provisional_diagnostic(
+        *m13Owner.value(),*m13Result.value(),
+        app::l3_automatch::m13_frozen::M13TwentySevenConformance{},
+        app::l3_automatch::m13_frozen::FullM08Comparison{},true,
+        app::l3_automatch::m13_frozen::
+            MandatoryHardPredicate::unavailable,
+        app::l3_automatch::m13_frozen::
+            MandatoryHardPredicate::unavailable));
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
     QVERIFY(session.project.can_save_project());
