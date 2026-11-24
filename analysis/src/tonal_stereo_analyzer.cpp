@@ -228,7 +228,8 @@ core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
         if(!supplied.authoritative_band_eligibility.empty()) {
             const auto profile=m20_private::make_profile_candidate(
                 spectrum.average_psd,fs,spectrum.geometry.fft,12,
-                supplied.authoritative_band_eligibility,profile_common);
+                supplied.authoritative_band_eligibility,profile_common,
+                profile_common.has_value());
             if(profile.diagnostic==m20_private::ProfileDiagnostic::invalid_input
                ||profile.bands.size()!=result.primary_bands_1_12.size())
                 return R::failure(invalid("M20_REAL_PROFILE_SUPPORT_INVALID"));
