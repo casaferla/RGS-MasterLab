@@ -76,10 +76,12 @@ apply_stereo(const dsp::StereoMsParameters& seed,
     double width=seed.low_band_width_percent();
     for(const auto& f:fields) {
         if(f.band_id)return std::nullopt;
-        if(f.field==NativeField::mid_gain_db)mid=f.value;
-        else if(f.field==NativeField::side_gain_db&&!seed.side_muted())side=f.value;
+        if(f.field==NativeField::mid_gain_db&&f.value>=-12.0&&f.value<=12.0)mid=f.value;
+        else if(f.field==NativeField::side_gain_db&&!seed.side_muted()&&
+                f.value>=-3.0&&f.value<=1.5)side=f.value;
         else if(f.field==NativeField::low_width_percent&&
-                seed.mono_bass_mode()!=dsp::MonoBassMode::OFF)width=f.value;
+                seed.mono_bass_mode()!=dsp::MonoBassMode::OFF&&
+                f.value>=0.0&&f.value<=100.0)width=f.value;
         else return std::nullopt;
     }
     return as_payload(dsp::StereoMsParameters::create(mid,side,seed.side_muted(),
@@ -121,18 +123,20 @@ apply_eq(const dsp::ParametricEqParameters& seed,
     std::size_t matched=0U;
     for(auto& band:bands) {
         auto payload=band.payload();
+        const bool side=band.routing()==dsp::EqRouting::SIDE;
+        if(!side&&band.routing()!=dsp::EqRouting::STEREO)return std::nullopt;
         for(const auto& f:fields) {
             if(!f.band_id||*f.band_id!=band.band_id())continue;
             if(!band.enabled())return std::nullopt;
             if(auto* bell=std::get_if<dsp::BellPayload>(&payload)) {
                 if(f.field==NativeField::frequency_hz)bell->frequency_hz=f.value;
-                else if(f.field==NativeField::gain_db)bell->gain_db=f.value;
-                else if(f.field==NativeField::q)bell->q=f.value;
+                else if(f.field==NativeField::gain_db&&std::abs(f.value)<=(side?1.5:3.0))bell->gain_db=f.value;
+                else if(f.field==NativeField::q&&f.value>=0.1&&f.value<=(side?1.0:1.5))bell->q=f.value;
                 else return std::nullopt;
             }else if(auto* shelf=std::get_if<dsp::ShelfPayload>(&payload)) {
                 if(f.field==NativeField::frequency_hz)shelf->frequency_hz=f.value;
-                else if(f.field==NativeField::gain_db)shelf->gain_db=f.value;
-                else if(f.field==NativeField::shelf_slope)shelf->shelf_slope=f.value;
+                else if(f.field==NativeField::gain_db&&std::abs(f.value)<=(side?1.5:3.0))shelf->gain_db=f.value;
+                else if(f.field==NativeField::shelf_slope&&f.value>=0.1&&f.value<=1.0)shelf->shelf_slope=f.value;
                 else return std::nullopt;
             }else return std::nullopt;
             ++matched;
