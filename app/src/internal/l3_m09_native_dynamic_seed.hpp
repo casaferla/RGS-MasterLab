@@ -1,6 +1,6 @@
 #pragma once
 #include "l3_m09_p02_spectral_seed.hpp"
-#include "l3_m11_native_fixed_population.hpp"
+#include "l3_m11_native_fixed_assessment.hpp"
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 namespace rgsml::app::l3_automatch::m09_frozen {
 struct NativeDynamicSeed final {
@@ -133,5 +133,64 @@ struct NativeRankedCluster final {
     });
     if(out.size()>3U)out.resize(3U);
     return out;
+}
+// The Fixed carrier and the three original M07 vectors must have
+// identical canonical order. D12 is a compatibility gate, not a knob.
+[[nodiscard]] inline std::optional<std::vector<SpectralSeedCell>>
+native_fixed_spectral_cells(const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested)
+{
+    if(!fixed.measured_fixed_spectral_energy)return {};
+    const auto& carrier=*fixed.measured_fixed_spectral_energy;
+    const auto assessment=m11_frozen::assess_native_fixed_targets(fixed,amount,requested);
+    if(!assessment.valid_current||!assessment.corrective[1])return {};
+    const auto guards=m11_frozen::bind_native_fixed_to_candidate(fixed,fixed.measured_fixed,amount);
+    if(!guards)return {};
+    std::array<const m08_frozen::AuthenticatedPairSlot*,3> slots{};
+    std::array<std::size_t,3> offsets{};
+    std::array<double,3> deadbands{};
+    std::size_t offset=0;
+    constexpr std::array<std::string_view,3> ids{
+        "rgsml.reference-match.binding.dynamics.d10",
+        "rgsml.reference-match.binding.dynamics.d11",
+        "rgsml.reference-match.binding.dynamics.d12"};
+    for(std::size_t i=0;i<fixed.measured_fixed.size();++i) {
+        const auto& s=fixed.measured_fixed[i];
+        for(std::size_t d=0;d<3U;++d)if(s.binding_id==ids[d]) {
+            slots[d]=&s;offsets[d]=offset;deadbands[d]=m07_frozen::kBindings[i].deadband;
+        }
+        offset+=s.configured.size();
+    }
+    for(const auto* s:slots)if(!s||s->configured.size()!=carrier.grid.size())return {};
+    if(!native_fixed_spectral_carrier_matches(carrier,*slots[0]))return {};
+    std::vector<SpectralSeedCell> cells;
+    cells.reserve(carrier.grid.size());
+    for(std::size_t i=0;i<carrier.grid.size();++i) {
+        const auto& band=carrier.grid[i];
+        const auto& p=slots[0]->configured[i];const auto& a=slots[1]->configured[i];
+        const auto& c=slots[2]->configured[i];
+        SpectralSeedCell cell;
+        cell.canonical_low_edge_hz=band.low_hz;
+        cell.canonical_high_edge_hz=band.high_hz;
+        cell.canonical_center_hz=1000.0*std::exp2(static_cast<double>(band.exact_canonical_index)/12.0);
+        cell.d10_deadband=deadbands[0];cell.d11_deadband=deadbands[1];
+        cell.d10_pair_support=p.paired_native_support;
+        const auto& g=(*guards)[offsets[0]+i];
+        cell.d10_requested=g.required_in_frozen_k&&!g.protected_by_m11_mask;
+        cell.d10_exact_current=g.exact_current&&p.current_candidate_z.has_value();
+        cell.d11_exact_current=(*guards)[offsets[1]+i].required_in_frozen_k&&
+            (*guards)[offsets[1]+i].exact_current&&a.current_candidate_z.has_value();
+        cell.d12_exact_compatible=(*guards)[offsets[2]+i].required_in_frozen_k&&
+            (*guards)[offsets[2]+i].exact_current&&c.current_candidate_z.has_value();
+        if(cell.d10_requested&&cell.d10_exact_current&&cell.d11_exact_current) {
+            const auto ptarget=m08_frozen::desired_for_component(amount,1,p.prepared,p.reference);
+            const auto atarget=m08_frozen::desired_for_component(amount,1,a.prepared,a.reference);
+            if(!ptarget.value||!atarget.value)return {};
+            cell.d10_optimization_minus_fixed=ptarget.value->constraint_adjusted_z.value_or(ptarget.value->desired_z)-*p.current_candidate_z;
+            cell.d11_optimization_minus_fixed=atarget.value->constraint_adjusted_z.value_or(atarget.value->desired_z)-*a.current_candidate_z;
+        }
+        cells.push_back(cell);
+    }
+    return cells;
 }
 } // namespace rgsml::app::l3_automatch::m09_frozen
