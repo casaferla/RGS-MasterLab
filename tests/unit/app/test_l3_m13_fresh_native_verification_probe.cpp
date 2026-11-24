@@ -509,6 +509,19 @@ void M13FreshNativeProbeTest::reasonsOrderAndExactDuplicateSemantics()
     auto wrongStage=safety;
     wrongStage.stage=VerificationStage::feature_numeric;
     QVERIFY(!normalize_verification_reasons({wrongStage}));
+    // The one recovered signature reason is legal in either the
+    // input-integrity or materialized-structure stage, as frozen.
+    auto structural=signature;
+    structural.stage=VerificationStage::materialization_structure;
+    structural.field_path="/actualRefLinkedGraph/parameters";
+    auto signatures=normalize_verification_reasons({
+        structural,signature});
+    QVERIFY(signatures);
+    QCOMPARE(signatures->size(),std::size_t{2});
+    QCOMPARE(signatures->front().stage,
+             VerificationStage::input_integrity);
+    QCOMPARE(signatures->back().stage,
+             VerificationStage::materialization_structure);
     auto nonfinite=safety;
     nonfinite.measured_delta=std::numeric_limits<double>::infinity();
     QVERIFY(!normalize_verification_reasons({nonfinite}));
