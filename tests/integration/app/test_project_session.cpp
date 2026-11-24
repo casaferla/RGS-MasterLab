@@ -4821,6 +4821,21 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              m13Owner.value()->exact_product_ownership_epoch());
     QVERIFY(!actualNative.value()->original_native_additional_facts);
     QVERIFY(!actualNative.value()->authorizes_m13_verified());
+    // The original source parser rejects an analyzer that secretly
+    // reports a different Fs, even if the PCM still renders correctly.
+    const auto realM19Fs=m13Result.value()->fresh_m19.sample_rate_hz;
+    m13Result.value()->fresh_m19.sample_rate_hz=24000;
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        import_m13_product_fresh_original_native_source(
+            *m13Owner.value(),*m13Result.value(),
+            {20.0,16000.0},1e-12,0,false,false));
+    m13Result.value()->fresh_m19.sample_rate_hz=realM19Fs;
+    // Never infer an upstream Phase-6 density/grid attestation from
+    // M19/M20's mere successful completion.
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        import_m13_product_fresh_original_native_source(
+            *m13Owner.value(),*m13Result.value(),
+            {20.0,16000.0},0.0,0,false,true));
     QCOMPARE(m13Result.value()->logical_verification_evaluations,
              std::uint32_t{1});
     QCOMPARE(m13Result.value()->stage_witness.protected_manual.size(),
