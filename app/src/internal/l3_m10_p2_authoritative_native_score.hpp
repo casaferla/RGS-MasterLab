@@ -161,6 +161,12 @@ measure_and_score_m10_p2_full_native_candidate(
     if(!bound.fragments)
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
+    independently_attested_m08_m11.native_candidate_resource_identity=
+        verified_candidate_product_owner.resource_identity;
+    independently_attested_m08_m11.native_candidate_generation=
+        verified_candidate_product_owner.generation;
+    independently_attested_m08_m11.native_candidate_ticket=candidate.ticket_identity();
+    independently_attested_m08_m11.native_m07_generation=exact_phase6_m07_generation;
     return score_complete_p2_native_fragment_set(
         std::move(*bound.fragments),
         std::move(independently_attested_m08_m11),
