@@ -43,9 +43,10 @@ measure_native_fixed_once(
     auto authority=std::make_shared<const P2OriginalRealNativeTriple>(
         retain_original_native_definitions(*definitions));
     auto authority_content=exact_original_native_definition_content(*authority);
+    m05m06_real::D03D04NativeSeries native_windows;
     auto bound=bind_p2_original_native_triple_from_independent_full_pair(
         std::move(*definitions),originals,*measured.value(),fixed_owner,
-        active_frames,file_based_lra_attested);
+        active_frames,file_based_lra_attested,&native_windows);
     if(!bound.fragments)return std::nullopt;
     m07_frozen::ExactTwentySevenFeatureAssembler assembly{exact_generation,true};
     const auto admission=m07_frozen::collect_existing_m05m06_native_fragments(
@@ -71,6 +72,6 @@ measure_native_fixed_once(
         fixed_owner.generation,exact_generation,*fixed_graph,
         std::move(authority),std::move(authority_content),
         measured.value()->m16_actual_p2_output.global_linear_peak(),
-        stereo_required,std::move(stereo)};
+        stereo_required,std::move(stereo),std::move(native_windows)};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
