@@ -117,6 +117,9 @@ struct T01BindingProjection final {
             {z[0],m08_frozen::Endpoint::ordinary},
             {z[1],m08_frozen::Endpoint::ordinary},
             z[2],true});
+        auto& native=slot.configured.back().candidate_native;
+        native.value=z[2]; // POWER_FRACTION_DB is the frozen QTP native unit
+        native.selector=std::to_string(expected.canonical_index);
     }
     return {std::move(slot),T01BindingFailure::none};
 }
