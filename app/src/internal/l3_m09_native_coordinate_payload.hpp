@@ -49,6 +49,7 @@ apply_gain(const dsp::GainParameters& seed,
     double gain=seed.gain_db();
     for(const auto& f:fields) {
         if(f.band_id||f.field!=NativeField::gain_db)return std::nullopt;
+        if(f.value< -6.0||f.value>6.0)return std::nullopt;
         gain=f.value;
     }
     return as_payload(dsp::GainParameters::create(gain));
@@ -60,6 +61,7 @@ apply_transient(const dsp::TransientShaperParameters& seed,
     double attack=seed.attack_amount_db(),sustain=seed.sustain_amount_db();
     for(const auto& f:fields) {
         if(f.band_id)return std::nullopt;
+        if(f.value< -3.0||f.value>3.0)return std::nullopt;
         if(f.field==NativeField::attack_amount_db)attack=f.value;
         else if(f.field==NativeField::sustain_amount_db)sustain=f.value;
         else return std::nullopt;
@@ -87,6 +89,8 @@ apply_stereo(const dsp::StereoMsParameters& seed,
 apply_compressor(const dsp::CompressorParameters& seed,
                  std::span<const NativePhysicalField> fields)
 {
+    if(seed.makeup_gain_db()!=0.0||seed.detector_mode()!=dsp::CompressorDetectorMode::RMS||
+       seed.channel_link()==dsp::CompressorChannelLink::DUAL_MONO)return std::nullopt;
     double threshold=seed.threshold_dbfs(),ratio=seed.ratio(),knee=seed.knee_db();
     double attack=seed.attack_ms(),release=seed.release_ms(),rms=seed.rms_time_constant_ms();
     double look=seed.look_ahead_ms(),mix=seed.mix_percent(),makeup=seed.makeup_gain_db();
@@ -101,10 +105,11 @@ apply_compressor(const dsp::CompressorParameters& seed,
         case NativeField::rms_ms:rms=f.value;break;
         case NativeField::look_ahead_ms:look=f.value;break;
         case NativeField::mix_percent:mix=f.value;break;
-        case NativeField::makeup_gain_db:makeup=f.value;break;
+        case NativeField::makeup_gain_db:return std::nullopt; // fixed zero in automatic use
         default:return std::nullopt;
         }
     }
+    if(ratio>2.0)return std::nullopt;
     return as_payload(dsp::CompressorParameters::create(seed.detector_mode(),
         seed.channel_link(),threshold,ratio,knee,attack,release,rms,look,mix,makeup));
 }
@@ -148,6 +153,8 @@ apply_dynamic_eq(const dsp::DynamicEqParameters& seed,
     std::size_t matched=0U;
     for(auto& band:bands) {
         auto spec=band.spec();
+        if(spec.control.base_gain_db!=0.0||spec.routing!=dsp::EqRouting::STEREO)
+            return std::nullopt;
         for(const auto& f:fields) {
             if(!f.band_id||*f.band_id!=spec.band_id)continue;
             if(!spec.enabled)return std::nullopt;
@@ -164,8 +171,12 @@ apply_dynamic_eq(const dsp::DynamicEqParameters& seed,
             case NativeField::shelf_slope:
                 if(!shelf)return std::nullopt;
                 shelf->shelf_slope=f.value;break;
-            case NativeField::base_gain_db:c.base_gain_db=f.value;break;
-            case NativeField::range_db:c.range_db=f.value;break;
+            case NativeField::base_gain_db:return std::nullopt; // fixed zero in automatic use
+            case NativeField::range_db:
+                if(f.value< -2.0||f.value>2.0||
+                   (c.range_db<0.0&&f.value>0.0)||(c.range_db>0.0&&f.value<0.0))
+                    return std::nullopt;
+                c.range_db=f.value;break;
             case NativeField::threshold_dbfs:c.threshold_dbfs=f.value;break;
             case NativeField::ratio:c.ratio=f.value;break;
             case NativeField::rms_ms:c.rms_time_constant_ms=f.value;break;
