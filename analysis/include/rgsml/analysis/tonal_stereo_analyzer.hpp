@@ -121,6 +121,25 @@ struct TonalStereoAnalysisResult final {
     std::vector<TonalStereoRetainedInterval> width_selected_union{};
 };
 
+// Explicit native geometry/gate port for a source's OWN M19 observation.
+// Half-open sample intervals and the sample-interval midpoint s+N/2
+// are an explicit adapter convention; no implicit change to L1 callers.
+struct NativeTonalFrameGeometry final {
+    std::uint64_t window{},fft{},hop{};
+};
+[[nodiscard]] std::optional<NativeTonalFrameGeometry>
+native_tonal_frame_geometry(std::uint32_t sample_rate_hz) noexcept;
+
+struct BasicLevelAnalysisResult;
+struct NativeM19TonalGate final {
+    bool available{};
+    std::uint64_t active_pcm_frames{};
+    std::vector<std::uint8_t> selected_complete_frames;
+    std::vector<TonalStereoRetainedInterval> retained_union;
+};
+[[nodiscard]] core::Result<NativeM19TonalGate>
+bind_native_m19_tonal_gate(const BasicLevelAnalysisResult& levels);
+
 // Uses the existing AudioBufferView absolute-domain subview. Native,
 // bounded-window FFT/PSD accumulation; no per-STFT-frame PSD history.
 // Width and Grid100 correlation reuse the canonical M20 private math.
