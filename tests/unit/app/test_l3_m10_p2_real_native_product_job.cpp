@@ -327,6 +327,21 @@ void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpol
     const auto prefixes=m09::derive_native_side_prefixes(fixed,amount,requested,grid,3,dictionary,*rate.value());
     QVERIFY(!prefixes.empty());
     QVERIFY(prefixes.front().payload.bands().front().routing()==dsp::EqRouting::SIDE);
+    const auto response=m09::exact_prefix_cell_response(prefixes.front(),grid,1,"1");
+    QVERIFY(response&&*response>0.0);
+    QVERIFY(!m09::exact_prefix_cell_response(prefixes.front(),grid,1,"0"));
+    m09::NativeFamilySeedBank bank;
+    bank.side=prefixes;bank.exact_side_grid=grid;
+    m09::AbstractFamilyChoice family;family.stereo_side_eq_prefix=1U;
+    const std::array<m09::NativeRoleCoordinateAuthority,1> keys{{
+        {m09::IntentRole::stereo_side_eq,{0x41}}}};
+    const std::array<m09::NativeBandCoordinateAuthority,1> bands{{
+        {m09::IntentRole::stereo_side_eq,dictionary.front().band_id,{0x42},
+         {grid.front().low_hz,grid.back().high_hz}}}};
+    const auto requests=m09::derive_native_family_coordinate_requests(bank,family,keys,bands,48000);
+    QVERIFY(requests);
+    QCOMPARE(requests->size(),std::size_t{3});
+    QVERIFY(!m09::derive_native_family_coordinate_requests(bank,family,keys,{},48000));
     for(auto& slot:fixed.measured_fixed)if(slot.binding_id=="rgsml.reference-match.binding.stereo.s03")
         slot.configured[1].candidate_native.endpoint=m08::Endpoint::mono_side_muted;
     QVERIFY(!m09::native_side_fit_population(fixed,amount,requested,grid,3));
