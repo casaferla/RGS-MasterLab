@@ -630,6 +630,35 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     changed_definition=retained_definitions;
     changed_definition.d07_d09.per_descriptor_source_grade[0][2]=true;
     QVERIFY(definition_content!=m10::exact_original_native_definition_content(changed_definition));
+    // Provenance-only fixture. Its incomplete definitions still cannot
+    // become a complete M07 measurement or a numerical winner.
+    a::m11_frozen::NativeFixedPopulation fixed_definition_fixture;
+    fixed_definition_fixture.exact_independent_fixed_and_endpoint_safety_attested=true;
+    fixed_definition_fixture.exact_fixed_ticket=chosen->typed.base.ticket_identity;
+    fixed_definition_fixture.exact_fixed_resource_identity=owner.resource_identity;
+    fixed_definition_fixture.exact_fixed_source_generation=owner.generation;
+    fixed_definition_fixture.exact_m07_generation="current-phase6-test-generation";
+    fixed_definition_fixture.original_definition_authority=
+        std::make_shared<const m10::P2OriginalRealNativeTriple>(retained_definitions);
+    fixed_definition_fixture.exact_definition_authority_content=definition_content;
+    const auto resolved=m10::resolve_original_definitions_from_fixed(
+        fixed_definition_fixture,*original_pair.value(),stamp,
+        "current-phase6-test-generation","new-candidate");
+    QVERIFY(resolved);
+    const auto resolved_owner=a::native_product_candidate_identity(stamp,"new-candidate");
+    QVERIFY(m10::exact_source_owner_equal(resolved->m19.actual_candidate.owner,resolved_owner));
+    QVERIFY(m10::exact_source_owner_equal(resolved->s03_s06.independent_source_owners[2],
+                                         resolved_owner));
+    QVERIFY(!resolved->t01.actual_sources[2].integrated_lufs.ready());
+    QVERIFY(!m10::resolve_original_definitions_from_fixed(
+        fixed_definition_fixture,*original_pair.value(),stamp,"stale-generation","new-candidate"));
+    QVERIFY(!m10::resolve_original_definitions_from_fixed(
+        fixed_definition_fixture,*original_pair.value(),stamp,
+        "current-phase6-test-generation",fixed_definition_fixture.exact_fixed_ticket));
+    fixed_definition_fixture.exact_definition_authority_content.back()^=0x01;
+    QVERIFY(!m10::resolve_original_definitions_from_fixed(
+        fixed_definition_fixture,*original_pair.value(),stamp,
+        "current-phase6-test-generation","new-candidate"));
     auto stale_original=original_three_way();
     stale_original.d10_d12.source_owner[1].resource_identity=
         "wrong-independent-reference";
