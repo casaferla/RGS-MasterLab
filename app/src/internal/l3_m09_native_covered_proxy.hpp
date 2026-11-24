@@ -106,6 +106,26 @@ native_gain_coverage(const m11_frozen::NativeFixedPopulation& fixed,
     }
     return out;
 }
+// Analytical EQ coverage is tied to an actual selected comparison cell
+// and its cumulative static response, never to nearest frequency.
+[[nodiscard]] inline std::optional<double> exact_prefix_cell_response(
+    const NativeEqPrefix& prefix,std::span<const m05m06_real::T01ConfiguredBand> grid,
+    std::size_t cell,std::string_view selector)
+{
+    if(cell>=grid.size()||selector!=std::to_string(grid[cell].canonical_index))return {};
+    const auto& frequencies=prefix.exact_active_frequencies_hz;
+    const auto it=std::find(frequencies.begin(),frequencies.end(),grid[cell].center_hz);
+    if(it==frequencies.end())return {};
+    const auto index=static_cast<std::size_t>(it-frequencies.begin());
+    double response=0.0;
+    for(const auto& atom:prefix.greedy_order) {
+        const auto& values=atom.fit.atom.exact_canonical_response_at_limited_gain;
+        if(values.size()!=frequencies.size())return {};
+        response+=values[index];
+    }
+    if(!std::isfinite(response))return {};
+    return response;
+}
 // Bind explicit component capability only from an authenticated seed
 // bank and the direction selected by M09. In particular D09/D12,
 // correlation and unrelated loudness features are never side-effect coverage.
@@ -143,6 +163,18 @@ native_family_coverage(const m11_frozen::NativeFixedPopulation& fixed,
             if(std::abs(delta)<=binding.deadband)continue;
             const auto matches=[&](double movement){return (delta>0.0&&movement>0.0)||(delta<0.0&&movement<0.0);};
             const auto name=std::string_view(slot.binding_id);
+            if(name.ends_with(".t01")&&family.tonal_eq_prefix) {
+                const auto response=exact_prefix_cell_response(bank.tonal[family.tonal_eq_prefix-1U],
+                    bank.exact_tonal_grid,k,p.candidate_native.selector);
+                if(response)c.covered[k]=matches(*response);
+            }
+            if(name.ends_with(".s03")&&family.stereo_side_eq_prefix&&
+               p.candidate_native.endpoint!=m08_frozen::Endpoint::mono_side_muted&&
+               target.value->endpoint!=m08_frozen::Endpoint::mono_side_muted) {
+                const auto response=exact_prefix_cell_response(bank.side[family.stereo_side_eq_prefix-1U],
+                    bank.exact_side_grid,k,p.candidate_native.selector);
+                if(response)c.covered[k]=matches(*response);
+            }
             if(name.ends_with(".l01")&&family.loudness==LoudnessMode::gain&&bank.gain)
                 c.covered[k]=matches(bank.gain->payload.gain_db());
             if((name.ends_with(".d07")||name.ends_with(".d08"))&&family.micro!=MicroMode::none) {
