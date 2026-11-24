@@ -126,6 +126,8 @@ measure_and_score_m10_p2_full_native_candidate(
            candidate.ticket_identity()))
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
+    if(!bind_original_pair_profile_common(native_spec,*authentic_prepared_and_independent_reference))
+        return {P2NativeCostReason::missing_triple_native_authority,{},{},{}};
     const auto linked_graph=candidate.exact_linked_graph_content();
     const auto execution_graph=candidate.exact_execution_graph_content();
     if(!linked_graph||!execution_graph)
