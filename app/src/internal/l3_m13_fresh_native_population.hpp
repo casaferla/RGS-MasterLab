@@ -30,6 +30,7 @@ bind_m13_fresh_native_population(
     const OfflineProductOwnerStamp& exact_source_reference_owner,
     m10_frozen::P2OriginalRealNativeTriple original_definitions,
     std::string exact_phase6_m07_generation,
+    const m05m06_real::SourceIdentity& accepted_candidate_owner,
     const std::string& exact_accepted_source_reference_scope_revision,
     bool current_product_dependencies_attested,
     bool exact_file_based_lra_policy_attested)
@@ -58,6 +59,8 @@ bind_m13_fresh_native_population(
         request,fresh,{},{},0,false,false);
     if(!actual)return {};
     const auto& measured=actual.value()->fresh_full_m19_m20;
+    if(!m10_frozen::rebind_original_candidate_owner(
+           original_definitions,accepted_candidate_owner,measured.owner))return {};
     if(!m10_frozen::rebind_independent_original_native_pair(
         original_definitions,independent_pair,measured.owner))
         return {};
