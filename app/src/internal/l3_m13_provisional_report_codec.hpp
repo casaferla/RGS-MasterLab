@@ -40,6 +40,11 @@ struct M13ProvisionalDiagnosticEnvelope final {
     [[nodiscard]] constexpr bool is_final_p01_report() const noexcept
     {return false;}
 };
+[[nodiscard]] inline QString m13_ascii(std::string_view value)
+{
+    return QString::fromLatin1(
+        value.data(),static_cast<qsizetype>(value.size()));
+}
 [[nodiscard]] inline QString m13_decimal_from_binary64(double value)
 {
     if(!std::isfinite(value))return {};
@@ -116,8 +121,8 @@ m13_provisional_payload_without_own_checksum(
                 ?QJsonValue(m13_decimal_from_binary64(*reason.allowed_bound))
                 :QJsonValue::Null}
         };
-        if((reason.measured_delta&&!reason.measured_delta->isfinite())||
-           (reason.allowed_bound&&!reason.allowed_bound->isfinite()))
+        if((reason.measured_delta&&!std::isfinite(*reason.measured_delta))||
+           (reason.allowed_bound&&!std::isfinite(*reason.allowed_bound)))
             return std::nullopt;
         orderedReasons.append(item);
     }
@@ -148,17 +153,17 @@ m13_provisional_payload_without_own_checksum(
         {"independentM16CeilingDbTp",ceiling}
     };
     return QJsonObject{
-        {"schemaId",QString::fromUtf8(kProvisionalDiagnosticSchema)},
-        {"verifierId",QString::fromUtf8(kVerifierId)},
-        {"verificationPolicyId",QString::fromUtf8(kVerificationPolicyId)},
+        {"schemaId",m13_ascii(kProvisionalDiagnosticSchema)},
+        {"verifierId",m13_ascii(kVerifierId)},
+        {"verificationPolicyId",m13_ascii(kVerificationPolicyId)},
         {"reportId",QString::fromStdString(exact_report_id.to_string())},
         {"reportRevision","1"},
-        {"qualificationToleranceProfileId",QString::fromUtf8(kQtpId)},
+        {"qualificationToleranceProfileId",m13_ascii(kQtpId)},
         {"qualificationToleranceProfileState","PROVISIONAL"},
         {"qualifiedProfileApprovalRef",QJsonValue::Null},
         {"reportKind","PROVISIONAL_DIAGNOSTIC_NOT_VERIFIED"},
         {"reportRunOutcome",m13_state_token(assessment.state)},
-        {"checksumPolicyId",QString::fromUtf8(kM13OwnChecksumPolicy)},
+        {"checksumPolicyId",m13_ascii(kM13OwnChecksumPolicy)},
         {"checksumExclusion","/VerificationContentChecksum"},
         {"projectId",QString::fromStdString(plan.project_id.to_string())},
         {"acceptedPlanId",QString::fromStdString(plan.plan_id.to_string())},
@@ -208,21 +213,21 @@ encode_m13_provisional_diagnostic(
         QByteArray::fromStdString(bytes));
     if(!doc.isObject())return false;
     auto root=doc.object();
-    if(root.size()!=22U||
+    if(root.size()!=21U||
        root.value("schemaId").toString()!=
-           QString::fromUtf8(kProvisionalDiagnosticSchema)||
+           m13_ascii(kProvisionalDiagnosticSchema)||
        root.value("verifierId").toString()!=
-           QString::fromUtf8(kVerifierId)||
+           m13_ascii(kVerifierId)||
        root.value("verificationPolicyId").toString()!=
-           QString::fromUtf8(kVerificationPolicyId)||
+           m13_ascii(kVerificationPolicyId)||
        root.value("qualificationToleranceProfileId").toString()!=
-           QString::fromUtf8(kQtpId)||
+           m13_ascii(kQtpId)||
        root.value("qualificationToleranceProfileState").toString()!="PROVISIONAL"||
        !root.value("qualifiedProfileApprovalRef").isNull()||
        root.value("reportKind").toString()!="PROVISIONAL_DIAGNOSTIC_NOT_VERIFIED"||
        root.value("reportRunOutcome").toString()=="VERIFIED"||
        root.value("checksumPolicyId").toString()!=
-           QString::fromUtf8(kM13OwnChecksumPolicy)||
+           m13_ascii(kM13OwnChecksumPolicy)||
        root.value("checksumExclusion").toString()!=
            "/VerificationContentChecksum"||
        !root.value("canonicalReasons").isArray()||
