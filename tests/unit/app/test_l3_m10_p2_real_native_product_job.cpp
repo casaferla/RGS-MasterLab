@@ -611,6 +611,43 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         env,native_graph,"preserved-test",changed_key,native_cost,true,true,
         must_not_resolve).kind,m10::EvaluationKind::preflight_rejected);
     QVERIFY(!unexpected_resolution);
+    // This synthetic measured score exercises only the M12 graph
+    // equality guard. It is NOT a successful native 27-feature run.
+    namespace m12=a::m12_frozen;
+    auto prediction=std::make_shared<m10::NativePredictionSnapshot>();
+    prediction->native_population.resize(27);
+    const auto winner_owner=a::native_product_candidate_identity(stamp,
+        preserved.value()->ticket_identity());
+    prediction->candidate_resource_identity=winner_owner.resource_identity;
+    prediction->candidate_generation=winner_owner.generation;
+    prediction->exact_candidate_ticket=preserved.value()->ticket_identity();
+    prediction->exact_m07_generation=generation;
+    const auto winning_linked=preserved.value()->exact_linked_graph_content();
+    const auto winning_execution=preserved.value()->exact_execution_graph_content();
+    QVERIFY(winning_linked&&winning_execution);
+    prediction->exact_linked_graph_content=*winning_linked;
+    prediction->exact_execution_graph_content=*winning_execution;
+    const m10::MeasuredOrderKey measured_fixture{1.0,1.0,0.0,1U,{0x43},{0x44},
+        prediction};
+    QVERIFY(m12::matches_preserved_native_winner(
+        measured_fixture,*preserved.value(),generation));
+    QVERIFY(!m12::matches_preserved_native_winner(
+        measured_fixture,*without_p2.value(),generation));
+    QVERIFY(!m12::matches_preserved_native_winner(
+        measured_fixture,*preserved.value(),"different-generation"));
+    const m12::AcceptedPlanAndOwner accepted_fixture{
+        uuid("bf200000-0000-4000-8000-000000000001"),
+        uuid("bf200000-0000-4000-8000-000000000002"),
+        "unit-plan","unit-winner","unit-fixed","unit-scope",
+        linked.value()->revision(),true,true,true,false};
+    const auto staged=m12::stage_preserved_native_measured_winner(
+        accepted_fixture,measured_fixture,worker,native_graph,generation);
+    QVERIFY(staged);
+    QVERIFY(!staged.value()->authorizes_project_mutation());
+    auto changed_graph=native_graph;
+    QVERIFY(changed_graph.linked.set_user_bypass(linked_id,true));
+    QVERIFY(!m12::stage_preserved_native_measured_winner(
+        accepted_fixture,measured_fixture,worker,changed_graph,generation));
     const auto from_bound=
         m10::measure_and_score_bound_m10_p2_product_worker(
             worker,*linked.value(),artistic,*chosen,
