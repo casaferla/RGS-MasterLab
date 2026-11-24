@@ -56,6 +56,12 @@ bind_original_native_triple_from_measured_source(
         m05m06_real::observe_m05_tonal_bundle(
             tonal,original.t02_t06.exact_common,
             original.t02_t06.exact_accepted_density_floor);
+    original.t02_t06.sources[2].selected_spectral_population_identity=
+        actual.selected_spectral_population_identity;
+    original.t02_t06.sources[2].selected_spectral_frames=
+        actual.selected_spectral_frames;
+    original.t02_t06.sources[2].complete_spectral_frames=
+        actual.complete_spectral_frames;
     original.d01.source[2]=actual;
     original.d02.actual_candidate=m05m06_real::observe_lra_from_real_m19(
         actual,exact_phase6_active_frames,
