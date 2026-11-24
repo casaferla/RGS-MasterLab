@@ -70,6 +70,10 @@ void M10CompletedCacheTest::nativeEvidenceSurvivesExactHitsAndRejectsSubstitutio
     auto measured=score();
     m10::NativePredictionSnapshot snapshot;
     snapshot.requested_reporting_domains=std::array<bool,4>{true,false,true,false};
+    snapshot.candidate_resource_identity="actual-candidate";
+    snapshot.candidate_generation=7U;
+    snapshot.exact_candidate_ticket="exact-ticket";
+    snapshot.exact_m07_generation="m07-generation";
     measured.native_prediction=
         std::make_shared<const m10::NativePredictionSnapshot>(snapshot);
     QCOMPARE(cache.insert_completed(key(),measured,true),m10::CacheInsert::inserted);
@@ -79,7 +83,7 @@ void M10CompletedCacheTest::nativeEvidenceSurvivesExactHitsAndRejectsSubstitutio
     auto other=measured;
     other.native_prediction=std::make_shared<const m10::NativePredictionSnapshot>(snapshot);
     QCOMPARE(cache.insert_completed(key(),other,true),m10::CacheInsert::already_exact);
-    snapshot.requested_reporting_domains=std::array<bool,4>{false,false,true,false};
+    snapshot.exact_candidate_ticket="different-ticket";
     other.native_prediction=std::make_shared<const m10::NativePredictionSnapshot>(snapshot);
     QCOMPARE(m10::compare_measured(measured,other),0);
     QCOMPARE(cache.insert_completed(key(),other,true),m10::CacheInsert::deterministic_result_collision);
