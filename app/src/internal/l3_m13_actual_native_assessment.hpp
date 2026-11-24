@@ -5,6 +5,7 @@
 #include "l3_m13_provisional_verification_assessment.hpp"
 #include "l3_m10_native_prediction_snapshot.hpp"
 #include "l3_m10_frozen_coordinate_refiner.hpp"
+#include "l3_m11_actual_native_stereo_safety.hpp"
 
 namespace rgsml::app::l3_automatch::m13_frozen {
 [[nodiscard]] inline M13ProvisionalAssessment
@@ -60,6 +61,28 @@ assess_m13_actual_native_completion(
             proximity=compare_m13_accepted_and_fresh_native_proximity(
                 prediction.native_population,actual,*prediction.requested_reporting_domains,
                 true).conformance;
+        // The original Prepared and freshly measured Master own the
+        // raw stereo safety, never the accepted solver's candidate rho.
+        if(independent_pair.prepared.original_m19_m20.channels==2U) {
+            const auto fresh_readings=m05m06_real::import_actual_full_source(
+                fresh.fresh_m19,fresh.fresh_m20,m13_fresh_master_native_identity(request));
+            const auto raw=fresh_readings.source&&fresh.additional_native
+                ?m11_frozen::bind_actual_native_stereo_safety(
+                    independent_pair.prepared.original_m19_m20,
+                    independent_pair.prepared.full_native.s03_s06,
+                    *fresh_readings.source,fresh.additional_native->s03_s06,
+                    independent_endpoint_and_safety_attested,
+                    independent_endpoint_and_safety_attested)
+                :m11_frozen::NativeStereoRawSafety{};
+            const auto check=m11_frozen::verify_m11_native_stereo_hard_safety(raw);
+            if(other_hard_safety!=MandatoryHardPredicate::failed) {
+                if(check.reason==m11_frozen::NativeStereoSafetyReason::missing_or_stale_safety_evidence||
+                   check.reason==m11_frozen::NativeStereoSafetyReason::nonfinite_or_invalid)
+                    other_hard_safety=MandatoryHardPredicate::unavailable;
+                else if(!check.passes_hard_gate())
+                    other_hard_safety=MandatoryHardPredicate::failed;
+            }
+        }
         const auto guard=verify_m13_fresh_protected_population(
             prediction.native_population,actual,prediction.protected_k,true,
             independent_endpoint_and_safety_attested);
