@@ -837,6 +837,18 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     own_gate_spec.source_support.retained_width_blocks={};
     const auto own_gate_native=a::measure_real_full_owned_pcm_native_once(*source.value(),own_gate_spec);
     QVERIFY(own_gate_native);
+    QVERIFY(!own_gate_native.value()->spectral_seed_carrier);
+    auto retain_gate_spec=own_gate_spec;
+    retain_gate_spec.retain_native_spectral_energy=true;
+    const auto retained_native=a::measure_real_full_owned_pcm_native_once(*source.value(),retain_gate_spec);
+    QVERIFY(retained_native);
+    QVERIFY(retained_native.value()->spectral_seed_carrier);
+    const auto& carrier=*retained_native.value()->spectral_seed_carrier;
+    QCOMPARE(carrier.ordinals,retained_native.value()->selected_original_m20_ordinals);
+    QCOMPARE(carrier.energy.size(),carrier.ordinals.size());
+    QCOMPARE(carrier.grid.size(),retain_gate_spec.spectral_bands.size());
+    QCOMPARE(retained_native.value()->tonal.mean_linear_psd,own_gate_native.value()->tonal.mean_linear_psd);
+    for(const auto& row:carrier.energy)QCOMPARE(row.size(),carrier.grid.size());
     const auto own_gate=analysis::bind_native_m19_tonal_gate(own_gate_native.value()->levels);
     QVERIFY(own_gate);
     QCOMPARE(own_gate_native.value()->exact_observed_active_frames,own_gate.value()->active_pcm_frames);
