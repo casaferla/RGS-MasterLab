@@ -50,6 +50,7 @@ import_m13_product_fresh_original_native_source(
        owner.replay->controller_id.is_nil()||
        owner.replay->plan_id.is_nil()||
        owner.replay->exact_plan_checksum.empty()||
+       admitted.exact_product_ownership_epoch()==0U||
        fresh.logical_verification_evaluations!=1U||
        !m12_frozen::m12_native_stage_witness_matches_replay_plan(
            *owner.replay,fresh.stage_witness))
@@ -79,6 +80,7 @@ import_m13_product_fresh_original_native_source(
         exact_identity+=':';
         exact_identity+=part;
     };
+    append(std::to_string(admitted.exact_product_ownership_epoch()));
     append(owner.replay->project_id.to_string());
     append(owner.replay->source_id.to_string());
     append(owner.replay->reference_id.to_string());
@@ -88,7 +90,8 @@ import_m13_product_fresh_original_native_source(
     append(owner.replay->linked_chain_id.to_string());
     auto observed=m05m06_real::import_actual_full_source(
         fresh.fresh_m19,fresh.fresh_m20,
-        m05m06_real::SourceIdentity{exact_identity,1U,true});
+        m05m06_real::SourceIdentity{exact_identity,
+            admitted.exact_product_ownership_epoch(),true});
     if(!observed.source)
         return fail("L3_M13_FRESH_NATIVE_ORIGINAL_M19_M20_UNAVAILABLE");
     M13FreshOriginalNativeSource output{
@@ -105,7 +108,8 @@ import_m13_product_fresh_original_native_source(
             m05m06_real::bundle_actual_product_m05m06(
                 view,fresh.fresh_m19,fresh.fresh_m20,
                 m05m06_real::SourceIdentity{
-                    std::move(exact_identity),1U,true},
+                    std::move(exact_identity),
+                    admitted.exact_product_ownership_epoch(),true},
                 common_tonal,exact_phase6_density_floor,
                 phase6_active_frames,
                 phase6_file_based_lra_trailing_attested);
