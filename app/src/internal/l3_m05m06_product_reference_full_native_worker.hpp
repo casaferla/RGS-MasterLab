@@ -60,6 +60,8 @@ measure_current_gold_full_native_worker(
         captured.sample_rate_hz!=176400U&&captured.sample_rate_hz!=192000U)||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return fail("L3_REFERENCE_NATIVE_MISSING_QT_CAPTURE_OR_OWNER");
+    if(!bind_product_native_fft_metadata(native_spec,captured.sample_rate_hz))
+        return fail("L3_REFERENCE_NATIVE_FFT_METADATA_INVALID");
     // Fail closed on a geometrically impossible allocation. No
     // hardcoded 128-MiB cap: five minutes at 192k stereo float64
     // legitimately requires ~879 MiB for one exact full PCM.
