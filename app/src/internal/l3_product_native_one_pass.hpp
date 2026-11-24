@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_native_seed_measurement_carriers.hpp"
 // One real candidate render -> one M19 and one M20 pass. The optional
 // native M20 spectral and coherent-stereo taps observe the SAME FFT
 // frames; distinct frozen P04 20ms/5ms FFT reads SAME rendered PCM.
@@ -50,13 +51,6 @@ struct ProductNativeOnePassSpec final {
     spec.source_support.profile_common_bandwidth=common;
     return true;
 }
-struct NativeSpectralSeedCarrier final {
-    std::vector<m05m06_real::NativeFrameBand> grid;
-    std::vector<std::vector<std::optional<double>>> energy;
-    std::vector<std::uint64_t> ordinals;
-    std::uint64_t active_pcm_frames{};
-    std::uint32_t sample_rate{};
-};
 struct ProductNativeOnePassResult final {
     OfflineProductCandidateMeasurement actual;
     m05m06_real::SpectralD10D12Native d10_d12;

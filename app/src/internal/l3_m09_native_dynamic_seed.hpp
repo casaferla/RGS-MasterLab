@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_m06_native_spectral_d10_d12.hpp"
 #include "l3_m09_p02_spectral_seed.hpp"
 #include "l3_m11_native_fixed_assessment.hpp"
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>

@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_m06_real_windowed_rms_crest.hpp"
 #include "l3_m09_p02_macro_reduction.hpp"
 #include "l3_m09_abstract_family_enumeration.hpp"
 #include "l3_m11_native_fixed_assessment.hpp"

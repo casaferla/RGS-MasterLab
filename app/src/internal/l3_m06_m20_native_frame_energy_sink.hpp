@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_native_seed_measurement_carriers.hpp"
 // L3-M06 native D10-D12 E[t,b] producer on the ACTUAL M20 FFT pass.
 // Uses M20's optional selected-frame PSD sink, no independent FFT or
 // time-averaged PSD reconstruction. Owner/canonical grid/gate are
@@ -14,10 +15,6 @@
 #include <vector>
 
 namespace rgsml::app::l3_automatch::m05m06_real {
-struct NativeFrameBand final {
-    int exact_canonical_index{};
-    double low_hz{},high_hz{};
-};
 class AuthenticM20FrameEnergySink final:
     public analysis::TonalStereoSelectedFrameSink {
 public:
