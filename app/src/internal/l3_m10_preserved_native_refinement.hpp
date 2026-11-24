@@ -33,6 +33,26 @@ run_preserved_native_top2(
         if(!canonical)return invalid;
         sorted.push_back(std::move(*canonical));
     }
+    // A numerical seed accepted from a previous run must correspond
+    // to the exact canonical trial and current original source owner.
+    for(std::size_t i=0;i<seeds.size();++i) {
+        const auto& seed=seeds[i];
+        if(seed.kind!=SeedTrialKind::attempted_complete&&
+           seed.kind!=SeedTrialKind::completed_cache_hit)continue;
+        if(!seed.frozen_measured||!seed.frozen_measured->native_prediction)return invalid;
+        const auto& prediction=*seed.frozen_measured->native_prediction;
+        std::vector<double> u;
+        for(const auto& c:sorted[i])u.push_back(c.normalized_u);
+        const auto ticket=m10_exact_native_trial_ticket(
+            seed.exact_combined_top32_ordinal,sorted[i],u);
+        const m05m06_real::SourceIdentity identity{
+            prediction.candidate_resource_identity,prediction.candidate_generation,true};
+        if(!ticket||prediction.exact_candidate_ticket!=*ticket||
+           prediction.exact_m07_generation!=env.generation||
+           prediction.exact_execution_graph_content.empty()||
+           !authentic_product_candidate_identity(identity,env.owners.current_owner,*ticket))
+            return invalid;
+    }
     return run_frozen_top2_refinements(
         seeds,sorted,attempts_before_seeds,
         env.owners.current_qt_product_epoch_and_m09_m11_attested,
