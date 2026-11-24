@@ -229,6 +229,9 @@ void P2RealNativeProductTest::nativeTypedSeedBuildsRealRefinementTrial() {
     QVERIFY(exact);
     QVERIFY(exact->graph.bindings==seed.seed.bindings);
     const std::array<double,1> proposal{{0.75}};
+    auto substituted_inventory=*inventory;
+    substituted_inventory.front().normalized_u=0.25;
+    QVERIFY(!m09::decode_native_typed_seed(seed,substituted_inventory,proposal));
     const auto trial=m09::build_native_typed_trial(seed,*inventory,proposal,{},
         [&](const m10::PreservedNativeGraph& graph,const auto&,const auto&)
             ->std::optional<m10::ExactExecutionCacheKey>{
