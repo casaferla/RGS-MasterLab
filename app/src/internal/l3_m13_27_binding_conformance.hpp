@@ -158,8 +158,10 @@ compare_m13_frozen_twenty_seven_native_bindings(
             missing?BindingConformance::unavailable:
             has_required?BindingConformance::passed:
                          BindingConformance::not_applicable;
-        if(row.outcome==BindingConformance::failed||
-           row.outcome==BindingConformance::unavailable)
+        // Evaluated mismatch is COMPLETE but FAILED, not missing
+        // evidence. P02 keeps that distinction even if other later
+        // mandatory observations were unavailable.
+        if(row.outcome==BindingConformance::unavailable)
             result.every_required_binding_complete=false;
         if(row.outcome!=BindingConformance::passed&&has_required)
             result.every_required_binding_passed=false;
