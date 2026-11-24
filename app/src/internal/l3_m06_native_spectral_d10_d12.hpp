@@ -14,6 +14,8 @@
 #include <limits>
 #include <numeric>
 #include <optional>
+#include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -35,6 +37,7 @@ struct SpectralBandD10D12 final {
         SpectralNativeReason::missing_exact_stft_or_grid,
         SpectralNativeReason::missing_exact_stft_or_grid};
     std::optional<double> d12_raw_rho{};
+    std::string exact_frame_population_identity{};
 };
 struct SpectralD10D12Native final {
     std::vector<SpectralBandD10D12> canonical_band_results;
@@ -51,7 +54,8 @@ reduce_native_spectral_d10_d12(
     std::size_t canonical_configured_band_count,
     bool exact_current_stft_frame_energy_and_grid_attested,
     std::uint64_t active_duration_frames,
-    std::uint64_t sample_rate_hz)
+    std::uint64_t sample_rate_hz,
+    std::span<const std::uint64_t> exact_selected_ordinals={})
 {
     SpectralD10D12Native out;
     if(!exact_current_stft_frame_energy_and_grid_attested||
@@ -59,6 +63,28 @@ reduce_native_spectral_d10_d12(
        sample_rate_hz==0U)
         return out;
     const std::size_t n=active_e_tb.size();
+    const bool has_ordinals=!exact_selected_ordinals.empty();
+    if(has_ordinals&&(exact_selected_ordinals.size()!=n||
+       std::adjacent_find(exact_selected_ordinals.begin(),
+           exact_selected_ordinals.end(),[](auto a,auto b){return a>=b;})!=
+           exact_selected_ordinals.end())) {
+        out.source_reason=SpectralNativeReason::invalid_energy_or_geometry;
+        return out;
+    }
+    NativeMembershipIdentity selected{"D10-D12-selected-STFT/1"};
+    selected.append(sample_rate_hz);
+    selected.append(active_duration_frames);
+    selected.append(canonical_configured_band_count);
+    for(auto ordinal:exact_selected_ordinals)selected.append(ordinal);
+    const auto selected_identity=has_ordinals?selected.finish():std::string{};
+    std::vector<NativeMembershipIdentity> accepted;
+    if(has_ordinals) {
+        accepted.reserve(canonical_configured_band_count);
+        for(std::size_t k=0;k<canonical_configured_band_count;++k) {
+            accepted.emplace_back("D10-D12-valid-band-STFT/1");
+            accepted.back().append(k);
+        }
+    }
     out.candidate_active_frames=n;
     out.canonical_band_results.resize(canonical_configured_band_count);
     if(active_duration_frames<2U*sample_rate_hz) {
@@ -73,7 +99,8 @@ reduce_native_spectral_d10_d12(
     std::vector<std::vector<double>> rel_values(canonical_configured_band_count);
     std::vector<std::vector<double>> common_values(canonical_configured_band_count);
     std::vector<std::vector<double>> chronological_A(canonical_configured_band_count);
-    for(const auto& frame:active_e_tb) {
+    for(std::size_t frame_index=0;frame_index<n;++frame_index) {
+        const auto& frame=active_e_tb[frame_index];
         if(frame.size()!=canonical_configured_band_count) {
             out.source_reason=SpectralNativeReason::invalid_energy_or_geometry;
             return out;
@@ -112,6 +139,7 @@ reduce_native_spectral_d10_d12(
                 out.source_reason=SpectralNativeReason::invalid_arithmetic;
                 return out;
             }
+            if(has_ordinals)accepted[k].append(exact_selected_ordinals[frame_index]);
             abs_values[k].push_back(A);
             rel_values[k].push_back(R);
             common_values[k].push_back(G);
@@ -129,6 +157,8 @@ reduce_native_spectral_d10_d12(
             out.source_reason=SpectralNativeReason::invalid_arithmetic;
             return out;
         }
+        if(has_ordinals)band.exact_frame_population_identity=
+            selected_identity+":"+accepted[k].finish();
         band.valid_native_counts.fill(count);
         band.native_support.fill(native_support);
         if(count<kSpectralMinimumValidFrames||
