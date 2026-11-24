@@ -147,7 +147,7 @@ native_fixed_spectral_cells(const m11_frozen::NativeFixedPopulation& fixed,
     if(!assessment.valid_current||!assessment.corrective[1])return {};
     const auto guards=m11_frozen::bind_native_fixed_to_candidate(fixed,fixed.measured_fixed,amount);
     if(!guards)return {};
-    std::array<const m08_frozen::AuthenticatedPairSlot*,3> slots{};
+    std::array<const m08_frozen::AuthenticatedPairSlot*,3> feature_slots{};
     std::array<std::size_t,3> offsets{};
     std::array<double,3> deadbands{};
     std::size_t offset=0;
@@ -158,18 +158,18 @@ native_fixed_spectral_cells(const m11_frozen::NativeFixedPopulation& fixed,
     for(std::size_t i=0;i<fixed.measured_fixed.size();++i) {
         const auto& s=fixed.measured_fixed[i];
         for(std::size_t d=0;d<3U;++d)if(s.binding_id==ids[d]) {
-            slots[d]=&s;offsets[d]=offset;deadbands[d]=m07_frozen::kBindings[i].deadband;
+            feature_slots[d]=&s;offsets[d]=offset;deadbands[d]=m07_frozen::kBindings[i].deadband;
         }
         offset+=s.configured.size();
     }
-    for(const auto* s:slots)if(!s||s->configured.size()!=carrier.grid.size())return {};
-    if(!native_fixed_spectral_carrier_matches(carrier,*slots[0]))return {};
+    for(const auto* s:feature_slots)if(!s||s->configured.size()!=carrier.grid.size())return {};
+    if(!native_fixed_spectral_carrier_matches(carrier,*feature_slots[0]))return {};
     std::vector<SpectralSeedCell> cells;
     cells.reserve(carrier.grid.size());
     for(std::size_t i=0;i<carrier.grid.size();++i) {
         const auto& band=carrier.grid[i];
-        const auto& p=slots[0]->configured[i];const auto& a=slots[1]->configured[i];
-        const auto& c=slots[2]->configured[i];
+        const auto& p=feature_slots[0]->configured[i];const auto& a=feature_slots[1]->configured[i];
+        const auto& c=feature_slots[2]->configured[i];
         SpectralSeedCell cell;
         cell.canonical_low_edge_hz=band.low_hz;
         cell.canonical_high_edge_hz=band.high_hz;
