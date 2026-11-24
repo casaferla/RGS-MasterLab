@@ -7,6 +7,8 @@
 #include "l3_m11_p03_protected_no_regression.hpp"
 #include "l3_m08_native_gold_proximity.hpp"
 #include "l3_m13_predicted_vs_verified_proximity.hpp"
+#include "l3_m13_27_binding_conformance.hpp"
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -170,5 +172,102 @@ compare_m13_accepted_and_fresh_native_proximity(
     out.conformance=compare_frozen_m08_prediction_with_fresh_verified(
         out.predicted.domains,out.verified.domains);
     return out;
+}
+// Verify each native value against the actual transformed solver value.
+// Raw correlation and width endpoints must survive the projection;
+// neither is inferred by inverting a clipped transform.
+[[nodiscard]] inline bool m13_native_coordinate_consistent(
+    const m07_frozen::Binding& binding,
+    const m08_frozen::AuthenticatedPairComponent& component)
+{
+    const auto& native=component.candidate_native;
+    if(!native.value||!component.current_candidate_z||
+       !std::isfinite(*native.value)||
+       !std::isfinite(*component.current_candidate_z))return false;
+    const auto x=*native.value;
+    double z{};
+    using T=m07_frozen::Transform;
+    switch(binding.transform) {
+    case T::identity:
+    case T::power_fraction_db:
+        z=x;break;
+    case T::log2_positive:
+        if(x<=0.0)return false;
+        z=std::log2(x);break;
+    case T::mono_endpoint_log2:
+        if(native.endpoint==m08_frozen::Endpoint::mono_side_muted) {
+            if(x!=0.0)return false;
+            z=-24.0;
+        } else {
+            if(x<std::exp2(-24.0))return false;
+            z=std::log2(x);
+        }
+        break;
+    case T::fisher_z:
+        if(x< -1.0||x>1.0)return false;
+        // S02 uses the canonical M20 broadband conversion; D12 and
+        // coherent stereo originate in their own existing producers.
+        if(binding.binding_id=="rgsml.reference-match.binding.stereo.s02") {
+            const auto mapped=m05m06_real::correlation_fisher_z(
+                {x,m05m06_real::Readiness::measured});
+            if(!mapped.ready())return false;
+            z=*mapped.unrounded;
+        } else {
+            z=std::atanh(std::clamp(x,-1.0+1e-6,1.0-1e-6));
+        }
+        break;
+    }
+    return std::isfinite(z)&&z==*component.current_candidate_z;
+}
+[[nodiscard]] inline M13TwentySevenConformance
+compare_m13_accepted_and_fresh_native_bindings(
+    const std::vector<m08_frozen::AuthenticatedPairSlot>& accepted,
+    const M13FreshNativePopulation& fresh,
+    bool accepted_prediction_and_current_dependencies_attested)
+{
+    if(!accepted_prediction_and_current_dependencies_attested||
+       !m13_same_accepted_native_population(accepted,fresh))
+        return compare_m13_frozen_twenty_seven_native_bindings({});
+    std::vector<M13BindingNativeEvidence> evidence;
+    evidence.reserve(accepted.size());
+    for(std::size_t i=0;i<accepted.size();++i) {
+        const auto& a=accepted[i];
+        const auto& b=(*fresh.slots)[i];
+        M13BindingNativeEvidence slot{
+            a.binding_id,a.source_feature_id,a.exact_feature_dependency,
+            true,{}};
+        slot.configured.reserve(a.configured.size());
+        for(std::size_t j=0;j<a.configured.size();++j) {
+            const auto& x=a.configured[j];
+            const auto& y=b.configured[j];
+            const auto& p=x.candidate_native;
+            const auto& v=y.candidate_native;
+            ExpectedFreshNativeComponent c;
+            c.expected_selector=p.selector;
+            c.fresh_selector=v.selector;
+            c.expected_population_id=p.population_identity;
+            c.fresh_population_id=v.population_identity;
+            c.predicted_native=p.value;
+            c.actual_fresh_native=v.value;
+            c.predicted_endpoint=p.endpoint;
+            c.actual_endpoint=v.endpoint;
+            if(p.valid_count&&p.configured_count) {
+                c.expected_support_numerator=*p.valid_count;
+                c.expected_support_denominator=*p.configured_count;
+            }
+            if(v.valid_count&&v.configured_count) {
+                c.actual_support_numerator=*v.valid_count;
+                c.actual_support_denominator=*v.configured_count;
+            }
+            c.required=x.candidate_required||
+                       (x.current_valid&&x.paired_native_support>0.0);
+            c.exact_fresh_native_transform_attested=
+                m13_native_coordinate_consistent(m07_frozen::kBindings[i],x)&&
+                m13_native_coordinate_consistent(m07_frozen::kBindings[i],y);
+            slot.configured.push_back(std::move(c));
+        }
+        evidence.push_back(std::move(slot));
+    }
+    return compare_m13_frozen_twenty_seven_native_bindings(evidence);
 }
 } // namespace rgsml::app::l3_automatch::m13_frozen
