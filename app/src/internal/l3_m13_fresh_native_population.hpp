@@ -4,6 +4,8 @@
 // survive this binding. This does not grant final QTP/VERIFIED.
 #include "l3_m13_fresh_original_native_import.hpp"
 #include "l3_m10_p2_verified_candidate_triple.hpp"
+#include "l3_m11_p03_protected_no_regression.hpp"
+#include <cmath>
 #include <optional>
 #include <string>
 #include <utility>
@@ -64,5 +66,73 @@ bind_m13_fresh_native_population(
     if(admission.status!=m07_frozen::NativeFragmentAdmission::accepted_complete)
         return {admission.inventory,std::nullopt};
     return {admission.inventory,assembly.complete_canonical_population()};
+}
+// The accepted population owns configuration and P/G, not the fresh
+// candidate numbers. Do not silently use a different support/slot set.
+[[nodiscard]] inline bool m13_same_accepted_native_population(
+    const std::vector<m08_frozen::AuthenticatedPairSlot>& accepted,
+    const M13FreshNativePopulation& fresh)
+{
+    if(!fresh.slots||accepted.size()!=m07_frozen::kBindings.size()||
+       fresh.slots->size()!=accepted.size())return false;
+    for(std::size_t i=0;i<accepted.size();++i) {
+        const auto& a=accepted[i];
+        const auto& b=(*fresh.slots)[i];
+        if(a.binding_id!=m07_frozen::kBindings[i].binding_id||
+           a.binding_id!=b.binding_id||
+           a.source_feature_id!=b.source_feature_id||
+           a.exact_feature_dependency.empty()||
+           a.exact_feature_dependency!=b.exact_feature_dependency||
+           !a.feature_authority_attested||!b.feature_authority_attested||
+           a.configured.empty()||a.configured.size()!=b.configured.size())
+            return false;
+        for(std::size_t j=0;j<a.configured.size();++j) {
+            const auto& x=a.configured[j];
+            const auto& y=b.configured[j];
+            if(x.current_valid!=y.current_valid||
+               x.paired_native_support!=y.paired_native_support||
+               x.prepared.z!=y.prepared.z||
+               x.prepared.endpoint!=y.prepared.endpoint||
+               x.reference.z!=y.reference.z||
+               x.reference.endpoint!=y.reference.endpoint||
+               x.candidate_required!=y.candidate_required)
+                return false;
+        }
+    }
+    return true;
+}
+// Preserve the exact M11 Fixed, mask and deadband from the accepted
+// run, but replace EVERY candidate coordinate by the independent M13
+// observation. Missing values cannot become an artificial safety PASS.
+[[nodiscard]] inline m11_frozen::NoRegressionResult
+verify_m13_fresh_protected_population(
+    const std::vector<m08_frozen::AuthenticatedPairSlot>& accepted,
+    const M13FreshNativePopulation& fresh,
+    std::vector<m11_frozen::ProtectedComponent> accepted_k,
+    bool exact_accepted_fixed_and_mask_still_current,
+    bool independent_endpoint_and_safety_attested)
+{
+    if(!exact_accepted_fixed_and_mask_still_current||
+       !independent_endpoint_and_safety_attested||
+       !m13_same_accepted_native_population(accepted,fresh))
+        return {};
+    std::size_t ordinal=0;
+    for(const auto& slot:*fresh.slots) {
+        for(const auto& c:slot.configured) {
+            if(ordinal>=accepted_k.size()||
+               !c.prepared.z||!c.reference.z||!c.current_candidate_z)
+                return {};
+            auto& guard=accepted_k[ordinal++];
+            if(!guard.exact_current||!guard.required_in_frozen_k||
+               guard.prepared_z!=*c.prepared.z||
+               guard.gold_z!=*c.reference.z||
+               !std::isfinite(*c.current_candidate_z))
+                return {};
+            guard.candidate_z=*c.current_candidate_z;
+        }
+    }
+    if(ordinal!=accepted_k.size())return {};
+    return m11_frozen::verify_frozen_protected_no_regression(
+        accepted_k,true,true);
 }
 } // namespace rgsml::app::l3_automatch::m13_frozen
