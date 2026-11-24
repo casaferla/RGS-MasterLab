@@ -99,7 +99,6 @@ stage_exact_m12_native_ref_linked(
     for(const auto& n:original_m10_ordered_nodes) {
         if(n.semantic_node_id.is_nil()||
            n.exact_registered_type_id.empty()||
-           n.exact_registered_type_id=="rgsml.dsp.gain"||
            n.exact_registered_type_id=="rgsml.dsp.true-peak-limiter"||
            n.exact_registered_type_id=="rgsml.dsp.streaming-true-peak-limiter"||
            n.exact_registered_type_id=="rgsml.dsp.dither")
