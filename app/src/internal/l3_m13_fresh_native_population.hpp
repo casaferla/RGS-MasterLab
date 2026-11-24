@@ -18,7 +18,7 @@
 namespace rgsml::app::l3_automatch::m13_frozen {
 struct M13FreshNativePopulation final {
     m07_frozen::PartialFeatureInventory inventory;
-    std::optional<std::vector<m08_frozen::AuthenticatedPairSlot>> slots;
+    std::optional<std::vector<m08_frozen::AuthenticatedPairSlot>> native_population;
     [[nodiscard]] constexpr bool authorizes_m13_verified()const noexcept
     {return false;}
 };
@@ -82,11 +82,11 @@ bind_m13_fresh_native_population(
     const std::vector<m08_frozen::AuthenticatedPairSlot>& accepted,
     const M13FreshNativePopulation& fresh)
 {
-    if(!fresh.slots||accepted.size()!=m07_frozen::kBindings.size()||
-       fresh.slots->size()!=accepted.size())return false;
+    if(!fresh.native_population||accepted.size()!=m07_frozen::kBindings.size()||
+       fresh.native_population->size()!=accepted.size())return false;
     for(std::size_t i=0;i<accepted.size();++i) {
         const auto& a=accepted[i];
-        const auto& b=(*fresh.slots)[i];
+        const auto& b=(*fresh.native_population)[i];
         if(a.binding_id!=m07_frozen::kBindings[i].binding_id||
            a.binding_id!=b.binding_id||
            a.source_feature_id!=b.source_feature_id||
@@ -126,7 +126,7 @@ verify_m13_fresh_protected_population(
        !m13_same_accepted_native_population(accepted,fresh))
         return {};
     std::size_t ordinal=0;
-    for(const auto& slot:*fresh.slots) {
+    for(const auto& slot:*fresh.native_population) {
         for(const auto& c:slot.configured) {
             if(ordinal>=accepted_k.size()||
                !c.prepared.z||!c.reference.z||!c.current_candidate_z)
@@ -166,7 +166,7 @@ compare_m13_accepted_and_fresh_native_proximity(
     out.predicted=m08_frozen::measure_native_gold_proximity(
         accepted,exact_requested_domains,true);
     out.verified=m08_frozen::measure_native_gold_proximity(
-        *fresh.slots,exact_requested_domains,true);
+        *fresh.native_population,exact_requested_domains,true);
     if(!out.predicted.canonical_population_current||
        !out.verified.canonical_population_current)return out;
     out.conformance=compare_frozen_m08_prediction_with_fresh_verified(
@@ -232,7 +232,7 @@ compare_m13_accepted_and_fresh_native_bindings(
     evidence.reserve(accepted.size());
     for(std::size_t i=0;i<accepted.size();++i) {
         const auto& a=accepted[i];
-        const auto& b=(*fresh.slots)[i];
+        const auto& b=(*fresh.native_population)[i];
         M13BindingNativeEvidence slot{
             a.binding_id,a.source_feature_id,a.exact_feature_dependency,
             true,{}};
