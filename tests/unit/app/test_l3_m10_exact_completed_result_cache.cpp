@@ -19,6 +19,7 @@ private slots:
     void noPreflightOrPartialEvidenceCaching();
     void deterministicConflictPoisonsWholeGeneration();
     void boundedStorageAndTieBytes();
+    void nativeEvidenceSurvivesExactHitsAndRejectsSubstitution();
 };
 void M10CompletedCacheTest::
 exactOnlyAndNoPreviousOwnerSnapshotReuse() {
@@ -63,6 +64,27 @@ deterministicConflictPoisonsWholeGeneration() {
     QVERIFY(!cache.find(key()));
     QCOMPARE(cache.insert_completed(key(),score(),true),
              m10::CacheInsert::generation_poisoned);
+}
+void M10CompletedCacheTest::nativeEvidenceSurvivesExactHitsAndRejectsSubstitution() {
+    m10::ExactCompletedEvaluationCache cache{{0xAF,0x51}};
+    auto measured=score();
+    m10::NativePredictionSnapshot snapshot;
+    snapshot.requested_reporting_domains=std::array<bool,4>{true,false,true,false};
+    measured.native_prediction=
+        std::make_shared<const m10::NativePredictionSnapshot>(snapshot);
+    QCOMPARE(cache.insert_completed(key(),measured,true),m10::CacheInsert::inserted);
+    const auto hit=cache.find(key());
+    QVERIFY(hit&&hit->native_prediction);
+    QVERIFY(*hit->native_prediction==snapshot);
+    auto other=measured;
+    other.native_prediction=std::make_shared<const m10::NativePredictionSnapshot>(snapshot);
+    QCOMPARE(cache.insert_completed(key(),other,true),m10::CacheInsert::already_exact);
+    snapshot.requested_reporting_domains=std::array<bool,4>{false,false,true,false};
+    other.native_prediction=std::make_shared<const m10::NativePredictionSnapshot>(snapshot);
+    QCOMPARE(m10::compare_measured(measured,other),0);
+    QCOMPARE(cache.insert_completed(key(),other,true),m10::CacheInsert::deterministic_result_collision);
+    QVERIFY(cache.poisoned());
+    QVERIFY(!cache.find(key()));
 }
 void M10CompletedCacheTest::boundedStorageAndTieBytes() {
     m10::ExactCompletedEvaluationCache cache{{0xAF,0x51}};
