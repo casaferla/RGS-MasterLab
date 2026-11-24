@@ -108,7 +108,8 @@ measure_real_full_owned_pcm_native_once(
         return fail("L3_ONCE_NATIVE_STFT_COUNT_MISMATCH");
     auto d10=m05m06_real::reduce_native_spectral_d10_d12(
         spectral.exact_e_tb(),spectral.configured_bands(),true,
-        spec.phase6_active_pcm_frames,rate);
+        spec.phase6_active_pcm_frames,rate,
+        spectral.canonical_original_ordinals());
     if(d10.source_reason==
            m05m06_real::SpectralNativeReason::invalid_arithmetic||
        d10.source_reason==
