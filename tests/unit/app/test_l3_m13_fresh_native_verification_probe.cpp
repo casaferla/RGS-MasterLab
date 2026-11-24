@@ -41,6 +41,7 @@ private slots:
     void frozenQtpNativeScalarBoundaries();
     void sameRunPredictedVerifiedRawProximity();
     void frozenVerificationStatePrecedence();
+    void reasonsOrderAndExactDuplicateSemantics();
 };
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
@@ -472,6 +473,40 @@ void M13FreshNativeProbeTest::frozenVerificationStatePrecedence()
              VerificationState::verification_failed);
     e.exact_dependency_known_changed=true;
     QCOMPARE(project_verification_state(e),VerificationState::stale);
+}
+void M13FreshNativeProbeTest::reasonsOrderAndExactDuplicateSemantics()
+{
+    using namespace m13;
+    const VerificationReason signature{
+        VerificationStage::input_integrity,"SIGNATURE_MISMATCH",
+        "/acceptedPlanRef"};
+    const VerificationReason safety{
+        VerificationStage::safety,"HARD_SAFETY_VIOLATION",
+        "/freshM16"};
+    const VerificationReason proximity{
+        VerificationStage::proximity,"PROXIMITY_VERIFICATION_MISMATCH",
+        "/proximityResults/global"};
+    const VerificationReason stale{
+        VerificationStage::dependency_currentness,"STALE_DEPENDENCY",
+        "/Prepared/ContentChecksum"};
+    auto sorted=normalize_verification_reasons({
+        proximity,safety,signature,stale,signature});
+    QVERIFY(sorted);
+    QCOMPARE(sorted->size(),std::size_t{4});
+    QCOMPARE(sorted->front().code,std::string("STALE_DEPENDENCY"));
+    QCOMPARE((*sorted)[1].code,std::string("SIGNATURE_MISMATCH"));
+    QCOMPARE((*sorted)[2].code,std::string("HARD_SAFETY_VIOLATION"));
+    QCOMPARE(sorted->back().code,
+             std::string("PROXIMITY_VERIFICATION_MISMATCH"));
+    auto wrongStage=safety;
+    wrongStage.stage=VerificationStage::feature_numeric;
+    QVERIFY(!normalize_verification_reasons({wrongStage}));
+    auto nonfinite=safety;
+    nonfinite.measured_delta=std::numeric_limits<double>::infinity();
+    QVERIFY(!normalize_verification_reasons({nonfinite}));
+    auto retained=safety;
+    retained.component_key="left";
+    QVERIFY(normalize_verification_reasons({safety,retained})->size()==2U);
 }
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
 #include "test_l3_m13_fresh_native_verification_probe.moc"
