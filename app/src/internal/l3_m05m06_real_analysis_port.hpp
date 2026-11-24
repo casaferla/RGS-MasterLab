@@ -290,11 +290,25 @@ struct Import final {
         gate.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
         gate.append(frames);
         gate.append(levels.complete_loudness_block_count);
+        std::vector<analysis::BasicLevelRetainedInterval> union_from_starts;
         for(auto start:starts) {
             if(start%quarter||start>frames-quarter*4U)
                 return fail(ImportProblem::invalid_geometry);
             gate.append(start);
+            const auto end=start+quarter*4U;
+            if(union_from_starts.empty()||start>union_from_starts.back().end)
+                union_from_starts.push_back({start,end});
+            else union_from_starts.back().end=end;
         }
+        if(union_from_starts.size()!=levels.retained_block_union.size())
+            return fail(ImportProblem::invalid_geometry);
+        for(std::size_t i=0;i<union_from_starts.size();++i)
+            if(union_from_starts[i].begin!=levels.retained_block_union[i].begin||
+               union_from_starts[i].end!=levels.retained_block_union[i].end)
+                return fail(ImportProblem::invalid_geometry);
+        if(starts.empty()&&levels.integrated_lufs.state==
+              analysis::BasicLevelValueState::AVAILABLE)
+            return fail(ImportProblem::invalid_geometry);
         value.integrated_gate_population_identity=gate.finish();
         value.complete_loudness_blocks=levels.complete_loudness_block_count;
         value.final_loudness_blocks=starts.size();
