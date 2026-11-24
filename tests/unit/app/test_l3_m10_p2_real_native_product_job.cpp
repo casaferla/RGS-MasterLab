@@ -18,7 +18,7 @@
 #include "internal/l3_m09_native_tonal_seed.hpp"
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
-#include "internal/l3_m09_native_family_exact_content.hpp"
+#include "internal/l3_m09_native_covered_proxy.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -498,6 +498,38 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     QVERIFY(half);
     QCOMPARE(half->payload.gain_db(),5.0);
     QVERIFY(!half->seed_parameter_limited);
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*base.value()));
+    m09::NativeFamilySeedBank bank;
+    bank.gain=*half;
+    m09::AbstractFamilyChoice family;
+    family.loudness=m09::LoudnessMode::gain;
+    const std::array<m09::NativeRoleAllocation,1> allocations{{
+        {m09::IntentRole::loudness_gain,id("bd000000-0000-4000-8000-000000000061"),
+         uuid("bd000000-0000-4000-8000-000000000062")}}};
+    const std::array<m09::NativeRoleCoordinateRequest,1> coordinates{{
+        {m09::IntentRole::loudness_gain,{0x31},{0x32},m09::NativeField::gain_db,{},{}}}};
+    const auto typed=m09::build_native_family_seed(registry,bank,family,allocations,coordinates,1U,48000);
+    QVERIFY(typed);
+    const auto coverage=m09::native_gain_coverage(fixed,amount,requested,*typed);
+    QVERIFY(coverage);
+    QVERIFY((*coverage)[24].covered.front());
+    auto none=*coverage;
+    none[24].covered.front()=false;
+    const auto initial=m09::native_covered_target_loss(fixed,amount,requested,none);
+    const auto covered=m09::native_covered_target_loss(fixed,amount,requested,*coverage);
+    QVERIFY(initial&&covered);
+    QVERIFY(*initial>0.0);
+    QCOMPARE(*covered,0.0);
+    auto invalid=*coverage;
+    invalid[25].covered.front()=true;
+    QVERIFY(!m09::native_covered_target_loss(fixed,amount,requested,invalid));
+    const m09::CandidateCarrier identity{{0x31},{},{0x32},{0x33},{"fixture"}};
+    const auto bound=m09::bind_native_family_candidate(registry,bank,family,allocations,coordinates,1U,
+        48000,identity,fixed,amount,requested,{});
+    QVERIFY(bound&&bound->legal.pre_render_proxy.is_bound());
+    QVERIFY(!bound->recipe.exact_description.seed_exact_content.empty());
     fixed.measured_fixed[24].configured.front().current_candidate_z=-15.0;
     QVERIFY(!m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0));
     fixed.measured_fixed[24].configured.front().current_candidate_z=-20.0;
