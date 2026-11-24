@@ -15,6 +15,8 @@
 #include "internal/l3_m09_native_macro_seed.hpp"
 #include "internal/l3_m09_native_stereo_seed.hpp"
 #include "internal/l3_m09_native_eq_atom.hpp"
+#include "internal/l3_m09_native_tonal_seed.hpp"
+#include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -80,6 +82,8 @@ private slots:
     void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
     void nativeStereoSeedUsesFixedWidthAndCutoffEvidence();
     void nativeEqAtomUsesRealBoundedFrequencyResponse();
+    void nativeEqPrefixesPreserveStoredOrder();
+    void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
@@ -207,6 +211,56 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeEqPrefixesPreserveStoredOrder() {
+    namespace m09=a::m09_frozen;
+    const auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    const std::array<m09::NativeEqFitCell,2> active{{{100.0,3.0,0.5},{8000.0,-3.0,0.5}}};
+    const std::array<m09::NativeEqAtom,2> dictionary{{
+        {uuid("bd000000-0000-4000-8000-000000000034"),m09::AtomFilter::bell,8000.0,1.0},
+        {uuid("bd000000-0000-4000-8000-000000000035"),m09::AtomFilter::bell,100.0,1.0}}};
+    const auto prefixes=m09::fit_native_eq_prefixes(active,dictionary,*rate.value(),false,0.01);
+    QCOMPARE(prefixes.size(),std::size_t{2});
+    QCOMPARE(prefixes.back().payload.bands().size(),std::size_t{2});
+    QCOMPARE(std::get<dsp::BellPayload>(prefixes.back().payload.bands().front().payload()).frequency_hz,100.0);
+    QCOMPARE(std::get<dsp::BellPayload>(prefixes.back().payload.bands().back().payload()).frequency_hz,8000.0);
+    auto duplicate=dictionary;
+    duplicate[1].band_id=duplicate[0].band_id;
+    QVERIFY(m09::fit_native_eq_prefixes(active,duplicate,*rate.value(),false,0.01).empty());
+}
+void P2RealNativeProductTest::nativeDynamicClustersUseRetainedEnergyAndC01Parameters() {
+    namespace m09=a::m09_frozen;
+    std::vector<m09::SpectralSeedCell> cells;
+    for(int i=0;i<7;++i) {
+        const double lo=100.0+10.0*i;
+        cells.push_back({i!=3,true,true,true,lo+5.0,lo,lo+10.0,
+            i<3?3.0:-1.0,0.5,1.0,i<3?2.0:-1.0,0.5});
+    }
+    const auto ranked=m09::rank_native_spectral_clusters(cells);
+    QCOMPARE(ranked.size(),std::size_t{2});
+    QCOMPARE(ranked.front().first,std::size_t{0});
+    QCOMPARE(ranked.back().first,std::size_t{4});
+    a::NativeSpectralSeedCarrier carrier;
+    for(int i=0;i<7;++i)carrier.grid.push_back({i,100.0+10.0*i,110.0+10.0*i});
+    carrier.ordinals={0,1,2,3};
+    carrier.energy.assign(4,std::vector<std::optional<double>>(7,0.01));
+    carrier.energy.back()[0]=std::nullopt;
+    const auto threshold=m09::native_fixed_cluster_threshold(carrier,0,3);
+    QVERIFY(threshold.p75_dbfs);
+    QCOMPARE(threshold.common_valid_frames,std::size_t{3});
+    QVERIFY(std::abs(*threshold.p75_dbfs-10.0*std::log10(0.03))<1e-12);
+    for(const auto fs:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
+        const auto band=m09::native_dynamic_seed(ranked.front().seed,threshold,
+            uuid("bd000000-0000-4000-8000-000000000036"),true,false,fs,2U);
+        QVERIFY(band);
+        QVERIFY(band->payload.spec().filter_type==dsp::DynamicEqFilterType::LOW_SHELF);
+        QCOMPARE(band->payload.spec().control.range_db,2.0);
+        QCOMPARE(band->payload.spec().control.rms_time_constant_ms,50.0);
+        QVERIFY(band->parameter_limited);
+    }
+    carrier.ordinals.back()=1;
+    QVERIFY(!m09::native_fixed_cluster_threshold(carrier,0,3).p75_dbfs);
 }
 void P2RealNativeProductTest::nativeEqAtomUsesRealBoundedFrequencyResponse() {
     namespace m09=a::m09_frozen;
