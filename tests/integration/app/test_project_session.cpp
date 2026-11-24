@@ -4783,7 +4783,9 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              m13Owner.error()?m13Owner.error()->message().c_str():"");
     QVERIFY(!m13Owner.value()->authorizes_m13_verified());
     QVERIFY(!m13Owner.value()->authorizes_wav_export());
-    const auto m13Result=
+    // Mutable only for the negative analyzer-Fs test below; restore it
+    // before evaluating or sealing any genuine fresh evidence.
+    auto m13Result=
         app::l3_automatch::m13_frozen::
         run_fresh_m13_product_postmaterialization_probe(
             *m13Owner.value(),*core::FrameCount::create(4096).value());
