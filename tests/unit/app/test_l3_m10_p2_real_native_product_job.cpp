@@ -541,6 +541,15 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
                  tonal.selected_spectral_windows,
              prepared_native.value()->tonal.selected_spectral_windows);
     QVERIFY(!once_per_original_owner.value()->authorizes_m10_or_m13());
+    auto invalid_fft=spec_for_authoritative_bridge;
+    invalid_fft.exact_m20_fft_size*=2U;
+    QVERIFY(!a::measure_real_full_owned_pcm_native_once(*source.value(),invalid_fft));
+    QVERIFY(!a::observe_original_owned_full_source_once(
+        *source.value(),{"real-prepared-full-track-owner",11U,true},
+        spec_for_authoritative_bridge,{20.0,20001.0},1e-12,true));
+    QVERIFY(!a::observe_original_owned_full_source_once(
+        *source.value(),{"real-prepared-full-track-owner",11U,true},
+        spec_for_authoritative_bridge,{20.0,18000.0},0.0,true));
     QVERIFY(!a::observe_original_owned_full_source_once(
             *source.value(),
             {"missing-or-stale-original",0U,false},
