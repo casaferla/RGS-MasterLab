@@ -114,6 +114,13 @@ struct M19NativeSlotProjection final {
             {coords[0],m08_frozen::Endpoint::ordinary},
             {coords[1],m08_frozen::Endpoint::ordinary},
             coords[2],true});
+        auto& native=feature_slots[i].configured.back().candidate_native;
+        native.value=coords[2];
+        native.selector=feature_slots[i].binding_id;
+        if(i==3U) {
+            native.valid_count=e.actual_candidate.short_term_valid_windows;
+            native.configured_count=e.actual_candidate.short_term_complete_windows;
+        }
     }
     return {std::move(feature_slots),M19SlotFailure::none};
 }
