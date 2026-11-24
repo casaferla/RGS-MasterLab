@@ -4,6 +4,7 @@
 // completion on the current Product owner before sealing a diagnostic.
 #include "l3_m13_actual_native_assessment.hpp"
 #include "l3_m13_owned_native_spec.hpp"
+#include "l3_m10_exact_native_graph_content.hpp"
 #include <memory>
 #include <utility>
 
@@ -62,6 +63,34 @@ public:
                                                   prediction.exact_candidate_ticket))
             return R::failure(core::Error{core::ErrorCode::InvalidState,
                 "L3_M13_ACTUAL_WORKER_ACCEPTED_PREDICTION_STALE"});
+        // Reconstruct the exact executed segment identities from the
+        // actual persisted M12 replay. Do not accept an unrelated winner
+        // with the same user-supplied plan/checksum strings.
+        if(!replay->registry_owner)
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_REPLAY_REGISTRY_MISSING"});
+        const auto& registry=*replay->registry_owner;
+        const auto fixed=m10_frozen::exact_native_graph_content(
+            replay->manual_prefix,replay->manual_bindings,registry);
+        const auto linked=m10_frozen::exact_native_graph_content(
+            replay->reference_linked,replay->reference_bindings,registry);
+        std::optional<m10_frozen::ExactCacheBytes> terminal;
+        if(replay->terminal_p2)
+            terminal=m10_frozen::exact_native_graph_content(
+                *replay->terminal_p2,replay->terminal_p2_bindings,registry);
+        else {
+            auto empty=dsp::ProcessingChain::restore(registry,
+                replay->manual_prefix.context(),replay->manual_prefix.revision(),{});
+            if(empty)terminal=m10_frozen::exact_native_graph_content(
+                *empty.value(),{},registry);
+        }
+        if(!fixed||!linked||!terminal||
+           prediction.exact_linked_graph_content!=*linked||
+           prediction.exact_execution_graph_content!=
+               m10_frozen::exact_native_execution_segments(
+                   maximum_block_frames.value(),*fixed,*linked,*terminal))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_REPLAY_GRAPH_DIFFERS_FROM_WINNER"});
         const auto& prepared=input.request.exact_materialized_preview_owner().exact_prepared_owner;
         const auto& original=input.independent_pair->prepared.original_m19_m20;
         if(!prepared||
