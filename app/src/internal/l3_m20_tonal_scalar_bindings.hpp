@@ -25,6 +25,9 @@ inline constexpr std::array<std::string_view,5> kM20ScalarTonalBindings{{
 struct M20TonalSource final {
     SourceIdentity owner;
     TonalObservationBundle observed_from_real_m20;
+    std::string selected_spectral_population_identity{};
+    std::uint64_t selected_spectral_frames{};
+    std::uint64_t complete_spectral_frames{};
 };
 struct M20TonalAuthority final {
     std::string exact_phase6_feature_dependency;
