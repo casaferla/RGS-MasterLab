@@ -76,6 +76,9 @@ struct SourceReadings final {
     std::string short_term_population_identity{};
     std::string correlation_population_identity{};
     std::string full_pcm_population_identity{};
+    std::string integrated_gate_population_identity{};
+    std::uint64_t complete_loudness_blocks{};
+    std::uint64_t final_loudness_blocks{};
     std::string selected_spectral_population_identity{};
     std::uint64_t complete_spectral_frames{};
     std::uint64_t selected_spectral_frames{};
@@ -270,6 +273,30 @@ struct Import final {
              ||!levels.short_term_3s_grid100.empty()
              ||value.short_term_p50_lufs.ready())
         return fail(ImportProblem::scope_mismatch);
+    if(levels.retained_block_disclosure_complete&&
+       levels.complete_loudness_block_count>0U) {
+        const auto quarter=static_cast<std::uint64_t>(levels.sample_rate_hz/10);
+        const auto frames=static_cast<std::uint64_t>(levels.scope_frame_count);
+        const auto& starts=levels.final_loudness_block_starts;
+        if(quarter==0U||frames<quarter*4U||
+           levels.complete_loudness_block_count!=frames/quarter-3U||
+           starts.size()>levels.complete_loudness_block_count||
+           std::adjacent_find(starts.begin(),starts.end(),
+               [](auto a,auto b){return a>=b;})!=starts.end())
+            return fail(ImportProblem::invalid_geometry);
+        NativeMembershipIdentity gate{"M19-final-integrated-blocks/1"};
+        gate.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
+        gate.append(frames);
+        gate.append(levels.complete_loudness_block_count);
+        for(auto start:starts) {
+            if(start%quarter||start>frames-quarter*4U)
+                return fail(ImportProblem::invalid_geometry);
+            gate.append(start);
+        }
+        value.integrated_gate_population_identity=gate.finish();
+        value.complete_loudness_blocks=levels.complete_loudness_block_count;
+        value.final_loudness_blocks=starts.size();
+    }
     value.integrated_lufs=from_m19(levels.integrated_lufs);
     value.true_peak_db_tp=from_m19(levels.true_peak_db_tp);
     value.plr=plr_from_existing_m19(
