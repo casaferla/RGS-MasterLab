@@ -120,6 +120,7 @@ struct M19NativeSlotProjection final {
         if(i==3U) {
             native.valid_count=e.actual_candidate.short_term_valid_windows;
             native.configured_count=e.actual_candidate.short_term_complete_windows;
+            native.population_identity=e.actual_candidate.short_term_population_identity;
         }
     }
     return {std::move(feature_slots),M19SlotFailure::none};
