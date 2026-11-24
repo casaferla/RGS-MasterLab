@@ -117,6 +117,21 @@ bind_real_s03_s06(const CoherentStereoTripleAuthority& e) {
             slot.configured.push_back({
                 static_cast<bool>(valid),valid?paired:0.0,
                 z[0],z[1],z[2].z,true});
+            auto& native=slot.configured.back().candidate_native;
+            const auto& actual=e.observed[2];
+            const StereoCoherentScalar* raw=nullptr;
+            if(i==0U)raw=&actual.multiband[k].width;
+            else if(i==1U)raw=&actual.multiband[k].correlation;
+            else if(i==2U)raw=&actual.low_end_width[k];
+            else raw=&actual.low_end_correlation[k];
+            if(z[2].z)native.value=raw->raw_ratio_or_rho;
+            native.endpoint=z[2].endpoint;
+            native.valid_count=raw->valid_frames;
+            native.configured_count=actual.native_selected_frames;
+            constexpr std::array<int,3> cutoffs{{80,120,200}};
+            native.selector=lowend?
+                std::to_string(cutoffs[k]):
+                std::to_string(e.exact_canonical_band_indices[k]);
         }
     }
     return {std::move(all),CoherentStereoBindingFailure::none};
