@@ -6,6 +6,8 @@
 // No render, persistence or M13 verification lives in this helper.
 #include "l3_m08_frozen_targeted_population.hpp"
 #include "l3_m10_frozen_total_cost.hpp"
+#include "l3_m10_native_prediction_snapshot.hpp"
+#include <memory>
 #include "l3_m11_p03_protected_no_regression.hpp"
 #include "l3_m11_native_stereo_hard_safety.hpp"
 #include <array>
@@ -51,6 +53,7 @@ struct AuthoritativeCostInput final {
     std::uint32_t enabled_artistic_bands{};
     std::vector<std::uint8_t> canonical_current_tuple;
     std::vector<std::uint8_t> exact_topology_evidence_identity;
+    std::optional<std::array<bool,4>> m08_reporting_requested_domains{};
 };
 struct AuthoritativeCostResult final {
     std::optional<MeasuredOrderKey> measured;
@@ -133,13 +136,16 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
         population.value->objective_input);
     if(!measured.valid_measured())
         return {{},measured,AuthoritativeCostReason::target_cost_rejected};
-    const auto key=total_measured_cost(
+    auto key=total_measured_cost(
         measured,input.active_coordinates,input.active_owned_modules,
         input.enabled_artistic_bands,input.canonical_current_tuple,
         input.exact_topology_evidence_identity);
     if(!key)
         return {{},measured,
             AuthoritativeCostReason::invalid_reference_or_complexity};
-    return {key,measured,AuthoritativeCostReason::measured};
+    key->native_prediction=std::make_shared<const NativePredictionSnapshot>(
+        NativePredictionSnapshot{input.exact_pair_slots,input.protected_full_k,
+                                 input.m08_reporting_requested_domains});
+    return {std::move(key),measured,AuthoritativeCostReason::measured};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
