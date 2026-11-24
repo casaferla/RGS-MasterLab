@@ -97,7 +97,9 @@ template<class ResolveOriginalTriple>
     cost.independently_measured_fixed=fixed;
     const auto execution=job.value()->exact_execution_graph_content();
     auto exact=bind_preserved_native_execution_key(std::move(key),*job.value(),cost);
-    const auto analysis_scope=exact_native_analysis_scope_content(env.spec);
+    auto effective_spec=env.spec;
+    if(!bind_original_pair_profile_common(effective_spec,env.originals))return rejected();
+    const auto analysis_scope=exact_native_analysis_scope_content(effective_spec);
     if(!exact||!execution||!analysis_scope)return rejected();
     using namespace p2_cache_detail;
     append_exact_byte_field(exact->candidate_execution_content,*analysis_scope);
@@ -145,7 +147,7 @@ template<class ResolveOriginalTriple>
     }
     return evaluate_with_exact_completed_cache(env.cache,*exact,true,allow_new,[&](){
         const auto score=measure_and_score_m10_p2_full_native_candidate(
-            *job.value(),env.spec,nullptr,env.generation,true,std::move(cost),
+            *job.value(),std::move(effective_spec),nullptr,env.generation,true,std::move(cost),
             env.m11_ceiling_db_tp,candidate_owner,&env.originals,
             env.file_lra_policy_attested,
             [&](const M10P2FullNativeEvidence& measured)
