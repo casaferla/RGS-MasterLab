@@ -93,6 +93,13 @@ struct SpectralSlotProjection final {
                 {measured[0],m08_frozen::Endpoint::ordinary},
                 {measured[1],m08_frozen::Endpoint::ordinary},
                 measured[2],true});
+            auto& native=slot.configured.back().candidate_native;
+            const auto& actual=a.observed[2].canonical_band_results[i];
+            if(measured[2])
+                native.value=d==2U?actual.d12_raw_rho:measured[2];
+            native.valid_count=actual.valid_native_counts[d];
+            native.configured_count=a.observed[2].candidate_active_frames;
+            native.selector=std::to_string(i);
         }
     }
     return {std::move(out),SpectralSlotFailure::none};
