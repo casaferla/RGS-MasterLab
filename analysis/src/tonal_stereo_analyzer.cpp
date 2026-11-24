@@ -42,6 +42,13 @@ native_tonal_frame_geometry(std::uint32_t sample_rate_hz) noexcept {
     return NativeTonalFrameGeometry{g->window,g->fft,g->hop};
 }
 
+std::optional<NativeTonalBandwidth>
+native_tonal_measurement_bandwidth(std::uint32_t sample_rate_hz) noexcept {
+    const auto bw=m20_private::available_bandwidth(sample_rate_hz);
+    if(!(bw.high>bw.low))return std::nullopt;
+    return NativeTonalBandwidth{bw.low,bw.high};
+}
+
 std::vector<TonalBandMeasurement>
 native_tonal_fractional_grid(std::uint32_t sample_rate_hz,int denominator) {
     std::vector<TonalBandMeasurement> out;
