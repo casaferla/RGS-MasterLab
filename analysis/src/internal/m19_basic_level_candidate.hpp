@@ -72,6 +72,8 @@ struct BasicLevelPreproductionSnapshot {
     std::uint64_t short_term_3s_complete_windows{};
     std::vector<ShortTermLoudnessSample> short_term_3s_grid100;
     std::optional<double> short_term_3s_type7_p50_lufs;
+    std::uint64_t complete_loudness_block_count{};
+    std::vector<std::uint64_t> final_loudness_block_starts{};
 };
 
 // Private gate evidence for independent numerical adversaries. All comparisons
@@ -438,6 +440,7 @@ public:
             // retained intervals have been *decided* by this producer,
             // independently from a future official Phase-6 qualification.
             out.retained_block_disclosure_complete = true;
+            out.complete_loudness_block_count=block_powers_.size();
             if (gated->integrated_lufs) {
                 out.integrated_lufs = gated->integrated_lufs;
                 out.loudness_state = LoudnessPreproductionState::available;
@@ -452,6 +455,7 @@ public:
                     if(start>scopeEnd ||block>scopeEnd-start)
                         return std::nullopt; // never invent a partial block
                     const auto end=start+block;
+                    out.final_loudness_block_starts.push_back(start);
                     if(out.retained_block_union.empty() ||
                        start>out.retained_block_union.back().end) {
                         out.retained_block_union.push_back({start,end});
