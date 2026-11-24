@@ -81,6 +81,7 @@ import_m13_product_fresh_original_native_source(
        owner.replay->plan_id.is_nil()||
        owner.replay->exact_plan_checksum.empty()||
        admitted.exact_product_ownership_epoch()==0U||
+       !fresh.matches_executed_request(admitted)||
        fresh.logical_verification_evaluations!=1U||
        !m12_frozen::m12_native_stage_witness_matches_replay_plan(
            *owner.replay,fresh.stage_witness))
