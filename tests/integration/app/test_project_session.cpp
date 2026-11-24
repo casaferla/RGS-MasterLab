@@ -4981,6 +4981,27 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!app::l3_automatch::m13_frozen::
         verify_m13_provisional_diagnostic_integrity(
             *reorderedSealed.value()));
+    // Rehashed but physically unsupported rate cannot impersonate
+    // an independent six-Fs full-Master observation.
+    auto inventedRate=validJson.object();
+    auto inventedEvidence=inventedRate.value("freshEvidence").toObject();
+    inventedEvidence.insert("sampleRateHz",QStringLiteral("12345"));
+    inventedRate.insert("freshEvidence",inventedEvidence);
+    inventedRate.remove("VerificationContentChecksum");
+    const auto inventedBase=project::OpaqueJsonValue::parse(
+        QJsonDocument(inventedRate).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(inventedBase);
+    inventedRate.insert("VerificationContentChecksum",
+        QString::fromStdString(app::l3_automatch::m13_frozen::
+            m13_digest_canonical_json(*inventedBase.value())));
+    const auto inventedSealed=project::OpaqueJsonValue::parse(
+        QJsonDocument(inventedRate).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(inventedSealed);
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(
+            *inventedSealed.value()));
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     // The existing shared M18 epoch must exclude BOTH M13 capture
