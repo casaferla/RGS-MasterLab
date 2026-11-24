@@ -7,6 +7,7 @@ struct NativeEqPrefix final {
     dsp::ParametricEqParameters payload;
     std::vector<NativeEqAtomFit> greedy_order;
     std::vector<double> exact_active_frequencies_hz;
+    std::vector<std::optional<double>> exact_eligible_grid{};
 };
 // The dictionary must contain the exact legal canonical atoms and their
 // allocated band IDs. The full active population stays in the fit.
