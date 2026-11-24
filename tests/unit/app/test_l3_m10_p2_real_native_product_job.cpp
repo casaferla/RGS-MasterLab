@@ -530,6 +530,25 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
         48000,identity,fixed,amount,requested,{});
     QVERIFY(bound&&bound->legal.pre_render_proxy.is_bound());
     QVERIFY(!bound->recipe.exact_description.seed_exact_content.empty());
+    const m09::AbstractFamilyChoice no_action;
+    const m09::CandidateCarrier none_identity{{0x30},{},{0x32},{0x33},{"fixture"}};
+    const auto no_seed=m09::bind_native_family_candidate(registry,bank,no_action,{},{},1U,
+        48000,none_identity,fixed,amount,requested,{});
+    QVERIFY(no_seed);
+    std::vector<m09::BoundNativeFamilyCandidate> all{*no_seed,*bound,*bound};
+    const auto batch=m09::select_bound_native_family_batch({0x33},all);
+    QVERIFY(batch);
+    QCOMPARE(batch->selected.exact_descriptions.size(),std::size_t{2});
+    QCOMPARE(batch->recipes.size(),std::size_t{2});
+    QCOMPARE(batch->recipes.front().ordinal,std::size_t{1});
+    QVERIFY(batch->recipes.front().family.loudness==m09::LoudnessMode::gain);
+    const auto selected_native=m09::bind_selected_native_families(batch->selected,batch->recipes,
+        registry,bank,1U,48000,[&](const auto& graph,const auto& inventory){
+            return m09::exact_family_seed_content(graph,*registry,inventory);
+        });
+    QVERIFY(selected_native);
+    all.back().recipe.exact_description.dependency_tuple={0xff};
+    QVERIFY(!m09::select_bound_native_family_batch({0x33},all));
     fixed.measured_fixed[24].configured.front().current_candidate_z=-15.0;
     QVERIFY(!m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0));
     fixed.measured_fixed[24].configured.front().current_candidate_z=-20.0;
