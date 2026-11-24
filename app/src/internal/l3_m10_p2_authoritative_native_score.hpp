@@ -132,8 +132,6 @@ measure_and_score_m10_p2_full_native_candidate(
         return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
     independently_attested_m08_m11.native_linked_graph_content=*linked_graph;
     independently_attested_m08_m11.native_execution_graph_content=*execution_graph;
-    const auto exact_active_frames=
-        static_cast<std::int64_t>(native_spec.phase6_active_pcm_frames);
     auto measured=measure_m10_p2_full_native_once(
         candidate,std::move(native_spec),exact_pre_p2_prefix,cancellation);
     if(!measured)
@@ -142,6 +140,8 @@ measure_and_score_m10_p2_full_native_candidate(
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return {P2NativeCostReason::stale_or_unattested_product,
                 {},{},{} };
+    const auto exact_active_frames=static_cast<std::int64_t>(
+        measured.value()->native.exact_observed_active_frames);
     // Independent post-P2 M16 is a mandatory M11 hard constraint,
     // checked before the expensive 27-slot projection. A claimed
     // prior/comparison metric or the M17 export ceiling cannot pass.
