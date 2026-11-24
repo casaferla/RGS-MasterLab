@@ -12,6 +12,12 @@ namespace rgsml::app::l3_automatch::m11_frozen {
 struct NativeFixedPopulation final {
     std::vector<m08_frozen::AuthenticatedPairSlot> measured_fixed;
     bool exact_independent_fixed_and_endpoint_safety_attested{};
+    // Retained provenance of the independent worker result; the Product
+    // scorer must revalidate these before consuming a reusable Fixed.
+    std::string exact_fixed_ticket{};
+    std::string exact_fixed_resource_identity{};
+    std::uint64_t exact_fixed_source_generation{};
+    std::string exact_m07_generation{};
 };
 [[nodiscard]] inline std::optional<std::vector<ProtectedComponent>>
 bind_native_fixed_to_candidate(
