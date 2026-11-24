@@ -50,6 +50,8 @@ derive_native_family_coordinate_requests(const NativeFamilySeedBank& bank,
     std::size_t consumed_bands=0;
     for(std::size_t i=0;i<roles.size();++i) {
         if(role_keys[i].role!=roles[i]||role_keys[i].semantic_node_key.empty())return {};
+        for(std::size_t j=0;j<i;++j)
+            if(role_keys[j].semantic_node_key==role_keys[i].semantic_node_key)return {};
         const auto payload=native_family_role_payload(bank,family,roles[i]);
         if(!payload)return {};
         const auto add=[&](NativeField field,const NativeBandCoordinateAuthority* band=nullptr){
@@ -80,8 +82,8 @@ derive_native_family_coordinate_requests(const NativeFamilySeedBank& bank,
                 if(!key||!add(F::frequency_hz,key)||!add(F::gain_db,key)||
                    !add(std::holds_alternative<dsp::BellPayload>(b.payload())?F::q:F::shelf_slope,key))return {};
             }
-        } else if(const auto* eq=std::get_if<dsp::DynamicEqParameters>(&*payload)) {
-            for(const auto& b:eq->bands()) {
+        } else if(const auto* dynamic=std::get_if<dsp::DynamicEqParameters>(&*payload)) {
+            for(const auto& b:dynamic->bands()) {
                 const auto* key=authority(b.spec().band_id);
                 if(!key||!add(F::frequency_hz,key)||
                    !add(std::holds_alternative<dsp::DynamicEqBellShape>(b.spec().shape)?F::q:F::shelf_slope,key))return {};
