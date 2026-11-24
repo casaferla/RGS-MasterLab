@@ -1,5 +1,6 @@
 #pragma once
 #include "l3_m09_abstract_family_enumeration.hpp"
+#include "l3_m09_exact_candidate_dedup.hpp"
 #include "l3_m09_native_automatic_coordinate.hpp"
 #include <memory>
 #include <string>
@@ -126,5 +127,48 @@ assemble_native_artistic_role_graph(
         revision,std::move(nodes));
     if(!chain)return std::nullopt;
     return m10_frozen::PreservedNativeGraph{std::move(*chain.value()),std::move(bindings)};
+}
+struct NativeRoleCoordinateRequest final {
+    IntentRole role;
+    ExactBytes semantic_key;
+    ExactBytes stable_parameter_key;
+    NativeField field;
+    std::optional<core::Uuid> band_id;
+    std::optional<NativeFrequencyBounds> frequency_bounds;
+};
+// M09/M12 provide the allocated semantic identities and complete
+// coordinate descriptors. This builds the actual immutable seed and
+// verifies exact round-trip through the existing M10 inverse transform.
+[[nodiscard]] inline std::optional<NativeTypedSeed>
+assemble_native_artistic_typed_seed(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const AbstractFamilyChoice& family,std::span<const NativeRoleSeed> roles,
+    std::span<const NativeRoleCoordinateRequest> requests,
+    std::uint64_t revision,std::int64_t sample_rate)
+{
+    if(!registry||requests.size()>48U)return std::nullopt;
+    if(sample_rate!=44100&&sample_rate!=48000&&sample_rate!=88200&&
+       sample_rate!=96000&&sample_rate!=176400&&sample_rate!=192000)
+        return std::nullopt;
+    auto graph=assemble_native_artistic_role_graph(*registry,family,roles,revision);
+    if(!graph)return std::nullopt;
+    const auto nodes=graph->linked.instances();
+    std::vector<NativeSeedCoordinate> coordinates;
+    coordinates.reserve(requests.size());
+    for(const auto& request:requests) {
+        const auto role=std::find_if(roles.begin(),roles.end(),[&](const auto& seed){
+            return seed.role==request.role;
+        });
+        if(role==roles.end())return std::nullopt;
+        const auto index=static_cast<std::size_t>(role-roles.begin());
+        auto coordinate=make_native_seed_coordinate(nodes[index],graph->bindings[index],
+            request.semantic_key,request.stable_parameter_key,request.field,
+            request.band_id,request.frequency_bounds,sample_rate);
+        if(!coordinate)return std::nullopt;
+        coordinates.push_back(std::move(*coordinate));
+    }
+    NativeTypedSeed seed{std::move(registry),std::move(*graph),std::move(coordinates)};
+    if(!native_seed_inventory(seed))return std::nullopt;
+    return seed;
 }
 } // namespace rgsml::app::l3_automatch::m09_frozen
