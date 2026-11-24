@@ -52,9 +52,23 @@ measure_native_fixed_once(
         return std::nullopt;
     auto population=assembly.complete_canonical_population();
     if(!population)return std::nullopt;
+    const auto actual=m05m06_real::import_actual_full_source(
+        measured.value()->native.actual.levels,measured.value()->native.actual.tonal,
+        fixed_owner,measured.value()->native.selected_original_m20_ordinals);
+    if(!actual.source)return std::nullopt;
+    const bool stereo_required=originals.prepared.original_m19_m20.channels==2U;
+    std::optional<m11_frozen::NativeStereoRawSafety> stereo;
+    if(stereo_required)
+        stereo=m11_frozen::bind_actual_native_stereo_safety(
+            originals.prepared.original_m19_m20,originals.prepared.full_native.s03_s06,
+            *actual.source,measured.value()->native.s03_s06,
+            exact_current_fixed_and_endpoint_safety_attested,
+            exact_current_fixed_and_endpoint_safety_attested);
     return m11_frozen::NativeFixedPopulation{std::move(*population),true,
         fixed_job.ticket_identity(),fixed_owner.resource_identity,
         fixed_owner.generation,exact_generation,*fixed_graph,
-        std::move(authority),std::move(authority_content)};
+        std::move(authority),std::move(authority_content),
+        measured.value()->m16_actual_p2_output.global_linear_peak(),
+        stereo_required,std::move(stereo)};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
