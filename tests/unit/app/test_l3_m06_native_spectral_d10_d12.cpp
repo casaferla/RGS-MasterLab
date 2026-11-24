@@ -79,6 +79,11 @@ missingGridOrInsufficientSupportNeverClaimsReady() {
         native(40),3,false,48000*3,48000);
     QCOMPARE(empty.source_reason,
              real::SpectralNativeReason::missing_exact_stft_or_grid);
+    const auto no_active=real::reduce_native_spectral_d10_d12({},3,true,0,48000);
+    QCOMPARE(no_active.source_reason,real::SpectralNativeReason::insufficient_band_frame_support);
+    QCOMPARE(no_active.canonical_band_results.size(),std::size_t{3});
+    for(const auto& band:no_active.canonical_band_results)
+        QVERIFY(!band.d10_d11_d12_z[0]);
     auto too_few=real::reduce_native_spectral_d10_d12(
         native(19),3,true,48000*3,48000);
     for(const auto& b:too_few.canonical_band_results)
