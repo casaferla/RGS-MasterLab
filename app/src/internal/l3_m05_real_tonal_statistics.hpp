@@ -18,6 +18,26 @@
 
 namespace rgsml::app::l3_automatch::m05m06_real {
 struct CommonTonalBandwidth final {double low_hz{},high_hz{};};
+// Metadata only: this is the largest native intersection, not an M07
+// admission, per-band support decision, or permission to broaden a
+// separately frozen comparison interval.
+[[nodiscard]] inline std::optional<CommonTonalBandwidth>
+original_native_common_tonal_bandwidth(std::uint32_t prepared_rate,
+                                      std::uint32_t reference_rate) noexcept {
+    const auto p=analysis::native_tonal_measurement_bandwidth(prepared_rate);
+    const auto g=analysis::native_tonal_measurement_bandwidth(reference_rate);
+    if(!p||!g)return std::nullopt;
+    const CommonTonalBandwidth common{std::max(p->low_hz,g->low_hz),
+                                      std::min(p->high_hz,g->high_hz)};
+    if(!(common.high_hz>common.low_hz))return std::nullopt;
+    return common;
+}
+[[nodiscard]] inline bool native_common_contains(
+    const CommonTonalBandwidth& outer,const CommonTonalBandwidth& requested) noexcept {
+    return std::isfinite(requested.low_hz)&&std::isfinite(requested.high_hz)&&
+        requested.high_hz>requested.low_hz&&requested.low_hz>=outer.low_hz&&
+        requested.high_hz<=outer.high_hz;
+}
 struct TonalT3T5 final {
     CommonTonalBandwidth common;
     double energy{};
