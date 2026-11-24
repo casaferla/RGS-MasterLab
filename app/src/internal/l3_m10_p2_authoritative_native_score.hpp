@@ -10,6 +10,7 @@
 #include "l3_m10_p2_actual_m16_guard.hpp"
 #include "l3_m11_actual_native_stereo_safety.hpp"
 #include "l3_m10_p2_verified_candidate_triple.hpp"
+#include "l3_m10_original_definition_authority.hpp"
 #include "l3_m07_existing_native_fragment_collector.hpp"
 #include "l3_m10_authoritative_candidate_cost.hpp"
 #include "l3_m10_cache_aware_evaluator.hpp"
@@ -160,6 +161,11 @@ measure_and_score_m10_p2_full_native_candidate(
     if(!original_triple)
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
+    auto definitions=std::make_shared<const P2OriginalRealNativeTriple>(
+        retain_original_native_definitions(*original_triple));
+    independently_attested_m08_m11.native_definition_authority_content=
+        exact_original_native_definition_content(*definitions);
+    independently_attested_m08_m11.native_original_definition_authority=std::move(definitions);
     auto bound=bind_p2_original_native_triple_from_independent_full_pair(
         std::move(*original_triple),
         *authentic_prepared_and_independent_reference,
