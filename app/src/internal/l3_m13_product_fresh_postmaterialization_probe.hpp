@@ -149,7 +149,6 @@ run_fresh_m13_product_postmaterialization_probe(
     // inputs exist. It owns M19 and M20, so do not run either a second
     // time or use the earlier M10 candidate's PCM/observations.
     if(exact_native_spec) {
-        const auto exact_active_frames=exact_native_spec->phase6_active_pcm_frames;
         auto observed_native=measure_real_full_owned_pcm_native_once(
             render.value()->buffer(),std::move(*exact_native_spec),
             cancellation);
@@ -163,7 +162,7 @@ run_fresh_m13_product_postmaterialization_probe(
                 std::move(n.d10_d12),std::move(n.s03_s06),
                 std::move(n.d07_d09),
                 std::move(n.selected_original_m20_ordinals),
-                exact_active_frames},admitted});
+                n.exact_observed_active_frames},admitted});
     }
     auto m19=analysis::measure_basic_level_full_resource(
         render.value()->buffer());
