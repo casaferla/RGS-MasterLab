@@ -2,6 +2,7 @@
 // Bind the actual measured solver winner to the M12 staged typed graph.
 // This is a prepublication guard, never a materialization receipt.
 #include "l3_m10_preserved_native_refinement.hpp"
+#include "l3_m10_original_definition_authority.hpp"
 #include "l3_m12_ref_linked_native_stage.hpp"
 
 namespace rgsml::app::l3_automatch::m12_frozen {
@@ -18,6 +19,13 @@ namespace rgsml::app::l3_automatch::m12_frozen {
         prediction.candidate_resource_identity,prediction.candidate_generation,true};
     return prediction.native_population.size()==m07_frozen::kBindings.size()&&
            prediction.exact_m07_generation==exact_generation&&
+           prediction.original_definition_authority&&
+           !prediction.exact_definition_authority_content.empty()&&
+           m10_frozen::exact_source_owner_equal(
+               prediction.original_definition_authority->m19.actual_candidate.owner,identity)&&
+           m10_frozen::exact_original_native_definition_content(
+               *prediction.original_definition_authority)==
+                   prediction.exact_definition_authority_content&&
            prediction.exact_candidate_ticket==reconstructed.ticket_identity()&&
            authentic_product_candidate_identity(identity,reconstructed.owner_stamp(),
                                                 reconstructed.ticket_identity())&&
