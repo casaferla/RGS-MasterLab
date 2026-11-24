@@ -253,6 +253,55 @@ encode_m13_provisional_diagnostic(
     if(outcome!="NOT_VERIFIED"&&outcome!="VERIFICATION_FAILED"&&
        outcome!="VERIFICATION_UNAVAILABLE"&&outcome!="STALE")
         return false;
+    // The diagnostic is a frozen numerical testimony, not arbitrary
+    // JSON. Only the six native rates, one genuine fresh full render,
+    // valid component cardinalities and canonical numeric strings pass.
+    const auto observed=root.value("freshEvidence").toObject();
+    if(observed.size()!=10U||
+       !observed.value("freshNativeRender").isBool()||
+       !observed.value("freshBindingPopulationComplete").isBool()||
+       !observed.value("freshProximityMatchesPrediction").isBool())
+        return false;
+    const auto exact_uint=[&](const char* field)->
+        std::optional<std::uint64_t> {
+        const auto token=observed.value(field);
+        if(!token.isString())return std::nullopt;
+        const auto str=token.toString().toStdString();
+        if(str.empty())return std::nullopt;
+        std::uint64_t value{};
+        const auto [end,err]=std::from_chars(
+            str.data(),str.data()+str.size(),value);
+        if(err!=std::errc{}||end!=str.data()+str.size()||
+           std::to_string(value)!=str)return std::nullopt;
+        return value;
+    };
+    const auto exact_real=[&](const char* field)->
+        std::optional<double> {
+        const auto token=observed.value(field);
+        if(!token.isString())return std::nullopt;
+        const auto str=token.toString().toStdString();
+        if(str.empty())return std::nullopt;
+        double value{};
+        const auto [end,err]=std::from_chars(
+            str.data(),str.data()+str.size(),value,
+            std::chars_format::general);
+        if(err!=std::errc{}||end!=str.data()+str.size()||
+           !std::isfinite(value))return std::nullopt;
+        return value;
+    };
+    const auto configured=exact_uint("configuredNativeComponents");
+    const auto required=exact_uint("requiredNativeComponents");
+    const auto evaluations=exact_uint("verificationEvaluations");
+    const auto fs=exact_uint("sampleRateHz");
+    const auto frames=exact_uint("frameCount");
+    const auto measured=exact_real("fullResourceM16LinearPeak");
+    const auto ceiling=exact_real("independentM16CeilingDbTp");
+    if(!configured||!required||!evaluations||!fs||!frames||
+       !measured||!ceiling||*required>*configured||
+       *evaluations!=1U||*frames==0U||
+       (*fs!=44100U&&*fs!=48000U&&*fs!=88200U&&*fs!=96000U&&
+        *fs!=176400U&&*fs!=192000U)||
+       *measured<0.0)return false;
     const auto reasons=root.value("canonicalReasons").toArray();
     std::vector<VerificationReason> decodedReasons;
     decodedReasons.reserve(static_cast<std::size_t>(reasons.size()));
