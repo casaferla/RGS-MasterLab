@@ -104,7 +104,11 @@ template<class ResolveOriginalTriple>
            hit->native_prediction->candidate_resource_identity!=candidate_owner.resource_identity||
            hit->native_prediction->candidate_generation!=candidate_owner.generation||
            hit->native_prediction->exact_m07_generation!=env.generation||
-           hit->native_prediction->exact_execution_graph_content!=*execution)
+           hit->native_prediction->exact_execution_graph_content!=*execution||
+           (original_definitions&&
+             (!hit->native_prediction->original_definition_authority||
+              hit->native_prediction->exact_definition_authority_content!=
+                  exact_original_native_definition_content(*original_definitions))))
             return rejected();
     }
     return evaluate_with_exact_completed_cache(env.cache,*exact,true,allow_new,[&](){
