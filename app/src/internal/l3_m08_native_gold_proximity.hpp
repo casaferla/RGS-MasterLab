@@ -47,9 +47,10 @@ measure_native_gold_proximity(
            (binding.component_share==m07_frozen::ComponentShare::thirds&&n!=3U))
             return out;
         auto& a=totals[static_cast<std::size_t>(binding.domain)];
+        const volatile double component_count=static_cast<double>(n);
         const double mass=static_cast<double>(binding.domain_mass.numerator)/
             static_cast<double>(binding.domain_mass.denominator)/
-            static_cast<double>(n);
+            component_count;
         for(const auto& c:slot.configured) {
             a.configured+=mass;
             if(!std::isfinite(c.paired_native_support)||
