@@ -106,4 +106,45 @@ native_gain_coverage(const m11_frozen::NativeFixedPopulation& fixed,
     }
     return out;
 }
+struct BoundNativeFamilyCandidate final {
+    m10_frozen::BoundLegalCombinedCandidate legal;
+    SelectedNativeFamilyRecipe recipe;
+};
+// Build the legal M09 entry and its exact selected recipe together.
+// Inputs retain the allocated semantic identity and evidence dependency;
+// there is no generated fake cost or substitution of unavailable roles.
+[[nodiscard]] inline std::optional<BoundNativeFamilyCandidate>
+bind_native_family_candidate(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const NativeFamilySeedBank& bank,const AbstractFamilyChoice& family,
+    std::span<const NativeRoleAllocation> allocations,
+    std::span<const NativeRoleCoordinateRequest> coordinates,
+    std::uint64_t revision,std::int64_t rate,
+    CandidateCarrier identity,const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    m10_frozen::AuthoritativeCostInput constraints)
+{
+    if(!registry||identity.semantic_tuple.empty()||identity.dependency_tuple.empty()||
+       identity.generation_snapshot.empty()||identity.ordered_provenance.empty())return {};
+    const auto typed=build_native_family_seed(registry,bank,family,allocations,coordinates,revision,rate);
+    if(!typed)return {};
+    const auto inventory=native_seed_inventory(*typed);
+    if(!inventory)return {};
+    const auto bytes=exact_family_seed_content(typed->seed,*registry,*inventory);
+    if(!bytes||(!identity.seed_exact_content.empty()&&identity.seed_exact_content!=*bytes))return {};
+    identity.seed_exact_content=*bytes;
+    const auto coverage=native_gain_coverage(fixed,amount,requested,*typed);
+    if(!coverage)return {};
+    const auto proxy=native_covered_proxy(fixed,amount,requested,*typed,*coverage,identity.semantic_tuple);
+    if(!proxy.is_bound())return {};
+    BoundNativeFamilyCandidate result;
+    result.legal={identity,proxy,inventory->size(),true,true};
+    result.recipe.exact_description=std::move(identity);
+    result.recipe.family=family;
+    result.recipe.allocations.assign(allocations.begin(),allocations.end());
+    result.recipe.coordinates.assign(coordinates.begin(),coordinates.end());
+    result.recipe.exact_inventory=*inventory;
+    result.recipe.constraints=std::move(constraints);
+    return result;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
