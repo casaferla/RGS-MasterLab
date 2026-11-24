@@ -18,7 +18,7 @@
 #include "internal/l3_m09_native_tonal_seed.hpp"
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
-#include "internal/l3_m09_native_selected_family_search.hpp"
+#include "internal/l3_m09_native_family_exact_content.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -492,6 +492,30 @@ void P2RealNativeProductTest::nativeSelectedFamilyChecksExactSeedIdentity() {
         return m09::ExactBytes{0x99};};
     const auto bound=m09::bind_selected_native_families(selected,recipes,registry,bank,1U,48000,matching);
     QVERIFY(bound&&bound->front().typed);
+    const auto& typed=*bound->front().typed;
+    const auto inventory=m09::native_seed_inventory(typed);
+    QVERIFY(inventory);
+    const auto bytes=m09::exact_family_seed_content(typed.seed,*registry,*inventory);
+    QVERIFY(bytes);
+    auto exact_description=recipe.exact_description;
+    exact_description.seed_exact_content=*bytes;
+    const std::array<double,1> u{0.5},v{0.75};
+    const auto key=m09::exact_family_trial_key(exact_description,typed.seed,*registry,*inventory,u);
+    QVERIFY(key);
+    const auto decoded=m09::decode_native_typed_seed(typed,*inventory,v);
+    QVERIFY(decoded);
+    const auto changed=m09::exact_family_trial_key(exact_description,decoded->graph,*registry,*inventory,v);
+    QVERIFY(changed);
+    QVERIFY(changed->canonical_current_tuple!=key->canonical_current_tuple);
+    QCOMPARE(changed->topology_evidence_identity,key->topology_evidence_identity);
+    QCOMPARE(changed->immutable_generation_and_policy,key->immutable_generation_and_policy);
+    auto exact_recipes=recipes;
+    exact_recipes.front().exact_description=exact_description;
+    auto exact_selected=selected;
+    exact_selected.exact_descriptions.front()=exact_description;
+    const auto codec=[&](const auto& graph,const auto& coords){
+        return m09::exact_family_seed_content(graph,*registry,coords);};
+    QVERIFY(m09::bind_selected_native_families(exact_selected,exact_recipes,registry,bank,1U,48000,codec));
     QVERIFY(!m09::bind_selected_native_families(selected,recipes,registry,bank,1U,48000,mismatching));
     selected.combined_consumer.ledger.front().selected_but_unavailable=true;
     const auto absent=m09::bind_selected_native_families(selected,recipes,registry,bank,1U,48000,mismatching);
