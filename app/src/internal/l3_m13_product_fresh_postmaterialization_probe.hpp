@@ -28,6 +28,8 @@ public:
     {return *ticket_;}
     [[nodiscard]] double frozen_independent_m16_ceiling_db_tp()
         const noexcept{return ceilingDbTp_;}
+    [[nodiscard]] std::uint64_t exact_product_ownership_epoch()
+        const noexcept{return exactProductEpoch_;}
     [[nodiscard]] bool authorizes_m13_verified() const noexcept
     {return false;}
     [[nodiscard]] bool authorizes_wav_export() const noexcept
