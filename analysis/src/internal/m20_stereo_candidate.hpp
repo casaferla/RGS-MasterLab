@@ -9,6 +9,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include <utility>
 namespace rgsml::analysis::m20_private {
 enum class Diagnostic {valid,not_applicable,invalid_input,insufficient_content,undefined_denominator};
 struct Interval {std::uint64_t begin=0,end=0;}; // absolute half-open caller-authorized PCM interval
@@ -24,6 +25,7 @@ struct WidthResult {
   bool used_all_scope_fallback=false;
   std::uint64_t selected_frames=0;
   std::optional<double> ratio;
+  std::vector<Interval> exact_selected_union{};
 };
 struct CorrelationWindow {
   std::uint64_t absolute_start=0;
@@ -141,7 +143,9 @@ private:
       const auto i=static_cast<std::size_t>(absolute-s.origin);
       acc.add(s.left[i],s.right[i]);
     }
-  return acc.finish(selected,!s.gate_available);
+  auto out=acc.finish(selected,!s.gate_available);
+  out.exact_selected_union=std::move(*intervals);
+  return out;
 }
 [[nodiscard]] inline double type7(std::vector<double> v,double p) {
   std::sort(v.begin(),v.end());
