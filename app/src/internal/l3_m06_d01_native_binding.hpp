@@ -71,6 +71,13 @@ struct D01BindingProjection final {
             valid_pair,valid_pair?pair->pair_support:0.0,
             {p,m08_frozen::Endpoint::ordinary},
             {g,m08_frozen::Endpoint::ordinary},c,true});
+        auto& native=result.configured.back().candidate_native;
+        native.value=c;
+        native.selector=std::array<const char*,3>{{"P10-P50","P90-P50","P95-P50"}}[i];
+        if(candidate) {
+            native.valid_count=candidate->valid_windows;
+            native.configured_count=candidate->complete_windows;
+        }
     }
     return {std::move(result),D01BindingFailure::none};
 }
