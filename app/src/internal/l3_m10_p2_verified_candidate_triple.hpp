@@ -76,8 +76,10 @@ bind_p2_original_native_triple_from_real_candidate(
     std::int64_t exact_phase6_active_frames,
     bool phase6_file_based_trailing_policy_attested)
 {
-    const auto from_real=measured.native.actual.observed_m05m06(
-        current_candidate_product_owner);
+    const auto from_real=m05m06_real::import_actual_full_source(
+        measured.native.actual.levels,measured.native.actual.tonal,
+        current_candidate_product_owner,
+        measured.native.selected_original_m20_ordinals);
     if(!from_real.source)return {};
     return bind_original_native_triple_from_measured_source(
         std::move(original),*from_real.source,measured.native.actual.tonal,
