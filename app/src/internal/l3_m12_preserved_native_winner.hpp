@@ -83,4 +83,45 @@ stage_preserved_native_measured_winner(
         return fail("L3_M12_STAGED_GRAPH_DIFFERS_FROM_MEASURED_WINNER");
     return stage;
 }
+// Reconstruct precisely the winning coordinate vector, not a second
+// independently chosen graph or a fresh solver score. The Qt owner
+// still holds the exclusive M12 publication/receipt boundary.
+template<class BuildTypedTrial>
+[[nodiscard]] inline core::Result<StagedRefLinkedSegment>
+stage_preserved_native_refinement_winner(
+    const AcceptedPlanAndOwner& accepted,
+    const m10_frozen::RefinementBatchResult& result,
+    const m10_frozen::PreservedNativeSearchEnvironment& env,
+    BuildTypedTrial&& build_trial)
+{
+    using R=core::Result<StagedRefLinkedSegment>;
+    const auto fail=[](const char* why){
+        return R::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    using Reason=m10_frozen::RefinementBatchReason;
+    if((result.reason!=Reason::complete&&result.reason!=Reason::budget_exhausted)||
+       !result.winning_refinement_index||
+       *result.winning_refinement_index>=result.candidate_refinements.size())
+        return fail("L3_M12_NATIVE_REFINEMENT_WINNER_UNAVAILABLE");
+    const auto& refined=result.candidate_refinements[*result.winning_refinement_index];
+    const auto& winner=refined.numerical.winner;
+    if(refined.numerical.end==m10_frozen::End::cancelled||
+       !winner.native_prediction||
+       !m10_frozen::valid_key(winner))
+        return fail("L3_M12_NATIVE_REFINEMENT_WINNER_INVALID");
+    const auto& coords=refined.numerical.coordinates;
+    std::vector<double> u;
+    for(const auto& c:coords)u.push_back(c.normalized_u);
+    const auto ticket=m10_frozen::m10_exact_native_trial_ticket(
+        refined.exact_combined_ordinal,coords,u);
+    if(!ticket||*ticket!=winner.native_prediction->exact_candidate_ticket)
+        return fail("L3_M12_NATIVE_REFINEMENT_COORDINATE_TICKET_MISMATCH");
+    auto trial=std::invoke(build_trial,refined.exact_combined_ordinal,coords,u);
+    if(!trial||!trial->exact_current_typed_graph_preflight_passed||
+       trial->key.canonical_current_tuple!=winner.canonical_current_tuple||
+       trial->key.topology_evidence_identity!=winner.topology_evidence_identity)
+        return fail("L3_M12_NATIVE_REFINEMENT_GRAPH_RECONSTRUCTION_FAILED");
+    return stage_preserved_native_measured_winner(
+        accepted,winner,env.owners,trial->graph,env.generation);
+}
 } // namespace rgsml::app::l3_automatch::m12_frozen
