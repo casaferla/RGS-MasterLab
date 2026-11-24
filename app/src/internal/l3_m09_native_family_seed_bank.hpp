@@ -80,4 +80,38 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     }
     return assemble_native_artistic_typed_seed(std::move(registry),family,seeds,coordinates,revision,rate);
 }
+// Prepare reusable role alternatives once, not once per combined
+// family. SIDE EQ remains conditional on its separate exact eligible
+// dictionary/insertion evidence; absent evidence produces no prefix.
+[[nodiscard]] inline NativeFamilySeedBank derive_native_family_seed_bank(
+    const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    std::span<const m05m06_real::T01ConfiguredBand> tonal_grid,
+    std::span<const NativeEqAtom> tonal_dictionary,
+    std::span<const core::Uuid> dynamic_band_ids,
+    core::SampleRate rate,std::uint32_t channels,double ceiling_db_tp,
+    bool exact_event_context,bool exact_stereo_fixed_insertion,
+    std::vector<NativeEqPrefix> independently_bound_side_prefixes={})
+{
+    NativeFamilySeedBank bank;
+    if(channels<1U||channels>2U)return bank;
+    bank.tonal=derive_native_tonal_prefixes(fixed,amount,requested,
+        tonal_grid,tonal_dictionary,rate);
+    if(fixed.measured_fixed_spectral_energy&&
+       fixed.measured_fixed_spectral_energy->sample_rate==static_cast<std::uint32_t>(rate.value()))
+        bank.spectral=derive_native_dynamic_prefixes(fixed,amount,requested,dynamic_band_ids,channels);
+    bank.macro[0]=derive_native_macro_seed(fixed,amount,requested,MacroMode::linked_max,channels==2U);
+    if(channels==2U)
+        bank.macro[1]=derive_native_macro_seed(fixed,amount,requested,MacroMode::stereo_mean,true);
+    const auto micro=derive_native_micro_seed(fixed,amount,requested,exact_event_context);
+    for(std::size_t i=0;i<bank.micro.size();++i)
+        bank.micro[i]=native_micro_variant_payload(micro,static_cast<MicroMode>(i+1U));
+    if(channels==2U) {
+        bank.side=std::move(independently_bound_side_prefixes);
+        for(std::size_t i=0;i<bank.stereo.size();++i)
+            bank.stereo[i]=derive_native_stereo_seed(fixed,amount,requested,i+1U,true,exact_stereo_fixed_insertion);
+    }
+    bank.gain=derive_native_loudness_gain_seed(fixed,amount,requested,ceiling_db_tp);
+    return bank;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
