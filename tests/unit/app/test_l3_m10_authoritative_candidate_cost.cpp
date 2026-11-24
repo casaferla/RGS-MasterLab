@@ -63,6 +63,7 @@ private slots:
     void currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost();
     void independentFixedRemovesOnlyProtectedResidualMass();
     void fixedWholeVectorNeedsOrthogonalAndAlreadyCloseGuards();
+    void fixedDomainAssessmentKeepsConfiguredCoverageAndRequestedMask();
 };
 void M10AuthoritativeCostTest::
 currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost() {
@@ -227,6 +228,47 @@ void M10AuthoritativeCostTest::fixedWholeVectorNeedsOrthogonalAndAlreadyCloseGua
     slot.configured[1].current_candidate_z.reset();
     QCOMPARE(m11::assess_fixed_feature(slot,binding,0.5).status,
              m11::FixedTargetStatus::unavailable);
+}
+void M10AuthoritativeCostTest::fixedDomainAssessmentKeepsConfiguredCoverageAndRequestedMask() {
+    auto in=source();
+    m11::NativeFixedPopulation fixed;
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    fixed.measured_fixed=in.exact_pair_slots;
+    const std::array<bool,4> requested{{true,true,true,true}};
+    auto assessment=m11::assess_native_fixed_targets(fixed,in.amount,requested);
+    QVERIFY(assessment.valid_current&&assessment.all_requested_targets_met);
+    for(bool corrective:assessment.corrective)QVERIFY(!corrective);
+    for(const auto& coverage:assessment.coverage) {
+        QVERIFY(coverage);
+        QVERIFY(std::abs(*coverage-1.0)<1e-12);
+    }
+    fixed.measured_fixed[0].configured[0].current_candidate_z=12.0;
+    assessment=m11::assess_native_fixed_targets(fixed,in.amount,requested);
+    QVERIFY(assessment.valid_current&&!assessment.all_requested_targets_met);
+    QVERIFY(assessment.corrective[0]);
+    QVERIFY(!assessment.corrective[1]);
+    auto non_tonal=requested;non_tonal[0]=false;
+    assessment=m11::assess_native_fixed_targets(fixed,in.amount,non_tonal);
+    QVERIFY(assessment.valid_current&&assessment.all_requested_targets_met);
+    QVERIFY(!assessment.coverage[0]);
+    auto& missing=fixed.measured_fixed[0].configured[0];
+    missing.current_valid=false;
+    missing.paired_native_support=0.0;
+    missing.current_candidate_z.reset();
+    missing.prepared.z.reset();
+    missing.reference.z.reset();
+    assessment=m11::assess_native_fixed_targets(fixed,in.amount,requested);
+    QVERIFY(assessment.valid_current);
+    QVERIFY(assessment.coverage[0]);
+    QVERIFY(std::abs(*assessment.coverage[0]-0.60)<1e-12);
+    // Both configured T01 components missing: structural mass remains.
+    fixed.measured_fixed[0].configured[1]=missing;
+    assessment=m11::assess_native_fixed_targets(fixed,in.amount,requested);
+    QVERIFY(assessment.valid_current&&!assessment.all_requested_targets_met);
+    QVERIFY(*assessment.coverage[0]<0.60);
+    QVERIFY(assessment.corrective[0]);
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=false;
+    QVERIFY(!m11::assess_native_fixed_targets(fixed,in.amount,requested).valid_current);
 }
 void M10AuthoritativeCostTest::
 noCorrectionNeedsIndependentFixedProofNotNoneTop8() {
