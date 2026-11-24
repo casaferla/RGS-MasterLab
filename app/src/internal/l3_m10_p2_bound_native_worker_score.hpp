@@ -140,7 +140,10 @@ measure_and_score_preserved_terminal_product_worker(
         current.frozen_manual,current.frozen_manual_bindings,exact_ref_linked_artistic,
         linked_bindings,std::move(exact_candidate_ticket),
         current.maximum_block_frames,true);
-    if(!job)return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
+    if(!job||fixed.exact_fixed_graph_content.empty()||
+       job.value()->exact_fixed_graph_content()!=
+           std::optional<ExactCacheBytes>{fixed.exact_fixed_graph_content})
+        return {P2NativeCostReason::stale_or_unattested_product,{},{},{}};
     return measure_and_score_m10_p2_full_native_candidate(
         *job.value(),std::move(exact_m05m06_native_spec),nullptr,
         std::move(frozen_m07_phase6_dependency_generation),true,
