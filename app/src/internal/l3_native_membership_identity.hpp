@@ -24,8 +24,9 @@ public:
             bytes[i]=static_cast<std::byte>((value>>(8U*i))&0xffU);
         digest_.update(bytes);
     }
-    [[nodiscard]] std::string finish() noexcept(false) {
-        return core::sha256_hex(digest_.finalize());
+    [[nodiscard]] std::string finish() const {
+        auto snapshot=digest_;
+        return core::sha256_hex(snapshot.finalize());
     }
 private:
     core::Sha256 digest_;
