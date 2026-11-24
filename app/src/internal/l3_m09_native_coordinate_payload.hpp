@@ -139,5 +139,47 @@ apply_eq(const dsp::ParametricEqParameters& seed,
     if(matched!=fields.size())return std::nullopt;
     return as_payload(dsp::ParametricEqParameters::create(std::move(bands)));
 }
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_dynamic_eq(const dsp::DynamicEqParameters& seed,
+                 std::span<const NativePhysicalField> fields)
+{
+    auto bands=seed.bands();
+    std::size_t matched=0U;
+    for(auto& band:bands) {
+        auto spec=band.spec();
+        for(const auto& f:fields) {
+            if(!f.band_id||*f.band_id!=spec.band_id)continue;
+            if(!spec.enabled)return std::nullopt;
+            auto* bell=std::get_if<dsp::DynamicEqBellShape>(&spec.shape);
+            auto* shelf=std::get_if<dsp::DynamicEqShelfShape>(&spec.shape);
+            auto& c=spec.control;
+            switch(f.field) {
+            case NativeField::frequency_hz:
+                if(bell)bell->frequency_hz=f.value;
+                else if(shelf)shelf->frequency_hz=f.value;
+                else return std::nullopt;
+                break;
+            case NativeField::q:if(!bell)return std::nullopt;bell->q=f.value;break;
+            case NativeField::shelf_slope:
+                if(!shelf)return std::nullopt;
+                shelf->shelf_slope=f.value;break;
+            case NativeField::base_gain_db:c.base_gain_db=f.value;break;
+            case NativeField::range_db:c.range_db=f.value;break;
+            case NativeField::threshold_dbfs:c.threshold_dbfs=f.value;break;
+            case NativeField::ratio:c.ratio=f.value;break;
+            case NativeField::rms_ms:c.rms_time_constant_ms=f.value;break;
+            case NativeField::attack_ms:c.attack_ms=f.value;break;
+            case NativeField::release_ms:c.release_ms=f.value;break;
+            default:return std::nullopt;
+            }
+            ++matched;
+        }
+        auto updated=dsp::DynamicEqBandParameters::create(std::move(spec));
+        if(!updated)return std::nullopt;
+        band=std::move(*updated.value());
+    }
+    if(matched!=fields.size())return std::nullopt;
+    return as_payload(dsp::DynamicEqParameters::create(std::move(bands)));
+}
 } // namespace native_payload_detail
 } // namespace rgsml::app::l3_automatch::m09_frozen
