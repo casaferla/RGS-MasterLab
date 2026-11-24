@@ -50,7 +50,8 @@ bind_original_native_triple_from_measured_source(
     const m05m06_real::StereoCoherentNativeResult& stereo,
     const m05m06_real::SourceIdentity& current_candidate_product_owner,
     std::int64_t exact_phase6_active_frames,
-    bool phase6_file_based_trailing_policy_attested)
+    bool phase6_file_based_trailing_policy_attested,
+    m05m06_real::D03D04NativeSeries* retain_actual_windows=nullptr)
 {
     // The owner proves the exact candidate generation. A callback must
     // not introduce another candidate identity within a feature family
@@ -98,7 +99,10 @@ bind_original_native_triple_from_measured_source(
         transient.original_d07_d08_d09_type7;
     original.d10_d12.observed[2]=spectral;
     original.s03_s06.observed[2]=stereo;
-    return bind_all_original_real_native_p2_triple(original);
+    auto result=bind_all_original_real_native_p2_triple(original);
+    if(result.fragments&&retain_actual_windows)
+        *retain_actual_windows=std::move(original.d03_d04.actual_candidate);
+    return result;
 }
 [[nodiscard]] inline P2RealTripleBindingResult
 bind_p2_original_native_triple_from_real_candidate(
@@ -106,7 +110,8 @@ bind_p2_original_native_triple_from_real_candidate(
     const M10P2FullNativeEvidence& measured,
     const m05m06_real::SourceIdentity& current_candidate_product_owner,
     std::int64_t exact_phase6_active_frames,
-    bool phase6_file_based_trailing_policy_attested)
+    bool phase6_file_based_trailing_policy_attested,
+    m05m06_real::D03D04NativeSeries* retain_actual_windows=nullptr)
 {
     const auto from_real=m05m06_real::import_actual_full_source(
         measured.native.actual.levels,measured.native.actual.tonal,
@@ -118,7 +123,7 @@ bind_p2_original_native_triple_from_real_candidate(
         measured.native.actual.rendered.view(),measured.native.d07_d09,
         measured.native.d10_d12,measured.native.s03_s06,
         current_candidate_product_owner,exact_phase6_active_frames,
-        phase6_file_based_trailing_policy_attested);
+        phase6_file_based_trailing_policy_attested,retain_actual_windows);
 }
 // Strong Product path: the original callback carries canonical M07
 // definitions/support/grades, but it CANNOT introduce PREPARED or GOLD
@@ -208,7 +213,8 @@ bind_p2_original_native_triple_from_independent_full_pair(
     const M10P2FullNativeEvidence& measured_candidate,
     const m05m06_real::SourceIdentity& exact_current_p2_candidate_owner,
     std::int64_t candidate_exact_phase6_active_frames,
-    bool candidate_exact_file_based_lra_policy_attested)
+    bool candidate_exact_file_based_lra_policy_attested,
+    m05m06_real::D03D04NativeSeries* retain_actual_windows=nullptr)
 {
     if(!rebind_independent_original_native_pair(
         original,independent,exact_current_p2_candidate_owner))return {};
@@ -219,6 +225,6 @@ bind_p2_original_native_triple_from_independent_full_pair(
         std::move(original),measured_candidate,
         exact_current_p2_candidate_owner,
         candidate_exact_phase6_active_frames,
-        candidate_exact_file_based_lra_policy_attested);
+        candidate_exact_file_based_lra_policy_attested,retain_actual_windows);
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
