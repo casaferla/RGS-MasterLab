@@ -1,6 +1,7 @@
 #include "internal/l3_m08_frozen_amount_target.hpp"
 #include "internal/l3_m08_frozen_proximity_reporting.hpp"
 #include "internal/l3_m08_frozen_targeted_population.hpp"
+#include "internal/l3_m08_native_gold_proximity.hpp"
 #include <QtTest/QTest>
 #include <array>
 #include <bit>
@@ -33,6 +34,8 @@ private slots:
     void p02AlreadyMatchedDropoutAndRawNegativeLaw();
     void p02ConditionalRequestedGlobalDoesNotFabricateFull();
     void exact27M07M08M10PopulationUsesActualAmountAndEndpoint();
+    void nativeGoldProximityUsesFrozenMassAndCoverage();
+    void nativeGoldProximityHandlesClampingAndAlreadyClose();
 };
 void FrozenM08AmountTest::frozenFourDomainsAndAmountValidation() {
     auto a=m08::create_amount_config(0.5,ordered(0.8,0.4,0.1,0.0),1);
@@ -339,6 +342,88 @@ void FrozenM08AmountTest::noClaimOfProductTargetOrM13() {
         QVERIFY(!target.value->authorizes_solver_or_publication());
         QVERIFY(!target.value->achieved_z);
     }
+}
+void FrozenM08AmountTest::nativeGoldProximityUsesFrozenMassAndCoverage()
+{
+    std::vector<m08::AuthenticatedPairSlot> paired;
+    for(const auto& b:m07::kBindings) {
+        m08::AuthenticatedPairSlot slot{
+            std::string(b.binding_id),std::string(b.source_feature_id),
+            "test-definition",true,{}};
+        const auto n=b.component_share==m07::ComponentShare::thirds?
+            std::size_t{3}:std::size_t{1};
+        for(std::size_t i=0;i<n;++i)
+            slot.configured.push_back({
+                true,1.0,{2.0*b.scale},{0.0},b.scale,true});
+        paired.push_back(std::move(slot));
+    }
+    const std::array<bool,4> requested{{true,true,true,true}};
+    const auto half=m08::measure_native_gold_proximity(paired,requested,true);
+    QVERIFY(half.canonical_population_current);
+    for(std::size_t d=0;d<4;++d) {
+        QVERIFY(half.domains[d].proximity.comparable());
+        QVERIFY(std::abs(*half.domains[d].proximity.raw-0.5)<1e-12);
+        QCOMPARE(*half.domains[d].effective_coverage,1.0);
+    }
+    // Support changes the effective weight exactly once.
+    paired[0].configured[0].paired_native_support=0.75;
+    paired[0].configured[0].current_candidate_z=0.0;
+    const auto weighted=m08::measure_native_gold_proximity(
+        paired,requested,true);
+    QVERIFY(weighted.domains[0].proximity.comparable());
+    QVERIFY(std::abs(*weighted.domains[0].effective_coverage-0.8)<1e-12);
+    QVERIFY(std::abs(*weighted.domains[0].proximity.raw-0.75)<1e-12);
+    paired[0].configured[0].current_candidate_z.reset();
+    const auto dropout=m08::measure_native_gold_proximity(paired,requested,true);
+    QCOMPARE(dropout.domains[0].proximity.reason,
+        m08::ProximityReason::candidate_required_component_missing);
+    QVERIFY(!dropout.domains[0].proximity.raw);
+    QCOMPARE(dropout.domains[0].effective_coverage,
+             weighted.domains[0].effective_coverage);
+    QVERIFY(dropout.domains[1].proximity.comparable());
+    paired[0].configured[0].paired_native_support=0.0;
+    const auto insufficient=m08::measure_native_gold_proximity(
+        paired,requested,true);
+    QVERIFY(!insufficient.domains[0].proximity.comparable());
+    QVERIFY(*insufficient.domains[0].effective_coverage<0.60);
+    QVERIFY(!m08::measure_native_gold_proximity(
+        paired,requested,false).canonical_population_current);
+    paired.back().binding_id="wrong-binding";
+    QVERIFY(!m08::measure_native_gold_proximity(
+        paired,requested,true).canonical_population_current);
+}
+void FrozenM08AmountTest::nativeGoldProximityHandlesClampingAndAlreadyClose()
+{
+    std::vector<m08::AuthenticatedPairSlot> paired;
+    for(const auto& b:m07::kBindings) {
+        m08::AuthenticatedPairSlot slot{
+            std::string(b.binding_id),std::string(b.source_feature_id),
+            "test-definition",true,{}};
+        const auto n=b.component_share==m07::ComponentShare::thirds?
+            std::size_t{3}:std::size_t{1};
+        for(std::size_t i=0;i<n;++i)
+            slot.configured.push_back({
+                true,1.0,{12.0*b.scale},{0.0},6.0*b.scale,true});
+        paired.push_back(std::move(slot));
+    }
+    const std::array<bool,4> requested{{true,false,false,false}};
+    auto report=m08::measure_native_gold_proximity(paired,requested,true);
+    QVERIFY(report.domains[0].proximity.comparable());
+    QCOMPARE(*report.domains[0].proximity.raw,0.0);
+    QVERIFY(!report.domains[1].requested);
+    for(auto& slot:paired)
+        for(auto& c:slot.configured) {
+            c.prepared.z=0.0;c.current_candidate_z=0.0;
+        }
+    report=m08::measure_native_gold_proximity(paired,requested,true);
+    QCOMPARE(report.domains[0].proximity.reason,
+        m08::ProximityReason::proximity_already_matched);
+    QCOMPARE(*report.domains[0].proximity.raw,1.0);
+    paired[0].configured[0].current_candidate_z=1.0;
+    report=m08::measure_native_gold_proximity(paired,requested,true);
+    QCOMPARE(report.domains[0].proximity.reason,
+        m08::ProximityReason::proximity_undefined_initial_already_matched_candidate_departure);
+    QVERIFY(!report.domains[0].proximity.raw);
 }
 } // namespace
 } // namespace rgsml::tests
