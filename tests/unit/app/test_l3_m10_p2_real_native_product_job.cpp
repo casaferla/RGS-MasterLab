@@ -1013,6 +1013,17 @@ allNativeTripleOwnersAgreeBeforeBuildingAnyFeature() {
     all.s01_s02.prepared.owner=owners[0];
     all.s01_s02.reference.owner=owners[1];
     all.s01_s02.actual_candidate.owner=owners[2];
+    auto fresh=all;
+    const native::SourceIdentity freshOwner{"new-independent-master",6U,true};
+    QVERIFY(m10::rebind_original_candidate_owner(fresh,owners[2],freshOwner));
+    QVERIFY(m10::exact_source_owner_equal(fresh.m19.actual_candidate.owner,freshOwner));
+    QVERIFY(m10::exact_source_owner_equal(fresh.d10_d12.source_owner[2],freshOwner));
+    QVERIFY(m10::exact_source_owner_equal(fresh.t01.actual_sources[0].owner,owners[0]));
+    QVERIFY(!m10::rebind_original_candidate_owner(fresh,owners[2],freshOwner));
+    auto wrong=all;
+    ++wrong.d07_d09.current_sources[2].owner.generation;
+    QVERIFY(!m10::rebind_original_candidate_owner(wrong,owners[2],freshOwner));
+    QVERIFY(m10::exact_source_owner_equal(wrong.m19.actual_candidate.owner,owners[2]));
     const auto only_missing_definitions=
         m10::bind_all_original_real_native_p2_triple(all);
     QCOMPARE(only_missing_definitions.reason,
