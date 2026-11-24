@@ -26,6 +26,8 @@ namespace {
 namespace a=rgsml::app::l3_automatch;
 namespace m12=a::m12_frozen;
 namespace m13=a::m13_frozen;
+namespace m07_frozen=a::m07_frozen;
+namespace m08_frozen=a::m08_frozen;
 [[nodiscard]] core::Uuid uuid(const char* s) {
     auto x=core::Uuid::parse(s);Q_ASSERT(x);return *x.value();
 }
