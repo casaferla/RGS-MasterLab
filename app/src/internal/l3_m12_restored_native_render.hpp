@@ -106,7 +106,6 @@ render_restored_m12_full_native_pcm_once(
                    node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
                    !node.semantic_node_id()||
                    node.semantic_node_id()->is_nil()||
-                   node.module_type_id()=="rgsml.dsp.gain"||
                    node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter")
                     return false;
             } else if(node.provenance()!=dsp::ModuleProvenance::MANUAL||
