@@ -617,17 +617,17 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         {-12.0,a::m05m06_real::Readiness::measured};
     definition_fixture.t02_t06.exact_common={20.0,18000.0};
     definition_fixture.t02_t06.exact_accepted_density_floor=1e-12;
-    const auto retained=m10::retain_original_native_definitions(definition_fixture);
-    QCOMPARE(retained.t01.authoritative_primary_grid.size(),std::size_t{1});
-    QVERIFY(!retained.t01.actual_sources[2].integrated_lufs.ready());
-    const auto definition_content=m10::exact_original_native_definition_content(retained);
+    const auto retained_definitions=m10::retain_original_native_definitions(definition_fixture);
+    QCOMPARE(retained_definitions.t01.authoritative_primary_grid.size(),std::size_t{1});
+    QVERIFY(!retained_definitions.t01.actual_sources[2].integrated_lufs.ready());
+    const auto definition_content=m10::exact_original_native_definition_content(retained_definitions);
     QVERIFY(!definition_content.empty());
     QVERIFY(definition_content==
         m10::exact_original_native_definition_content(definition_fixture));
-    auto changed_definition=retained;
+    auto changed_definition=retained_definitions;
     changed_definition.t01.exact_native_band_support_prepared_gold[0][0]=0.5;
     QVERIFY(definition_content!=m10::exact_original_native_definition_content(changed_definition));
-    changed_definition=retained;
+    changed_definition=retained_definitions;
     changed_definition.d07_d09.per_descriptor_source_grade[0][2]=true;
     QVERIFY(definition_content!=m10::exact_original_native_definition_content(changed_definition));
     auto stale_original=original_three_way();
