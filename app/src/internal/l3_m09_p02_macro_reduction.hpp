@@ -25,8 +25,8 @@ struct MacroComponent final {
     double paired_support{};
 };
 struct MacroGroup final {
-    // Canonical order is D01,D02,D03,D04,D05,D06; first has 3
-    // P10/P90/P95 centered coordinates, each remaining group scalar.
+    // Canonical order D01..D06: D01 centered P10/P90/P95 and
+    // D04 local crest P10/P50/P90 are both single three-component groups.
     std::vector<MacroComponent> components;
 };
 enum class MacroSeedReason:std::uint8_t {
@@ -52,7 +52,7 @@ struct MacroReductionSeed final {
     bool any_expansion=false;
     for(std::size_t g=0;g<source.size();++g) {
         const auto& components=source[g].components;
-        if(components.size()!=(g==0?3U:1U))
+        if(components.size()!=((g==0U||g==3U)?3U:1U))
             return {{},MacroSeedReason::invalid_frozen_component,0};
         bool group_reduction=false;
         bool group_expansion=false;
@@ -102,7 +102,7 @@ struct MacroReductionSeed final {
                 group_active_mass+=weight;
             }
         }
-        // D01 vector is ONE coherent group, not three independent votes.
+        // Each vector is ONE coherent group, not three independent votes.
         if(group_reduction&&!group_expansion&&group_active_mass>0.0) {
             ++group_count;
             weighted_sum+=group_weighted_sum;
