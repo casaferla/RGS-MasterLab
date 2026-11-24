@@ -36,6 +36,7 @@ private slots:
     void newRealRenderAndIndependentAnalysisRemainNonverified();
     void optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput();
     void frozenQtpTwentySevenCanonicalCategories();
+    void frozenQtpNativeScalarBoundaries();
 };
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
@@ -313,7 +314,7 @@ void M13FreshNativeProbeTest::frozenQtpTwentySevenCanonicalCategories()
 {
     using namespace m13;
     static_assert(kQtpBindings.size()==m07_frozen::kBindings.size());
-    QCOMPARE(kQtpState,std::string_view("PROVISIONAL"));
+    QVERIFY(kQtpState==std::string_view("PROVISIONAL"));
     QCOMPARE(kQtpBindings[0].category,QtpCategory::band_profile_db);
     QCOMPARE(kQtpBindings[1].category,QtpCategory::slope_db_per_octave);
     QCOMPARE(kQtpBindings[5].category,QtpCategory::slope_db_per_octave);
@@ -341,6 +342,54 @@ void M13FreshNativeProbeTest::frozenQtpTwentySevenCanonicalCategories()
              QtpOutcome::mismatch);
     QCOMPARE(compare_qtp_t1_profile(equal,std::span<const double>{}).outcome,
              QtpOutcome::unavailable);
+}
+
+void M13FreshNativeProbeTest::frozenQtpNativeScalarBoundaries()
+{
+    using namespace m13;
+    const auto scalar=[](QtpCategory cat,double ref,double actual) {
+        return compare_qtp_native_scalar(cat,ref,actual).outcome;
+    };
+    QCOMPARE(scalar(QtpCategory::loudness_lu,-12.0,-12.009),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::loudness_lu,-12.0,-12.02),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::lra_lu,3.0,3.019),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::lra_lu,3.0,3.021),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::generic_db,8.0,8.009),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::true_peak_db_tp,-1.0,-0.989),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::slope_db_per_octave,-2.0,-1.99981),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::slope_db_per_octave,-2.0,-1.9997),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::positive_hz,1000.0,1000.009),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::positive_hz,1000.0,1000.02),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::positive_ms,10.0,10.00009),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::positive_ms,10.0,0.0),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::positive_width_ratio,0.0,1e-7),
+             QtpOutcome::mismatch); // exact MONO endpoint
+    QCOMPARE(scalar(QtpCategory::positive_width_ratio,1.0,1.000009),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::correlation_raw_rho,0.7,0.700019),
+             QtpOutcome::pass);
+    QCOMPARE(scalar(QtpCategory::correlation_raw_rho,0.7,0.700021),
+             QtpOutcome::mismatch);
+    QCOMPARE(scalar(QtpCategory::correlation_raw_rho,1.0,0.999999),
+             QtpOutcome::mismatch); // exact Fisher endpoint
+    QCOMPARE(compare_qtp_native_scalar(
+        QtpCategory::positive_hz,100.0,std::nullopt).outcome,
+        QtpOutcome::unavailable);
+    QCOMPARE(compare_qtp_native_scalar(
+        QtpCategory::band_profile_db,1.0,1.0).outcome,
+        QtpOutcome::unavailable);
 }
 
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
