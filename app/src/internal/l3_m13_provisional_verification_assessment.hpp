@@ -58,7 +58,8 @@ assess_provisional_m13_product_fresh_evidence(
         r.binding_key=std::move(binding);r.predicate=predicate;
         reasons.push_back(std::move(r));
     };
-    if(!exact_product_m12_owner_still_current_after_worker) {
+    if(!exact_product_m12_owner_still_current_after_worker||
+       !fresh.matches_executed_request(request)) {
         state.exact_dependency_known_changed=true;
         record(VerificationStage::dependency_currentness,
             "STALE_DEPENDENCY","/currentM12ProductOwner",
@@ -74,6 +75,7 @@ assess_provisional_m13_product_fresh_evidence(
     const auto& owner=request.exact_materialized_preview_owner();
     const auto& source=owner.exact_prepared_owner;
     const bool correctFresh=source&&owner.replay&&
+        fresh.matches_executed_request(request)&&
         fresh.logical_verification_evaluations==1U&&
         fresh.fresh_full_master_pcm.view().absolute_range()==
             source->view().absolute_range()&&
