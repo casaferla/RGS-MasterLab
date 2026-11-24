@@ -643,6 +643,13 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     prediction->candidate_generation=winner_owner.generation;
     prediction->exact_candidate_ticket=preserved.value()->ticket_identity();
     prediction->exact_m07_generation=generation;
+    auto winner_definitions=original_three_way();
+    QVERIFY(m10::rebind_original_candidate_owner(winner_definitions,owner,winner_owner));
+    prediction->original_definition_authority=
+        std::make_shared<const m10::P2OriginalRealNativeTriple>(
+            m10::retain_original_native_definitions(winner_definitions));
+    prediction->exact_definition_authority_content=
+        m10::exact_original_native_definition_content(*prediction->original_definition_authority);
     const auto winning_linked=preserved.value()->exact_linked_graph_content();
     const auto winning_execution=preserved.value()->exact_execution_graph_content();
     QVERIFY(winning_linked&&winning_execution);
@@ -665,6 +672,12 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         accepted_fixture,measured_fixture,worker,native_graph,generation);
     QVERIFY(staged);
     QVERIFY(!staged.value()->authorizes_project_mutation());
+    auto forged_prediction=std::make_shared<m10::NativePredictionSnapshot>(*prediction);
+    forged_prediction->exact_definition_authority_content.back()^=0x01;
+    auto forged_winner=measured_fixture;
+    forged_winner.native_prediction=std::move(forged_prediction);
+    QVERIFY(!m12::stage_preserved_native_measured_winner(
+        accepted_fixture,forged_winner,worker,native_graph,generation));
     auto changed_graph=native_graph;
     QVERIFY(changed_graph.linked.set_user_bypass(linked_id,true));
     QVERIFY(!m12::stage_preserved_native_measured_winner(
