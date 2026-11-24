@@ -59,6 +59,16 @@ observe_original_owned_full_source_once(
                exact_full_pcm.view().frame_count().value())||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return fail("L3_ORIGINAL_NATIVE_SOURCE_OWNER_OR_GRID_STALE");
+    const auto native_bandwidth=analysis::native_tonal_measurement_bandwidth(
+        static_cast<std::uint32_t>(exact_full_pcm.view().format().sample_rate().value()));
+    if(!native_bandwidth||!std::isfinite(exact_common_tonal_bandwidth.low_hz)||
+       !std::isfinite(exact_common_tonal_bandwidth.high_hz)||
+       !(exact_common_tonal_bandwidth.high_hz>exact_common_tonal_bandwidth.low_hz)||
+       exact_common_tonal_bandwidth.low_hz<native_bandwidth->low_hz||
+       exact_common_tonal_bandwidth.high_hz>native_bandwidth->high_hz||
+       !std::isfinite(exact_m05_phase6_density_floor)||
+       !(exact_m05_phase6_density_floor>0.0))
+        return fail("L3_ORIGINAL_NATIVE_SOURCE_BANDWIDTH_OR_FLOOR_INVALID");
     auto native=measure_real_full_owned_pcm_native_once(
         exact_full_pcm,std::move(canonical_native_spec),cancellation);
     if(!native)return R::failure(*native.error());
