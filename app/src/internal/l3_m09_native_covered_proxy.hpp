@@ -1,6 +1,7 @@
 #pragma once
 #include "l3_m09_native_family_exact_content.hpp"
 #include "l3_m09_pre_render_proxy.hpp"
+#include "l3_m09_native_family_inventory.hpp"
 
 namespace rgsml::app::l3_automatch::m09_frozen {
 struct NativeComponentCoverage final {
@@ -251,6 +252,25 @@ bind_native_family_candidate(
     result.recipe.exact_inventory=*inventory;
     result.recipe.constraints=std::move(constraints);
     return result;
+}
+// Production binding derives the complete active inventory from actual
+// role payloads. It never trims fields to force a candidate under 48.
+[[nodiscard]] inline std::optional<BoundNativeFamilyCandidate>
+bind_native_family_candidate_with_inventory(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const NativeFamilySeedBank& bank,const AbstractFamilyChoice& family,
+    std::span<const NativeRoleAllocation> allocations,
+    std::span<const NativeRoleCoordinateAuthority> role_keys,
+    std::span<const NativeBandCoordinateAuthority> band_keys,
+    std::uint64_t revision,std::int64_t rate,
+    CandidateCarrier identity,const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    m10_frozen::AuthoritativeCostInput constraints)
+{
+    const auto requests=derive_native_family_coordinate_requests(bank,family,role_keys,band_keys,rate);
+    if(!requests||requests->size()>m10_frozen::kMaxActiveCoordinates)return {};
+    return bind_native_family_candidate(std::move(registry),bank,family,allocations,*requests,
+        revision,rate,std::move(identity),fixed,amount,requested,std::move(constraints));
 }
 struct BoundNativeSelectedBatch final {
     m10_frozen::BoundLegalCombinedResult selected;
