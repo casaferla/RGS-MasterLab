@@ -28,6 +28,10 @@ struct M12PreparedProjectTransaction;
 struct M12ImmutableProductPreviewTicket;
 }
 
+namespace l3_automatch::m13_frozen {
+class M13ActualNativeWorkerCompletion;
+}
+
 class SourceSelectionViewModel;
 class GoldSelectionViewModel;
 class AuditionRegionViewModel;
@@ -219,6 +223,13 @@ public:
         bool independent_reference_and_scopes_current,
         l3_automatch::m13_frozen::MandatoryHardPredicate m11_protected,
         l3_automatch::m13_frozen::MandatoryHardPredicate other_hard_safety);
+
+    // Seal only the immutable completion produced by the actual worker,
+    // after rechecking the Product epoch and independent reference owner.
+    [[nodiscard]] core::Result<
+        l3_automatch::m13_frozen::M13ProvisionalDiagnosticEnvelope>
+    seal_private_m13_actual_native_completion(
+        const l3_automatch::m13_frozen::M13ActualNativeWorkerCompletion& completion);
 
 signals:
     void changed();
