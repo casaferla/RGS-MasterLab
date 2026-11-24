@@ -68,6 +68,7 @@ private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeTypedSeedBuildsRealRefinementTrial();
+    void nativeM20MetadataUsesSixRateGeometry();
     void adaptiveRamCacheBudgetPreservesColdRender();
     void canonicalP2TrialTicketsCover48OrderedParameters();
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
@@ -76,6 +77,33 @@ private slots:
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
     void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
+void P2RealNativeProductTest::nativeM20MetadataUsesSixRateGeometry() {
+    for(const auto fs:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
+        const auto frame=analysis::native_tonal_frame_geometry(fs);
+        const auto bandwidth=analysis::native_tonal_measurement_bandwidth(fs);
+        QVERIFY(frame&&bandwidth);
+        QVERIFY(frame->window>0U&&frame->fft>=frame->window&&frame->hop>0U);
+        QCOMPARE(bandwidth->low_hz,20.0);
+        QCOMPARE(bandwidth->high_hz,fs==44100U?19845.0:20000.0);
+        for(const int denominator:{3,12}) {
+            const auto grid=analysis::native_tonal_fractional_grid(fs,denominator);
+            QVERIFY(!grid.empty());
+            for(const auto& band:grid) {
+                QVERIFY(band.low_hz<band.center_hz&&band.center_hz<band.high_hz);
+                QVERIFY(band.high_hz>bandwidth->low_hz&&band.low_hz<bandwidth->high_hz);
+                QCOMPARE(band.fully_supported,band.low_hz>=bandwidth->low_hz&&
+                         band.high_hz<=bandwidth->high_hz);
+                QVERIFY(!band.normalized_fraction.value);
+                QCOMPARE(band.normalized_fraction.state,
+                    analysis::TonalStereoMetricState::UNAVAILABLE_AUTHORITATIVE_SUPPORT);
+            }
+        }
+        QVERIFY(analysis::native_tonal_fractional_grid(fs,6).empty());
+    }
+    QVERIFY(!analysis::native_tonal_frame_geometry(32000));
+    QVERIFY(!analysis::native_tonal_measurement_bandwidth(32000));
+    QVERIFY(analysis::native_tonal_fractional_grid(32000,12).empty());
+}
 void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBounds() {
     namespace m09=a::m09_frozen;
     using F=m09::NativeField;
