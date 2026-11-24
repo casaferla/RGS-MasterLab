@@ -8,6 +8,7 @@
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_native_fixed_worker.hpp"
 #include "internal/l3_m12_preserved_native_winner.hpp"
+#include "internal/l3_m09_native_automatic_coordinate.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -65,6 +66,7 @@ class P2RealNativeProductTest final:public QObject {
     Q_OBJECT
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
+    void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void adaptiveRamCacheBudgetPreservesColdRender();
     void canonicalP2TrialTicketsCover48OrderedParameters();
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
@@ -73,6 +75,69 @@ private slots:
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
     void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
+void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBounds() {
+    namespace m09=a::m09_frozen;
+    using F=m09::NativeField;
+    const auto gain=dsp::GainParameters::create(0.0);
+    const auto transient=dsp::TransientShaperParameters::create(0.5,-0.5);
+    const auto stereo=dsp::StereoMsParameters::create_default();
+    const auto compressor=dsp::CompressorParameters::create_default();
+    QVERIFY(gain&&transient&&stereo&&compressor);
+    const auto apply=[](const dsp::ModuleParameterPayload& p,
+                         std::vector<m09::NativePhysicalField> fields){
+        return m09::apply_native_physical_fields(p,fields);
+    };
+    auto moved=apply(*gain.value(),{{F::gain_db,{},2.0}});
+    QVERIFY(moved);
+    QCOMPARE(std::get<dsp::GainParameters>(*moved).gain_db(),2.0);
+    QVERIFY(!apply(*gain.value(),{{F::gain_db,{},6.1}}));
+    QVERIFY(!apply(*gain.value(),{{F::gain_db,{},1.0},{F::gain_db,{},2.0}}));
+    moved=apply(*transient.value(),{{F::attack_amount_db,{},2.0},{F::sustain_amount_db,{},-1.0}});
+    QVERIFY(moved);
+    QCOMPARE(std::get<dsp::TransientShaperParameters>(*moved).attack_amount_db(),2.0);
+    QCOMPARE(std::get<dsp::TransientShaperParameters>(*moved).sustain_amount_db(),-1.0);
+    QVERIFY(!apply(*transient.value(),{{F::attack_ms,{},3.0}}));
+    QVERIFY(!apply(*stereo.value(),{{F::low_width_percent,{},50.0}}));
+    moved=apply(*stereo.value(),{{F::side_gain_db,{},1.5}});
+    QVERIFY(moved);
+    QCOMPARE(std::get<dsp::StereoMsParameters>(*moved).side_gain_db(),1.5);
+    QVERIFY(!apply(*stereo.value(),{{F::side_gain_db,{},2.0}}));
+    moved=apply(*compressor.value(),{{F::ratio,{},1.5},{F::attack_ms,{},12.0}});
+    QVERIFY(moved);
+    QCOMPARE(std::get<dsp::CompressorParameters>(*moved).ratio(),1.5);
+    QCOMPARE(std::get<dsp::CompressorParameters>(*moved).makeup_gain_db(),0.0);
+    QVERIFY(!apply(*compressor.value(),{{F::ratio,{},2.1}}));
+    QVERIFY(!apply(*compressor.value(),{{F::makeup_gain_db,{},1.0}}));
+
+    const auto band_id=uuid("bd000000-0000-4000-8000-000000000011");
+    const auto eqband=dsp::EqBandParameters::create(band_id,true,dsp::EqFilterType::BELL,
+        dsp::EqRouting::SIDE,dsp::BellPayload{1000.0,0.0,0.707});
+    QVERIFY(eqband);
+    const auto eq=dsp::ParametricEqParameters::create({*eqband.value()});
+    QVERIFY(eq);
+    moved=apply(*eq.value(),{{F::frequency_hz,band_id,1200.0},{F::gain_db,band_id,-1.5}});
+    QVERIFY(moved);
+    const auto& actual_band=std::get<dsp::ParametricEqParameters>(*moved).bands().front();
+    QCOMPARE(actual_band.band_id(),band_id);
+    QCOMPARE(actual_band.routing(),dsp::EqRouting::SIDE);
+    QCOMPARE(std::get<dsp::BellPayload>(actual_band.payload()).frequency_hz,1200.0);
+    QVERIFY(!apply(*eq.value(),{{F::gain_db,band_id,2.0}}));
+    QVERIFY(!apply(*eq.value(),{{F::shelf_slope,band_id,0.5}}));
+    dsp::DynamicEqBandSpec spec;
+    spec.band_id=band_id;
+    spec.control.range_db=-1.0;
+    const auto dynamic_band=dsp::DynamicEqBandParameters::create(spec);
+    QVERIFY(dynamic_band);
+    const auto dynamic=dsp::DynamicEqParameters::create({*dynamic_band.value()});
+    QVERIFY(dynamic);
+    moved=apply(*dynamic.value(),{{F::range_db,band_id,-2.0},{F::threshold_dbfs,band_id,-30.0}});
+    QVERIFY(moved);
+    QCOMPARE(std::get<dsp::DynamicEqParameters>(*moved).bands().front().spec().control.range_db,-2.0);
+    QVERIFY(!apply(*dynamic.value(),{{F::range_db,band_id,1.0}}));
+    QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
+    QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
+    QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto registry_value=dsp::ModuleRegistry::create_dsp_package_v1();
