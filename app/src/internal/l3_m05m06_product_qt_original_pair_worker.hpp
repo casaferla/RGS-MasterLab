@@ -48,6 +48,11 @@ measure_product_qt_original_pair_native_worker(
            stamp.reference_selection_revision||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return fail("L3_PRODUCT_NATIVE_PAIR_CAPTURE_OR_SCOPE_STALE");
+    const auto common=m05m06_real::original_native_common_tonal_bandwidth(
+        static_cast<std::uint32_t>(captured.source.prepared->view().format().sample_rate().value()),
+        captured.reference.sample_rate_hz);
+    if(!common||!m05m06_real::native_common_contains(*common,exact_m07_common_tonal))
+        return fail("L3_PRODUCT_NATIVE_PAIR_COMMON_BANDWIDTH_INVALID");
     auto prepared=observe_original_owned_full_source_once(
         captured.source.prepared->buffer(),
         native_product_original_identity(
