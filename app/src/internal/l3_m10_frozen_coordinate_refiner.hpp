@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -30,6 +31,7 @@ struct Coordinate final {
     std::vector<std::uint8_t> stable_parameter_id;
     double normalized_u{};
 };
+struct NativePredictionSnapshot;
 struct MeasuredOrderKey final {
     double total_j{};
     double target_j{};
@@ -37,6 +39,8 @@ struct MeasuredOrderKey final {
     std::uint32_t active_owned_modules{};
     std::vector<std::uint8_t> canonical_current_tuple;
     std::vector<std::uint8_t> topology_evidence_identity;
+    // Shared immutable real analysis, not part of the frozen ranking.
+    std::shared_ptr<const NativePredictionSnapshot> native_prediction{};
 };
 [[nodiscard]] inline std::optional<std::int64_t> quantize_q1e9(
     double value) noexcept
