@@ -80,6 +80,9 @@ measure_real_full_owned_pcm_native_once(
     const auto rate=static_cast<std::uint32_t>(
         view.format().sample_rate().value());
     const auto channels=view.format().channel_count();
+    const auto native_geometry=analysis::native_tonal_frame_geometry(rate);
+    if(!native_geometry||native_geometry->fft!=spec.exact_m20_fft_size)
+        return fail("L3_ONCE_NATIVE_FFT_METADATA_MISMATCH");
     if(spec.phase6_active_pcm_frames>
        static_cast<std::uint64_t>(view.frame_count().value()))
         return fail("L3_ONCE_ACTIVE_SCOPE_NOT_CURRENT");
