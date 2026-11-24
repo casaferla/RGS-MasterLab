@@ -5,6 +5,7 @@
 #include "l3_m13_actual_native_assessment.hpp"
 #include "l3_m13_owned_native_spec.hpp"
 #include "l3_m10_exact_native_graph_content.hpp"
+#include "l3_m10_original_definition_authority.hpp"
 #include <memory>
 #include <utility>
 
@@ -48,6 +49,12 @@ public:
                 "L3_M13_ACTUAL_WORKER_MISSING_ACCEPTED_NATIVE_EVIDENCE"});
         const auto& replay=input.request.exact_materialized_preview_owner().replay;
         const auto& prediction=*input.accepted_winner.native_prediction;
+        if(!prediction.original_definition_authority||
+           prediction.exact_definition_authority_content.empty()||
+           m10_frozen::exact_original_native_definition_content(*prediction.original_definition_authority)!=
+               prediction.exact_definition_authority_content)
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_ORIGINAL_DEFINITIONS_UNAVAILABLE"});
         const m05m06_real::SourceIdentity accepted{
             prediction.candidate_resource_identity,prediction.candidate_generation,true};
         if(!replay||!m10_frozen::valid_key(input.accepted_winner)||
@@ -104,7 +111,7 @@ public:
         if(!fresh)return R::failure(*fresh.error());
         auto diagnosis=assess_m13_actual_native_completion(
             input.request,*fresh.value(),*input.independent_pair,
-            input.source_reference_owner,std::move(input.original_definitions),
+            input.source_reference_owner,*prediction.original_definition_authority,
             std::move(input.exact_m07_generation),input.accepted_scope_revision,
             input.accepted_winner,input.accepted_winner_checksum,
             input.accepted_protection_checksum,input.accepted_winner_evidence_attested,
