@@ -29,6 +29,7 @@ struct OriginalOwnedNativeSourceFacts final {
     m05m06_real::D03D04NativeSeries original_d03_d04_window_series;
     m05m06_real::D03D04Selectors original_d03_d04;
     std::int64_t exactly_attested_phase6_active_frames{};
+    m05m06_real::CommonTonalBandwidth exact_profile_common_bandwidth{};
     [[nodiscard]] constexpr bool authorizes_m10_or_m13()
         const noexcept{return false;}
 };
@@ -69,6 +70,9 @@ observe_original_owned_full_source_once(
        !std::isfinite(exact_m05_phase6_density_floor)||
        !(exact_m05_phase6_density_floor>0.0))
         return fail("L3_ORIGINAL_NATIVE_SOURCE_BANDWIDTH_OR_FLOOR_INVALID");
+    if(!bind_product_native_profile_common(canonical_native_spec,
+           {exact_common_tonal_bandwidth.low_hz,exact_common_tonal_bandwidth.high_hz}))
+        return fail("L3_ORIGINAL_NATIVE_PROFILE_COMMON_BANDWIDTH_CONFLICT");
     auto native=measure_real_full_owned_pcm_native_once(
         exact_full_pcm,std::move(canonical_native_spec),cancellation);
     if(!native)return R::failure(*native.error());
@@ -95,6 +99,6 @@ observe_original_owned_full_source_once(
     return R::success(OriginalOwnedNativeSourceFacts{
         std::move(*imported.source),std::move(*native.value()),
         std::move(tonal),std::move(lra),std::move(native_windows),
-        std::move(rms),active});
+        std::move(rms),active,exact_common_tonal_bandwidth});
 }
 } // namespace rgsml::app::l3_automatch
