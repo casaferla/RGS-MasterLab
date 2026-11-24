@@ -26,10 +26,15 @@ bind_m13_fresh_native_population(
     const OfflineProductOwnerStamp& exact_source_reference_owner,
     m10_frozen::P2OriginalRealNativeTriple original_definitions,
     std::string exact_phase6_m07_generation,
+    const std::string& exact_accepted_source_reference_scope_revision,
     bool current_product_dependencies_attested,
     bool exact_file_based_lra_policy_attested)
 {
-    if(!current_product_dependencies_attested||
+    const auto& replay=request.exact_materialized_preview_owner().replay;
+    if(!replay||exact_accepted_source_reference_scope_revision.empty()||
+       replay->exact_source_reference_scope_revision!=
+           exact_accepted_source_reference_scope_revision||
+       !current_product_dependencies_attested||
        exact_phase6_m07_generation.empty()||
        !fresh.additional_native||
        !original_pair_matches_product_owner(independent_pair,
