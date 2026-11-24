@@ -78,6 +78,18 @@ make_real_d03_d04_m07_m08_slots(const D03D04FullEvidence& e)
             pair->reference.d04_type7_crest_p10_p50_p90_db[i],
             candidate.d04_type7_crest_p10_p50_p90_db[i],
             pair->paired_d04_support);
+    auto& rms=feature_slots[0].configured.front().candidate_native;
+    rms.value=candidate.d03_type7_rms_p95_minus_p10_db;
+    rms.valid_count=candidate.valid_rms_windows;
+    rms.configured_count=candidate.complete_native_windows;
+    rms.selector="P95-P10";
+    for(std::size_t i=0;i<3U;++i) {
+        auto& crest=feature_slots[1].configured[i].candidate_native;
+        crest.value=candidate.d04_type7_crest_p10_p50_p90_db[i];
+        crest.valid_count=candidate.valid_crest_windows;
+        crest.configured_count=candidate.complete_native_windows;
+        crest.selector=std::array<const char*,3>{{"P10","P50","P90"}}[i];
+    }
     return {std::move(feature_slots),D03D04SlotFailure::none};
 }
 } // namespace rgsml::app::l3_automatch::m05m06_real
