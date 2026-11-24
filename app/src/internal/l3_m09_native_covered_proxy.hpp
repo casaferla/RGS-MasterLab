@@ -67,4 +67,43 @@ struct NativeComponentCoverage final {
     operands.exact_m05_m08_and_m10_operands_attested=true;
     return make_pre_render_proxy(operands);
 }
+// The first complete capability adapter covers only L01 with a
+// directionally compatible uniform Gain. Neither L02 nor L03 is
+// inferred from this knob; other roles need their own evidence map.
+[[nodiscard]] inline std::optional<std::vector<NativeComponentCoverage>>
+native_gain_coverage(const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    const NativeTypedSeed& typed)
+{
+    const auto assessment=m11_frozen::assess_native_fixed_targets(fixed,amount,requested);
+    const auto guards=m11_frozen::bind_native_fixed_to_candidate(fixed,fixed.measured_fixed,amount);
+    if(!assessment.valid_current||!guards||!native_seed_inventory(typed))return {};
+    const auto nodes=typed.seed.linked.instances();
+    const dsp::GainParameters* gain=nullptr;
+    for(std::size_t i=0;i<nodes.size();++i) {
+        if(const auto* p=std::get_if<dsp::GainParameters>(&typed.seed.bindings[i].parameters)) {
+            if(gain||!nodes[i].active())return {};
+            gain=p;
+        } else return {}; // only the NONE / Gain topology is attested here
+    }
+    std::vector<NativeComponentCoverage> out;
+    std::size_t offset=0;
+    for(const auto& slot:fixed.measured_fixed) {
+        NativeComponentCoverage c{slot.binding_id,slot.exact_feature_dependency,
+            std::vector<bool>(slot.configured.size(),false)};
+        if(gain&&assessment.corrective[3]&&slot.binding_id=="rgsml.reference-match.binding.loudness.l01") {
+            if(slot.configured.size()!=1U)return {};
+            const auto& p=slot.configured.front();
+            const auto& guard=(*guards)[offset];
+            if(guard.required_in_frozen_k&&!guard.protected_by_m11_mask&&guard.exact_current) {
+                const auto target=m08_frozen::desired_for_component(amount,3,p.prepared,p.reference);
+                if(!target.value||!p.current_candidate_z)return {};
+                const double delta=target.value->constraint_adjusted_z.value_or(target.value->desired_z)-*p.current_candidate_z;
+                c.covered[0]=(delta>0.0&&gain->gain_db()>0.0)||(delta<0.0&&gain->gain_db()<0.0);
+            }
+        }
+        offset+=slot.configured.size();out.push_back(std::move(c));
+    }
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
