@@ -5,8 +5,7 @@
 #include "l3_m08_frozen_targeted_population.hpp"
 #include "l3_m11_p03_protected_no_regression.hpp"
 #include "l3_m11_native_stereo_hard_safety.hpp"
-#include "l3_m06_real_windowed_rms_crest.hpp"
-#include "l3_product_native_one_pass.hpp"
+#include "l3_native_seed_measurement_carriers.hpp"
 #include <cmath>
 #include <optional>
 #include <memory>
