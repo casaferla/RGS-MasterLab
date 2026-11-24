@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include <utility>
 
 namespace rgsml::app::l3_automatch::m09_frozen {
 enum class NativeField {
@@ -182,4 +183,21 @@ apply_dynamic_eq(const dsp::DynamicEqParameters& seed,
     return as_payload(dsp::DynamicEqParameters::create(std::move(bands)));
 }
 } // namespace native_payload_detail
+// A complete physical vector is applied once per module. Coupled
+// validation happens on the final typed payload, not intermediate edits.
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_native_physical_fields(
+    const dsp::ModuleParameterPayload& seed,
+    std::span<const NativePhysicalField> fields)
+{
+    if(!valid_native_physical_fields(fields))return std::nullopt;
+    using namespace native_payload_detail;
+    if(const auto* p=std::get_if<dsp::GainParameters>(&seed))return apply_gain(*p,fields);
+    if(const auto* p=std::get_if<dsp::TransientShaperParameters>(&seed))return apply_transient(*p,fields);
+    if(const auto* p=std::get_if<dsp::StereoMsParameters>(&seed))return apply_stereo(*p,fields);
+    if(const auto* p=std::get_if<dsp::CompressorParameters>(&seed))return apply_compressor(*p,fields);
+    if(const auto* p=std::get_if<dsp::ParametricEqParameters>(&seed))return apply_eq(*p,fields);
+    if(const auto* p=std::get_if<dsp::DynamicEqParameters>(&seed))return apply_dynamic_eq(*p,fields);
+    return std::nullopt; // P2 and WAV Export are outside AutoMatch
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
