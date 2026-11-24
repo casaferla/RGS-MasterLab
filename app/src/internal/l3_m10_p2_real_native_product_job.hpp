@@ -418,14 +418,8 @@ public:
         const auto linked=exact_linked_graph_content();
         const auto terminal=m10_frozen::exact_native_graph_content(final_p2_,p2_bindings_,*registry_);
         if(!fixed||!linked||!terminal)return std::nullopt;
-        m10_frozen::ExactCacheBytes out;
-        using namespace m10_frozen::p2_cache_detail;
-        append_exact_field(out,"rgsml.l3.native-execution-graph/1");
-        append_exact_field(out,std::to_string(max_block_frames_.value()));
-        append_exact_byte_field(out,*fixed);
-        append_exact_byte_field(out,*linked);
-        append_exact_byte_field(out,*terminal);
-        return out;
+        return m10_frozen::exact_native_execution_segments(
+            max_block_frames_.value(),*fixed,*linked,*terminal);
     }
     [[nodiscard]] bool preserves_user_terminal() const noexcept {
         return p2_bindings_.empty()||
