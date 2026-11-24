@@ -1001,6 +1001,12 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto scope_variant=spec_for_authoritative_bridge;
     const auto native_scope=m10::exact_native_analysis_scope_content(scope_variant);
     QVERIFY(native_scope);
+    auto scope_common=scope_variant;
+    scope_common.source_support.profile_common_bandwidth=analysis::NativeTonalBandwidth{20.0,18000.0};
+    const auto native_common=m10::exact_native_analysis_scope_content(scope_common);
+    QVERIFY(native_common&&native_common!=native_scope);
+    scope_common.source_support.profile_common_bandwidth->high_hz=19000.0;
+    QVERIFY(native_common!=m10::exact_native_analysis_scope_content(scope_common));
     ++scope_variant.phase6_active_pcm_frames;
     QVERIFY(native_scope!=m10::exact_native_analysis_scope_content(scope_variant));
     scope_variant=spec_for_authoritative_bridge;
