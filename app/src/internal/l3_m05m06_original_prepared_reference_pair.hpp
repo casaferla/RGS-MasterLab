@@ -64,6 +64,11 @@ measure_original_prepared_reference_native_once(
        &exact_current_prepared==&exact_independent_reference||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return fail("L3_ORIGINAL_PAIR_SAME_OR_UNATTESTED_SOURCE");
+    const auto common=m05m06_real::original_native_common_tonal_bandwidth(
+        static_cast<std::uint32_t>(exact_current_prepared.view().format().sample_rate().value()),
+        static_cast<std::uint32_t>(exact_independent_reference.view().format().sample_rate().value()));
+    if(!common||!m05m06_real::native_common_contains(*common,exact_m07_common_bandwidth))
+        return fail("L3_ORIGINAL_PAIR_COMMON_NATIVE_BANDWIDTH_INVALID");
     auto prepared=observe_original_owned_full_source_once(
         exact_current_prepared,std::move(prepared_current_product_owner),
         std::move(prepared_native_spec),exact_m07_common_bandwidth,
