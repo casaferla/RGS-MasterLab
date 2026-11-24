@@ -902,6 +902,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     // M07 Phase6 definitions MUST prevent a score.
     const auto original_three_way=[&]{
         m10::P2OriginalRealNativeTriple triple;
+        triple.t02_t06.exact_common={20.0,18000.0};
         const std::array<a::m05m06_real::SourceIdentity,3> owners{{
             source_owner,gold_owner,owner}};
         for(std::size_t k=0;k<3U;++k) {
