@@ -75,6 +75,19 @@ struct M13FreshProductMasterProbe final {
     double independent_m16_ceiling_db_tp{};
     std::uint32_t logical_verification_evaluations{1U};
     std::optional<M13FreshAdditionalNativeObservations> additional_native;
+    // Bind the worker output to the request it actually executed.
+    // Keeping the immutable ticket alive also prevents pointer ABA.
+    M13ImmutableProductFreshProbeRequest executed_request;
+    [[nodiscard]] bool matches_executed_request(
+        const M13ImmutableProductFreshProbeRequest& request)const noexcept
+    {
+        return &executed_request.exact_materialized_preview_owner()==
+                   &request.exact_materialized_preview_owner()&&
+               executed_request.exact_product_ownership_epoch()==
+                   request.exact_product_ownership_epoch()&&
+               executed_request.frozen_independent_m16_ceiling_db_tp()==
+                   request.frozen_independent_m16_ceiling_db_tp();
+    }
     [[nodiscard]] constexpr bool is_m13_verified() const noexcept
     {return false;}
     [[nodiscard]] constexpr bool is_qualification_receipt() const noexcept
@@ -150,7 +163,7 @@ run_fresh_m13_product_postmaterialization_probe(
                 std::move(n.d10_d12),std::move(n.s03_s06),
                 std::move(n.d07_d09),
                 std::move(n.selected_original_m20_ordinals),
-                exact_active_frames}});
+                exact_active_frames},admitted});
     }
     auto m19=analysis::measure_basic_level_full_resource(
         render.value()->buffer());
@@ -165,7 +178,7 @@ run_fresh_m13_product_postmaterialization_probe(
     return R::success(M13FreshProductMasterProbe{
         std::move(*render.value()),std::move(*m16.value()),
         std::move(*m19.value()),std::move(*m20.value()),
-        std::move(witness),ceiling,1U,std::nullopt});
+        std::move(witness),ceiling,1U,std::nullopt,admitted});
 }
 } // namespace l3_automatch::m13_frozen
 } // namespace rgsml::app
