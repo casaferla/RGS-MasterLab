@@ -30,11 +30,12 @@ measure_native_fixed_once(
     const auto fixed_graph=fixed_job.exact_fixed_graph_content();
     if(!fixed_graph||candidate.exact_fixed_graph_content()!=fixed_graph)
         return std::nullopt;
-    const auto active_frames=static_cast<std::int64_t>(spec.phase6_active_pcm_frames);
     auto measured=measure_m10_p2_full_native_once(
         fixed_job,std::move(spec),nullptr,cancellation);
     if(!measured||(cancellation&&cancellation->load(std::memory_order_acquire)))
         return std::nullopt;
+    const auto active_frames=static_cast<std::int64_t>(
+        measured.value()->native.exact_observed_active_frames);
     auto definitions=std::invoke(std::forward<ResolveOriginalNativeTriple>(resolve),
                                   *measured.value());
     if(!definitions)return std::nullopt;
