@@ -48,13 +48,13 @@ assess_m13_actual_native_completion(
             std::move(original_definitions),std::move(exact_phase6_m07_generation),
             accepted_scope_revision,true,exact_file_based_lra_policy_attested);
         bindings=compare_m13_accepted_and_fresh_native_bindings(
-            prediction.slots,actual,true);
+            prediction.native_population,actual,true);
         if(prediction.requested_reporting_domains)
             proximity=compare_m13_accepted_and_fresh_native_proximity(
-                prediction.slots,actual,*prediction.requested_reporting_domains,
+                prediction.native_population,actual,*prediction.requested_reporting_domains,
                 true).conformance;
         const auto guard=verify_m13_fresh_protected_population(
-            prediction.slots,actual,prediction.protected_k,true,
+            prediction.native_population,actual,prediction.protected_k,true,
             independent_endpoint_and_safety_attested);
         if(guard.is_admissible())protection=MandatoryHardPredicate::passed;
         else if(guard.reason==
