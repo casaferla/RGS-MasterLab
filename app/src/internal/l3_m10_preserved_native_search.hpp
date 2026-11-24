@@ -5,6 +5,7 @@
 #include "l3_m10_exact_native_graph_content.hpp"
 #include "l3_m10_p2_canonical_trial_ticket.hpp"
 #include "l3_m11_native_fixed_assessment.hpp"
+#include "l3_m10_native_scope_key.hpp"
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 struct PreservedNativeGraph final {
@@ -96,7 +97,17 @@ template<class ResolveOriginalTriple>
     cost.independently_measured_fixed=fixed;
     const auto execution=job.value()->exact_execution_graph_content();
     auto exact=bind_preserved_native_execution_key(std::move(key),*job.value(),cost);
-    if(!exact||!execution)return rejected();
+    const auto analysis_scope=exact_native_analysis_scope_content(env.spec);
+    if(!exact||!execution||!analysis_scope)return rejected();
+    using namespace p2_cache_detail;
+    append_exact_byte_field(exact->candidate_execution_content,*analysis_scope);
+    append_exact_field(exact->candidate_execution_content,env.generation);
+    append_exact_field(exact->candidate_execution_content,
+        std::to_string(std::bit_cast<std::uint64_t>(env.m11_ceiling_db_tp)));
+    append_exact_field(exact->candidate_execution_content,
+        env.file_lra_policy_attested?"file-lra-attested":"file-lra-unattested");
+    append_exact_byte_field(exact->candidate_execution_content,fixed.exact_fixed_graph_content);
+    append_exact_byte_field(exact->candidate_execution_content,fixed.exact_definition_authority_content);
     const auto candidate_owner=native_product_candidate_identity(owners.current_owner,ticket);
     if(const auto hit=env.cache.find(*exact)) {
         if(!hit->native_prediction||
