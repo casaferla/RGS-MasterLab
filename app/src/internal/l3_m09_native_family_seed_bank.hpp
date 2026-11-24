@@ -1,6 +1,7 @@
 #pragma once
 #include "l3_m09_native_role_graph.hpp"
 #include "l3_m09_native_tonal_seed.hpp"
+#include "l3_m09_native_side_seed.hpp"
 #include "l3_m09_native_dynamic_seed.hpp"
 #include "l3_m09_native_macro_seed.hpp"
 #include "l3_m09_native_micro_seed.hpp"
@@ -81,8 +82,8 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     return assemble_native_artistic_typed_seed(std::move(registry),family,seeds,coordinates,revision,rate);
 }
 // Prepare reusable role alternatives once, not once per combined
-// family. SIDE EQ remains conditional on its separate exact eligible
-// dictionary/insertion evidence; absent evidence produces no prefix.
+// family. SIDE EQ uses the separately supplied selected S03 canonical
+// grid and exact eligible dictionary; absent evidence produces no prefix.
 [[nodiscard]] inline NativeFamilySeedBank derive_native_family_seed_bank(
     const m11_frozen::NativeFixedPopulation& fixed,
     const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
@@ -91,7 +92,9 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     std::span<const core::Uuid> dynamic_band_ids,
     core::SampleRate rate,std::uint32_t channels,double ceiling_db_tp,
     bool exact_event_context,bool exact_stereo_fixed_insertion,
-    std::vector<NativeEqPrefix> independently_bound_side_prefixes={})
+    std::span<const m05m06_real::T01ConfiguredBand> side_grid={},
+    int side_grid_denominator=12,
+    std::span<const NativeEqAtom> side_dictionary={})
 {
     NativeFamilySeedBank bank;
     if(channels<1U||channels>2U)return bank;
@@ -107,7 +110,8 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     for(std::size_t i=0;i<bank.micro.size();++i)
         bank.micro[i]=native_micro_variant_payload(micro,static_cast<MicroMode>(i+1U));
     if(channels==2U) {
-        bank.side=std::move(independently_bound_side_prefixes);
+        bank.side=derive_native_side_prefixes(fixed,amount,requested,side_grid,
+            side_grid_denominator,side_dictionary,rate);
         for(std::size_t i=0;i<bank.stereo.size();++i)
             bank.stereo[i]=derive_native_stereo_seed(fixed,amount,requested,i+1U,true,exact_stereo_fixed_insertion);
     }
