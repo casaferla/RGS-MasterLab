@@ -2716,7 +2716,7 @@ qt_add_executable(rgsml_l3_m10_refinement_batch_tests
     unit/app/test_l3_m10_frozen_refinement_batch.cpp)
 target_include_directories(rgsml_l3_m10_refinement_batch_tests
     PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
-target_link_libraries(rgsml_l3_m10_refinement_batch_tests PRIVATE Qt6::Test)
+target_link_libraries(rgsml_l3_m10_refinement_batch_tests PRIVATE rgsml_dsp Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m10_refinement_batch_tests)
 add_test(NAME rgsml_l3_m10_refinement_batch_tests
     COMMAND rgsml_l3_m10_refinement_batch_tests)
