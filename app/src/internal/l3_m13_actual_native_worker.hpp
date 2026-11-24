@@ -106,8 +106,12 @@ public:
            prepared->view().format().channel_count()!=original.channels)
             return R::failure(core::Error{core::ErrorCode::InvalidState,
                 "L3_M13_ACTUAL_WORKER_PREPARED_SCOPE_MISMATCH"});
+        auto native_spec=input.native_spec.borrow();
+        if(!bind_original_pair_profile_common(native_spec,*input.independent_pair))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_PROFILE_SCOPE_MISMATCH"});
         auto fresh=run_fresh_m13_product_postmaterialization_probe(
-            input.request,maximum_block_frames,input.native_spec.borrow(),cancellation);
+            input.request,maximum_block_frames,std::move(native_spec),cancellation);
         if(!fresh)return R::failure(*fresh.error());
         auto diagnosis=assess_m13_actual_native_completion(
             input.request,*fresh.value(),*input.independent_pair,
