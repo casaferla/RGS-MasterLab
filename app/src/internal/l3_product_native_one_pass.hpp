@@ -6,6 +6,7 @@
 #include "l3_product_offline_trial_job.hpp"
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -35,6 +36,16 @@ struct ProductNativeOnePassSpec final {
     if(!geometry||(spec.exact_m20_fft_size!=0U&&
                    spec.exact_m20_fft_size!=geometry->fft))return false;
     spec.exact_m20_fft_size=geometry->fft;
+    return true;
+}
+[[nodiscard]] inline bool bind_product_native_profile_common(
+    ProductNativeOnePassSpec& spec,analysis::NativeTonalBandwidth common) noexcept {
+    if(!std::isfinite(common.low_hz)||!std::isfinite(common.high_hz)||
+       !(common.high_hz>common.low_hz))return false;
+    const auto& supplied=spec.source_support.profile_common_bandwidth;
+    if(supplied&&(supplied->low_hz!=common.low_hz||supplied->high_hz!=common.high_hz))
+        return false;
+    spec.source_support.profile_common_bandwidth=common;
     return true;
 }
 struct ProductNativeOnePassResult final {
