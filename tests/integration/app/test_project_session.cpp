@@ -4834,6 +4834,21 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!provisional.verified_profile_approval_exists);
     QVERIFY(!provisional.authorizes_product_verified());
     QVERIFY(!provisional.authorizes_master_wav_export());
+    const auto currentProductDiagnosis=session.project.
+        assess_private_m13_completed_fresh_worker(
+            *m13Owner.value(),*m13Result.value(),
+            app::l3_automatch::m13_frozen::
+                M13TwentySevenConformance{},
+            app::l3_automatch::m13_frozen::FullM08Comparison{},
+            true,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable);
+    QCOMPARE(currentProductDiagnosis.state,
+             app::l3_automatch::m13_frozen::
+                 VerificationState::verification_unavailable);
+    QVERIFY(!currentProductDiagnosis.canonical_reasons.empty());
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     // The existing shared M18 epoch must exclude BOTH M13 capture
@@ -5077,6 +5092,21 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!importedLease);
 
     QVERIFY(session.project.undo_private_m12_materialization());
+    const auto retiredProductDiagnosis=session.project.
+        assess_private_m13_completed_fresh_worker(
+            *m13Owner.value(),*m13Result.value(),
+            app::l3_automatch::m13_frozen::
+                M13TwentySevenConformance{},
+            app::l3_automatch::m13_frozen::FullM08Comparison{},
+            true,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable,
+            app::l3_automatch::m13_frozen::
+                MandatoryHardPredicate::unavailable);
+    QCOMPARE(retiredProductDiagnosis.state,
+             app::l3_automatch::m13_frozen::VerificationState::stale);
+    QCOMPARE(retiredProductDiagnosis.canonical_reasons.front().code,
+             std::string("STALE_DEPENDENCY"));
     QVERIFY(!session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     QVERIFY(!session.previewController->
