@@ -130,6 +130,10 @@ struct NativeTonalFrameGeometry final {
 [[nodiscard]] std::optional<NativeTonalFrameGeometry>
 native_tonal_frame_geometry(std::uint32_t sample_rate_hz) noexcept;
 
+// Geometry only: no FFT, measured energy or source eligibility.
+[[nodiscard]] std::vector<TonalBandMeasurement>
+native_tonal_fractional_grid(std::uint32_t sample_rate_hz,int denominator);
+
 struct BasicLevelAnalysisResult;
 struct NativeM19TonalGate final {
     bool available{};
