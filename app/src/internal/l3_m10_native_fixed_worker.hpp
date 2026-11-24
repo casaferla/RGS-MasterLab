@@ -46,6 +46,8 @@ measure_native_fixed_once(
         return std::nullopt;
     auto population=assembly.complete_canonical_population();
     if(!population)return std::nullopt;
-    return m11_frozen::NativeFixedPopulation{std::move(*population),true};
+    return m11_frozen::NativeFixedPopulation{std::move(*population),true,
+        fixed_job.ticket_identity(),fixed_owner.resource_identity,
+        fixed_owner.generation,exact_generation};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
