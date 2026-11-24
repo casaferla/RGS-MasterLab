@@ -40,7 +40,23 @@ private slots:
     void lowEndOnlyWhenRetainedGateSameAndAttested();
     void lessThanTwentyFramesNeverGradeMultiband();
     void identicalCountsDoNotConcealDifferentOrdinals();
+    void completedEmptyStereoRetainsBandIdentities();
 };
+void NativeStereoBandTest::completedEmptyStereoRetainsBandIdentities(){
+    native::AuthenticM20CoherentStereoSink sink{
+        48000,4096,{{0,20,80},{1,80,200},{2,200,1000}},true,true};
+    QVERIFY(sink.valid());
+    const auto empty=sink.finalize(0U,true);
+    QVERIFY(empty.source_observation_complete);
+    QVERIFY(!empty.numerical_source_valid);
+    QCOMPARE(empty.source_channel_count,std::size_t{2});
+    QCOMPARE(empty.multiband.size(),std::size_t{3});
+    QCOMPARE(empty.native_selected_frames,std::uint64_t{0});
+    for(const auto& band:empty.multiband) {
+        QVERIFY(!band.width.transformed_z);
+        QVERIFY(!band.correlation.transformed_z);
+    }
+}
 void NativeStereoBandTest::realPsdInPhaseMonoEndpointNeedsExactEvidence(){
     auto pcm=stereo_wave(false);QVERIFY(pcm);
     native::AuthenticM20CoherentStereoSink sink{
