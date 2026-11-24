@@ -70,14 +70,19 @@ void M05M06RealPortTest::integratedMembershipUsesExactBlockStartsNotUnion()
     QVERIFY(!first.source->integrated_gate_population_identity.empty());
     auto a=*levels.value(),b=a;
     // Equal count, identical retained union; different original block starts.
-    a.final_loudness_block_starts={0,4800,28800};
-    b.final_loudness_block_starts={0,9600,28800};
+    a.final_loudness_block_starts={0,4800,19200};
+    b.final_loudness_block_starts={0,9600,19200};
+    a.retained_block_union={{0,38400}};
+    b.retained_block_union=a.retained_block_union;
     const auto x=real::import_actual_full_source(a,*tonal.value(),{"fixture",1,true});
     const auto y=real::import_actual_full_source(b,*tonal.value(),{"fixture",1,true});
     QVERIFY(x.source&&y.source);
     QVERIFY(x.source->integrated_gate_population_identity!=
             y.source->integrated_gate_population_identity);
-    b.final_loudness_block_starts={0,1,28800};
+    b.retained_block_union={{0,48000}};
+    QVERIFY(!real::import_actual_full_source(b,*tonal.value(),{"fixture",1,true}).source);
+    b.retained_block_union=a.retained_block_union;
+    b.final_loudness_block_starts={0,1,19200};
     QVERIFY(!real::import_actual_full_source(b,*tonal.value(),{"fixture",1,true}).source);
 }
 void M05M06RealPortTest::widthMembershipUsesSelectedFrameUnion()
