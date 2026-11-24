@@ -14,9 +14,14 @@
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 [[nodiscard]] inline P2RealTripleBindingResult
-bind_p2_original_native_triple_from_real_candidate(
+bind_original_native_triple_from_measured_source(
     P2OriginalRealNativeTriple original,
-    const M10P2FullNativeEvidence& measured,
+    const m05m06_real::SourceReadings& actual,
+    const analysis::TonalStereoAnalysisResult& tonal,
+    const audio::AudioBufferView& pcm,
+    const m05m06_real::P04ProductObservation& transient,
+    const m05m06_real::SpectralD10D12Native& spectral,
+    const m05m06_real::StereoCoherentNativeResult& stereo,
     const m05m06_real::SourceIdentity& current_candidate_product_owner,
     std::int64_t exact_phase6_active_frames,
     bool phase6_file_based_trailing_policy_attested)
@@ -43,31 +48,43 @@ bind_p2_original_native_triple_from_real_candidate(
        !same(original.d10_d12.source_owner[2])||
        !same(original.s03_s06.independent_source_owners[2]))
         return {};
-    const auto from_real=measured.native.actual.observed_m05m06(
-        current_candidate_product_owner);
-    if(!from_real.source)
-        return {};
-    // Owner-supplied PREPARED/REFERENCE observations are untouched,
-    // as are all authoritative M07 digests, support masks and grids.
-    const auto& actual=*from_real.source;
+    if(!same(actual.owner))return {};
     original.m19.actual_candidate=actual;
     original.s01_s02.actual_candidate=actual;
     original.t01.actual_sources[2]=actual;
     original.t02_t06.sources[2].observed_from_real_m20=
-        measured.native.actual.observed_m05_tonal(
-            original.t02_t06.exact_common,
+        m05m06_real::observe_m05_tonal_bundle(
+            tonal,original.t02_t06.exact_common,
             original.t02_t06.exact_accepted_density_floor);
     original.d01.source[2]=actual;
     original.d02.actual_candidate=m05m06_real::observe_lra_from_real_m19(
         actual,exact_phase6_active_frames,
         phase6_file_based_trailing_policy_attested);
     original.d03_d04.actual_candidate=
-        measured.native.actual.observed_m06_native_rms_crest();
+        m05m06_real::observe_d03_d04_real_pcm(pcm);
     original.d07_d09.current_sources[2].measured=
-        measured.native.d07_d09.original_d07_d08_d09_type7;
-    original.d10_d12.observed[2]=measured.native.d10_d12;
-    original.s03_s06.observed[2]=measured.native.s03_s06;
+        transient.original_d07_d08_d09_type7;
+    original.d10_d12.observed[2]=spectral;
+    original.s03_s06.observed[2]=stereo;
     return bind_all_original_real_native_p2_triple(original);
+}
+[[nodiscard]] inline P2RealTripleBindingResult
+bind_p2_original_native_triple_from_real_candidate(
+    P2OriginalRealNativeTriple original,
+    const M10P2FullNativeEvidence& measured,
+    const m05m06_real::SourceIdentity& current_candidate_product_owner,
+    std::int64_t exact_phase6_active_frames,
+    bool phase6_file_based_trailing_policy_attested)
+{
+    const auto from_real=measured.native.actual.observed_m05m06(
+        current_candidate_product_owner);
+    if(!from_real.source)return {};
+    return bind_original_native_triple_from_measured_source(
+        std::move(original),*from_real.source,measured.native.actual.tonal,
+        measured.native.actual.rendered.view(),measured.native.d07_d09,
+        measured.native.d10_d12,measured.native.s03_s06,
+        current_candidate_product_owner,exact_phase6_active_frames,
+        phase6_file_based_trailing_policy_attested);
 }
 // Strong Product path: the original callback carries canonical M07
 // definitions/support/grades, but it CANNOT introduce PREPARED or GOLD
