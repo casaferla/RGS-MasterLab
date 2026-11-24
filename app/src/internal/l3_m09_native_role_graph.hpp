@@ -157,6 +157,17 @@ assemble_native_artistic_typed_seed(
     if(sample_rate!=44100&&sample_rate!=48000&&sample_rate!=88200&&
        sample_rate!=96000&&sample_rate!=176400&&sample_rate!=192000)
         return std::nullopt;
+    const double maximum_frequency=std::min(20000.0,0.45*static_cast<double>(sample_rate));
+    for(const auto& role:roles) {
+        if(const auto* eq=std::get_if<dsp::ParametricEqParameters>(&role.payload))
+            for(const auto& band:eq->bands()) {
+                const auto frequency=std::visit([](const auto& p){return p.frequency_hz;},band.payload());
+                if(!std::isfinite(frequency)||frequency<20.0||frequency>maximum_frequency)
+                    return {};
+            }
+        if(const auto* dynamic=std::get_if<dsp::DynamicEqParameters>(&role.payload))
+            if(!dynamic->validate_for_audio(static_cast<std::uint32_t>(sample_rate),2U))return {};
+    }
     auto graph=assemble_native_artistic_role_graph(*registry,family,roles,revision);
     if(!graph)return std::nullopt;
     const auto nodes=graph->linked.instances();
