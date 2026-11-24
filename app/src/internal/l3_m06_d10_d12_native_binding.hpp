@@ -100,6 +100,7 @@ struct SpectralSlotProjection final {
             native.valid_count=actual.valid_native_counts[d];
             native.configured_count=a.observed[2].candidate_active_frames;
             native.selector=std::to_string(i);
+            native.population_identity=actual.exact_frame_population_identity;
         }
     }
     return {std::move(out),SpectralSlotFailure::none};
