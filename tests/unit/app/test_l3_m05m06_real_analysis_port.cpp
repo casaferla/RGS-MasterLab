@@ -29,6 +29,7 @@ private slots:
     void nativePopulationRequiresExactSelectedOrdinals();
     void integratedMembershipUsesExactBlockStartsNotUnion();
     void widthMembershipUsesSelectedFrameUnion();
+    void ownM19GateUsesNativeGeometryAtAllSixRates();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
     double scale,double harmonic,int seconds=1) {
@@ -52,6 +53,41 @@ private slots:
         (*r.value())[i]=scale*(0.64*a-0.8*harmonic*b);
     }
     return source;
+}
+void M05M06RealPortTest::ownM19GateUsesNativeGeometryAtAllSixRates()
+{
+    constexpr std::array<std::uint32_t,6> rates{{44100,48000,88200,96000,176400,192000}};
+    for(const auto fs:rates) {
+        const auto g=analysis::native_tonal_frame_geometry(fs);
+        QVERIFY(g);
+        QVERIFY(g->window>0U&&g->hop>0U&&g->fft>=g->window);
+        analysis::BasicLevelAnalysisResult level;
+        level.scope_begin_frame=0;
+        level.scope_frame_count=static_cast<std::int64_t>(fs);
+        level.sample_rate_hz=fs;
+        level.channel_count=2U;
+        auto absent=analysis::bind_native_m19_tonal_gate(level);
+        QVERIFY(absent);
+        QVERIFY(!absent.value()->available);
+        QCOMPARE(absent.value()->active_pcm_frames,static_cast<std::uint64_t>(fs));
+        level.retained_block_disclosure_complete=true;
+        const auto empty=analysis::bind_native_m19_tonal_gate(level);
+        QVERIFY(empty&&empty.value()->available);
+        QCOMPARE(empty.value()->active_pcm_frames,std::uint64_t{0});
+        QVERIFY(std::none_of(empty.value()->selected_complete_frames.begin(),
+            empty.value()->selected_complete_frames.end(),[](auto v){return v!=0U;}));
+        const auto center=g->window/2U;
+        level.retained_block_union={{center,center+g->hop}};
+        level.integrated_lufs={-20.0,analysis::BasicLevelValueState::AVAILABLE};
+        const auto selected=analysis::bind_native_m19_tonal_gate(level);
+        QVERIFY(selected&&selected.value()->available);
+        QCOMPARE(selected.value()->active_pcm_frames,g->hop);
+        QCOMPARE(selected.value()->selected_complete_frames[0],std::uint8_t{1});
+        QCOMPARE(selected.value()->selected_complete_frames[1],std::uint8_t{0});
+        level.retained_block_union={{center,static_cast<std::uint64_t>(fs)+1U}};
+        QVERIFY(!analysis::bind_native_m19_tonal_gate(level));
+    }
+    QVERIFY(!analysis::native_tonal_frame_geometry(32000U));
 }
 void M05M06RealPortTest::integratedMembershipUsesExactBlockStartsNotUnion()
 {
