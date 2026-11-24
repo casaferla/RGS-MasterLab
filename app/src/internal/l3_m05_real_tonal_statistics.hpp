@@ -5,6 +5,7 @@
 // comparison bandwidth. Caller supplies identical common interval for
 // candidate+REFERENCE, and later authenticates M07/M08 eligibility.
 // Output is only observed z=log2(frequency/1Hz), NOT M10 readiness.
+#include "l3_native_membership_identity.hpp"
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <algorithm>
 #include <bit>
@@ -110,6 +111,7 @@ struct TonalSlope final {
     std::size_t configured_bands{};
     std::size_t above_floor_bands{};
     double supplied_density_floor{};
+    std::string exact_ols_population_identity{};
 };
 [[nodiscard]] inline std::optional<TonalSlope> observe_m05_t2_or_t6(
     const analysis::TonalStereoAnalysisResult& producer,
@@ -132,6 +134,9 @@ struct TonalSlope final {
        ||authoritative_density_floor<=0.0)
         return std::nullopt;
     std::size_t total=0,used=0;
+    NativeMembershipIdentity membership{"M05-OLS-primary-band-membership/1"};
+    membership.append(static_cast<std::uint64_t>(producer.sample_rate_hz));
+    membership.append(high_frequency_slope?1U:0U);
     double sx=0.0,sy=0.0,sxx=0.0,sxy=0.0;
     for(const auto& band:producer.primary_bands_1_12) {
         if(!std::isfinite(band.center_hz)
@@ -154,6 +159,8 @@ struct TonalSlope final {
             (band.high_hz-band.low_hz);
         if(!std::isfinite(density)||density<0.0)
             return std::nullopt;
+        membership.append(static_cast<std::uint64_t>(static_cast<std::int64_t>(band.band_index)));
+        membership.append(density>authoritative_density_floor?1U:0U);
         if(density<=authoritative_density_floor)continue;
         const double x=std::log2(band.center_hz/1000.0);
         const double y=10.0*std::log10(density);
@@ -173,7 +180,7 @@ struct TonalSlope final {
         return std::nullopt;
     const double slope=(n*sxy-sx*sy)/denominator;
     if(!std::isfinite(slope))return std::nullopt;
-    return TonalSlope{slope,total,used,authoritative_density_floor};
+    return TonalSlope{slope,total,used,authoritative_density_floor,membership.finish()};
 }
 // Convenience observation bundle. Absent T2/T6 support or missing
 // external floor stays explicit. A single call reuses the SAME canonical
