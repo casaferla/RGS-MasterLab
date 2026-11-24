@@ -6,6 +6,7 @@
 #include "internal/l3_m05m06_product_qt_original_pair_worker.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
+#include "internal/l3_m10_native_fixed_worker.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -217,6 +218,23 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(no_terminal);
     QVERIFY(without_p2.value()->result_has_expected_scope(*no_terminal.value()));
     QVERIFY(!without_p2.value()->prepare_exact_pre_p2_prefix());
+    QVERIFY(without_p2.value()->preserves_user_terminal());
+    QVERIFY(!without_p2.value()->fixed_only());
+    auto empty_linked=dsp::ProcessingChain::restore(
+        *product_registry,{dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+        1U,{});
+    QVERIFY(empty_linked);
+    auto fixed_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+        stamp,prepared_owner,product_registry,*manual.value(),gain_only,
+        *empty_linked.value(),{},"real-fixed-baseline",*block.value(),true);
+    QVERIFY(fixed_job);
+    QVERIFY(fixed_job.value()->fixed_only());
+    QVERIFY(fixed_job.value()->same_fixed_baseline_as(*without_p2.value()));
+    QVERIFY(!fixed_job.value()->same_fixed_baseline_as(*preserved.value()));
+    auto fixed_pcm=fixed_job.value()->execute();
+    QVERIFY(fixed_pcm);
+    QVERIFY(fixed_job.value()->result_has_expected_scope(*fixed_pcm.value()));
+    QVERIFY(fixed_pcm.value()->signatures().empty());
     auto bypassed=*active_manual.value();
     QVERIFY(bypassed.set_user_bypass(p2_id,true));
     auto bypass_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
