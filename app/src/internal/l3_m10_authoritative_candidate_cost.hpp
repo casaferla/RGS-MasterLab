@@ -61,6 +61,8 @@ struct AuthoritativeCostInput final {
     std::string native_m07_generation{};
     std::vector<std::uint8_t> native_linked_graph_content{};
     std::vector<std::uint8_t> native_execution_graph_content{};
+    std::shared_ptr<const P2OriginalRealNativeTriple> native_original_definition_authority{};
+    std::vector<std::uint8_t> native_definition_authority_content{};
     std::optional<m11_frozen::NativeFixedPopulation> independently_measured_fixed;
 };
 struct AuthoritativeCostResult final {
@@ -176,7 +178,9 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
                                  input.native_candidate_ticket,
                                  input.native_m07_generation,
                                  input.native_linked_graph_content,
-                                 input.native_execution_graph_content});
+                                 input.native_execution_graph_content,
+                                 input.native_original_definition_authority,
+                                 input.native_definition_authority_content});
     return {std::move(key),measured,AuthoritativeCostReason::measured};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
