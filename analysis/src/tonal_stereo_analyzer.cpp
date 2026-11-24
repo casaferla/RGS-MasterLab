@@ -42,6 +42,15 @@ native_tonal_frame_geometry(std::uint32_t sample_rate_hz) noexcept {
     return NativeTonalFrameGeometry{g->window,g->fft,g->hop};
 }
 
+std::vector<TonalBandMeasurement>
+native_tonal_fractional_grid(std::uint32_t sample_rate_hz,int denominator) {
+    std::vector<TonalBandMeasurement> out;
+    for(const auto& band:m20_private::fractional_band_geometry(sample_rate_hz,denominator))
+        out.push_back({band.index,band.center,band.low,band.high,band.fully_supported,0.0,
+                       {std::nullopt,State::UNAVAILABLE_AUTHORITATIVE_SUPPORT}});
+    return out;
+}
+
 core::Result<NativeM19TonalGate>
 bind_native_m19_tonal_gate(const BasicLevelAnalysisResult& levels) {
     using R=core::Result<NativeM19TonalGate>;
