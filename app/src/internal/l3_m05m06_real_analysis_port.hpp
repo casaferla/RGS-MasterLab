@@ -72,8 +72,8 @@ struct SourceReadings final {
         Value power_fraction_db; // 10log10(f), not raw linear fraction
     };
     std::vector<Band> profile_1_12; // T1 partial, no 1/3 fallback
-    std::string short_term_population_identity;
-    std::string correlation_population_identity;
+    std::string short_term_population_identity{};
+    std::string correlation_population_identity{};
 };
 enum class ImportProblem:std::uint8_t {
     none,owner_unconfirmed,scope_mismatch,invalid_geometry
