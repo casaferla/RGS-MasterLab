@@ -5,6 +5,7 @@
 #include "l3_m13_qtp_27_projection.hpp"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -49,7 +50,7 @@ struct ReasonDescriptor final {
     std::string_view code;
     VerificationStage stage;
 };
-inline constexpr std::array<ReasonDescriptor,22> kReasonDescriptors{{
+inline constexpr std::array<ReasonDescriptor,20> kReasonDescriptors{{
     {"STALE_DEPENDENCY",VerificationStage::dependency_currentness},
     {"SIGNATURE_MISMATCH",VerificationStage::input_integrity},
     {"VERIFICATION_INPUT_UNAVAILABLE",VerificationStage::input_integrity},
@@ -85,11 +86,7 @@ inline constexpr std::array<ReasonDescriptor,22> kReasonDescriptors{{
     {"FEATURE_VERIFICATION_MISMATCH",
         VerificationStage::feature_numeric},
     {"PROXIMITY_VERIFICATION_MISMATCH",
-        VerificationStage::proximity},
-    {"MATERIALIZED_SIGNATURE_MISMATCH",
-        VerificationStage::materialization_structure},
-    {"VERIFICATION_DEPENDENCY_UNRESOLVED",
-        VerificationStage::dependency_currentness}
+        VerificationStage::proximity}
 }};
 [[nodiscard]] inline bool accepted_reason_stage(
     const VerificationReason& reason) noexcept
