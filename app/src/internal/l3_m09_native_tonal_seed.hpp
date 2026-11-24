@@ -20,13 +20,17 @@ native_tonal_fit_population(const m11_frozen::NativeFixedPopulation& fixed,
     if(slot.binding_id!="rgsml.reference-match.binding.tonal.t01"||
        slot.configured.size()!=grid.size()||protection->size()<grid.size())return {};
     const auto& binding=m07_frozen::kBindings.front();
+    const int denominator=slot.source_feature_id==binding.source_feature_id?12:
+        slot.source_feature_id==binding.exclusive_fallback_feature_id?3:0;
+    if(!denominator)return {};
     NativeTonalFitPopulation out;
     out.eligible_grid.resize(grid.size());
     double weight=0.0;
     for(std::size_t i=0;i<grid.size();++i) {
         const auto& b=grid[i];const auto& p=slot.configured[i];const auto& g=(*protection)[i];
         if(!std::isfinite(b.center_hz)||!(b.low_hz<b.center_hz&&b.center_hz<b.high_hz)||
-           (i&&b.canonical_index!=grid[i-1].canonical_index+1))return {};
+           (i&&b.canonical_index!=grid[i-1].canonical_index+1)||
+           std::abs(std::log2(b.center_hz/1000.0)-static_cast<double>(b.canonical_index)/denominator)>1e-10)return {};
         if(!g.required_in_frozen_k)continue;
         if(!g.exact_current||!p.current_candidate_z||
            p.candidate_native.selector!=std::to_string(b.canonical_index))return {};
@@ -40,7 +44,7 @@ native_tonal_fit_population(const m11_frozen::NativeFixedPopulation& fixed,
         if(!g.protected_by_m11_mask)out.eligible_grid[i]=delta;
     }
     if(weight<=0.0||!std::isfinite(weight))return {};
-    const auto smoothed=smooth_selected_valid_runs(out.eligible_grid,1.0/12.0);
+    const auto smoothed=smooth_selected_valid_runs(out.eligible_grid,1.0/static_cast<double>(denominator));
     if(smoothed.failure!=GridFailure::none||
        !has_three_adjacent_signed_action(smoothed.values,binding.deadband))return {};
     out.eligible_grid=smoothed.values;
