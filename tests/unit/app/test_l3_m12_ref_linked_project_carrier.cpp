@@ -738,6 +738,39 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!combinedTicket.value()->authorizes_m13_verified());
     QVERIFY(combinedTicket.value()->replay);
     QCOMPARE(combinedTicket.value()->replay->plan_id,accepted().plan_id);
+    // The Reference Match loudness gain is a distinct owned DSP,
+    // not an edit/reownership of the protected Input Gain.
+    const auto linkedGainId=id("bf100000-0000-4000-8000-000000000002");
+    const auto loudnessGain=dsp::GainParameters::create(2.0);
+    QVERIFY(loudnessGain);
+    std::vector<m::ExactLinkedNode> loudnessNodes{{
+        linkedGainId,uuid("bf100000-0000-4000-8000-000000000003"),
+        "rgsml.dsp.gain",*loudnessGain.value()}};
+    const auto gainStage=m::stage_exact_m12_native_ref_linked(
+        accepted(),*manualGain.value(),gainBindings,reg,loudnessNodes);
+    QVERIFY(gainStage);
+    const auto gainCarrier=m::encode_exact_ref_linked_project_carrier(
+        *gainStage.value(),refChainId);
+    QVERIFY(gainCarrier);
+    const auto gainDraft=m::prepare_exact_m12_project_transaction(
+        *productBefore.value(),*gainCarrier.value(),*gainStage.value(),productExpected);
+    QVERIFY(gainDraft);
+    const auto gainTicket=m::prepare_m12_product_prepublication_preview_ticket(
+        *productBefore.value(),*gainDraft.value(),reg,
+        manualChain.chainId,*manualGain.value(),gainBindings,ownedPrepared,true);
+    QVERIFY(gainTicket&&gainTicket.value()->replay);
+    m::M12NativeStageExecutionWitness gainWitness;
+    const auto gainReplay=m::render_restored_m12_full_native_pcm_once(
+        *gainTicket.value()->replay,*ownedPrepared,*maxBlock.value(),&gainWitness);
+    QVERIFY(gainReplay);
+    QCOMPARE(gainWitness.protected_manual.front().instance_id,gainId);
+    QCOMPARE(gainWitness.reference_linked.front().instance_id,linkedGainId);
+    QVERIFY(m::m12_native_stage_witness_matches_replay_plan(
+        *gainTicket.value()->replay,gainWitness));
+    loudnessNodes.front()={gainId,uuid("bf100000-0000-4000-8000-000000000003"),
+                           "rgsml.dsp.gain",*loudnessGain.value()};
+    QVERIFY(!m::stage_exact_m12_native_ref_linked(
+        accepted(),*manualGain.value(),gainBindings,reg,loudnessNodes));
     // A same-controller UPDATE with a fresh immutable plan revision
     // must remain admissible after an earlier REF segment was saved.
     auto nextProductPlan=accepted();
