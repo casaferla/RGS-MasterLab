@@ -5,6 +5,8 @@
 #include "l3_m13_fresh_original_native_import.hpp"
 #include "l3_m10_p2_verified_candidate_triple.hpp"
 #include "l3_m11_p03_protected_no_regression.hpp"
+#include "l3_m08_native_gold_proximity.hpp"
+#include "l3_m13_predicted_vs_verified_proximity.hpp"
 #include <cmath>
 #include <optional>
 #include <string>
@@ -139,5 +141,34 @@ verify_m13_fresh_protected_population(
     if(ordinal!=accepted_k.size())return {};
     return m11_frozen::verify_frozen_protected_no_regression(
         accepted_k,true,true);
+}
+// Same-run prediction and verification are measured against the same
+// original reference and comparison population. A stale source or
+// candidate dropout cannot be repaired by a report-supplied percentage.
+struct M13NativeProximityComparison final {
+    m08_frozen::NativeProximityPopulationResult predicted;
+    m08_frozen::NativeProximityPopulationResult verified;
+    FullM08Comparison conformance;
+};
+[[nodiscard]] inline M13NativeProximityComparison
+compare_m13_accepted_and_fresh_native_proximity(
+    const std::vector<m08_frozen::AuthenticatedPairSlot>& accepted,
+    const M13FreshNativePopulation& fresh,
+    const std::array<bool,4>& exact_requested_domains,
+    bool accepted_prediction_and_current_dependencies_attested)
+{
+    M13NativeProximityComparison out;
+    if(!accepted_prediction_and_current_dependencies_attested||
+       !m13_same_accepted_native_population(accepted,fresh))
+        return out;
+    out.predicted=m08_frozen::measure_native_gold_proximity(
+        accepted,exact_requested_domains,true);
+    out.verified=m08_frozen::measure_native_gold_proximity(
+        *fresh.slots,exact_requested_domains,true);
+    if(!out.predicted.canonical_population_current||
+       !out.verified.canonical_population_current)return out;
+    out.conformance=compare_frozen_m08_prediction_with_fresh_verified(
+        out.predicted.domains,out.verified.domains);
+    return out;
 }
 } // namespace rgsml::app::l3_automatch::m13_frozen
