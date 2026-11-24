@@ -632,6 +632,34 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         env,native_graph,"preserved-test",changed_key,native_cost,true,true,
         must_not_resolve).kind,m10::EvaluationKind::preflight_rejected);
     QVERIFY(!unexpected_resolution);
+    // Exercise the actual seed-to-refinement entry. A missing original
+    // definition resolver cannot turn a physical attempt into a winner.
+    const std::array<std::size_t,1> selected_ordinals{{7U}};
+    const std::vector<std::vector<m10::Coordinate>> selected_inventory{{inventory[1],inventory[0]}};
+    std::size_t typed_builds=0U;
+    const auto build_native_trial=[&](std::size_t ordinal,const auto& canonical,
+                                     const auto& u)->std::optional<m10::PreservedNativeTrial> {
+        ++typed_builds;
+        if(ordinal!=7U||canonical.size()!=2U||u.size()!=2U)return std::nullopt;
+        return m10::PreservedNativeTrial{native_graph,key,native_cost,true};
+    };
+    const auto resolve_native_trial=[&](std::size_t,const a::M10P2FullNativeEvidence& m){
+        return missing_original(m);
+    };
+    const auto no_native_winner=m10::run_preserved_native_seed_and_refinement(
+        selected_ordinals,selected_inventory,0U,env,build_native_trial,resolve_native_trial);
+    QCOMPARE(no_native_winner.reason,m10::RefinementBatchReason::no_complete_seed_or_stale_source);
+    QCOMPARE(no_native_winner.total_attempted,std::uint32_t{1});
+    QCOMPARE(typed_builds,std::size_t{1});
+    QVERIFY(!no_native_winner.winning_refinement_index);
+    const std::array<m10::SeedTrial,1> numerical_only{{
+        {7U,m10::SeedTrialKind::attempted_complete,
+         m10::MeasuredOrderKey{1.0,1.0,0.0,1U,{0x43},{0x44}},true,true}
+    }};
+    const auto no_native_seed=m10::run_preserved_native_top2(
+        numerical_only,selected_inventory,0U,env,build_native_trial,resolve_native_trial);
+    QCOMPARE(no_native_seed.reason,m10::RefinementBatchReason::invalid_inventory);
+    QCOMPARE(typed_builds,std::size_t{1});
     // This synthetic measured score exercises only the M12 graph
     // equality guard. It is NOT a successful native 27-feature run.
     namespace m12=a::m12_frozen;
