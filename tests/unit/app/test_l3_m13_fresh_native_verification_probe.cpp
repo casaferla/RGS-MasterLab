@@ -1,5 +1,6 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
 #include "internal/l3_m13_qtp_27_projection.hpp"
+#include "internal/l3_m13_predicted_vs_verified_proximity.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
 #include "internal/l3_m13_p2_owned_full_master_probe.hpp"
@@ -37,6 +38,7 @@ private slots:
     void optimizerP2RunsAfterLinkedAndM16ReadsItsActualOutput();
     void frozenQtpTwentySevenCanonicalCategories();
     void frozenQtpNativeScalarBoundaries();
+    void sameRunPredictedVerifiedRawProximity();
 };
 void M13FreshNativeProbeTest::
 noM12ReceiptCannotPretendFreshVerification() {
@@ -390,6 +392,56 @@ void M13FreshNativeProbeTest::frozenQtpNativeScalarBoundaries()
     QCOMPARE(compare_qtp_native_scalar(
         QtpCategory::band_profile_db,1.0,1.0).outcome,
         QtpOutcome::unavailable);
+}
+
+void M13FreshNativeProbeTest::sameRunPredictedVerifiedRawProximity()
+{
+    using namespace m13;
+    using M=m08_frozen::ProximityReason;
+    const m08_frozen::DomainProximity prediction{
+        1.25,M::comparable};
+    const m08_frozen::DomainProximity justInside{
+        1.25049,M::comparable};
+    const m08_frozen::DomainProximity tooFar{
+        1.25051,M::comparable};
+    QCOMPARE(compare_exact_m08_raw_proximity(prediction,justInside,true).
+             status,ProximityComparisonStatus::passed);
+    QCOMPARE(compare_exact_m08_raw_proximity(prediction,tooFar,true).
+             status,ProximityComparisonStatus::failed);
+    QCOMPARE(compare_exact_m08_raw_proximity(prediction,
+        {1.25019,M::comparable},false).status,
+        ProximityComparisonStatus::passed);
+    QCOMPARE(compare_exact_m08_raw_proximity(prediction,
+        {1.25021,M::comparable},false).status,
+        ProximityComparisonStatus::failed);
+    QCOMPARE(compare_exact_m08_raw_proximity(prediction,
+        {1.25,M::proximity_already_matched},true).status,
+        ProximityComparisonStatus::failed);
+    QCOMPARE(compare_exact_m08_raw_proximity(
+        {std::nullopt,M::candidate_required_component_missing},
+        {std::nullopt,M::candidate_required_component_missing},true).status,
+        ProximityComparisonStatus::unavailable);
+    std::array<m08_frozen::RequestedDomainReport,4> predicted{};
+    std::array<m08_frozen::RequestedDomainReport,4> verified{};
+    for(std::size_t i=0;i<4;++i) {
+        predicted[i]={true,{0.5,M::comparable},1.0};
+        verified[i]={true,{0.5003,M::comparable},1.0};
+    }
+    const auto pass=compare_frozen_m08_prediction_with_fresh_verified(
+        predicted,verified);
+    QVERIFY(pass.all_required_pass());
+    QCOMPARE(pass.global.status,ProximityComparisonStatus::passed);
+    verified[1].effective_coverage=0.75;
+    QVERIFY(!compare_frozen_m08_prediction_with_fresh_verified(
+        predicted,verified).all_required_pass());
+    verified[1].effective_coverage=1.0;
+    verified[1].proximity={std::nullopt,
+        M::candidate_required_component_missing};
+    const auto partial=compare_frozen_m08_prediction_with_fresh_verified(
+        predicted,verified);
+    QVERIFY(!partial.all_required_pass());
+    QCOMPARE(partial.global.status,ProximityComparisonStatus::failed);
+    QVERIFY(!partial.full_global_population);
 }
 
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
