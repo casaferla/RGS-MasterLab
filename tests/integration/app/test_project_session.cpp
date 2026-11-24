@@ -4644,18 +4644,22 @@ void ProjectSessionTest::
 m12RealProductAtomicMaterializationUndoRedoAndSaveAs_data()
 {
     QTest::addColumn<std::uint32_t>("sampleRateHz");
-    QTest::newRow("44k1")<<std::uint32_t{44100};
-    QTest::newRow("48k")<<std::uint32_t{48000};
-    QTest::newRow("88k2")<<std::uint32_t{88200};
-    QTest::newRow("96k")<<std::uint32_t{96000};
-    QTest::newRow("176k4")<<std::uint32_t{176400};
-    QTest::newRow("192k")<<std::uint32_t{192000};
+    QTest::addColumn<bool>("fullNative");
+    QTest::newRow("44k1")<<std::uint32_t{44100}<<false;
+    QTest::newRow("48k")<<std::uint32_t{48000}<<false;
+    QTest::newRow("88k2")<<std::uint32_t{88200}<<false;
+    QTest::newRow("96k")<<std::uint32_t{96000}<<false;
+    QTest::newRow("176k4")<<std::uint32_t{176400}<<false;
+    QTest::newRow("192k")<<std::uint32_t{192000}<<false;
+    QTest::newRow("48k-full-native")<<std::uint32_t{48000}<<true;
 }
 
 void ProjectSessionTest::
 m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
 {
     QFETCH(std::uint32_t,sampleRateHz);
+    QFETCH(bool,fullNative);
+    const std::int64_t fixtureFrames=fullNative?144000:512;
     namespace m=app::l3_automatch::m12_frozen;
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -4732,7 +4736,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     // Genuine immutable PCM owner fed through the existing Product
     // Preview Controller. Never fabricate a Product M12 receipt from it.
     auto rate=core::SampleRate::create(sampleRateHz);
-    auto frames=core::FrameCount::create(512);
+    auto frames=core::FrameCount::create(fixtureFrames);
     auto fmt=audio::AudioFormat::create(
         *rate.value(),audio::ChannelLayout::STEREO_LR);
     QVERIFY(rate&&frames&&fmt);
@@ -4858,6 +4862,48 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY2(m13Result,
              m13Result.error()?m13Result.error()->message().c_str():"");
     QVERIFY(!m13Result.value()->additional_native);
+    if(fullNative) {
+        // Test fixture's original native grid. The real fresh Master
+        // is analyzed by the same producers as the independent solver.
+        // No artificial production feature approval is inferred.
+        app::l3_automatch::ProductNativeOnePassSpec spec;
+        spec.current_full_phase6_source_and_grid=true;
+        spec.exact_m20_fft_size=4096;
+        spec.phase6_active_pcm_frames=
+            static_cast<std::uint64_t>(fixtureFrames);
+        spec.exact_stereo_reference_grade=true;
+        spec.exact_m19_low_end_gate_same_as_m20_stft=true;
+        spec.spectral_bands={{0,20,80},{1,80,200},{2,200,1000}};
+        spec.stereo_bands=spec.spectral_bands;
+        const auto full=app::l3_automatch::m13_frozen::
+            run_fresh_m13_product_postmaterialization_probe(
+                *m13Owner.value(),*core::FrameCount::create(4096).value(),
+                std::move(spec));
+        QVERIFY2(full,full.error()?full.error()->message().c_str():"");
+        QVERIFY(full.value()->additional_native);
+        QVERIFY(full.value()->matches_executed_request(*m13Owner.value()));
+        QCOMPARE(full.value()->logical_verification_evaluations,1U);
+        QCOMPARE(full.value()->additional_native->exact_phase6_active_frames,
+                 static_cast<std::uint64_t>(fixtureFrames));
+        QVERIFY(full.value()->fresh_m20.selected_spectral_windows>0U);
+        QCOMPARE(full.value()->additional_native->
+                    selected_original_m20_ordinals.size(),
+                 full.value()->fresh_m20.selected_spectral_windows);
+        QCOMPARE(full.value()->fresh_m16.global_linear_peak(),
+                 m13Result.value()->fresh_m16.global_linear_peak());
+        const auto nativeView=full.value()->fresh_full_master_pcm.view();
+        const auto partialView=m13Result.value()->fresh_full_master_pcm.view();
+        for(std::size_t channel=0;channel<nativeView.format().channel_count();
+            ++channel) {
+            const auto x=nativeView.channel(channel);
+            const auto y=partialView.channel(channel);
+            QVERIFY(x&&y);
+            QCOMPARE(x.value()->size(),y.value()->size());
+            for(std::size_t i=0;i<x.value()->size();++i)
+                QCOMPARE((*x.value())[i],(*y.value())[i]);
+        }
+        QVERIFY(!full.value()->is_m13_verified());
+    }
     // A *new* owning PCM allocation is mandatory: neither a previous
     // PREPARED buffer nor the accepted M10 candidate is a verifier render.
     QVERIFY(&m13Result.value()->fresh_full_master_pcm.buffer()!=
@@ -4883,7 +4929,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QCOMPARE(actualNative.value()->fresh_full_m19_m20.sample_rate_hz,
              static_cast<std::int64_t>(sampleRateHz));
     QCOMPARE(actualNative.value()->fresh_full_m19_m20.scope_frame_count,
-             std::int64_t{512});
+             fixtureFrames);
     QVERIFY(actualNative.value()->fresh_full_m19_m20.owner.
         full_track_owner_confirmed);
     QCOMPARE(actualNative.value()->fresh_full_m19_m20.owner.generation,
