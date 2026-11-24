@@ -4,6 +4,7 @@
 // Prepared/REFERENCE comparison population. Never derive Fixed from C.
 #include "l3_m08_frozen_targeted_population.hpp"
 #include "l3_m11_p03_protected_no_regression.hpp"
+#include "l3_m11_native_stereo_hard_safety.hpp"
 #include <cmath>
 #include <optional>
 #include <memory>
@@ -23,6 +24,9 @@ struct NativeFixedPopulation final {
     std::vector<std::uint8_t> exact_fixed_graph_content{};
     std::shared_ptr<const m10_frozen::P2OriginalRealNativeTriple> original_definition_authority{};
     std::vector<std::uint8_t> exact_definition_authority_content{};
+    std::optional<double> measured_m16_linear_peak{};
+    bool stereo_safety_required{};
+    std::optional<NativeStereoRawSafety> measured_stereo_safety{};
 };
 [[nodiscard]] inline std::optional<std::vector<ProtectedComponent>>
 bind_native_fixed_to_candidate(
