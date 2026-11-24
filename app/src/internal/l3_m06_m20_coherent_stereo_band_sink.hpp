@@ -5,6 +5,7 @@
 // One streaming pass, bounded per-band accumulator; no second FFT,
 // no coherence substitution, no fabricated mono Side endpoint.
 #include "l3_m06_m20_native_frame_energy_sink.hpp"
+#include "l3_native_membership_identity.hpp"
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
 #include <algorithm>
 #include <array>
@@ -25,6 +26,7 @@ struct StereoCoherentScalar final {
     bool actual_zero_side_endpoint{};
     std::uint64_t valid_frames{};
     double native_support{};
+    std::string exact_frame_population_identity{};
 };
 struct StereoCanonicalBand final {
     int canonical_index{};
@@ -106,13 +108,13 @@ public:
         for(auto& band:bands_) {
             const auto energy=integrate(band.cells,l,r,cross);
             if(!energy) {valid_=false;return false;}
-            band.observed.accept(*energy,*full);
+            band.observed.accept(*energy,*full,ordinal);
         }
         if(low_gate_current_) {
             for(std::size_t i=0;i<3U;++i) {
                 const auto e=integrate(low_bands_[i],l,r,cross);
                 if(!e) {valid_=false;return false;}
-                low_[i].accept(*e,*full);
+                low_[i].accept(*e,*full,ordinal);
             }
         }
         last_ordinal_=ordinal;
@@ -167,7 +169,10 @@ private:
         double width_mid{},width_side{},corr_l{},corr_r{},corr_c{};
         std::uint64_t width_valid{},corr_valid{};
         static constexpr double kRelativeFloor=1e-12;
-        void accept(const Triple& band,const Triple& full) noexcept {
+        NativeMembershipIdentity width_membership{"S-width-STFT/1"};
+        NativeMembershipIdentity correlation_membership{"S-rho-STFT/1"};
+        void accept(const Triple& band,const Triple& full,
+                    std::uint64_t ordinal) noexcept {
             const double EL=band.l,ER=band.r,C=band.c;
             const double T=EL+ER;
             const double Em=(T+2.0*C)/4.0;
@@ -178,12 +183,18 @@ private:
                                     kRelativeFloor*full.r);
             const double fsum=std::max(kStereoNativePowerFloor,
                                       kRelativeFloor*(full.l+full.r));
-            if(std::isfinite(Em)&&std::isfinite(Es)&&Em>0.0&&
-               Es>=0.0&&T>=fsum) {
+            const bool width_eligible=std::isfinite(Em)&&std::isfinite(Es)&&
+                Em>0.0&&Es>=0.0&&T>=fsum;
+            width_membership.append(ordinal);
+            width_membership.append(width_eligible?1U:0U);
+            if(width_eligible) {
                 width_mid+=Em;width_side+=Es;++width_valid;
             }
-            if(EL>0.0&&ER>0.0&&EL>=fl&&ER>=fr&&
-               std::isfinite(C)&&std::isfinite(EL)&&std::isfinite(ER)) {
+            const bool correlation_eligible=EL>0.0&&ER>0.0&&EL>=fl&&ER>=fr&&
+                std::isfinite(C)&&std::isfinite(EL)&&std::isfinite(ER);
+            correlation_membership.append(ordinal);
+            correlation_membership.append(correlation_eligible?1U:0U);
+            if(correlation_eligible) {
                 corr_l+=EL;corr_r+=ER;corr_c+=C;++corr_valid;
             }
         }
@@ -193,6 +204,7 @@ private:
         {
             StereoCoherentScalar out;
             out.valid_frames=width_valid;
+            if(total)out.exact_frame_population_identity=width_membership.finish();
             if(total)out.native_support=
                 static_cast<double>(width_valid)/static_cast<double>(total);
             const bool grade=external_grade&&width_valid>0U&&
@@ -219,6 +231,7 @@ private:
         {
             StereoCoherentScalar out;
             out.valid_frames=corr_valid;
+            if(total)out.exact_frame_population_identity=correlation_membership.finish();
             if(total)out.native_support=
                 static_cast<double>(corr_valid)/static_cast<double>(total);
             const bool grade=external_grade&&corr_valid>0U&&
