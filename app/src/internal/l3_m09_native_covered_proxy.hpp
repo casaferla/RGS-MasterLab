@@ -310,4 +310,31 @@ select_bound_native_family_batch(const ExactBytes& generation,
     result.selected=std::move(selected);
     return result;
 }
+// Execute only an explicitly complete current M09 stream. Fixed
+// no-correction remains available even when no candidate is generated.
+[[nodiscard]] inline NativeProductSearchResult run_bound_native_family_batch(
+    const ExactBytes& generation,std::span<const BoundNativeFamilyCandidate> candidates,
+    bool exact_complete_legal_combined_stream_attested,
+    const NativeFamilySeedBank& bank,std::uint64_t revision,std::int64_t rate,
+    const m10_frozen::PreservedNativeSearchEnvironment& env,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    bool independent_fixed_safety_scope_current,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    NativeProductSearchResult result;
+    if(cancellation&&cancellation->load(std::memory_order_acquire)) {
+        result.status=NativeProductSearchStatus::cancelled;return result;
+    }
+    result.fixed_gate=m10_frozen::assess_native_fixed_search_gate(env,amount,requested,
+        independent_fixed_safety_scope_current);
+    if(result.fixed_gate.status==m10_frozen::NativeFixedSearchStatus::no_correction_required) {
+        result.status=NativeProductSearchStatus::no_correction_required;return result;
+    }
+    if(result.fixed_gate.status!=m10_frozen::NativeFixedSearchStatus::correction_required)return result;
+    const auto batch=select_bound_native_family_batch(generation,candidates,
+        exact_complete_legal_combined_stream_attested);
+    if(!batch)return result;
+    return run_exact_selected_native_family_search(batch->selected,batch->recipes,bank,
+        revision,rate,env,amount,requested,independent_fixed_safety_scope_current,cancellation);
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
