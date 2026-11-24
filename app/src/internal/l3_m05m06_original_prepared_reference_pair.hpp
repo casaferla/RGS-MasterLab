@@ -18,6 +18,14 @@ struct OriginalPreparedReferenceNativeFacts final {
     [[nodiscard]] constexpr bool authorizes_m10_or_m12()
         const noexcept{return false;}
 };
+// Candidate, Fixed and fresh verifier all consume the actual P/G scope.
+[[nodiscard]] inline bool bind_original_pair_profile_common(
+    ProductNativeOnePassSpec& spec,const OriginalPreparedReferenceNativeFacts& pair) noexcept {
+    const auto p=pair.prepared.exact_profile_common_bandwidth;
+    const auto g=pair.reference.exact_profile_common_bandwidth;
+    if(p.low_hz!=g.low_hz||p.high_hz!=g.high_hz)return false;
+    return bind_product_native_profile_common(spec,{p.low_hz,p.high_hz});
+}
 // Generation alignment is necessary on EVERY new solver attempt AND
 // exact completed-cache hit. Source and REFERENCE selection revisions
 // are independent: a new REFERENCE with the same path is still new.
