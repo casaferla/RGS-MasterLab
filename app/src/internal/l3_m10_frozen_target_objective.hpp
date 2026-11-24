@@ -28,6 +28,8 @@ struct AuthoritativeComponent final {
     // Candidate dropout of a required component is an invalid candidate,
     // even when another binding can still satisfy the coverage gate.
     bool required_candidate_evidence{false};
+    // M11 protection removes residual cost, never configured coverage.
+    bool protected_from_correction{false};
 };
 struct DomainPopulation final {
     Domain domain{};
@@ -62,7 +64,7 @@ struct TargetCost final {
         if(d>=4||seen[d]||pop.configured.empty())
             return result;
         seen[d]=true;
-        double configured=0.0,effective=0.0,numerator=0.0;
+        double configured=0.0,effective=0.0,residual_mass=0.0,numerator=0.0;
         for(const auto& feature:pop.configured) {
             if(!std::isfinite(feature.configured_mass)
                ||feature.configured_mass<=0.0
@@ -92,6 +94,10 @@ struct TargetCost final {
                 result.status=TargetCostStatus::missing_required_candidate;
                 return result;
             }
+            effective+=mass;
+            if(!std::isfinite(effective))return result;
+            if(feature.protected_from_correction)continue;
+            residual_mass+=mass;
             // Finite normalized residual before robust min(square,16).
             // Saturate by magnitude>4 without overflowing large squares.
             const double residual=(*feature.candidate_z-
@@ -103,9 +109,8 @@ struct TargetCost final {
             }
             const double loss=std::abs(residual)>=4.0
                 ?16.0:residual*residual;
-            effective+=mass;
             numerator+=mass*loss;
-            if(!std::isfinite(effective)||!std::isfinite(numerator))
+            if(!std::isfinite(residual_mass)||!std::isfinite(numerator))
                 return result;
         }
         if(configured<=0.0||!std::isfinite(configured))
@@ -119,7 +124,9 @@ struct TargetCost final {
             result.status=TargetCostStatus::insufficient_effective_coverage;
             return result;
         }
-        const double loss=numerator/effective;
+        if(residual_mass==0.0)continue; // protected-only domain
+        volatile double denominator=residual_mass;
+        const double loss=numerator/denominator;
         if(!std::isfinite(loss))return result;
         result.domain_loss[d]=loss;
         constexpr double W=0.25; // equal frozen domain weights
