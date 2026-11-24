@@ -43,10 +43,17 @@ assess_m13_actual_native_completion(
     auto protection=MandatoryHardPredicate::unavailable;
     if(current) {
         const auto& prediction=*accepted_winner.native_prediction;
+        const m05m06_real::SourceIdentity accepted_candidate_owner{
+            prediction.candidate_resource_identity,prediction.candidate_generation,true};
+        const bool exact_accepted_native_owner=
+            prediction.exact_m07_generation==exact_phase6_m07_generation&&
+            authentic_product_candidate_identity(accepted_candidate_owner,
+                exact_source_reference_owner,prediction.exact_candidate_ticket);
         const auto actual=bind_m13_fresh_native_population(
             request,fresh,independent_pair,exact_source_reference_owner,
             std::move(original_definitions),std::move(exact_phase6_m07_generation),
-            accepted_scope_revision,true,exact_file_based_lra_policy_attested);
+            accepted_candidate_owner,accepted_scope_revision,
+            exact_accepted_native_owner,exact_file_based_lra_policy_attested);
         bindings=compare_m13_accepted_and_fresh_native_bindings(
             prediction.native_population,actual,true);
         if(prediction.requested_reporting_domains)
