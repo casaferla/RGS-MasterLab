@@ -19,6 +19,7 @@
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
 #include "internal/l3_m09_native_covered_proxy.hpp"
+#include "internal/l3_m09_native_eq_dictionary.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -317,6 +318,23 @@ void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpol
         1000.0*std::exp2(i/3.0),1000.0*std::exp2((i+0.5)/3.0)});
     const auto pop=m09::native_side_fit_population(fixed,amount,requested,grid,3);
     QVERIFY(pop);
+    unsigned next_band=1U;
+    const auto allocate=[&](const m09::NativeEqDictionaryIdentity&)->std::optional<core::Uuid>{
+        core::Uuid::Bytes bytes{};
+        bytes[0]=0xbdU;bytes[15]=static_cast<std::uint8_t>(next_band++);
+        return core::Uuid{bytes};
+    };
+    const auto full_dictionary=m09::derive_native_eq_dictionary(grid,*pop,20.0,20000.0,
+        *core::SampleRate::create(48000).value(),true,allocate);
+    QVERIFY(full_dictionary);
+    QCOMPARE(full_dictionary->size(),std::size_t{12});
+    auto missing=*pop;missing.eligible_grid[1].reset();
+    const auto split_dictionary=m09::derive_native_eq_dictionary(grid,missing,20.0,20000.0,
+        *core::SampleRate::create(48000).value(),true,allocate);
+    QVERIFY(split_dictionary);
+    QCOMPARE(split_dictionary->size(),std::size_t{8});
+    for(const auto& atom:*split_dictionary)
+        QVERIFY(atom.frequency_hz!=grid[1].center_hz);
     QCOMPARE(pop->active.size(),std::size_t{3});
     QVERIFY(std::abs(pop->active.front().residual_db-10.0*std::log10(2.0))<1e-12);
     QVERIFY(!m09::native_side_fit_population(fixed,amount,requested,grid,12));
