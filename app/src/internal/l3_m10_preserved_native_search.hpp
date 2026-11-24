@@ -108,6 +108,27 @@ template<class ResolveOriginalTriple>
         env.file_lra_policy_attested?"file-lra-attested":"file-lra-unattested");
     append_exact_byte_field(exact->candidate_execution_content,fixed.exact_fixed_graph_content);
     append_exact_byte_field(exact->candidate_execution_content,fixed.exact_definition_authority_content);
+    const auto add_bits=[&](double value){
+        append_exact_field(exact->candidate_execution_content,
+            std::to_string(std::bit_cast<std::uint64_t>(value)));
+    };
+    add_bits(cost.amount.global);
+    for(auto value:cost.amount.domains)add_bits(value);
+    append_exact_field(exact->candidate_execution_content,
+        std::to_string(cost.amount.independent_amount_revision));
+    for(bool requested:cost.m08_corrective_mask)
+        exact->candidate_execution_content.push_back(requested?1U:0U);
+    exact->candidate_execution_content.push_back(cost.m08_reporting_requested_domains?1U:0U);
+    if(cost.m08_reporting_requested_domains)
+        for(bool requested:*cost.m08_reporting_requested_domains)
+            exact->candidate_execution_content.push_back(requested?1U:0U);
+    append_exact_field(exact->candidate_execution_content,
+        std::to_string(cost.active_coordinates.size()));
+    for(const auto& c:cost.active_coordinates) {
+        add_bits(c.current_u);add_bits(c.immutable_reference_u);add_bits(c.reference_weight_r);
+    }
+    append_exact_field(exact->candidate_execution_content,std::to_string(cost.active_owned_modules));
+    append_exact_field(exact->candidate_execution_content,std::to_string(cost.enabled_artistic_bands));
     const auto candidate_owner=native_product_candidate_identity(owners.current_owner,ticket);
     if(const auto hit=env.cache.find(*exact)) {
         if(!hit->native_prediction||
