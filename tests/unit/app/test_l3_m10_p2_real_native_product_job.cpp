@@ -17,6 +17,7 @@
 #include "internal/l3_m09_native_eq_atom.hpp"
 #include "internal/l3_m09_native_tonal_seed.hpp"
 #include "internal/l3_m09_native_dynamic_seed.hpp"
+#include "internal/l3_m09_native_family_seed_bank.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -77,6 +78,7 @@ private slots:
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
+    void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
     void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
@@ -455,6 +457,32 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     fixed.measured_fixed[24].configured.front().current_candidate_z=-20.0;
     fixed.measured_m16_linear_peak.reset();
     QVERIFY(!m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0));
+}
+void P2RealNativeProductTest::nativeFamilyBankDoesNotSubstituteUnavailableRoles() {
+    namespace m09=a::m09_frozen;
+    const auto gain=dsp::GainParameters::create(2.0);
+    QVERIFY(gain);
+    m09::NativeFamilySeedBank bank;
+    bank.gain=m09::NativeLoudnessGainSeed{*gain.value(),2.0,-3.0,false,false};
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*base.value()));
+    m09::AbstractFamilyChoice family;
+    family.loudness=m09::LoudnessMode::gain;
+    const std::array<m09::NativeRoleAllocation,1> allocations{{
+        {m09::IntentRole::loudness_gain,id("bd000000-0000-4000-8000-000000000041"),
+         uuid("bd000000-0000-4000-8000-000000000042")}}};
+    const std::array<m09::NativeRoleCoordinateRequest,1> coordinates{{
+        {m09::IntentRole::loudness_gain,{0x11},{0x12},m09::NativeField::gain_db,{},{}}}};
+    const auto seed=m09::build_native_family_seed(registry,bank,family,allocations,coordinates,1U,48000);
+    QVERIFY(seed);
+    QCOMPARE(seed->seed.linked.instances().size(),std::size_t{1});
+    bank.gain.reset();
+    QVERIFY(!m09::build_native_family_seed(registry,bank,family,allocations,coordinates,1U,48000));
+    family.loudness=m09::LoudnessMode::terminal_limiter_only;
+    QVERIFY(!m09::native_family_role_payload(bank,family,m09::IntentRole::terminal_limiter));
+    family.tonal_eq_prefix=1U;
+    QVERIFY(!m09::native_family_role_payload(bank,family,m09::IntentRole::tonal_eq));
 }
 void P2RealNativeProductTest::nativeRoleAssemblyCreatesActualTypedSeed() {
     namespace m09=a::m09_frozen;
