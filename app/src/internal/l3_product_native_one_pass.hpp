@@ -143,10 +143,17 @@ measure_real_full_owned_pcm_native_once(
             spec.phase6_active_pcm_frames,
             spec.exact_stereo_reference_grade,
             {},spec.exact_low_end_zero_side);
-        if(!s03.numerical_source_valid||
+        if(!s03.source_observation_complete||
            s03.native_selected_frames!=
              tonal.value()->selected_spectral_windows)
             return fail("L3_ONCE_NATIVE_STEREO_COUNT_MISMATCH");
+    }else {
+        // Mono has no coherent stereo observations. Preserve configured
+        // component identities without inventing a stereo/Side reading.
+        s03.source_observation_complete=true;
+        s03.source_channel_count=1U;
+        for(const auto& b:spec.stereo_bands)
+            s03.multiband.push_back({b.exact_canonical_index,{},{}});
     }
     auto p04=m05m06_real::measure_product_p04_d07_d09(
         view,static_cast<std::int64_t>(spec.phase6_active_pcm_frames),
