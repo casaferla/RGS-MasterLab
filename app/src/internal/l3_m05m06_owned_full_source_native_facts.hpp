@@ -58,11 +58,10 @@ observe_original_owned_full_source_once(
                exact_full_pcm.view().frame_count().value())||
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return fail("L3_ORIGINAL_NATIVE_SOURCE_OWNER_OR_GRID_STALE");
-    const auto active=static_cast<std::int64_t>(
-        canonical_native_spec.phase6_active_pcm_frames);
     auto native=measure_real_full_owned_pcm_native_once(
         exact_full_pcm,std::move(canonical_native_spec),cancellation);
     if(!native)return R::failure(*native.error());
+    const auto active=static_cast<std::int64_t>(native.value()->exact_observed_active_frames);
     auto imported=m05m06_real::import_actual_full_source(
         native.value()->levels,native.value()->tonal,
         std::move(original_product_owner),
