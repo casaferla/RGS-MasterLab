@@ -54,6 +54,10 @@ struct AuthoritativeCostInput final {
     std::vector<std::uint8_t> canonical_current_tuple;
     std::vector<std::uint8_t> exact_topology_evidence_identity;
     std::optional<std::array<bool,4>> m08_reporting_requested_domains{};
+    std::string native_candidate_resource_identity{};
+    std::uint64_t native_candidate_generation{};
+    std::string native_candidate_ticket{};
+    std::string native_m07_generation{};
 };
 struct AuthoritativeCostResult final {
     std::optional<MeasuredOrderKey> measured;
@@ -145,7 +149,11 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
             AuthoritativeCostReason::invalid_reference_or_complexity};
     key->native_prediction=std::make_shared<const NativePredictionSnapshot>(
         NativePredictionSnapshot{input.exact_pair_slots,input.protected_full_k,
-                                 input.m08_reporting_requested_domains});
+                                 input.m08_reporting_requested_domains,
+                                 input.native_candidate_resource_identity,
+                                 input.native_candidate_generation,
+                                 input.native_candidate_ticket,
+                                 input.native_m07_generation});
     return {std::move(key),measured,AuthoritativeCostReason::measured};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
