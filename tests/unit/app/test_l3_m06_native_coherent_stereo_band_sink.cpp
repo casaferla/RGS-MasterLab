@@ -39,6 +39,7 @@ private slots:
     void antiPhaseRhoNegativeAndNeverInventSideSource();
     void lowEndOnlyWhenRetainedGateSameAndAttested();
     void lessThanTwentyFramesNeverGradeMultiband();
+    void identicalCountsDoNotConcealDifferentOrdinals();
 };
 void NativeStereoBandTest::realPsdInPhaseMonoEndpointNeedsExactEvidence(){
     auto pcm=stereo_wave(false);QVERIFY(pcm);
@@ -125,6 +126,30 @@ lessThanTwentyFramesNeverGradeMultiband(){
     QCOMPARE(out.multiband.front().correlation.valid_frames,
              std::uint64_t{19});
     QVERIFY(!out.multiband.front().correlation.transformed_z);
+}
+void NativeStereoBandTest::identicalCountsDoNotConcealDifferentOrdinals()
+{
+    native::AuthenticM20CoherentStereoSink first{
+        48000,4096,{{0,20,80}},true,true};
+    native::AuthenticM20CoherentStereoSink second{
+        48000,4096,{{0,20,80}},true,true};
+    const std::vector<double> p(2049,0.001),c(2049,0.0);
+    for(std::uint64_t i=0;i<25U;++i) {
+        QVERIFY(first.on_selected_stereo_frame(i,48000,4096,p,p,c));
+        QVERIFY(second.on_selected_stereo_frame(i+1U,48000,4096,p,p,c));
+    }
+    const auto a=first.finalize(48000*2,true);
+    const auto b=second.finalize(48000*2,true);
+    const auto repeated=first.finalize(48000*2,true);
+    const auto& x=a.multiband.front();
+    const auto& y=b.multiband.front();
+    QCOMPARE(x.width.valid_frames,y.width.valid_frames);
+    QCOMPARE(x.width.raw_ratio_or_rho,y.width.raw_ratio_or_rho);
+    QVERIFY(!x.width.exact_frame_population_identity.empty());
+    QVERIFY(x.width.exact_frame_population_identity!=y.width.exact_frame_population_identity);
+    QVERIFY(x.correlation.exact_frame_population_identity!=y.correlation.exact_frame_population_identity);
+    QCOMPARE(x.width.exact_frame_population_identity,
+             repeated.multiband.front().width.exact_frame_population_identity);
 }
 } // namespace
 } // namespace rgsml::tests
