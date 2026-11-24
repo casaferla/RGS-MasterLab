@@ -5,6 +5,7 @@
 #include "internal/l3_m12_product_materialization_receipt.hpp"
 #include "internal/l3_m13_product_fresh_postmaterialization_probe.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
+#include "internal/l3_m13_provisional_report_codec.hpp"
 #include <rgsml/core/resource_reference.hpp>
 
 #include <QObject>
@@ -197,6 +198,19 @@ public:
     // nonpublishing and cannot mint a VERIFIED report from provisional QTP.
     [[nodiscard]] l3_automatch::m13_frozen::M13ProvisionalAssessment
     assess_private_m13_completed_fresh_worker(
+        const l3_automatch::m13_frozen::
+            M13ImmutableProductFreshProbeRequest& request,
+        const l3_automatch::m13_frozen::M13FreshProductMasterProbe& result,
+        const l3_automatch::m13_frozen::M13TwentySevenConformance& native,
+        const l3_automatch::m13_frozen::FullM08Comparison& proximity,
+        bool independent_reference_and_scopes_current,
+        l3_automatch::m13_frozen::MandatoryHardPredicate m11_protected,
+        l3_automatch::m13_frozen::MandatoryHardPredicate other_hard_safety);
+    // Owner-thread only: seal a diagnostic after actual post-worker
+    // currentness admission. Never a persisted P01 VERIFIED report.
+    [[nodiscard]] core::Result<
+        l3_automatch::m13_frozen::M13ProvisionalDiagnosticEnvelope>
+    seal_private_m13_provisional_diagnostic(
         const l3_automatch::m13_frozen::
             M13ImmutableProductFreshProbeRequest& request,
         const l3_automatch::m13_frozen::M13FreshProductMasterProbe& result,
