@@ -67,6 +67,7 @@ class P2RealNativeProductTest final:public QObject {
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
+    void nativeTypedSeedBuildsRealRefinementTrial();
     void adaptiveRamCacheBudgetPreservesColdRender();
     void canonicalP2TrialTicketsCover48OrderedParameters();
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
@@ -137,6 +138,62 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeTypedSeedBuildsRealRefinementTrial() {
+    namespace m09=a::m09_frozen;
+    namespace m10=a::m10_frozen;
+    using F=m09::NativeField;
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*base.value()));
+    const auto gain_id=id("be000000-0000-4000-8000-000000000001");
+    const auto semantic=uuid("be000000-0000-4000-8000-000000000002");
+    auto instance=dsp::ModuleInstance::create({
+        gain_id,"rgsml.dsp.gain",true,false,false,false,
+        dsp::ModuleProvenance::REFERENCE_MATCH,dsp::ModuleOwner::REFERENCE_MATCH,
+        dsp::ModuleLinkState::REF_LINKED,semantic,{}});
+    QVERIFY(instance);
+    auto chain=dsp::ProcessingChain::restore(*registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+        11U,{*instance.value()});
+    auto gain=dsp::GainParameters::create(1.0);
+    QVERIFY(chain&&gain);
+    const dsp::ModuleExecutionBinding binding{gain_id,*gain.value()};
+    const auto coordinate=m09::make_native_seed_coordinate(*instance.value(),
+        binding,{0x10},{0x20},F::gain_db,{}, {},48000);
+    QVERIFY(coordinate);
+    QCOMPARE(coordinate->immutable_reference_u,0.5);
+    QCOMPARE(coordinate->reference_weight,1.0);
+    const m09::NativeTypedSeed seed{registry,{*chain.value(),{binding}},{*coordinate}};
+    const auto inventory=m09::native_seed_inventory(seed);
+    QVERIFY(inventory);
+    const std::array<double,1> current{{coordinate->canonical.normalized_u}};
+    const auto exact=m09::decode_native_typed_seed(seed,*inventory,current);
+    QVERIFY(exact);
+    QVERIFY(exact->graph.bindings==seed.seed.bindings);
+    const std::array<double,1> proposal{{0.75}};
+    const auto trial=m09::build_native_typed_trial(seed,*inventory,proposal,{},
+        [&](const m10::PreservedNativeGraph& graph,const auto&,const auto&)
+            ->std::optional<m10::ExactExecutionCacheKey>{
+            const auto graph_bytes=m10::exact_native_graph_content(
+                graph.linked,graph.bindings,*registry);
+            if(!graph_bytes)return std::nullopt;
+            return m10::ExactExecutionCacheKey{{0x01},*graph_bytes,{0x02},{0x03}};
+        });
+    QVERIFY(trial);
+    QCOMPARE(std::get<dsp::GainParameters>(trial->graph.bindings.front().parameters).gain_db(),3.0);
+    QCOMPARE(trial->constraints.active_owned_modules,std::uint32_t{1});
+    QCOMPARE(trial->constraints.enabled_artistic_bands,std::uint32_t{0});
+    QCOMPARE(trial->constraints.active_coordinates.front().immutable_reference_u,0.5);
+    QCOMPARE(trial->constraints.active_coordinates.front().current_u,0.75);
+    QVERIFY(seed.seed.bindings.front()==binding);
+    auto substituted=seed;
+    substituted.coordinates.front().exact_allocated_semantic_node_id=
+        uuid("be000000-0000-4000-8000-000000000003");
+    QVERIFY(!m09::decode_native_typed_seed(substituted,*inventory,proposal));
+    substituted=seed;
+    substituted.coordinates.front().canonical.normalized_u=0.25;
+    QVERIFY(!m09::native_seed_inventory(substituted));
 }
 void P2RealNativeProductTest::
 genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
