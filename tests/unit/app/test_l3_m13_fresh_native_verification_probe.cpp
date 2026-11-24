@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <numbers>
 #include <vector>
 namespace rgsml::tests {
@@ -477,18 +478,22 @@ void M13FreshNativeProbeTest::frozenVerificationStatePrecedence()
 void M13FreshNativeProbeTest::reasonsOrderAndExactDuplicateSemantics()
 {
     using namespace m13;
-    const VerificationReason signature{
-        VerificationStage::input_integrity,"SIGNATURE_MISMATCH",
-        "/acceptedPlanRef"};
-    const VerificationReason safety{
-        VerificationStage::safety,"HARD_SAFETY_VIOLATION",
-        "/freshM16"};
-    const VerificationReason proximity{
-        VerificationStage::proximity,"PROXIMITY_VERIFICATION_MISMATCH",
-        "/proximityResults/global"};
-    const VerificationReason stale{
-        VerificationStage::dependency_currentness,"STALE_DEPENDENCY",
-        "/Prepared/ContentChecksum"};
+    VerificationReason signature;
+    signature.stage=VerificationStage::input_integrity;
+    signature.code="SIGNATURE_MISMATCH";
+    signature.field_path="/acceptedPlanRef";
+    VerificationReason safety;
+    safety.stage=VerificationStage::safety;
+    safety.code="HARD_SAFETY_VIOLATION";
+    safety.field_path="/freshM16";
+    VerificationReason proximity;
+    proximity.stage=VerificationStage::proximity;
+    proximity.code="PROXIMITY_VERIFICATION_MISMATCH";
+    proximity.field_path="/proximityResults/global";
+    VerificationReason stale;
+    stale.stage=VerificationStage::dependency_currentness;
+    stale.code="STALE_DEPENDENCY";
+    stale.field_path="/Prepared/ContentChecksum";
     auto sorted=normalize_verification_reasons({
         proximity,safety,signature,stale,signature});
     QVERIFY(sorted);
