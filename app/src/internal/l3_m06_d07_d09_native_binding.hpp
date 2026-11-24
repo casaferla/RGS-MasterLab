@@ -90,6 +90,11 @@ bind_real_d07_d09(const TransientTripleEvidence& e)
                 static_cast<bool>(ready),ready?support:0.0,
                 {p,m08_frozen::Endpoint::ordinary},
                 {g,m08_frozen::Endpoint::ordinary},c,true});
+            auto& native=out[d].configured.back().candidate_native;
+            if(c)native.value=src[2]->native_type7_p10_p50_p90[k];
+            native.valid_count=src[2]->valid_descriptor_events;
+            native.configured_count=src[2]->canonical_events;
+            native.selector=std::array<const char*,3>{{"P10","P50","P90"}}[k];
         }
     }
     return {std::move(out),TransientBindingFailure::none};
