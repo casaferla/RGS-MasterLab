@@ -27,6 +27,8 @@ private slots:
     void frozenD01Type7AndThreeComponentMassNativeOracles();
     void frozenT2T6ExternalFloorAndUnweightedOlsOracle();
     void nativePopulationRequiresExactSelectedOrdinals();
+    void integratedMembershipUsesExactBlockStartsNotUnion();
+    void widthMembershipUsesSelectedFrameUnion();
 };
 [[nodiscard]] core::Result<audio::AudioBuffer> example(
     double scale,double harmonic,int seconds=1) {
@@ -50,6 +52,61 @@ private slots:
         (*r.value())[i]=scale*(0.64*a-0.8*harmonic*b);
     }
     return source;
+}
+void M05M06RealPortTest::integratedMembershipUsesExactBlockStartsNotUnion()
+{
+    auto pcm=example(0.4,0.15);
+    QVERIFY(pcm);
+    const auto levels=analysis::measure_basic_level_full_resource(*pcm.value());
+    const auto tonal=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{0},pcm.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QVERIFY(levels&&tonal);
+    QCOMPARE(levels.value()->complete_loudness_block_count,std::uint64_t{7});
+    QVERIFY(!levels.value()->final_loudness_block_starts.empty());
+    const auto first=real::import_actual_full_source(
+        *levels.value(),*tonal.value(),{"actual",1,true});
+    QVERIFY(first.source);
+    QVERIFY(!first.source->integrated_gate_population_identity.empty());
+    auto a=*levels.value(),b=a;
+    // Equal count, identical retained union; different original block starts.
+    a.final_loudness_block_starts={0,4800,28800};
+    b.final_loudness_block_starts={0,9600,28800};
+    const auto x=real::import_actual_full_source(a,*tonal.value(),{"fixture",1,true});
+    const auto y=real::import_actual_full_source(b,*tonal.value(),{"fixture",1,true});
+    QVERIFY(x.source&&y.source);
+    QVERIFY(x.source->integrated_gate_population_identity!=
+            y.source->integrated_gate_population_identity);
+    b.final_loudness_block_starts={0,1,28800};
+    QVERIFY(!real::import_actual_full_source(b,*tonal.value(),{"fixture",1,true}).source);
+}
+void M05M06RealPortTest::widthMembershipUsesSelectedFrameUnion()
+{
+    auto pcm=example(0.4,0.15);
+    QVERIFY(pcm);
+    const auto levels=analysis::measure_basic_level_full_resource(*pcm.value());
+    QVERIFY(levels);
+    analysis::TonalStereoTrustedSupport spec;
+    const std::vector<analysis::TonalStereoRetainedInterval> a{{0,24000}},b{{24000,48000}};
+    spec.has_width_gate=true;
+    spec.retained_width_blocks=a;
+    const auto x=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{0},pcm.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,spec);
+    spec.retained_width_blocks=b;
+    const auto y=analysis::measure_tonal_stereo_scope(
+        pcm.value()->view(),core::FrameIndex{0},pcm.value()->view().frame_count(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,spec);
+    QVERIFY(x&&y);
+    QCOMPARE(x.value()->width_selected_frames,std::uint64_t{24000});
+    QCOMPARE(y.value()->width_selected_frames,x.value()->width_selected_frames);
+    const auto first=real::import_actual_full_source(*levels.value(),*x.value(),{"fixture",1,true});
+    const auto second=real::import_actual_full_source(*levels.value(),*y.value(),{"fixture",2,true});
+    QVERIFY(first.source&&second.source);
+    QVERIFY(first.source->width_population_identity!=second.source->width_population_identity);
+    auto malformed=*x.value();
+    ++malformed.width_selected_frames;
+    QVERIFY(!real::import_actual_full_source(*levels.value(),malformed,{"fixture",1,true}).source);
 }
 void M05M06RealPortTest::nativePopulationRequiresExactSelectedOrdinals()
 {
