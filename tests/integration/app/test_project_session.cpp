@@ -3,6 +3,7 @@
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
+#include "internal/l3_m13_fresh_original_native_import.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -4802,6 +4803,24 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
              static_cast<std::int64_t>(sampleRateHz));
     QCOMPARE(m13Result.value()->fresh_m20.sample_rate_hz,
              static_cast<std::int64_t>(sampleRateHz));
+    // Real original M05/M06 source importer, not an M21 GUI-proxy:
+    // the intentionally short fixture has no qualified Phase6 series.
+    const auto actualNative=app::l3_automatch::m13_frozen::
+        import_m13_product_fresh_original_native_source(
+            *m13Owner.value(),*m13Result.value(),
+            {20.0,16000.0},1e-12,0,false,false);
+    QVERIFY2(actualNative,
+        actualNative.error()?actualNative.error()->message().c_str():"");
+    QCOMPARE(actualNative.value()->fresh_full_m19_m20.sample_rate_hz,
+             static_cast<std::int64_t>(sampleRateHz));
+    QCOMPARE(actualNative.value()->fresh_full_m19_m20.scope_frame_count,
+             std::int64_t{512});
+    QVERIFY(actualNative.value()->fresh_full_m19_m20.owner.
+        full_track_owner_confirmed);
+    QCOMPARE(actualNative.value()->fresh_full_m19_m20.owner.generation,
+             m13Owner.value()->exact_product_ownership_epoch());
+    QVERIFY(!actualNative.value()->original_native_additional_facts);
+    QVERIFY(!actualNative.value()->authorizes_m13_verified());
     QCOMPARE(m13Result.value()->logical_verification_evaluations,
              std::uint32_t{1});
     QCOMPARE(m13Result.value()->stage_witness.protected_manual.size(),
