@@ -1,0 +1,83 @@
+#pragma once
+#include "l3_m09_native_role_graph.hpp"
+#include "l3_m09_native_tonal_seed.hpp"
+#include "l3_m09_native_dynamic_seed.hpp"
+#include "l3_m09_native_macro_seed.hpp"
+#include "l3_m09_native_micro_seed.hpp"
+#include "l3_m09_native_stereo_seed.hpp"
+#include "l3_m09_native_loudness_seed.hpp"
+namespace rgsml::app::l3_automatch::m09_frozen {
+struct NativeFamilySeedBank final {
+    std::vector<NativeEqPrefix> tonal;
+    std::vector<NativeDynamicPrefix> spectral;
+    std::array<std::optional<NativeCompressorSeed>,2> macro;
+    std::array<std::optional<dsp::TransientShaperParameters>,3> micro;
+    std::vector<NativeEqPrefix> side;
+    std::array<std::optional<NativeStereoSeed>,7> stereo;
+    std::optional<NativeLoudnessGainSeed> gain;
+};
+struct NativeRoleAllocation final {
+    IntentRole role;
+    dsp::ModuleInstanceId instance;
+    core::Uuid semantic;
+};
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+native_family_role_payload(const NativeFamilySeedBank& bank,
+    const AbstractFamilyChoice& family,IntentRole role)
+{
+    switch(role) {
+    case IntentRole::tonal_eq:
+        if(family.tonal_eq_prefix&&family.tonal_eq_prefix<=bank.tonal.size())
+            return bank.tonal[family.tonal_eq_prefix-1U].payload;
+        break;
+    case IntentRole::spectral_dynamic_eq:
+        if(family.spectral_dynamic_eq_prefix&&family.spectral_dynamic_eq_prefix<=bank.spectral.size())
+            return bank.spectral[family.spectral_dynamic_eq_prefix-1U].payload;
+        break;
+    case IntentRole::macro_compressor: {
+        const auto i=static_cast<std::size_t>(family.macro);
+        if(i&&i<=bank.macro.size()&&bank.macro[i-1U])return bank.macro[i-1U]->payload;
+        break;
+    }
+    case IntentRole::micro_transient: {
+        const auto i=static_cast<std::size_t>(family.micro);
+        if(i&&i<=bank.micro.size()&&bank.micro[i-1U])return *bank.micro[i-1U];
+        break;
+    }
+    case IntentRole::stereo_side_eq:
+        if(family.stereo_side_eq_prefix&&family.stereo_side_eq_prefix<=bank.side.size())
+            return bank.side[family.stereo_side_eq_prefix-1U].payload;
+        break;
+    case IntentRole::stereo_ms:
+        // No independent Fixed-only low-lane estimate can impersonate
+        // the insertion baseline after a selected SIDE EQ.
+        if(!family.stereo_side_eq_prefix&&family.stereo_mode_index&&
+           family.stereo_mode_index<=bank.stereo.size()&&bank.stereo[family.stereo_mode_index-1U])
+            return bank.stereo[family.stereo_mode_index-1U]->payload;
+        break;
+    case IntentRole::loudness_gain:
+        if(bank.gain)return bank.gain->payload;
+        break;
+    case IntentRole::terminal_limiter:break;
+    }
+    return {};
+}
+[[nodiscard]] inline std::optional<NativeTypedSeed> build_native_family_seed(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const NativeFamilySeedBank& bank,const AbstractFamilyChoice& family,
+    std::span<const NativeRoleAllocation> allocations,
+    std::span<const NativeRoleCoordinateRequest> coordinates,
+    std::uint64_t revision,std::int64_t rate)
+{
+    const auto ordered=ordered_abstract_roles(family);
+    if(ordered.size()!=allocations.size())return {};
+    std::vector<NativeRoleSeed> seeds;
+    for(std::size_t i=0;i<ordered.size();++i) {
+        if(allocations[i].role!=ordered[i])return {};
+        auto payload=native_family_role_payload(bank,family,ordered[i]);
+        if(!payload)return {};
+        seeds.push_back({ordered[i],allocations[i].instance,allocations[i].semantic,std::move(*payload)});
+    }
+    return assemble_native_artistic_typed_seed(std::move(registry),family,seeds,coordinates,revision,rate);
+}
+} // namespace rgsml::app::l3_automatch::m09_frozen
