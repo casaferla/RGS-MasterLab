@@ -17,6 +17,7 @@ struct NativeSeedCoordinate final {
     std::optional<core::Uuid> band_id;
     double immutable_reference_u{};
     double reference_weight{};
+    core::Uuid exact_allocated_semantic_node_id;
 };
 struct NativeTypedSeed final {
     std::shared_ptr<const dsp::ModuleRegistry> registry;
@@ -64,11 +65,20 @@ decode_native_typed_seed(
         const auto node=std::find_if(nodes.begin(),nodes.end(),[&](const auto& n){
             return n.instance_id()==found->instance_id;
         });
-        if(node==nodes.end()||!node->active()||!node->semantic_node_id())
+        if(node==nodes.end()||!node->active()||!node->semantic_node_id()||
+           found->exact_allocated_semantic_node_id.is_nil()||
+           *node->semantic_node_id()!=found->exact_allocated_semantic_node_id)
             return std::nullopt;
-        const auto physical=found->transform.from_normalized(normalized[i]);
-        if(!physical)return std::nullopt;
         const auto index=static_cast<std::size_t>(node-nodes.begin());
+        const auto physical_seed=read_native_physical_field(
+            bindings[index].parameters,found->field,found->band_id);
+        if(!physical_seed||
+           found->transform.to_normalized(*physical_seed)!=
+               std::optional<double>{found->canonical.normalized_u})
+            return std::nullopt;
+        const auto physical=normalized[i]==found->canonical.normalized_u
+            ?physical_seed:found->transform.from_normalized(normalized[i]);
+        if(!physical)return std::nullopt;
         fields[index].push_back({found->field,found->band_id,*physical});
         reference.push_back({normalized[i],found->immutable_reference_u,found->reference_weight});
     }
