@@ -2,7 +2,8 @@
 // Keep only the original definition and source ownership authority used
 // by the measured candidate. All numerical P/G/C readings are rebuilt
 // from independently owned PCM by the existing native binders.
-#include "l3_m10_p2_real_native_triple_binding.hpp"
+#include "l3_m10_p2_verified_candidate_triple.hpp"
+#include "l3_m11_native_fixed_population.hpp"
 #include "l3_m10_p2_exact_cache_evaluator.hpp"
 #include <bit>
 #include <memory>
@@ -157,5 +158,34 @@ namespace rgsml::app::l3_automatch::m10_frozen {
         owner(input.s03_s06.independent_source_owners[j]);
     }
     return out;
+}
+[[nodiscard]] inline std::optional<P2OriginalRealNativeTriple>
+resolve_original_definitions_from_fixed(
+    const m11_frozen::NativeFixedPopulation& fixed,
+    const OriginalPreparedReferenceNativeFacts& originals,
+    const OfflineProductOwnerStamp& owner,
+    const std::string& exact_generation,
+    const std::string& candidate_ticket)
+{
+    if(!fixed.exact_independent_fixed_and_endpoint_safety_attested||
+       !fixed.original_definition_authority||fixed.exact_definition_authority_content.empty()||
+       fixed.exact_m07_generation!=exact_generation||
+       fixed.exact_fixed_ticket==candidate_ticket||
+       !original_pair_matches_product_owner(originals,owner)||
+       exact_original_native_definition_content(*fixed.original_definition_authority)!=
+           fixed.exact_definition_authority_content)
+        return std::nullopt;
+    const m05m06_real::SourceIdentity previous{
+        fixed.exact_fixed_resource_identity,fixed.exact_fixed_source_generation,true};
+    if(!authentic_product_candidate_identity(previous,owner,fixed.exact_fixed_ticket))
+        return std::nullopt;
+    auto definitions=*fixed.original_definition_authority;
+    const auto next=native_product_candidate_identity(owner,candidate_ticket);
+    if(!rebind_original_candidate_owner(definitions,previous,next)||
+       !rebind_independent_original_native_pair(definitions,originals,next))
+        return std::nullopt;
+    // Strip P/G observations again: the actual candidate binder will
+    // reconstruct all three numerical families from the immutable pair.
+    return retain_original_native_definitions(definitions);
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
