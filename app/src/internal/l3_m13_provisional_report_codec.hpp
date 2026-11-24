@@ -86,6 +86,7 @@ m13_provisional_payload_without_own_checksum(
     core::Uuid exact_report_id)
 {
     if(exact_report_id.is_nil()||
+       !fresh.matches_executed_request(admitted)||
        assessment.state==VerificationState::verified||
        assessment.verified_profile_approval_exists||
        !admitted.exact_materialized_preview_owner().replay||
