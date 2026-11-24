@@ -94,6 +94,7 @@ bind_real_d07_d09(const TransientTripleEvidence& e)
             if(c)native.value=src[2]->native_type7_p10_p50_p90[k];
             native.valid_count=src[2]->valid_descriptor_events;
             native.configured_count=src[2]->canonical_events;
+            native.population_identity=src[2]->exact_event_population_identity;
             native.selector=std::array<const char*,3>{{"P10","P50","P90"}}[k];
         }
     }
