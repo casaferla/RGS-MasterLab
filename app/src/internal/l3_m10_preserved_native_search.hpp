@@ -75,6 +75,16 @@ template<class ResolveOriginalTriple>
        job.value()->exact_fixed_graph_content()!=
            std::optional<ExactCacheBytes>{fixed.exact_fixed_graph_content})
         return rejected();
+    // A production Fixed carries its original measured definition
+    // authority. Rebind to the new ticket before ANY cache lookup.
+    // The old callback-only path remains available to nonpublishing
+    // research fixtures without a Fixed definition snapshot.
+    std::optional<P2OriginalRealNativeTriple> original_definitions;
+    if(fixed.original_definition_authority) {
+        original_definitions=resolve_original_definitions_from_fixed(
+            fixed,env.originals,owners.current_owner,env.generation,ticket);
+        if(!original_definitions)return rejected();
+    }
     cost.independently_measured_fixed=fixed;
     const auto execution=job.value()->exact_execution_graph_content();
     auto exact=bind_preserved_native_execution_key(std::move(key),*job.value(),cost);
@@ -94,7 +104,11 @@ template<class ResolveOriginalTriple>
             *job.value(),env.spec,nullptr,env.generation,true,std::move(cost),
             env.m11_ceiling_db_tp,candidate_owner,&env.originals,
             env.file_lra_policy_attested,
-            std::forward<ResolveOriginalTriple>(resolve),cancellation);
+            [&](const M10P2FullNativeEvidence& measured)
+                ->std::optional<P2OriginalRealNativeTriple> {
+                if(original_definitions)return std::move(original_definitions);
+                return std::invoke(resolve,measured);
+            },cancellation);
         return score.as_exact_cache_evidence();
     });
 }
