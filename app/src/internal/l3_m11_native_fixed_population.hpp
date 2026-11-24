@@ -18,6 +18,7 @@ struct NativeFixedPopulation final {
     std::string exact_fixed_resource_identity{};
     std::uint64_t exact_fixed_source_generation{};
     std::string exact_m07_generation{};
+    std::vector<std::uint8_t> exact_fixed_graph_content{};
 };
 [[nodiscard]] inline std::optional<std::vector<ProtectedComponent>>
 bind_native_fixed_to_candidate(
