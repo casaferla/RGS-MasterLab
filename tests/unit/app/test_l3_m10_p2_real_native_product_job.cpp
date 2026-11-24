@@ -69,6 +69,7 @@ private slots:
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeM20MetadataUsesSixRateGeometry();
+    void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
     void canonicalP2TrialTicketsCover48OrderedParameters();
     void streamingP2AndIndependentM16RenderAtAllSixRates_data();
@@ -103,6 +104,34 @@ void P2RealNativeProductTest::nativeM20MetadataUsesSixRateGeometry() {
     QVERIFY(!analysis::native_tonal_frame_geometry(32000));
     QVERIFY(!analysis::native_tonal_measurement_bandwidth(32000));
     QVERIFY(analysis::native_tonal_fractional_grid(32000,12).empty());
+}
+void P2RealNativeProductTest::nativeProductPairMetadataKeepsIndependentRates() {
+    namespace real=a::m05m06_real;
+    constexpr std::array<std::uint32_t,6> rates{44100,48000,88200,96000,176400,192000};
+    for(const auto p:rates)for(const auto g:rates) {
+        const auto common=real::original_native_common_tonal_bandwidth(p,g);
+        QVERIFY(common);
+        QCOMPARE(common->low_hz,20.0);
+        QCOMPARE(common->high_hz,(p==44100U||g==44100U)?19845.0:20000.0);
+        QVERIFY(real::native_common_contains(*common,{20.0,18000.0}));
+        QVERIFY(!real::native_common_contains(*common,{20.0,common->high_hz+1.0}));
+        QVERIFY(!real::native_common_contains(*common,{21.0,20.0}));
+        QVERIFY(!real::native_common_contains(*common,{20.0,
+                 std::numeric_limits<double>::quiet_NaN()}));
+        a::ProductNativeOnePassSpec ps,gs;
+        QVERIFY(a::bind_product_native_fft_metadata(ps,p));
+        QVERIFY(a::bind_product_native_fft_metadata(gs,g));
+        QCOMPARE(ps.exact_m20_fft_size,analysis::native_tonal_frame_geometry(p)->fft);
+        QCOMPARE(gs.exact_m20_fft_size,analysis::native_tonal_frame_geometry(g)->fft);
+        QVERIFY(!ps.current_full_phase6_source_and_grid);
+        QVERIFY(ps.spectral_bands.empty());
+        ps.exact_m20_fft_size=1U;
+        QVERIFY(!a::bind_product_native_fft_metadata(ps,p));
+        QCOMPARE(ps.exact_m20_fft_size,std::uint64_t{1});
+    }
+    QVERIFY(!real::original_native_common_tonal_bandwidth(48000,32000));
+    a::ProductNativeOnePassSpec invalid;
+    QVERIFY(!a::bind_product_native_fft_metadata(invalid,32000));
 }
 void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBounds() {
     namespace m09=a::m09_frozen;
