@@ -92,14 +92,11 @@ bind_p2_original_native_triple_from_real_candidate(
 // overwritten from the same actual, independent, once-per-generation
 // PCM analysis. Candidate C remains rebuilt from the actual P2 render
 // by the existing strict candidate binder below.
-[[nodiscard]] inline P2RealTripleBindingResult
-bind_p2_original_native_triple_from_independent_full_pair(
-    P2OriginalRealNativeTriple original,
+[[nodiscard]] inline bool
+rebind_independent_original_native_pair(
+    P2OriginalRealNativeTriple& original,
     const OriginalPreparedReferenceNativeFacts& independent,
-    const M10P2FullNativeEvidence& measured_candidate,
-    const m05m06_real::SourceIdentity& exact_current_p2_candidate_owner,
-    std::int64_t candidate_exact_phase6_active_frames,
-    bool candidate_exact_file_based_lra_policy_attested)
+    const m05m06_real::SourceIdentity& exact_current_p2_candidate_owner)
 {
     const auto& prepared=independent.prepared;
     const auto& reference=independent.reference;
@@ -113,7 +110,7 @@ bind_p2_original_native_triple_from_independent_full_pair(
            p.resource_identity||
        exact_current_p2_candidate_owner.resource_identity==
            g.resource_identity)
-        return {};
+        return false;
     const std::array<const OriginalOwnedNativeSourceFacts*,2> sources{{
         &prepared,&reference}};
     for(std::size_t i=0;i<2U;++i) {
@@ -135,7 +132,7 @@ bind_p2_original_native_triple_from_independent_full_pair(
                          original.d02.reference_owner)||
            !same(i==0U?original.d03_d04.prepared_owner:
                          original.d03_d04.reference_owner))
-            return {};
+            return false;
     }
     for(std::size_t i=0;i<2U;++i) {
         const auto& measured=*sources[i];
@@ -162,6 +159,19 @@ bind_p2_original_native_triple_from_independent_full_pair(
         original.d10_d12.observed[i]=measured.full_native.d10_d12;
         original.s03_s06.observed[i]=measured.full_native.s03_s06;
     }
+    return true;
+}
+[[nodiscard]] inline P2RealTripleBindingResult
+bind_p2_original_native_triple_from_independent_full_pair(
+    P2OriginalRealNativeTriple original,
+    const OriginalPreparedReferenceNativeFacts& independent,
+    const M10P2FullNativeEvidence& measured_candidate,
+    const m05m06_real::SourceIdentity& exact_current_p2_candidate_owner,
+    std::int64_t candidate_exact_phase6_active_frames,
+    bool candidate_exact_file_based_lra_policy_attested)
+{
+    if(!rebind_independent_original_native_pair(
+        original,independent,exact_current_p2_candidate_owner))return {};
     // No grade/digest/amount/safety attestation is created here.
     // If any frozen native feature lacks support or its original
     // policy/definition authority, the original M07 assembler refuses J.
