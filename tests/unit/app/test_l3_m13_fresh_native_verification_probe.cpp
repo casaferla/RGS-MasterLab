@@ -565,6 +565,33 @@ completeFreshNativeTwentySevenBindingComparison()
     QVERIFY(comparison.rows[0].t1_profile);
     QCOMPARE(comparison.rows[0].t1_profile->outcome,
              QtpOutcome::mismatch); // RMS, despite .008<.01
+    all[0].configured[0].actual_fresh_native=0.5;
+    // Support and selector membership are exact categorical invariants
+    // even if an allowed numeric error is zero.
+    all[19].configured[0].actual_support_numerator=8;
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QCOMPARE(comparison.rows[19].outcome,BindingConformance::failed);
+    all[19].configured[0].actual_support_numerator=9;
+    all[18].configured[0].actual_endpoint=
+        m08_frozen::Endpoint::mono_side_muted;
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QCOMPARE(comparison.rows[18].outcome,BindingConformance::failed);
+    all[18].configured[0].actual_endpoint=
+        m08_frozen::Endpoint::ordinary;
+    all[2].configured[0].exact_fresh_native_transform_attested=false;
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QCOMPARE(comparison.rows[2].outcome,BindingConformance::unavailable);
+    all[2].configured[0].exact_fresh_native_transform_attested=true;
+    all[0].selected_source_feature_id=
+        std::string(m07_frozen::kBindings[0].exclusive_fallback_feature_id);
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QVERIFY(comparison.every_required_binding_passed);
+    all[0].selected_source_feature_id="invented-fallback";
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QVERIFY(!comparison.every_required_binding_complete);
+    all.pop_back();
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QVERIFY(!comparison.every_required_binding_complete);
 }
 
 QTEST_GUILESS_MAIN(rgsml::tests::M13FreshNativeProbeTest)
