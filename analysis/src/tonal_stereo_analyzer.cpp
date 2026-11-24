@@ -1,4 +1,6 @@
 #include <rgsml/analysis/tonal_stereo_analyzer.hpp>
+#include <rgsml/analysis/basic_level_analyzer.hpp>
+#include <limits>
 #include "internal/m20_bounded_spectrum_candidate.hpp"
 #include "internal/m20_normalized_profile_candidate.hpp"
 #include <rgsml/core/error.hpp>
@@ -32,6 +34,60 @@ using State=TonalStereoMetricState;
     return core::Error{core::ErrorCode::InvalidState,name};
 }
 } // namespace
+
+std::optional<NativeTonalFrameGeometry>
+native_tonal_frame_geometry(std::uint32_t sample_rate_hz) noexcept {
+    const auto g=m20_private::spectral_geometry(sample_rate_hz);
+    if(!g)return std::nullopt;
+    return NativeTonalFrameGeometry{g->window,g->fft,g->hop};
+}
+
+core::Result<NativeM19TonalGate>
+bind_native_m19_tonal_gate(const BasicLevelAnalysisResult& levels) {
+    using R=core::Result<NativeM19TonalGate>;
+    const auto fail=[](){return R::failure(invalid("M20_M19_NATIVE_GATE_INVALID"));};
+    if(levels.scope_begin_frame<0||levels.scope_frame_count<=0||
+       levels.sample_rate_hz<=0||levels.sample_rate_hz>192000||
+       levels.channel_count<1U||levels.channel_count>2U)return fail();
+    const auto g=native_tonal_frame_geometry(static_cast<std::uint32_t>(levels.sample_rate_hz));
+    if(!g)return fail();
+    const auto begin=static_cast<std::uint64_t>(levels.scope_begin_frame);
+    const auto frames=static_cast<std::uint64_t>(levels.scope_frame_count);
+    if(begin>std::numeric_limits<std::uint64_t>::max()-frames)return fail();
+    const auto end=begin+frames;
+    NativeM19TonalGate out;
+    if(!levels.retained_block_disclosure_complete) {
+        if(!levels.retained_block_union.empty()||
+           levels.integrated_lufs.state==BasicLevelValueState::AVAILABLE)return fail();
+        out.active_pcm_frames=frames;
+        return R::success(std::move(out));
+    }
+    out.available=true;
+    for(const auto& block:levels.retained_block_union) {
+        if(block.begin<begin||block.begin>=block.end||block.end>end||
+           (!out.retained_union.empty()&&block.begin<=out.retained_union.back().end))
+            return fail();
+        out.retained_union.push_back({block.begin,block.end});
+        out.active_pcm_frames+=block.end-block.begin;
+    }
+    if((levels.integrated_lufs.state==BasicLevelValueState::AVAILABLE)!=
+        !out.retained_union.empty())return fail();
+    const auto count=frames<g->window?0U:1U+(frames-g->window)/g->hop;
+    if(count>std::numeric_limits<std::size_t>::max())return fail();
+    out.selected_complete_frames.reserve(static_cast<std::size_t>(count));
+    std::size_t interval=0;
+    for(std::uint64_t i=0;i<count;++i) {
+        // Integer interval bounds: floor of the sample-interval midpoint
+        // has identical half-open membership to the exact midpoint.
+        const auto center=begin+i*g->hop+g->window/2U;
+        while(interval<out.retained_union.size()&&
+              out.retained_union[interval].end<=center)++interval;
+        out.selected_complete_frames.push_back(
+            interval<out.retained_union.size()&&
+            out.retained_union[interval].begin<=center?1U:0U);
+    }
+    return R::success(std::move(out));
+}
 
 core::Result<TonalStereoAnalysisResult> measure_tonal_stereo_scope(
     const audio::AudioBufferView& resource,
