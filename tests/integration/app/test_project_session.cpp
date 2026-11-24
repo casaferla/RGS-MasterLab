@@ -4921,6 +4921,31 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!app::l3_automatch::m13_frozen::
         verify_m13_provisional_diagnostic_integrity(
             *forgedValidHash.value()));
+    // A dishonest reordered reason list with its *own valid new hash*
+    // still violates the frozen P02 deterministic report schema.
+    auto reordered=validJson.object();
+    auto causeList=reordered.value("canonicalReasons").toArray();
+    QVERIFY(causeList.size()>1);
+    const auto firstCause=causeList[0];
+    causeList[0]=causeList[causeList.size()-1];
+    causeList[causeList.size()-1]=firstCause;
+    reordered.insert("canonicalReasons",causeList);
+    reordered.insert("primaryReason",causeList[0]);
+    reordered.remove("VerificationContentChecksum");
+    const auto reorderedBase=project::OpaqueJsonValue::parse(
+        QJsonDocument(reordered).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(reorderedBase);
+    reordered.insert("VerificationContentChecksum",
+        QString::fromStdString(app::l3_automatch::m13_frozen::
+            m13_digest_canonical_json(*reorderedBase.value())));
+    const auto reorderedSealed=project::OpaqueJsonValue::parse(
+        QJsonDocument(reordered).toJson(
+            QJsonDocument::Compact).toStdString());
+    QVERIFY(reorderedSealed);
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        verify_m13_provisional_diagnostic_integrity(
+            *reorderedSealed.value()));
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
     // The existing shared M18 epoch must exclude BOTH M13 capture
