@@ -1760,6 +1760,28 @@ bool ProjectSessionViewModel::private_m13_fresh_probe_still_current(
             ticket&&provider&&provider()==ticket->exact_prepared_owner;
 }
 
+l3_automatch::m13_frozen::M13ProvisionalAssessment
+ProjectSessionViewModel::assess_private_m13_completed_fresh_worker(
+    const l3_automatch::m13_frozen::
+        M13ImmutableProductFreshProbeRequest& request,
+    const l3_automatch::m13_frozen::M13FreshProductMasterProbe& result,
+    const l3_automatch::m13_frozen::M13TwentySevenConformance& native,
+    const l3_automatch::m13_frozen::FullM08Comparison& proximity,
+    bool independent_reference_and_scopes_current,
+    l3_automatch::m13_frozen::MandatoryHardPredicate m11_protected,
+    l3_automatch::m13_frozen::MandatoryHardPredicate other_hard_safety)
+{
+    // Revalidate on the REAL Product owner, after the worker finished.
+    // If Undo->Redo reproduces the original PCM, the independent M12
+    // publication epoch still marks the worker as STALE (no ABA).
+    const bool current=private_m13_fresh_probe_still_current(request);
+    return l3_automatch::m13_frozen::
+        assess_provisional_m13_product_fresh_evidence(
+            request,result,native,proximity,current,
+            independent_reference_and_scopes_current,
+            m11_protected,other_hard_safety);
+}
+
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
 {
     namespace m=l3_automatch::m12_frozen;
