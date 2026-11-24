@@ -71,4 +71,91 @@ namespace rgsml::app::l3_automatch::m10_frozen {
     }
     return out;
 }
+[[nodiscard]] inline ExactCacheBytes exact_original_native_definition_content(
+    const P2OriginalRealNativeTriple& input)
+{
+    ExactCacheBytes out;
+    const auto field=[&](std::string_view value){
+        p2_cache_detail::append_exact_field(out,value);
+    };
+    const auto integer=[&](auto value){field(std::to_string(value));};
+    const auto number=[&](double value){integer(std::bit_cast<std::uint64_t>(value));};
+    const auto grades=[&](const auto& values){
+        for(bool value:values)out.push_back(value?1U:0U);
+    };
+    const auto owner=[&](const m05m06_real::SourceIdentity& source){
+        field(source.resource_identity);integer(source.generation);
+        out.push_back(source.full_track_owner_confirmed?1U:0U);
+    };
+    field("rgsml.l3.native-definition-authority/1");
+    integer(input.t01.authoritative_primary_grid.size());
+    for(const auto& band:input.t01.authoritative_primary_grid) {
+        integer(band.canonical_index);number(band.low_hz);
+        number(band.center_hz);number(band.high_hz);
+    }
+    for(const auto& support:input.t01.exact_native_band_support_prepared_gold) {
+        integer(support.size());
+        for(const auto& value:support) {
+            out.push_back(value?1U:0U);
+            if(value)number(*value);
+        }
+    }
+    grades(input.t01.phase6_source_reference_grade);
+    field(input.t01.exact_primary_t01_feature_dependency);
+    integer(input.t01.exact_phase6_grid_and_native_support_current);
+    number(input.t02_t06.exact_common.low_hz);
+    number(input.t02_t06.exact_common.high_hz);
+    number(input.t02_t06.exact_accepted_density_floor);
+    for(const auto& f:input.t02_t06.features) {
+        field(f.exact_phase6_feature_dependency);
+        integer(f.phase6_definition_and_common_bandwidth_current);
+        grades(f.reference_grade);
+    }
+    grades(input.d01.phase6_reference_grade);
+    field(input.d01.exact_feature_dependency);
+    integer(input.d01.exact_phase6_feature_revision_and_context_current);
+    owner(input.d02.prepared_owner);owner(input.d02.reference_owner);
+    owner(input.d02.candidate_owner);
+    integer(input.d02.exact_feature_definition_and_all_source_epochs_current);
+    field(input.d02.exact_feature_dependency);
+    owner(input.d03_d04.prepared_owner);owner(input.d03_d04.reference_owner);
+    owner(input.d03_d04.candidate_owner);
+    integer(input.d03_d04.exact_phase6_feature_definition_current);
+    integer(input.d03_d04.all_three_source_reference_grade_attested);
+    field(input.d03_d04.exact_feature_dependency);
+    for(const auto& f:input.d07_d09.exact_feature_definition_digests)field(f);
+    for(const auto& g:input.d07_d09.per_descriptor_source_grade)grades(g);
+    integer(input.d07_d09.same_exact_p04_policy_context_and_generation_attested);
+    for(const auto& f:input.d10_d12.canonical_feature_dependency)field(f);
+    for(const auto& g:input.d10_d12.source_reference_grade)grades(g);
+    integer(input.d10_d12.exact_current_full_stft_grid_and_policy_attested);
+    owner(input.m19.prepared.owner);owner(input.m19.reference.owner);
+    owner(input.m19.actual_candidate.owner);
+    for(const auto& f:input.m19.authority) {
+        field(f.exact_feature_dependency);
+        integer(f.current_phase6_definition_and_revision);
+        grades(f.source_reference_grade);
+    }
+    owner(input.s01_s02.prepared.owner);owner(input.s01_s02.reference.owner);
+    owner(input.s01_s02.actual_candidate.owner);
+    for(const auto& f:input.s01_s02.authority) {
+        field(f.exact_feature_dependency);
+        integer(f.current_phase6_feature_definition);
+        grades(f.phase6_reference_grade);
+    }
+    integer(input.s03_s06.exact_canonical_band_indices.size());
+    for(auto index:input.s03_s06.exact_canonical_band_indices)integer(index);
+    for(const auto& f:input.s03_s06.immutable_feature_definition_digests)field(f);
+    for(const auto& g:input.s03_s06.source_phase6_reference_grade)grades(g);
+    integer(input.s03_s06.exact_current_common_band_grid_and_retained_gate_policy);
+    for(std::size_t j=0;j<3U;++j) {
+        owner(input.t01.actual_sources[j].owner);
+        owner(input.t02_t06.sources[j].owner);
+        owner(input.d01.source[j].owner);
+        owner(input.d07_d09.current_sources[j].owner);
+        owner(input.d10_d12.source_owner[j]);
+        owner(input.s03_s06.independent_source_owners[j]);
+    }
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m10_frozen
