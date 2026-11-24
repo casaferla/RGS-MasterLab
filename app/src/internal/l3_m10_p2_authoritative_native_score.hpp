@@ -8,6 +8,7 @@
 // This does NOT publish a Product graph, alter M17 or verify M13.
 #include "l3_m10_p2_full_native_evidence.hpp"
 #include "l3_m10_p2_actual_m16_guard.hpp"
+#include "l3_m11_actual_native_stereo_safety.hpp"
 #include "l3_m10_p2_verified_candidate_triple.hpp"
 #include "l3_m07_existing_native_fragment_collector.hpp"
 #include "l3_m10_authoritative_candidate_cost.hpp"
@@ -161,6 +162,23 @@ measure_and_score_m10_p2_full_native_candidate(
     if(!bound.fragments)
         return {P2NativeCostReason::missing_triple_native_authority,
                 {},{},{} };
+    const auto& original_prepared=authentic_prepared_and_independent_reference->prepared;
+    if(original_prepared.original_m19_m20.channels==2U) {
+        const auto actual=m05m06_real::import_actual_full_source(
+            measured.value()->native.actual.levels,measured.value()->native.actual.tonal,
+            verified_candidate_product_owner,
+            measured.value()->native.selected_original_m20_ordinals);
+        if(!actual.source||!independently_attested_m08_m11.native_stereo_raw_safety)
+            return {P2NativeCostReason::m08_or_m11_safety_rejected,{},{},{}};
+        const auto& policy=*independently_attested_m08_m11.native_stereo_raw_safety;
+        independently_attested_m08_m11.native_stereo_raw_safety_required_by_current_owner=true;
+        independently_attested_m08_m11.native_stereo_raw_safety=
+            m11_frozen::bind_actual_native_stereo_safety(
+                original_prepared.original_m19_m20,original_prepared.full_native.s03_s06,
+                *actual.source,measured.value()->native.s03_s06,
+                policy.exact_current_source_candidate_and_canonical_safety_revision,
+                policy.no_forbidden_decorrelation_or_haas);
+    }
     independently_attested_m08_m11.native_candidate_resource_identity=
         verified_candidate_product_owner.resource_identity;
     independently_attested_m08_m11.native_candidate_generation=
