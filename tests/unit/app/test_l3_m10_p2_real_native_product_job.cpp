@@ -444,6 +444,21 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     spec.spectral_bands={{0,20,80},{1,80,200},{2,200,1000}};
     spec.stereo_bands={{0,20,80},{1,80,200},{2,200,1000}};
     const auto spec_for_authoritative_bridge=spec;
+    auto own_gate_spec=spec;
+    own_gate_spec.derive_own_m19_temporal_gate=true;
+    own_gate_spec.source_support.has_spectral_gate=false;
+    own_gate_spec.source_support.spectral_frame_mask={};
+    own_gate_spec.source_support.has_width_gate=false;
+    own_gate_spec.source_support.retained_width_blocks={};
+    const auto own_gate_native=a::measure_real_full_owned_pcm_native_once(*source.value(),own_gate_spec);
+    QVERIFY(own_gate_native);
+    const auto own_gate=analysis::bind_native_m19_tonal_gate(own_gate_native.value()->levels);
+    QVERIFY(own_gate);
+    QCOMPARE(own_gate_native.value()->exact_observed_active_frames,own_gate.value()->active_pcm_frames);
+    QCOMPARE(own_gate_native.value()->tonal.spectral_all_frames_fallback,!own_gate.value()->available);
+    QCOMPARE(own_gate_native.value()->tonal.width_all_scope_fallback,!own_gate.value()->available);
+    own_gate_spec.source_support.has_width_gate=true;
+    QVERIFY(!a::measure_real_full_owned_pcm_native_once(*source.value(),own_gate_spec));
     // One genuine, preexisting full-resource PCM can now use the
     // SAME native Phase6 M19/M20/P04 analysis without rerendering a
     // candidate. PREPARED and decoded REFERENCE will retain distinct
