@@ -193,4 +193,36 @@ native_fixed_spectral_cells(const m11_frozen::NativeFixedPopulation& fixed,
     }
     return cells;
 }
+struct NativeDynamicPrefix final {
+    dsp::DynamicEqParameters payload;
+    std::vector<NativeRankedCluster> ranked_clusters;
+    std::vector<NativeDynamicSeed> seeds;
+};
+[[nodiscard]] inline std::vector<NativeDynamicPrefix> derive_native_dynamic_prefixes(
+    const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    std::span<const core::Uuid> allocated_ranked_band_ids,std::uint32_t channels)
+{
+    const auto cells=native_fixed_spectral_cells(fixed,amount,requested);
+    if(!cells)return {};
+    const auto& carrier=*fixed.measured_fixed_spectral_energy;
+    const auto ranked=rank_native_spectral_clusters(*cells);
+    if(allocated_ranked_band_ids.size()<ranked.size())return {};
+    std::vector<NativeDynamicPrefix> out;
+    std::vector<dsp::DynamicEqBandParameters> bands;
+    std::vector<NativeRankedCluster> selected;
+    std::vector<NativeDynamicSeed> seeds;
+    for(std::size_t i=0;i<ranked.size();++i) {
+        const auto& item=ranked[i];
+        const auto threshold=native_fixed_cluster_threshold(carrier,item.first,item.count);
+        const auto seed=native_dynamic_seed(item.seed,threshold,allocated_ranked_band_ids[i],
+            item.first==0U,item.first+item.count==cells->size(),carrier.sample_rate,channels);
+        if(!seed)break; // do not substitute a lower-ranked cluster
+        bands.push_back(seed->payload);selected.push_back(item);seeds.push_back(*seed);
+        auto payload=dsp::DynamicEqParameters::create(bands);
+        if(!payload)return {};
+        out.push_back({std::move(*payload.value()),selected,seeds});
+    }
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
