@@ -174,7 +174,9 @@ score_exact_candidate_population(const AuthoritativeCostInput& input)
                                  input.native_candidate_resource_identity,
                                  input.native_candidate_generation,
                                  input.native_candidate_ticket,
-                                 input.native_m07_generation});
+                                 input.native_m07_generation,
+                                 input.native_linked_graph_content,
+                                 input.native_execution_graph_content});
     return {std::move(key),measured,AuthoritativeCostReason::measured};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
