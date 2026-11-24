@@ -7,6 +7,7 @@
 // P2 Ceiling/Drive comes from the current exact M10 typed binding.
 #include "l3_m10_p2_canonical_coordinate_port.hpp"
 #include "l3_m10_p2_memory_budget.hpp"
+#include "l3_m10_exact_native_graph_content.hpp"
 #include "l3_product_offline_trial_job.hpp"
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -389,6 +390,27 @@ public:
     }
     [[nodiscard]] const OfflineProductOwnerStamp& owner_stamp()
         const noexcept{return owner_;}
+    [[nodiscard]] std::optional<m10_frozen::ExactCacheBytes>
+    exact_linked_graph_content() const {
+        if(!registry_)return std::nullopt;
+        return m10_frozen::exact_native_graph_content(linked_,linked_bindings_,*registry_);
+    }
+    [[nodiscard]] std::optional<m10_frozen::ExactCacheBytes>
+    exact_execution_graph_content() const {
+        if(!registry_)return std::nullopt;
+        const auto fixed=m10_frozen::exact_native_graph_content(fixed_,fixed_bindings_,*registry_);
+        const auto linked=exact_linked_graph_content();
+        const auto terminal=m10_frozen::exact_native_graph_content(final_p2_,p2_bindings_,*registry_);
+        if(!fixed||!linked||!terminal)return std::nullopt;
+        m10_frozen::ExactCacheBytes out;
+        using namespace m10_frozen::p2_cache_detail;
+        append_exact_field(out,"rgsml.l3.native-execution-graph/1");
+        append_exact_field(out,std::to_string(max_block_frames_.value()));
+        append_exact_byte_field(out,*fixed);
+        append_exact_byte_field(out,*linked);
+        append_exact_byte_field(out,*terminal);
+        return out;
+    }
     [[nodiscard]] bool preserves_user_terminal() const noexcept {
         return p2_bindings_.empty()||
             (p2_bindings_.size()==1U&&!baseline_manual_bindings_.empty()&&
