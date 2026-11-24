@@ -88,6 +88,11 @@ struct M20StereoProjection final {
     if(cw.z)width_native.value=in.actual_candidate.broadband_width.unrounded;
     width_native.endpoint=cw.endpoint;
     width_native.selector="broadband-width";
+    if(cw.z&&!in.actual_candidate.width_population_identity.empty()) {
+        width_native.population_identity=in.actual_candidate.width_population_identity;
+        width_native.valid_count=in.actual_candidate.width_selected_frames;
+        width_native.configured_count=static_cast<std::uint64_t>(in.actual_candidate.scope_frame_count);
+    }
     // S02: transformed Fisher-Z Type7 native P10/P50/P90 and
     // independent one-time valid/complete native correlation support.
     double pair_support=0.0;
