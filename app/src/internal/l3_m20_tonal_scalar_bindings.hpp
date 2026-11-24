@@ -152,6 +152,7 @@ struct TonalBindingProjection final {
                 const auto& slope=i==0U?*b.t2_spectral_tilt:*b.t6_high_frequency_slope;
                 native.valid_count=slope.above_floor_bands;
                 native.configured_count=slope.configured_bands;
+                native.population_identity=slope.exact_ols_population_identity;
             }
         }
         native.selector=feature_slots[i].binding_id;
