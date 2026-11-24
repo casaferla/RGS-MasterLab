@@ -47,4 +47,43 @@ native_tonal_fit_population(const m11_frozen::NativeFixedPopulation& fixed,
     for(auto& cell:out.active)cell.frozen_normalized_weight/=weight;
     return out;
 }
+// Caller supplies the allocated dictionary identities. Only atoms on
+// eligible canonical centers and with frozen dictionary shapes enter.
+[[nodiscard]] inline std::vector<NativeEqPrefix> derive_native_tonal_prefixes(
+    const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    std::span<const m05m06_real::T01ConfiguredBand> grid,
+    std::span<const NativeEqAtom> dictionary,core::SampleRate rate)
+{
+    const auto population=native_tonal_fit_population(fixed,amount,requested,grid);
+    if(!population)return {};
+    std::vector<NativeEqAtom> legal;
+    for(const auto& atom:dictionary) {
+        const auto it=std::find_if(grid.begin(),grid.end(),[&](const auto& band){
+            return band.center_hz==atom.frequency_hz;
+        });
+        if(it==grid.end())return {};
+        const auto i=static_cast<std::size_t>(it-grid.begin());
+        if(!population->eligible_grid[i])continue;
+        if(atom.filter==AtomFilter::bell) {
+            constexpr std::array<double,5> q{0.35,0.50,0.707,1.0,1.4};
+            if(std::find(q.begin(),q.end(),atom.q_or_slope)==q.end())return {};
+        } else if(atom.filter==AtomFilter::low_shelf||atom.filter==AtomFilter::high_shelf) {
+            if(atom.q_or_slope!=0.5&&atom.q_or_slope!=1.0)return {};
+            // Canonical centers are ordered on the logarithmic grid.
+            // The supplied dictionary retains its boundary eligibility.
+        } else return {};
+        legal.push_back(atom);
+    }
+    auto active=population->active;
+    for(auto& cell:active) {
+        const auto it=std::find_if(grid.begin(),grid.end(),[&](const auto& b){
+            return b.center_hz==cell.frequency_hz;
+        });
+        if(it==grid.end())return {};
+        const auto& smoothed=population->eligible_grid[static_cast<std::size_t>(it-grid.begin())];
+        if(smoothed)cell.residual_db=*smoothed;
+    }
+    return fit_native_eq_prefixes(active,legal,rate,false,m07_frozen::kBindings.front().deadband);
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
