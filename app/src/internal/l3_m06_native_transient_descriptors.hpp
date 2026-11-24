@@ -38,6 +38,7 @@ struct NativeTransientDescriptor final {
     TransientDescriptorFailure reason{
         TransientDescriptorFailure::missing_detector_policy_or_source_identity};
     std::array<std::optional<double>,3> native_type7_p10_p50_p90{};
+    std::string exact_event_population_identity{};
     [[nodiscard]] bool reference_grade() const noexcept {
         return reason==TransientDescriptorFailure::ready;
     }
@@ -64,6 +65,14 @@ observe_phase6_native_transient_descriptors(
     }
     const auto count=canonical_detector_events.size();
     std::array<std::vector<double>,3> sorted;
+    std::array<NativeMembershipIdentity,3> memberships{{
+        NativeMembershipIdentity{"D07-P04-event-membership/1"},
+        NativeMembershipIdentity{"D08-P04-event-membership/1"},
+        NativeMembershipIdentity{"D09-P04-event-membership/1"}}};
+    for(auto& membership:memberships) {
+        membership.append(static_cast<std::uint64_t>(sample_rate_hz));
+        membership.append(static_cast<std::uint64_t>(exact_active_frames));
+    }
     for(auto& s:sorted)s.reserve(count);
     std::optional<std::uint64_t> previous_ordinal;
     for(const auto& event:canonical_detector_events) {
@@ -84,6 +93,8 @@ observe_phase6_native_transient_descriptors(
             event.attack_rise_time_ms
         }};
         for(std::size_t d=0;d<3U;++d) {
+            memberships[d].append(event.canonical_event_ordinal);
+            memberships[d].append(values[d].has_value()?1U:0U);
             if(!values[d])continue;
             if(!std::isfinite(*values[d])||
                (d==2U&&*values[d]<=0.0)) {
@@ -98,6 +109,7 @@ observe_phase6_native_transient_descriptors(
     for(std::size_t d=0;d<3U;++d) {
         auto& out=result.d07_d08_d09[d];
         out.canonical_events=count;
+        out.exact_event_population_identity=memberships[d].finish();
         out.valid_descriptor_events=sorted[d].size();
         if(count>0U)
             out.native_support=static_cast<double>(
