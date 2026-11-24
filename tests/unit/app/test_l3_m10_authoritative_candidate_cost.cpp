@@ -1,4 +1,5 @@
 #include "internal/l3_m10_authoritative_candidate_cost.hpp"
+#include "internal/l3_m11_native_fixed_assessment.hpp"
 #include <QtTest/QTest>
 #include <array>
 #include <cmath>
@@ -10,6 +11,7 @@ namespace {
 namespace m07=rgsml::app::l3_automatch::m07_frozen;
 namespace m08=rgsml::app::l3_automatch::m08_frozen;
 namespace m10=rgsml::app::l3_automatch::m10_frozen;
+namespace m11=rgsml::app::l3_automatch::m11_frozen;
 [[nodiscard]] m10::AuthoritativeCostInput source() {
     const std::array<m08::DomainAmount,4> ordered{{
         {m07::kDomainIds[0],1.0},{m07::kDomainIds[1],1.0},
@@ -60,6 +62,7 @@ private slots:
     void independentGuardAndCandidateCannotDisagree();
     void currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost();
     void independentFixedRemovesOnlyProtectedResidualMass();
+    void fixedWholeVectorNeedsOrthogonalAndAlreadyCloseGuards();
 };
 void M10AuthoritativeCostTest::
 currentNativeStereoSafetyVetoesBeforeMeasuredM10Cost() {
@@ -197,6 +200,33 @@ void M10AuthoritativeCostTest::independentFixedRemovesOnlyProtectedResidualMass(
     input.exact_pair_slots[0].configured[0].current_candidate_z=9.0;
     fixed.measured_fixed[0].exact_feature_dependency="different-fixed-generation";
     QVERIFY(!m10::score_exact_candidate_population(input).measured);
+}
+void M10AuthoritativeCostTest::fixedWholeVectorNeedsOrthogonalAndAlreadyCloseGuards() {
+    auto in=source();
+    auto slot=in.exact_pair_slots[0];
+    const auto& binding=m07::kBindings[0];
+    auto result=m11::assess_fixed_feature(slot,binding,0.5);
+    QCOMPARE(result.status,m11::FixedTargetStatus::met);
+    // Individually both directional components exceed 0.5, yet
+    // the full vector has an excessive orthogonal error.
+    slot.configured[0].current_candidate_z=9.0;
+    result=m11::assess_fixed_feature(slot,binding,0.5);
+    QCOMPARE(result.status,m11::FixedTargetStatus::residual);
+    QVERIFY(result.directional_progress&&*result.directional_progress>=0.5);
+    QVERIFY(result.orthogonal_error&&result.orthogonal_tolerance);
+    QVERIFY(*result.orthogonal_error>*result.orthogonal_tolerance);
+    // A close P/G coordinate must not leave its own deadband.
+    slot=in.exact_pair_slots[0];
+    slot.configured[0].reference.z=slot.configured[0].prepared.z;
+    slot.configured[0].current_candidate_z=10.5;
+    result=m11::assess_fixed_feature(slot,binding,0.5);
+    QCOMPARE(result.status,m11::FixedTargetStatus::residual);
+    slot.configured[0].current_candidate_z=12.0;
+    result=m11::assess_fixed_feature(slot,binding,0.5);
+    QCOMPARE(result.status,m11::FixedTargetStatus::met);
+    slot.configured[1].current_candidate_z.reset();
+    QCOMPARE(m11::assess_fixed_feature(slot,binding,0.5).status,
+             m11::FixedTargetStatus::unavailable);
 }
 void M10AuthoritativeCostTest::
 noCorrectionNeedsIndependentFixedProofNotNoneTop8() {
