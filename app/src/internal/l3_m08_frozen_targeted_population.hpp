@@ -9,12 +9,28 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace rgsml::app::l3_automatch::m08_frozen {
+// Retain actual native coordinates for M13. Never invert Fisher-z
+// or a clipped mono width to guess an endpoint. The M10 objective
+// still uses the original transformed coordinate and pair support.
+struct CandidateNativeObservation final {
+    std::optional<double> value;
+    Endpoint endpoint{Endpoint::ordinary};
+    std::optional<std::uint64_t> valid_count;
+    std::optional<std::uint64_t> configured_count;
+    // Exact source-produced selector and selected population identity;
+    // absent when the producer has not exposed that evidence.
+    std::string selector;
+    std::string population_identity;
+    friend bool operator==(const CandidateNativeObservation&,
+                           const CandidateNativeObservation&)=default;
+};
 struct AuthenticatedPairComponent final {
     bool current_valid{};
     double paired_native_support{};
@@ -22,6 +38,9 @@ struct AuthenticatedPairComponent final {
     CanonicalCoordinate reference;
     std::optional<double> current_candidate_z;
     bool candidate_required{true};
+    CandidateNativeObservation candidate_native{};
+    friend bool operator==(const AuthenticatedPairComponent&,
+                           const AuthenticatedPairComponent&)=default;
 };
 struct AuthenticatedPairSlot final {
     std::string binding_id;
@@ -29,6 +48,8 @@ struct AuthenticatedPairSlot final {
     std::string exact_feature_dependency;
     bool feature_authority_attested{};
     std::vector<AuthenticatedPairComponent> configured;
+    friend bool operator==(const AuthenticatedPairSlot&,
+                           const AuthenticatedPairSlot&)=default;
 };
 enum class PopulationFailure:std::uint8_t {
     none,invalid_binding_or_dependency,
