@@ -8,7 +8,7 @@
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_m10_native_fixed_worker.hpp"
 #include "internal/l3_m12_preserved_native_winner.hpp"
-#include "internal/l3_m09_native_automatic_coordinate.hpp"
+#include "internal/l3_m09_native_selected_search.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -782,6 +782,34 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         numerical_only,selected_inventory,0U,env,build_native_trial,resolve_native_trial);
     QCOMPARE(no_native_seed.reason,m10::RefinementBatchReason::invalid_inventory);
     QCOMPARE(typed_builds,std::size_t{1});
+    // The selected M09 ledger is authoritative. An unavailable selected
+    // entry consumes no attempt; do not replace it from another ordinal.
+    namespace m09=a::m09_frozen;
+    m10::BoundLegalCombinedResult selected;
+    selected.status=m10::BoundLegalStatus::selected;
+    selected.exact_descriptions.resize(1);
+    selected.combined_consumer.status=m10::ConsumerStatus::ready;
+    selected.combined_consumer.numeric_selected_indices={0U};
+    selected.combined_consumer.ledger={{0U,m10::ConsumerReason::selected,true}};
+    const std::array<m09::SelectedNativeSeed,1> unavailable{{
+        {0U,inventory,nullptr,{}}
+    }};
+    bool serialized_unavailable=false;
+    const auto serializer=[&](const auto&,const auto&,const auto&,const auto&)
+        ->std::optional<m10::ExactExecutionCacheKey>{
+        serialized_unavailable=true;return std::nullopt;
+    };
+    const auto unavailable_result=m09::run_selected_native_typed_search(
+        selected,unavailable,0U,env,serializer,resolve_native_trial);
+    QCOMPARE(unavailable_result.reason,m10::RefinementBatchReason::no_complete_seed_or_stale_source);
+    QCOMPARE(unavailable_result.total_attempted,std::uint32_t{0});
+    QVERIFY(!serialized_unavailable);
+    auto wrong_selection=unavailable;
+    wrong_selection[0].exact_combined_ordinal=1U;
+    const auto invalid_selection=m09::run_selected_native_typed_search(
+        selected,wrong_selection,0U,env,serializer,resolve_native_trial);
+    QCOMPARE(invalid_selection.reason,m10::RefinementBatchReason::invalid_inventory);
+    QVERIFY(!serialized_unavailable);
     // This synthetic measured score exercises only the M12 graph
     // equality guard. It is NOT a successful native 27-feature run.
     namespace m12=a::m12_frozen;
