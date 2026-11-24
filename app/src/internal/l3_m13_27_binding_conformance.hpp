@@ -106,12 +106,20 @@ compare_m13_frozen_twenty_seven_native_bindings(
             }
             ++result.required_components;
             has_required=true;
+            // Absent structural evidence is not a measured disagreement.
             if(component.expected_selector.empty()||
-               component.fresh_selector!=component.expected_selector||
+               component.fresh_selector.empty()||
                component.expected_population_id.empty()||
+               component.fresh_population_id.empty()||
+               component.expected_support_denominator==0U||
+               component.actual_support_denominator==0U) {
+                missing=true;
+                row.component_comparisons.push_back({});
+                continue;
+            }
+            if(component.fresh_selector!=component.expected_selector||
                component.fresh_population_id!=
                    component.expected_population_id||
-               component.expected_support_denominator==0U||
                component.actual_support_denominator!=
                    component.expected_support_denominator||
                component.actual_support_numerator!=
