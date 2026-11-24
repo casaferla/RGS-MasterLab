@@ -48,6 +48,8 @@ public:
         std::span<const double> real_cross_psd) = 0;
 };
 
+struct NativeTonalBandwidth final {double low_hz{},high_hz{};};
+
 struct TonalStereoTrustedSupport final {
     // If unavailable, explicitly include ALL complete STFT windows,
     // never infer a mask from LUFS alone.
@@ -64,6 +66,9 @@ struct TonalStereoTrustedSupport final {
     // source/Phase6 grid/gate/current owner before using its payload.
     TonalStereoSelectedFrameSink* selected_native_frame_sink{nullptr};
     TonalStereoStereoFrameSink* selected_stereo_frame_sink{nullptr};
+    // Optional exact comparison interval for normalized profile only.
+    // No change to native PSD, measured energy or ordinary L1 consumers.
+    std::optional<NativeTonalBandwidth> profile_common_bandwidth{};
 };
 
 enum class TonalStereoMetricState : std::uint8_t {
@@ -131,7 +136,6 @@ struct NativeTonalFrameGeometry final {
 native_tonal_frame_geometry(std::uint32_t sample_rate_hz) noexcept;
 
 // Native measurement bandwidth, without PCM or eligibility authority.
-struct NativeTonalBandwidth final {double low_hz{},high_hz{};};
 [[nodiscard]] std::optional<NativeTonalBandwidth>
 native_tonal_measurement_bandwidth(std::uint32_t sample_rate_hz) noexcept;
 
