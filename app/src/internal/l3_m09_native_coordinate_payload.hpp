@@ -52,5 +52,18 @@ apply_gain(const dsp::GainParameters& seed,
     }
     return as_payload(dsp::GainParameters::create(gain));
 }
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_transient(const dsp::TransientShaperParameters& seed,
+                std::span<const NativePhysicalField> fields)
+{
+    double attack=seed.attack_amount_db(),sustain=seed.sustain_amount_db();
+    for(const auto& f:fields) {
+        if(f.band_id)return std::nullopt;
+        if(f.field==NativeField::attack_amount_db)attack=f.value;
+        else if(f.field==NativeField::sustain_amount_db)sustain=f.value;
+        else return std::nullopt;
+    }
+    return as_payload(dsp::TransientShaperParameters::create(attack,sustain));
+}
 } // namespace native_payload_detail
 } // namespace rgsml::app::l3_automatch::m09_frozen
