@@ -75,6 +75,8 @@ struct SourceReadings final {
     std::vector<Band> profile_1_12; // T1 partial, no 1/3 fallback
     std::string short_term_population_identity{};
     std::string correlation_population_identity{};
+    std::string width_population_identity{};
+    std::uint64_t width_selected_frames{};
     std::string full_pcm_population_identity{};
     std::string integrated_gate_population_identity{};
     std::uint64_t complete_loudness_blocks{};
@@ -302,6 +304,30 @@ struct Import final {
     value.plr=plr_from_existing_m19(
         value.true_peak_db_tp,value.integrated_lufs);
     value.global_crest_db=from_m19(levels.sample_peak_crest_db);
+    if(!tonal.width_selected_union.empty()) {
+        NativeMembershipIdentity width{"M20-broadband-width-union/1"};
+        width.append(static_cast<std::uint64_t>(levels.sample_rate_hz));
+        width.append(static_cast<std::uint64_t>(levels.scope_frame_count));
+        width.append(tonal.width_all_scope_fallback?1U:0U);
+        std::uint64_t selected=0U;
+        std::uint64_t previous_end=0U;
+        bool first=true;
+        for(const auto& part:tonal.width_selected_union) {
+            if(part.begin>=part.end||
+               part.end>static_cast<std::uint64_t>(levels.scope_frame_count)||
+               (!first&&part.begin<=previous_end))
+                return fail(ImportProblem::invalid_geometry);
+            selected+=part.end-part.begin;
+            width.append(part.begin);
+            width.append(part.end);
+            previous_end=part.end;
+            first=false;
+        }
+        if(selected!=tonal.width_selected_frames)
+            return fail(ImportProblem::invalid_geometry);
+        value.width_population_identity=width.finish();
+        value.width_selected_frames=selected;
+    }
     value.broadband_width=from_m20(tonal.width_ratio);
     value.broadband_width_z=width_mono_endpoint_log2(
         value.broadband_width);
