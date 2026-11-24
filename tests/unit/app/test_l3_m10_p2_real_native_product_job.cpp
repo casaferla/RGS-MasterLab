@@ -13,6 +13,7 @@
 #include "internal/l3_m09_native_loudness_seed.hpp"
 #include "internal/l3_m09_native_micro_seed.hpp"
 #include "internal/l3_m09_native_macro_seed.hpp"
+#include "internal/l3_m09_native_stereo_seed.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -76,6 +77,7 @@ private slots:
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
     void nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups();
+    void nativeStereoSeedUsesFixedWidthAndCutoffEvidence();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
@@ -203,6 +205,47 @@ void P2RealNativeProductTest::nativeAutomaticPayloadsRespectFixedTopologyAndBoun
     QVERIFY(!apply(*dynamic.value(),{{F::base_gain_db,band_id,1.0}}));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::knee_db,band_id,{},48000));
     QVERIFY(!m09::native_automatic_coordinate_rule(*dynamic.value(),F::look_ahead_ms,{}, {},48000));
+}
+void P2RealNativeProductTest::nativeStereoSeedUsesFixedWidthAndCutoffEvidence() {
+    namespace m09=a::m09_frozen;
+    namespace m07=a::m07_frozen;
+    namespace m08=a::m08_frozen;
+    a::m11_frozen::NativeFixedPopulation fixed;
+    fixed.exact_independent_fixed_and_endpoint_safety_attested=true;
+    for(const auto& binding:m07::kBindings) {
+        const bool broad=binding.binding_id=="rgsml.reference-match.binding.stereo.s01";
+        const bool low=binding.binding_id=="rgsml.reference-match.binding.stereo.s05";
+        m08::AuthenticatedPairSlot slot{std::string(binding.binding_id),
+            std::string(binding.source_feature_id),"fixture-only",true,{}};
+        const auto n=binding.component_share==m07::ComponentShare::thirds?3U:
+            binding.component_share==m07::ComponentShare::configured_n?2U:1U;
+        for(unsigned i=0;i<n;++i) {
+            slot.configured.push_back({true,1.0,{0.0,m08::Endpoint::ordinary},
+                {broad?-0.5:low?-1.5:0.0,m08::Endpoint::ordinary},0.0,true});
+            auto& native=slot.configured.back().candidate_native;
+            if(broad||low) {
+                native.value=1.0;
+                native.selector=broad?"broadband-width":std::array<const char*,3>{"80","120","200"}[i];
+            }
+        }
+        fixed.measured_fixed.push_back(std::move(slot));
+    }
+    const m08::AmountConfig amount{1.0,{1.0,1.0,1.0,1.0},1U};
+    const std::array<bool,4> requested{false,false,true,false};
+    const auto broad=m09::derive_native_stereo_seed(fixed,amount,requested,1U,true,true);
+    QVERIFY(broad);
+    QVERIFY(broad->payload.mono_bass_mode()==dsp::MonoBassMode::OFF);
+    QVERIFY(std::abs(broad->payload.mid_gain_db()-5.0*std::log10(2.0))<1e-12);
+    QVERIFY(std::abs(broad->payload.side_gain_db()+5.0*std::log10(2.0))<1e-12);
+    const auto low=m09::derive_native_stereo_seed(fixed,amount,requested,3U,true,true);
+    QVERIFY(low);
+    QVERIFY(low->payload.mono_bass_mode()==dsp::MonoBassMode::LR12);
+    QCOMPARE(low->payload.mono_bass_cutoff_hz(),120.0);
+    QVERIFY(std::abs(low->payload.low_band_width_percent()-50.0)<1e-12);
+    QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,3U,true,false));
+    QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,3U,false,true));
+    fixed.measured_fixed[22].configured[1].candidate_native.selector="80";
+    QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,3U,true,true));
 }
 void P2RealNativeProductTest::nativeMacroSeedUsesMeasuredRmsMembershipAndCoherentGroups() {
     namespace m09=a::m09_frozen;
