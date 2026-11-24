@@ -136,6 +136,12 @@ rebind_independent_original_native_pair(
     const auto& reference=independent.reference;
     const auto& p=prepared.original_m19_m20.owner;
     const auto& g=reference.original_m19_m20.owner;
+    const auto common=original.t02_t06.exact_common;
+    const auto matches_common=[&](const auto& source){
+        return source.exact_profile_common_bandwidth.low_hz==common.low_hz&&
+               source.exact_profile_common_bandwidth.high_hz==common.high_hz;
+    };
+    if(!matches_common(prepared)||!matches_common(reference))return false;
     if(!p.full_track_owner_confirmed||!g.full_track_owner_confirmed||
        !p.generation||!g.generation||
        p.resource_identity.empty()||g.resource_identity.empty()||
