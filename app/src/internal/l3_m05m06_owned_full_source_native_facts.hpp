@@ -13,6 +13,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <utility>
 
