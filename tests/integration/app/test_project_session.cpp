@@ -4,7 +4,7 @@
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
 #include "internal/l3_m13_fresh_original_native_import.hpp"
-#include "internal/l3_m13_fresh_native_population.hpp"
+#include "internal/l3_m13_actual_native_assessment.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -4637,6 +4637,30 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
     fresh.slots=accepted;
     QVERIFY(!m13::verify_m13_fresh_protected_population(
         accepted,fresh,acceptedK,false,true).is_admissible());
+    // The L02 raw scalar must satisfy the native QTP tolerance and
+    // identical structural membership, independently of solver ranking.
+    auto& native=accepted[25].configured.front().candidate_native;
+    native.value=0.8;
+    native.selector="P50";
+    native.population_identity="test-only-membership";
+    native.valid_count=10U;
+    native.configured_count=10U;
+    fresh.slots=accepted;
+    auto& actual=fresh.slots->at(25).configured.front();
+    actual.current_candidate_z=0.805;
+    actual.candidate_native.value=0.805;
+    QCOMPARE(m13::compare_m13_accepted_and_fresh_native_bindings(
+        accepted,fresh,true).rows[25].outcome,m13::BindingConformance::passed);
+    actual.current_candidate_z=0.83;
+    actual.candidate_native.value=0.83;
+    QCOMPARE(m13::compare_m13_accepted_and_fresh_native_bindings(
+        accepted,fresh,true).rows[25].outcome,m13::BindingConformance::failed);
+    actual.candidate_native.population_identity.clear();
+    QCOMPARE(m13::compare_m13_accepted_and_fresh_native_bindings(
+        accepted,fresh,true).rows[25].outcome,m13::BindingConformance::unavailable);
+    actual.candidate_native.population_identity="different-membership";
+    QCOMPARE(m13::compare_m13_accepted_and_fresh_native_bindings(
+        accepted,fresh,true).rows[25].outcome,m13::BindingConformance::failed);
     QVERIFY(!fresh.authorizes_m13_verified());
 }
 
