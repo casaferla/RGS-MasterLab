@@ -82,5 +82,30 @@ apply_stereo(const dsp::StereoMsParameters& seed,
     return as_payload(dsp::StereoMsParameters::create(mid,side,seed.side_muted(),
         seed.mono_bass_mode(),seed.mono_bass_cutoff_hz(),width));
 }
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_compressor(const dsp::CompressorParameters& seed,
+                 std::span<const NativePhysicalField> fields)
+{
+    double threshold=seed.threshold_dbfs(),ratio=seed.ratio(),knee=seed.knee_db();
+    double attack=seed.attack_ms(),release=seed.release_ms(),rms=seed.rms_time_constant_ms();
+    double look=seed.look_ahead_ms(),mix=seed.mix_percent(),makeup=seed.makeup_gain_db();
+    for(const auto& f:fields) {
+        if(f.band_id)return std::nullopt;
+        switch(f.field) {
+        case NativeField::threshold_dbfs:threshold=f.value;break;
+        case NativeField::ratio:ratio=f.value;break;
+        case NativeField::knee_db:knee=f.value;break;
+        case NativeField::attack_ms:attack=f.value;break;
+        case NativeField::release_ms:release=f.value;break;
+        case NativeField::rms_ms:rms=f.value;break;
+        case NativeField::look_ahead_ms:look=f.value;break;
+        case NativeField::mix_percent:mix=f.value;break;
+        case NativeField::makeup_gain_db:makeup=f.value;break;
+        default:return std::nullopt;
+        }
+    }
+    return as_payload(dsp::CompressorParameters::create(seed.detector_mode(),
+        seed.channel_link(),threshold,ratio,knee,attack,release,rms,look,mix,makeup));
+}
 } // namespace native_payload_detail
 } // namespace rgsml::app::l3_automatch::m09_frozen
