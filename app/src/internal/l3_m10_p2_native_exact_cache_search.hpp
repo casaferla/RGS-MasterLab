@@ -7,6 +7,7 @@
 // (4 sweeps, minus-before-plus, 800 attempted), M17, or Project state.
 #include "l3_m10_p2_bound_native_worker_score.hpp"
 #include "l3_m10_p2_exact_cache_evaluator.hpp"
+#include "l3_m10_native_scope_key.hpp"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -77,6 +78,10 @@ template<typename M09Decode,typename CanonicalKey,
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return {EvaluationKind::preflight_rejected,{}};
 
+    if(!bind_original_pair_profile_common(full_native_spec,*authentic_prepared_reference_native_pair))
+        return {EvaluationKind::preflight_rejected,{}};
+    const auto native_scope=exact_native_analysis_scope_content(full_native_spec);
+    if(!native_scope)return {EvaluationKind::preflight_rejected,{}};
     // The prepared job is created during preflight, never inside the
     // cache-miss renderer. Thus malformed DSP/registry/ownership consumes
     // ZERO M10 attempted renders and cannot masquerade as a failed one.
@@ -88,7 +93,11 @@ template<typename M09Decode,typename CanonicalKey,
         std::move(candidate_ticket),cache,
         allow_new_render_analysis_attempt,
         std::forward<M09Decode>(m09_decode),
-        std::forward<CanonicalKey>(full_exact_execution_key),
+        [&](const BoundM10P2Candidate& bound) {
+            auto key=std::invoke(full_exact_execution_key,bound);
+            if(key)p2_cache_detail::append_exact_byte_field(key->candidate_execution_content,*native_scope);
+            return key;
+        },
         [&](const BoundM10P2Candidate& bound) {
             if(!bound.typed.still_matches(
                 owners.frozen_manual,owners.frozen_manual_bindings)||
