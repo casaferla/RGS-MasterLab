@@ -55,4 +55,38 @@ native_side_fit_population(const m11_frozen::NativeFixedPopulation& fixed,
     for(auto& c:out.active)c.frozen_normalized_weight/=weight;
     return out;
 }
+[[nodiscard]] inline std::vector<NativeEqPrefix> derive_native_side_prefixes(
+    const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    std::span<const m05m06_real::T01ConfiguredBand> grid,int denominator,
+    std::span<const NativeEqAtom> dictionary,core::SampleRate rate)
+{
+    const auto population=native_side_fit_population(fixed,amount,requested,grid,denominator);
+    if(!population)return {};
+    std::vector<NativeEqAtom> legal;
+    for(const auto& atom:dictionary) {
+        const auto it=std::find_if(grid.begin(),grid.end(),[&](const auto& b){
+            return b.center_hz==atom.frequency_hz;});
+        if(it==grid.end())return {};
+        if(!population->eligible_grid[static_cast<std::size_t>(it-grid.begin())])continue;
+        if(atom.filter==AtomFilter::bell) {
+            constexpr std::array<double,4> q{0.35,0.50,0.707,1.0};
+            if(std::find(q.begin(),q.end(),atom.q_or_slope)==q.end())return {};
+        } else if(atom.filter==AtomFilter::low_shelf||atom.filter==AtomFilter::high_shelf) {
+            if(atom.q_or_slope!=0.5&&atom.q_or_slope!=1.0)return {};
+        } else return {};
+        legal.push_back(atom);
+    }
+    auto active=population->active;
+    for(auto& c:active) {
+        const auto it=std::find_if(grid.begin(),grid.end(),[&](const auto& b){
+            return b.center_hz==c.frequency_hz;});
+        if(it==grid.end())return {};
+        const auto& z=population->eligible_grid[static_cast<std::size_t>(it-grid.begin())];
+        if(z)c.residual_db=*z;
+    }
+    const auto* binding=m07_frozen::find_binding("rgsml.reference-match.binding.stereo.s03");
+    if(!binding)return {};
+    return fit_native_eq_prefixes(active,legal,rate,true,20.0*std::log10(2.0)*binding->deadband);
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
