@@ -76,6 +76,9 @@ struct BasicLevelAnalysisResult final {
     std::uint64_t short_term_3s_complete_windows{};
     std::vector<BasicLevelShortTermSample> short_term_3s_grid100;
     BasicLevelValue short_term_3s_p50_lufs{};
+    // Exact complete/final 400ms block membership from the same gate.
+    std::uint64_t complete_loudness_block_count{};
+    std::vector<std::uint64_t> final_loudness_block_starts{};
 };
 
 // Selected read-only AnalysisScope: four metrics and a typed explicit
