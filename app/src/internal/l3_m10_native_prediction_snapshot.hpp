@@ -20,6 +20,8 @@ struct NativePredictionSnapshot final {
     std::uint64_t candidate_generation{};
     std::string exact_candidate_ticket{};
     std::string exact_m07_generation{};
+    std::vector<std::uint8_t> exact_linked_graph_content{};
+    std::vector<std::uint8_t> exact_execution_graph_content{};
     friend bool operator==(const NativePredictionSnapshot&,
                            const NativePredictionSnapshot&)=default;
 };
