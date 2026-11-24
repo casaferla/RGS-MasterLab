@@ -5288,6 +5288,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     const auto postRedo=session.project.
         capture_private_m13_fresh_postmaterialization_probe(0.0);
     QVERIFY(postRedo);
+    QVERIFY(postRedo.value()->exact_product_ownership_epoch()!=
+            m13Owner.value()->exact_product_ownership_epoch());
     QVERIFY(session.project.private_m13_fresh_probe_still_current(
         *postRedo.value()));
     QVERIFY(session.previewController->
