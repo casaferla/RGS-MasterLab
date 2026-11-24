@@ -22,6 +22,9 @@ struct ProductNativeOnePassSpec final {
     bool exact_m19_low_end_gate_same_as_m20_stft{};
     std::array<bool,3> exact_low_end_zero_side{};
     analysis::TonalStereoTrustedSupport source_support{};
+    // Opt-in Product path: derive temporal gates from this rendered PCM,
+    // never reuse the PREPARED or another candidate's retained intervals.
+    bool derive_own_m19_temporal_gate{};
 };
 struct ProductNativeOnePassResult final {
     OfflineProductCandidateMeasurement actual;
@@ -81,6 +84,23 @@ measure_real_full_owned_pcm_native_once(
     auto levels=analysis::measure_basic_level_full_resource(
         full_resource);
     if(!levels)return R::failure(*levels.error());
+    std::optional<analysis::NativeM19TonalGate> owned_gate;
+    if(spec.derive_own_m19_temporal_gate) {
+        if(spec.source_support.has_spectral_gate||spec.source_support.has_width_gate||
+           !spec.source_support.spectral_frame_mask.empty()||
+           !spec.source_support.retained_width_blocks.empty())
+            return fail("L3_ONCE_CONFLICTING_TEMPORAL_GATE_AUTHORITIES");
+        auto gate=analysis::bind_native_m19_tonal_gate(*levels.value());
+        if(!gate)return R::failure(*gate.error());
+        owned_gate=std::move(*gate.value());
+        spec.phase6_active_pcm_frames=owned_gate->active_pcm_frames;
+        spec.source_support.has_spectral_gate=owned_gate->available;
+        spec.source_support.has_width_gate=owned_gate->available;
+        spec.source_support.spectral_frame_mask=owned_gate->selected_complete_frames;
+        spec.source_support.retained_width_blocks=owned_gate->retained_union;
+        // Low-end consumes the exact same retained temporal selection.
+        spec.exact_m19_low_end_gate_same_as_m20_stft=owned_gate->available;
+    }
     m05m06_real::AuthenticM20FrameEnergySink spectral{
         rate,spec.exact_m20_fft_size,
         std::move(spec.spectral_bands),true};
