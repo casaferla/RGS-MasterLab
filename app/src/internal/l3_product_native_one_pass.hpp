@@ -51,6 +51,17 @@ struct ProductNativeOnePassSpec final {
     spec.source_support.profile_common_bandwidth=common;
     return true;
 }
+// Exact L/R equality of the actual full resource proves the global
+// zero-Side endpoint for every retained band. Do not infer it from a
+// tiny measured width, a dB floor, or a different source's policy.
+[[nodiscard]] inline bool actual_full_pcm_has_exact_zero_side(const audio::AudioBufferView& view) {
+    if(view.format().channel_count()!=2U||view.frame_count().value()<=0)return false;
+    const auto l=view.channel(0),r=view.channel(1);
+    if(!l||!r||l.value()->size()!=r.value()->size())return false;
+    for(std::size_t i=0;i<l.value()->size();++i)
+        if(!std::isfinite((*l.value())[i])||(*l.value())[i]!=(*r.value())[i])return false;
+    return true;
+}
 struct ProductNativeOnePassResult final {
     OfflineProductCandidateMeasurement actual;
     m05m06_real::SpectralD10D12Native d10_d12;
@@ -169,10 +180,16 @@ measure_real_full_owned_pcm_native_once(
         return fail("L3_ONCE_NATIVE_SPECTRAL_INVALID");
     m05m06_real::StereoCoherentNativeResult s03;
     if(stereo) {
+        const bool actual_zero_side=actual_full_pcm_has_exact_zero_side(view);
+        // In the owner-derived path, a shared input spec must not
+        // transplant an endpoint assertion from PREPARED to a trial.
+        const auto low_zero=spec.derive_own_m19_temporal_gate?
+            std::array<bool,3>{actual_zero_side,actual_zero_side,actual_zero_side}:
+            spec.exact_low_end_zero_side;
         s03=stereo->finalize(
             spec.phase6_active_pcm_frames,
             spec.exact_stereo_reference_grade,
-            {},spec.exact_low_end_zero_side);
+            {},low_zero);
         if(!s03.source_observation_complete||
            s03.native_selected_frames!=
              tonal.value()->selected_spectral_windows)
