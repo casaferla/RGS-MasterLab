@@ -40,6 +40,7 @@ class FrozenM07RegistryTest final:public QObject {
 private slots:
     void frozen27SlotsAndExactRationalMasses();
     void realCanonicalDspAvailabilityDoesNotChangeStaticPolicy();
+    void currentProductCapabilitiesExcludeM17AndRequireRefLinkedP2();
     void m07ToM10FullyResolvedFixture();
     void missingSourceIdentityOrPopulationNeverInventsJ();
 };
@@ -123,6 +124,32 @@ realCanonicalDspAvailabilityDoesNotChangeStaticPolicy() {
     // The original L1 package factory-less placeholders are immutable.
     QVERIFY(!native.value()->has_factory("rgsml.dsp.dynamic-eq"));
     QVERIFY(!native.value()->has_factory("rgsml.dsp.transient-shaper"));
+}
+void FrozenM07RegistryTest::currentProductCapabilitiesExcludeM17AndRequireRefLinkedP2() {
+    const auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    const auto initial=m07::assess_current_product_dsp_snapshot(*base.value());
+    QCOMPARE(initial.back().intent.dsp_type_id,std::string_view{"rgsml.dsp.streaming-true-peak-limiter"});
+    QVERIFY(!initial.back().intrinsic_context_matches);
+    auto dynamic=dsp::ModuleRegistry::with_dynamic_eq_offline(*base.value());
+    QVERIFY(dynamic);
+    auto transient=dsp::ModuleRegistry::with_transient_shaper_offline(*dynamic.value());
+    QVERIFY(transient);
+    auto manual=dsp::ModuleRegistry::with_streaming_true_peak_preview(*transient.value());
+    QVERIFY(manual);
+    const auto preview=m07::assess_current_product_dsp_snapshot(*manual.value());
+    QVERIFY(!preview.back().intrinsic_context_matches);
+    auto linked=dsp::ModuleRegistry::with_streaming_true_peak_automatch(*transient.value());
+    QVERIFY(linked);
+    const auto current=m07::assess_current_product_dsp_snapshot(*linked.value());
+    for(std::size_t i=0;i<current.size();++i) {
+        QCOMPARE(current[i].intent.intent_id,m07::kIntents[i].intent_id);
+        QCOMPARE(current[i].intent.required_segment,dsp::ChainSegment::REF_LINKED);
+        QVERIFY(current[i].intrinsic_context_matches);
+        QCOMPARE(current[i].factory_state,m07::FactoryEvidence::factory_present_unattested);
+        QVERIFY(current[i].intent.dsp_type_id!="rgsml.dsp.true-peak-limiter");
+        QVERIFY(!current[i].authorizes_match_planning());
+    }
 }
 void FrozenM07RegistryTest::m07ToM10FullyResolvedFixture() {
     auto sourced=fixture();

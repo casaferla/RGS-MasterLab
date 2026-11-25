@@ -208,6 +208,17 @@ inline constexpr std::array<CapabilityIntent,8> kIntents{{
      "rgsml.dsp.true-peak-limiter",dsp::ProcessingStage::MASTER,
      dsp::ChainSegment::TERMINAL}
 }};
+// Current Product capability projection supersedes historical placement
+// (MANUAL/TERMINAL) without modifying the frozen 27 numerical bindings.
+// The eight intent identities remain identical. M17 is never a native
+// AutoMatch factory or a candidate coordinate.
+[[nodiscard]] consteval std::array<CapabilityIntent,8> current_product_intents() {
+    auto out=kIntents;
+    for(auto& intent:out)intent.required_segment=dsp::ChainSegment::REF_LINKED;
+    out.back().dsp_type_id="rgsml.dsp.streaming-true-peak-limiter";
+    return out;
+}
+inline constexpr auto kCurrentProductIntents=current_product_intents();
 // Safety and evidence are separate M07 records. None is a 28th slot.
 enum class Role:std::uint8_t{
     safety_constraint,diagnostic_evidence,ui_only,deferred
@@ -303,10 +314,11 @@ struct AssessedIntent final{
         const noexcept{return false;} // exact deps + M09 are still required
 };
 [[nodiscard]] inline std::array<AssessedIntent,8>
-assess_canonical_dsp_snapshot(const dsp::ModuleRegistry& catalog) {
+assess_intent_snapshot(const dsp::ModuleRegistry& catalog,
+    const std::array<CapabilityIntent,8>& intents) {
     std::array<AssessedIntent,8> out{};
-    for(std::size_t i=0;i<kIntents.size();++i) {
-        const auto& source=kIntents[i];
+    for(std::size_t i=0;i<intents.size();++i) {
+        const auto& source=intents[i];
         AssessedIntent assessed{source,FactoryEvidence::unknown_type,false};
         const auto descriptor=catalog.find_descriptor(source.dsp_type_id);
         if(descriptor) {
@@ -325,5 +337,14 @@ assess_canonical_dsp_snapshot(const dsp::ModuleRegistry& catalog) {
         out[i]=assessed;
     }
     return out;
+}
+// Historical documentary projection retained for regression/readback.
+[[nodiscard]] inline std::array<AssessedIntent,8>
+assess_canonical_dsp_snapshot(const dsp::ModuleRegistry& catalog) {
+    return assess_intent_snapshot(catalog,kIntents);
+}
+[[nodiscard]] inline std::array<AssessedIntent,8>
+assess_current_product_dsp_snapshot(const dsp::ModuleRegistry& catalog) {
+    return assess_intent_snapshot(catalog,kCurrentProductIntents);
 }
 } // namespace rgsml::app::l3_automatch::m07_frozen
