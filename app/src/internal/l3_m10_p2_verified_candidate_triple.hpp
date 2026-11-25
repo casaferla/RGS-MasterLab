@@ -201,6 +201,10 @@ rebind_independent_original_native_pair(
         original.t01.actual_sources[i]=real;
         original.t02_t06.sources[i].observed_from_real_m20=
             measured.original_t02_t06;
+        original.t02_t06.sources[i].selected_spectral_population_identity=
+            real.selected_spectral_population_identity;
+        original.t02_t06.sources[i].selected_spectral_frames=real.selected_spectral_frames;
+        original.t02_t06.sources[i].complete_spectral_frames=real.complete_spectral_frames;
         original.d01.source[i]=real;
         if(i==0U) {
             original.m19.prepared=real;
