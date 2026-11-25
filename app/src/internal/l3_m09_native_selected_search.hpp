@@ -181,7 +181,7 @@ run_current_native_product_search(
     // Production evaluation always resolves original definitions from
     // Fixed; the legacy research callback must never supply them.
     out.refinement=run_selected_native_typed_search(selected,current,0U,env,
-        std::forward<SerializeCanonicalCurrent>(serialize_current),
+        serialize_current,
         [](std::size_t,const M10P2FullNativeEvidence&)
             ->std::optional<P2OriginalRealNativeTriple>{return std::nullopt;},
         cancellation);
@@ -189,8 +189,12 @@ run_current_native_product_search(
         out.status=NativeProductSearchStatus::cancelled;
     else if(out.refinement->winning_refinement_index&&
        (out.refinement->reason==RefinementBatchReason::complete||
-        out.refinement->reason==RefinementBatchReason::budget_exhausted))
-        out.status=NativeProductSearchStatus::measured_candidate;
+        out.refinement->reason==RefinementBatchReason::budget_exhausted)) {
+        out.winning_graph=reconstruct_selected_native_winner(selected,current,*out.refinement,
+            serialize_current);
+        out.status=out.winning_graph?NativeProductSearchStatus::measured_candidate:
+            NativeProductSearchStatus::unavailable;
+    }
     else out.status=NativeProductSearchStatus::no_measured_candidate;
     return out;
 }
