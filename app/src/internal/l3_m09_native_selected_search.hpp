@@ -78,10 +78,72 @@ enum class NativeProductSearchStatus:std::uint8_t {
     unavailable,no_correction_required,measured_candidate,
     no_measured_candidate,cancelled
 };
+struct NativeMeasuredWinnerGraph final {
+    // The graph retains the registry owner after the search's seed bank
+    // and typed trial objects have been destroyed.
+    std::shared_ptr<const dsp::ModuleRegistry> registry;
+    m10_frozen::PreservedNativeGraph graph;
+    std::size_t exact_combined_ordinal{};
+    std::string exact_ticket;
+    std::vector<m10_frozen::Coordinate> immutable_seed_inventory;
+    std::vector<double> winning_values;
+};
+template<class SerializeCanonicalCurrent>
+[[nodiscard]] inline std::optional<NativeMeasuredWinnerGraph>
+reconstruct_selected_native_winner(
+    const m10_frozen::BoundLegalCombinedResult& selected,
+    std::span<const SelectedNativeSeed> seeds,
+    const m10_frozen::RefinementBatchResult& result,
+    SerializeCanonicalCurrent&& serialize_current)
+{
+    using namespace m10_frozen;
+    if((result.reason!=RefinementBatchReason::complete&&
+        result.reason!=RefinementBatchReason::budget_exhausted)||
+       !result.winning_refinement_index||
+       *result.winning_refinement_index>=result.candidate_refinements.size())return {};
+    const auto& refined=result.candidate_refinements[*result.winning_refinement_index];
+    const auto ordinal=refined.exact_combined_ordinal;
+    if(ordinal>=selected.exact_descriptions.size()||
+       ordinal>=selected.combined_consumer.ledger.size()||
+       selected.combined_consumer.ledger[ordinal].reason!=ConsumerReason::selected||
+       selected.combined_consumer.ledger[ordinal].selected_but_unavailable)return {};
+    const auto found=std::find_if(seeds.begin(),seeds.end(),[&](const auto& s){
+        return s.exact_combined_ordinal==ordinal;});
+    if(found==seeds.end()||!found->available_typed_seed||
+       std::count_if(seeds.begin(),seeds.end(),[&](const auto& s){
+           return s.exact_combined_ordinal==ordinal;})!=1)return {};
+    const auto& typed=*found->available_typed_seed;
+    const auto inventory=m10_sort_exact_inventory(found->exact_m09_inventory);
+    const auto& current=refined.numerical.coordinates;
+    const auto& winner=refined.numerical.winner;
+    if(!inventory||inventory->size()!=current.size()||!valid_key(winner)||
+       !winner.native_prediction||refined.numerical.end==End::cancelled)return {};
+    std::vector<double> u;
+    for(std::size_t i=0;i<current.size();++i) {
+        if(current[i].semantic_node_id!=(*inventory)[i].semantic_node_id||
+           current[i].stable_parameter_id!=(*inventory)[i].stable_parameter_id)return {};
+        u.push_back(current[i].normalized_u);
+    }
+    const auto ticket=m10_exact_native_trial_ticket(ordinal,*inventory,u);
+    if(!ticket||*ticket!=winner.native_prediction->exact_candidate_ticket)return {};
+    // Important: decode with immutable seed coordinates, NOT the
+    // refined inventory whose normalized_u has changed.
+    auto trial=build_native_typed_trial(typed,*inventory,u,found->frozen_constraints,
+        [&](const auto& graph,const auto& coords,const auto& values){
+            return std::invoke(serialize_current,selected.exact_descriptions[ordinal],graph,coords,values);
+        });
+    if(!trial||trial->key.canonical_current_tuple!=winner.canonical_current_tuple||
+       trial->key.topology_evidence_identity!=winner.topology_evidence_identity||
+       exact_native_graph_content(trial->graph.linked,trial->graph.bindings,*typed.registry)!=
+          std::optional<ExactCacheBytes>{winner.native_prediction->exact_linked_graph_content})return {};
+    return NativeMeasuredWinnerGraph{typed.registry,std::move(trial->graph),ordinal,
+        *ticket,*inventory,std::move(u)};
+}
 struct NativeProductSearchResult final {
     NativeProductSearchStatus status{NativeProductSearchStatus::unavailable};
     m10_frozen::NativeFixedSearchGate fixed_gate;
     std::optional<m10_frozen::RefinementBatchResult> refinement;
+    std::optional<NativeMeasuredWinnerGraph> winning_graph;
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
 };
 template<class SerializeCanonicalCurrent>
