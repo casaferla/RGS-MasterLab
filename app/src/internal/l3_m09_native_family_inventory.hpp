@@ -136,4 +136,25 @@ native_eq_band_run_bounds(const NativeEqPrefix& prefix,
        lower>=upper||center<lower||center>upper)return {};
     return NativeFrequencyBounds{lower,upper};
 }
+// Use the exact selected cluster edges for C01 frequency refinement.
+[[nodiscard]] inline std::optional<NativeFrequencyBounds>
+native_dynamic_band_cluster_bounds(const NativeDynamicPrefix& prefix,const core::Uuid& band,
+    double common_low,double common_high)
+{
+    if(prefix.seeds.size()!=prefix.ranked_clusters.size()||
+       !std::isfinite(common_low)||!std::isfinite(common_high)||
+       common_low<20.0||common_high<=common_low)return {};
+    for(std::size_t i=0;i<prefix.seeds.size();++i) {
+        if(prefix.seeds[i].payload.spec().band_id!=band)continue;
+        const auto& cluster=prefix.ranked_clusters[i].seed;
+        if(!cluster.cluster_lower_edge_hz||!cluster.cluster_upper_edge_hz||
+           !cluster.weighted_center_hz)return {};
+        const double lo=std::max(common_low,*cluster.cluster_lower_edge_hz);
+        const double hi=std::min(common_high,*cluster.cluster_upper_edge_hz);
+        if(!std::isfinite(lo)||!std::isfinite(hi)||lo>=hi||
+           *cluster.weighted_center_hz<lo||*cluster.weighted_center_hz>hi)return {};
+        return NativeFrequencyBounds{lo,hi};
+    }
+    return {};
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
