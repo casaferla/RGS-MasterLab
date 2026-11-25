@@ -99,7 +99,9 @@ public:
 
     // Product AutoMatch does not require or optimize a MANUAL P2.
     // If present, preserve its exact parameters and activation state,
-    // and place it after the REF_LINKED artistic chain.
+    // and place it after the REF_LINKED artistic chain. A separately
+    // owned P2 may be the last REF_LINKED node only when the protected
+    // MANUAL graph has no P2 at all (even a bypassed one).
     [[nodiscard]] static core::Result<M10P2RealNativeProductJob>
     create_preserving_user_terminal(
         OfflineProductOwnerStamp owner,
@@ -165,7 +167,15 @@ private:
                   manual_nodes[i],current_manual_bindings[i]))
                 return R::failure(error("L3_M10_P2_MANUAL_BINDINGS_INVALID"));
         const auto linked_nodes=exact_candidate_linked.instances();
+        bool linked_terminal=false;
         for(std::size_t i=0;i<linked_nodes.size();++i) {
+            const bool is_p2=linked_nodes[i].module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
+            if(is_p2) {
+                if(has_terminal||linked_terminal||i+1U!=linked_nodes.size()||
+                   !std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(linked_bindings[i].parameters))
+                    return R::failure(error("L3_M10_P2_OWNED_TERMINAL_CONFLICT"));
+                linked_terminal=true;
+            }
             if(!binding_matches_instance(linked_nodes[i],linked_bindings[i])||
                linked_nodes[i].provenance()!=
                    dsp::ModuleProvenance::REFERENCE_MATCH||
@@ -173,8 +183,6 @@ private:
                    dsp::ModuleOwner::REFERENCE_MATCH||
                linked_nodes[i].link_state()!=
                    dsp::ModuleLinkState::REF_LINKED||
-               linked_nodes[i].module_type_id()==
-                   "rgsml.dsp.streaming-true-peak-limiter"||
                linked_nodes[i].module_type_id()==
                    "rgsml.dsp.true-peak-limiter")
                 return R::failure(error("L3_M10_P2_LINKED_BINDINGS_INVALID"));

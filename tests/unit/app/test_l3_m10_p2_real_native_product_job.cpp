@@ -1509,6 +1509,43 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(fixed_job.value()->exact_execution_graph_content()!=
             without_p2.value()->exact_execution_graph_content());
     QVERIFY(unlinked_graph==preserved.value()->exact_linked_graph_content());
+    // An owned P2 must be the final REF_LINKED DSP and is part of
+    // the exact candidate identity, not the independently fixed graph.
+    const auto owned_registry=a::freeze_native_automatch_execution_registry(product_registry);
+    QVERIFY(owned_registry&&*owned_registry);
+    const auto owned_id=id("bb000000-0000-4000-8000-000000000002");
+    const auto owned_node=dsp::ModuleInstance::create({
+        owned_id,"rgsml.dsp.streaming-true-peak-limiter",true,false,false,false,
+        dsp::ModuleProvenance::REFERENCE_MATCH,dsp::ModuleOwner::REFERENCE_MATCH,
+        dsp::ModuleLinkState::REF_LINKED,uuid("bc000000-0000-4000-8000-000000000002"),{}});
+    QVERIFY(owned_node);
+    const auto owned_chain=dsp::ProcessingChain::restore(**owned_registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+        1U,{*linked_instance.value(),*owned_node.value()});
+    QVERIFY(owned_chain);
+    QVERIFY(!dsp::ProcessingChain::restore(**owned_registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+        1U,{*owned_node.value(),*linked_instance.value()}));
+    auto owned_bindings=artistic;
+    owned_bindings.push_back({owned_id,*chosen->typed.chosen_p2_parameters()});
+    const auto owned_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+        stamp,prepared_owner,*owned_registry,*manual.value(),gain_only,
+        *owned_chain.value(),owned_bindings,"owned-final-p2",*block.value(),true);
+    QVERIFY(owned_job);
+    QVERIFY(owned_job.value()->preserves_user_terminal());
+    QVERIFY(owned_job.value()->exact_fixed_graph_content()==fixed_graph);
+    QVERIFY(owned_job.value()->exact_linked_graph_content()!=unlinked_graph);
+    QVERIFY(!a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+        stamp,prepared_owner,*owned_registry,*active_manual.value(),manual_bindings,
+        *owned_chain.value(),owned_bindings,"double-p2-rejected",*block.value(),true));
+    const auto owned_pcm=owned_job.value()->execute();
+    QVERIFY(owned_pcm);
+    QVERIFY(owned_job.value()->result_has_expected_scope(*owned_pcm.value()));
+    QCOMPARE(owned_pcm.value()->signatures().back().instance_id,owned_id);
+    const auto owned_tp=analysis::measure_true_peak_full_resource(owned_pcm.value()->buffer());
+    QVERIFY(owned_tp);
+    QVERIFY(std::isfinite(owned_tp.value()->global_linear_peak()));
+    QVERIFY(owned_tp.value()->global_linear_peak()<=1.0);
     auto bypassed=*active_manual.value();
     QVERIFY(bypassed.set_user_bypass(p2_id,true));
     auto bypass_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
