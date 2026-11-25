@@ -24,6 +24,7 @@ struct D03D04NativeSeries final {
 struct NativeFrameBand final {
     int exact_canonical_index{};
     double low_hz{},high_hz{};
+    friend bool operator==(const NativeFrameBand&,const NativeFrameBand&)=default;
 };
 } // namespace rgsml::app::l3_automatch::m05m06_real
 namespace rgsml::app::l3_automatch {
