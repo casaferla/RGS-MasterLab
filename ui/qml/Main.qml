@@ -646,6 +646,11 @@ ApplicationWindow {
         id: autoMatchDialog
         objectName: "autoMatchDialog"
         title: "AutoMatch"
+        function amountText(index) {
+            let item = autoMatchInputs.itemAt(index)
+            return item && item.numericField.acceptableInput
+                ? item.numericField.text + "%" : "—"
+        }
         modal: false
         anchors.centerIn: parent
         width: 340
@@ -2003,7 +2008,7 @@ ApplicationWindow {
                                                             font.weight: Font.Bold
                                                         }
                                                         Text {
-                                                            text: "0%"
+                                                            text: autoMatchDialog.amountText(0)
                                                             color: "#586D7C"
                                                             font.family: "Segoe UI"
                                                             font.pixelSize: 8
@@ -2072,7 +2077,7 @@ ApplicationWindow {
                                                     }
 
                                                     Text {
-                                                        text: "Tonal"
+                                                        text: "Tonal " + autoMatchDialog.amountText(1)
                                                         color: "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
@@ -2107,7 +2112,7 @@ ApplicationWindow {
                                                     }
 
                                                     Text {
-                                                        text: "Dynamics"
+                                                        text: "Dynamics " + autoMatchDialog.amountText(2)
                                                         color: "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
@@ -2142,7 +2147,7 @@ ApplicationWindow {
                                                     }
 
                                                     Text {
-                                                        text: "Stereo"
+                                                        text: "Stereo " + autoMatchDialog.amountText(3)
                                                         color: "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
@@ -2177,7 +2182,7 @@ ApplicationWindow {
                                                     }
 
                                                     Text {
-                                                        text: "Loudness"
+                                                        text: "Loudness " + autoMatchDialog.amountText(4)
                                                         color: "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
