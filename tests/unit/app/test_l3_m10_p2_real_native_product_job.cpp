@@ -19,7 +19,7 @@
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
 #include "internal/l3_m09_native_domain_stream.hpp"
-#include "internal/l3_m09_native_automatic_seed_bank.hpp"
+#include "internal/l3_m09_native_fixed_seed_geometry.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
 #include "internal/l3_m10_p2_frozen_real_refinement_batch.hpp"
@@ -92,6 +92,7 @@ private slots:
     void nativeEqPrefixesPreserveStoredOrder();
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
+    void nativeSeedGeometryRejectsSubstitutedStereoGrid();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
     void canonicalP2TrialTicketsCover48OrderedParameters();
@@ -101,6 +102,27 @@ private slots:
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
     void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
+void P2RealNativeProductTest::nativeSeedGeometryRejectsSubstitutedStereoGrid() {
+    namespace m09=a::m09_frozen;
+    for(const auto rate:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
+        for(const int denominator:{3,12}) {
+            const auto grid=analysis::native_tonal_fractional_grid(rate,denominator);
+            std::vector<a::m05m06_real::NativeFrameBand> bands;
+            std::vector<int> indices;
+            for(const auto& band:grid) {
+                if(!band.fully_supported)continue;
+                bands.push_back({band.band_index,band.low_hz,band.high_hz});
+                indices.push_back(band.band_index);
+            }
+            const auto matched=m09::match_exact_native_stereo_grid(bands,indices,rate,denominator);
+            QVERIFY(matched);
+            QCOMPARE(matched->size(),bands.size());
+            QVERIFY(!m09::match_exact_native_stereo_grid(bands,indices,rate,denominator==3?12:3));
+            auto wrong=bands;wrong.front().high_hz+=0.01;
+            QVERIFY(!m09::match_exact_native_stereo_grid(wrong,indices,rate,denominator));
+        }
+    }
+}
 void P2RealNativeProductTest::nativeM20MetadataUsesSixRateGeometry() {
     for(const auto fs:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
         const auto frame=analysis::native_tonal_frame_geometry(fs);
