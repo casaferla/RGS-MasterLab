@@ -88,15 +88,15 @@ measure_m10_p2_full_native_once(
         return R::failure(core::Error{
             core::ErrorCode::InvalidState,
             "L3_M10_P2_CANCELLED_AFTER_REAL_ANALYSIS"});
-    const auto m16=analysis::measure_true_peak_full_resource(
-        measured.value()->actual.rendered.buffer());
-    if(!m16)return R::failure(*m16.error());
-    if(!std::isfinite(m16.value()->global_linear_peak())||
-       m16.value()->global_linear_peak()<0.0)
+    // M19 already executed genuine independent M16 on exactly this PCM.
+    // Keep the raw carrier, not an inverse conversion from rounded dBTP.
+    auto m16=std::move(measured.value()->exact_full_resource_m16);
+    if(!m16||!std::isfinite(m16->global_linear_peak())||
+       m16->global_linear_peak()<0.0)
         return R::failure(core::Error{
             core::ErrorCode::InvalidState,
             "L3_M10_P2_ACTUAL_M16_INVALID"});
     return R::success(M10P2FullNativeEvidence{
-        std::move(*measured.value()),std::move(*m16.value())});
+        std::move(*measured.value()),std::move(*m16)});
 }
 } // namespace rgsml::app::l3_automatch

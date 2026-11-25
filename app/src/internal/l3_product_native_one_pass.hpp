@@ -70,6 +70,7 @@ struct ProductNativeOnePassResult final {
     std::vector<std::uint64_t> selected_original_m20_ordinals;
     std::uint64_t exact_observed_active_frames{};
     std::optional<NativeSpectralSeedCarrier> spectral_seed_carrier{};
+    std::optional<analysis::TruePeakMeasurement> exact_full_resource_m16{};
     [[nodiscard]] constexpr bool authorizes_m10_or_export()
         const noexcept{return false;}
 };
@@ -87,6 +88,7 @@ struct ProductNativeFullResourceObservations final {
     std::vector<std::uint64_t> selected_original_m20_ordinals;
     std::uint64_t exact_observed_active_frames{};
     std::optional<NativeSpectralSeedCarrier> spectral_seed_carrier{};
+    std::optional<analysis::TruePeakMeasurement> exact_full_resource_m16{};
     [[nodiscard]] constexpr bool authorizes_m10_or_m12()const noexcept {
         return false;
     }
@@ -124,16 +126,17 @@ measure_real_full_owned_pcm_native_once(
     if(spec.phase6_active_pcm_frames>
        static_cast<std::uint64_t>(view.frame_count().value()))
         return fail("L3_ONCE_ACTIVE_SCOPE_NOT_CURRENT");
-    auto levels=analysis::measure_basic_level_full_resource(
+    auto combined=analysis::measure_basic_level_and_true_peak_full_resource(
         full_resource);
-    if(!levels)return R::failure(*levels.error());
+    if(!combined)return R::failure(*combined.error());
+    auto& levels=combined.value()->levels;
     std::optional<analysis::NativeM19TonalGate> owned_gate;
     if(spec.derive_own_m19_temporal_gate) {
         if(spec.source_support.has_spectral_gate||spec.source_support.has_width_gate||
            !spec.source_support.spectral_frame_mask.empty()||
            !spec.source_support.retained_width_blocks.empty())
             return fail("L3_ONCE_CONFLICTING_TEMPORAL_GATE_AUTHORITIES");
-        auto gate=analysis::bind_native_m19_tonal_gate(*levels.value());
+        auto gate=analysis::bind_native_m19_tonal_gate(levels);
         if(!gate)return R::failure(*gate.error());
         owned_gate=std::move(*gate.value());
         spec.phase6_active_pcm_frames=owned_gate->active_pcm_frames;
@@ -213,9 +216,10 @@ measure_real_full_owned_pcm_native_once(
             std::move(spectral).take_native_energies(),spectral.canonical_original_ordinals(),
             spec.phase6_active_pcm_frames,rate};
     return R::success(ProductNativeFullResourceObservations{
-        std::move(*levels.value()),std::move(*tonal.value()),
+        std::move(levels),std::move(*tonal.value()),
         std::move(d10),std::move(s03),std::move(p04),
-        spectral.canonical_original_ordinals(),spec.phase6_active_pcm_frames,std::move(carrier)});
+        spectral.canonical_original_ordinals(),spec.phase6_active_pcm_frames,std::move(carrier),
+        std::move(combined.value()->true_peak)});
 }
 // Reusable native analyzer for any genuine immutable Product job that
 // exposes execute()/result_has_expected_scope(). The specialized M10/P2
@@ -255,6 +259,7 @@ measure_real_product_candidate_once(
         std::move(observed.value()->s03_s06),
         std::move(observed.value()->d07_d09),
         std::move(observed.value()->selected_original_m20_ordinals),
-        observed.value()->exact_observed_active_frames,std::move(observed.value()->spectral_seed_carrier)});
+        observed.value()->exact_observed_active_frames,std::move(observed.value()->spectral_seed_carrier),
+        std::move(observed.value()->exact_full_resource_m16)});
 }
 } // namespace rgsml::app::l3_automatch

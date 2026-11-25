@@ -4,6 +4,7 @@
 // zero for unavailable results, private audio renderer or duplicated M16 TP.
 // Mathematical/official Gate G remains separate from mere API compilation.
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
@@ -97,5 +98,15 @@ measure_basic_level_scope(
 // qualification_status is preserved; numerical support is NOT a Gate G.
 [[nodiscard]] core::Result<BasicLevelAnalysisResult>
 measure_basic_level_full_resource(const audio::AudioBuffer& resource);
+
+// Owning-resource combined observation. The raw M16 carrier and the
+// M19-imported dBTP originate from the SAME genuine M16 evaluation.
+// No externally supplied peak or pre-render result can be substituted.
+struct BasicLevelWithTruePeak final {
+    BasicLevelAnalysisResult levels;
+    TruePeakMeasurement true_peak;
+};
+[[nodiscard]] core::Result<BasicLevelWithTruePeak>
+measure_basic_level_and_true_peak_full_resource(const audio::AudioBuffer& resource);
 
 } // namespace rgsml::analysis

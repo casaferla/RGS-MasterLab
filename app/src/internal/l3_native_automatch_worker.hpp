@@ -83,11 +83,11 @@ measure_native_stereo_insertion_population(const NativeAutoMatchWorkerInputs& in
     auto observed=measure_real_product_candidate_once(NativeStereoInsertionJobView{job},
         std::move(spec),cancellation);
     if(!observed||(cancellation&&cancellation->load(std::memory_order_acquire)))return {};
-    auto peak=analysis::measure_true_peak_full_resource(observed.value()->actual.rendered.buffer());
+    auto peak=std::move(observed.value()->exact_full_resource_m16);
     if(!peak)return {};
     // Reuse the original native projection only; the preterminal M16
     // is NOT the independent final safety measurement of any candidate.
-    M10P2FullNativeEvidence measured{std::move(*observed.value()),std::move(*peak.value())};
+    M10P2FullNativeEvidence measured{std::move(*observed.value()),std::move(*peak)};
     const auto& ticket=job.ticket_identity();
     auto definitions=m10_frozen::resolve_original_definitions_from_fixed(fixed,input.originals,
         owners.current_owner,input.exact_generation,ticket);

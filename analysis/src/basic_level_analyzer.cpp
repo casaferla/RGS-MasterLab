@@ -94,15 +94,15 @@ core::Result<BasicLevelAnalysisResult> measure_basic_level_scope(
     return R::success(std::move(out));
 }
 
-core::Result<BasicLevelAnalysisResult> measure_basic_level_full_resource(
+core::Result<BasicLevelWithTruePeak> measure_basic_level_and_true_peak_full_resource(
     const audio::AudioBuffer& resource)
 {
-    using R=core::Result<BasicLevelAnalysisResult>;
+    using R=core::Result<BasicLevelWithTruePeak>;
     const auto view=resource.view();
     auto result=measure_basic_level_scope(view,
         view.absolute_start_frame(),view.frame_count(),
         view.timebase().frame_domain_id());
-    if(!result)return result;
+    if(!result)return R::failure(*result.error());
     // Actual canonical M16: source-ordered FIR and final dBTP are
     // imported by one already-existing public method. Never copy the
     // algorithm, override its qualification or fabricate a peak.
@@ -124,7 +124,16 @@ core::Result<BasicLevelAnalysisResult> measure_basic_level_full_resource(
         result.value()->true_peak_db_tp=mapped(
             peak.value()->global_db_tp());
     }
-    return result;
+    return R::success(BasicLevelWithTruePeak{
+        std::move(*result.value()),std::move(*peak.value())});
+}
+core::Result<BasicLevelAnalysisResult> measure_basic_level_full_resource(
+    const audio::AudioBuffer& resource)
+{
+    auto combined=measure_basic_level_and_true_peak_full_resource(resource);
+    using R=core::Result<BasicLevelAnalysisResult>;
+    if(!combined)return R::failure(*combined.error());
+    return R::success(std::move(combined.value()->levels));
 }
 
 } // namespace rgsml::analysis
