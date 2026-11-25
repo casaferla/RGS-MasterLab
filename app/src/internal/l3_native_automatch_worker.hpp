@@ -2,7 +2,8 @@
 #include "l3_m10_native_fixed_worker.hpp"
 #include "l3_m10_native_definition_builder.hpp"
 #include "l3_m09_native_fixed_seed_geometry.hpp"
-#include "l3_m09_native_domain_stream.hpp"
+#include "l3_m09_native_owner_allocations.hpp"
+#include <type_traits>
 namespace rgsml::app::l3_automatch {
 enum class NativeAutoMatchWorkerPhase:std::uint8_t {
     invalid_owner,unavailable_fixed,unavailable_seed_geometry,
@@ -90,7 +91,10 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     out.search=m09_frozen::run_authorized_native_family_search(input.exact_generation_and_policy,
         binding,env,input.requested,channels==2U,input.exact_current_endpoint_safety_attested,
         [&](auto domain,const auto& family){
-            return std::invoke(resolve_authority,*bank,domain,family);
+            if constexpr(std::is_invocable_v<ResolveAuthority&,const m09_frozen::NativeFamilySeedBank&,
+                const m11_frozen::NativeFixedPopulation&,decltype(domain),decltype(family)>)
+                return std::invoke(resolve_authority,*bank,*out.fixed,domain,family);
+            else return std::invoke(resolve_authority,*bank,domain,family);
         },std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
     out.phase=cancelled()?NativeAutoMatchWorkerPhase::cancelled:NativeAutoMatchWorkerPhase::search_completed;
     return out;
@@ -115,5 +119,58 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
                 owners.current_owner,ticket,spec);
         },std::forward<AllocateBand>(allocate_band),std::forward<ResolveAuthority>(resolve_authority),
         std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
+}
+// The ordinary artistic route no longer requires a caller to supply
+// a separate candidate recipe or UUID resolver per combination.
+// The immutable accepted dependency bytes and owner UUID allocator
+// still come from the Product session, not from a second registry.
+[[nodiscard]] inline NativeAutoMatchWorkerResult run_native_automatch_with_owner_allocations(
+    NativeAutoMatchWorkerInputs input,const m10_frozen::NativeDefinitionPolicy& definitions,
+    m09_frozen::NativeOwnerAllocations::AllocateUuid allocate_uuid,
+    std::span<const core::Uuid> protected_project_ids,
+    const m09_frozen::ExactBytes& exact_accepted_dependencies,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    if(cancellation&&cancellation->load(std::memory_order_acquire)) {
+        NativeAutoMatchWorkerResult cancelled;cancelled.phase=NativeAutoMatchWorkerPhase::cancelled;
+        return cancelled;
+    }
+    if(!input.owners.frozen_registry||exact_accepted_dependencies.empty()||
+       !m10_frozen::valid_native_definition_policy(definitions))return {};
+    std::vector<core::Uuid> protected_ids(protected_project_ids.begin(),protected_project_ids.end());
+    for(const auto& instance:input.owners.frozen_manual.instances())
+        protected_ids.push_back(instance.instance_id().uuid());
+    m09_frozen::NativeOwnerAllocations allocations(std::move(allocate_uuid),protected_ids);
+    input.dynamic_band_ids.clear();
+    for(std::size_t i=0;i<3U;++i) {
+        const auto id=allocations.dynamic_band(i);
+        if(!id)return {};
+        input.dynamic_band_ids.push_back(*id);
+    }
+    const auto generation=input.exact_generation_and_policy;
+    const auto registry=input.owners.frozen_registry;
+    const double ceiling=input.independent_m11_ceiling_db_tp;
+    auto result=run_native_automatch_with_definitions(std::move(input),definitions,
+        [&](auto role,const auto& atom){return allocations.band(role,atom);},
+        [&](const auto& bank,const auto& fixed,auto,const auto& family){
+            m09_frozen::NativeFamilyBindingAuthority unresolved;
+            unresolved.exact_reason="fixed-m16-or-dependency-unavailable";
+            if(!fixed.measured_m16_linear_peak||fixed.exact_definition_authority_content.empty()||
+               fixed.exact_fixed_graph_content.empty())return unresolved;
+            auto dependencies=exact_accepted_dependencies;
+            using namespace m10_frozen::p2_cache_detail;
+            append_exact_field(dependencies,"rgsml.l3.native-owner-dependencies/1");
+            append_exact_byte_field(dependencies,fixed.exact_definition_authority_content);
+            append_exact_byte_field(dependencies,fixed.exact_fixed_graph_content);
+            const bool peak_exceeds=!m10_frozen::check_actual_p2_m16_linear_peak(
+                *fixed.measured_m16_linear_peak,ceiling).passes();
+            return m09_frozen::resolve_native_owner_family(bank,family,allocations,*registry,
+                generation,dependencies,peak_exceeds);
+        },[&](auto role,const auto& id){return allocations.band_identity(role,id);},cancellation);
+    if(allocations.failed()) {
+        result.search={};
+        result.phase=NativeAutoMatchWorkerPhase::unavailable_seed_bank;
+    }
+    return result;
 }
 } // namespace rgsml::app::l3_automatch
