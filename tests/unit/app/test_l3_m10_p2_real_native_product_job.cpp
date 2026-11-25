@@ -8,6 +8,7 @@
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_native_automatch_worker.hpp"
 #include "internal/l3_native_common_analysis_spec.hpp"
+#include "internal/l3_native_qt_search_worker.hpp"
 #include "internal/l3_m12_preserved_native_winner.hpp"
 #include "internal/l3_m09_native_selected_search.hpp"
 #include "internal/l3_m09_native_role_graph.hpp"
@@ -95,6 +96,7 @@ private slots:
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeCommonAnalysisSpecUsesAllRatePairs();
+    void nativeOfflineRegistryKeepsLiveManualAuthority();
     void nativeAutomaticGainSearchMeasuresRealOwnedPcm();
     void nativeFullPcmZeroSideIsNotAWidthFloor();
     void nativeSeedGeometryRejectsSubstitutedStereoGrid();
@@ -273,6 +275,25 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
     QVERIFY(winner.native_prediction);
     QCOMPARE(winner.native_prediction->exact_candidate_ticket,result.search.winning_graph->exact_ticket);
     QVERIFY(!result.authorizes_product_publication());
+}
+void P2RealNativeProductTest::nativeOfflineRegistryKeepsLiveManualAuthority() {
+    const auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    const auto live=std::make_shared<const dsp::ModuleRegistry>(*base.value());
+    const auto extended=a::freeze_native_automatch_execution_registry(live);
+    QVERIFY(extended&&*extended);
+    QVERIFY((*extended)->has_factory("rgsml.dsp.dynamic-eq"));
+    QVERIFY((*extended)->has_factory("rgsml.dsp.transient-shaper"));
+    QVERIFY(!live->has_factory("rgsml.dsp.dynamic-eq"));
+    QVERIFY(!live->has_factory("rgsml.dsp.transient-shaper"));
+    QCOMPARE((*extended)->has_factory("rgsml.dsp.streaming-true-peak-limiter"),
+        live->has_factory("rgsml.dsp.streaming-true-peak-limiter"));
+    const auto reused=a::freeze_native_automatch_execution_registry(*extended);
+    QVERIFY(reused&&*reused==*extended);
+    QVERIFY(!a::freeze_native_automatch_execution_registry({}));
+    static_assert(std::is_pointer_v<decltype(&a::capture_native_qt_search_on_owner)>);
+    static_assert(std::is_pointer_v<decltype(&a::native_qt_search_still_current_on_owner)>);
+    static_assert(std::is_pointer_v<decltype(&a::run_native_qt_search_worker)>);
 }
 void P2RealNativeProductTest::nativeCommonAnalysisSpecUsesAllRatePairs() {
     const std::array<std::uint32_t,6> rates{44100,48000,88200,96000,176400,192000};
