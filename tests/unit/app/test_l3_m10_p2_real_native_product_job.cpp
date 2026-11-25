@@ -1733,6 +1733,8 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     const auto owned_pcm=owned_job.value()->execute();
     QVERIFY(owned_pcm);
     QVERIFY(owned_job.value()->result_has_expected_scope(*owned_pcm.value()));
+    QVERIFY(!without_p2.value()->result_has_expected_scope(*owned_pcm.value()));
+    QVERIFY(!owned_job.value()->result_has_expected_scope(*no_terminal.value()));
     QCOMPARE(owned_pcm.value()->signatures().back().instance_id,owned_id);
     const auto owned_tp=analysis::measure_true_peak_full_resource(owned_pcm.value()->buffer());
     QVERIFY(owned_tp);

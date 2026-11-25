@@ -350,17 +350,24 @@ public:
     {
         if(!prepared_)return false;
         const auto& signatures=out.signatures();
-        return out.view().absolute_range()==
-                  prepared_->view().absolute_range()&&
-               out.view().format()==prepared_->view().format()&&
-               out.view().timebase().frame_domain_id()==
-                   audio::FrameDomainId::SOURCE_PROCESSING_RATE&&
-               (p2_bindings_.empty()
-                ? signatures.size()==linked_.instances().size()&&
-                  out.chain_revision()==linked_.revision()
-                : signatures.size()==1U&&
-                  signatures.back().instance_id==p2_bindings_.front().instance_id&&
-                  signatures.back().type_id=="rgsml.dsp.streaming-true-peak-limiter");
+        const auto& final_chain=p2_bindings_.empty()?linked_:final_p2_;
+        const auto nodes=final_chain.instances();
+        if(out.view().absolute_range()!=prepared_->view().absolute_range()||
+           out.view().format()!=prepared_->view().format()||
+           out.view().timebase().frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE||
+           out.chain_revision()!=final_chain.revision()||signatures.size()!=nodes.size())
+            return false;
+        for(std::size_t i=0;i<nodes.size();++i) {
+            const auto& node=nodes[i];
+            const auto& signature=signatures[i];
+            if(signature.instance_id!=node.instance_id()||
+               signature.type_id!=node.module_type_id()||
+               signature.disposition!=(node.active()
+                   ?render::ModuleExecutionDisposition::PROCESSED
+                   :render::ModuleExecutionDisposition::BYPASS_IDENTITY))
+                return false;
+        }
+        return true;
     }
     [[nodiscard]] bool still_current(
         const OfflineProductOwnerStamp& current_owner,
