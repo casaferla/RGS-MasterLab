@@ -132,7 +132,107 @@ private slots:
     void wrongProjectChainOrUnavailableFactoryCannotBePublished();
     void userManualChainAndSingleModulePresetsAreStrictlyTyped();
     void optimizedManualP2CannotBeSilentlyPersistedAsDifferentSound();
+    void ownedP2AndGainRoundtripUpdateAndSuspend();
 };
+void M12NativeProjectCarrierTest::ownedP2AndGainRoundtripUpdateAndSuspend() {
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto expanded=dsp::ModuleRegistry::with_streaming_true_peak_automatch(*base.value());
+    QVERIFY(expanded);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*expanded.value()));
+    auto manual=dsp::ProcessingChain::create(*registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto gain=dsp::GainParameters::create(1.0);
+    const auto p2=dsp::StreamingTruePeakLimiterParameters::create(-2.0,3.0,5);
+    QVERIFY(gain&&p2);
+    std::vector<m::ExactLinkedNode> nodes{
+        {id("b3000000-0000-4000-8000-000000000081"),
+         uuid("b4000000-0000-4000-8000-000000000081"),"rgsml.dsp.gain",*gain.value()},
+        {id("b3000000-0000-4000-8000-000000000082"),
+         uuid("b4000000-0000-4000-8000-000000000082"),"rgsml.dsp.streaming-true-peak-limiter",*p2.value()}};
+    const std::vector<dsp::ModuleExecutionBinding> none;
+    auto stage=m::stage_exact_m12_native_ref_linked(accepted(),*manual.value(),none,registry,nodes);
+    QVERIFY(stage);
+    const auto linkedId=uuid("b5000000-0000-4000-8000-000000000081");
+    auto carrier=m::encode_exact_ref_linked_project_carrier(*stage.value(),linkedId);
+    QVERIFY(carrier);
+    project::ProjectDocument doc;
+    doc.projectId=uuid("b6000000-0000-4000-8000-000000000081");
+    doc.displayName="Owned P2 roundtrip fixture";
+    doc.sourceResourceId=uuid("b7000000-0000-4000-8000-000000000081");
+    const auto refResource=uuid("b7000000-0000-4000-8000-000000000082");
+    const auto refId=uuid("b7000000-0000-4000-8000-000000000083");
+    doc.resources.push_back({doc.sourceResourceId,"AUDIO",
+        {{"rgsml.windows.local-file","C:/source.wav","source.wav"}},std::nullopt});
+    doc.resources.push_back({refResource,"AUDIO",
+        {{"rgsml.windows.local-file","C:/reference.wav","reference.wav"}},std::nullopt});
+    doc.references.activeReferenceId=refId;
+    doc.references.items.push_back({refId,"GOLD",refResource});
+    project::Chain fixed;
+    fixed.chainId=uuid("b8000000-0000-4000-8000-000000000081");
+    fixed.stage="MASTER";fixed.segment="MANUAL";fixed.revision=0;
+    doc.pipeline.masteringChainId=fixed.chainId;doc.chains.push_back(fixed);
+    const auto before=project::ProjectSnapshot::create(doc);
+    QVERIFY(before);
+    m::M12ProjectTransactionExpected expected{doc.sourceResourceId,refId,fixed.chainId,
+        fixed,std::nullopt,true,true};
+    auto transaction=m::prepare_exact_m12_project_transaction(*before.value(),*carrier.value(),
+        *stage.value(),expected);
+    QVERIFY(transaction);
+    const auto& candidate=transaction.value()->candidate_not_yet_committed;
+    const auto zipped=std::make_shared<M12ZipStorage>();
+    QVERIFY(project::ProjectRepository::save_create_new(candidate,
+        std::make_unique<M12ZipEndpoint>(zipped),
+        [zipped]()->core::Result<std::unique_ptr<core::IResourceReader>>{
+            return core::Result<std::unique_ptr<core::IResourceReader>>::
+                success(std::make_unique<M12ZipEndpoint>(zipped));}));
+    auto reopened=project::ProjectRepository::open(std::make_unique<M12ZipEndpoint>(zipped));
+    QVERIFY(reopened);
+    auto restored=m::decode_exact_m12_ref_linked_product_state(reopened.value()->document(),registry);
+    QVERIFY(restored);
+    QVERIFY(restored.value()->exact_native_bindings==stage.value()->exact_bindings);
+    auto unavailable=std::make_shared<const dsp::ModuleRegistry>(*base.value());
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(reopened.value()->document(),unavailable));
+    const auto suspension=m::prepare_m12_owned_controller_suspension(*reopened.value(),
+        accepted().reference_match_controller_id,linkedId,m::ControllerSuspensionCause::amount_zero,true);
+    QVERIFY(suspension);
+    const auto& suspended=suspension.value()->updated_project_not_committed;
+    auto off=m::decode_exact_m12_ref_linked_product_state(suspended.document(),registry);
+    QVERIFY(off);
+    for(const auto& node:off.value()->exact_native_chain.instances())QVERIFY(!node.active());
+    QVERIFY(off.value()->exact_native_bindings==stage.value()->exact_bindings);
+    const auto resumed=m::prepare_m12_owned_controller_suspension(suspended,
+        accepted().reference_match_controller_id,linkedId,m::ControllerSuspensionCause::current_amount_restored,true);
+    QVERIFY(resumed);
+    auto next=accepted();next.exact_accepted_plan_revision++;
+    next.exact_plan_content_checksum="new-reviewed-owned-p2-plan";
+    const auto changed=dsp::StreamingTruePeakLimiterParameters::create(-3.0,2.0,5);
+    QVERIFY(changed);nodes.back().exact_m10_winning_parameters=*changed.value();
+    auto nextStage=m::stage_exact_m12_native_ref_linked(next,*manual.value(),none,registry,nodes);
+    QVERIFY(nextStage);
+    auto nextCarrier=m::encode_exact_ref_linked_project_carrier(*nextStage.value(),linkedId);
+    QVERIFY(nextCarrier);
+    expected.exact_existing_linked_snapshot=reopened.value()->document().chains.back();
+    auto update=m::prepare_exact_m12_project_transaction(*reopened.value(),*nextCarrier.value(),
+        *nextStage.value(),expected);
+    QVERIFY(update);
+    auto updated=m::decode_exact_m12_ref_linked_product_state(
+        update.value()->candidate_not_yet_committed.document(),registry);
+    QVERIFY(updated);
+    QVERIFY(updated.value()->exact_native_bindings==nextStage.value()->exact_bindings);
+    QCOMPARE(updated.value()->exact_native_chain.instances().back().instance_id(),nodes.back().allocated_instance_id);
+    auto wrongOrder=reopened.value()->document();
+    std::reverse(wrongOrder.chains.back().modules.begin(),wrongOrder.chains.back().modules.end());
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(wrongOrder,registry));
+    auto manualP2=dsp::ProcessingChain::create(*registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manualP2);
+    const auto manualId=id("b3000000-0000-4000-8000-000000000083");
+    QVERIFY(manualP2.value()->add(manualId,"rgsml.dsp.streaming-true-peak-limiter",0));
+    const std::vector<dsp::ModuleExecutionBinding> manualBindings{{manualId,*p2.value()}};
+    QVERIFY(!m::stage_exact_m12_native_ref_linked(accepted(),*manualP2.value(),manualBindings,registry,nodes));
+}
 void M12NativeProjectCarrierTest::
 realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     auto base=dsp::ModuleRegistry::create_dsp_package_v1();
