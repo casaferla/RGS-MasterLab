@@ -588,7 +588,12 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         completed.emplace(a::run_native_qt_search_worker(*captured.value(),policy,allocate,{}));
     });
     searchThread.join();
-    QVERIFY(completed&&completed->originals&&completed->result.fixed);
+    QVERIFY(completed);
+    qInfo("Qt native search phase=%d status=%d fixed-gate=%d originals=%d fixed=%d",
+        static_cast<int>(completed->result.phase),static_cast<int>(completed->result.search.status),
+        static_cast<int>(completed->result.search.fixed_gate.status),
+        completed->originals?1:0,completed->result.fixed?1:0);
+    QVERIFY(completed->originals&&completed->result.fixed);
     QVERIFY2(completed->result.search.status==a::m09_frozen::NativeProductSearchStatus::measured_candidate,
         "ordinary real Qt AutoMatch did not produce a measured winner");
     QVERIFY(completed->result.search.winning_graph&&completed->result.search.refinement);
@@ -628,8 +633,19 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto& fresh=verification->value()->fresh();
     QCOMPARE(fresh.logical_verification_evaluations,1U);
     QVERIFY(fresh.additional_native);
-    QVERIFY(verification->value()->assessment().fresh_master_execution_attested);
-    QVERIFY(verification->value()->assessment().actual_27_binding_population_attested);
+    // Keep all assertions, and expose the actual canonical failed or
+    // unavailable predicates if the end-to-end numerical gate fails.
+    const auto& assessment=verification->value()->assessment();
+    qInfo("Qt fresh M13 state=%d required=%llu configured=%llu",
+        static_cast<int>(assessment.state),
+        static_cast<unsigned long long>(assessment.required_native_components),
+        static_cast<unsigned long long>(assessment.configured_native_components));
+    for(const auto& reason:assessment.canonical_reasons)
+        qInfo("M13 reason=%s field=%s binding=%s predicate=%d",
+            reason.code.c_str(),reason.field_path.c_str(),reason.binding_key.c_str(),
+            static_cast<int>(reason.predicate));
+    QVERIFY(assessment.fresh_master_execution_attested);
+    QVERIFY(assessment.actual_27_binding_population_attested);
     QVERIFY(verification->value()->assessment().same_run_proximity_attested);
     QVERIFY(verification->value()->assessment().native_numerical_evidence_passed());
     QVERIFY(!verification->value()->authorizes_verified());
