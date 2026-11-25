@@ -1,7 +1,7 @@
 #pragma once
 // M09 physical coordinates -> existing validated DSP payloads.
 // The frozen M09 inventory supplies bounds, semantic IDs and seeds.
-// No implicit default, topology change, MANUAL edit or P2 coordinate.
+// No implicit default, topology change, MANUAL edit or WAV Export coordinate.
 #include <rgsml/dsp/module_parameter_payload.hpp>
 #include <algorithm>
 #include <cmath>
@@ -15,7 +15,8 @@ enum class NativeField {
     gain_db,frequency_hz,q,shelf_slope,base_gain_db,range_db,
     threshold_dbfs,ratio,knee_db,attack_ms,release_ms,rms_ms,
     look_ahead_ms,mix_percent,makeup_gain_db,attack_amount_db,
-    sustain_amount_db,mid_gain_db,side_gain_db,low_width_percent
+    sustain_amount_db,mid_gain_db,side_gain_db,low_width_percent,
+    p2_ceiling_db_tp,p2_drive_db
 };
 struct NativePhysicalField final {
     NativeField field;
@@ -53,6 +54,22 @@ apply_gain(const dsp::GainParameters& seed,
         gain=f.value;
     }
     return as_payload(dsp::GainParameters::create(gain));
+}
+[[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
+apply_streaming_p2(const dsp::StreamingTruePeakLimiterParameters& seed,
+                   std::span<const NativePhysicalField> fields)
+{
+    double ceiling=seed.ceiling_db_tp(),drive=seed.drive_db();
+    for(const auto& f:fields) {
+        if(f.band_id)return std::nullopt;
+        if(f.field==NativeField::p2_ceiling_db_tp)ceiling=f.value;
+        else if(f.field==NativeField::p2_drive_db)drive=f.value;
+        else return std::nullopt;
+    }
+    // Native typed validation owns legality; margin is immutable and
+    // never an active M10 coordinate.
+    return as_payload(dsp::StreamingTruePeakLimiterParameters::create(
+        ceiling,drive,seed.margin_percent()));
 }
 [[nodiscard]] inline std::optional<dsp::ModuleParameterPayload>
 apply_transient(const dsp::TransientShaperParameters& seed,
@@ -213,7 +230,8 @@ apply_native_physical_fields(
     if(const auto* p=std::get_if<dsp::CompressorParameters>(&seed))return apply_compressor(*p,fields);
     if(const auto* p=std::get_if<dsp::ParametricEqParameters>(&seed))return apply_eq(*p,fields);
     if(const auto* p=std::get_if<dsp::DynamicEqParameters>(&seed))return apply_dynamic_eq(*p,fields);
-    return std::nullopt; // P2 and WAV Export are outside AutoMatch
+    if(const auto* p=std::get_if<dsp::StreamingTruePeakLimiterParameters>(&seed))return apply_streaming_p2(*p,fields);
+    return std::nullopt; // WAV Export remains outside AutoMatch
 }
 [[nodiscard]] inline std::optional<double>
 read_native_physical_field(const dsp::ModuleParameterPayload& seed,
@@ -221,6 +239,9 @@ read_native_physical_field(const dsp::ModuleParameterPayload& seed,
 {
     if(const auto* gain=std::get_if<dsp::GainParameters>(&seed)) {
         if(!band_id&&field==NativeField::gain_db)return gain->gain_db();
+    } else if(const auto* p2=std::get_if<dsp::StreamingTruePeakLimiterParameters>(&seed)) {
+        if(!band_id&&field==NativeField::p2_ceiling_db_tp)return p2->ceiling_db_tp();
+        if(!band_id&&field==NativeField::p2_drive_db)return p2->drive_db();
     } else if(const auto* transient=std::get_if<dsp::TransientShaperParameters>(&seed)) {
         if(!band_id&&field==NativeField::attack_amount_db)return transient->attack_amount_db();
         if(!band_id&&field==NativeField::sustain_amount_db)return transient->sustain_amount_db();

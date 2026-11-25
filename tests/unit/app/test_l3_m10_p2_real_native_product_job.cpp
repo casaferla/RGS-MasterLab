@@ -80,6 +80,7 @@ class P2RealNativeProductTest final:public QObject {
 private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
+    void nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
@@ -112,6 +113,37 @@ private slots:
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
     void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
+void P2RealNativeProductTest::nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate() {
+    namespace m09=a::m09_frozen;
+    using F=m09::NativeField;
+    const auto seed=dsp::StreamingTruePeakLimiterParameters::create(-1.0,0.0,5);
+    QVERIFY(seed);
+    const dsp::ModuleParameterPayload payload=*seed.value();
+    const std::vector<m09::NativePhysicalField> fields{
+        {F::p2_ceiling_db_tp,{},-2.0},{F::p2_drive_db,{},6.0}};
+    const auto updated=m09::apply_native_physical_fields(payload,fields);
+    QVERIFY(updated);
+    const auto* typed=std::get_if<dsp::StreamingTruePeakLimiterParameters>(&*updated);
+    QVERIFY(typed);
+    QCOMPARE(typed->ceiling_db_tp(),-2.0);
+    QCOMPARE(typed->drive_db(),6.0);
+    QCOMPARE(typed->margin_percent(),5);
+    QVERIFY(m09::read_native_physical_field(*updated,F::p2_ceiling_db_tp,{})==std::optional<double>{-2.0});
+    QVERIFY(m09::read_native_physical_field(*updated,F::p2_drive_db,{})==std::optional<double>{6.0});
+    auto invalid=fields;invalid[0].value=0.1;
+    QVERIFY(!m09::apply_native_physical_fields(payload,invalid));
+    invalid=fields;invalid[1].value=24.1;
+    QVERIFY(!m09::apply_native_physical_fields(payload,invalid));
+    invalid=fields;invalid.push_back(fields.front());
+    QVERIFY(!m09::apply_native_physical_fields(payload,invalid));
+    invalid=fields;invalid[1].field=F::gain_db;
+    QVERIFY(!m09::apply_native_physical_fields(payload,invalid));
+    const auto export_tp=dsp::TruePeakLimiterParameters::create(-1.0);
+    QVERIFY(export_tp);
+    const dsp::ModuleParameterPayload export_payload=*export_tp.value();
+    QVERIFY(!m09::apply_native_physical_fields(export_payload,fields));
+    QVERIFY(!m09::read_native_physical_field(export_payload,F::p2_ceiling_db_tp,{}));
+}
 void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
     namespace native=a::m05m06_real;
     namespace m10=a::m10_frozen;
