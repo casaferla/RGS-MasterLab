@@ -309,8 +309,25 @@ void P2RealNativeProductTest::nativeOfflineRegistryKeepsLiveManualAuthority() {
     QVERIFY((*extended)->has_factory("rgsml.dsp.transient-shaper"));
     QVERIFY(!live->has_factory("rgsml.dsp.dynamic-eq"));
     QVERIFY(!live->has_factory("rgsml.dsp.transient-shaper"));
-    QCOMPARE((*extended)->has_factory("rgsml.dsp.streaming-true-peak-limiter"),
-        live->has_factory("rgsml.dsp.streaming-true-peak-limiter"));
+    QVERIFY((*extended)->has_factory("rgsml.dsp.streaming-true-peak-limiter"));
+    QVERIFY(!live->has_factory("rgsml.dsp.streaming-true-peak-limiter"));
+    const auto p2_descriptor=(*extended)->find_descriptor("rgsml.dsp.streaming-true-peak-limiter");
+    QVERIFY(p2_descriptor);
+    QVERIFY(p2_descriptor.value()->get().must_be_last());
+    QVERIFY(!p2_descriptor.value()->get().duplicable());
+    const auto segments=p2_descriptor.value()->get().allowed_segments();
+    QVERIFY(std::find(segments.begin(),segments.end(),dsp::ChainSegment::REF_LINKED)!=segments.end());
+    const auto manual_preview=dsp::ModuleRegistry::with_streaming_true_peak_preview(*base.value());
+    QVERIFY(manual_preview);
+    const auto manual_live=std::make_shared<const dsp::ModuleRegistry>(*manual_preview.value());
+    const auto extended_manual=a::freeze_native_automatch_execution_registry(manual_live);
+    QVERIFY(extended_manual&&*extended_manual);
+    const auto live_descriptor=manual_live->find_descriptor("rgsml.dsp.streaming-true-peak-limiter");
+    QVERIFY(live_descriptor);
+    QCOMPARE(live_descriptor.value()->get().allowed_segments().size(),std::size_t{1});
+    const auto extended_descriptor=(*extended_manual)->find_descriptor("rgsml.dsp.streaming-true-peak-limiter");
+    QVERIFY(extended_descriptor);
+    QCOMPARE(extended_descriptor.value()->get(),p2_descriptor.value()->get());
     const auto reused=a::freeze_native_automatch_execution_registry(*extended);
     QVERIFY(reused&&*reused==*extended);
     QVERIFY(!a::freeze_native_automatch_execution_registry({}));
