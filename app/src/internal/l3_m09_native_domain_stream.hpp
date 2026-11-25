@@ -129,4 +129,61 @@ template<class ResolveDomainEntry>
     out.ready=true;
     return out;
 }
+[[nodiscard]] inline std::optional<std::vector<AbstractFamilyChoice>>
+enumerate_retained_domain_cartesian(const NativeDomainSelection& selection)
+{
+    if(!selection.ready)return {};
+    std::size_t count=1;
+    for(const auto& domain:selection.retained) {
+        if(domain.empty()||domain.size()>m10_frozen::kDomainConsumerCap)return {};
+        count*=domain.size();
+    }
+    std::vector<AbstractFamilyChoice> out;out.reserve(count);
+    for(const auto& t:selection.retained[0])
+        for(const auto& d:selection.retained[1])
+            for(const auto& s:selection.retained[2])
+                for(const auto& l:selection.retained[3]) {
+                    const auto combined=combine_domain_families({t,d,s,l});
+                    if(!combined)return {};
+                    out.push_back(*combined);
+                }
+    return out;
+}
+struct NativeCombinedEntry final {
+    AbstractFamilyChoice family;
+    NativeDomainDisposition disposition{NativeDomainDisposition::unresolved};
+    std::optional<BoundNativeFamilyCandidate> candidate;
+    std::string exact_reason;
+};
+struct NativeCombinedStream final {
+    bool complete{};
+    std::vector<NativeCombinedEntry> ledger;
+    std::vector<BoundNativeFamilyCandidate> legal;
+};
+// The resolver supplies explicit legality/evidence decisions, not an
+// availability-driven subset. Any unresolved combination prevents top32.
+template<class ResolveCombinedEntry>
+[[nodiscard]] inline NativeCombinedStream bind_retained_native_cartesian(
+    const NativeDomainSelection& selection,ResolveCombinedEntry&& resolve,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    NativeCombinedStream out;
+    const auto ordered=enumerate_retained_domain_cartesian(selection);
+    if(!ordered)return out;
+    bool unresolved=false;
+    for(const auto& family:*ordered) {
+        if(cancellation&&cancellation->load(std::memory_order_acquire))return out;
+        auto e=std::invoke(resolve,family);
+        if(!same_abstract_family(e.family,family)||e.exact_reason.empty()||
+           (e.disposition==NativeDomainDisposition::legal)!=e.candidate.has_value())return out;
+        if(e.disposition==NativeDomainDisposition::unresolved)unresolved=true;
+        if(e.candidate) {
+            if(!same_abstract_family(e.candidate->recipe.family,family))return out;
+            out.legal.push_back(*e.candidate);
+        }
+        out.ledger.push_back(std::move(e));
+    }
+    out.complete=!unresolved;
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
