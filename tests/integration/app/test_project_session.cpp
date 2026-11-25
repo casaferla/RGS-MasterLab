@@ -736,6 +736,41 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY2(diagnostic,diagnostic?"":diagnostic.error()->message().c_str());
     QVERIFY(m13::verify_m13_provisional_diagnostic_integrity(diagnostic.value()->canonical_report));
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    // A second search retains the first exact ticket until Apply and
+    // never accumulates another REF_LINKED chain. Undo/Redo must restore
+    // the original/new ticket, not recompute an unreviewed graph.
+    const auto priorTicket=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(priorTicket&&priorTicket->replay);
+    const auto secondPlanId=uuidOf("e6000000-0000-4000-8000-000000000004");
+    const auto replacement=a::begin_native_qt_product_session_on_owner(session.project,controllers,
+        fanout,session.selector,session.gold,amount,requested,0.0,*block.value(),
+        secondPlanId,controllerId,linkedId,true);
+    QVERIFY2(replacement,replacement?"":replacement.error()->message().c_str());
+    QVERIFY(replacement.value()->expected.exact_existing_linked_snapshot);
+    QVERIFY(replacement.value()->controller_id==controllerId);
+    QVERIFY(replacement.value()->linked_chain_id==linkedId);
+    QCOMPARE(replacement.value()->capture.linked_revision,UINT64_C(2));
+    next=100U;
+    Action replaceAction{controllers,fanout,session.selector,session.gold};
+    QVERIFY(replaceAction.begin(*replacement.value(),allocate));
+    QTRY_VERIFY_WITH_TIMEOUT((replaceAction.poll(),!replaceAction.busy()),180000);
+    QVERIFY(replaceAction.phase()==Action::Phase::candidate_ready);
+    QVERIFY(replaceAction.replacing());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==priorTicket);
+    QVERIFY2(replaceAction.adopt(),replaceAction.error().c_str());
+    const auto replacementTicket=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(replacementTicket&&replacementTicket!=priorTicket&&replacementTicket->replay);
+    QVERIFY(replacementTicket->replay->plan_id==secondPlanId);
+    QVERIFY(replacementTicket->replay->controller_id==controllerId);
+    QVERIFY(replacementTicket->replay->linked_chain_id==linkedId);
+    QCOMPARE(replacementTicket->replay->reference_linked.revision(),UINT64_C(2));
+    QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    const auto undone=session.project.undo_private_m12_materialization();
+    QVERIFY2(undone,undone?"":undone.error()->message().c_str());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==priorTicket);
+    const auto redone=session.project.redo_private_m12_materialization();
+    QVERIFY2(redone,redone?"":redone.error()->message().c_str());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==replacementTicket);
     const auto after=dir.filePath(QStringLiteral("l3-native-after.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(after));
     QVERIFY2(QFileInfo::exists(after),session.project.error_message().toUtf8().constData());
@@ -744,6 +779,11 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto linked=std::find_if(persisted.value()->document().chains.begin(),
         persisted.value()->document().chains.end(),[&](const auto& c){return c.chainId==linkedId;});
     QVERIFY(linked!=persisted.value()->document().chains.end());
+    QCOMPARE(linked->revision,UINT64_C(2));
+    QCOMPARE(std::count_if(persisted.value()->document().chains.begin(),
+        persisted.value()->document().chains.end(),[](const auto& c) {
+            return c.stage=="MASTER"&&c.segment=="REF_LINKED";
+        }),std::ptrdiff_t{1});
     QVERIFY(!linked->modules.empty());
     session.project.openProject(QUrl::fromLocalFile(after));
     QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());

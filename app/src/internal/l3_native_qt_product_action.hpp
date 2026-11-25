@@ -11,7 +11,7 @@ public:
     using Controllers=ProductQtP2NativeAdmission::Controllers;
     using Fanout=ProductQtP2NativeAdmission::Fanout;
     using Completion=m13_frozen::M13ActualNativeWorkerCompletion;
-    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,
+    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,no_correction_prior_retained,
         cancelled,stale,failed,materialized,verifying,numerical_pass,verification_incomplete};
     NativeQtProductAction(Controllers product,const Fanout& fanout,
         const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold)
@@ -25,6 +25,9 @@ public:
     }
     [[nodiscard]] Phase phase()const noexcept{return phase_;}
     [[nodiscard]] const std::string& error()const noexcept{return error_;}
+    [[nodiscard]] bool replacing()const noexcept {
+        return operation_&&operation_->expected.exact_existing_linked_snapshot.has_value();
+    }
     [[nodiscard]] bool busy()const noexcept {
         return phase_==Phase::searching||phase_==Phase::cancelling||phase_==Phase::verifying;
     }
@@ -111,7 +114,7 @@ public:
                 if(!operation_||!current(*operation_)){phase_=Phase::stale;return;}
                 if(done.result.phase==NativeAutoMatchWorkerPhase::search_completed&&
                    done.result.search.status==m09_frozen::NativeProductSearchStatus::no_correction_required) {
-                    phase_=Phase::no_correction;return;
+                    phase_=replacing()?Phase::no_correction_prior_retained:Phase::no_correction;return;
                 }
                 auto plan=review_native_qt_product_session_on_owner(project(),product_,fanout_,
                     selector_,gold_,*operation_,done);
@@ -134,7 +137,8 @@ public:
                     ?Phase::numerical_pass:Phase::verification_incomplete;
             }catch(...) {phase_=Phase::verification_incomplete;}
         }
-        if((phase_==Phase::candidate_ready||phase_==Phase::no_correction)&&
+        if((phase_==Phase::candidate_ready||phase_==Phase::no_correction||
+            phase_==Phase::no_correction_prior_retained)&&
            operation_&&!current(*operation_)) {
             reviewed_.reset();completed_.reset();phase_=Phase::stale;
         }

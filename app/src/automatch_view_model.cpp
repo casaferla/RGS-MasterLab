@@ -47,8 +47,10 @@ QString AutoMatchViewModel::status_text()const {
     case P::idle:return QStringLiteral("READY");
     case P::searching:return QStringLiteral("SEARCHING");
     case P::cancelling:return QStringLiteral("CANCELLING");
-    case P::candidate_ready:return QStringLiteral("CANDIDATE READY");
+    case P::candidate_ready:return action_.replacing()
+        ?QStringLiteral("REPLACEMENT READY"):QStringLiteral("CANDIDATE READY");
     case P::no_correction:return QStringLiteral("NO CORRECTION REQUIRED");
+    case P::no_correction_prior_retained:return QStringLiteral("NO CORRECTION / PRIOR MATCH RETAINED");
     case P::cancelled:return QStringLiteral("CANCELLED");
     case P::stale:return QStringLiteral("INPUT CHANGED");
     case P::failed:return QStringLiteral("AUTOMATCH UNAVAILABLE");
@@ -77,7 +79,7 @@ bool AutoMatchViewModel::start(double total,double tonal,double dynamics,double 
     const a::m08_frozen::AmountConfig amount{total,values,++amount_revision_};
     auto operation=a::begin_native_qt_product_session_on_owner(product_.upstream.project,
         product_,fanout_,selector_,gold_,amount,requested,ceiling,*block.value(),
-        new_uuid(),new_uuid(),new_uuid());
+        new_uuid(),new_uuid(),new_uuid(),true);
     if(!operation) {
         error_=QString::fromStdString(operation.error()->message());emit changed();return false;
     }
