@@ -275,6 +275,27 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
     QVERIFY(winner.native_prediction);
     QCOMPARE(winner.native_prediction->exact_candidate_ticket,result.search.winning_graph->exact_ticket);
     QVERIFY(!result.authorizes_product_publication());
+    // M12 consumes the actual winning typed graph, not a second
+    // caller-selected set of parameters. A stage is not a receipt.
+    namespace m12=a::m12_frozen;
+    const m12::AcceptedPlanAndOwner accepted{
+        uuid("bd000000-0000-4000-8000-000000000101"),
+        uuid("bd000000-0000-4000-8000-000000000102"),
+        "fixture-plan","fixture-m10","fixture-m11","fixture-scope",
+        1U,true,true,true,false};
+    const auto stage=m12::stage_current_native_search_winner(
+        accepted,result.search,owners,input.exact_generation);
+    QVERIFY(stage);
+    QCOMPARE(stage.value()->exact_bindings.size(),graph.bindings.size());
+    QVERIFY(stage.value()->exact_bindings==graph.bindings);
+    QVERIFY(!stage.value()->authorizes_project_mutation());
+    auto stale=accepted;
+    ++stale.exact_accepted_plan_revision;
+    QVERIFY(!m12::stage_current_native_search_winner(
+        stale,result.search,owners,input.exact_generation));
+    QVERIFY(!m12::stage_current_native_search_winner(
+        accepted,result.search,owners,"stale-generation"));
+
 }
 void P2RealNativeProductTest::nativeOfflineRegistryKeepsLiveManualAuthority() {
     const auto base=dsp::ModuleRegistry::create_dsp_package_v1();
