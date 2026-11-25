@@ -76,7 +76,7 @@ run_selected_native_typed_search(
 }
 enum class NativeProductSearchStatus:std::uint8_t {
     unavailable,no_correction_required,measured_candidate,
-    no_measured_candidate,cancelled
+    no_measured_candidate,cancelled,measured_none_candidate
 };
 struct NativeMeasuredWinnerGraph final {
     // The graph retains the registry owner after the search's seed bank
@@ -192,8 +192,10 @@ run_current_native_product_search(
         out.refinement->reason==RefinementBatchReason::budget_exhausted)) {
         out.winning_graph=reconstruct_selected_native_winner(selected,current,*out.refinement,
             serialize_current);
-        out.status=out.winning_graph?NativeProductSearchStatus::measured_candidate:
-            NativeProductSearchStatus::unavailable;
+        out.status=!out.winning_graph?NativeProductSearchStatus::unavailable:
+            out.winning_graph->graph.linked.instances().empty()?
+                NativeProductSearchStatus::measured_none_candidate:
+                NativeProductSearchStatus::measured_candidate;
     }
     else out.status=NativeProductSearchStatus::no_measured_candidate;
     return out;
