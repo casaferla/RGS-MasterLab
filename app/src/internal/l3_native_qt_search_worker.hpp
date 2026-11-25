@@ -21,6 +21,7 @@ struct NativeQtSearchPolicy final {
 struct NativeQtSearchWorkerResult final {
     std::shared_ptr<const OriginalPreparedReferenceNativeFacts> originals;
     NativeAutoMatchWorkerResult result;
+    std::int64_t original_pair_ms{};
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
 };
 // Worker reads only immutable capture/policy/UUID allocator. The
@@ -38,10 +39,12 @@ struct NativeQtSearchWorkerResult final {
        !m10_frozen::valid_native_definition_policy(policy.definitions)||
        policy.exact_generation.empty()||policy.generation_and_policy.empty()||
        policy.accepted_dependencies.empty())return out;
+    const auto pair_start=std::chrono::steady_clock::now();
     auto pair=measure_product_qt_original_pair_native_worker(captured.current,
         captured.common_spec.prepared,captured.common_spec.reference,captured.common_spec.common,
         policy.definitions.exact_density_floor,policy.file_based_lra_policy_attested,
         policy.file_based_lra_policy_attested,cancellation);
+    out.original_pair_ms=native_elapsed_ms(pair_start);
     if(cancelled()){out.result.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
     if(!pair){out.result.phase=NativeAutoMatchWorkerPhase::unavailable_fixed;return out;}
     out.originals=std::make_shared<const OriginalPreparedReferenceNativeFacts>(std::move(*pair.value()));

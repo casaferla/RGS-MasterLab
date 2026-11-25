@@ -4,11 +4,21 @@
 #include "l3_m09_native_fixed_seed_geometry.hpp"
 #include "l3_m09_native_owner_allocations.hpp"
 #include <type_traits>
+#include <chrono>
 namespace rgsml::app::l3_automatch {
 enum class NativeAutoMatchWorkerPhase:std::uint8_t {
     invalid_owner,unavailable_fixed,unavailable_seed_geometry,
     unavailable_seed_bank,search_completed,cancelled
 };
+// Diagnostic only: elapsed monotonic wall time is never a solver
+// coordinate, canonical identity, termination condition or safety flag.
+struct NativeAutoMatchTiming final {
+    std::int64_t fixed_ms{},seed_ms{},search_ms{};
+};
+[[nodiscard]] inline std::int64_t native_elapsed_ms(std::chrono::steady_clock::time_point start) noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now()-start).count();
+}
 struct NativeAutoMatchWorkerResult final {
     NativeAutoMatchWorkerPhase phase{NativeAutoMatchWorkerPhase::invalid_owner};
     std::optional<m11_frozen::NativeFixedPopulation> fixed;
@@ -17,6 +27,7 @@ struct NativeAutoMatchWorkerResult final {
     std::uint32_t exact_owned_pre_p2_prefix_uses{};
     std::uint32_t measured_side_insertion_rows{};
     m10_frozen::NativeOwnedP2EvaluationCounts owned_p2_counts{};
+    NativeAutoMatchTiming timing{};
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
 };
 // Borrowed from the immutable Product session. This worker owns no
@@ -152,10 +163,12 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     const auto channels=format.channel_count();
     if(!bind_product_native_fft_metadata(input.native_spec,static_cast<std::uint32_t>(rate.value()))||
        !bind_original_pair_profile_common(input.native_spec,input.originals))return out;
+    const auto fixed_start=std::chrono::steady_clock::now();
     out.fixed=m10_frozen::measure_current_product_fixed(owners,input.originals,input.native_spec,
         input.exact_generation,input.fixed_ticket,input.accepted_linked_revision,
         input.exact_current_endpoint_safety_attested,input.file_based_lra_policy_attested,
         std::forward<ResolveOriginalDefinitions>(resolve_definitions),cancellation);
+    out.timing.fixed_ms=native_elapsed_ms(fixed_start);
     if(cancelled()){out.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
     if(!out.fixed){out.phase=NativeAutoMatchWorkerPhase::unavailable_fixed;return out;}
     // The matrix belongs to Fixed only, not to the hundreds of trial renders.
@@ -174,6 +187,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     if(out.search.fixed_gate.status!=m10_frozen::NativeFixedSearchStatus::correction_required) {
         out.phase=NativeAutoMatchWorkerPhase::unavailable_fixed;return out;
     }
+    const auto seed_start=std::chrono::steady_clock::now();
     const auto geometry=m09_frozen::derive_native_fixed_seed_geometry(*out.fixed,input.originals,
         input.native_spec,static_cast<std::uint32_t>(rate.value()));
     if(!geometry){out.phase=NativeAutoMatchWorkerPhase::unavailable_seed_geometry;return out;}
@@ -251,9 +265,12 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     const m09_frozen::NativeFamilyBindingEnvironment binding{owners.frozen_registry,*bank,*out.fixed,
         input.amount,input.accepted_linked_revision,rate.value(),geometry->common_low,
         geometry->common_high,input.constraints};
+    out.timing.seed_ms=native_elapsed_ms(seed_start);
+    const auto search_start=std::chrono::steady_clock::now();
     out.search=m09_frozen::run_authorized_native_family_search(input.exact_generation_and_policy,
         binding,env,input.requested,channels==2U,input.exact_current_endpoint_safety_attested,
         resolve_current,std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
+    out.timing.search_ms=native_elapsed_ms(search_start);
     out.exact_fixed_prefix_uses=fixed_prefix_cache.hits;
     out.exact_owned_pre_p2_prefix_uses=fixed_prefix_cache.pre_p2_hits;
     out.phase=cancelled()?NativeAutoMatchWorkerPhase::cancelled:NativeAutoMatchWorkerPhase::search_completed;
