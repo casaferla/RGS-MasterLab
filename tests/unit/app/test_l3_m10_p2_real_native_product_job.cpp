@@ -1898,6 +1898,17 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         QVERIFY(stale_fixed);
         QVERIFY(!stale_fixed.value()->matches_exact_fixed_prefix(*fixed_prefix.value()));
         QVERIFY(!stale_fixed.value()->execute_with_exact_fixed_prefix(*fixed_prefix.value()));
+        // Strict cache API still refuses the stale prefix. The analysis
+        // adapter may instead render the current exact job from scratch.
+        const auto stale_cold=stale_fixed.value()->execute();
+        const auto fallback=a::M10ExactFixedPrefixJobView{*stale_fixed.value(),*fixed_prefix.value()}.execute();
+        QVERIFY(stale_cold&&fallback);
+        QVERIFY(stale_cold.value()->signatures()==fallback.value()->signatures());
+        for(std::size_t c=0;c<stale_cold.value()->view().format().channel_count();++c) {
+            const auto x=stale_cold.value()->view().channel(c),y=fallback.value()->view().channel(c);
+            QVERIFY(x&&y);
+            QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+        }
         const auto warm=owned_job.value()->execute_with_exact_fixed_prefix(*fixed_prefix.value());
         QVERIFY(warm);
         QVERIFY(warm.value()->signatures()==owned_pcm.value()->signatures());
@@ -1944,6 +1955,15 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(prefix_for_original);
     QVERIFY(!stale_job.value()->execute_with_exact_pre_p2_prefix(
         *prefix_for_original.value()));
+    const auto cold_stale=stale_job.value()->execute();
+    const auto fallback_stale=a::M10P2ExactPrefixJobView{*stale_job.value(),*prefix_for_original.value()}.execute();
+    QVERIFY(cold_stale&&fallback_stale);
+    QVERIFY(cold_stale.value()->signatures()==fallback_stale.value()->signatures());
+    for(std::size_t c=0;c<cold_stale.value()->view().format().channel_count();++c) {
+        const auto x=cold_stale.value()->view().channel(c),y=fallback_stale.value()->view().channel(c);
+        QVERIFY(x&&y);
+        QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+    }
     // An overly tight RAM budget rejects only caching, never normal
     // P2 Product rendering or the real native analysis path.
     QVERIFY(!job.value()->prepare_exact_pre_p2_prefix(8U));

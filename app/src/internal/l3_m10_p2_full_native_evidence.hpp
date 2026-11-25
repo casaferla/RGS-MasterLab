@@ -32,7 +32,12 @@ public:
         const M10P2ExactPrefix& prefix) noexcept
         :job_(job),prefix_(prefix) {}
     [[nodiscard]] core::Result<render::RenderResult> execute() const {
-        return job_.execute_with_exact_pre_p2_prefix(prefix_);
+        // The cache is an optional optimization, never an eligibility
+        // predicate. A stale/refused prefix is discarded; only a genuine
+        // cold render of this job may reach the analysis path instead.
+        auto warm=job_.execute_with_exact_pre_p2_prefix(prefix_);
+        if(warm)return warm;
+        return job_.execute();
     }
     [[nodiscard]] bool result_has_expected_scope(
         const render::RenderResult& result) const noexcept {
@@ -47,7 +52,9 @@ public:
     M10ExactFixedPrefixJobView(const M10P2RealNativeProductJob& job,
         const M10ExactFixedPrefix& prefix) noexcept:job_(job),prefix_(prefix){}
     [[nodiscard]] core::Result<render::RenderResult> execute() const {
-        return job_.execute_with_exact_fixed_prefix(prefix_);
+        auto warm=job_.execute_with_exact_fixed_prefix(prefix_);
+        if(warm)return warm;
+        return job_.execute();
     }
     [[nodiscard]] bool result_has_expected_scope(const render::RenderResult& result) const noexcept {
         return job_.result_has_expected_scope(result);
