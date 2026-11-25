@@ -6,7 +6,7 @@
 #include "internal/l3_m13_fresh_original_native_import.hpp"
 #include "internal/l3_m13_current_search_worker.hpp"
 #include "internal/l3_native_qt_search_handoff.hpp"
-#include "internal/l3_native_qt_product_policy.hpp"
+#include "internal/l3_native_qt_product_session.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -565,32 +565,41 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(controllers,fanout));
     const auto block=core::FrameCount::create(4096);
     QVERIFY(block);
-    const auto captured=a::capture_native_qt_search_on_owner(controllers,fanout,session.selector,
-        session.gold,"qt-native-real-fixed",1U,*block.value(),true);
-    QVERIFY2(captured,captured?"":captured.error()->message().c_str());
-    const auto productPolicy=a::build_current_native_qt_product_policy(*captured.value(),
-        {1.0,{1.0,1.0,1.0,1.0},1U},{false,false,false,true},0.0);
-    QVERIFY(productPolicy);
-    const auto& policy=*productPolicy;
+    const auto uuidOf=[](const char* value){return *core::Uuid::parse(value).value();};
+    const auto planId=uuidOf("e6000000-0000-4000-8000-000000000001");
+    const auto controllerId=uuidOf("e6000000-0000-4000-8000-000000000002");
+    const auto linkedId=uuidOf("e6000000-0000-4000-8000-000000000003");
+    const auto amount=a::m08_frozen::AmountConfig{1.0,{1.0,1.0,1.0,1.0},1U};
+    const std::array<bool,4> requested{false,false,false,true};
+    QVERIFY(!a::begin_native_qt_product_session_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,amount,requested,0.0,*block.value(),planId,planId,linkedId));
+    const auto operation=a::begin_native_qt_product_session_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,amount,requested,0.0,*block.value(),planId,controllerId,linkedId);
+    QVERIFY2(operation,operation?"":operation.error()->message().c_str());
+    QVERIFY(m12::m12_exact_project_snapshot_equal(*before.value(),operation.value()->baseline));
+    const auto* captured=&operation.value()->capture;
+    const auto& policy=operation.value()->policy;
+    QVERIFY(std::find(operation.value()->protected_ids.begin(),operation.value()->protected_ids.end(),
+        session.gainId.uuid())!=operation.value()->protected_ids.end());
     QCOMPARE(policy.exact_generation.size(),std::size_t{64});
-    const auto samePolicy=a::build_current_native_qt_product_policy(*captured.value(),
+    const auto samePolicy=a::build_current_native_qt_product_policy(*captured,
         policy.amount,policy.requested,0.0);
     QVERIFY(samePolicy);
     QCOMPARE(samePolicy->exact_generation,policy.exact_generation);
     QVERIFY(samePolicy->accepted_dependencies==policy.accepted_dependencies);
-    const auto differentCeiling=a::build_current_native_qt_product_policy(*captured.value(),
+    const auto differentCeiling=a::build_current_native_qt_product_policy(*captured,
         policy.amount,policy.requested,-1.0);
     QVERIFY(differentCeiling);
     QVERIFY(differentCeiling->exact_generation!=policy.exact_generation);
     auto differentAmount=policy.amount;differentAmount.domains[3]=0.5;
-    const auto differentPolicy=a::build_current_native_qt_product_policy(*captured.value(),
+    const auto differentPolicy=a::build_current_native_qt_product_policy(*captured,
         differentAmount,policy.requested,0.0);
     QVERIFY(differentPolicy);
     QVERIFY(differentPolicy->exact_generation!=policy.exact_generation);
     differentAmount.global=1.01;
-    QVERIFY(!a::build_current_native_qt_product_policy(*captured.value(),
+    QVERIFY(!a::build_current_native_qt_product_policy(*captured,
         differentAmount,policy.requested,0.0));
-    QVERIFY(!a::build_current_native_qt_product_policy(*captured.value(),
+    QVERIFY(!a::build_current_native_qt_product_policy(*captured,
         policy.amount,policy.requested,0.1));
     unsigned next=1U;
     const auto allocate=[&](){
@@ -599,7 +608,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     };
     std::optional<a::NativeQtSearchWorkerResult> completed;
     std::thread searchThread([&]{
-        completed.emplace(a::run_native_qt_search_worker(*captured.value(),policy,allocate,{}));
+        completed.emplace(a::run_native_qt_search_worker(*captured,policy,allocate,operation.value()->protected_ids));
     });
     searchThread.join();
     QVERIFY(completed);
@@ -631,35 +640,29 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         static_cast<long long>(completed->result.timing.seed_ms),static_cast<long long>(completed->result.timing.search_ms),
         completed->result.search.refinement->total_attempted);
     QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
-        session.gold,*captured.value()));
-    const auto uuidOf=[](const char* value){return *core::Uuid::parse(value).value();};
-    const auto planId=uuidOf("e6000000-0000-4000-8000-000000000001");
-    const auto controllerId=uuidOf("e6000000-0000-4000-8000-000000000002");
-    const auto built=a::build_native_qt_measured_plan(*captured.value(),policy,*completed,planId,controllerId);
+        session.gold,*captured));
+    const auto built=a::build_native_qt_measured_plan(*captured,policy,*completed,planId,controllerId);
     QVERIFY(built);
     const auto& plan=*built;
-    const auto repeated=a::build_native_qt_measured_plan(*captured.value(),policy,*completed,planId,controllerId);
+    const auto repeated=a::build_native_qt_measured_plan(*captured,policy,*completed,planId,controllerId);
     QVERIFY(repeated);
     QCOMPARE(repeated->exact_plan_content_checksum,plan.exact_plan_content_checksum);
     QCOMPARE(plan.exact_plan_content_checksum.size(),std::size_t{64});
     auto changedPolicy=policy;
     changedPolicy.independent_ceiling_db_tp=-1.0;
-    QVERIFY(!a::build_native_qt_measured_plan(*captured.value(),changedPolicy,*completed,planId,controllerId));
-    QVERIFY(!a::build_native_qt_measured_plan(*captured.value(),policy,*completed,planId,planId));
-    const auto linkedId=uuidOf("e6000000-0000-4000-8000-000000000003");
-    const m12::M12ProjectTransactionExpected expected{
-        doc.sourceResourceId,*doc.references.activeReferenceId,*doc.pipeline.masteringChainId,
-        *manual,std::nullopt,true,true};
+    QVERIFY(!a::build_native_qt_measured_plan(*captured,changedPolicy,*completed,planId,controllerId));
+    QVERIFY(!a::build_native_qt_measured_plan(*captured,policy,*completed,planId,planId));
+    const auto& expected=operation.value()->expected;
     const auto protectedBindings=session.masteringChainState->execution_bindings();
     const auto receipt=a::apply_native_qt_search_on_owner(session.project,controllers,fanout,
-        session.selector,session.gold,*captured.value(),policy,*completed,plan,*before.value(),
+        session.selector,session.gold,*captured,policy,*completed,plan,operation.value()->baseline,
         linkedId,expected);
     QVERIFY2(receipt,receipt?"":receipt.error()->message().c_str());
     QVERIFY(receipt.value()->materialized_not_verified());
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
     QVERIFY(!QFileInfo::exists(baseline));
     const auto freshInput=a::capture_native_qt_fresh_verification_on_owner(session.project,
-        session.gold,*captured.value(),policy,*completed,plan,true,m13::MandatoryHardPredicate::passed);
+        session.gold,*captured,policy,*completed,plan,true,m13::MandatoryHardPredicate::passed);
     QVERIFY(freshInput);
     std::optional<core::Result<m13::M13ActualNativeWorkerCompletion>> verification;
     std::thread verificationThread([&]{
