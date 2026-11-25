@@ -849,6 +849,14 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
         .disposition==m09::NativeDomainDisposition::not_applicable);
     QVERIFY(m09::resolve_native_owner_family(bank,terminal_family,owner_ids,*registry,{0x33},{0x32},true)
         .disposition==m09::NativeDomainDisposition::unresolved);
+    for(const auto mode:{m09::LoudnessMode::terminal_limiter_only,
+                        m09::LoudnessMode::gain_with_terminal_limiter}) {
+        terminal_family.loudness=mode;
+        const auto occupied=m09::resolve_native_owner_family(
+            bank,terminal_family,owner_ids,*registry,{0x33},{0x32},true,true);
+        QVERIFY(occupied.disposition==m09::NativeDomainDisposition::not_applicable);
+        QCOMPARE(occupied.exact_reason,std::string("protected-user-terminal-already-occupies-slot"));
+    }
     const m09::NativeEqDictionaryIdentity atom{0,m09::AtomFilter::bell,0.707};
     const auto eq_id=owner_ids.band(m09::IntentRole::tonal_eq,atom);
     QVERIFY(eq_id);
