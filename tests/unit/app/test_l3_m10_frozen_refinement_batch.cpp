@@ -1,4 +1,5 @@
 #include "internal/l3_m10_frozen_refinement_batch.hpp"
+#include "internal/l3_m10_frozen_total_cost.hpp"
 #include <QtTest/QTest>
 #include <atomic>
 #include <bit>
@@ -30,12 +31,28 @@ class M10RefinementBatchTest final:public QObject {
     Q_OBJECT
 private slots:
     void sameFrozenStepsAcrossMeasuredTop2AndSharedBudget();
+    void exactNativeLowerBoundNeverPrunesEqualQuantizedCost();
     void partialBudgetKeepsMeasuredWinnerNo801stAttempt();
     void staleInventoryOrUnreadySeedNeverCallsEvaluator();
     void cancellationNeverClaimsCompletedMaster();
     void twoRunsReuseOnlyExactlyIdenticalCompletedCoordinates();
     void exhaustedSeedBudgetAndInvalidTrialRemainDistinct();
 };
+void M10RefinementBatchTest::exactNativeLowerBoundNeverPrunesEqualQuantizedCost()
+{
+    const std::vector<m10::ActiveReferenceCoordinate> moved{{0.75,0.5,1.0}};
+    const std::vector<m10::ActiveReferenceCoordinate> seed{{0.5,0.5,1.0}};
+    const auto current=m10::MeasuredOrderKey{0.000625,0.0,0.0,1U,{1},{2}};
+    QVERIFY(m10::native_cost_bound_cannot_beat(moved,1U,0U,current));
+    QVERIFY(!m10::native_cost_bound_cannot_beat(seed,1U,0U,current));
+    auto tied=current;
+    tied.total_j+=0.02*0.0625;
+    QVERIFY(!m10::native_cost_bound_cannot_beat(moved,1U,0U,tied));
+    tied.total_j-=0.1e-9;
+    QVERIFY(!m10::native_cost_bound_cannot_beat(moved,1U,0U,tied));
+    QVERIFY(!m10::native_cost_bound_cannot_beat(moved,9U,0U,current));
+    QVERIFY(m10::native_cost_bound_cannot_beat(seed,2U,0U,current));
+}
 void M10RefinementBatchTest::
 sameFrozenStepsAcrossMeasuredTop2AndSharedBudget() {
     const std::vector<m10::SeedTrial> seeds{

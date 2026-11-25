@@ -53,6 +53,26 @@ struct ActiveReferenceCoordinate final {
     return 0.5*static_cast<double>(active_owned_modules)/8.0+
            0.5*static_cast<double>(active_artistic_bands)/12.0;
 }
+// The artistic objective is a sum of nonnegative squared residuals.
+// The exact typed R/C gives a lower bound on J before any PCM work.
+// Only a STRICTLY worse quantized bound may prune; equal J still
+// needs the full native score and frozen tie-break chain.
+[[nodiscard]] inline bool native_cost_bound_cannot_beat(
+    std::span<const ActiveReferenceCoordinate> active,
+    std::uint32_t active_owned_modules,std::uint32_t active_artistic_bands,
+    const MeasuredOrderKey& incumbent) noexcept
+{
+    if(!valid_key(incumbent))return false;
+    const auto R=normalized_reference_distance(active);
+    const auto C=complexity_cost(active_owned_modules,active_artistic_bands);
+    if(!R||!C)return false;
+    const double lower=0.02*(*R)+0.01*(*C);
+    // Be conservative even at binary64 rounding/contraction boundaries.
+    const auto q=quantize_q1e9(std::max(0.0,std::nextafter(
+        std::nextafter(lower,0.0),0.0)));
+    const auto best=quantize_q1e9(incumbent.total_j);
+    return q&&best&&*q>*best;
+}
 [[nodiscard]] inline std::optional<MeasuredOrderKey> total_measured_cost(
     const TargetCost& target,
     std::span<const ActiveReferenceCoordinate> active,

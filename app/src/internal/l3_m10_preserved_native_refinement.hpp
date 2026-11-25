@@ -53,6 +53,13 @@ run_preserved_native_top2(
            !authentic_product_candidate_identity(identity,env.owners.current_owner,*ticket))
             return invalid;
     }
+    // Keep a separate genuine incumbent for EACH selected topology.
+    // Do not prune a locally improving path merely because another
+    // topology is currently better globally. An exact cost lower bound
+    // cannot win the CURRENT/MINUS/PLUS comparison, including ties.
+    std::vector<std::optional<MeasuredOrderKey>> incumbents;
+    incumbents.reserve(seeds.size());
+    for(const auto& seed:seeds)incumbents.push_back(seed.frozen_measured);
     return run_frozen_top2_refinements(
         seeds,sorted,attempts_before_seeds,
         env.owners.current_qt_product_epoch_and_m09_m11_attested,
@@ -70,12 +77,21 @@ run_preserved_native_top2(
             if(!ticket)return refused();
             auto trial=std::invoke(build_trial,ordinal,sorted[index],u);
             if(!trial)return refused();
-            return evaluate_preserved_native_cached(env,trial->graph,std::move(*ticket),
+            const auto& cost=trial->constraints;
+            auto& incumbent=incumbents[index];
+            if(trial->exact_current_typed_graph_preflight_passed&&incumbent&&
+               native_cost_bound_cannot_beat(cost.active_coordinates,cost.active_owned_modules,
+                   cost.enabled_artistic_bands,*incumbent))return refused();
+            auto event=evaluate_preserved_native_cached(env,trial->graph,std::move(*ticket),
                 std::move(trial->key),std::move(trial->constraints),
                 trial->exact_current_typed_graph_preflight_passed,allow_new,
                 [&](const M10P2FullNativeEvidence& measured){
                     return std::invoke(resolve_original,ordinal,measured);
                 },cancellation);
+            if(event.measured&&valid_key(*event.measured)&&
+               (!incumbent||compare_measured(*event.measured,*incumbent)<0))
+                incumbent=event.measured;
+            return event;
         },cancellation);
 }
 // Execute the selected combined seeds using exactly the same evaluator
