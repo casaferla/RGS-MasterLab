@@ -42,21 +42,40 @@ private:
     const M10P2RealNativeProductJob& job_;
     const M10P2ExactPrefix& prefix_;
 };
+class M10ExactFixedPrefixJobView final {
+public:
+    M10ExactFixedPrefixJobView(const M10P2RealNativeProductJob& job,
+        const M10ExactFixedPrefix& prefix) noexcept:job_(job),prefix_(prefix){}
+    [[nodiscard]] core::Result<render::RenderResult> execute() const {
+        return job_.execute_with_exact_fixed_prefix(prefix_);
+    }
+    [[nodiscard]] bool result_has_expected_scope(const render::RenderResult& result) const noexcept {
+        return job_.result_has_expected_scope(result);
+    }
+private:
+    const M10P2RealNativeProductJob& job_;
+    const M10ExactFixedPrefix& prefix_;
+};
 [[nodiscard]] inline core::Result<M10P2FullNativeEvidence>
 measure_m10_p2_full_native_once(
     const M10P2RealNativeProductJob& job,
     ProductNativeOnePassSpec spec,
     const M10P2ExactPrefix* exact_prefix=nullptr,
-    const std::atomic<bool>* cancellation=nullptr)
+    const std::atomic<bool>* cancellation=nullptr,
+    const M10ExactFixedPrefix* exact_fixed_prefix=nullptr)
 {
     using R=core::Result<M10P2FullNativeEvidence>;
+    if(exact_prefix&&exact_fixed_prefix)return R::failure(core::Error{
+        core::ErrorCode::InvalidState,"L3_M10_AMBIGUOUS_PREFIX_CACHE"});
     core::Result<ProductNativeOnePassResult> measured=
         exact_prefix
         ?measure_real_product_candidate_once(
              M10P2ExactPrefixJobView{job,*exact_prefix},
              std::move(spec),cancellation)
-        :measure_real_product_candidate_once(
-             job,std::move(spec),cancellation);
+        :exact_fixed_prefix
+            ?measure_real_product_candidate_once(
+                M10ExactFixedPrefixJobView{job,*exact_fixed_prefix},std::move(spec),cancellation)
+            :measure_real_product_candidate_once(job,std::move(spec),cancellation);
     if(!measured)return R::failure(*measured.error());
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return R::failure(core::Error{

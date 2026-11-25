@@ -107,7 +107,8 @@ measure_and_score_m10_p2_full_native_candidate(
         authentic_prepared_and_independent_reference,
     bool phase6_file_based_lra_trailing_attested,
     ResolveAllRealNativeTripleFragments&& resolve_original_m05m06,
-    const std::atomic<bool>* cancellation=nullptr)
+    const std::atomic<bool>* cancellation=nullptr,
+    const M10ExactFixedPrefix* exact_fixed_prefix=nullptr)
 {
     if(!current_product_source_reference_and_candidate_attested||
        exact_phase6_m07_generation.empty()||
@@ -135,7 +136,7 @@ measure_and_score_m10_p2_full_native_candidate(
     independently_attested_m08_m11.native_linked_graph_content=*linked_graph;
     independently_attested_m08_m11.native_execution_graph_content=*execution_graph;
     auto measured=measure_m10_p2_full_native_once(
-        candidate,std::move(native_spec),exact_pre_p2_prefix,cancellation);
+        candidate,std::move(native_spec),exact_pre_p2_prefix,cancellation,exact_fixed_prefix);
     if(!measured)
         return {P2NativeCostReason::real_render_or_analysis_failed,
                 {},{},{} };
