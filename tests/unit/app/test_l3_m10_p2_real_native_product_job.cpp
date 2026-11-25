@@ -1789,6 +1789,8 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         *owned_chain.value(),owned_bindings,"owned-final-p2",*block.value(),true);
     QVERIFY(owned_job);
     QVERIFY(owned_job.value()->preserves_user_terminal());
+    QVERIFY(owned_job.value()->owned_p2_prefix_eligible());
+    QVERIFY(owned_job.value()->exact_owned_p2_upstream_content());
     QVERIFY(owned_job.value()->exact_fixed_graph_content()==fixed_graph);
     QVERIFY(owned_job.value()->exact_linked_graph_content()!=unlinked_graph);
     QVERIFY(!a::M10P2RealNativeProductJob::create_preserving_user_terminal(
@@ -1800,6 +1802,38 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(!without_p2.value()->result_has_expected_scope(*owned_pcm.value()));
     QVERIFY(!owned_job.value()->result_has_expected_scope(*no_terminal.value()));
     QCOMPARE(owned_pcm.value()->signatures().back().instance_id,owned_id);
+    QVERIFY(!owned_job.value()->prepare_exact_pre_p2_prefix(0U));
+    const auto pre_p2=owned_job.value()->prepare_exact_pre_p2_prefix();
+    if(pre_p2) {
+        QVERIFY(owned_job.value()->matches_exact_pre_p2_prefix(*pre_p2.value()));
+        const auto warm_p2=owned_job.value()->execute_with_exact_pre_p2_prefix(*pre_p2.value());
+        QVERIFY(warm_p2);
+        QVERIFY(warm_p2.value()->signatures()==owned_pcm.value()->signatures());
+        for(std::size_t c=0;c<owned_pcm.value()->view().format().channel_count();++c) {
+            const auto x=owned_pcm.value()->view().channel(c),y=warm_p2.value()->view().channel(c);
+            QVERIFY(x&&y);
+            QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+        }
+        auto moved_bindings=owned_bindings;
+        const auto moved=dsp::StreamingTruePeakLimiterParameters::create(-3.0,2.0,5);
+        QVERIFY(moved);
+        moved_bindings.back().parameters=*moved.value();
+        const auto moved_job=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+            stamp,prepared_owner,*owned_registry,*manual.value(),gain_only,*owned_chain.value(),
+            moved_bindings,"owned-pre-p2-changed",*block.value(),true);
+        QVERIFY(moved_job);
+        QVERIFY(moved_job.value()->exact_owned_p2_upstream_content()==owned_job.value()->exact_owned_p2_upstream_content());
+        QVERIFY(moved_job.value()->matches_exact_pre_p2_prefix(*pre_p2.value()));
+        const auto cold_moved=moved_job.value()->execute();
+        const auto warm_moved=moved_job.value()->execute_with_exact_pre_p2_prefix(*pre_p2.value());
+        QVERIFY(cold_moved&&warm_moved);
+        QVERIFY(cold_moved.value()->signatures()==warm_moved.value()->signatures());
+        for(std::size_t c=0;c<cold_moved.value()->view().format().channel_count();++c) {
+            const auto x=cold_moved.value()->view().channel(c),y=warm_moved.value()->view().channel(c);
+            QVERIFY(x&&y);
+            QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+        }
+    }
     QVERIFY(!owned_job.value()->prepare_exact_fixed_prefix(0U));
     const auto fixed_prefix=owned_job.value()->prepare_exact_fixed_prefix();
     if(fixed_prefix) {

@@ -351,6 +351,22 @@ public:
                 return n.module_type_id()=="rgsml.dsp.gain"||n.module_type_id()=="rgsml.dsp.parametric-eq";
             });
     }
+    [[nodiscard]] std::optional<m10_frozen::ExactCacheBytes> exact_owned_p2_upstream_content() const {
+        if(!registry_||!owned_p2_prefix_eligible())return {};
+        const auto nodes=linked_.instances();
+        const auto prefix=dsp::ProcessingChain::restore(*registry_,linked_.context(),
+            linked_.revision(),{nodes.begin(),nodes.end()-1});
+        if(!prefix)return {};
+        const auto fixed=exact_fixed_graph_content();
+        const auto linked=m10_frozen::exact_native_graph_content(*prefix.value(),
+            std::span<const dsp::ModuleExecutionBinding>{linked_bindings_}.first(nodes.size()-1U),*registry_);
+        if(!fixed||!linked)return {};
+        using namespace m10_frozen::p2_cache_detail;
+        m10_frozen::ExactCacheBytes out;
+        append_exact_field(out,"rgsml.l3.owned-p2-upstream/1");
+        append_exact_byte_field(out,*fixed);append_exact_byte_field(out,*linked);
+        return out;
+    }
     // Optional exact PCM prefix cache uses available physical RAM at the
     // time of creation. Never compromise entire-resource output if the
     // budget is too small: execute() takes the correct cold path.
