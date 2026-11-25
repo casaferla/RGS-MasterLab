@@ -39,6 +39,8 @@ qt_add_executable(rgsml_app
     src/m18_private_export_authority.cpp
     src/m18_product_export_view_model.cpp
     src/m18_product_export_view_model.hpp
+    src/automatch_view_model.cpp
+    src/automatch_view_model.hpp
     src/m21_product_status_view_model.cpp
     src/m21_product_status_view_model.hpp
     src/terminal_private_product_session.hpp

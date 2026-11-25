@@ -30,6 +30,7 @@
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
 #include "m18_product_export_view_model.hpp"
+#include "automatch_view_model.hpp"
 #include "m21_product_status_view_model.hpp"
 #include "internal/m21_private_product_analysis_coordinator.hpp"
 // Compile-check L3 Product Qt owner admission in the genuine app target,
@@ -1224,6 +1225,8 @@ int main(int argc, char* argv[])
         m18Controllers,m18Fanout};
     rgsml::app::M18ProductExportViewModel m18ExportViewModel{
         m18ExportAction,m18Controllers};
+    rgsml::app::AutoMatchViewModel autoMatchViewModel{
+        m18Controllers,m18Fanout,auditionSelector,goldSelection};
 
     // M19-M21 use the real M18 Product authority and independent
     // SOURCE / REFERENCE owners. The status envelope remains strictly
@@ -1414,6 +1417,8 @@ int main(int argc, char* argv[])
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
         QStringLiteral("m18ProductExportViewModel"),&m18ExportViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("autoMatchViewModel"),&autoMatchViewModel);
     // Real Product-backed M19/M20/M21 readiness only. This QML
     // context never certifies Phase-6 or exposes synthetic/demo numbers.
     engine.rootContext()->setContextProperty(

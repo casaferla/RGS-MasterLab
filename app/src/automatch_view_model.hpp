@@ -1,0 +1,48 @@
+#pragma once
+#include "internal/l3_native_qt_product_action.hpp"
+#include <QObject>
+#include <QString>
+#include <QTimer>
+
+namespace rgsml::app {
+class AutoMatchViewModel final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(bool canStart READ can_start NOTIFY changed)
+    Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool canAdopt READ can_adopt NOTIFY changed)
+    Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
+    Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
+    Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
+public:
+    using Action=l3_automatch::NativeQtProductAction;
+    AutoMatchViewModel(Action::Controllers product,const Action::Fanout& fanout,
+        const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
+        QObject* parent=nullptr);
+    [[nodiscard]] bool can_start()const;
+    [[nodiscard]] bool busy()const;
+    [[nodiscard]] bool can_adopt()const;
+    [[nodiscard]] bool can_cancel()const;
+    [[nodiscard]] QString status_text()const;
+    [[nodiscard]] QString error_text()const{return error_;}
+    // All values are captured once before dispatch; the ceiling is the
+    // independent AutoMatch/M16 safety limit, never the WAV Export setting.
+    Q_INVOKABLE bool start(double total,double tonal,double dynamics,double stereo,
+        double loudness,double ceiling);
+    Q_INVOKABLE void cancel();
+    Q_INVOKABLE bool adopt();
+    Q_INVOKABLE void refresh();
+signals:
+    void changed();
+private:
+    [[nodiscard]] bool owner()const;
+    Action::Controllers product_;
+    const Action::Fanout& fanout_;
+    const AuditionSourceSelector& selector_;
+    const GoldSelectionViewModel& gold_;
+    Action action_;
+    QTimer timer_;
+    QString error_;
+    std::uint64_t amount_revision_{};
+    bool publishing_{};
+};
+} // namespace rgsml::app
