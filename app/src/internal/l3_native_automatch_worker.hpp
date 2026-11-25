@@ -15,6 +15,7 @@ struct NativeAutoMatchWorkerResult final {
     m09_frozen::NativeProductSearchResult search;
     std::uint32_t exact_fixed_prefix_uses{};
     std::uint32_t measured_side_insertion_rows{};
+    m10_frozen::NativeOwnedP2EvaluationCounts owned_p2_counts{};
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
 };
 // Borrowed from the immutable Product session. This worker owns no
@@ -129,7 +130,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     m10_frozen::NativeFixedPrefixCache fixed_prefix_cache;
     const m10_frozen::PreservedNativeSearchEnvironment env{owners,input.originals,*out.fixed,
         input.native_spec,input.exact_generation,cache,input.independent_m11_ceiling_db_tp,
-        input.file_based_lra_policy_attested,&fixed_prefix_cache};
+        input.file_based_lra_policy_attested,&fixed_prefix_cache,&out.owned_p2_counts};
     out.search.fixed_gate=m10_frozen::assess_native_fixed_search_gate(env,input.amount,input.requested,
         input.exact_current_endpoint_safety_attested);
     if(out.search.fixed_gate.status==m10_frozen::NativeFixedSearchStatus::no_correction_required) {

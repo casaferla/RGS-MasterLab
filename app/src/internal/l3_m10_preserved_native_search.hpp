@@ -29,6 +29,9 @@ struct NativeFixedPrefixCache final {
         return &*prefix;
     }
 };
+struct NativeOwnedP2EvaluationCounts final {
+    std::uint32_t attempted{},complete{},cache_hits{};
+};
 struct PreservedNativeSearchEnvironment final {
     const P2NativeProductWorkerScope& owners;
     const OriginalPreparedReferenceNativeFacts& originals;
@@ -39,6 +42,7 @@ struct PreservedNativeSearchEnvironment final {
     double m11_ceiling_db_tp{};
     bool file_lra_policy_attested{};
     NativeFixedPrefixCache* fixed_prefix_cache{};
+    NativeOwnedP2EvaluationCounts* owned_p2_counts{};
 };
 [[nodiscard]] inline std::optional<ExactExecutionCacheKey>
 bind_preserved_native_execution_key(
@@ -174,7 +178,7 @@ template<class ResolveOriginalTriple>
                   exact_original_native_definition_content(*original_definitions))))
             return rejected();
     }
-    return evaluate_with_exact_completed_cache(env.cache,*exact,true,allow_new,[&](){
+    const auto evaluated=evaluate_with_exact_completed_cache(env.cache,*exact,true,allow_new,[&](){
         const auto* prefix=env.fixed_prefix_cache?env.fixed_prefix_cache->lookup(*job.value()):nullptr;
         const auto score=measure_and_score_m10_p2_full_native_candidate(
             *job.value(),std::move(effective_spec),nullptr,env.generation,true,std::move(cost),
@@ -187,5 +191,13 @@ template<class ResolveOriginalTriple>
             },cancellation,prefix);
         return score.as_exact_cache_evidence();
     });
+    if(env.owned_p2_counts&&std::any_of(graph.linked.instances().begin(),graph.linked.instances().end(),
+        [](const auto& n){return n.active()&&n.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";})) {
+        if(evaluated.kind==EvaluationKind::attempted_complete||
+           evaluated.kind==EvaluationKind::attempted_failure)++env.owned_p2_counts->attempted;
+        if(evaluated.kind==EvaluationKind::attempted_complete)++env.owned_p2_counts->complete;
+        if(evaluated.kind==EvaluationKind::completed_cache_hit)++env.owned_p2_counts->cache_hits;
+    }
+    return evaluated;
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
