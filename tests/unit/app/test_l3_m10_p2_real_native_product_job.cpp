@@ -95,6 +95,7 @@ private slots:
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeCommonAnalysisSpecUsesAllRatePairs();
+    void nativeFullPcmZeroSideIsNotAWidthFloor();
     void nativeSeedGeometryRejectsSubstitutedStereoGrid();
     void nativeDefinitionPolicyAndGradesAreExact();
     void nativeProductPairMetadataKeepsIndependentRates();
@@ -160,6 +161,30 @@ void P2RealNativeProductTest::nativeSeedGeometryRejectsSubstitutedStereoGrid() {
             QVERIFY(!m09::match_exact_native_stereo_grid(wrong,indices,rate,denominator));
         }
     }
+}
+void P2RealNativeProductTest::nativeFullPcmZeroSideIsNotAWidthFloor() {
+    const auto fs=core::SampleRate::create(48000);
+    const auto fmt=audio::AudioFormat::create(*fs.value(),audio::ChannelLayout::STEREO_LR);
+    const auto frames=core::FrameCount::create(48000*2);
+    QVERIFY(fmt&&frames);
+    auto pcm=audio::AudioBuffer::create(*fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(pcm);
+    auto l=pcm.value()->mutable_view().channel(0),r=pcm.value()->mutable_view().channel(1);
+    QVERIFY(l&&r);
+    for(std::size_t i=0;i<l.value()->size();++i) {
+        const double v=0.2*std::sin(2.0*std::numbers::pi*55.0*i/48000.0);
+        (*l.value())[i]=v;(*r.value())[i]=v;
+    }
+    QVERIFY(a::actual_full_pcm_has_exact_zero_side(pcm.value()->view()));
+    auto spec=a::build_current_native_common_analysis_spec(48000,48000,true);
+    QVERIFY(spec);
+    const auto observed=a::measure_real_full_owned_pcm_native_once(*pcm.value(),spec->prepared);
+    QVERIFY(observed);
+    QVERIFY(observed.value()->s03_s06.low_end_width[0].actual_zero_side_endpoint);
+    QVERIFY(observed.value()->s03_s06.low_end_width[0].raw_ratio_or_rho==0.0);
+    (*r.value())[1000]+=1e-12;
+    QVERIFY(!a::actual_full_pcm_has_exact_zero_side(pcm.value()->view()));
 }
 void P2RealNativeProductTest::nativeCommonAnalysisSpecUsesAllRatePairs() {
     const std::array<std::uint32_t,6> rates{44100,48000,88200,96000,176400,192000};
