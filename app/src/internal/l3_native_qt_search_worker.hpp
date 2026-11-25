@@ -16,6 +16,7 @@ struct NativeQtSearchPolicy final {
     bool file_based_lra_policy_attested{};
     bool exact_event_context{};
     m10_frozen::AuthoritativeCostInput constraints;
+    std::optional<m09_frozen::NativeOwnedP2Seed> owned_p2{};
 };
 struct NativeQtSearchWorkerResult final {
     std::shared_ptr<const OriginalPreparedReferenceNativeFacts> originals;
@@ -55,7 +56,7 @@ struct NativeQtSearchWorkerResult final {
         policy.exact_generation,policy.generation_and_policy,captured.current.job.ticket_identity(),
         captured.linked_revision,policy.amount,policy.requested,policy.independent_ceiling_db_tp,
         policy.exact_current_endpoint_safety_attested,policy.file_based_lra_policy_attested,
-        policy.exact_event_context,exact_fixed_stereo_insertion,{},policy.constraints};
+        policy.exact_event_context,exact_fixed_stereo_insertion,{},policy.constraints,policy.owned_p2};
     out.result=run_native_automatch_with_owner_allocations(std::move(input),policy.definitions,
         std::move(allocate_uuid),protected_ids,policy.accepted_dependencies,cancellation);
     return out;

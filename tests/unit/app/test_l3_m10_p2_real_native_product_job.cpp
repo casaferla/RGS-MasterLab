@@ -85,6 +85,7 @@ private slots:
     void nativeOwnedP2RoleBuildsTwoCoordinateFinalGraph();
     void nativeOwnedP2BankDerivesCompleteInventory();
     void nativeOwnedP2OwnerAuthoritySeparatesPolicyAndProtectedSlot();
+    void nativeOwnedP2PolicyCannotEnterWorkerWithInvalidBounds();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
@@ -282,6 +283,20 @@ void P2RealNativeProductTest::nativeOwnedP2OwnerAuthoritySeparatesPolicyAndProte
     const auto protected_slot=m09::resolve_native_owner_family(bank,family,ids,**registry,{0x33},{0x32},true,true);
     QCOMPARE(protected_slot.disposition,m09::NativeDomainDisposition::not_applicable);
     QVERIFY(protected_slot.allocations.empty());
+}
+void P2RealNativeProductTest::nativeOwnedP2PolicyCannotEnterWorkerWithInvalidBounds() {
+    namespace m09=a::m09_frozen;
+    using T=a::m10_frozen::Transform;
+    const auto payload=dsp::StreamingTruePeakLimiterParameters::create(-3.0,0.0,5);
+    QVERIFY(payload);
+    a::NativeQtSearchPolicy policy;
+    QVERIFY(!policy.owned_p2);
+    policy.owned_p2=m09::NativeOwnedP2Seed{*payload.value(),
+        {{T::additive_or_linear,-6.0,0.0,{},0.25},
+         {T::additive_or_linear,-12.0,12.0,0.0,1.0}}};
+    QVERIFY(m09::valid_native_owned_p2_seed(*policy.owned_p2));
+    policy.owned_p2->policy.ceiling.lower=-13.0;
+    QVERIFY(!m09::valid_native_owned_p2_seed(*policy.owned_p2));
 }
 void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
     namespace native=a::m05m06_real;

@@ -34,6 +34,7 @@ struct NativeAutoMatchWorkerInputs final {
     bool exact_fixed_stereo_insertion{};
     std::vector<core::Uuid> dynamic_band_ids;
     m10_frozen::AuthoritativeCostInput constraints;
+    std::optional<m09_frozen::NativeOwnedP2Seed> owned_p2{};
 };
 template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
 [[nodiscard]] inline NativeAutoMatchWorkerResult run_native_automatch_worker(
@@ -49,7 +50,8 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
        !owners.frozen_registry||input.exact_generation.empty()||input.exact_generation_and_policy.empty()||
        !input.accepted_linked_revision||!std::isfinite(input.independent_m11_ceiling_db_tp)||
        input.independent_m11_ceiling_db_tp>0.0||
-       !original_pair_matches_product_owner(input.originals,owners.current_owner))return out;
+       !original_pair_matches_product_owner(input.originals,owners.current_owner)||
+       (input.owned_p2&&!m09_frozen::valid_native_owned_p2_seed(*input.owned_p2)))return out;
     const auto format=owners.current_prepared->view().format();
     const auto rate=format.sample_rate();
     const auto channels=format.channel_count();
@@ -79,12 +81,16 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     const auto geometry=m09_frozen::derive_native_fixed_seed_geometry(*out.fixed,input.originals,
         input.native_spec,static_cast<std::uint32_t>(rate.value()));
     if(!geometry){out.phase=NativeAutoMatchWorkerPhase::unavailable_seed_geometry;return out;}
-    const auto bank=m09_frozen::derive_native_automatic_seed_bank(*out.fixed,input.amount,input.requested,
+    auto bank=m09_frozen::derive_native_automatic_seed_bank(*out.fixed,input.amount,input.requested,
         geometry->tonal,geometry->side,geometry->side_denominator,geometry->common_low,
         geometry->common_high,rate,static_cast<std::uint32_t>(channels),input.independent_m11_ceiling_db_tp,
         input.exact_event_context,input.exact_fixed_stereo_insertion,input.dynamic_band_ids,
         std::forward<AllocateBand>(allocate_band));
     if(!bank){out.phase=NativeAutoMatchWorkerPhase::unavailable_seed_bank;return out;}
+    // P2 participates only from the accepted immutable owner policy.
+    // The normal numerical search never takes over a protected MANUAL P2.
+    if(out.search.fixed_gate.targets.corrective[3]&&input.owned_p2)
+        bank->owned_p2=input.owned_p2;
     const m09_frozen::NativeFamilyBindingEnvironment binding{owners.frozen_registry,*bank,*out.fixed,
         input.amount,input.accepted_linked_revision,rate.value(),geometry->common_low,
         geometry->common_high,input.constraints};
