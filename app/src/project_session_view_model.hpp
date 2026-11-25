@@ -179,7 +179,7 @@ public:
     // owner lease; neither SaveAs nor a prior on-disk project is required.
     // No REF graph, receipt or history is installed by capture.
     [[nodiscard]] core::Result<project::ProjectSnapshot>
-    capture_private_m12_search_baseline();
+    capture_private_m12_search_baseline(bool require_owned_replacement=false);
 
     // M12 PRIVATE Qt-Product transaction, never directly Q_INVOKABLE.
     // Requires the existing real exclusive M18 Project mutation batch,

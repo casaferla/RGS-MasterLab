@@ -1491,7 +1491,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
 }
 
 core::Result<project::ProjectSnapshot>
-ProjectSessionViewModel::capture_private_m12_search_baseline()
+ProjectSessionViewModel::capture_private_m12_search_baseline(bool require_owned_replacement)
 {
     using R=core::Result<project::ProjectSnapshot>;
     const auto fail=[](const char* code){
@@ -1512,7 +1512,22 @@ ProjectSessionViewModel::capture_private_m12_search_baseline()
     auto stem=opened_?QString::fromStdString(opened_->document().displayName):
         QFileInfo(source_->display_name()).completeBaseName();
     if(stem.isEmpty())stem=QStringLiteral("Untitled");
-    return current_snapshot(stem);
+    auto live=current_snapshot(stem);
+    if(!live||!require_owned_replacement)return live;
+    namespace m=l3_automatch::m12_frozen;
+    const auto linked=m::assess_current_product_ref_linked_open_safety(live.value()->document());
+    if(linked==m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked)return live;
+    // Mirror the existing physical M12 publication gate before dispatch:
+    // only this session's exact current receipt can be replaced.
+    const auto ticket=previewController_->private_m12_product_preview_ticket();
+    if(!opened_||!ticket||!ticket->replay||m12UndoHistory_.empty()||
+       !m12RedoHistory_.empty()||!m12UndoHistory_.back().receipt||
+       m12UndoHistory_.back().afterTicket!=ticket||
+       !m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
+       !m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value())||
+       !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
+        return fail("L3_M12_BASELINE_PRIOR_OWNER_NOT_CURRENT");
+    return live;
 }
 
 core::Result<l3_automatch::m12_frozen::M12ProductMaterializationReceipt>

@@ -4,6 +4,7 @@
 #include "l3_native_qt_product_policy.hpp"
 #include "l3_native_qt_search_handoff.hpp"
 #include <set>
+#include <limits>
 
 namespace rgsml::app::l3_automatch {
 struct NativeQtProductSession final {
@@ -20,7 +21,8 @@ begin_native_qt_product_session_on_owner(
     const ProductQtP2NativeAdmission::Fanout& fanout,const AuditionSourceSelector& selector,
     const GoldSelectionViewModel& gold,const m08_frozen::AmountConfig& amount,
     const std::array<bool,4>& requested,double independent_ceiling_db_tp,
-    core::FrameCount block,core::Uuid plan_id,core::Uuid controller_id,core::Uuid linked_chain_id)
+    core::FrameCount block,core::Uuid plan_id,core::Uuid controller_id,core::Uuid linked_chain_id,
+    bool allow_existing_replacement=false)
 {
     using R=core::Result<NativeQtProductSession>;
     const auto fail=[](const char* why){return R::failure(core::Error{core::ErrorCode::InvalidState,why});};
@@ -28,7 +30,7 @@ begin_native_qt_product_session_on_owner(
        &session!=&product.upstream.project||
        plan_id.is_nil()||controller_id.is_nil()||linked_chain_id.is_nil())
         return fail("L3_PRODUCT_SESSION_INVALID_OWNER");
-    auto baseline=session.capture_private_m12_search_baseline();
+    auto baseline=session.capture_private_m12_search_baseline(allow_existing_replacement);
     if(!baseline)return R::failure(*baseline.error());
     const auto& doc=baseline.value()->document();
     if(!doc.references.activeReferenceId||!doc.pipeline.masteringChainId)
@@ -37,10 +39,18 @@ begin_native_qt_product_session_on_owner(
         return c.chainId==*doc.pipeline.masteringChainId&&c.stage=="MASTER"&&c.segment=="MANUAL";
     });
     if(manual==doc.chains.end())return fail("L3_PRODUCT_SESSION_MANUAL_MISSING");
-    // Do not silently replace a previously accepted controller.
-    if(std::any_of(doc.chains.begin(),doc.chains.end(),[](const auto& c){
+    const auto prior=std::find_if(doc.chains.begin(),doc.chains.end(),[](const auto& c){
         return c.stage=="MASTER"&&c.segment=="REF_LINKED";
-    }))return fail("L3_PRODUCT_SESSION_EXISTING_LINKED_REQUIRES_REPLACEMENT");
+    });
+    const bool replacing=prior!=doc.chains.end();
+    std::uint64_t revision=1U;
+    if(replacing) {
+        if(!allow_existing_replacement)
+            return fail("L3_PRODUCT_SESSION_EXISTING_LINKED_REQUIRES_REPLACEMENT");
+        if(!prior->revision||prior->revision==std::numeric_limits<std::uint64_t>::max())
+            return fail("L3_PRODUCT_SESSION_LINKED_REVISION_EXHAUSTED");
+        revision=prior->revision+1U;
+    }
     std::set<core::Uuid> used;
     used.insert(doc.projectId);used.insert(doc.sourceResourceId);
     for(const auto& r:doc.resources)used.insert(r.resourceId);
@@ -53,15 +63,33 @@ begin_native_qt_product_session_on_owner(
             if(node.semanticNodeId)used.insert(*node.semanticNodeId);
         }
     }
-    for(const auto& id:{plan_id,controller_id,linked_chain_id})
-        if(!used.insert(id).second)return fail("L3_PRODUCT_SESSION_ID_COLLISION");
+    if(!used.insert(plan_id).second)return fail("L3_PRODUCT_SESSION_ID_COLLISION");
+    if(!replacing) {
+        for(const auto& id:{controller_id,linked_chain_id})
+            if(!used.insert(id).second)return fail("L3_PRODUCT_SESSION_ID_COLLISION");
+    }
     auto capture=capture_native_qt_search_on_owner(product,fanout,selector,gold,
-        plan_id.to_string()+"/fixed",1U,block,true);
+        plan_id.to_string()+"/fixed",revision,block,true);
     if(!capture)return R::failure(*capture.error());
+    if(replacing) {
+        const auto restored=m12_frozen::decode_exact_m12_ref_linked_product_state(
+            doc,capture.value()->execution_registry);
+        if(!restored)return R::failure(*restored.error());
+        const auto& exact=*restored.value();
+        if(exact.plan_id==plan_id||exact.controller_id==plan_id||
+           exact.persisted_linked_chain_id!=prior->chainId||
+           exact.exact_native_chain.revision()!=prior->revision)
+            return fail("L3_PRODUCT_SESSION_PRIOR_OWNER_MISMATCH");
+        controller_id=exact.controller_id;
+        linked_chain_id=exact.persisted_linked_chain_id;
+        used.insert(controller_id);
+        used.insert(exact.plan_id);
+    }
     auto policy=build_current_native_qt_product_policy(*capture.value(),amount,requested,independent_ceiling_db_tp);
     if(!policy)return fail("L3_PRODUCT_SESSION_POLICY_UNAVAILABLE");
     m12_frozen::M12ProjectTransactionExpected expected{doc.sourceResourceId,
-        *doc.references.activeReferenceId,*doc.pipeline.masteringChainId,*manual,std::nullopt,true,true};
+        *doc.references.activeReferenceId,*doc.pipeline.masteringChainId,*manual,
+        replacing?std::optional<project::Chain>{*prior}:std::nullopt,true,true};
     std::vector<core::Uuid> protected_ids(used.begin(),used.end());
     return R::success(NativeQtProductSession{std::move(*baseline.value()),
         std::move(*capture.value()),std::move(*policy),std::move(expected),
