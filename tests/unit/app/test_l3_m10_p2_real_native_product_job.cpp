@@ -276,7 +276,8 @@ void P2RealNativeProductTest::nativeOwnedP2OwnerAuthoritySeparatesPolicyAndProte
     auto changed=bank;changed.owned_p2->policy.drive.reference_weight=0.5;
     const auto second=m09::resolve_native_owner_family(changed,family,ids,**registry,{0x33},{0x32},false);
     QCOMPARE(second.disposition,m09::NativeDomainDisposition::legal);
-    QVERIFY(first.identity.semantic_tuple!=second.identity.semantic_tuple);
+    QVERIFY(first.identity.semantic_tuple==second.identity.semantic_tuple);
+    QVERIFY(first.identity.dependency_tuple!=second.identity.dependency_tuple);
     QCOMPARE(first.allocations.front().instance,second.allocations.front().instance);
     const auto protected_slot=m09::resolve_native_owner_family(bank,family,ids,**registry,{0x33},{0x32},true,true);
     QCOMPARE(protected_slot.disposition,m09::NativeDomainDisposition::not_applicable);
