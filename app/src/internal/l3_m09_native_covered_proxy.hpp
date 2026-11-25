@@ -268,7 +268,35 @@ bind_native_family_candidate_with_inventory(
     m10_frozen::AuthoritativeCostInput constraints)
 {
     const auto requests=derive_native_family_coordinate_requests(bank,family,role_keys,band_keys,rate);
-    if(!requests||requests->size()>m10_frozen::kMaxActiveCoordinates)return {};
+    if(!requests)return {};
+    if(requests->size()>m10_frozen::kMaxActiveCoordinates) {
+        if(!registry||identity.semantic_tuple.empty()||identity.dependency_tuple.empty()||
+           identity.generation_snapshot.empty()||identity.ordered_provenance.empty())return {};
+        auto descriptive=build_native_family_inventory_seed(registry,bank,family,allocations,
+            *requests,revision,rate);
+        if(!descriptive)return {};
+        auto inventory=exact_over_budget_description_inventory(*descriptive);
+        const auto bytes=exact_over_budget_seed_content(*descriptive);
+        const auto complexity=native_artistic_complexity(descriptive->seed);
+        if(!inventory||!bytes||!complexity||
+           (!identity.seed_exact_content.empty()&&identity.seed_exact_content!=*bytes))return {};
+        identity.seed_exact_content=*bytes;
+        ProxyOperands operands;
+        operands.canonical_unsigned_topology_key=identity.semantic_tuple;
+        operands.active_owned_modules=complexity->modules;
+        operands.enabled_artistic_bands=complexity->bands;
+        BoundNativeFamilyCandidate result;
+        // The frozen combined consumer excludes this entry before ranking.
+        // Its complete topology is preserved; no fake numerical proxy.
+        result.legal={identity,make_pre_render_proxy(operands),inventory->size(),true,true};
+        result.recipe.exact_description=std::move(identity);
+        result.recipe.family=family;
+        result.recipe.allocations.assign(allocations.begin(),allocations.end());
+        result.recipe.coordinates=*requests;
+        result.recipe.exact_inventory=std::move(*inventory);
+        result.recipe.constraints=std::move(constraints);
+        return result;
+    }
     return bind_native_family_candidate(std::move(registry),bank,family,allocations,*requests,
         revision,rate,std::move(identity),fixed,amount,requested,std::move(constraints));
 }
