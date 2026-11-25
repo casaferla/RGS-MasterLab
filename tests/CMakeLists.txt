@@ -3191,7 +3191,7 @@ qt_add_executable(rgsml_l3_m13_fresh_native_probe_tests
 target_include_directories(rgsml_l3_m13_fresh_native_probe_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src)
 target_link_libraries(rgsml_l3_m13_fresh_native_probe_tests
-    PRIVATE rgsml_render rgsml_analysis rgsml_audio rgsml_dsp Qt6::Test)
+    PRIVATE rgsml_project rgsml_render rgsml_analysis rgsml_audio rgsml_dsp Qt6::Test)
 rgsml_apply_project_warnings(rgsml_l3_m13_fresh_native_probe_tests)
 add_test(NAME rgsml_l3_m13_fresh_native_probe_tests
     COMMAND rgsml_l3_m13_fresh_native_probe_tests)
