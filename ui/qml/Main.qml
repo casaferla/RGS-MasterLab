@@ -67,6 +67,8 @@ ApplicationWindow {
         ? masterOutputRateState : null
     // M18 Export becomes available only when the native Product owner
     // has installed all epoch guards and retained an exact verified M17 Master.
+    readonly property var appAutoMatchModel: typeof autoMatchViewModel !== "undefined"
+        ? autoMatchViewModel : null
     readonly property var appM18ExportModel: typeof m18ProductExportViewModel !== "undefined"
         ? m18ProductExportViewModel : null
     // Native Project owns the current explicit WAV encoding preference.
@@ -638,6 +640,100 @@ ApplicationWindow {
     // M18 Product-authorized output choice. The File menu remains
     // disabled until the application owns the complete M18 gate bundle.
     // No QML surface can mint a Ticket or invoke a detached worker.
+    // Numeric fallback exposes the real action without freezing the
+    // pending PO choice of rotary knobs versus vertical faders.
+    Dialog {
+        id: autoMatchDialog
+        objectName: "autoMatchDialog"
+        title: "AutoMatch"
+        modal: false
+        anchors.centerIn: parent
+        width: 340
+        standardButtons: Dialog.Close
+        background: Rectangle { color: root.surface; border.color: root.border; radius: 5 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+            Text {
+                Layout.fillWidth: true
+                text: root.appAutoMatchModel ? root.appAutoMatchModel.statusText : "UNAVAILABLE"
+                color: root.accent
+                font.bold: true
+            }
+            GridLayout {
+                columns: 2
+                Layout.fillWidth: true
+                Repeater {
+                    model: ["Total Match", "Tonal", "Dynamics", "Stereo", "Loudness", "TP ceiling (dBTP)"]
+                    delegate: RowLayout {
+                        required property string modelData
+                        required property int index
+                        property alias numericField: amountField
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        Text { text: modelData; color: root.textPrimary; Layout.fillWidth: true }
+                        TextField {
+                            id: amountField
+                            objectName: "autoMatchAmount_" + index
+                            Layout.preferredWidth: 110
+                            text: index === 5 ? "0" : "100"
+                            enabled: !!root.appAutoMatchModel && !root.appAutoMatchModel.busy
+                                && !root.appAutoMatchModel.canAdopt
+                            validator: DoubleValidator {
+                                bottom: index === 5 ? -12 : 0
+                                top: index === 5 ? 0 : 100
+                                notation: DoubleValidator.StandardNotation
+                                locale: "C"
+                            }
+                            function numericValue() { return acceptableInput ? Number(text) : NaN }
+                        }
+                        Text { text: index === 5 ? "dBTP" : "%"; color: root.textSecondary; Layout.preferredWidth: 36 }
+                    }
+                    id: autoMatchInputs
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.appAutoMatchModel ? root.appAutoMatchModel.errorText : ""
+                color: root.error
+                wrapMode: Text.WrapAnywhere
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    objectName: "autoMatchStartButton"
+                    text: "Search"
+                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canStart
+                        && !root.appAutoMatchModel.canAdopt && !root.monitorExclusive
+                    onClicked: {
+                        let values = []
+                        for (let i = 0; i < 6; ++i) {
+                            let item = autoMatchInputs.itemAt(i)
+                            if (!item) return
+                            values.push(item.numericField.numericValue())
+                        }
+                        root.appAutoMatchModel.start(values[0]/100, values[1]/100,
+                            values[2]/100, values[3]/100, values[4]/100, values[5])
+                    }
+                }
+                Button {
+                    objectName: "autoMatchAdoptButton"
+                    text: "Apply"
+                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
+                        && !root.monitorExclusive
+                    onClicked: root.appAutoMatchModel.adopt()
+                }
+                Button {
+                    objectName: "autoMatchCancelButton"
+                    text: "Cancel"
+                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canCancel
+                    onClicked: root.appAutoMatchModel.cancel()
+                }
+            }
+        }
+    }
+
     FileDialog {
         id: m18ExportFileDialog
         objectName: "m18ExportFileDialog"
@@ -1381,6 +1477,12 @@ ApplicationWindow {
                             }
                         }
                         MenuSeparator { }
+                        StudioMenuItem {
+                            objectName: "menuAutoMatch"
+                            text: "AutoMatch…"
+                            enabled: !!root.appAutoMatchModel && !root.monitorExclusive
+                            onTriggered: autoMatchDialog.open()
+                        }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: root.displayedWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
@@ -1911,6 +2013,23 @@ ApplicationWindow {
                                             }
                                         }
 
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 26
+                                            Button {
+                                                objectName: "openAutoMatchDialog"
+                                                text: "AutoMatch…"
+                                                enabled: !!root.appAutoMatchModel && !root.monitorExclusive
+                                                onClicked: autoMatchDialog.open()
+                                            }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: root.appAutoMatchModel ? root.appAutoMatchModel.statusText : ""
+                                                color: root.textSecondary
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                            }
+                                        }
                                         // Domain Controls Row: Four Equal Domain Knobs
                                         Rectangle {
                                             Layout.fillWidth: true

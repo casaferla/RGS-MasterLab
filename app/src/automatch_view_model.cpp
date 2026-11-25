@@ -2,6 +2,7 @@
 #include <QUuid>
 #include <QThread>
 #include <cmath>
+#include <algorithm>
 #include <limits>
 
 namespace rgsml::app {
@@ -61,7 +62,7 @@ QString AutoMatchViewModel::status_text()const {
 bool AutoMatchViewModel::start(double total,double tonal,double dynamics,double stereo,
     double loudness,double ceiling)
 {
-    if(!can_start())return false;
+    if(!can_start()||can_adopt())return false;
     error_.clear();
     const std::array<double,4> values{tonal,dynamics,stereo,loudness};
     const auto valid=[](double v){return std::isfinite(v)&&v>=0.0&&v<=1.0;};
