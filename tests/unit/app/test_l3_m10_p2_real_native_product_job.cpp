@@ -81,6 +81,7 @@ private slots:
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate();
+    void nativeOwnedP2CoordinatePolicyMustBeExplicitAndBounded();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
@@ -143,6 +144,31 @@ void P2RealNativeProductTest::nativeOwnedP2PhysicalCoordinatesKeepMarginAndExpor
     const dsp::ModuleParameterPayload export_payload=*export_tp.value();
     QVERIFY(!m09::apply_native_physical_fields(export_payload,fields));
     QVERIFY(!m09::read_native_physical_field(export_payload,F::p2_ceiling_db_tp,{}));
+}
+void P2RealNativeProductTest::nativeOwnedP2CoordinatePolicyMustBeExplicitAndBounded() {
+    namespace m09=a::m09_frozen;
+    using F=m09::NativeField;
+    using T=a::m10_frozen::Transform;
+    const auto seed=dsp::StreamingTruePeakLimiterParameters::create(-2.0,1.0,2);
+    QVERIFY(seed);
+    const dsp::ModuleParameterPayload payload=*seed.value();
+    const m09::NativeP2CoordinatePolicy policy{
+        {T::additive_or_linear,-6.0,0.0,{},0.25},
+        {T::additive_or_linear,-12.0,12.0,0.0,1.0}};
+    QVERIFY(m09::valid_native_p2_coordinate_policy(policy));
+    QVERIFY(!m09::native_automatic_coordinate_rule(payload,F::p2_ceiling_db_tp,{}, {},48000));
+    const auto ceiling=m09::native_automatic_coordinate_rule(payload,F::p2_ceiling_db_tp,{}, {},48000,&policy);
+    const auto drive=m09::native_automatic_coordinate_rule(payload,F::p2_drive_db,{}, {},48000,&policy);
+    QVERIFY(ceiling&&drive);
+    QCOMPARE(ceiling->lower,-6.0);
+    QCOMPARE(drive->upper,12.0);
+    auto bad=policy;bad.ceiling.upper=0.1;
+    QVERIFY(!m09::valid_native_p2_coordinate_policy(bad));
+    bad=policy;bad.drive.reference_weight=0.0;
+    QVERIFY(!m09::valid_native_p2_coordinate_policy(bad));
+    bad=policy;bad.drive.fixed_reference=24.0;
+    QVERIFY(!m09::valid_native_p2_coordinate_policy(bad));
+    QVERIFY(!m09::native_automatic_coordinate_rule(payload,F::p2_drive_db,{}, {},48000,&bad));
 }
 void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
     namespace native=a::m05m06_real;

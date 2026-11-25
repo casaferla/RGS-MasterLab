@@ -13,12 +13,30 @@ struct NativeCoordinateRule final {
     std::optional<double> fixed_reference;
     double reference_weight{};
 };
+// P2's two new continuous coordinates require an explicit accepted
+// policy. The old export-limiter fixed-ceiling law cannot provide it.
+struct NativeP2CoordinatePolicy final {
+    NativeCoordinateRule ceiling;
+    NativeCoordinateRule drive;
+};
+[[nodiscard]] inline bool valid_native_p2_coordinate_policy(const NativeP2CoordinatePolicy& policy)
+{
+    const auto valid=[](const NativeCoordinateRule& r,double lo,double hi) {
+        return r.kind==m10_frozen::Transform::additive_or_linear&&
+            std::isfinite(r.lower)&&std::isfinite(r.upper)&&
+            lo<=r.lower&&r.lower<r.upper&&r.upper<=hi&&
+            std::isfinite(r.reference_weight)&&r.reference_weight>0.0&&
+            (!r.fixed_reference||(std::isfinite(*r.fixed_reference)&&
+                *r.fixed_reference>=r.lower&&*r.fixed_reference<=r.upper));
+    };
+    return valid(policy.ceiling,-12.0,0.0)&&valid(policy.drive,-24.0,24.0);
+}
 [[nodiscard]] inline std::optional<NativeCoordinateRule>
 native_automatic_coordinate_rule(
     const dsp::ModuleParameterPayload& seed,NativeField field,
     const std::optional<core::Uuid>& band_id,
     std::optional<NativeFrequencyBounds> exact_frequency_bounds,
-    std::int64_t sample_rate_hz)
+    std::int64_t sample_rate_hz,const NativeP2CoordinatePolicy* p2_policy=nullptr)
 {
     using T=m10_frozen::Transform;
     const auto linear=[](double a,double b,std::optional<double> ref,double weight){
@@ -28,6 +46,12 @@ native_automatic_coordinate_rule(
         return NativeCoordinateRule{T::positive_time_or_q_log,a,b,ref,weight};
     };
     if(!read_native_physical_field(seed,field,band_id))return std::nullopt;
+    if(std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(seed)) {
+        if(!p2_policy||!valid_native_p2_coordinate_policy(*p2_policy)||exact_frequency_bounds)return {};
+        if(field==NativeField::p2_ceiling_db_tp)return p2_policy->ceiling;
+        if(field==NativeField::p2_drive_db)return p2_policy->drive;
+        return {};
+    }
     if(field==NativeField::frequency_hz) {
         if(!exact_frequency_bounds||sample_rate_hz<=0)return std::nullopt;
         const double a=exact_frequency_bounds->lower,b=exact_frequency_bounds->upper;
@@ -102,7 +126,7 @@ make_native_seed_coordinate(
     std::vector<std::uint8_t> exact_stable_parameter_key,
     NativeField field,std::optional<core::Uuid> band_id,
     std::optional<NativeFrequencyBounds> exact_frequency_bounds,
-    std::int64_t sample_rate_hz)
+    std::int64_t sample_rate_hz,const NativeP2CoordinatePolicy* p2_policy=nullptr)
 {
     const auto semantic=node.semantic_node_id();
     if(!semantic||semantic->is_nil()||!node.active()||
@@ -112,7 +136,7 @@ make_native_seed_coordinate(
        !binding_matches_instance(node,binding))
         return std::nullopt;
     const auto rule=native_automatic_coordinate_rule(binding.parameters,field,
-        band_id,exact_frequency_bounds,sample_rate_hz);
+        band_id,exact_frequency_bounds,sample_rate_hz,p2_policy);
     const auto seed=read_native_physical_field(binding.parameters,field,band_id);
     if(!rule||!seed)return std::nullopt;
     const auto transform=m10_frozen::CoordinateTransform::create(
