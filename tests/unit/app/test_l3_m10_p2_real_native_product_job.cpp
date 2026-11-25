@@ -851,7 +851,7 @@ void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpol
     QCOMPARE(automatic_authorities->front().bounds.upper,grid.back().high_hz);
     auto combined=family;combined.stereo_mode_index=1U;
     QVERIFY(!m09::native_family_role_payload(bank,combined,m09::IntentRole::stereo_ms));
-    const auto ms=dsp::StereoMsParameters::create(0.1,-0.1,false,dsp::MonoBassMode::OFF,0.0,100.0);
+    const auto ms=dsp::StereoMsParameters::create(0.1,-0.1,false,dsp::MonoBassMode::OFF,120.0,100.0);
     QVERIFY(ms);
     bank.post_side_stereo[0]=m09::NativeFamilySeedBank::PostSideStereo{
         {0x55},{},bank.side.front().payload};

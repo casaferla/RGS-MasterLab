@@ -169,8 +169,6 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
         const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
         if(!row||row->exact_prefix_graph.empty()||
            row->exact_side_payload!=bank.side[family.stereo_side_eq_prefix-1U].payload) {
-            if(!bank.stereo[family.stereo_mode_index-1U])
-                return conditional("no-native-stereo-seed");
             out.exact_reason="conditional-post-side-insertion-baseline-unresolved";return out;
         }
         if(!row->modes[family.stereo_mode_index-1U])
