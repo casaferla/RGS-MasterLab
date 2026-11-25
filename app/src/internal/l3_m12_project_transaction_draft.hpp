@@ -325,11 +325,26 @@ prepare_exact_m12_project_transaction(
                prior.owner!="REFERENCE_MATCH"||
                prior.linkState!="REF_LINKED"||
                !prior.algorithmVersion||!prior.parameterSchemaId||
-               prior.typeId=="rgsml.dsp.gain"||
                prior.typeId=="rgsml.dsp.true-peak-limiter"||
-               prior.typeId=="rgsml.dsp.streaming-true-peak-limiter"||
                prior.typeId=="rgsml.dsp.dither")
                 return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_LINKED_CORRUPT");
+            if(prior.typeId=="rgsml.dsp.streaming-true-peak-limiter" &&
+               (&prior!=&linked->modules.back() ||
+                std::any_of(manual->modules.begin(),manual->modules.end(),[](const auto& fixed){
+                    return fixed.typeId=="rgsml.dsp.streaming-true-peak-limiter";
+                })))
+                return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_P2_CONFLICT");
+            const auto descriptor=accepted_stage.registry_owner->find_descriptor(prior.typeId);
+            if(!descriptor||descriptor.value()->get().algorithm_version()!=
+                  std::optional<std::string_view>{*prior.algorithmVersion}||
+               descriptor.value()->get().parameter_schema_id()!=
+                  std::optional<std::string_view>{*prior.parameterSchemaId}||
+               !accepted_stage.registry_owner->has_factory(prior.typeId))
+                return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_SCHEMA_UNAVAILABLE");
+            const auto decoded=dsp::decode_module_parameters_json(
+                *prior.parameterSchemaId,prior.parameters.canonical_utf8());
+            if(!decoded||!accepted_stage.registry_owner->create_module(prior.typeId,*decoded.value()))
+                return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_PAYLOAD_INVALID");
         }
         for(const auto& node:exact_native_carrier.native_project_chain.modules) {
             const auto semantic=std::find_if(
