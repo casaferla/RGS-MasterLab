@@ -87,10 +87,16 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
         input.exact_event_context,input.exact_fixed_stereo_insertion,input.dynamic_band_ids,
         std::forward<AllocateBand>(allocate_band));
     if(!bank){out.phase=NativeAutoMatchWorkerPhase::unavailable_seed_bank;return out;}
-    // P2 participates only from the accepted immutable owner policy.
-    // The normal numerical search never takes over a protected MANUAL P2.
-    if(out.search.fixed_gate.targets.corrective[3]&&input.owned_p2)
-        bank->owned_p2=input.owned_p2;
+    // The normal Product path supplies a deterministic v1 policy when
+    // no accepted explicit override is present. Never take over a
+    // protected MANUAL P2, even if bypassed.
+    const auto manual_nodes=owners.frozen_manual.instances();
+    const bool protected_p2=std::any_of(manual_nodes.begin(),manual_nodes.end(),[](const auto& node){
+        return node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
+    });
+    if(out.search.fixed_gate.targets.corrective[3]&&!protected_p2)
+        bank->owned_p2=input.owned_p2?input.owned_p2:
+            m09_frozen::default_native_owned_p2_seed(input.independent_m11_ceiling_db_tp);
     const m09_frozen::NativeFamilyBindingEnvironment binding{owners.frozen_registry,*bank,*out.fixed,
         input.amount,input.accepted_linked_revision,rate.value(),geometry->common_low,
         geometry->common_high,input.constraints};
