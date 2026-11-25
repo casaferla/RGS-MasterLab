@@ -122,6 +122,14 @@ probe_fresh_m13_full_native_master_once(
     }
     for(std::size_t i=0;i<current_linked.exact_bindings.size();++i) {
         const auto& instance=current_linked.chain.instances()[i];
+        if(instance.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
+           (p2_present||i+1U!=current_linked.exact_bindings.size()||
+            !std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(
+                current_linked.exact_bindings[i].parameters)))
+            return fail("L3_M13_OWNED_P2_TERMINAL_CONFLICT");
+        if(instance.module_type_id()=="rgsml.dsp.true-peak-limiter"||
+           instance.module_type_id()=="rgsml.dsp.dither")
+            return fail("L3_M13_EXPORT_MODULE_IN_LINKED_GRAPH");
         if(!binding_matches_instance(
             instance,current_linked.exact_bindings[i])||
            instance.provenance()!=
