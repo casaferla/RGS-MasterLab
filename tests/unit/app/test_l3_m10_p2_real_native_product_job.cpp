@@ -698,6 +698,43 @@ void P2RealNativeProductTest::nativeSelectedFamilyChecksExactSeedIdentity() {
     const auto changed=m09::exact_family_trial_key(exact_description,decoded->graph,*registry,*inventory,v);
     QVERIFY(changed);
     QVERIFY(changed->canonical_current_tuple!=key->canonical_current_tuple);
+    // Structural reconstruction fixture only: this is not a measured
+    // Product prediction and cannot pass the independent M12 owner gate.
+    m10::RefinementBatchResult refinement;
+    refinement.reason=m10::RefinementBatchReason::complete;
+    refinement.winning_refinement_index=0U;
+    m10::RefinedSeed refined;
+    refined.exact_combined_ordinal=0U;
+    refined.numerical.coordinates=*inventory;
+    refined.numerical.coordinates.front().normalized_u=v.front();
+    refined.numerical.winner.canonical_current_tuple=changed->canonical_current_tuple;
+    refined.numerical.winner.topology_evidence_identity=changed->topology_evidence_identity;
+    const auto ticket=m10::m10_exact_native_trial_ticket(0U,*inventory,v);
+    QVERIFY(ticket);
+    auto prediction=std::make_shared<m10::NativePredictionSnapshot>();
+    prediction->exact_candidate_ticket=*ticket;
+    const auto graph_bytes=m10::exact_native_graph_content(decoded->graph.linked,decoded->graph.bindings,*registry);
+    QVERIFY(graph_bytes);
+    prediction->exact_linked_graph_content=*graph_bytes;
+    refined.numerical.winner.native_prediction=prediction;
+    refinement.candidate_refinements.push_back(refined);
+    auto reconstruction_selection=selected;
+    reconstruction_selection.exact_descriptions.front()=exact_description;
+    const std::array<m09::SelectedNativeSeed,1> reconstruction_seeds{{
+        {0U,*inventory,&typed,{}}}};
+    const auto serialize=[&](const auto& description,const auto& graph,const auto& coords,const auto& values){
+        return m09::exact_family_trial_key(description,graph,*registry,coords,values);
+    };
+    const auto reconstructed=m09::reconstruct_selected_native_winner(reconstruction_selection,
+        reconstruction_seeds,refinement,serialize);
+    QVERIFY(reconstructed);
+    QCOMPARE(reconstructed->immutable_seed_inventory.front().normalized_u,0.5);
+    QCOMPARE(reconstructed->winning_values.front(),0.75);
+    QCOMPARE(std::get<dsp::GainParameters>(reconstructed->graph.bindings.front().parameters).gain_db(),3.0);
+    refinement.candidate_refinements.front().numerical.coordinates.front().normalized_u=0.625;
+    QVERIFY(!m09::reconstruct_selected_native_winner(reconstruction_selection,
+        reconstruction_seeds,refinement,serialize));
+
     QCOMPARE(changed->topology_evidence_identity,key->topology_evidence_identity);
     QCOMPARE(changed->immutable_generation_and_policy,key->immutable_generation_and_policy);
     auto exact_recipes=recipes;
