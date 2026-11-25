@@ -153,6 +153,10 @@ measure_and_score_m10_p2_full_native_candidate(
            exact_current_m11_final_tp_safety_ceiling_db_tp).passes())
         return {P2NativeCostReason::m08_or_m11_safety_rejected,
                 {},{},{} };
+    independently_attested_m08_m11.native_independent_full_m16_linear_peak=
+        measured.value()->m16_actual_p2_output.global_linear_peak();
+    independently_attested_m08_m11.native_independent_m11_ceiling_db_tp=
+        exact_current_m11_final_tp_safety_ceiling_db_tp;
     // Resolver delivers the original owner-checked native Prepared/G
     // family and all source-specific feature definitions. Rebind EVERY
     // candidate family from this exact real P2 render, not from any

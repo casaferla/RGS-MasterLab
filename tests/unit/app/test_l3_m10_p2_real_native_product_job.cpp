@@ -487,6 +487,11 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
     const auto& winner=result.search.refinement->candidate_refinements[
         *result.search.refinement->winning_refinement_index].numerical.winner;
     QVERIFY(winner.native_prediction);
+    QVERIFY(winner.native_prediction->independent_full_m16_linear_peak);
+    QVERIFY(winner.native_prediction->independent_m11_ceiling_db_tp);
+    QCOMPARE(*winner.native_prediction->independent_m11_ceiling_db_tp,0.0);
+    QVERIFY(m10::check_actual_p2_m16_linear_peak(*winner.native_prediction->independent_full_m16_linear_peak,
+        *winner.native_prediction->independent_m11_ceiling_db_tp).passes());
     QCOMPARE(winner.native_prediction->exact_candidate_ticket,result.search.winning_graph->exact_ticket);
     QVERIFY(!result.authorizes_product_publication());
     // M12 consumes the actual winning typed graph, not a second

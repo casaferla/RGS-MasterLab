@@ -26,6 +26,9 @@ struct NativePredictionSnapshot final {
     std::vector<std::uint8_t> exact_execution_graph_content{};
     std::shared_ptr<const P2OriginalRealNativeTriple> original_definition_authority{};
     std::vector<std::uint8_t> exact_definition_authority_content{};
+    // Independent whole-resource M16, not the scoped artistic L03 slot.
+    std::optional<double> independent_full_m16_linear_peak{};
+    std::optional<double> independent_m11_ceiling_db_tp{};
     friend bool operator==(const NativePredictionSnapshot& a,
                            const NativePredictionSnapshot& b) {
         return a.native_population==b.native_population&&
@@ -39,7 +42,9 @@ struct NativePredictionSnapshot final {
             a.exact_execution_graph_content==b.exact_execution_graph_content&&
             static_cast<bool>(a.original_definition_authority)==
                 static_cast<bool>(b.original_definition_authority)&&
-            a.exact_definition_authority_content==b.exact_definition_authority_content;
+            a.exact_definition_authority_content==b.exact_definition_authority_content&&
+            a.independent_full_m16_linear_peak==b.independent_full_m16_linear_peak&&
+            a.independent_m11_ceiling_db_tp==b.independent_m11_ceiling_db_tp;
     }
 };
 } // namespace rgsml::app::l3_automatch::m10_frozen
