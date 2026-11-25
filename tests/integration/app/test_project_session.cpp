@@ -5,6 +5,7 @@
 #include "internal/l3_m13_provisional_report_codec.hpp"
 #include "internal/l3_m13_fresh_original_native_import.hpp"
 #include "internal/l3_m13_current_search_worker.hpp"
+#include "internal/l3_native_qt_search_handoff.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -731,6 +732,31 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     illegalCapture.join();
     QVERIFY(workerCannotCapture);
 
+    // Native search captures the actual Product before any candidate,
+    // and never mutates the existing manual or reference owners.
+    namespace native_search=app::l3_automatch;
+    const auto nativeBlock=core::FrameCount::create(4096);
+    QVERIFY(nativeBlock);
+    const auto nativeCapture=native_search::capture_native_qt_search_on_owner(
+        controllers,fanout,session.selector,session.gold,"qt-fixed-fixture",1U,
+        *nativeBlock.value(),true);
+    QVERIFY2(nativeCapture,nativeCapture?"":nativeCapture.error()->message().c_str());
+    QVERIFY(nativeCapture.value()->current.job.fixed_only());
+    QVERIFY(native_search::native_qt_search_still_current_on_owner(
+        controllers,fanout,session.selector,session.gold,*nativeCapture.value()));
+    QVERIFY(!native_search::capture_native_qt_search_on_owner(
+        controllers,fanout,session.selector,session.gold,"qt-unattested",1U,
+        *nativeBlock.value(),false));
+    bool nativeWorkerCannotCapture=false;
+    std::thread illegalNativeCapture([&]{
+        nativeWorkerCannotCapture=!native_search::capture_native_qt_search_on_owner(
+            controllers,fanout,session.selector,session.gold,"qt-illegal-worker",1U,
+            *nativeBlock.value(),true);
+    });
+    illegalNativeCapture.join();
+    QVERIFY(nativeWorkerCannotCapture);
+    static_assert(std::is_pointer_v<decltype(&native_search::apply_native_qt_search_on_owner)>);
+    static_assert(std::is_pointer_v<decltype(&native_search::capture_native_qt_fresh_verification_on_owner)>);
 
     // A truly independent REFERENCE is visible to the private UI readiness
     // bridge only after its own canonical GoldSelection file owner accepted
