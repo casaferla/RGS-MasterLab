@@ -1390,7 +1390,7 @@ core::Result<RenderResult> render_preview_p2_cached_prefix(
             core::ErrorCode::InvalidState,
             "P2_INCREMENTAL_PREFIX_NOT_VERIFIED",
             "Streaming P2 incremental render requires an exact owned "
-            "four-node full-programme prefix without upstream telemetry."));
+            "full-programme prefix without upstream latency or telemetry."));
     };
     try {
         const auto instances = full.chain_instances();
@@ -1400,15 +1400,24 @@ core::Result<RenderResult> render_preview_p2_cached_prefix(
         // or Stereo/M-S may carry latency, lookahead or source-bound M15/M14
         // sidecars. Those configurations must render the full chain until
         // their full telemetry rebase has independent qualification.
-        if (instances.size()!=5U || full.bindings().size()!=5U
+        const bool manualShape=instances.size()==5U &&
+            full.chain_context().segment==dsp::ChainSegment::MANUAL &&
+            instances[0].module_type_id()==kGainTypeId &&
+            instances[1].module_type_id()==kEqTypeId &&
+            instances[2].module_type_id()==kCompressorTypeId &&
+            instances[3].module_type_id()==kStereoMsTypeId &&
+            !instances[2].active() && !instances[3].active();
+        // REF_LINKED cache is deliberately restricted to zero-latency
+        // Gain/EQ upstream. Do not split latency/tail-bearing processors.
+        const bool ownedShape=!instances.empty()&&
+            full.chain_context().segment==dsp::ChainSegment::REF_LINKED&&
+            std::all_of(instances.begin(),instances.end()-1,[](const auto& node){
+                return node.module_type_id()==kGainTypeId||node.module_type_id()==kEqTypeId;
+            });
+        if ((!manualShape&&!ownedShape) || instances.empty()
+            || full.bindings().size()!=instances.size()
             || full.chain_context().stage!=dsp::ProcessingStage::MASTER
-            || full.chain_context().segment!=dsp::ChainSegment::MANUAL
-            || instances[0].module_type_id()!=kGainTypeId
-            || instances[1].module_type_id()!=kEqTypeId
-            || instances[2].module_type_id()!=kCompressorTypeId
-            || instances[3].module_type_id()!=kStereoMsTypeId
-            || instances[4].module_type_id()!=kStreamingTruePeakTypeId
-            || instances[2].active() || instances[3].active()
+            || instances.back().module_type_id()!=kStreamingTruePeakTypeId
             || src.absolute_range()!=full.render_window()
             || prior.absolute_range()!=full.render_window()
             || prior.format()!=src.format()
@@ -1416,40 +1425,39 @@ core::Result<RenderResult> render_preview_p2_cached_prefix(
                 audio::FrameDomainId::SOURCE_PROCESSING_RATE
             || prefix.frame_domain_id()!=src.timebase().frame_domain_id()
             || prefix.render_window()!=full.render_window()
-            || prefix.signatures().size()!=4U
+            || prefix.signatures().size()!=instances.size()-1U
             || prefix.compressor_telemetry_sidecar()
             || !prefix.stereo_ms_stage_output_sidecars().empty()
             || full.realization_id()
             || full.max_telemetry_bytes())
             return fail();
 
-        for (std::size_t i=0;i<4U;++i) {
+        for (std::size_t i=0;i<instances.size()-1U;++i) {
             if (prefix.signatures()[i].instance_id!=instances[i].instance_id()
                 || prefix.signatures()[i].type_id!=instances[i].module_type_id())
                 return fail();
         }
-        // These first four signatures were constructed by the canonical
-        // renderer from the exact upstream typed dependency key; the
-        // Product worker must pin that key to the immutable SOURCE owner.
-        std::vector<dsp::ModuleInstance> fifth{instances[4]};
+        // The prefix signatures were constructed by the canonical
+        // renderer. The caller pins exact typed dependencies and owner.
+        std::vector<dsp::ModuleInstance> terminal{instances.back()};
         auto suffixChain=dsp::ProcessingChain::restore(
-            registry,full.chain_context(),full.chain_revision(),std::move(fifth));
+            registry,full.chain_context(),full.chain_revision(),std::move(terminal));
         if(!suffixChain) return R::failure(*suffixChain.error());
-        const auto fifthBinding=std::find_if(
+        const auto terminalBinding=std::find_if(
             full.bindings().begin(),full.bindings().end(),
             [&](const dsp::ModuleExecutionBinding& b) {
-                return b.instance_id==instances[4].instance_id();
+                return b.instance_id==instances.back().instance_id();
             });
-        if(fifthBinding==full.bindings().end())return fail();
+        if(terminalBinding==full.bindings().end())return fail();
         auto suffixRequest=RenderRequest::create(
             prior,full.render_window(),*suffixChain.value(),
-            {*fifthBinding},full.maximum_block_frames());
+            {*terminalBinding},full.maximum_block_frames());
         if(!suffixRequest)return R::failure(*suffixRequest.error());
         auto suffix=render_preview(*suffixRequest.value(),registry);
         if(!suffix)return suffix;
         if(suffix.value()->signatures().size()!=1U
             || suffix.value()->signatures()[0].instance_id
-                !=instances[4].instance_id()
+                !=instances.back().instance_id()
             || suffix.value()->compressor_telemetry_sidecar()
             || !suffix.value()->stereo_ms_stage_output_sidecars().empty())
             return fail();

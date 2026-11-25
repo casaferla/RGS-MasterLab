@@ -11,11 +11,11 @@ namespace rgsml::render {
     const RenderRequest& request,
     const rgsml::dsp::ModuleRegistry& registry);
 
-// L1+P2 opt-in bounded prefix cache: render only the fifth streaming P2
-// from a previously accepted, immutable four-stage PCM realization.
-// Strictly restricted to full programme / bypassed Compressor & Stereo/M-S,
-// where no upstream telemetry or latency can be lost. All other chain
-// topologies MUST use render_preview() instead.
+// Exact bounded prefix cache: render only the final streaming P2.
+// MANUAL retains the original five-node/bypassed Compressor & Stereo-M/S
+// restriction. REF_LINKED permits only Gain/EQ upstream. No telemetry or
+// latency may be lost; callers pin the full upstream graph and PCM owner.
+// Other topologies MUST use render_preview() instead.
 [[nodiscard]] rgsml::core::Result<RenderResult>
 render_preview_p2_cached_prefix(
     const RenderRequest& full_request,
