@@ -627,6 +627,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(verification->value()->assessment().fresh_master_execution_attested);
     QVERIFY(verification->value()->assessment().actual_27_binding_population_attested);
     QVERIFY(verification->value()->assessment().same_run_proximity_attested);
+    QVERIFY(verification->value()->assessment().native_numerical_evidence_passed());
     QVERIFY(!verification->value()->authorizes_verified());
     const auto diagnostic=session.project.seal_private_m13_actual_native_completion(*verification->value());
     QVERIFY2(diagnostic,diagnostic?"":diagnostic.error()->message().c_str());

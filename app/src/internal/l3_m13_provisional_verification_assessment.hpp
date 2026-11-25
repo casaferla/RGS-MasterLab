@@ -27,6 +27,21 @@ struct M13ProvisionalAssessment final {
     bool actual_27_binding_population_attested{};
     bool same_run_proximity_attested{};
     bool verified_profile_approval_exists{}; // always false in this lane
+    // Development checkpoint only: distinguish successful physical
+    // native verification from missing formal QTP approval. No release
+    // permission is created, and any other missing/failed/stale predicate
+    // continues to block this numerical checkpoint.
+    [[nodiscard]] bool native_numerical_evidence_passed() const noexcept {
+        return state==VerificationState::verification_unavailable&&
+            fresh_master_execution_attested&&actual_27_binding_population_attested&&
+            same_run_proximity_attested&&required_native_components>0U&&
+            configured_native_components>=required_native_components&&
+            !verified_profile_approval_exists&&canonical_reasons.size()==1U&&
+            canonical_reasons.front().stage==VerificationStage::execution_prerequisites&&
+            canonical_reasons.front().code=="VERIFICATION_PROFILE_UNAVAILABLE"&&
+            canonical_reasons.front().predicate==PredicateState::unavailable&&
+            canonical_reasons.front().field_path=="/qualificationToleranceProfile/approvalRef";
+    }
     [[nodiscard]] constexpr bool authorizes_product_verified()
         const noexcept{return false;}
     [[nodiscard]] constexpr bool authorizes_master_wav_export()

@@ -1,5 +1,6 @@
 #include "internal/l3_m13_fresh_native_verification_probe.hpp"
 #include "internal/l3_m13_qtp_27_projection.hpp"
+#include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_predicted_vs_verified_proximity.hpp"
 #include "internal/l3_m13_verification_state_reasons.hpp"
 #include "internal/l3_m13_27_binding_conformance.hpp"
@@ -46,6 +47,7 @@ private slots:
     void frozenQtpNativeScalarBoundaries();
     void sameRunPredictedVerifiedRawProximity();
     void frozenVerificationStatePrecedence();
+    void numericDevelopmentCheckpointRequiresAllNonqualificationPredicates();
     void reasonsOrderAndExactDuplicateSemantics();
     void completeFreshNativeTwentySevenBindingComparison();
     void ownedNativeSpecRetainsGateBytesAcrossDispatch();
@@ -513,6 +515,34 @@ void M13FreshNativeProbeTest::frozenVerificationStatePrecedence()
              VerificationState::verification_failed);
     e.exact_dependency_known_changed=true;
     QCOMPARE(project_verification_state(e),VerificationState::stale);
+}
+void M13FreshNativeProbeTest::numericDevelopmentCheckpointRequiresAllNonqualificationPredicates()
+{
+    m13::M13ProvisionalAssessment evidence;
+    QVERIFY(!evidence.native_numerical_evidence_passed());
+    evidence.configured_native_components=30U;
+    evidence.required_native_components=20U;
+    evidence.fresh_master_execution_attested=true;
+    evidence.actual_27_binding_population_attested=true;
+    evidence.same_run_proximity_attested=true;
+    m13::VerificationReason qtp;
+    qtp.stage=m13::VerificationStage::execution_prerequisites;
+    qtp.code="VERIFICATION_PROFILE_UNAVAILABLE";
+    qtp.field_path="/qualificationToleranceProfile/approvalRef";
+    qtp.predicate=m13::PredicateState::unavailable;
+    evidence.canonical_reasons={qtp};
+    QVERIFY(evidence.native_numerical_evidence_passed());
+    QVERIFY(!evidence.authorizes_product_verified());
+    QVERIFY(!evidence.authorizes_master_wav_export());
+    auto invalid=evidence;invalid.same_run_proximity_attested=false;
+    QVERIFY(!invalid.native_numerical_evidence_passed());
+    invalid=evidence;invalid.state=m13::VerificationState::stale;
+    QVERIFY(!invalid.native_numerical_evidence_passed());
+    invalid=evidence;invalid.canonical_reasons.push_back(qtp);
+    invalid.canonical_reasons.back().code="VERIFICATION_RUNTIME_UNAVAILABLE";
+    QVERIFY(!invalid.native_numerical_evidence_passed());
+    invalid=evidence;invalid.required_native_components=0U;
+    QVERIFY(!invalid.native_numerical_evidence_passed());
 }
 void M13FreshNativeProbeTest::reasonsOrderAndExactDuplicateSemantics()
 {
