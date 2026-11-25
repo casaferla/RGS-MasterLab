@@ -849,6 +849,17 @@ void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpol
     QCOMPARE(automatic_authorities->size(),std::size_t{1});
     QCOMPARE(automatic_authorities->front().bounds.lower,grid.front().low_hz);
     QCOMPARE(automatic_authorities->front().bounds.upper,grid.back().high_hz);
+    auto combined=family;combined.stereo_mode_index=1U;
+    QVERIFY(!m09::native_family_role_payload(bank,combined,m09::IntentRole::stereo_ms));
+    const auto ms=dsp::StereoMsParameters::create(0.1,-0.1,false,dsp::MonoBassMode::OFF,0.0,100.0);
+    QVERIFY(ms);
+    bank.post_side_stereo[0]=m09::NativeFamilySeedBank::PostSideStereo{
+        {0x55},{},bank.side.front().payload};
+    bank.post_side_stereo[0]->modes[0]=m09::NativeStereoSeed{*ms.value(),0.1,-0.1,{},false};
+    const auto composed_payload=m09::native_family_role_payload(bank,combined,m09::IntentRole::stereo_ms);
+    QVERIFY(composed_payload&&std::holds_alternative<dsp::StereoMsParameters>(*composed_payload));
+    auto stale_row=bank;stale_row.post_side_stereo[0]->exact_prefix_graph.clear();
+    QVERIFY(!m09::native_family_role_payload(stale_row,combined,m09::IntentRole::stereo_ms));
     auto split_bank=bank;
     split_bank.side.front().exact_eligible_grid.front().reset();
     const auto split_bounds=m09::native_eq_band_run_bounds(split_bank.side.front(),grid,

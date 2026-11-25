@@ -153,7 +153,16 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     const bool protected_p2=std::any_of(manual_nodes.begin(),manual_nodes.end(),[](const auto& node){
         return node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
     });
-    if(out.search.fixed_gate.targets.corrective[3]&&!protected_p2)
+    const auto p2_descriptor=owners.frozen_registry->find_descriptor("rgsml.dsp.streaming-true-peak-limiter");
+    bool p2_available=false;
+    if(p2_descriptor&&owners.frozen_registry->has_factory("rgsml.dsp.streaming-true-peak-limiter")) {
+        const auto segments=p2_descriptor.value()->get().allowed_segments();
+        p2_available=std::find(segments.begin(),segments.end(),dsp::ChainSegment::REF_LINKED)!=segments.end();
+    }
+    if(input.owned_p2&&!protected_p2&&!p2_available) {
+        out.phase=NativeAutoMatchWorkerPhase::unavailable_seed_bank;return out;
+    }
+    if(out.search.fixed_gate.targets.corrective[3]&&!protected_p2&&p2_available)
         bank->owned_p2=input.owned_p2?input.owned_p2:
             m09_frozen::default_native_owned_p2_seed(input.independent_m11_ceiling_db_tp);
     const auto resolve_current=[&](auto domain,const auto& family){
