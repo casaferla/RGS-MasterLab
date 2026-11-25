@@ -2,7 +2,7 @@
 // Execute Fixed independently of each candidate, with the same preserved
 // user terminal and the same native binding definitions. Retain native
 // measurements, never the Fixed PCM or a proxy score.
-#include "l3_m10_p2_authoritative_native_score.hpp"
+#include "l3_m10_p2_bound_native_worker_score.hpp"
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 template<class ResolveOriginalNativeTriple>
@@ -97,5 +97,33 @@ measure_native_fixed_once(
     return measure_native_fixed_independently(fixed_job,std::move(spec),exact_generation,
         fixed_owner,originals,exact_current_fixed_and_endpoint_safety_attested,
         file_based_lra_attested,std::forward<ResolveOriginalNativeTriple>(resolve),cancellation);
+}
+// Actual Product Fixed entry: render the immutable MANUAL graph and
+// preserved terminal once, prior to creating any artistic candidate.
+template<class ResolveOriginalNativeTriple>
+[[nodiscard]] inline std::optional<m11_frozen::NativeFixedPopulation>
+measure_current_product_fixed(const P2NativeProductWorkerScope& owners,
+    const OriginalPreparedReferenceNativeFacts& originals,ProductNativeOnePassSpec spec,
+    const std::string& exact_generation,const std::string& fixed_ticket,
+    std::uint64_t linked_revision,bool endpoint_safety_attested,bool file_based_lra_attested,
+    ResolveOriginalNativeTriple&& resolve,const std::atomic<bool>* cancellation=nullptr)
+{
+    if(!owners.current_qt_product_epoch_and_m09_m11_attested||
+       !owners.current_owner.populated()||!owners.current_prepared||!owners.frozen_registry||
+       fixed_ticket.empty()||exact_generation.empty()||!linked_revision||
+       !original_pair_matches_product_owner(originals,owners.current_owner)||
+       (cancellation&&cancellation->load(std::memory_order_acquire)))return {};
+    auto empty=dsp::ProcessingChain::restore(*owners.frozen_registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},linked_revision,{});
+    if(!empty)return {};
+    auto job=M10P2RealNativeProductJob::create_preserving_user_terminal(
+        owners.current_owner,owners.current_prepared,owners.frozen_registry,
+        owners.frozen_manual,owners.frozen_manual_bindings,*empty.value(),{},
+        fixed_ticket,owners.maximum_block_frames,true);
+    if(!job)return {};
+    const auto owner=native_product_candidate_identity(owners.current_owner,fixed_ticket);
+    return measure_native_fixed_independently(*job.value(),std::move(spec),
+        exact_generation,owner,originals,endpoint_safety_attested,file_based_lra_attested,
+        std::forward<ResolveOriginalNativeTriple>(resolve),cancellation);
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
