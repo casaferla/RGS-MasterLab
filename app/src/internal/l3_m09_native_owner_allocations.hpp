@@ -115,11 +115,11 @@ native_owner_family_topology(const NativeFamilySeedBank& bank,
                 if(!key)return {};
                 append_exact_byte_field(out,*key);
             }
-        } else if(const auto* eq=std::get_if<dsp::DynamicEqParameters>(&*payload)) {
+        } else if(const auto* dynamic_eq=std::get_if<dsp::DynamicEqParameters>(&*payload)) {
             const auto& prefix=bank.spectral[family.spectral_dynamic_eq_prefix-1U];
-            if(prefix.ranked_clusters.size()!=eq->bands().size())return {};
-            for(std::size_t i=0;i<eq->bands().size();++i) {
-                const auto key=allocations.band_identity(role,eq->bands()[i].spec().band_id);
+            if(prefix.ranked_clusters.size()!=dynamic_eq->bands().size())return {};
+            for(std::size_t i=0;i<dynamic_eq->bands().size();++i) {
+                const auto key=allocations.band_identity(role,dynamic_eq->bands()[i].spec().band_id);
                 if(!key)return {};
                 append_exact_byte_field(out,*key);
                 append_exact_field(out,std::to_string(prefix.ranked_clusters[i].first));
