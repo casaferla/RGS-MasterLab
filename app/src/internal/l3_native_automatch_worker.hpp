@@ -208,7 +208,35 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
             return std::invoke(resolve_authority,*bank,*out.fixed,domain,family);
         else return std::invoke(resolve_authority,*bank,domain,family);
     };
-    if(channels==2U&&out.search.fixed_gate.targets.corrective[2]&&input.exact_fixed_stereo_insertion) {
+    if(channels==2U&&out.search.fixed_gate.targets.corrective[2]) {
+        const bool active_user_terminal=std::any_of(manual_nodes.begin(),manual_nodes.end(),[](const auto& n){
+            return n.active()&&n.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
+        });
+        if(active_user_terminal) {
+            bank->standalone_preterminal_observation_required=true;
+            bank->stereo={};
+            const auto empty=dsp::ProcessingChain::restore(*owners.frozen_registry,
+                {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},
+                input.accepted_linked_revision,{});
+            if(empty) {
+                const auto job=M10P2RealNativeProductJob::create_preserving_user_terminal(
+                    owners.current_owner,owners.current_prepared,owners.frozen_registry,
+                    owners.frozen_manual,owners.frozen_manual_bindings,*empty.value(),{},
+                    input.fixed_ticket+"/preterminal-stereo",owners.maximum_block_frames,true);
+                if(job) {
+                    const auto insertion=measure_native_stereo_insertion_population(input,*out.fixed,
+                        *job.value(),cancellation);
+                    if(insertion) {
+                        bank->standalone_preterminal_graph=insertion->graph;
+                        for(std::size_t i=0;i<bank->stereo.size();++i)
+                            bank->stereo[i]=m09_frozen::derive_native_stereo_seed(*out.fixed,input.amount,
+                                input.requested,i+1U,true,true,&insertion->slots);
+                    }
+                }
+            }
+        }
+        if(cancelled()){out.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
+        if(input.exact_fixed_stereo_insertion||active_user_terminal) {
         for(std::size_t prefix=1U;prefix<=bank->side.size()&&prefix<=bank->post_side_stereo.size();++prefix) {
             if(cancelled()){out.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
             m09_frozen::AbstractFamilyChoice family;
@@ -217,6 +245,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
             bank->post_side_stereo[prefix-1U]=measure_native_post_side_stereo_seed_row(
                 input,*out.fixed,*bank,prefix,authority,cancellation);
             if(bank->post_side_stereo[prefix-1U])++out.measured_side_insertion_rows;
+        }
         }
     }
     const m09_frozen::NativeFamilyBindingEnvironment binding{owners.frozen_registry,*bank,*out.fixed,
