@@ -55,6 +55,17 @@ fullOwningResourceUsesActualM16OnlyAcrossSixRates()
         const auto product=measure_basic_level_full_resource(
             *buffer.value());
         QVERIFY(product);
+        const auto combined=measure_basic_level_and_true_peak_full_resource(*buffer.value());
+        QVERIFY(combined);
+        const auto& shared=combined.value()->true_peak;
+        QVERIFY(shared.global_linear_peak()==canonicalM16.value()->global_linear_peak());
+        QCOMPARE(shared.global_db_tp(),canonicalM16.value()->global_db_tp());
+        QCOMPARE(shared.global_peak_channel(),canonicalM16.value()->global_peak_channel());
+        QCOMPARE(shared.qualification_status(),canonicalM16.value()->qualification_status());
+        for(std::size_t c=0;c<shared.channel_count();++c)
+            QVERIFY(shared.per_channel_linear_peak()[c]==canonicalM16.value()->per_channel_linear_peak()[c]);
+        QCOMPARE(combined.value()->levels.true_peak_db_tp.db,product.value()->true_peak_db_tp.db);
+        QCOMPARE(combined.value()->levels.integrated_lufs.db,product.value()->integrated_lufs.db);
         const auto& snapshot=*product.value();
         QCOMPARE(snapshot.scope_begin_frame,std::int64_t{317});
         QCOMPARE(snapshot.scope_frame_count,frames.value()->value());
