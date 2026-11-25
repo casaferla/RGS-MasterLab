@@ -19,6 +19,25 @@ struct NativeOwnedP2Seed final {
     return p.ceiling_db_tp()>=seed.policy.ceiling.lower&&p.ceiling_db_tp()<=seed.policy.ceiling.upper&&
         p.drive_db()>=seed.policy.drive.lower&&p.drive_db()<=seed.policy.drive.upper;
 }
+// Product policy v1: use the existing validated DSP ranges, a neutral
+// drive anchor and the least restrictive independently safe seed ceiling.
+// Ceiling is a shaping coordinate, not the independent M16 hard gate.
+// Fixed margin is deliberately not a solver coordinate.
+[[nodiscard]] inline std::optional<NativeOwnedP2Seed>
+default_native_owned_p2_seed(double independent_ceiling_db_tp)
+{
+    if(!std::isfinite(independent_ceiling_db_tp)||independent_ceiling_db_tp>0.0)
+        return {};
+    using T=m10_frozen::Transform;
+    const double seed_ceiling=std::clamp(independent_ceiling_db_tp,-12.0,0.0);
+    const auto payload=dsp::StreamingTruePeakLimiterParameters::create(seed_ceiling,0.0,5);
+    if(!payload)return {};
+    NativeOwnedP2Seed seed{*payload.value(),
+        {{T::additive_or_linear,-12.0,0.0,seed_ceiling,0.25},
+         {T::additive_or_linear,-24.0,24.0,0.0,1.0}}};
+    if(!valid_native_owned_p2_seed(seed))return {};
+    return seed;
+}
 struct NativeFamilySeedBank final {
     std::vector<NativeEqPrefix> tonal;
     std::vector<NativeDynamicPrefix> spectral;

@@ -86,6 +86,7 @@ private slots:
     void nativeOwnedP2BankDerivesCompleteInventory();
     void nativeOwnedP2OwnerAuthoritySeparatesPolicyAndProtectedSlot();
     void nativeOwnedP2PolicyCannotEnterWorkerWithInvalidBounds();
+    void nativeOwnedP2DefaultPolicyIsBoundedAndIndependent();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
@@ -303,6 +304,25 @@ void P2RealNativeProductTest::nativeOwnedP2PolicyCannotEnterWorkerWithInvalidBou
     QVERIFY(m09::valid_native_owned_p2_seed(*policy.owned_p2));
     policy.owned_p2->policy.ceiling.lower=-13.0;
     QVERIFY(!m09::valid_native_owned_p2_seed(*policy.owned_p2));
+}
+void P2RealNativeProductTest::nativeOwnedP2DefaultPolicyIsBoundedAndIndependent() {
+    namespace m09=a::m09_frozen;
+    for(double limit:{0.0,-1.0,-6.0,-12.0,-15.0}) {
+        const auto seed=m09::default_native_owned_p2_seed(limit);
+        QVERIFY(seed);
+        QVERIFY(m09::valid_native_owned_p2_seed(*seed));
+        QCOMPARE(seed->payload.ceiling_db_tp(),std::clamp(limit,-12.0,0.0));
+        QCOMPARE(seed->payload.drive_db(),0.0);
+        QCOMPARE(seed->payload.margin_percent(),5);
+        QCOMPARE(seed->policy.ceiling.lower,-12.0);
+        QCOMPARE(seed->policy.ceiling.upper,0.0);
+        QCOMPARE(seed->policy.drive.lower,-24.0);
+        QCOMPARE(seed->policy.drive.upper,24.0);
+        QVERIFY(seed->policy.ceiling.fixed_reference==std::optional<double>{seed->payload.ceiling_db_tp()});
+        QVERIFY(seed->policy.drive.fixed_reference==std::optional<double>{0.0});
+    }
+    QVERIFY(!m09::default_native_owned_p2_seed(0.1));
+    QVERIFY(!m09::default_native_owned_p2_seed(std::numeric_limits<double>::quiet_NaN()));
 }
 void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
     namespace native=a::m05m06_real;
