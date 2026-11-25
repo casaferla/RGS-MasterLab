@@ -667,6 +667,37 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     authority.exact_reason="fixture-exact";
     authority.available_currently=false;
     const auto resolve_band=[](auto,const auto&)->std::optional<m09::ExactBytes>{return {};};
+    unsigned allocation_counter=1U;
+    const auto allocate=[&](){
+        core::Uuid::Bytes bytes{};
+        bytes[0]=0xcc;bytes[15]=static_cast<std::uint8_t>(allocation_counter++);
+        return core::Uuid{bytes};
+    };
+    m09::NativeOwnerAllocations owner_ids(allocate),other_ids(allocate);
+    const auto owner_gain=m09::resolve_native_owner_family(bank,family,owner_ids,*registry,{0x33},{0x32},false);
+    const auto repeated_gain=m09::resolve_native_owner_family(bank,family,owner_ids,*registry,{0x33},{0x32},false);
+    const auto other_gain=m09::resolve_native_owner_family(bank,family,other_ids,*registry,{0x33},{0x32},false);
+    QVERIFY(owner_gain.disposition==m09::NativeDomainDisposition::legal);
+    QVERIFY(repeated_gain.allocations.front().instance==owner_gain.allocations.front().instance);
+    QVERIFY(other_gain.allocations.front().instance!=owner_gain.allocations.front().instance);
+    QVERIFY(other_gain.identity.semantic_tuple==owner_gain.identity.semantic_tuple);
+    const auto owner_bound=m09::bind_native_family_entry(binding_env,family,owner_gain,requested,resolve_band);
+    QVERIFY(owner_bound.candidate);
+    m09::AbstractFamilyChoice terminal_family;
+    terminal_family.loudness=m09::LoudnessMode::terminal_limiter_only;
+    QVERIFY(m09::resolve_native_owner_family(bank,terminal_family,owner_ids,*registry,{0x33},{0x32},false)
+        .disposition==m09::NativeDomainDisposition::not_applicable);
+    QVERIFY(m09::resolve_native_owner_family(bank,terminal_family,owner_ids,*registry,{0x33},{0x32},true)
+        .disposition==m09::NativeDomainDisposition::unresolved);
+    const m09::NativeEqDictionaryIdentity atom{0,m09::AtomFilter::bell,0.707};
+    const auto eq_id=owner_ids.band(m09::IntentRole::tonal_eq,atom);
+    QVERIFY(eq_id);
+    QVERIFY(owner_ids.band(m09::IntentRole::tonal_eq,atom)==eq_id);
+    QVERIFY(!owner_ids.band_identity(m09::IntentRole::stereo_side_eq,*eq_id));
+    QVERIFY(owner_ids.band_identity(m09::IntentRole::tonal_eq,*eq_id));
+    m09::NativeOwnerAllocations collision([&]{return *eq_id;});
+    QVERIFY(!collision.role(m09::IntentRole::loudness_gain));
+    QVERIFY(collision.failed());
     const auto domain=m09::bind_native_domain_entry(binding_env,3U,family,authority,resolve_band);
     QVERIFY(domain.legal&&domain.legal->proxy.is_bound());
     QVERIFY(!domain.legal->available_currently);
