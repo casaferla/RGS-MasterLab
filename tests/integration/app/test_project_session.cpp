@@ -328,6 +328,7 @@ private slots:
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs_data();
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
+    void nativeMeasuredWinnerUsesRealQtM12AndM13();
     void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
     void m18SingleUpstreamBundleRejectsBusyWorkerAndDuplicateBinding();
@@ -431,6 +432,219 @@ m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen()
              M18MasterWavPreferenceCodec::default_pcm24_seed());
     QVERIFY(project::MasterOutputRatePreference::only_known_fields(
         persisted.value()->document().output));
+}
+
+void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
+{
+    namespace a=app::l3_automatch;
+    namespace m12=a::m12_frozen;
+    namespace m13=a::m13_frozen;
+    using app::internal::M18ProductCompleteBinding;
+    using platform::windows::internal::M18ProductExportIdentity;
+    using platform::windows::internal::M18ProductEpochTicketAuthority;
+    using platform::windows::internal::M18OwnerMutationFanout;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Physically separate PCM16 resources, 12 s, same spectral content
+    // and envelope but +2 dB reference loudness. Not a synthetic score.
+    const auto writeTone=[&](const QString& name,double factor) {
+        std::vector<std::int64_t> samples(48000U*12U);
+        for(std::size_t i=0;i<samples.size();++i) {
+            const double t=static_cast<double>(i)/48000.0;
+            constexpr double tau=6.2831853071795864769;
+            const double envelope=0.7+0.3*std::sin(tau*0.8*t);
+            const double v=envelope*(0.12*std::sin(tau*55.0*t)+
+                0.08*std::sin(tau*440.0*t)+0.04*std::sin(tau*2200.0*t));
+            samples[i]=static_cast<std::int64_t>(std::llround(v*factor*32768.0));
+        }
+        const auto bytes=wav_support::make_wav(1U,16U,1U,48000U,
+            wav_support::pcm_payload(samples,16U));
+        const auto path=dir.filePath(name);
+        QFile file{path};
+        if(!file.open(QIODevice::WriteOnly|QIODevice::NewOnly)||
+           file.write(reinterpret_cast<const char*>(bytes.data()),
+             static_cast<qint64>(bytes.size()))!=static_cast<qint64>(bytes.size()))return QString{};
+        file.close();return path;
+    };
+    const auto sourcePath=writeTone(QStringLiteral("l3-native-source.wav"),1.0);
+    const auto referencePath=writeTone(QStringLiteral("l3-native-reference.wav"),std::pow(10.0,2.0/20.0));
+    QVERIFY(!sourcePath.isEmpty()&&!referencePath.isEmpty());
+    Session session;
+    QVERIFY(!session.source.has_source());
+    app::MasterOutputRateState rate;
+    QCOMPARE(rate.rate_revision(),UINT64_C(0));
+    session.project.set_master_output_rate_state(&rate);
+    install_m18_checked_source_dispatch(session,rate);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto id=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "ac180000-0000-4000-8000-000000000018").value());
+    QVERIFY(id);
+    auto terminal=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(terminal);
+    app::TerminalCandidateGate candidates;
+    app::TerminalPrivateRenderController renderer{
+        candidates,*terminal.value(),
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        [&session]{return session.masteringChainState->chain();}};
+    app::TerminalAudioSessionGate device{
+        candidates,*session.observed,
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           core::RealizationId)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M18_FIRST_SOURCE_NO_VERIFIED_DEVICE"});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,device,session.transport,
+        [](auto,auto,auto)->core::Result<core::RealizationId> {
+            return core::Result<core::RealizationId>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                            "M18_FIRST_SOURCE_NO_PUBLISHED_MASTER"});
+        }};
+    app::TerminalPrivateProductSession m17{
+        renderer,publisher,candidates,session.transport,
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::shared_ptr<const render::RenderResult>{return {};},
+        []()->std::optional<core::RealizationId>{return {};},
+        []()->std::optional<core::FrameRange>{return {};},
+        []{return false;}};
+    const M18ProductExportIdentity initial{
+        1U,1U,1U,session.masteringChainState->chain().revision(),
+        48000U,rate.rate_revision()};
+    auto owner=std::make_shared<M18ProductEpochTicketAuthority>(1U,initial);
+    M18OwnerMutationFanout fanout{owner,1U,initial};
+    app::internal::M18ProductUpstreamBinding::Controllers upstream{
+        session.project,session.source,rate,
+        *session.masteringChainState,session.selector,session.region,
+        session.gold,*terminal.value()};
+    M18ProductCompleteBinding::Controllers controllers{
+        upstream,m17,candidates};
+    QVERIFY(M18ProductCompleteBinding::bind(controllers,fanout));
+    QVERIFY(M18ProductCompleteBinding::installed(controllers));
+    QVERIFY(!M18ProductCompleteBinding::can_offer_verified_master(
+        controllers,fanout));
+    const auto initialSnapshot=fanout.current_owner_snapshot();
+    QVERIFY(initialSnapshot);
+
+
+    session.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    QVERIFY(session.source.has_source());
+    session.gold.selectGold(QUrl::fromLocalFile(referencePath));
+    QVERIFY(session.gold.has_gold());
+    session.previewController->set_snapshot_provider([&session]{
+        return session.selector.prepared_realization_snapshot();
+    });
+    const auto baseline=dir.filePath(QStringLiteral("l3-native-before.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(baseline));
+    QVERIFY2(QFileInfo::exists(baseline),session.project.error_message().toUtf8().constData());
+    const auto before=load_project(baseline);
+    QVERIFY(before);
+    const auto& doc=before.value()->document();
+    QVERIFY(doc.references.activeReferenceId&&doc.pipeline.masteringChainId);
+    const auto manual=std::find_if(doc.chains.begin(),doc.chains.end(),[&](const auto& chain){
+        return chain.chainId==*doc.pipeline.masteringChainId;
+    });
+    QVERIFY(manual!=doc.chains.end());
+    QVERIFY(M18ProductCompleteBinding::reconcile_after_product_mutation(controllers,fanout));
+    const auto block=core::FrameCount::create(4096);
+    QVERIFY(block);
+    const auto captured=a::capture_native_qt_search_on_owner(controllers,fanout,session.selector,
+        session.gold,"qt-native-real-fixed",1U,*block.value(),true);
+    QVERIFY2(captured,captured?"":captured.error()->message().c_str());
+    a::NativeQtSearchPolicy policy;
+    policy.definitions.exact_density_floor=1e-12;
+    policy.definitions.exact_current_registry_and_phase6_policy_attested=true;
+    for(std::size_t i=0;i<policy.definitions.records.size();++i) {
+        const auto& binding=a::m07_frozen::kBindings[i];
+        policy.definitions.records[i]={std::string(binding.binding_id),std::string(binding.source_feature_id),
+            "qt-physical-test-definition-"+std::to_string(i)};
+    }
+    policy.definitions.records[9].exact_dependency=policy.definitions.records[8].exact_dependency;
+    policy.exact_generation="qt-physical-gain-generation";
+    policy.generation_and_policy={0x71,0x74};policy.accepted_dependencies={0x75,0x76};
+    policy.amount={1.0,{1.0,1.0,1.0,1.0},1U};
+    policy.requested={false,false,false,true};
+    policy.independent_ceiling_db_tp=0.0;
+    policy.exact_current_endpoint_safety_attested=true;
+    policy.file_based_lra_policy_attested=true;
+    policy.constraints.optimization_target_equals_desired_attested=true;
+    policy.constraints.exact_m05_m06_source_and_m07_dependency_current=true;
+    policy.constraints.m11_fixed_and_protected_snapshot_current=true;
+    policy.constraints.fresh_candidate_render_and_analysis_current=true;
+    policy.constraints.hard_m11_and_independent_safety_preflight_passed=true;
+    policy.constraints.m11_full_k_dependency_and_order_attested=true;
+    unsigned next=1U;
+    const auto allocate=[&](){
+        core::Uuid::Bytes bytes{};bytes[0]=0xd3;bytes[15]=static_cast<std::uint8_t>(next++);
+        return core::Uuid{bytes};
+    };
+    std::optional<a::NativeQtSearchWorkerResult> completed;
+    std::thread searchThread([&]{
+        completed.emplace(a::run_native_qt_search_worker(*captured.value(),policy,allocate,{}));
+    });
+    searchThread.join();
+    QVERIFY(completed&&completed->originals&&completed->result.fixed);
+    QVERIFY2(completed->result.search.status==a::m09_frozen::NativeProductSearchStatus::measured_candidate,
+        "ordinary real Qt AutoMatch did not produce a measured winner");
+    QVERIFY(completed->result.search.winning_graph);
+    QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
+        session.gold,*captured.value()));
+    const auto uuidOf=[](const char* value){return *core::Uuid::parse(value).value();};
+    const m12::AcceptedPlanAndOwner plan{
+        uuidOf("e6000000-0000-4000-8000-000000000001"),
+        uuidOf("e6000000-0000-4000-8000-000000000002"),
+        "qt-native-test-plan","qt-native-test-winner","qt-native-test-fixed","qt-native-test-scope",
+        1U,true,true,true,false};
+    const auto linkedId=uuidOf("e6000000-0000-4000-8000-000000000003");
+    const m12::M12ProjectTransactionExpected expected{
+        doc.sourceResourceId,*doc.references.activeReferenceId,*doc.pipeline.masteringChainId,
+        *manual,std::nullopt,true,true};
+    const auto protectedBindings=session.masteringChainState->execution_bindings();
+    const auto receipt=a::apply_native_qt_search_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,*captured.value(),policy,*completed,plan,*before.value(),
+        linkedId,expected);
+    QVERIFY2(receipt,receipt?"":receipt.error()->message().c_str());
+    QVERIFY(receipt.value()->materialized_not_verified());
+    QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    const auto freshInput=a::capture_native_qt_fresh_verification_on_owner(session.project,
+        session.gold,*captured.value(),policy,*completed,plan,true,m13::MandatoryHardPredicate::passed);
+    QVERIFY(freshInput);
+    std::optional<core::Result<m13::M13ActualNativeWorkerCompletion>> verification;
+    std::thread verificationThread([&]{
+        verification.emplace(m13::M13ActualNativeWorkerCompletion::execute(*freshInput,*block.value()));
+    });
+    verificationThread.join();
+    QVERIFY(verification);
+    QVERIFY2(*verification,*verification?"":verification->error()->message().c_str());
+    const auto& fresh=verification->value()->fresh();
+    QCOMPARE(fresh.logical_verification_evaluations,1U);
+    QVERIFY(fresh.additional_native);
+    QVERIFY(verification->value()->assessment().fresh_master_execution_attested);
+    QVERIFY(verification->value()->assessment().actual_27_binding_population_attested);
+    QVERIFY(verification->value()->assessment().same_run_proximity_attested);
+    QVERIFY(!verification->value()->authorizes_verified());
+    const auto diagnostic=session.project.seal_private_m13_actual_native_completion(*verification->value());
+    QVERIFY2(diagnostic,diagnostic?"":diagnostic.error()->message().c_str());
+    QVERIFY(m13::verify_m13_provisional_diagnostic_integrity(diagnostic.value()->canonical_report));
+    QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    const auto after=dir.filePath(QStringLiteral("l3-native-after.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(after));
+    QVERIFY2(QFileInfo::exists(after),session.project.error_message().toUtf8().constData());
+    const auto persisted=load_project(after);
+    QVERIFY(persisted);
+    const auto linked=std::find_if(persisted.value()->document().chains.begin(),
+        persisted.value()->document().chains.end(),[&](const auto& c){return c.chainId==linkedId;});
+    QVERIFY(linked!=persisted.value()->document().chains.end());
+    QVERIFY(!linked->modules.empty());
+    session.project.openProject(QUrl::fromLocalFile(after));
+    QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());
+    QVERIFY(session.previewController->has_private_m12_product_preview_ticket());
+    QVERIFY(!session.project.seal_private_m13_actual_native_completion(*verification->value()));
 }
 
 void ProjectSessionTest::
