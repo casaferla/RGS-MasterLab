@@ -66,4 +66,67 @@ enumerate_native_domain_families(const NativeFamilySeedBank& bank,bool stereo)
     combined.loudness=domains[3].loudness;
     return combined;
 }
+enum class NativeDomainDisposition:std::uint8_t {
+    legal,not_applicable,unresolved
+};
+struct NativeDomainEntry final {
+    AbstractFamilyChoice family;
+    NativeDomainDisposition disposition{NativeDomainDisposition::unresolved};
+    std::optional<m10_frozen::ConsumerInput> legal;
+    std::string exact_reason;
+};
+struct NativeDomainSelection final {
+    bool ready{};
+    std::array<std::vector<NativeDomainEntry>,4> ledger;
+    std::array<m10_frozen::DomainConsumerResult,4> numeric;
+    DomainFamilyLists retained;
+};
+// Availability is intentionally NOT a legality filter. A legal unavailable
+// entry with a bound proxy participates in numeric top8 unchanged. Missing
+// authority blocks the full corrective domain, never a partial ranking.
+template<class ResolveDomainEntry>
+[[nodiscard]] inline NativeDomainSelection select_native_domain_families(
+    const DomainFamilyLists& canonical,const std::array<bool,4>& corrective,
+    ResolveDomainEntry&& resolve)
+{
+    NativeDomainSelection out;
+    for(std::size_t d=0;d<4U;++d) {
+        if(canonical[d].empty()||!same_abstract_family(canonical[d].front(),{}))return out;
+        if(!corrective[d]) {
+            for(const auto& c:canonical[d])
+                out.ledger[d].push_back({c,NativeDomainDisposition::not_applicable,{},
+                    "domain-not-corrective"});
+            out.retained[d].push_back({});
+            continue;
+        }
+        std::vector<m10_frozen::ConsumerInput> legal;
+        std::vector<std::size_t> legal_to_original;
+        bool unresolved=false;
+        for(const auto& c:canonical[d]) {
+            auto e=std::invoke(resolve,d,c);
+            if(!same_abstract_family(e.family,c)||e.exact_reason.empty()||
+               (e.disposition==NativeDomainDisposition::legal)!=e.legal.has_value())
+                return out;
+            if(e.disposition==NativeDomainDisposition::unresolved)unresolved=true;
+            if(e.legal) {
+                legal_to_original.push_back(out.ledger[d].size());
+                legal.push_back(*e.legal);
+            }
+            out.ledger[d].push_back(std::move(e));
+        }
+        if(unresolved)return out;
+        out.numeric[d]=m10_frozen::select_domain_top8(legal);
+        if(out.numeric[d].status!=m10_frozen::ConsumerStatus::ready)return out;
+        // Preserve canonical structural order for the Cartesian traversal,
+        // separate from numeric rank order held by the consumer.
+        auto indices=out.numeric[d].numeric_selected_indices;
+        std::sort(indices.begin(),indices.end());
+        for(auto i:indices) {
+            if(i>=legal_to_original.size())return out;
+            out.retained[d].push_back(out.ledger[d][legal_to_original[i]].family);
+        }
+    }
+    out.ready=true;
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
