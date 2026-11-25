@@ -93,6 +93,7 @@ private slots:
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeSeedGeometryRejectsSubstitutedStereoGrid();
+    void nativeDefinitionPolicyAndGradesAreExact();
     void nativeProductPairMetadataKeepsIndependentRates();
     void adaptiveRamCacheBudgetPreservesColdRender();
     void canonicalP2TrialTicketsCover48OrderedParameters();
@@ -102,6 +103,40 @@ private slots:
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
     void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
+void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
+    namespace native=a::m05m06_real;
+    namespace m10=a::m10_frozen;
+    m10::NativeDefinitionPolicy policy;
+    policy.exact_current_registry_and_phase6_policy_attested=true;
+    policy.exact_density_floor=1e-12;
+    for(std::size_t i=0;i<policy.records.size();++i) {
+        const auto& binding=a::m07_frozen::kBindings[i];
+        policy.records[i]={std::string(binding.binding_id),std::string(binding.source_feature_id),
+            "fixture-only-"+std::to_string(i)};
+    }
+    policy.records[9].exact_dependency=policy.records[8].exact_dependency;
+    QVERIFY(m10::valid_native_definition_policy(policy));
+    auto changed=policy;
+    changed.records[0].source_feature_id=std::string(a::m07_frozen::kBindings[0].exclusive_fallback_feature_id);
+    QVERIFY(!m10::valid_native_definition_policy(changed));
+    changed=policy;changed.records[4].exact_dependency.clear();
+    QVERIFY(!m10::valid_native_definition_policy(changed));
+    for(const auto rate:std::array<std::int64_t,6>{44100,48000,88200,96000,176400,192000}) {
+        native::SourceReadings source;
+        source.owner={"duration-fixture",1U,true};
+        source.sample_rate_hz=rate;source.scope_frame_count=12*rate;source.channels=2U;
+        const auto low=native::native_full_source_duration_grade(source,rate-1U);
+        QVERIFY(low&&!low->stereo&&!low->spectrum&&!low->transient&&!low->integrated_and_macro);
+        const auto tonal=native::native_full_source_duration_grade(source,2*rate);
+        QVERIFY(tonal&&tonal->stereo&&tonal->spectrum&&!tonal->transient&&!tonal->integrated_and_macro);
+        const auto all=native::native_full_source_duration_grade(source,10*rate);
+        QVERIFY(all&&all->stereo&&all->spectrum&&all->transient&&all->integrated_and_macro);
+        source.channels=1U;
+        const auto mono=native::native_full_source_duration_grade(source,10*rate);
+        QVERIFY(mono&&!mono->stereo&&mono->spectrum);
+        QVERIFY(!native::native_full_source_duration_grade(source,13*rate));
+    }
+}
 void P2RealNativeProductTest::nativeSeedGeometryRejectsSubstitutedStereoGrid() {
     namespace m09=a::m09_frozen;
     for(const auto rate:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
