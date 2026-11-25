@@ -124,9 +124,10 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     // The matrix belongs to Fixed only, not to the hundreds of trial renders.
     input.native_spec.retain_native_spectral_energy=false;
     m10_frozen::ExactCompletedEvaluationCache cache{input.exact_generation_and_policy};
+    m10_frozen::NativeFixedPrefixCache fixed_prefix_cache;
     const m10_frozen::PreservedNativeSearchEnvironment env{owners,input.originals,*out.fixed,
         input.native_spec,input.exact_generation,cache,input.independent_m11_ceiling_db_tp,
-        input.file_based_lra_policy_attested};
+        input.file_based_lra_policy_attested,&fixed_prefix_cache};
     out.search.fixed_gate=m10_frozen::assess_native_fixed_search_gate(env,input.amount,input.requested,
         input.exact_current_endpoint_safety_attested);
     if(out.search.fixed_gate.status==m10_frozen::NativeFixedSearchStatus::no_correction_required) {

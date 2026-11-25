@@ -12,6 +12,23 @@ struct PreservedNativeGraph final {
     dsp::ProcessingChain linked;
     std::vector<dsp::ModuleExecutionBinding> bindings;
 };
+// Single worker-local prefix snapshot. Admission is attempted at most
+// once; a missing RAM budget or telemetry restriction never blocks a trial.
+struct NativeFixedPrefixCache final {
+    bool attempted{};
+    std::optional<M10ExactFixedPrefix> prefix;
+    std::uint32_t hits{};
+    [[nodiscard]] const M10ExactFixedPrefix* lookup(const M10P2RealNativeProductJob& job) {
+        if(!attempted) {
+            attempted=true;
+            auto created=job.prepare_exact_fixed_prefix();
+            if(created)prefix.emplace(std::move(*created.value()));
+        }
+        if(!prefix||!job.matches_exact_fixed_prefix(*prefix))return nullptr;
+        ++hits;
+        return &*prefix;
+    }
+};
 struct PreservedNativeSearchEnvironment final {
     const P2NativeProductWorkerScope& owners;
     const OriginalPreparedReferenceNativeFacts& originals;
@@ -21,6 +38,7 @@ struct PreservedNativeSearchEnvironment final {
     ExactCompletedEvaluationCache& cache;
     double m11_ceiling_db_tp{};
     bool file_lra_policy_attested{};
+    NativeFixedPrefixCache* fixed_prefix_cache{};
 };
 [[nodiscard]] inline std::optional<ExactExecutionCacheKey>
 bind_preserved_native_execution_key(
@@ -157,6 +175,7 @@ template<class ResolveOriginalTriple>
             return rejected();
     }
     return evaluate_with_exact_completed_cache(env.cache,*exact,true,allow_new,[&](){
+        const auto* prefix=env.fixed_prefix_cache?env.fixed_prefix_cache->lookup(*job.value()):nullptr;
         const auto score=measure_and_score_m10_p2_full_native_candidate(
             *job.value(),std::move(effective_spec),nullptr,env.generation,true,std::move(cost),
             env.m11_ceiling_db_tp,candidate_owner,&env.originals,
@@ -165,7 +184,7 @@ template<class ResolveOriginalTriple>
                 ->std::optional<P2OriginalRealNativeTriple> {
                 if(original_definitions)return std::move(original_definitions);
                 return std::invoke(resolve,measured);
-            },cancellation);
+            },cancellation,prefix);
         return score.as_exact_cache_evidence();
     });
 }
