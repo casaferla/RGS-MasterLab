@@ -130,7 +130,14 @@ public:
                             completed_.emplace(std::move(done));
                             phase_=Phase::no_correction_prior_retained;
                         } else {
-                            phase_=Phase::zero_amount_prior_retained;
+                            bool positive=false;
+                            for(std::size_t i=0;i<4U;++i)
+                                positive=positive||(operation_->policy.requested[i]&&
+                                    m08_frozen::effective_amount(operation_->policy.amount,i).rounded>0.0);
+                            if(positive) {
+                                error_="L3_PRODUCT_NO_CORRECTION_EVIDENCE_UNAVAILABLE";
+                                phase_=Phase::failed;
+                            }else phase_=Phase::zero_amount_prior_retained;
                         }
                     }else phase_=Phase::no_correction;
                     return;

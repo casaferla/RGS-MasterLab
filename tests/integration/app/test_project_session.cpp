@@ -816,6 +816,49 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==reopenedTicket);
     QVERIFY(session.project.redo_private_m12_materialization());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    // The same tone at a different amplitude has no tonal correction
+    // requirement. A positive Tonal-only search should therefore offer
+    // removal of the previous Loudness match, never silently remove it.
+    const std::array<bool,4> tonalOnly{true,false,false,false};
+    const auto tonalAmount=a::m08_frozen::AmountConfig{1.0,{1.0,0.0,0.0,0.0},2U};
+    const auto fourthPlanId=uuidOf("e6000000-0000-4000-8000-000000000006");
+    const auto noCorrection=a::begin_native_qt_product_session_on_owner(session.project,
+        controllers,fanout,session.selector,session.gold,tonalAmount,tonalOnly,0.0,*block.value(),
+        fourthPlanId,controllerId,linkedId,true);
+    QVERIFY2(noCorrection,noCorrection?"":noCorrection.error()->message().c_str());
+    Action clearAction{controllers,fanout,session.selector,session.gold};
+    unsigned clearIds=1U;
+    const auto clearAllocator=[&](){
+        core::Uuid::Bytes bytes{};bytes[0]=0xd4;bytes[15]=static_cast<std::uint8_t>(clearIds++);
+        return core::Uuid{bytes};
+    };
+    QVERIFY(clearAction.begin(*noCorrection.value(),clearAllocator));
+    QTRY_VERIFY_WITH_TIMEOUT((clearAction.poll(),!clearAction.busy()),180000);
+    QVERIFY2(clearAction.phase()==Action::Phase::no_correction_prior_retained,clearAction.error().c_str());
+    QVERIFY(clearAction.can_adopt());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    clearAction.cancel();
+    QVERIFY(clearAction.phase()==Action::Phase::kept_current);
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(clearAction.begin(*noCorrection.value(),clearAllocator));
+    QTRY_VERIFY_WITH_TIMEOUT((clearAction.poll(),!clearAction.busy()),180000);
+    QVERIFY(clearAction.phase()==Action::Phase::no_correction_prior_retained);
+    QVERIFY2(clearAction.adopt(),clearAction.error().c_str());
+    QVERIFY(clearAction.phase()==Action::Phase::no_correction_cleared);
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(session.project.redo_private_m12_materialization());
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    const auto cleared=dir.filePath(QStringLiteral("l3-native-cleared.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(cleared));
+    QVERIFY2(QFileInfo::exists(cleared),session.project.error_message().toUtf8().constData());
+    const auto clearedProject=load_project(cleared);
+    QVERIFY(clearedProject);
+    QVERIFY(std::none_of(clearedProject.value()->document().chains.begin(),
+        clearedProject.value()->document().chains.end(),[](const auto& chain){
+            return chain.segment=="REF_LINKED";
+        }));
 }
 
 void ProjectSessionTest::
