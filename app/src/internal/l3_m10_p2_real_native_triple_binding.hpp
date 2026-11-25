@@ -35,6 +35,7 @@ struct P2RealTripleBindingResult final {
     P2RealTripleBindingReason reason{
         P2RealTripleBindingReason::
             missing_owner_or_inconsistent_three_way_scope};
+    std::uint16_t missing_native_family_mask{};
     [[nodiscard]] constexpr bool authorizes_solver()const noexcept{
         return false;
     }
@@ -112,18 +113,23 @@ bind_all_original_real_native_p2_triple(
         input.s01_s02);
     fragments.stereo_coherent_bands_and_lowend=
         m05m06_real::bind_real_s03_s06(input.s03_s06);
-    if(!fragments.tonal_primary->slot||
-       !fragments.tonal_scalar->feature_slots||
-       !fragments.macro_d01->slot||
-       !fragments.macro_lra->slot||
-       !fragments.macro_windowed->feature_slots||
-       !fragments.micro_events->feature_slots||
-       !fragments.spectral_frame_energy->feature_bindings||
-       !fragments.macro_loudness->feature_slots||
-       !fragments.stereo_broadband->feature_slots||
-       !fragments.stereo_coherent_bands_and_lowend->feature_bindings)
-        return {{},P2RealTripleBindingReason::
-            missing_original_source_binding};
+    // Preserve explicit failure provenance without admitting a partial
+    // objective or returning partially authenticated fragments.
+    const std::array<bool,10> complete{{
+        fragments.tonal_primary->slot.has_value(),
+        fragments.tonal_scalar->feature_slots.has_value(),
+        fragments.macro_d01->slot.has_value(),
+        fragments.macro_lra->slot.has_value(),
+        fragments.macro_windowed->feature_slots.has_value(),
+        fragments.micro_events->feature_slots.has_value(),
+        fragments.spectral_frame_energy->feature_bindings.has_value(),
+        fragments.macro_loudness->feature_slots.has_value(),
+        fragments.stereo_broadband->feature_slots.has_value(),
+        fragments.stereo_coherent_bands_and_lowend->feature_bindings.has_value()}};
+    std::uint16_t missing=0;
+    for(std::size_t i=0;i<complete.size();++i)
+        if(!complete[i])missing|=static_cast<std::uint16_t>(1U<<i);
+    if(missing)return {{},P2RealTripleBindingReason::missing_original_source_binding,missing};
     return {std::move(fragments),P2RealTripleBindingReason::ready};
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
