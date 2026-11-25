@@ -142,6 +142,49 @@ apply_native_qt_product_session_on_owner(
         operation.capture,operation.policy,completed,reviewed,operation.baseline,
         operation.linked_chain_id,operation.expected);
 }
+// A positive no-correction result is not Amount zero. Only a freshly
+// measured, fully safe Fixed graph may propose removing old REF nodes.
+[[nodiscard]] inline bool native_qt_positive_no_correction(
+    const NativeQtProductSession& operation,const NativeQtSearchWorkerResult& completed)
+{
+    const auto& policy=operation.policy;
+    const auto& worker=completed.result;
+    const auto owners=operation.capture.native_worker_scope();
+    if(!completed.originals||!worker.fixed||
+       worker.phase!=NativeAutoMatchWorkerPhase::search_completed||
+       worker.search.status!=m09_frozen::NativeProductSearchStatus::no_correction_required||
+       worker.search.fixed_gate.status!=m10_frozen::NativeFixedSearchStatus::no_correction_required||
+       worker.fixed->exact_m07_generation!=policy.exact_generation||
+       worker.fixed->exact_fixed_ticket!=operation.capture.current.job.ticket_identity()||
+       !original_pair_matches_product_owner(*completed.originals,owners.current_owner))
+        return false;
+    bool positive=false;
+    for(std::size_t i=0;i<4U;++i)
+        positive=positive||(policy.requested[i]&&m08_frozen::effective_amount(policy.amount,i).rounded>0.0);
+    if(!positive)return false;
+    m10_frozen::ExactCompletedEvaluationCache cache{policy.generation_and_policy};
+    const m10_frozen::PreservedNativeSearchEnvironment env{owners,*completed.originals,
+        *worker.fixed,operation.capture.common_spec.prepared,policy.exact_generation,cache,
+        policy.independent_ceiling_db_tp,policy.file_based_lra_policy_attested};
+    return m10_frozen::assess_native_fixed_search_gate(env,policy.amount,policy.requested,
+        policy.exact_current_endpoint_safety_attested).status==
+        m10_frozen::NativeFixedSearchStatus::no_correction_required;
+}
+[[nodiscard]] inline core::Status apply_native_qt_no_correction_on_owner(
+    ProjectSessionViewModel& session,const ProductQtP2NativeAdmission::Controllers& product,
+    const ProductQtP2NativeAdmission::Fanout& fanout,const AuditionSourceSelector& selector,
+    const GoldSelectionViewModel& gold,const NativeQtProductSession& operation,
+    const NativeQtSearchWorkerResult& completed)
+{
+    if(QThread::currentThread()!=session.thread()||&session!=&product.upstream.project||
+       !operation.expected.exact_existing_linked_snapshot||
+       !native_qt_search_still_current_on_owner(product,fanout,selector,gold,operation.capture)||
+       !native_qt_positive_no_correction(operation,completed))
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
+            "L3_PRODUCT_NO_CORRECTION_NOT_CURRENT"});
+    return session.clear_private_m12_owned_match(operation.baseline,operation.controller_id,
+        operation.linked_chain_id,operation.capture.current.source.prepared);
+}
 // M13 follows explicit adoption. Its new owner is captured through
 // Project, while the original session still authenticates the winner.
 [[nodiscard]] inline std::optional<m13_frozen::M13ActualNativeWorkerInputs>

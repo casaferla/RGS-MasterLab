@@ -1925,6 +1925,78 @@ ProjectSessionViewModel::seal_private_m13_actual_native_completion(
         request,fresh,completion.assessment(),next_id());
 }
 
+core::Status ProjectSessionViewModel::clear_private_m12_owned_match(
+    const project::ProjectSnapshot& expected,core::Uuid controller_id,
+    core::Uuid linked_id,const std::shared_ptr<const render::RenderResult>& prepared)
+{
+    namespace m=l3_automatch::m12_frozen;
+    const auto fail=[](const char* code){return core::Status::failure(
+        core::Error{core::ErrorCode::InvalidState,code});};
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||!opened_||!sessionChainMaterialized_||
+       !m18ProjectOpenBatchBegin_||!m18ProjectSaveBatchBegin_||
+       !previewController_||!masteringChainState_||!prepared)
+        return fail("L3_M12_CLEAR_NO_EXCLUSIVE_OWNER");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("L3_M12_CLEAR_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    auto live=current_snapshot(QString::fromStdString(expected.document().displayName));
+    const auto ticket=previewController_->private_m12_product_preview_ticket();
+    const auto& provider=previewController_->snapshot_provider();
+    const bool receipt=live&&!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
+        m12UndoHistory_.back().afterTicket==ticket&&
+        m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
+    const bool reopened=live&&m12UndoHistory_.empty()&&m12ReopenedReadback_&&
+        m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
+    if(!live||!ticket||!ticket->replay||!provider||provider()!=prepared||
+       ticket->exact_prepared_owner!=prepared||!m12RedoHistory_.empty()||
+       (!receipt&&!reopened)||ticket->replay->controller_id!=controller_id||
+       ticket->replay->linked_chain_id!=linked_id||
+       !m::m12_exact_project_snapshot_equal(*live.value(),expected)||
+       !m::m12_exact_project_snapshot_equal(*opened_,expected)||
+       !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
+        return fail("L3_M12_CLEAR_PRIOR_OWNER_STALE");
+    auto doc=live.value()->document();
+    const auto removed=std::erase_if(doc.chains,[&](const auto& chain){
+        return chain.stage=="MASTER"&&chain.segment=="REF_LINKED"&&chain.chainId==linked_id;
+    });
+    if(removed!=1U)return fail("L3_M12_CLEAR_LINKED_ID_MISMATCH");
+    auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    if(!metadata.isObject())return fail("L3_M12_CLEAR_METADATA_INVALID");
+    auto object=metadata.object();
+    object.remove(QStringLiteral("materialization"));
+    auto canonical=project::OpaqueJsonValue::parse(QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString());
+    if(!canonical)return core::Status::failure(*canonical.error());
+    doc.referenceMatch=*canonical.value();
+    auto after=project::ProjectSnapshot::create(std::move(doc),
+        {live.value()->optional_entries().begin(),live.value()->optional_entries().end()});
+    if(!after)return core::Status::failure(*after.error());
+    if(m::assess_current_product_ref_linked_open_safety(after.value()->document())!=
+       m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked)
+        return fail("L3_M12_CLEAR_FOREIGN_LINKED_CONTENT");
+    M12MaterializationHistoryEntry entry{*live.value(),*after.value(),ticket,nullptr,std::nullopt};
+    m12UndoHistory_.reserve(m12UndoHistory_.size()+1U);
+    const auto bindings=masteringChainState_->execution_bindings();
+    opened_.emplace(entry.after);
+    previewController_->set_private_m12_product_preview_ticket(nullptr);
+    const auto readback=current_snapshot(QString::fromStdString(expected.document().displayName));
+    if(!readback||!m::m12_exact_project_snapshot_equal(*readback.value(),entry.after)||
+       previewController_->private_m12_product_preview_ticket()||provider()!=prepared||
+       masteringChainState_->execution_bindings()!=bindings) {
+        opened_.emplace(entry.before);
+        previewController_->set_private_m12_product_preview_ticket(ticket);
+        return fail("L3_M12_CLEAR_READBACK_ROLLED_BACK");
+    }
+    m12UndoHistory_.push_back(std::move(entry));
+    m12RedoHistory_.clear();
+    ++m12ProductOwnershipEpoch_;
+    statusText_=QStringLiteral("NO CORRECTION / MANUAL");
+    clear_error();
+    return core::Status::success();
+}
+
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
 {
     namespace m=l3_automatch::m12_frozen;
@@ -1944,6 +2016,7 @@ core::Status ProjectSessionViewModel::undo_private_m12_materialization()
     const auto heldLease=*lease.value();
     Q_UNUSED(heldLease);
     const auto& last=m12UndoHistory_.back();
+    const auto witness=last.afterTicket?last.afterTicket:last.beforeTicket;
     auto live=current_snapshot(
         QString::fromStdString(last.after.document().displayName));
     const auto& provider=previewController_->snapshot_provider();
@@ -1952,8 +2025,8 @@ core::Status ProjectSessionViewModel::undo_private_m12_materialization()
        !m::m12_exact_project_snapshot_equal(*opened_,last.after)||
        previewController_->private_m12_product_preview_ticket()!=
            last.afterTicket||
-       !last.afterTicket||!provider||
-       provider()!=last.afterTicket->exact_prepared_owner)
+       !witness||!provider||
+       provider()!=witness->exact_prepared_owner)
         return fail("L3_M12_UNDO_CURRENT_PRODUCT_STATE_STALE");
     m12RedoHistory_.reserve(m12RedoHistory_.size()+1U);
     // Commit a FULL prior snapshot. A former linked controller's
@@ -1967,7 +2040,7 @@ core::Status ProjectSessionViewModel::undo_private_m12_materialization()
     if(!readback||
        previewController_->private_m12_product_preview_ticket()!=
            last.beforeTicket||
-       !provider||provider()!=last.afterTicket->exact_prepared_owner||
+       !provider||provider()!=witness->exact_prepared_owner||
        !m::m12_exact_project_snapshot_equal(
            *readback.value(),last.before)) {
         opened_.emplace(last.after);
@@ -2004,6 +2077,7 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
     const auto heldLease=*lease.value();
     Q_UNUSED(heldLease);
     const auto& next=m12RedoHistory_.back();
+    const auto witness=next.afterTicket?next.afterTicket:next.beforeTicket;
     auto live=current_snapshot(
         QString::fromStdString(next.before.document().displayName));
     const auto& provider=previewController_->snapshot_provider();
@@ -2012,19 +2086,19 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
        !m::m12_exact_project_snapshot_equal(*opened_,next.before)||
        previewController_->private_m12_product_preview_ticket()!=
            next.beforeTicket||
-       !next.afterTicket||!next.afterTicket->replay||!provider||
-       provider()!=next.afterTicket->exact_prepared_owner)
+       !witness||!witness->replay||!provider||
+       provider()!=witness->exact_prepared_owner)
         return fail("L3_M12_REDO_CURRENT_PRODUCT_STATE_STALE");
     const auto bindings=masteringChainState_->execution_bindings();
     const auto replay=m::prepare_m12_immutable_product_preview_ticket(
-        next.afterTicket->replay,
-        next.afterTicket->exact_prepared_owner,
+        witness->replay,
+        witness->exact_prepared_owner,
         masteringChainState_->chain(),bindings);
     if(!replay||
        replay.value()->exact_manual_nodes!=
-           next.afterTicket->exact_manual_nodes||
+           witness->exact_manual_nodes||
        replay.value()->exact_manual_bindings!=
-           next.afterTicket->exact_manual_bindings)
+           witness->exact_manual_bindings)
         return fail("L3_M12_REDO_MANUAL_OR_PREPARED_OWNER_STALE");
     m12UndoHistory_.reserve(m12UndoHistory_.size()+1U);
     opened_.emplace(next.after);
@@ -2035,7 +2109,7 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
     if(!readback||
        previewController_->private_m12_product_preview_ticket()!=
            next.afterTicket||
-       !provider||provider()!=next.afterTicket->exact_prepared_owner||
+       !provider||provider()!=witness->exact_prepared_owner||
        !m::m12_exact_project_snapshot_equal(
            *readback.value(),next.after)) {
         opened_.emplace(next.before);
@@ -2046,7 +2120,9 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
     m12UndoHistory_.push_back(std::move(m12RedoHistory_.back()));
     m12RedoHistory_.pop_back();
     ++m12ProductOwnershipEpoch_;
-    statusText_=QStringLiteral("MATERIALIZED / NOT_VERIFIED");
+    statusText_=m12UndoHistory_.back().afterTicket
+        ?QStringLiteral("MATERIALIZED / NOT_VERIFIED")
+        :QStringLiteral("NO CORRECTION / MANUAL");
     clear_error();
     return core::Status::success();
 }
