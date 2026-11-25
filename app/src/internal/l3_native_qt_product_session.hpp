@@ -114,4 +114,21 @@ apply_native_qt_product_session_on_owner(
         operation.capture,operation.policy,completed,reviewed,operation.baseline,
         operation.linked_chain_id,operation.expected);
 }
+// M13 follows explicit adoption. Its new owner is captured through
+// Project, while the original session still authenticates the winner.
+[[nodiscard]] inline std::optional<m13_frozen::M13ActualNativeWorkerInputs>
+capture_native_qt_product_session_verification_on_owner(
+    ProjectSessionViewModel& session,const GoldSelectionViewModel& gold,
+    const NativeQtProductSession& operation,const NativeQtSearchWorkerResult& completed,
+    const m12_frozen::AcceptedPlanAndOwner& reviewed,
+    bool independent_scopes_current,
+    m13_frozen::MandatoryHardPredicate other_hard_safety)
+{
+    if(reviewed.plan_id!=operation.plan_id||
+       reviewed.reference_match_controller_id!=operation.controller_id)
+        return {};
+    return capture_native_qt_fresh_verification_on_owner(session,gold,
+        operation.capture,operation.policy,completed,reviewed,
+        independent_scopes_current,other_hard_safety);
+}
 } // namespace rgsml::app::l3_automatch

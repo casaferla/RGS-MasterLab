@@ -668,14 +668,20 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto stillBefore=session.project.capture_private_m12_search_baseline();
     QVERIFY(stillBefore);
     QVERIFY(m12::m12_exact_project_snapshot_equal(operation.value()->baseline,*stillBefore.value()));
+    QVERIFY(!a::capture_native_qt_product_session_verification_on_owner(session.project,
+        session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed));
     const auto receipt=a::apply_native_qt_product_session_on_owner(session.project,controllers,fanout,
         session.selector,session.gold,*operation.value(),*completed,plan);
     QVERIFY2(receipt,receipt?"":receipt.error()->message().c_str());
     QVERIFY(receipt.value()->materialized_not_verified());
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
     QVERIFY(!QFileInfo::exists(baseline));
-    const auto freshInput=a::capture_native_qt_fresh_verification_on_owner(session.project,
-        session.gold,*captured,policy,*completed,plan,true,m13::MandatoryHardPredicate::passed);
+    QVERIFY(!a::capture_native_qt_product_session_verification_on_owner(session.project,
+        session.gold,*operation.value(),*completed,wrongPlan,true,m13::MandatoryHardPredicate::passed));
+    QVERIFY(!a::capture_native_qt_product_session_verification_on_owner(session.project,
+        session.gold,*operation.value(),*completed,plan,false,m13::MandatoryHardPredicate::passed));
+    const auto freshInput=a::capture_native_qt_product_session_verification_on_owner(session.project,
+        session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed);
     QVERIFY(freshInput);
     std::optional<core::Result<m13::M13ActualNativeWorkerCompletion>> verification;
     std::thread verificationThread([&]{
