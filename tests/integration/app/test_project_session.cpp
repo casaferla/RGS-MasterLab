@@ -853,6 +853,11 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     QVERIFY(!M21Owners::measure_gold_worker(*selectedGold.value()));
     session.gold.clearGold();
     QVERIFY(!session.gold.has_gold());
+    QVERIFY(!native_search::native_qt_search_still_current_on_owner(
+        controllers,fanout,session.selector,session.gold,*nativeCapture.value()));
+    QVERIFY(!native_search::capture_native_qt_search_on_owner(
+        controllers,fanout,session.selector,session.gold,"qt-reference-cleared",1U,
+        *nativeBlock.value(),true));
     const auto retiredGold=goldInbox.view_current(
         controllers,fanout,session.selector,session.gold);
     QCOMPARE(retiredGold.columns[1]->lifecycle,
