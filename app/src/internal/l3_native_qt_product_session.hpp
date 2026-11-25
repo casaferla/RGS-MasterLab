@@ -67,4 +67,51 @@ begin_native_qt_product_session_on_owner(
         std::move(*capture.value()),std::move(*policy),std::move(expected),
         std::move(protected_ids),plan_id,controller_id,linked_chain_id});
 }
+// Worker entry point for a single admitted Product operation. All of
+// its dependencies and reserved identities travel with the session.
+[[nodiscard]] inline NativeQtSearchWorkerResult
+run_native_qt_product_session_worker(
+    const NativeQtProductSession& operation,
+    m09_frozen::NativeOwnerAllocations::AllocateUuid allocate_uuid,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    return run_native_qt_search_worker(operation.capture,operation.policy,
+        std::move(allocate_uuid),operation.protected_ids,cancellation);
+}
+
+// Review is not publication. A GUI may retain the immutable result,
+// but a changed Product owner cannot offer it as a current candidate.
+[[nodiscard]] inline std::optional<m12_frozen::AcceptedPlanAndOwner>
+review_native_qt_product_session_on_owner(
+    ProjectSessionViewModel& session,const ProductQtP2NativeAdmission::Controllers& product,
+    const ProductQtP2NativeAdmission::Fanout& fanout,const AuditionSourceSelector& selector,
+    const GoldSelectionViewModel& gold,const NativeQtProductSession& operation,
+    const NativeQtSearchWorkerResult& completed)
+{
+    if(QThread::currentThread()!=session.thread()||&session!=&product.upstream.project||
+       !native_qt_search_still_current_on_owner(product,fanout,selector,gold,operation.capture))
+        return {};
+    return build_native_qt_measured_plan(operation.capture,operation.policy,completed,
+        operation.plan_id,operation.controller_id);
+}
+
+// Adoption requires the explicit reviewed plan and the original baseline;
+// it cannot accidentally substitute a newer snapshot or a new chain ID.
+[[nodiscard]] inline core::Result<m12_frozen::M12ProductMaterializationReceipt>
+apply_native_qt_product_session_on_owner(
+    ProjectSessionViewModel& session,const ProductQtP2NativeAdmission::Controllers& product,
+    const ProductQtP2NativeAdmission::Fanout& fanout,const AuditionSourceSelector& selector,
+    const GoldSelectionViewModel& gold,const NativeQtProductSession& operation,
+    const NativeQtSearchWorkerResult& completed,const m12_frozen::AcceptedPlanAndOwner& reviewed)
+{
+    using R=core::Result<m12_frozen::M12ProductMaterializationReceipt>;
+    if(QThread::currentThread()!=session.thread()||&session!=&product.upstream.project||
+       reviewed.plan_id!=operation.plan_id||
+       reviewed.reference_match_controller_id!=operation.controller_id)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "L3_PRODUCT_SESSION_REVIEW_IDENTITY_MISMATCH"});
+    return apply_native_qt_search_on_owner(session,product,fanout,selector,gold,
+        operation.capture,operation.policy,completed,reviewed,operation.baseline,
+        operation.linked_chain_id,operation.expected);
+}
 } // namespace rgsml::app::l3_automatch

@@ -606,9 +606,15 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         core::Uuid::Bytes bytes{};bytes[0]=0xd3;bytes[15]=static_cast<std::uint8_t>(next++);
         return core::Uuid{bytes};
     };
+    std::atomic<bool> cancelled{true};
+    const auto cancelledResult=a::run_native_qt_product_session_worker(*operation.value(),allocate,&cancelled);
+    QVERIFY(cancelledResult.result.phase==a::NativeAutoMatchWorkerPhase::cancelled);
+    QCOMPARE(next,1U);
+    QVERIFY(!a::review_native_qt_product_session_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,*operation.value(),cancelledResult));
     std::optional<a::NativeQtSearchWorkerResult> completed;
     std::thread searchThread([&]{
-        completed.emplace(a::run_native_qt_search_worker(*captured,policy,allocate,operation.value()->protected_ids));
+        completed.emplace(a::run_native_qt_product_session_worker(*operation.value(),allocate));
     });
     searchThread.join();
     QVERIFY(completed);
@@ -641,7 +647,8 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         completed->result.search.refinement->total_attempted);
     QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
         session.gold,*captured));
-    const auto built=a::build_native_qt_measured_plan(*captured,policy,*completed,planId,controllerId);
+    const auto built=a::review_native_qt_product_session_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,*operation.value(),*completed);
     QVERIFY(built);
     const auto& plan=*built;
     const auto repeated=a::build_native_qt_measured_plan(*captured,policy,*completed,planId,controllerId);
@@ -652,11 +659,17 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     changedPolicy.independent_ceiling_db_tp=-1.0;
     QVERIFY(!a::build_native_qt_measured_plan(*captured,changedPolicy,*completed,planId,controllerId));
     QVERIFY(!a::build_native_qt_measured_plan(*captured,policy,*completed,planId,planId));
-    const auto& expected=operation.value()->expected;
     const auto protectedBindings=session.masteringChainState->execution_bindings();
-    const auto receipt=a::apply_native_qt_search_on_owner(session.project,controllers,fanout,
-        session.selector,session.gold,*captured,policy,*completed,plan,operation.value()->baseline,
-        linkedId,expected);
+    auto wrongPlan=plan;
+    wrongPlan.plan_id=linkedId;
+    QVERIFY(!a::apply_native_qt_product_session_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,*operation.value(),*completed,wrongPlan));
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    const auto stillBefore=session.project.capture_private_m12_search_baseline();
+    QVERIFY(stillBefore);
+    QVERIFY(m12::m12_exact_project_snapshot_equal(operation.value()->baseline,*stillBefore.value()));
+    const auto receipt=a::apply_native_qt_product_session_on_owner(session.project,controllers,fanout,
+        session.selector,session.gold,*operation.value(),*completed,plan);
     QVERIFY2(receipt,receipt?"":receipt.error()->message().c_str());
     QVERIFY(receipt.value()->materialized_not_verified());
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
