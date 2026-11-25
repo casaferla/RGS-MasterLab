@@ -1857,7 +1857,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             QVERIFY(x&&y);
             QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
         }
-        auto changed_fixed=gain_only;
+        std::vector<dsp::ModuleExecutionBinding> changed_fixed(gain_only.begin(),gain_only.end());
         const auto new_gain=dsp::GainParameters::create(1.25);
         QVERIFY(new_gain);
         changed_fixed.front().parameters=*new_gain.value();
