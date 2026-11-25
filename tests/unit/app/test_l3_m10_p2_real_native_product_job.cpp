@@ -600,6 +600,27 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     const auto generated=m09::bind_native_family_candidate_with_inventory(registry,bank,family,
         allocations,role_keys,{},1U,48000,identity,fixed,amount,requested,{});
     QVERIFY(generated);
+    const m09::NativeFamilyBindingEnvironment binding_env{registry,bank,fixed,amount,
+        1U,48000,20.0,20000.0,{}};
+    m09::NativeFamilyBindingAuthority authority;
+    authority.disposition=m09::NativeDomainDisposition::legal;
+    authority.identity=identity;
+    authority.allocations.assign(allocations.begin(),allocations.end());
+    authority.role_keys.assign(role_keys.begin(),role_keys.end());
+    authority.exact_reason="fixture-exact";
+    authority.available_currently=false;
+    const auto resolve_band=[](auto,const auto&)->std::optional<m09::ExactBytes>{return {};};
+    const auto domain=m09::bind_native_domain_entry(binding_env,3U,family,authority,resolve_band);
+    QVERIFY(domain.legal&&domain.legal->proxy.is_bound());
+    QVERIFY(!domain.legal->available_currently);
+    authority.available_currently=true;
+    const auto combined_entry=m09::bind_native_family_entry(binding_env,family,authority,requested,resolve_band);
+    QVERIFY(combined_entry.candidate);
+    QVERIFY(combined_entry.candidate->legal.availability_currently);
+    authority.role_keys.clear();
+    const auto unresolved=m09::bind_native_family_entry(binding_env,family,authority,requested,resolve_band);
+    QVERIFY(unresolved.disposition==m09::NativeDomainDisposition::unresolved);
+    QVERIFY(!unresolved.candidate);
     QCOMPARE(generated->recipe.exact_inventory.front().normalized_u,
         bound->recipe.exact_inventory.front().normalized_u);
     QVERIFY(!m09::derive_native_family_coordinate_requests(bank,family,{},{},48000));
