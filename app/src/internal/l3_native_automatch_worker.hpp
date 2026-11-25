@@ -67,7 +67,7 @@ private:
 };
 struct NativeStereoInsertionPopulation final {
     m09_frozen::ExactBytes graph;
-    std::vector<m08_frozen::AuthenticatedPairSlot> slots;
+    std::vector<m08_frozen::AuthenticatedPairSlot> canonical_population;
 };
 [[nodiscard]] inline std::optional<NativeStereoInsertionPopulation>
 measure_native_stereo_insertion_population(const NativeAutoMatchWorkerInputs& input,
@@ -139,7 +139,7 @@ measure_native_post_side_stereo_seed_row(
     m09::NativeFamilySeedBank::PostSideStereo row{insertion->graph,{},bank.side[prefix-1U].payload};
     for(std::size_t i=0;i<row.modes.size();++i)
         row.modes[i]=m09::derive_native_stereo_seed(fixed,input.amount,input.requested,
-            i+1U,true,true,&insertion->slots);
+            i+1U,true,true,&insertion->canonical_population);
     return row;
 }
 template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
@@ -244,7 +244,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
                         bank->standalone_preterminal_graph=insertion->graph;
                         for(std::size_t i=0;i<bank->stereo.size();++i)
                             bank->stereo[i]=m09_frozen::derive_native_stereo_seed(*out.fixed,input.amount,
-                                input.requested,i+1U,true,true,&insertion->slots);
+                                input.requested,i+1U,true,true,&insertion->canonical_population);
                     }
                 }
             }
