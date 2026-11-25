@@ -96,6 +96,23 @@ build_native_qt_measured_plan(
     if(!m12_frozen::stage_current_native_search_winner(accepted,search,owners,policy.exact_generation))return {};
     return accepted;
 }
+[[nodiscard]] inline bool native_qt_measured_plan_matches(
+    const NativeQtSearchCapture& captured,const NativeQtSearchPolicy& policy,
+    const NativeQtSearchWorkerResult& completed,const m12_frozen::AcceptedPlanAndOwner& accepted)
+{
+    const auto exact=build_native_qt_measured_plan(captured,policy,completed,
+        accepted.plan_id,accepted.reference_match_controller_id);
+    return exact&&
+        exact->exact_plan_content_checksum==accepted.exact_plan_content_checksum&&
+        exact->exact_m10_result_and_topology_checksum==accepted.exact_m10_result_and_topology_checksum&&
+        exact->exact_m11_fixed_and_protection_checksum==accepted.exact_m11_fixed_and_protection_checksum&&
+        exact->exact_source_reference_amount_scope_revision==accepted.exact_source_reference_amount_scope_revision&&
+        exact->exact_accepted_plan_revision==accepted.exact_accepted_plan_revision&&
+        accepted.current_source_reference_owner_and_plan_attested&&
+        accepted.m11_protected_and_full_candidate_safety_passed&&
+        accepted.independent_m16_measurement_and_m11_safety_attested&&
+        !accepted.no_correction_required;
+}
 // Real owner-thread handoff. The worker cannot issue a receipt and a
 // completed search cannot replace a changed source, REFERENCE or project.
 [[nodiscard]] inline core::Result<m12_frozen::M12ProductMaterializationReceipt>
@@ -129,6 +146,8 @@ apply_native_qt_search_on_owner(
     if(!winner.native_prediction||
        !m10_frozen::native_prediction_passes_current_m16(*winner.native_prediction,policy.independent_ceiling_db_tp))
         return R::failure(core::Error{core::ErrorCode::InvalidState,"L3_QT_SEARCH_INDEPENDENT_M16_STALE"});
+    if(!native_qt_measured_plan_matches(captured,policy,completed,accepted))
+        return R::failure(core::Error{core::ErrorCode::InvalidState,"L3_QT_SEARCH_ACCEPTED_PLAN_CHANGED"});
     const auto owners=captured.native_worker_scope();
     return session.apply_private_m12_current_native_search(completed.result,accepted,owners,
         policy.exact_generation,pre_search_project,linked_chain_id,expected);
@@ -148,7 +167,8 @@ capture_native_qt_fresh_verification_on_owner(
     if(QThread::currentThread()!=session.thread()||
        QThread::currentThread()!=gold.thread()||
        gold.selection_revision()!=captured.current.job.owner_stamp().reference_selection_revision||
-       !completed.originals||!independent_scopes_current)return {};
+       !completed.originals||!independent_scopes_current||
+       !native_qt_measured_plan_matches(captured,policy,completed,accepted))return {};
     auto spec=m13_frozen::M13OwnedNativeSpec::capture(captured.common_spec.prepared);
     if(!spec)return {};
     auto request=session.capture_private_m13_fresh_postmaterialization_probe(policy.independent_ceiling_db_tp);
