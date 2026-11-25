@@ -942,6 +942,14 @@ void P2RealNativeProductTest::nativeStereoSeedUsesFixedWidthAndCutoffEvidence() 
     const auto composed=m09::derive_native_stereo_seed(fixed,amount,requested,1U,true,true,&insertion);
     QVERIFY(composed);
     QVERIFY(std::abs(composed->payload.mid_gain_db()-broad->payload.mid_gain_db()/2.0)<1e-12);
+    m09::NativeFamilySeedBank standalone;
+    standalone.stereo[0]=*composed;
+    m09::AbstractFamilyChoice standalone_family;standalone_family.stereo_mode_index=1U;
+    QVERIFY(m09::native_family_role_payload(standalone,standalone_family,m09::IntentRole::stereo_ms));
+    standalone.standalone_preterminal_observation_required=true;
+    QVERIFY(!m09::native_family_role_payload(standalone,standalone_family,m09::IntentRole::stereo_ms));
+    standalone.standalone_preterminal_graph={0x31,0x32};
+    QVERIFY(m09::native_family_role_payload(standalone,standalone_family,m09::IntentRole::stereo_ms));
     insertion.front().exact_feature_dependency="wrong-generation";
     QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,1U,true,true,&insertion));
     fixed.measured_fixed[22].configured[1].candidate_native.selector="80";
