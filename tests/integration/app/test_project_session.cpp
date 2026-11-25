@@ -755,6 +755,20 @@ m18FreshStartupBindsBeforeFirstSourceSelection()
     });
     illegalNativeCapture.join();
     QVERIFY(nativeWorkerCannotCapture);
+    native_search::NativeQtSearchPolicy nativePolicy;
+    std::atomic<bool> nativeCancelled{true};
+    const auto cancelledNative=native_search::run_native_qt_search_worker(
+        *nativeCapture.value(),nativePolicy,{}, {},&nativeCancelled);
+    QVERIFY(cancelledNative.result.phase==native_search::NativeAutoMatchWorkerPhase::cancelled);
+    QVERIFY(!cancelledNative.originals);
+    QVERIFY(!cancelledNative.authorizes_product_publication());
+    nativeCancelled.store(false,std::memory_order_release);
+    const auto missingPolicy=native_search::run_native_qt_search_worker(
+        *nativeCapture.value(),nativePolicy,{}, {},&nativeCancelled);
+    QVERIFY(missingPolicy.result.phase==native_search::NativeAutoMatchWorkerPhase::invalid_owner);
+    QVERIFY(!missingPolicy.originals);
+    QVERIFY(native_search::native_qt_search_still_current_on_owner(
+        controllers,fanout,session.selector,session.gold,*nativeCapture.value()));
     static_assert(std::is_pointer_v<decltype(&native_search::apply_native_qt_search_on_owner)>);
     static_assert(std::is_pointer_v<decltype(&native_search::capture_native_qt_fresh_verification_on_owner)>);
 
