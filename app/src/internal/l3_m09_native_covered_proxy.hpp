@@ -272,6 +272,27 @@ bind_native_family_candidate_with_inventory(
     return bind_native_family_candidate(std::move(registry),bank,family,allocations,*requests,
         revision,rate,std::move(identity),fixed,amount,requested,std::move(constraints));
 }
+// Derive the complete frequency inventory from the measured seed bank
+// before binding the native candidate, rather than trusting arbitrary
+// caller-supplied frequency intervals.
+template<class ResolveBandIdentity>
+[[nodiscard]] inline std::optional<BoundNativeFamilyCandidate>
+bind_native_family_with_derived_bounds(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const NativeFamilySeedBank& bank,const AbstractFamilyChoice& family,
+    std::span<const NativeRoleAllocation> allocations,
+    std::span<const NativeRoleCoordinateAuthority> role_keys,
+    double common_low,double common_high,std::uint64_t revision,std::int64_t rate,
+    CandidateCarrier identity,const m11_frozen::NativeFixedPopulation& fixed,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    m10_frozen::AuthoritativeCostInput constraints,ResolveBandIdentity&& resolve_band)
+{
+    const auto bands=derive_native_family_band_authorities(bank,family,common_low,common_high,
+        std::forward<ResolveBandIdentity>(resolve_band));
+    if(!bands)return {};
+    return bind_native_family_candidate_with_inventory(std::move(registry),bank,family,allocations,
+        role_keys,*bands,revision,rate,std::move(identity),fixed,amount,requested,std::move(constraints));
+}
 struct BoundNativeSelectedBatch final {
     m10_frozen::BoundLegalCombinedResult selected;
     std::vector<SelectedNativeFamilyRecipe> recipes;
