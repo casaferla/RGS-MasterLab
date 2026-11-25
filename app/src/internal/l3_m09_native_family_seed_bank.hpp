@@ -49,6 +49,13 @@ struct NativeFamilySeedBank final {
     std::vector<m05m06_real::T01ConfiguredBand> exact_tonal_grid;
     std::vector<m05m06_real::T01ConfiguredBand> exact_side_grid;
     std::optional<NativeOwnedP2Seed> owned_p2{};
+    // Indexed by exact SIDE EQ prefix length minus one. Empty row
+    // means the insertion baseline is unresolved, not zero correction.
+    struct PostSideStereo final {
+        ExactBytes exact_prefix_graph;
+        std::array<std::optional<NativeStereoSeed>,7> modes;
+    };
+    std::array<std::optional<PostSideStereo>,3> post_side_stereo{};
 };
 struct NativeRoleAllocation final {
     IntentRole role;
@@ -83,10 +90,14 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
             return bank.side[family.stereo_side_eq_prefix-1U].payload;
         break;
     case IntentRole::stereo_ms:
-        // No independent Fixed-only low-lane estimate can impersonate
-        // the insertion baseline after a selected SIDE EQ.
-        if(!family.stereo_side_eq_prefix&&family.stereo_mode_index&&
-           family.stereo_mode_index<=bank.stereo.size()&&bank.stereo[family.stereo_mode_index-1U])
+        if(!family.stereo_mode_index||family.stereo_mode_index>bank.stereo.size())break;
+        if(family.stereo_side_eq_prefix) {
+            if(family.stereo_side_eq_prefix>bank.side.size()||
+               family.stereo_side_eq_prefix>bank.post_side_stereo.size())break;
+            const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
+            if(row&&!row->exact_prefix_graph.empty()&&row->modes[family.stereo_mode_index-1U])
+                return row->modes[family.stereo_mode_index-1U]->payload;
+        }else if(bank.stereo[family.stereo_mode_index-1U])
             return bank.stereo[family.stereo_mode_index-1U]->payload;
         break;
     case IntentRole::loudness_gain:

@@ -163,9 +163,17 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
     }
     if(family.stereo_side_eq_prefix&&family.stereo_mode_index) {
         if(family.stereo_mode_index>bank.stereo.size()||
-           !bank.stereo[family.stereo_mode_index-1U])
+           family.stereo_side_eq_prefix>bank.side.size()||
+           family.stereo_side_eq_prefix>bank.post_side_stereo.size())
             return conditional("no-native-stereo-seed");
-        out.exact_reason="conditional-post-side-insertion-baseline-unresolved";return out;
+        const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
+        if(!row||row->exact_prefix_graph.empty()) {
+            if(!bank.stereo[family.stereo_mode_index-1U])
+                return conditional("no-native-stereo-seed");
+            out.exact_reason="conditional-post-side-insertion-baseline-unresolved";return out;
+        }
+        if(!row->modes[family.stereo_mode_index-1U])
+            return conditional("no-post-side-stereo-correction");
     }
     for(const auto role:ordered_abstract_roles(family)) {
         if(!native_family_role_payload(bank,family,role))
@@ -184,6 +192,11 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
         out.role_keys.push_back({role,NativeOwnerAllocations::role_key(role)});
     }
     auto dependencies=exact_dependencies;
+    if(family.stereo_side_eq_prefix&&family.stereo_mode_index) {
+        const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
+        if(!row||row->exact_prefix_graph.empty())return out;
+        m10_frozen::p2_cache_detail::append_exact_byte_field(dependencies,row->exact_prefix_graph);
+    }
     if(family.loudness==LoudnessMode::gain_with_terminal_limiter||
        family.loudness==LoudnessMode::terminal_limiter_only) {
         if(!bank.owned_p2||!valid_native_owned_p2_seed(*bank.owned_p2))return out;
