@@ -1,5 +1,6 @@
 #pragma once
 #include "l3_m10_native_fixed_worker.hpp"
+#include "l3_m10_native_definition_builder.hpp"
 #include "l3_m09_native_fixed_seed_geometry.hpp"
 #include "l3_m09_native_domain_stream.hpp"
 namespace rgsml::app::l3_automatch {
@@ -93,5 +94,26 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
         },std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
     out.phase=cancelled()?NativeAutoMatchWorkerPhase::cancelled:NativeAutoMatchWorkerPhase::search_completed;
     return out;
+}
+// Product-facing entry: use the accepted native definition inventory
+// rather than an arbitrary triple resolver. The definitions are built
+// only after the actual independently rendered Fixed PCM is measured.
+template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
+[[nodiscard]] inline NativeAutoMatchWorkerResult run_native_automatch_with_definitions(
+    NativeAutoMatchWorkerInputs input,const m10_frozen::NativeDefinitionPolicy& definitions,
+    AllocateBand&& allocate_band,ResolveAuthority&& resolve_authority,
+    ResolveBandIdentity&& resolve_band_identity,const std::atomic<bool>* cancellation=nullptr)
+{
+    if(!m10_frozen::valid_native_definition_policy(definitions))return {};
+    const auto& owners=input.owners;
+    const auto& originals=input.originals;
+    const auto ticket=input.fixed_ticket;
+    const auto spec=input.native_spec;
+    return run_native_automatch_worker(std::move(input),
+        [&](const M10P2FullNativeEvidence& fixed){
+            return m10_frozen::build_current_native_definitions(definitions,originals,fixed,
+                owners.current_owner,ticket,spec);
+        },std::forward<AllocateBand>(allocate_band),std::forward<ResolveAuthority>(resolve_authority),
+        std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
 }
 } // namespace rgsml::app::l3_automatch
