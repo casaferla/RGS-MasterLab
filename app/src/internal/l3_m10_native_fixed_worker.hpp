@@ -7,9 +7,8 @@
 namespace rgsml::app::l3_automatch::m10_frozen {
 template<class ResolveOriginalNativeTriple>
 [[nodiscard]] inline std::optional<m11_frozen::NativeFixedPopulation>
-measure_native_fixed_once(
+measure_native_fixed_independently(
     const M10P2RealNativeProductJob& fixed_job,
-    const M10P2RealNativeProductJob& candidate,
     ProductNativeOnePassSpec spec,
     const std::string& exact_generation,
     const m05m06_real::SourceIdentity& fixed_owner,
@@ -19,8 +18,7 @@ measure_native_fixed_once(
     ResolveOriginalNativeTriple&& resolve,
     const std::atomic<bool>* cancellation=nullptr)
 {
-    if(!fixed_job.fixed_only()||!fixed_job.same_fixed_baseline_as(candidate)||
-       fixed_job.ticket_identity()==candidate.ticket_identity()||
+    if(!fixed_job.fixed_only()||
        exact_generation.empty()||!exact_current_fixed_and_endpoint_safety_attested||
        !original_pair_matches_product_owner(originals,fixed_job.owner_stamp())||
        !authentic_product_candidate_identity(fixed_owner,fixed_job.owner_stamp(),
@@ -28,7 +26,7 @@ measure_native_fixed_once(
        (cancellation&&cancellation->load(std::memory_order_acquire)))
         return std::nullopt;
     const auto fixed_graph=fixed_job.exact_fixed_graph_content();
-    if(!fixed_graph||candidate.exact_fixed_graph_content()!=fixed_graph)
+    if(!fixed_graph)
         return std::nullopt;
     if(!bind_original_pair_profile_common(spec,originals))return std::nullopt;
     spec.retain_native_spectral_energy=true;
@@ -79,5 +77,25 @@ measure_native_fixed_once(
         measured.value()->m16_actual_p2_output.global_linear_peak(),
         stereo_required,std::move(stereo),std::move(native_windows),
         std::move(spectral)};
+}
+// Legacy callers with an already constructed candidate keep the
+// exact same-Fixed guard; the Product can measure Fixed BEFORE M09.
+template<class ResolveOriginalNativeTriple>
+[[nodiscard]] inline std::optional<m11_frozen::NativeFixedPopulation>
+measure_native_fixed_once(
+    const M10P2RealNativeProductJob& fixed_job,
+    const M10P2RealNativeProductJob& candidate,
+    ProductNativeOnePassSpec spec,const std::string& exact_generation,
+    const m05m06_real::SourceIdentity& fixed_owner,
+    const OriginalPreparedReferenceNativeFacts& originals,
+    bool exact_current_fixed_and_endpoint_safety_attested,bool file_based_lra_attested,
+    ResolveOriginalNativeTriple&& resolve,const std::atomic<bool>* cancellation=nullptr)
+{
+    if(!fixed_job.same_fixed_baseline_as(candidate)||
+       fixed_job.ticket_identity()==candidate.ticket_identity()||
+       candidate.exact_fixed_graph_content()!=fixed_job.exact_fixed_graph_content())return {};
+    return measure_native_fixed_independently(fixed_job,std::move(spec),exact_generation,
+        fixed_owner,originals,exact_current_fixed_and_endpoint_safety_attested,
+        file_based_lra_attested,std::forward<ResolveOriginalNativeTriple>(resolve),cancellation);
 }
 } // namespace rgsml::app::l3_automatch::m10_frozen
