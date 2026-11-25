@@ -59,6 +59,8 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
         std::forward<ResolveOriginalDefinitions>(resolve_definitions),cancellation);
     if(cancelled()){out.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
     if(!out.fixed){out.phase=NativeAutoMatchWorkerPhase::unavailable_fixed;return out;}
+    // The matrix belongs to Fixed only, not to the hundreds of trial renders.
+    input.native_spec.retain_native_spectral_energy=false;
     m10_frozen::ExactCompletedEvaluationCache cache{input.exact_generation_and_policy};
     const m10_frozen::PreservedNativeSearchEnvironment env{owners,input.originals,*out.fixed,
         input.native_spec,input.exact_generation,cache,input.independent_m11_ceiling_db_tp,
