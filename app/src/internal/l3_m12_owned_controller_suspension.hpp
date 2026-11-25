@@ -103,11 +103,19 @@ prepare_m12_owned_controller_suspension(
            module.semanticNodeId->is_nil()||
            !linked_semantic_ids.insert(*module.semanticNodeId).second||
            !module.algorithmVersion||!module.parameterSchemaId||
-           module.typeId=="rgsml.dsp.gain"||
            module.typeId=="rgsml.dsp.true-peak-limiter"||
-           module.typeId=="rgsml.dsp.streaming-true-peak-limiter"||
            module.typeId=="rgsml.dsp.dither")
             return fail("L3_M12_CONTROLLER_SUSPENSION_INVALID_LINKED_NODE");
+        if(module.typeId=="rgsml.dsp.streaming-true-peak-limiter") {
+            if(&module!=&it->modules.back())
+                return fail("L3_M12_CONTROLLER_SUSPENSION_P2_ORDER");
+            for(const auto& chain:doc.chains) {
+                if(&chain==&*it)continue;
+                for(const auto& other:chain.modules)
+                    if(other.typeId=="rgsml.dsp.streaming-true-peak-limiter")
+                        return fail("L3_M12_CONTROLLER_SUSPENSION_P2_CONFLICT");
+            }
+        }
     }
     const bool suspend=cause!=ControllerSuspensionCause::
         current_amount_restored;
