@@ -95,6 +95,7 @@ private slots:
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
     void nativeCommonAnalysisSpecUsesAllRatePairs();
+    void nativeAutomaticGainSearchMeasuresRealOwnedPcm();
     void nativeFullPcmZeroSideIsNotAWidthFloor();
     void nativeSeedGeometryRejectsSubstitutedStereoGrid();
     void nativeDefinitionPolicyAndGradesAreExact();
@@ -185,6 +186,93 @@ void P2RealNativeProductTest::nativeFullPcmZeroSideIsNotAWidthFloor() {
     QVERIFY(observed.value()->s03_s06.low_end_width[0].raw_ratio_or_rho==0.0);
     (*r.value())[1000]+=1e-12;
     QVERIFY(!a::actual_full_pcm_has_exact_zero_side(pcm.value()->view()));
+}
+void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
+    namespace m09=a::m09_frozen;
+    namespace m10=a::m10_frozen;
+    const auto fs=core::SampleRate::create(48000);
+    const auto format=audio::AudioFormat::create(*fs.value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(48000*12);
+    const auto block=core::FrameCount::create(4096);
+    QVERIFY(format&&frames&&block);
+    auto source=audio::AudioBuffer::create(*format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    auto gold=audio::AudioBuffer::create(*format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(source&&gold);
+    auto s=source.value()->mutable_view().channel(0),g=gold.value()->mutable_view().channel(0);
+    QVERIFY(s&&g);
+    for(std::size_t i=0;i<s.value()->size();++i) {
+        const double t=static_cast<double>(i)/48000.0;
+        const double envelope=0.7+0.3*std::sin(2.0*std::numbers::pi*0.8*t);
+        const double v=envelope*(0.12*std::sin(2.0*std::numbers::pi*55.0*t)
+            +0.08*std::sin(2.0*std::numbers::pi*440.0*t)
+            +0.04*std::sin(2.0*std::numbers::pi*2200.0*t));
+        (*s.value())[i]=v;(*g.value())[i]=v*std::pow(10.0,2.0/20.0);
+    }
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*base.value()));
+    const auto manual=dsp::ProcessingChain::create(*registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto request=render::RenderRequest::create(source.value()->view(),
+        source.value()->view().absolute_range(),*manual.value(),{},*block.value());
+    QVERIFY(request);
+    auto rendered=render::render_preview(*request.value(),*registry);
+    QVERIFY(rendered);
+    auto prepared=std::make_shared<const render::RenderResult>(std::move(*rendered.value()));
+    const a::OfflineProductOwnerStamp stamp{21U,22U,23U,"fixture","gain-source","fixture","gain-reference"};
+    const auto spec=a::build_current_native_common_analysis_spec(48000,48000,true);
+    QVERIFY(spec);
+    const auto pair=a::measure_original_prepared_reference_native_once(prepared->buffer(),
+        a::native_product_original_identity(stamp,a::OriginalProductRole::prepared),spec->prepared,
+        *gold.value(),a::native_product_original_identity(stamp,a::OriginalProductRole::reference),
+        spec->reference,spec->common,1e-12,true,true,true);
+    QVERIFY(pair);
+    m10::NativeDefinitionPolicy definitions;
+    definitions.exact_density_floor=1e-12;
+    definitions.exact_current_registry_and_phase6_policy_attested=true;
+    for(std::size_t i=0;i<definitions.records.size();++i) {
+        const auto& b=a::m07_frozen::kBindings[i];
+        definitions.records[i]={std::string(b.binding_id),std::string(b.source_feature_id),
+            "gain-test-definition-"+std::to_string(i)};
+    }
+    definitions.records[9].exact_dependency=definitions.records[8].exact_dependency;
+    const m10::P2NativeProductWorkerScope owners{stamp,prepared,registry,*manual.value(),{},*block.value(),true};
+    m10::AuthoritativeCostInput constraints;
+    // Test owner attests the frozen policy. Actual candidate features,
+    // M16, protection and scores must still be produced by the worker.
+    constraints.optimization_target_equals_desired_attested=true;
+    constraints.exact_m05_m06_source_and_m07_dependency_current=true;
+    constraints.m11_fixed_and_protected_snapshot_current=true;
+    constraints.fresh_candidate_render_and_analysis_current=true;
+    constraints.hard_m11_and_independent_safety_preflight_passed=true;
+    constraints.m11_full_k_dependency_and_order_attested=true;
+    a::NativeAutoMatchWorkerInputs input{owners,*pair.value(),spec->prepared,"gain-real-generation",
+        {0x71,0x72},"gain-real-fixed",1U,{1.0,{1.0,1.0,1.0,1.0},1U},
+        {false,false,false,true},0.0,true,true,false,false,{},constraints};
+    unsigned next=1U;
+    const auto allocate=[&](){
+        core::Uuid::Bytes bytes{};bytes[0]=0xd2;bytes[15]=static_cast<std::uint8_t>(next++);
+        return core::Uuid{bytes};
+    };
+    const auto result=a::run_native_automatch_with_owner_allocations(input,definitions,allocate,{}, {0x73});
+    QVERIFY2(result.fixed.has_value(),"independent Fixed native 27-slot admission failed");
+    QCOMPARE(result.fixed->measured_fixed.size(),std::size_t{27});
+    QVERIFY2(result.search.status==m09::NativeProductSearchStatus::measured_candidate,
+        "real automatic Gain search did not produce a measured winner");
+    QVERIFY(result.search.winning_graph&&result.search.refinement);
+    const auto& graph=result.search.winning_graph->graph;
+    QCOMPARE(graph.bindings.size(),std::size_t{1});
+    const auto* gain=std::get_if<dsp::GainParameters>(&graph.bindings.front().parameters);
+    QVERIFY(gain);
+    QVERIFY(std::abs(gain->gain_db()-2.0)<0.5);
+    const auto& winner=result.search.refinement->candidate_refinements[
+        *result.search.refinement->winning_refinement_index].numerical.winner;
+    QVERIFY(winner.native_prediction);
+    QCOMPARE(winner.native_prediction->exact_candidate_ticket,result.search.winning_graph->exact_ticket);
+    QVERIFY(!result.authorizes_product_publication());
 }
 void P2RealNativeProductTest::nativeCommonAnalysisSpecUsesAllRatePairs() {
     const std::array<std::uint32_t,6> rates{44100,48000,88200,96000,176400,192000};
