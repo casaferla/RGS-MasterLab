@@ -93,6 +93,17 @@ template<class ResolveOriginalTriple>
             return rejected(); // distinct no-correction owner path
         cost.m08_corrective_mask=fixed_targets.corrective;
         cost.m11_no_correction_full_evidence_attested=false;
+        // Candidate stereo safety is remeasured by the scorer. Its
+        // policy/owner anchors must be the real independently measured
+        // Fixed record, never a second caller-provided set of numbers.
+        if(fixed.stereo_safety_required) {
+            if(!fixed.measured_stereo_safety||
+               !fixed.measured_stereo_safety->exact_current_source_candidate_and_canonical_safety_revision||
+               !fixed.measured_stereo_safety->no_forbidden_decorrelation_or_haas)return rejected();
+            cost.native_stereo_raw_safety_required_by_current_owner=true;
+            cost.native_stereo_raw_safety=fixed.measured_stereo_safety;
+        } else if(cost.native_stereo_raw_safety_required_by_current_owner||cost.native_stereo_raw_safety)
+            return rejected();
     }
     cost.independently_measured_fixed=fixed;
     const auto execution=job.value()->exact_execution_graph_content();
