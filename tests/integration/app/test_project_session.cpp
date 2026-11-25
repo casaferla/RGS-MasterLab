@@ -805,12 +805,21 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto reopenedTicket=session.previewController->private_m12_product_preview_ticket();
     QVERIFY(reopenedTicket&&reopenedTicket->replay);
     QVERIFY(!session.project.undo_private_m12_materialization());
+    const auto priorReconciliation=fanout.current_owner_snapshot();
+    QVERIFY(priorReconciliation);
     const auto thirdPlanId=uuidOf("e6000000-0000-4000-8000-000000000005");
     const auto reopenedReplacement=a::begin_native_qt_product_session_on_owner(session.project,
         controllers,fanout,session.selector,session.gold,amount,requested,0.0,*block.value(),
         thirdPlanId,controllerId,linkedId,true);
     QVERIFY2(reopenedReplacement,reopenedReplacement?"":reopenedReplacement.error()->message().c_str());
     QCOMPARE(reopenedReplacement.value()->capture.linked_revision,UINT64_C(3));
+    const auto reconciledOwner=fanout.current_owner_snapshot();
+    QVERIFY(reconciledOwner);
+    QCOMPARE(reconciledOwner->identity.chain_revision,session.masteringChainState->chain().revision());
+    QCOMPARE(reconciledOwner->identity.master_rate_revision,rate.rate_revision());
+    QVERIFY(reconciledOwner->epoch>priorReconciliation->epoch);
+    QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
+        session.gold,reopenedReplacement.value()->capture));
     next=200U;
     Action reopenedAction{controllers,fanout,session.selector,session.gold};
     QVERIFY(reopenedAction.begin(*reopenedReplacement.value(),allocate));

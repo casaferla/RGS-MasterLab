@@ -3,6 +3,7 @@
 // worker data are deliberately separate from eventual user adoption.
 #include "l3_native_qt_product_policy.hpp"
 #include "l3_native_qt_search_handoff.hpp"
+#include "m18_product_complete_binding.hpp"
 #include <set>
 #include <limits>
 
@@ -68,6 +69,13 @@ begin_native_qt_product_session_on_owner(
         for(const auto& id:{controller_id,linked_chain_id})
             if(!used.insert(id).second)return fail("L3_PRODUCT_SESSION_ID_COLLISION");
     }
+    // Project Open restores the real rate and MANUAL revision under its
+    // physical lease. A queued main.cpp notification may not yet have
+    // reconciled those values. Reconcile after baseline lease release,
+    // before freezing M21 dependencies; never manufacture an epoch.
+    const auto reconciled=internal::M18ProductCompleteBinding::reconcile_after_product_mutation(
+        product,fanout);
+    if(!reconciled)return R::failure(*reconciled.error());
     auto capture=capture_native_qt_search_on_owner(product,fanout,selector,gold,
         plan_id.to_string()+"/fixed",revision,block,true);
     if(!capture)return R::failure(*capture.error());
