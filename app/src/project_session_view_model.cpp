@@ -2,6 +2,7 @@
 #include "internal/l3_m12_ref_linked_project_open_gate.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
+#include "internal/l3_m12_current_search_transaction.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_actual_native_worker.hpp"
 
@@ -1487,6 +1488,32 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
     ++m12ProductOwnershipEpoch_;
     clear_error();
+}
+
+core::Result<l3_automatch::m12_frozen::M12ProductMaterializationReceipt>
+ProjectSessionViewModel::apply_private_m12_current_native_search(
+    const l3_automatch::NativeAutoMatchWorkerResult& worker,
+    const l3_automatch::m12_frozen::AcceptedPlanAndOwner& accepted,
+    const l3_automatch::m10_frozen::P2NativeProductWorkerScope& owners,
+    const std::string& exactGeneration,
+    const project::ProjectSnapshot& preSearchProject,
+    core::Uuid linkedChainId,
+    const l3_automatch::m12_frozen::M12ProjectTransactionExpected& expected)
+{
+    namespace m=l3_automatch::m12_frozen;
+    using R=core::Result<m::M12ProductMaterializationReceipt>;
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       !opened_||!m::m12_exact_project_snapshot_equal(*opened_,preSearchProject)||
+       !gold_||gold_->selection_revision()!=owners.current_owner.reference_selection_revision)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "L3_M12_PRODUCT_SEARCH_HANDOFF_STALE"});
+    auto draft=m::prepare_current_native_search_transaction(worker,accepted,owners,
+        exactGeneration,preSearchProject,linkedChainId,expected);
+    if(!draft)return R::failure(*draft.error());
+    // Existing M12 exclusively leases, rechecks the real current Project
+    // and PREPARED owner, publishes atomically, then independently reads back.
+    return apply_private_m12_materialization(*draft.value(),
+        owners.frozen_registry,owners.current_prepared);
 }
 
 core::Result<l3_automatch::m12_frozen::M12ProductMaterializationReceipt>

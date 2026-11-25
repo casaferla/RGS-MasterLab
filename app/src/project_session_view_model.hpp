@@ -23,7 +23,11 @@
 namespace rgsml::dsp { class ModuleRegistry; }
 namespace rgsml::render { class RenderResult; }
 namespace rgsml::app {
+namespace l3_automatch { struct NativeAutoMatchWorkerResult; }
+namespace l3_automatch::m10_frozen { struct P2NativeProductWorkerScope; }
 namespace l3_automatch::m12_frozen {
+struct AcceptedPlanAndOwner;
+struct M12ProjectTransactionExpected;
 struct M12PreparedProjectTransaction;
 struct M12ImmutableProductPreviewTicket;
 }
@@ -180,6 +184,17 @@ public:
         const l3_automatch::m12_frozen::M12PreparedProjectTransaction& draft,
         std::shared_ptr<const dsp::ModuleRegistry> executionRegistry,
         std::shared_ptr<const render::RenderResult> preparedOwner);
+    // Owner-thread handoff from the completed native worker. The
+    // pre-search Project snapshot is not replaced by a fresh baseline.
+    [[nodiscard]] core::Result<l3_automatch::m12_frozen::
+        M12ProductMaterializationReceipt> apply_private_m12_current_native_search(
+        const l3_automatch::NativeAutoMatchWorkerResult& worker,
+        const l3_automatch::m12_frozen::AcceptedPlanAndOwner& accepted,
+        const l3_automatch::m10_frozen::P2NativeProductWorkerScope& owners,
+        const std::string& exactGeneration,
+        const project::ProjectSnapshot& preSearchProject,
+        core::Uuid linkedChainId,
+        const l3_automatch::m12_frozen::M12ProjectTransactionExpected& expected);
     [[nodiscard]] core::Status undo_private_m12_materialization();
     [[nodiscard]] core::Status redo_private_m12_materialization();
 
