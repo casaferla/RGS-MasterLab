@@ -474,12 +474,45 @@ public:
             return R::failure(error("L3_M10_P2_FULL_RENDER_SCOPE_INVALID"));
         return limited;
     }
-    [[nodiscard]] bool result_has_expected_scope(
-        const render::RenderResult& out) const noexcept
+    // Read-only insertion observation before a preserved MANUAL terminal.
+    // Not a complete scored candidate, not a modification of the terminal.
+    [[nodiscard]] core::Result<render::RenderResult> execute_stereo_insertion_observation() const {
+        using R=core::Result<render::RenderResult>;
+        if(!preserves_user_terminal()||!std::all_of(linked_.instances().begin(),linked_.instances().end(),
+            [](const auto& n){return n.module_type_id()=="rgsml.dsp.parametric-eq";}))
+            return R::failure(error("L3_M09_INSERTION_GRAPH_INVALID"));
+        auto measured=render_pre_p2();
+        if(!measured)return measured;
+        if(!stereo_insertion_has_expected_scope(*measured.value()))
+            return R::failure(error("L3_M09_INSERTION_SCOPE_INVALID"));
+        return measured;
+    }
+    [[nodiscard]] bool stereo_insertion_has_expected_scope(const render::RenderResult& out) const noexcept {
+        return preserves_user_terminal()&&std::all_of(linked_.instances().begin(),linked_.instances().end(),
+            [](const auto& n){return n.module_type_id()=="rgsml.dsp.parametric-eq";})&&
+            result_matches_segment(out,linked_);
+    }
+    [[nodiscard]] std::optional<m10_frozen::ExactCacheBytes> exact_stereo_insertion_content() const {
+        if(!registry_||!preserves_user_terminal()||!std::all_of(linked_.instances().begin(),linked_.instances().end(),
+            [](const auto& n){return n.module_type_id()=="rgsml.dsp.parametric-eq";}))return {};
+        const auto fixed=exact_fixed_graph_content();
+        const auto linked=exact_linked_graph_content();
+        if(!fixed||!linked)return {};
+        using namespace m10_frozen::p2_cache_detail;
+        m10_frozen::ExactCacheBytes out;
+        append_exact_field(out,"rgsml.l3.pre-manual-terminal-stereo-insertion/1");
+        append_exact_byte_field(out,*fixed);append_exact_byte_field(out,*linked);
+        return out;
+    }
+    [[nodiscard]] bool result_has_expected_scope(const render::RenderResult& out) const noexcept {
+        return result_matches_segment(out,p2_bindings_.empty()?linked_:final_p2_);
+    }
+private:
+    [[nodiscard]] bool result_matches_segment(
+        const render::RenderResult& out,const dsp::ProcessingChain& final_chain) const noexcept
     {
         if(!prepared_)return false;
         const auto& signatures=out.signatures();
-        const auto& final_chain=p2_bindings_.empty()?linked_:final_p2_;
         const auto nodes=final_chain.instances();
         if(out.view().absolute_range()!=prepared_->view().absolute_range()||
            out.view().format()!=prepared_->view().format()||
@@ -498,6 +531,7 @@ public:
         }
         return true;
     }
+public:
     [[nodiscard]] bool still_current(
         const OfflineProductOwnerStamp& current_owner,
         const std::shared_ptr<const render::RenderResult>& current_prepared,
