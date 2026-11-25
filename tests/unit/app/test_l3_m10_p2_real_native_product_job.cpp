@@ -1782,9 +1782,37 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     if(fixed_prefix) {
         QVERIFY(owned_job.value()->matches_exact_fixed_prefix(*fixed_prefix.value()));
         QVERIFY(!without_p2.value()->matches_exact_fixed_prefix(*fixed_prefix.value())); // distinct registry owner
+        auto changed_owned_bindings=owned_bindings;
+        const auto different_p2=dsp::StreamingTruePeakLimiterParameters::create(-2.0,1.0,5);
+        QVERIFY(different_p2);
+        changed_owned_bindings.back().parameters=*different_p2.value();
+        const auto changed_owned=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+            stamp,prepared_owner,*owned_registry,*manual.value(),gain_only,
+            *owned_chain.value(),changed_owned_bindings,"owned-final-p2-altered",*block.value(),true);
+        QVERIFY(changed_owned);
+        QVERIFY(changed_owned.value()->matches_exact_fixed_prefix(*fixed_prefix.value()));
+        const auto fresh_changed=changed_owned.value()->execute();
+        const auto warm_changed=changed_owned.value()->execute_with_exact_fixed_prefix(*fixed_prefix.value());
+        QVERIFY(fresh_changed&&warm_changed);
+        QVERIFY(fresh_changed.value()->signatures()==warm_changed.value()->signatures());
+        for(std::size_t c=0;c<fresh_changed.value()->view().format().channel_count();++c) {
+            const auto x=fresh_changed.value()->view().channel(c),y=warm_changed.value()->view().channel(c);
+            QVERIFY(x&&y);
+            QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+        }
+        auto changed_fixed=gain_only;
+        const auto new_gain=dsp::GainParameters::create(1.25);
+        QVERIFY(new_gain);
+        changed_fixed.front().parameters=*new_gain.value();
+        const auto stale_fixed=a::M10P2RealNativeProductJob::create_preserving_user_terminal(
+            stamp,prepared_owner,*owned_registry,*manual.value(),changed_fixed,
+            *owned_chain.value(),owned_bindings,"changed-fixed-graph",*block.value(),true);
+        QVERIFY(stale_fixed);
+        QVERIFY(!stale_fixed.value()->matches_exact_fixed_prefix(*fixed_prefix.value()));
+        QVERIFY(!stale_fixed.value()->execute_with_exact_fixed_prefix(*fixed_prefix.value()));
         const auto warm=owned_job.value()->execute_with_exact_fixed_prefix(*fixed_prefix.value());
         QVERIFY(warm);
-        QCOMPARE(warm.value()->signatures(),owned_pcm.value()->signatures());
+        QVERIFY(warm.value()->signatures()==owned_pcm.value()->signatures());
         for(std::size_t channel=0;channel<owned_pcm.value()->view().format().channel_count();++channel) {
             const auto cold_samples=owned_pcm.value()->view().channel(channel);
             const auto warm_samples=warm.value()->view().channel(channel);
