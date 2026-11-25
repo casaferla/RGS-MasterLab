@@ -29,6 +29,10 @@ struct ProductNativeOnePassSpec final {
     bool derive_own_m19_temporal_gate{};
     // Fixed-only retention; ordinary candidates do not retain the matrix.
     bool retain_native_spectral_energy{};
+    // Phase6 comparison support: derive the common geometric mask for
+    // this actual M19-gated full resource. M20 itself applies the
+    // measured relative-power floor; missing bands remain missing.
+    bool derive_native_common_profile_support{};
 };
 // Resolve an omitted FFT size from the actual source rate, without
 // granting any missing Phase6 grid/grade or changing caller definitions.
@@ -146,6 +150,41 @@ measure_real_full_owned_pcm_native_once(
         spec.source_support.retained_width_blocks=owned_gate->retained_union;
         // Low-end consumes the exact same retained temporal selection.
         spec.exact_m19_low_end_gate_same_as_m20_stft=owned_gate->available;
+    }
+    // Lifetime is confined to the synchronous analyzer call. Never
+    // store a span into the moved/copyable Product spec or a Qt object.
+    std::vector<std::uint8_t> profile_support;
+    if(spec.derive_native_common_profile_support) {
+        const auto& common=spec.source_support.profile_common_bandwidth;
+        if(!spec.derive_own_m19_temporal_gate||!common||
+           !spec.source_support.authoritative_band_eligibility.empty())
+            return fail("L3_ONCE_CONFLICTING_PROFILE_SUPPORT_AUTHORITY");
+        const auto grid=analysis::native_tonal_fractional_grid(rate,12);
+        if(grid.empty())return fail("L3_ONCE_PROFILE_GRID_UNAVAILABLE");
+        profile_support.assign(grid.size(),0U);
+        // Confirm the *exact* admitted common cells, not an interpolated
+        // or caller-selected subset. Eligibility here is geometric; the
+        // canonical M20 normalizer evaluates actual common-band power
+        // and excludes fractions below 1e-12 without renormalization.
+        std::size_t admitted=0;
+        for(std::size_t i=0;i<grid.size();++i) {
+            const auto& cell=grid[i];
+            if(!cell.fully_supported||cell.low_hz<common->low_hz||cell.high_hz>common->high_hz)
+                continue;
+            if(admitted>=spec.spectral_bands.size())
+                return fail("L3_ONCE_PROFILE_COMMON_GRID_MISMATCH");
+            const auto& expected=spec.spectral_bands[admitted++];
+            if(cell.band_index!=expected.exact_canonical_index||
+               cell.low_hz!=expected.low_hz||cell.high_hz!=expected.high_hz)
+                return fail("L3_ONCE_PROFILE_COMMON_GRID_MISMATCH");
+            if(owned_gate&&owned_gate->available&&
+               std::any_of(owned_gate->selected_complete_frames.begin(),
+                   owned_gate->selected_complete_frames.end(),[](auto v){return v!=0U;}))
+                profile_support[i]=1U;
+        }
+        if(admitted!=spec.spectral_bands.size()||admitted==0U)
+            return fail("L3_ONCE_PROFILE_COMMON_GRID_MISMATCH");
+        spec.source_support.authoritative_band_eligibility=profile_support;
     }
     m05m06_real::AuthenticM20FrameEnergySink spectral{
         rate,spec.exact_m20_fft_size,

@@ -42,6 +42,7 @@ build_current_native_common_analysis_spec(std::uint32_t prepared_rate,
     for(auto* spec:{&out.prepared,&out.reference}) {
         spec->current_full_phase6_source_and_grid=true;
         spec->derive_own_m19_temporal_gate=true;
+        spec->derive_native_common_profile_support=true;
         spec->exact_stereo_reference_grade=true; // native duration and support still independently checked
         spec->spectral_bands=common;
         spec->stereo_bands=common;

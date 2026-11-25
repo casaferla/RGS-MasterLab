@@ -642,6 +642,16 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         static_cast<int>(completed->result.search.fixed_gate.status),
         completed->originals?1:0,completed->result.fixed?1:0);
     QVERIFY(completed->originals&&completed->result.fixed);
+    // A qualified native T01 is mandatory, not a scalar-only tonal
+    // substitute. This broadband source has actual common-band power.
+    const auto& t01=completed->result.fixed->measured_fixed.front();
+    QVERIFY(t01.binding_id=="rgsml.reference-match.binding.tonal.t01");
+    QVERIFY(!t01.configured.empty());
+    const auto availableT01=std::count_if(t01.configured.begin(),t01.configured.end(),
+        [](const auto& c){return c.current_valid&&c.paired_native_support>0.0&&
+            c.prepared.z&&c.reference.z&&c.current_candidate_z;});
+    QVERIFY(availableT01>0);
+    QVERIFY(static_cast<double>(availableT01)/static_cast<double>(t01.configured.size())>=0.60);
     for(const auto& part:completed->result.fixed->measured_fixed) {
         if(part.binding_id.find(".loudness.")==std::string::npos)continue;
         for(const auto& c:part.configured)
