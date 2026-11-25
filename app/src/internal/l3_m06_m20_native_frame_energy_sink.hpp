@@ -43,6 +43,23 @@ public:
                          band.low_hz<bands_[i-1U].high_hz)))
                 valid_=false;
         }
+        // The bin geometry depends ONLY on Fs/FFT/grid, not the frame.
+        // Retain the original binary64 overlap formula and ascending bin
+        // order, but never rescan thousands of irrelevant bins per band
+        // on every selected frame.
+        if(!valid_)return;
+        const double step=static_cast<double>(fs_)/static_cast<double>(nfft_);
+        band_cells_.reserve(bands_.size());
+        for(const auto& band:bands_) {
+            std::vector<Cell> cells;
+            for(std::size_t k=0;k<=nfft_/2U;++k) {
+                const double f=static_cast<double>(k)*step;
+                const double a=std::max({0.0,band.low_hz,f-step/2.0});
+                const double b=std::min({nyquist,band.high_hz,f+step/2.0});
+                if(b>a)cells.push_back({k,b-a});
+            }
+            band_cells_.push_back(std::move(cells));
+        }
     }
     [[nodiscard]] bool on_selected_native_frame(
         std::uint64_t frame,
@@ -56,24 +73,19 @@ public:
             valid_=false;
             return false;
         }
+        // Validate every bin, including those outside configured bands,
+        // exactly as the dense scan did. Do this once, not B times.
+        for(const double value:psd) {
+            if(!std::isfinite(value)||value<0.0) {
+                valid_=false;return false;
+            }
+        }
         std::vector<std::optional<double>> row;
         row.reserve(bands_.size());
-        const double nyquist=static_cast<double>(fs_)/2.0;
-        const double step=static_cast<double>(fs_)/static_cast<double>(nfft_);
-        for(const auto& band:bands_) {
+        for(const auto& cells:band_cells_) {
             double E=0.0;
-            for(std::size_t k=0;k<psd.size();++k) {
-                const double value=psd[k];
-                if(!std::isfinite(value)||value<0.0) {
-                    valid_=false;
-                    return false;
-                }
-                const double f=static_cast<double>(k)*step;
-                const double a=std::max({0.0,band.low_hz,f-step/2.0});
-                const double b=std::min({nyquist,band.high_hz,f+step/2.0});
-                if(b<=a)continue;
-                E+=value*(b-a);
-            }
+            for(const auto& cell:cells)
+                E+=psd[cell.bin]*cell.overlap_hz;
             if(!std::isfinite(E)||E<0.0) {
                 valid_=false;
                 return false;
@@ -101,6 +113,8 @@ public:
         return false;
     }
 private:
+    struct Cell final {std::size_t bin{};double overlap_hz{};};
+    std::vector<std::vector<Cell>> band_cells_;
     std::uint32_t fs_{};
     std::uint64_t nfft_{};
     std::vector<NativeFrameBand> bands_;

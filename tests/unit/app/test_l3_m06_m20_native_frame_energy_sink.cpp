@@ -15,6 +15,7 @@ class M20SelectedFrameSinkTest final:public QObject{
 private slots:
     void sameOriginalFftAndPsdWithAndWithoutNativeFrameExtraction();
     void badSourceGridAndStalePolicyFailClosed();
+    void sparseIntegrationMatchesDenseAtAllProductRates();
 };
 void M20SelectedFrameSinkTest::
 sameOriginalFftAndPsdWithAndWithoutNativeFrameExtraction(){
@@ -65,6 +66,42 @@ sameOriginalFftAndPsdWithAndWithoutNativeFrameExtraction(){
         }
     }
     QVERIFY(!sink.authorizes_m10());
+}
+void M20SelectedFrameSinkTest::sparseIntegrationMatchesDenseAtAllProductRates()
+{
+    for(const auto fs:{44100U,48000U,88200U,96000U,176400U,192000U}) {
+        const auto geometry=analysis::native_tonal_frame_geometry(fs);
+        QVERIFY(geometry);
+        const auto fft=geometry->fft;
+        const double maximum=std::min(20000.0,0.45*fs);
+        const std::vector<real::NativeFrameBand> bands{
+            {0,20.0,73.25},{1,73.25,81.0},{2,81.0,1000.125},
+            {3,1000.125,maximum}};
+        real::AuthenticM20FrameEnergySink sink{fs,fft,bands,true};
+        QVERIFY(sink.valid());
+        std::vector<double> psd(static_cast<std::size_t>(fft/2U+1U));
+        const double step=static_cast<double>(fs)/static_cast<double>(fft);
+        for(std::uint64_t frame=0;frame<4U;++frame) {
+            for(std::size_t k=0;k<psd.size();++k)
+                psd[k]=static_cast<double>((k+1U)*(frame+1U)%127U)/127.0;
+            QVERIFY(sink.on_selected_native_frame(frame,fs,fft,psd));
+            for(std::size_t j=0;j<bands.size();++j) {
+                double expected=0.0;
+                for(std::size_t k=0;k<psd.size();++k) {
+                    const double f=static_cast<double>(k)*step;
+                    const double a=std::max({0.0,bands[j].low_hz,f-step/2.0});
+                    const double b=std::min({static_cast<double>(fs)/2.0,bands[j].high_hz,f+step/2.0});
+                    if(b>a)expected+=psd[k]*(b-a);
+                }
+                const auto actual=sink.exact_e_tb().back()[j];
+                QVERIFY(actual);
+                QVERIFY(*actual==expected); // exact, not approximate QCOMPARE
+            }
+        }
+        psd[0]=-1.0; // outside the entire configured grid
+        QVERIFY(!sink.on_selected_native_frame(4U,fs,fft,psd));
+        QVERIFY(!sink.valid());
+    }
 }
 void M20SelectedFrameSinkTest::badSourceGridAndStalePolicyFailClosed(){
     real::AuthenticM20FrameEnergySink stale{
