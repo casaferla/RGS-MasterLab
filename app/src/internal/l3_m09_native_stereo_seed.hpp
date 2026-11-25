@@ -41,25 +41,29 @@ native_width_target(const m08_frozen::AuthenticatedPairComponent& part,
         !guard.protected_by_m11_mask&&(fixed_mono!=mono||
         std::abs(desired-*part.current_candidate_z)>deadband)};
 }
-// This is the no-upstream-SIDE-EQ recipe. A composite insertion baseline
-// after SIDE EQ must be independently provided; Fixed is not that baseline.
+// A composite insertion baseline after SIDE EQ is separately measured.
+// Original target and M11 protection stay anchored to independent Fixed,
+// not to the post-SIDE candidate. The optional population carries only
+// the insertion readings and must match the original definition/support.
 [[nodiscard]] inline std::optional<NativeStereoSeed>
 derive_native_stereo_seed(const m11_frozen::NativeFixedPopulation& fixed,
     const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
-    std::size_t mode_index,bool stereo_input,bool exact_fixed_insertion_without_side_eq)
+    std::size_t mode_index,bool stereo_input,bool exact_fixed_insertion_without_side_eq,
+    const std::vector<m08_frozen::AuthenticatedPairSlot>* exact_post_side=nullptr)
 {
     if(!stereo_input||!exact_fixed_insertion_without_side_eq||mode_index==0U||
        mode_index>kLowBassAlternatives.size())return {};
     constexpr auto domain=static_cast<std::size_t>(m07_frozen::Domain::stereo);
     const auto targets=m11_frozen::assess_native_fixed_targets(fixed,amount,requested);
     if(!targets.valid_current||!targets.corrective[domain])return {};
-    const auto protection=m11_frozen::bind_native_fixed_to_candidate(fixed,fixed.measured_fixed,amount);
+    const auto& insertion=exact_post_side?*exact_post_side:fixed.measured_fixed;
+    const auto protection=m11_frozen::bind_native_fixed_to_candidate(fixed,insertion,amount);
     if(!protection)return {};
     const auto& low=kLowBassAlternatives[mode_index-1U];
     std::optional<NativeWidthTarget> broad,bass;
     std::size_t offset=0;
-    for(std::size_t i=0;i<fixed.measured_fixed.size();++i) {
-        const auto& slot=fixed.measured_fixed[i];
+    for(std::size_t i=0;i<insertion.size();++i) {
+        const auto& slot=insertion[i];
         const auto& binding=m07_frozen::kBindings[i];
         if(offset+slot.configured.size()>protection->size())return {};
         if(slot.binding_id=="rgsml.reference-match.binding.stereo.s01"&&slot.configured.size()==1U)

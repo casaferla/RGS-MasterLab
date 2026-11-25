@@ -900,6 +900,16 @@ void P2RealNativeProductTest::nativeStereoSeedUsesFixedWidthAndCutoffEvidence() 
     QVERIFY(std::abs(low->payload.low_band_width_percent()-50.0)<1e-12);
     QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,3U,true,false));
     QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,3U,false,true));
+    auto insertion=fixed.measured_fixed;
+    for(auto& slot:insertion)if(slot.binding_id=="rgsml.reference-match.binding.stereo.s01") {
+        auto& p=slot.configured.front();p.current_candidate_z=-0.25;
+        p.candidate_native.value=std::pow(2.0,-0.25);
+    }
+    const auto composed=m09::derive_native_stereo_seed(fixed,amount,requested,1U,true,true,&insertion);
+    QVERIFY(composed);
+    QVERIFY(std::abs(composed->payload.mid_gain_db()-broad->payload.mid_gain_db()/2.0)<1e-12);
+    insertion.front().exact_feature_dependency="wrong-generation";
+    QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,1U,true,true,&insertion));
     fixed.measured_fixed[22].configured[1].candidate_native.selector="80";
     QVERIFY(!m09::derive_native_stereo_seed(fixed,amount,requested,3U,true,true));
 }
