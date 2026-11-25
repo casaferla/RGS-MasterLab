@@ -6,6 +6,7 @@
 #include "l3_m13_owned_native_spec.hpp"
 #include "l3_m10_exact_native_graph_content.hpp"
 #include "l3_m10_original_definition_authority.hpp"
+#include "l3_m10_p2_actual_m16_guard.hpp"
 #include <memory>
 #include <utility>
 
@@ -49,6 +50,10 @@ public:
                 "L3_M13_ACTUAL_WORKER_MISSING_ACCEPTED_NATIVE_EVIDENCE"});
         const auto& replay=input.request.exact_materialized_preview_owner().replay;
         const auto& prediction=*input.accepted_winner.native_prediction;
+        if(!m10_frozen::native_prediction_passes_current_m16(prediction,
+                input.request.frozen_independent_m16_ceiling_db_tp()))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_INDEPENDENT_M16_STALE"});
         if(!prediction.original_definition_authority||
            prediction.exact_definition_authority_content.empty()||
            m10_frozen::exact_original_native_definition_content(*prediction.original_definition_authority)!=

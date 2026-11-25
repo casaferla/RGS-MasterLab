@@ -3260,6 +3260,20 @@ m16ActualSafetyRejectsExcessAndInvalidCeilings() {
         Why::invalid_independent_ceiling);
     QVERIFY(!m10::check_actual_p2_m16_linear_peak(0.9,-6.0)
         .authorizes_m12_or_m13());
+    m10::NativePredictionSnapshot prediction;
+    QVERIFY(!m10::native_prediction_passes_current_m16(prediction,0.0));
+    prediction.independent_full_m16_linear_peak=0.8;
+    QVERIFY(!m10::native_prediction_passes_current_m16(prediction,0.0));
+    prediction.independent_m11_ceiling_db_tp=0.0;
+    QVERIFY(m10::native_prediction_passes_current_m16(prediction,0.0));
+    // Numerically safe at both ceilings is not the same accepted policy.
+    QVERIFY(!m10::native_prediction_passes_current_m16(prediction,-1.0));
+    prediction.independent_m11_ceiling_db_tp=-1.0;
+    QVERIFY(m10::native_prediction_passes_current_m16(prediction,-1.0));
+    prediction.independent_full_m16_linear_peak=0.9;
+    QVERIFY(!m10::native_prediction_passes_current_m16(prediction,-1.0));
+    prediction.independent_full_m16_linear_peak=std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(!m10::native_prediction_passes_current_m16(prediction,-1.0));
 }
 } // namespace
 } // namespace rgsml::tests
