@@ -1737,6 +1737,19 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     auto no_terminal=without_p2.value()->execute();
     QVERIFY(no_terminal);
     QVERIFY(without_p2.value()->result_has_expected_scope(*no_terminal.value()));
+    const auto insertion=preserved.value()->execute_stereo_insertion_observation();
+    QVERIFY(insertion);
+    QVERIFY(preserved.value()->exact_stereo_insertion_content());
+    QVERIFY(preserved.value()->stereo_insertion_has_expected_scope(*insertion.value()));
+    QVERIFY(!preserved.value()->result_has_expected_scope(*insertion.value()));
+    QVERIFY(!preserved.value()->stereo_insertion_has_expected_scope(*unchanged.value()));
+    QVERIFY(!job.value()->execute_stereo_insertion_observation());
+    QVERIFY(insertion.value()->signatures()==no_terminal.value()->signatures());
+    for(std::size_t c=0;c<2;++c) {
+        const auto x=insertion.value()->view().channel(c),y=no_terminal.value()->view().channel(c);
+        QVERIFY(x&&y);
+        QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+    }
     QVERIFY(!without_p2.value()->prepare_exact_pre_p2_prefix());
     QVERIFY(without_p2.value()->preserves_user_terminal());
     QVERIFY(!without_p2.value()->fixed_only());
