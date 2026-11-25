@@ -29,10 +29,11 @@ namespace rgsml::app::l3_automatch::m10_frozen {
         a.stable_parameter_id.begin(),a.stable_parameter_id.end(),
         b.stable_parameter_id.begin(),b.stable_parameter_id.end());
 }
+// Empty is the exact NONE inventory, not a missing inventory.
 [[nodiscard]] inline bool m10_valid_sorted_coordinate_inventory(
     std::span<const Coordinate> coords) noexcept
 {
-    if(coords.empty()||coords.size()>kMaxActiveCoordinates)
+    if(coords.size()>kMaxActiveCoordinates)
         return false;
     for(std::size_t i=0;i<coords.size();++i) {
         if(coords[i].semantic_node_id.empty()||
@@ -48,7 +49,7 @@ namespace rgsml::app::l3_automatch::m10_frozen {
 [[nodiscard]] inline std::optional<std::vector<Coordinate>>
 m10_sort_exact_inventory(std::span<const Coordinate> coords)
 {
-    if(coords.empty()||coords.size()>kMaxActiveCoordinates)
+    if(coords.size()>kMaxActiveCoordinates)
         return std::nullopt;
     std::vector<Coordinate> sorted(coords.begin(),coords.end());
     std::sort(sorted.begin(),sorted.end(),m10_canonical_coordinate_less);
