@@ -1551,9 +1551,9 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     const auto resolve_band_identity=[&](auto,const auto&)->std::optional<a::m09_frozen::ExactBytes>{
         unexpected_generation=true;return {};
     };
-    std::atomic<bool> cancelled{true};
+    std::atomic<bool> worker_cancelled_flag{true};
     const auto cancelled_worker=a::run_native_automatch_worker(native_worker_input,
-        absent_fixed_definitions,allocate_band,resolve_authority,resolve_band_identity,&cancelled);
+        absent_fixed_definitions,allocate_band,resolve_authority,resolve_band_identity,&worker_cancelled_flag);
     QVERIFY(cancelled_worker.phase==a::NativeAutoMatchWorkerPhase::cancelled);
     QCOMPARE(fixed_definition_requests,std::size_t{1});
     const auto unready_worker=a::run_native_automatch_worker(native_worker_input,
