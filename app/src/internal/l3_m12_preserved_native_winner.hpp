@@ -139,12 +139,16 @@ stage_current_native_search_winner(const AcceptedPlanAndOwner& accepted,
     };
     if(search.status!=m09_frozen::NativeProductSearchStatus::measured_candidate||
        !search.refinement||!search.winning_graph||
+       (search.refinement->reason!=m10_frozen::RefinementBatchReason::complete&&
+        search.refinement->reason!=m10_frozen::RefinementBatchReason::budget_exhausted)||
        !search.refinement->winning_refinement_index||
        *search.refinement->winning_refinement_index>=search.refinement->candidate_refinements.size())
         return fail("L3_M12_CURRENT_SEARCH_WINNER_MISSING");
     const auto& refined=search.refinement->candidate_refinements[*search.refinement->winning_refinement_index];
     const auto& owned=*search.winning_graph;
-    if(owned.registry!=env.owners.frozen_registry||
+    if(refined.numerical.end==m10_frozen::End::cancelled||
+       !m10_frozen::valid_key(refined.numerical.winner)||
+       owned.registry!=env.owners.frozen_registry||
        owned.exact_combined_ordinal!=refined.exact_combined_ordinal||
        !refined.numerical.winner.native_prediction||
        owned.exact_ticket!=refined.numerical.winner.native_prediction->exact_candidate_ticket||
