@@ -1658,6 +1658,8 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QCOMPARE(joined.reason,m10::P2RealTripleBindingReason::
         missing_original_source_binding);
     QVERIFY(!joined.fragments);
+    QVERIFY(joined.missing_native_family_mask!=0U);
+    QVERIFY((joined.missing_native_family_mask&0x03ffU)==joined.missing_native_family_mask);
     // An arbitrary callback-owned triple is NOT allowed to launder the
     // actual P2 measured candidate: all ten source stamps are required.
     auto invalid=m10::bind_p2_original_native_triple_from_real_candidate(
