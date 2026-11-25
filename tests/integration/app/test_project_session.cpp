@@ -6,6 +6,7 @@
 #include "internal/l3_m13_fresh_original_native_import.hpp"
 #include "internal/l3_m13_current_search_worker.hpp"
 #include "internal/l3_native_qt_search_handoff.hpp"
+#include "internal/l3_native_qt_product_policy.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -567,28 +568,30 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto captured=a::capture_native_qt_search_on_owner(controllers,fanout,session.selector,
         session.gold,"qt-native-real-fixed",1U,*block.value(),true);
     QVERIFY2(captured,captured?"":captured.error()->message().c_str());
-    a::NativeQtSearchPolicy policy;
-    policy.definitions.exact_density_floor=1e-12;
-    policy.definitions.exact_current_registry_and_phase6_policy_attested=true;
-    for(std::size_t i=0;i<policy.definitions.records.size();++i) {
-        const auto& binding=a::m07_frozen::kBindings[i];
-        policy.definitions.records[i]={std::string(binding.binding_id),std::string(binding.source_feature_id),
-            "qt-physical-test-definition-"+std::to_string(i)};
-    }
-    policy.definitions.records[9].exact_dependency=policy.definitions.records[8].exact_dependency;
-    policy.exact_generation="qt-physical-gain-generation";
-    policy.generation_and_policy={0x71,0x74};policy.accepted_dependencies={0x75,0x76};
-    policy.amount={1.0,{1.0,1.0,1.0,1.0},1U};
-    policy.requested={false,false,false,true};
-    policy.independent_ceiling_db_tp=0.0;
-    policy.exact_current_endpoint_safety_attested=true;
-    policy.file_based_lra_policy_attested=true;
-    policy.constraints.optimization_target_equals_desired_attested=true;
-    policy.constraints.exact_m05_m06_source_and_m07_dependency_current=true;
-    policy.constraints.m11_fixed_and_protected_snapshot_current=true;
-    policy.constraints.fresh_candidate_render_and_analysis_current=true;
-    policy.constraints.hard_m11_and_independent_safety_preflight_passed=true;
-    policy.constraints.m11_full_k_dependency_and_order_attested=true;
+    const auto productPolicy=a::build_current_native_qt_product_policy(*captured.value(),
+        {1.0,{1.0,1.0,1.0,1.0},1U},{false,false,false,true},0.0);
+    QVERIFY(productPolicy);
+    const auto& policy=*productPolicy;
+    QCOMPARE(policy.exact_generation.size(),std::size_t{64});
+    const auto samePolicy=a::build_current_native_qt_product_policy(*captured.value(),
+        policy.amount,policy.requested,0.0);
+    QVERIFY(samePolicy);
+    QCOMPARE(samePolicy->exact_generation,policy.exact_generation);
+    QVERIFY(samePolicy->accepted_dependencies==policy.accepted_dependencies);
+    const auto differentCeiling=a::build_current_native_qt_product_policy(*captured.value(),
+        policy.amount,policy.requested,-1.0);
+    QVERIFY(differentCeiling);
+    QVERIFY(differentCeiling->exact_generation!=policy.exact_generation);
+    auto differentAmount=policy.amount;differentAmount.domains[3]=0.5;
+    const auto differentPolicy=a::build_current_native_qt_product_policy(*captured.value(),
+        differentAmount,policy.requested,0.0);
+    QVERIFY(differentPolicy);
+    QVERIFY(differentPolicy->exact_generation!=policy.exact_generation);
+    differentAmount.global=1.01;
+    QVERIFY(!a::build_current_native_qt_product_policy(*captured.value(),
+        differentAmount,policy.requested,0.0));
+    QVERIFY(!a::build_current_native_qt_product_policy(*captured.value(),
+        policy.amount,policy.requested,0.1));
     unsigned next=1U;
     const auto allocate=[&](){
         core::Uuid::Bytes bytes{};bytes[0]=0xd3;bytes[15]=static_cast<std::uint8_t>(next++);
