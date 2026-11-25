@@ -64,6 +64,12 @@ prepare_m12_product_reopen_preflight(
         if(!added)return R::failure(*added.error());
         expanded=std::move(*added.value());
     }
+    if(contains_linked_type(persisted,"rgsml.dsp.streaming-true-peak-limiter")) {
+        auto added=dsp::ModuleRegistry::with_streaming_true_peak_automatch(
+            std::move(expanded));
+        if(!added)return R::failure(*added.error());
+        expanded=std::move(*added.value());
+    }
     auto registry=std::make_shared<const dsp::ModuleRegistry>(
         std::move(expanded));
     const auto restored=decode_exact_m12_ref_linked_product_state(
