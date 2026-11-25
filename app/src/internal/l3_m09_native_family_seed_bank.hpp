@@ -57,6 +57,8 @@ struct NativeFamilySeedBank final {
         dsp::ParametricEqParameters exact_side_payload;
     };
     std::array<std::optional<PostSideStereo>,3> post_side_stereo{};
+    bool standalone_preterminal_observation_required{};
+    ExactBytes standalone_preterminal_graph{};
 };
 struct NativeRoleAllocation final {
     IntentRole role;
@@ -100,7 +102,8 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
                row->exact_side_payload==bank.side[family.stereo_side_eq_prefix-1U].payload&&
                row->modes[family.stereo_mode_index-1U])
                 return row->modes[family.stereo_mode_index-1U]->payload;
-        }else if(bank.stereo[family.stereo_mode_index-1U])
+        }else if((!bank.standalone_preterminal_observation_required||
+                  !bank.standalone_preterminal_graph.empty())&&bank.stereo[family.stereo_mode_index-1U])
             return bank.stereo[family.stereo_mode_index-1U]->payload;
         break;
     case IntentRole::loudness_gain:

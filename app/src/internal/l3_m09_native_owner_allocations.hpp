@@ -161,6 +161,10 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
         if(!fixed_peak_exceeds_ceiling)return conditional("fixed-peak-within-independent-ceiling");
         out.exact_reason="conditional-terminal-composition-unresolved";return out;
     }
+    if(!family.stereo_side_eq_prefix&&family.stereo_mode_index&&
+       bank.standalone_preterminal_observation_required&&bank.standalone_preterminal_graph.empty()) {
+        out.exact_reason="standalone-preterminal-insertion-baseline-unresolved";return out;
+    }
     if(family.stereo_side_eq_prefix&&family.stereo_mode_index) {
         if(family.stereo_mode_index>bank.stereo.size()||
            family.stereo_side_eq_prefix>bank.side.size()||
@@ -191,6 +195,11 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
         out.role_keys.push_back({role,NativeOwnerAllocations::role_key(role)});
     }
     auto dependencies=exact_dependencies;
+    if(!family.stereo_side_eq_prefix&&family.stereo_mode_index&&
+       bank.standalone_preterminal_observation_required) {
+        if(bank.standalone_preterminal_graph.empty())return out;
+        m10_frozen::p2_cache_detail::append_exact_byte_field(dependencies,bank.standalone_preterminal_graph);
+    }
     if(family.stereo_side_eq_prefix&&family.stereo_mode_index) {
         const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
         if(!row||row->exact_prefix_graph.empty()||
