@@ -14,6 +14,7 @@ struct NativeAutoMatchWorkerResult final {
     std::optional<m11_frozen::NativeFixedPopulation> fixed;
     m09_frozen::NativeProductSearchResult search;
     std::uint32_t exact_fixed_prefix_uses{};
+    std::uint32_t exact_owned_pre_p2_prefix_uses{};
     std::uint32_t measured_side_insertion_rows{};
     m10_frozen::NativeOwnedP2EvaluationCounts owned_p2_counts{};
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
@@ -192,6 +193,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
         binding,env,input.requested,channels==2U,input.exact_current_endpoint_safety_attested,
         resolve_current,std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
     out.exact_fixed_prefix_uses=fixed_prefix_cache.hits;
+    out.exact_owned_pre_p2_prefix_uses=fixed_prefix_cache.pre_p2_hits;
     out.phase=cancelled()?NativeAutoMatchWorkerPhase::cancelled:NativeAutoMatchWorkerPhase::search_completed;
     return out;
 }

@@ -12,21 +12,43 @@ struct PreservedNativeGraph final {
     dsp::ProcessingChain linked;
     std::vector<dsp::ModuleExecutionBinding> bindings;
 };
-// Single worker-local prefix snapshot. Admission is attempted at most
-// once; a missing RAM budget or telemetry restriction never blocks a trial.
+// Single worker-local PCM snapshot, never two retained tracks. Promote
+// from fixed to a final-P2 input cache only on repeated exact upstream
+// content, so arbitrary coordinate changes do not thrash prefix creation.
 struct NativeFixedPrefixCache final {
-    bool attempted{};
+    struct Selection final {
+        const M10ExactFixedPrefix* fixed{};
+        const M10P2ExactPrefix* pre_p2{};
+    };
+    bool attempted{},owned_prefix_disabled{};
     std::optional<M10ExactFixedPrefix> prefix;
-    std::uint32_t hits{};
-    [[nodiscard]] const M10ExactFixedPrefix* lookup(const M10P2RealNativeProductJob& job) {
+    std::optional<M10P2ExactPrefix> owned_prefix;
+    std::optional<ExactCacheBytes> previous_owned_upstream;
+    std::uint32_t hits{},pre_p2_hits{};
+    [[nodiscard]] Selection lookup(const M10P2RealNativeProductJob& job) {
+        if(owned_prefix&&job.matches_exact_pre_p2_prefix(*owned_prefix)) {
+            ++pre_p2_hits;return {nullptr,&*owned_prefix};
+        }
+        owned_prefix.reset();
+        const auto upstream=owned_prefix_disabled?std::nullopt:job.exact_owned_p2_upstream_content();
+        const bool repeated=upstream&&previous_owned_upstream&&*upstream==*previous_owned_upstream;
+        previous_owned_upstream=upstream;
+        if(repeated) {
+            prefix.reset();attempted=false;
+            auto created=job.prepare_exact_pre_p2_prefix();
+            if(created) {
+                owned_prefix.emplace(std::move(*created.value()));
+                ++pre_p2_hits;return {nullptr,&*owned_prefix};
+            }
+            owned_prefix_disabled=true;
+        }
         if(!attempted) {
             attempted=true;
             auto created=job.prepare_exact_fixed_prefix();
             if(created)prefix.emplace(std::move(*created.value()));
         }
-        if(!prefix||!job.matches_exact_fixed_prefix(*prefix))return nullptr;
-        ++hits;
-        return &*prefix;
+        if(!prefix||!job.matches_exact_fixed_prefix(*prefix))return {};
+        ++hits;return {&*prefix,nullptr};
     }
 };
 struct NativeOwnedP2EvaluationCounts final {
@@ -179,16 +201,17 @@ template<class ResolveOriginalTriple>
             return rejected();
     }
     const auto evaluated=evaluate_with_exact_completed_cache(env.cache,*exact,true,allow_new,[&](){
-        const auto* prefix=env.fixed_prefix_cache?env.fixed_prefix_cache->lookup(*job.value()):nullptr;
+        const auto prefix=env.fixed_prefix_cache?env.fixed_prefix_cache->lookup(*job.value()):
+            NativeFixedPrefixCache::Selection{};
         const auto score=measure_and_score_m10_p2_full_native_candidate(
-            *job.value(),std::move(effective_spec),nullptr,env.generation,true,std::move(cost),
+            *job.value(),std::move(effective_spec),prefix.pre_p2,env.generation,true,std::move(cost),
             env.m11_ceiling_db_tp,candidate_owner,&env.originals,
             env.file_lra_policy_attested,
             [&](const M10P2FullNativeEvidence& measured)
                 ->std::optional<P2OriginalRealNativeTriple> {
                 if(original_definitions)return std::move(original_definitions);
                 return std::invoke(resolve,measured);
-            },cancellation,prefix);
+            },cancellation,prefix.fixed);
         return score.as_exact_cache_evidence();
     });
     if(env.owned_p2_counts&&std::any_of(graph.linked.instances().begin(),graph.linked.instances().end(),
