@@ -131,7 +131,8 @@ stage_preserved_native_refinement_winner(
 [[nodiscard]] inline core::Result<StagedRefLinkedSegment>
 stage_current_native_search_winner(const AcceptedPlanAndOwner& accepted,
     const m09_frozen::NativeProductSearchResult& search,
-    const m10_frozen::PreservedNativeSearchEnvironment& env)
+    const m10_frozen::P2NativeProductWorkerScope& owners,
+    const std::string& exact_generation)
 {
     using R=core::Result<StagedRefLinkedSegment>;
     const auto fail=[](const char* reason){
@@ -148,7 +149,7 @@ stage_current_native_search_winner(const AcceptedPlanAndOwner& accepted,
     const auto& owned=*search.winning_graph;
     if(refined.numerical.end==m10_frozen::End::cancelled||
        !m10_frozen::valid_key(refined.numerical.winner)||
-       owned.registry!=env.owners.frozen_registry||
+       owned.registry!=owners.frozen_registry||
        owned.exact_combined_ordinal!=refined.exact_combined_ordinal||
        !refined.numerical.winner.native_prediction||
        owned.exact_ticket!=refined.numerical.winner.native_prediction->exact_candidate_ticket||
@@ -164,6 +165,6 @@ stage_current_native_search_winner(const AcceptedPlanAndOwner& accepted,
         owned.immutable_seed_inventory,owned.winning_values);
     if(!ticket||*ticket!=owned.exact_ticket)return fail("L3_M12_CURRENT_SEARCH_WINNER_TICKET_MISMATCH");
     return stage_preserved_native_measured_winner(accepted,refined.numerical.winner,
-        env.owners,owned.graph,env.generation);
+        owners,owned.graph,exact_generation);
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
