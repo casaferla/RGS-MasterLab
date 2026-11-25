@@ -2991,6 +2991,25 @@ streamingP2AndIndependentM16RenderAtAllSixRates() {
     const auto linked_tp=analysis::measure_true_peak_full_resource(owned.value()->buffer());
     QVERIFY(linked_tp);
     QCOMPARE(linked_tp.value()->global_linear_peak(),tp.value()->global_linear_peak());
+    // Exact cached final P2 render must preserve the cold signatures
+    // and samples also for a REF_LINKED terminal-only topology.
+    const auto empty_prefix_chain=dsp::ProcessingChain::restore(**owned_registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},1U,{});
+    QVERIFY(empty_prefix_chain);
+    const auto empty_prefix_request=render::RenderRequest::create(source.value()->view(),
+        source.value()->view().absolute_range(),*empty_prefix_chain.value(),{},*block.value());
+    QVERIFY(empty_prefix_request);
+    const auto empty_prefix_pcm=render::render_preview(*empty_prefix_request.value(),**owned_registry);
+    QVERIFY(empty_prefix_pcm);
+    const auto cached=render::render_preview_p2_cached_prefix(*owned_request.value(),
+        *empty_prefix_pcm.value(),**owned_registry);
+    QVERIFY(cached);
+    QVERIFY(cached.value()->signatures()==owned.value()->signatures());
+    for(std::size_t c=0;c<2U;++c) {
+        const auto x=cached.value()->view().channel(c),y=owned.value()->view().channel(c);
+        QVERIFY(x&&y);
+        QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin()));
+    }
 }
 
 void P2RealNativeProductTest::
