@@ -65,7 +65,7 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     }
     return {};
 }
-[[nodiscard]] inline std::optional<NativeTypedSeed> build_native_family_seed(
+[[nodiscard]] inline std::optional<NativeTypedSeed> build_native_family_inventory_seed(
     std::shared_ptr<const dsp::ModuleRegistry> registry,
     const NativeFamilySeedBank& bank,const AbstractFamilyChoice& family,
     std::span<const NativeRoleAllocation> allocations,
@@ -81,7 +81,20 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
         if(!payload)return {};
         seeds.push_back({ordered[i],allocations[i].instance,allocations[i].semantic,std::move(*payload)});
     }
-    return assemble_native_artistic_typed_seed(std::move(registry),family,seeds,coordinates,revision,rate);
+    return assemble_native_artistic_inventory_seed(std::move(registry),family,seeds,coordinates,revision,rate);
+}
+[[nodiscard]] inline std::optional<NativeTypedSeed> build_native_family_seed(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const NativeFamilySeedBank& bank,const AbstractFamilyChoice& family,
+    std::span<const NativeRoleAllocation> allocations,
+    std::span<const NativeRoleCoordinateRequest> coordinates,
+    std::uint64_t revision,std::int64_t rate)
+{
+    if(coordinates.size()>m10_frozen::kMaxActiveCoordinates)return {};
+    auto seed=build_native_family_inventory_seed(std::move(registry),bank,family,allocations,
+        coordinates,revision,rate);
+    if(!seed||!native_seed_inventory(*seed))return {};
+    return seed;
 }
 // Prepare reusable role alternatives once, not once per combined
 // family. SIDE EQ uses the separately supplied selected S03 canonical
