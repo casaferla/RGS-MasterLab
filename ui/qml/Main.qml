@@ -724,14 +724,19 @@ ApplicationWindow {
                 }
                 Button {
                     objectName: "autoMatchAdoptButton"
-                    text: "Apply"
+                    text: root.appAutoMatchModel
+                        && root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
+                        ? "Remove match" : "Apply"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
                         && !root.monitorExclusive
                     onClicked: root.appAutoMatchModel.adopt()
                 }
                 Button {
                     objectName: "autoMatchCancelButton"
-                    text: "Cancel"
+                    text: root.appAutoMatchModel
+                        && (root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
+                            || root.appAutoMatchModel.statusText === "REPLACEMENT READY")
+                        ? "Keep current" : "Cancel"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canCancel
                     onClicked: root.appAutoMatchModel.cancel()
                 }

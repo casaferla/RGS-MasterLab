@@ -11,7 +11,7 @@ public:
     using Controllers=ProductQtP2NativeAdmission::Controllers;
     using Fanout=ProductQtP2NativeAdmission::Fanout;
     using Completion=m13_frozen::M13ActualNativeWorkerCompletion;
-    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,no_correction_prior_retained,
+    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,no_correction_prior_retained,no_correction_cleared,zero_amount_prior_retained,kept_current,
         cancelled,stale,failed,materialized,verifying,numerical_pass,verification_incomplete};
     NativeQtProductAction(Controllers product,const Fanout& fanout,
         const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold)
@@ -27,6 +27,9 @@ public:
     [[nodiscard]] const std::string& error()const noexcept{return error_;}
     [[nodiscard]] bool replacing()const noexcept {
         return operation_&&operation_->expected.exact_existing_linked_snapshot.has_value();
+    }
+    [[nodiscard]] bool can_adopt()const noexcept {
+        return phase_==Phase::candidate_ready||phase_==Phase::no_correction_prior_retained;
     }
     [[nodiscard]] bool busy()const noexcept {
         return phase_==Phase::searching||phase_==Phase::cancelling||phase_==Phase::verifying;
@@ -65,19 +68,27 @@ public:
         if(phase_==Phase::searching||phase_==Phase::verifying) {
             cancel_->store(true,std::memory_order_release);
             phase_=Phase::cancelling;
-        }else if(phase_==Phase::candidate_ready) {
+        }else if(can_adopt()) {
+            const bool keep=replacing();
             completed_.reset();reviewed_.reset();operation_.reset();
-            phase_=Phase::cancelled;
+            phase_=keep?Phase::kept_current:Phase::cancelled;
         }
     }
     [[nodiscard]] bool adopt() {
-        if(!owner()||phase_!=Phase::candidate_ready||!operation_||!completed_||!reviewed_)
+        if(!owner()||!can_adopt()||!operation_||!completed_)
             return false;
         error_.clear();
         if(!current(*operation_)){
             error_="L3_PRODUCT_ACTION_STALE_CANDIDATE";
             phase_=Phase::stale;return false;
         }
+        if(phase_==Phase::no_correction_prior_retained) {
+            const auto cleared=apply_native_qt_no_correction_on_owner(project(),product_,fanout_,
+                selector_,gold_,*operation_,*completed_);
+            if(!cleared){error_=cleared.error()->message();phase_=Phase::failed;return false;}
+            phase_=Phase::no_correction_cleared;return true;
+        }
+        if(!reviewed_)return false;
         auto receipt=apply_native_qt_product_session_on_owner(project(),product_,fanout_,
             selector_,gold_,*operation_,*completed_,*reviewed_);
         if(!receipt){error_=receipt.error()->message();phase_=Phase::failed;return false;}
@@ -114,7 +125,15 @@ public:
                 if(!operation_||!current(*operation_)){phase_=Phase::stale;return;}
                 if(done.result.phase==NativeAutoMatchWorkerPhase::search_completed&&
                    done.result.search.status==m09_frozen::NativeProductSearchStatus::no_correction_required) {
-                    phase_=replacing()?Phase::no_correction_prior_retained:Phase::no_correction;return;
+                    if(replacing()) {
+                        if(native_qt_positive_no_correction(*operation_,done)) {
+                            completed_.emplace(std::move(done));
+                            phase_=Phase::no_correction_prior_retained;
+                        } else {
+                            phase_=Phase::zero_amount_prior_retained;
+                        }
+                    }else phase_=Phase::no_correction;
+                    return;
                 }
                 auto plan=review_native_qt_product_session_on_owner(project(),product_,fanout_,
                     selector_,gold_,*operation_,done);
@@ -138,7 +157,7 @@ public:
             }catch(...) {phase_=Phase::verification_incomplete;}
         }
         if((phase_==Phase::candidate_ready||phase_==Phase::no_correction||
-            phase_==Phase::no_correction_prior_retained)&&
+            phase_==Phase::no_correction_prior_retained||phase_==Phase::zero_amount_prior_retained)&&
            operation_&&!current(*operation_)) {
             reviewed_.reset();completed_.reset();phase_=Phase::stale;
         }

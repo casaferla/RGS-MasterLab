@@ -26,6 +26,8 @@
 #include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QThread>
 #include <QUuid>
 
