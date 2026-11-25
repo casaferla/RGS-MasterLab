@@ -189,6 +189,7 @@ template<class ResolveOriginalTriple>
     const auto candidate_owner=native_product_candidate_identity(owners.current_owner,ticket);
     if(const auto hit=env.cache.find(*exact)) {
         if(!hit->native_prediction||
+           !native_prediction_passes_current_m16(*hit->native_prediction,env.m11_ceiling_db_tp)||
            hit->native_prediction->exact_candidate_ticket!=ticket||
            hit->native_prediction->candidate_resource_identity!=candidate_owner.resource_identity||
            hit->native_prediction->candidate_generation!=candidate_owner.generation||

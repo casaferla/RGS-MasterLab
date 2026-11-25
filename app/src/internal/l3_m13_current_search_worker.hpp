@@ -47,7 +47,9 @@ capture_current_search_verification_inputs(
        replay->reference_linked.revision()!=accepted.exact_accepted_plan_revision||
        owned.exact_combined_ordinal!=refined.exact_combined_ordinal)return {};
     const auto& prediction=*winner.native_prediction;
-    if(prediction.exact_candidate_ticket!=owned.exact_ticket||
+    if(!m10_frozen::native_prediction_passes_current_m16(prediction,
+           request.frozen_independent_m16_ceiling_db_tp())||
+       prediction.exact_candidate_ticket!=owned.exact_ticket||
        prediction.exact_m07_generation!=exact_generation||
        !prediction.original_definition_authority||
        m10_frozen::exact_original_native_definition_content(*prediction.original_definition_authority)!=

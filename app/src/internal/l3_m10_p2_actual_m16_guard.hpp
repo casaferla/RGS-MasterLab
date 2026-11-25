@@ -5,6 +5,7 @@
 // The M11 Product owner supplies the exact authoritative safety ceiling;
 // there is no invented "-1 dBTP" or tolerance and no GUI M21 surrogate.
 #include "l3_m10_p2_full_native_evidence.hpp"
+#include "l3_m10_native_prediction_snapshot.hpp"
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <cmath>
 #include <cstdint>
@@ -42,6 +43,14 @@ check_actual_p2_m16_linear_peak(
     return {genuinely_measured_m16_linear_peak<=allowed
         ?P2ActualM16SafetyReason::within_exact_m11_ceiling
         :P2ActualM16SafetyReason::exceeded};
+}
+[[nodiscard]] inline bool native_prediction_passes_current_m16(
+    const NativePredictionSnapshot& prediction,double ceiling) noexcept
+{
+    return prediction.independent_full_m16_linear_peak&&
+        prediction.independent_m11_ceiling_db_tp&&
+        *prediction.independent_m11_ceiling_db_tp==ceiling&&
+        check_actual_p2_m16_linear_peak(*prediction.independent_full_m16_linear_peak,ceiling).passes();
 }
 [[nodiscard]] inline P2ActualM16SafetyResult
 check_m10_p2_native_actual_m16(

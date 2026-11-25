@@ -27,6 +27,17 @@ apply_native_qt_search_on_owner(
        accepted.exact_accepted_plan_revision!=captured.linked_revision)
         return R::failure(core::Error{core::ErrorCode::InvalidState,
             "L3_QT_SEARCH_MATERIALIZATION_OWNER_STALE"});
+    // Re-admit the retained physical M16 result against the exact
+    // current policy. Do not accept a flag or a scoped L03 proxy alone.
+    const auto& search=completed.result.search;
+    if(!search.refinement||!search.refinement->winning_refinement_index||
+       *search.refinement->winning_refinement_index>=search.refinement->candidate_refinements.size())
+        return R::failure(core::Error{core::ErrorCode::InvalidState,"L3_QT_SEARCH_WINNER_MISSING"});
+    const auto& winner=search.refinement->candidate_refinements[
+        *search.refinement->winning_refinement_index].numerical.winner;
+    if(!winner.native_prediction||
+       !m10_frozen::native_prediction_passes_current_m16(*winner.native_prediction,policy.independent_ceiling_db_tp))
+        return R::failure(core::Error{core::ErrorCode::InvalidState,"L3_QT_SEARCH_INDEPENDENT_M16_STALE"});
     const auto owners=captured.native_worker_scope();
     return session.apply_private_m12_current_native_search(completed.result,accepted,owners,
         policy.exact_generation,pre_search_project,linked_chain_id,expected);
