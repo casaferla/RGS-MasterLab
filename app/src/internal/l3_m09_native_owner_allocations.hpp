@@ -129,4 +129,58 @@ native_owner_family_topology(const NativeFamilySeedBank& bank,
     }
     return out;
 }
+// Owner-attested exact dependency bytes come from the current accepted
+// input snapshot. The seed bank provides only actual analytical roles.
+// Unsupported conditional composition is explicitly unresolved, not NONE.
+[[nodiscard]] inline NativeFamilyBindingAuthority
+resolve_native_owner_family(const NativeFamilySeedBank& bank,
+    const AbstractFamilyChoice& family,NativeOwnerAllocations& allocations,
+    const dsp::ModuleRegistry& registry,const ExactBytes& generation,
+    const ExactBytes& exact_dependencies,bool fixed_peak_exceeds_ceiling)
+{
+    NativeFamilyBindingAuthority out;
+    out.exact_reason="missing-current-generation-dependencies";
+    if(generation.empty()||exact_dependencies.empty()||allocations.failed())return out;
+    const auto conditional=[&](const char* reason){
+        out.disposition=NativeDomainDisposition::not_applicable;
+        out.exact_reason=reason;
+        return out;
+    };
+    if(family.loudness==LoudnessMode::gain_with_terminal_limiter) {
+        if(!bank.gain||!bank.gain->terminal_branch_requested)
+            return conditional("terminal-branch-condition-not-met");
+        out.exact_reason="conditional-terminal-composition-unresolved";return out;
+    }
+    if(family.loudness==LoudnessMode::terminal_limiter_only) {
+        if(!fixed_peak_exceeds_ceiling)return conditional("fixed-peak-within-independent-ceiling");
+        out.exact_reason="conditional-terminal-composition-unresolved";return out;
+    }
+    if(family.stereo_side_eq_prefix&&family.stereo_mode_index) {
+        if(family.stereo_mode_index>bank.stereo.size()||
+           !bank.stereo[family.stereo_mode_index-1U])
+            return conditional("no-native-stereo-seed");
+        out.exact_reason="conditional-post-side-insertion-baseline-unresolved";return out;
+    }
+    for(const auto role:ordered_abstract_roles(family)) {
+        if(!native_family_role_payload(bank,family,role))
+            return conditional("no-current-eligible-native-seed");
+        const auto type=native_artistic_role_type(role);
+        if(!type||!registry.has_factory(*type)) {
+            out.exact_reason="native-factory-unavailable";return out;
+        }
+    }
+    const auto topology=native_owner_family_topology(bank,family,allocations);
+    if(!topology){out.exact_reason="native-topology-evidence-unavailable";return out;}
+    for(const auto role:ordered_abstract_roles(family)) {
+        auto allocated=allocations.role(role);
+        if(!allocated){out.exact_reason="owner-role-allocation-failed";return out;}
+        out.allocations.push_back(*allocated);
+        out.role_keys.push_back({role,NativeOwnerAllocations::role_key(role)});
+    }
+    out.identity={*topology,{},exact_dependencies,generation,{"native-owner-seed-bank"}};
+    out.available_currently=true;
+    out.disposition=NativeDomainDisposition::legal;
+    out.exact_reason="native-artistic-seed-and-owner-bound";
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
