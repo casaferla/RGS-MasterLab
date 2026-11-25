@@ -147,13 +147,13 @@ struct NativeRoleCoordinateRequest final {
 // coordinate descriptors. This builds the actual immutable seed and
 // verifies exact round-trip through the existing M10 inverse transform.
 [[nodiscard]] inline std::optional<NativeTypedSeed>
-assemble_native_artistic_typed_seed(
+assemble_native_artistic_inventory_seed(
     std::shared_ptr<const dsp::ModuleRegistry> registry,
     const AbstractFamilyChoice& family,std::span<const NativeRoleSeed> roles,
     std::span<const NativeRoleCoordinateRequest> requests,
     std::uint64_t revision,std::int64_t sample_rate)
 {
-    if(!registry||requests.size()>48U)return std::nullopt;
+    if(!registry)return std::nullopt;
     if(sample_rate!=44100&&sample_rate!=48000&&sample_rate!=88200&&
        sample_rate!=96000&&sample_rate!=176400&&sample_rate!=192000)
         return std::nullopt;
@@ -186,7 +186,21 @@ assemble_native_artistic_typed_seed(
         coordinates.push_back(std::move(*coordinate));
     }
     NativeTypedSeed seed{std::move(registry),std::move(*graph),std::move(coordinates)};
-    if(!native_seed_inventory(seed))return std::nullopt;
+    return seed;
+}
+// Execution remains capped at the frozen 48 coordinates. M09 can
+// describe the exact over-budget graph without making a trial executable.
+[[nodiscard]] inline std::optional<NativeTypedSeed>
+assemble_native_artistic_typed_seed(
+    std::shared_ptr<const dsp::ModuleRegistry> registry,
+    const AbstractFamilyChoice& family,std::span<const NativeRoleSeed> roles,
+    std::span<const NativeRoleCoordinateRequest> requests,
+    std::uint64_t revision,std::int64_t sample_rate)
+{
+    if(requests.size()>m10_frozen::kMaxActiveCoordinates)return {};
+    auto seed=assemble_native_artistic_inventory_seed(std::move(registry),family,roles,
+        requests,revision,sample_rate);
+    if(!seed||!native_seed_inventory(*seed))return {};
     return seed;
 }
 } // namespace rgsml::app::l3_automatch::m09_frozen
