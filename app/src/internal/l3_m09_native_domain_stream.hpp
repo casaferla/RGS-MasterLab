@@ -224,12 +224,15 @@ template<class ResolveCombinedEntry>
     const std::atomic<bool>* cancellation=nullptr)
 {
     NativeCombinedStream out;
+    const auto cancelled=[&](){return cancellation&&cancellation->load(std::memory_order_acquire);};
+    if(cancelled())return out;
     const auto ordered=enumerate_retained_domain_cartesian(selection);
     if(!ordered)return out;
     bool unresolved=false;
     for(const auto& family:*ordered) {
-        if(cancellation&&cancellation->load(std::memory_order_acquire))return out;
+        if(cancelled())return out;
         auto e=std::invoke(resolve,family);
+        if(cancelled())return out;
         if(!same_abstract_family(e.family,family)||e.exact_reason.empty()||
            (e.disposition==NativeDomainDisposition::legal)!=e.candidate.has_value())return out;
         if(e.disposition==NativeDomainDisposition::unresolved)unresolved=true;
@@ -239,7 +242,7 @@ template<class ResolveCombinedEntry>
         }
         out.ledger.push_back(std::move(e));
     }
-    out.complete=!unresolved;
+    out.complete=!unresolved&&!cancelled();
     return out;
 }
 // Bind the selected combined stream to the current measured worker.
