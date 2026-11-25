@@ -85,6 +85,7 @@ private slots:
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
     void nativeOverBudgetFamilyIsDescribedButNeverExecuted();
     void nativeDomainSelectionKeepsUnavailableNumericWinners();
+    void nativeDomainCancellationNeverRetainsPartialRanking();
     void nativeSelectedFamilyChecksExactSeedIdentity();
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
@@ -1075,6 +1076,29 @@ void P2RealNativeProductTest::nativeDomainSelectionKeepsUnavailableNumericWinner
     });
     QVERIFY(!incomplete.ready);
     QVERIFY(!m09::enumerate_retained_domain_cartesian(incomplete));
+}
+void P2RealNativeProductTest::nativeDomainCancellationNeverRetainsPartialRanking() {
+    namespace m09=a::m09_frozen;
+    m09::NativeFamilySeedBank bank;
+    const auto streams=m09::enumerate_native_domain_families(bank,true);
+    QVERIFY(streams);
+    const std::array<bool,4> corrective{false,true,false,false};
+    std::atomic<bool> cancellation{true};
+    std::size_t calls=0;
+    const auto resolver=[&](std::size_t,const auto& family){
+        ++calls;
+        cancellation.store(true,std::memory_order_release);
+        return m09::NativeDomainEntry{family,m09::NativeDomainDisposition::not_applicable,{},"test-cancelled"};
+    };
+    const auto before=m09::select_native_domain_families(*streams,corrective,resolver,&cancellation);
+    QVERIFY(!before.ready);
+    QCOMPARE(calls,std::size_t{0});
+    cancellation.store(false,std::memory_order_release);
+    const auto during=m09::select_native_domain_families(*streams,corrective,resolver,&cancellation);
+    QVERIFY(!during.ready);
+    QCOMPARE(calls,std::size_t{1});
+    QVERIFY(during.retained[1].empty());
+    QVERIFY(!m09::enumerate_retained_domain_cartesian(during));
 }
 void P2RealNativeProductTest::nativeOverBudgetFamilyIsDescribedButNeverExecuted() {
     namespace m09=a::m09_frozen;

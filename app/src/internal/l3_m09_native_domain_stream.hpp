@@ -87,10 +87,12 @@ struct NativeDomainSelection final {
 template<class ResolveDomainEntry>
 [[nodiscard]] inline NativeDomainSelection select_native_domain_families(
     const DomainFamilyLists& canonical,const std::array<bool,4>& corrective,
-    ResolveDomainEntry&& resolve)
+    ResolveDomainEntry&& resolve,const std::atomic<bool>* cancellation=nullptr)
 {
     NativeDomainSelection out;
+    const auto cancelled=[&](){return cancellation&&cancellation->load(std::memory_order_acquire);};
     for(std::size_t d=0;d<4U;++d) {
+        if(cancelled())return out;
         if(canonical[d].empty()||!same_abstract_family(canonical[d].front(),{}))return out;
         if(!corrective[d]) {
             for(const auto& c:canonical[d])
@@ -103,7 +105,9 @@ template<class ResolveDomainEntry>
         std::vector<std::size_t> legal_to_original;
         bool unresolved=false;
         for(const auto& c:canonical[d]) {
+            if(cancelled())return out;
             auto e=std::invoke(resolve,d,c);
+            if(cancelled())return out;
             if(!same_abstract_family(e.family,c)||e.exact_reason.empty()||
                (e.disposition==NativeDomainDisposition::legal)!=e.legal.has_value())
                 return out;
@@ -126,7 +130,7 @@ template<class ResolveDomainEntry>
             out.retained[d].push_back(out.ledger[d][legal_to_original[i]].family);
         }
     }
-    out.ready=true;
+    out.ready=!cancelled();
     return out;
 }
 [[nodiscard]] inline std::optional<std::vector<AbstractFamilyChoice>>
@@ -263,7 +267,10 @@ template<class ResolveDomainEntry,class ResolveCombinedEntry>
     const auto families=enumerate_native_domain_families(bank,stereo);
     if(!families)return out;
     const auto selected=select_native_domain_families(*families,out.fixed_gate.targets.corrective,
-        std::forward<ResolveDomainEntry>(resolve_domain));
+        std::forward<ResolveDomainEntry>(resolve_domain),cancellation);
+    if(cancellation&&cancellation->load(std::memory_order_acquire)) {
+        out.status=NativeProductSearchStatus::cancelled;return out;
+    }
     if(!selected.ready)return out;
     const auto combined=bind_retained_native_cartesian(selected,
         std::forward<ResolveCombinedEntry>(resolve_combined),cancellation);
