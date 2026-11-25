@@ -6,7 +6,7 @@
 #include "internal/l3_m05m06_product_qt_original_pair_worker.hpp"
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
-#include "internal/l3_m10_native_fixed_worker.hpp"
+#include "internal/l3_native_automatch_worker.hpp"
 #include "internal/l3_m12_preserved_native_winner.hpp"
 #include "internal/l3_m09_native_selected_search.hpp"
 #include "internal/l3_m09_native_role_graph.hpp"
@@ -1536,6 +1536,31 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         spec_for_authoritative_bridge,"current-phase6-test-generation","fixed-before-m09",
         1U,true,true,absent_fixed_definitions));
     QCOMPARE(fixed_definition_requests,std::size_t{1});
+    const a::NativeAutoMatchWorkerInputs native_worker_input{
+        worker,*original_pair.value(),spec_for_authoritative_bridge,
+        "current-phase6-test-generation",{0x41},"fixed-worker-entry",1U,
+        {1.0,{1.0,1.0,1.0,1.0},1U},{false,false,false,true},0.0,
+        true,true,false,false,{},{}};
+    bool unexpected_generation=false;
+    const auto allocate_band=[&](auto,const auto&)->std::optional<core::Uuid>{
+        unexpected_generation=true;return {};
+    };
+    const auto resolve_authority=[&](const auto&,auto,const auto&){
+        unexpected_generation=true;return a::m09_frozen::NativeFamilyBindingAuthority{};
+    };
+    const auto resolve_band_identity=[&](auto,const auto&)->std::optional<a::m09_frozen::ExactBytes>{
+        unexpected_generation=true;return {};
+    };
+    std::atomic<bool> cancelled{true};
+    const auto cancelled_worker=a::run_native_automatch_worker(native_worker_input,
+        absent_fixed_definitions,allocate_band,resolve_authority,resolve_band_identity,&cancelled);
+    QVERIFY(cancelled_worker.phase==a::NativeAutoMatchWorkerPhase::cancelled);
+    QCOMPARE(fixed_definition_requests,std::size_t{1});
+    const auto unready_worker=a::run_native_automatch_worker(native_worker_input,
+        absent_fixed_definitions,allocate_band,resolve_authority,resolve_band_identity);
+    QVERIFY(unready_worker.phase==a::NativeAutoMatchWorkerPhase::unavailable_fixed);
+    QCOMPARE(fixed_definition_requests,std::size_t{2});
+    QVERIFY(!unexpected_generation);
     // The Product route requires a separately measured Fixed and
     // checks its generation before invoking the native resolver.
     bool unexpected_resolution=false;
