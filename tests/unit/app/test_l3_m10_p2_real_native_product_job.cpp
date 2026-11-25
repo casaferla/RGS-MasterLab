@@ -2822,6 +2822,32 @@ streamingP2AndIndependentM16RenderAtAllSixRates() {
     QVERIFY(tp);
     QVERIFY(std::isfinite(tp.value()->global_linear_peak()));
     QVERIFY(tp.value()->global_linear_peak()<=1.0);
+    // The same P2 algorithm/schema, with a genuine REF_LINKED owner,
+    // must emit bit-identical full-resource PCM at every supported Fs.
+    const auto owned_registry=a::freeze_native_automatch_execution_registry(registry);
+    QVERIFY(owned_registry&&*owned_registry);
+    const auto owned_node=dsp::ModuleInstance::create({
+        limiter_id,"rgsml.dsp.streaming-true-peak-limiter",true,false,false,false,
+        dsp::ModuleProvenance::REFERENCE_MATCH,dsp::ModuleOwner::REFERENCE_MATCH,
+        dsp::ModuleLinkState::REF_LINKED,uuid("cc000000-0000-4000-8000-000000000002"),{}});
+    QVERIFY(owned_node);
+    const auto owned_chain=dsp::ProcessingChain::restore(**owned_registry,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},1U,{*owned_node.value()});
+    QVERIFY(owned_chain);
+    const auto owned_request=render::RenderRequest::create(source.value()->view(),
+        source.value()->view().absolute_range(),*owned_chain.value(),bindings,*block.value());
+    QVERIFY(owned_request);
+    const auto owned=render::render_preview(*owned_request.value(),**owned_registry);
+    QVERIFY(owned);
+    QCOMPARE(owned.value()->view().absolute_range(),rendered.value()->view().absolute_range());
+    for(std::size_t c=0;c<2U;++c) {
+        const auto x=owned.value()->view().channel(c),y=rendered.value()->view().channel(c);
+        QVERIFY(x&&y);
+        QVERIFY(std::equal(x.value()->begin(),x.value()->end(),y.value()->begin(),y.value()->end()));
+    }
+    const auto linked_tp=analysis::measure_true_peak_full_resource(owned.value()->buffer());
+    QVERIFY(linked_tp);
+    QCOMPARE(linked_tp.value()->global_linear_peak(),tp.value()->global_linear_peak());
 }
 
 void P2RealNativeProductTest::
