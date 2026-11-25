@@ -186,4 +186,40 @@ template<class ResolveCombinedEntry>
     out.complete=!unresolved;
     return out;
 }
+// Bind the selected combined stream to the current measured worker.
+// Keep the independent Fixed no-correction path before enumeration.
+template<class ResolveDomainEntry,class ResolveCombinedEntry>
+[[nodiscard]] inline NativeProductSearchResult run_native_domain_cartesian_search(
+    const ExactBytes& generation,const NativeFamilySeedBank& bank,
+    std::uint64_t revision,std::int64_t rate,bool stereo,
+    const m10_frozen::PreservedNativeSearchEnvironment& env,
+    const m08_frozen::AmountConfig& amount,const std::array<bool,4>& requested,
+    bool independent_fixed_safety_scope_current,
+    ResolveDomainEntry&& resolve_domain,ResolveCombinedEntry&& resolve_combined,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    NativeProductSearchResult out;
+    if(cancellation&&cancellation->load(std::memory_order_acquire)) {
+        out.status=NativeProductSearchStatus::cancelled;return out;
+    }
+    out.fixed_gate=m10_frozen::assess_native_fixed_search_gate(env,amount,requested,
+        independent_fixed_safety_scope_current);
+    if(out.fixed_gate.status==m10_frozen::NativeFixedSearchStatus::no_correction_required) {
+        out.status=NativeProductSearchStatus::no_correction_required;return out;
+    }
+    if(out.fixed_gate.status!=m10_frozen::NativeFixedSearchStatus::correction_required)return out;
+    const auto families=enumerate_native_domain_families(bank,stereo);
+    if(!families)return out;
+    const auto selected=select_native_domain_families(*families,out.fixed_gate.targets.corrective,
+        std::forward<ResolveDomainEntry>(resolve_domain));
+    if(!selected.ready)return out;
+    const auto combined=bind_retained_native_cartesian(selected,
+        std::forward<ResolveCombinedEntry>(resolve_combined),cancellation);
+    if(cancellation&&cancellation->load(std::memory_order_acquire)) {
+        out.status=NativeProductSearchStatus::cancelled;return out;
+    }
+    if(!combined.complete)return out;
+    return run_bound_native_family_batch(generation,combined.legal,true,bank,revision,rate,
+        env,amount,requested,independent_fixed_safety_scope_current,cancellation);
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
