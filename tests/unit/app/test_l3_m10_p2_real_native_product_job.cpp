@@ -18,7 +18,7 @@
 #include "internal/l3_m09_native_tonal_seed.hpp"
 #include "internal/l3_m09_native_dynamic_seed.hpp"
 #include "internal/l3_m09_native_family_seed_bank.hpp"
-#include "internal/l3_m09_native_covered_proxy.hpp"
+#include "internal/l3_m09_native_domain_stream.hpp"
 #include "internal/l3_m09_native_automatic_seed_bank.hpp"
 #include "internal/l3_m10_p2_bound_native_worker_score.hpp"
 #include "internal/l3_m10_p2_native_exact_cache_search.hpp"
@@ -81,6 +81,7 @@ private slots:
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
+    void nativeDomainSelectionKeepsUnavailableNumericWinners();
     void nativeSelectedFamilyChecksExactSeedIdentity();
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
     void nativeMicroSeedUsesFixedEventTargetsAndRealC00Payload();
@@ -692,6 +693,53 @@ void P2RealNativeProductTest::nativeSelectedFamilyChecksExactSeedIdentity() {
     auto stale=recipes;
     stale.front().exact_description.dependency_tuple={0xff};
     QVERIFY(!m09::bind_selected_native_families(selected,stale,registry,bank,1U,48000,matching));
+}
+void P2RealNativeProductTest::nativeDomainSelectionKeepsUnavailableNumericWinners() {
+    namespace m09=a::m09_frozen;
+    namespace m10=a::m10_frozen;
+    m09::NativeFamilySeedBank bank;
+    const auto streams=m09::enumerate_native_domain_families(bank,true);
+    QVERIFY(streams);
+    QCOMPARE((*streams)[0].size(),std::size_t{1});
+    QCOMPARE((*streams)[1].size(),std::size_t{12});
+    QCOMPARE((*streams)[2].size(),std::size_t{8});
+    QCOMPARE((*streams)[3].size(),std::size_t{4});
+    const std::array<bool,4> requested{false,true,false,false};
+    std::size_t ordinal=0;
+    const auto selected=m09::select_native_domain_families(*streams,requested,
+        [&](std::size_t d,const auto& family){
+            m09::NativeDomainEntry e;e.family=family;
+            if(d!=1U)return e;
+            const auto i=ordinal++;
+            e.disposition=m09::NativeDomainDisposition::legal;
+            e.exact_reason="fixture-bound";
+            m09::ProxyOperands proxy;
+            proxy.exact_m05_m08_and_m10_operands_attested=true;
+            proxy.frozen_covered_target_loss=static_cast<double>(i);
+            proxy.m10_seed_normalized_parameter_displacement=0.0;
+            proxy.m10_topology_complexity=0.0;
+            proxy.canonical_unsigned_topology_key={static_cast<std::uint8_t>(i+1U)};
+            e.legal=m10::ConsumerInput{m09::make_pre_render_proxy(proxy),i!=0U};
+            return e;
+        });
+    QVERIFY(selected.ready);
+    QCOMPARE(selected.numeric[1].numeric_selected_indices.size(),std::size_t{8});
+    QVERIFY(selected.numeric[1].ledger.front().selected_but_unavailable);
+    const auto combined=m09::enumerate_retained_domain_cartesian(selected);
+    QVERIFY(combined);
+    QCOMPARE(combined->size(),std::size_t{8});
+    QVERIFY(m09::same_abstract_family(combined->front(),{}));
+    auto unresolved=m09::bind_retained_native_cartesian(selected,[](const auto& family){
+        return m09::NativeCombinedEntry{family,m09::NativeDomainDisposition::unresolved,{},"missing-fixture"};
+    });
+    QVERIFY(!unresolved.complete);
+    QCOMPARE(unresolved.ledger.size(),std::size_t{8});
+    QVERIFY(unresolved.legal.empty());
+    const auto incomplete=m09::select_native_domain_families(*streams,requested,[](auto,const auto& family){
+        return m09::NativeDomainEntry{family,m09::NativeDomainDisposition::unresolved,{},"missing-fixture"};
+    });
+    QVERIFY(!incomplete.ready);
+    QVERIFY(!m09::enumerate_retained_domain_cartesian(incomplete));
 }
 void P2RealNativeProductTest::nativeFamilyBankDoesNotSubstituteUnavailableRoles() {
     namespace m09=a::m09_frozen;
