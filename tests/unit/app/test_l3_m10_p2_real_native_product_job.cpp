@@ -370,6 +370,24 @@ void P2RealNativeProductTest::nativeSideSeedUsesSelectedWidthGridWithoutInterpol
     QVERIFY(requests);
     QCOMPARE(requests->size(),std::size_t{3});
     QVERIFY(!m09::derive_native_family_coordinate_requests(bank,family,keys,{},48000));
+    const auto automatic_authorities=m09::derive_native_family_band_authorities(bank,family,
+        20.0,20000.0,[&](auto role,const auto& band)->std::optional<m09::ExactBytes>{
+            if(role!=m09::IntentRole::stereo_side_eq||band!=dictionary.front().band_id)return {};
+            return m09::ExactBytes{0x42};
+        });
+    QVERIFY(automatic_authorities);
+    QCOMPARE(automatic_authorities->size(),std::size_t{1});
+    QCOMPARE(automatic_authorities->front().bounds.lower,grid.front().low_hz);
+    QCOMPARE(automatic_authorities->front().bounds.upper,grid.back().high_hz);
+    auto split_bank=bank;
+    split_bank.side.front().exact_eligible_grid.front().reset();
+    const auto split_bounds=m09::native_eq_band_run_bounds(split_bank.side.front(),grid,
+        dictionary.front().band_id,20.0,20000.0);
+    QVERIFY(split_bounds);
+    QCOMPARE(split_bounds->lower,grid[1].low_hz);
+    split_bank.side.front().exact_eligible_grid[1].reset();
+    QVERIFY(!m09::native_eq_band_run_bounds(split_bank.side.front(),grid,
+        dictionary.front().band_id,20.0,20000.0));
     for(auto& slot:fixed.measured_fixed)if(slot.binding_id=="rgsml.reference-match.binding.stereo.s03")
         slot.configured[1].candidate_native.endpoint=m08::Endpoint::mono_side_muted;
     QVERIFY(!m09::native_side_fit_population(fixed,amount,requested,grid,3));
