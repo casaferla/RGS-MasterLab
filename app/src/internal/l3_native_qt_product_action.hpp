@@ -1,0 +1,149 @@
+#pragma once
+// Owner-thread action; only immutable input and cancellation cross threads.
+// Search completion never applies a graph. Adoption is a separate command.
+#include "l3_native_qt_product_session.hpp"
+#include <chrono>
+#include <future>
+
+namespace rgsml::app::l3_automatch {
+class NativeQtProductAction final {
+public:
+    using Controllers=ProductQtP2NativeAdmission::Controllers;
+    using Fanout=ProductQtP2NativeAdmission::Fanout;
+    using Completion=m13_frozen::M13ActualNativeWorkerCompletion;
+    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,
+        cancelled,stale,failed,materialized,verifying,numerical_pass,verification_incomplete};
+    NativeQtProductAction(Controllers product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold)
+        :product_(product),fanout_(fanout),selector_(selector),gold_(gold){}
+    NativeQtProductAction(const NativeQtProductAction&)=delete;
+    NativeQtProductAction& operator=(const NativeQtProductAction&)=delete;
+    ~NativeQtProductAction() {
+        // std::async futures join on destruction. Only shutdown may wait.
+        // No worker owns this action or any Qt object.
+        if(cancel_)cancel_->store(true,std::memory_order_release);
+    }
+    [[nodiscard]] Phase phase()const noexcept{return phase_;}
+    [[nodiscard]] bool busy()const noexcept {
+        return phase_==Phase::searching||phase_==Phase::cancelling||phase_==Phase::verifying;
+    }
+    [[nodiscard]] const NativeQtSearchWorkerResult* result()const noexcept {
+        return completed_?&*completed_:nullptr;
+    }
+    [[nodiscard]] const m12_frozen::AcceptedPlanAndOwner* reviewed()const noexcept {
+        return reviewed_?&*reviewed_:nullptr;
+    }
+    [[nodiscard]] const m13_frozen::M13ProvisionalDiagnosticEnvelope* diagnostic()const noexcept {
+        return diagnostic_?&*diagnostic_:nullptr;
+    }
+    [[nodiscard]] bool begin(NativeQtProductSession operation,
+        m09_frozen::NativeOwnerAllocations::AllocateUuid allocate)
+    {
+        if(!owner()||busy()||!allocate||!current(operation))return false;
+        try {
+            auto input=std::make_shared<const NativeQtProductSession>(std::move(operation));
+            auto cancel=std::make_shared<std::atomic<bool>>(false);
+            auto task=std::async(std::launch::async,[input,cancel,allocate=std::move(allocate)]() mutable {
+                return run_native_qt_product_session_worker(*input,std::move(allocate),cancel.get());
+            });
+            operation_=std::move(input);cancel_=std::move(cancel);
+            completed_.reset();reviewed_.reset();diagnostic_.reset();
+            search_=std::move(task);phase_=Phase::searching;
+            return true;
+        }catch(...) {phase_=Phase::failed;return false;}
+    }
+    void cancel() {
+        if(!owner())return;
+        if(phase_==Phase::searching||phase_==Phase::verifying) {
+            cancel_->store(true,std::memory_order_release);
+            phase_=Phase::cancelling;
+        }else if(phase_==Phase::candidate_ready) {
+            completed_.reset();reviewed_.reset();operation_.reset();
+            phase_=Phase::cancelled;
+        }
+    }
+    [[nodiscard]] bool adopt() {
+        if(!owner()||phase_!=Phase::candidate_ready||!operation_||!completed_||!reviewed_)
+            return false;
+        if(!current(*operation_)){phase_=Phase::stale;return false;}
+        auto receipt=apply_native_qt_product_session_on_owner(project(),product_,fanout_,
+            selector_,gold_,*operation_,*completed_,*reviewed_);
+        if(!receipt){phase_=Phase::failed;return false;}
+        phase_=Phase::materialized;return true;
+    }
+    // This argument comes from the Product safety authority, not QML.
+    [[nodiscard]] bool begin_verification(m13_frozen::MandatoryHardPredicate other_safety) {
+        if(!owner()||phase_!=Phase::materialized||!operation_||!completed_||!reviewed_)
+            return false;
+        auto input=capture_native_qt_product_session_verification_on_owner(project(),gold_,
+            *operation_,*completed_,*reviewed_,true,other_safety);
+        if(!input){phase_=Phase::verification_incomplete;return false;}
+        try {
+            auto cancel=std::make_shared<std::atomic<bool>>(false);
+            const auto block=operation_->capture.current.frozen_max_block_frames;
+            auto task=std::async(std::launch::async,[input=std::move(*input),cancel,block]() mutable {
+                return Completion::execute(std::move(input),block,cancel.get());
+            });
+            cancel_=std::move(cancel);verification_=std::move(task);
+            phase_=Phase::verifying;return true;
+        }catch(...) {phase_=Phase::verification_incomplete;return false;}
+    }
+    // Nonblocking. Called on the Qt owner by a timer or queued callback.
+    void poll() {
+        if(!owner())return;
+        using namespace std::chrono_literals;
+        if(search_.valid()&&search_.wait_for(0ms)==std::future_status::ready) {
+            try {
+                auto done=search_.get();
+                if(cancel_->load(std::memory_order_acquire)||
+                   done.result.phase==NativeAutoMatchWorkerPhase::cancelled) {
+                    phase_=Phase::cancelled;return;
+                }
+                if(!operation_||!current(*operation_)){phase_=Phase::stale;return;}
+                if(done.result.phase==NativeAutoMatchWorkerPhase::search_completed&&
+                   done.result.search.status==m09_frozen::NativeProductSearchStatus::no_correction_required) {
+                    phase_=Phase::no_correction;return;
+                }
+                auto plan=review_native_qt_product_session_on_owner(project(),product_,fanout_,
+                    selector_,gold_,*operation_,done);
+                if(!plan){phase_=Phase::failed;return;}
+                completed_.emplace(std::move(done));reviewed_.emplace(std::move(*plan));
+                phase_=Phase::candidate_ready;
+            }catch(...) {phase_=Phase::failed;}
+        }
+        if(verification_.valid()&&verification_.wait_for(0ms)==std::future_status::ready) {
+            try {
+                auto done=verification_.get();
+                if(cancel_->load(std::memory_order_acquire)||!done) {
+                    phase_=Phase::verification_incomplete;return;
+                }
+                auto sealed=project().seal_private_m13_actual_native_completion(*done.value());
+                if(!sealed){phase_=Phase::verification_incomplete;return;}
+                diagnostic_.emplace(std::move(*sealed.value()));
+                phase_=done.value()->assessment().native_numerical_evidence_passed()
+                    ?Phase::numerical_pass:Phase::verification_incomplete;
+            }catch(...) {phase_=Phase::verification_incomplete;}
+        }
+        if(phase_==Phase::candidate_ready&&operation_&&!current(*operation_))
+            phase_=Phase::stale;
+    }
+private:
+    [[nodiscard]] ProjectSessionViewModel& project()const noexcept{return product_.upstream.project;}
+    [[nodiscard]] bool owner()const noexcept{return QThread::currentThread()==project().thread();}
+    [[nodiscard]] bool current(const NativeQtProductSession& operation)const {
+        return native_qt_search_still_current_on_owner(product_,fanout_,selector_,gold_,operation.capture);
+    }
+    Controllers product_;
+    const Fanout& fanout_;
+    const AuditionSourceSelector& selector_;
+    const GoldSelectionViewModel& gold_;
+    Phase phase_{Phase::idle};
+    std::shared_ptr<const NativeQtProductSession> operation_;
+    std::shared_ptr<std::atomic<bool>> cancel_;
+    std::optional<NativeQtSearchWorkerResult> completed_;
+    std::optional<m12_frozen::AcceptedPlanAndOwner> reviewed_;
+    std::optional<m13_frozen::M13ProvisionalDiagnosticEnvelope> diagnostic_;
+    std::future<NativeQtSearchWorkerResult> search_;
+    std::future<core::Result<Completion>> verification_;
+};
+} // namespace rgsml::app::l3_automatch
