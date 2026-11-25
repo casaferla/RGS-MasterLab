@@ -40,6 +40,60 @@ struct NativeAutoMatchWorkerInputs final {
     m10_frozen::AuthoritativeCostInput constraints;
     std::optional<m09_frozen::NativeOwnedP2Seed> owned_p2{};
 };
+// Nonpublishing adapter for an actual insertion observation. The
+// ordinary M10 scorer never consumes this view or its preterminal PCM.
+class NativeStereoInsertionJobView final {
+public:
+    explicit NativeStereoInsertionJobView(const M10P2RealNativeProductJob& job):job_(job){}
+    [[nodiscard]] core::Result<render::RenderResult> execute() const {
+        return job_.execute_stereo_insertion_observation();
+    }
+    [[nodiscard]] bool result_has_expected_scope(const render::RenderResult& out) const noexcept {
+        return job_.stereo_insertion_has_expected_scope(out);
+    }
+private:
+    const M10P2RealNativeProductJob& job_;
+};
+struct NativeStereoInsertionPopulation final {
+    m09_frozen::ExactBytes graph;
+    std::vector<m08_frozen::AuthenticatedPairSlot> slots;
+};
+[[nodiscard]] inline std::optional<NativeStereoInsertionPopulation>
+measure_native_stereo_insertion_population(const NativeAutoMatchWorkerInputs& input,
+    const m11_frozen::NativeFixedPopulation& fixed,const M10P2RealNativeProductJob& job,
+    const std::atomic<bool>* cancellation)
+{
+    const auto& owners=input.owners;
+    if(job.exact_fixed_graph_content()!=
+        std::optional<m10_frozen::ExactCacheBytes>{fixed.exact_fixed_graph_content})return {};
+    const auto execution=job.exact_stereo_insertion_content();
+    if(!execution)return {};
+    auto spec=input.native_spec;spec.retain_native_spectral_energy=false;
+    auto observed=measure_real_product_candidate_once(NativeStereoInsertionJobView{job},
+        std::move(spec),cancellation);
+    if(!observed||(cancellation&&cancellation->load(std::memory_order_acquire)))return {};
+    auto peak=analysis::measure_true_peak_full_resource(observed.value()->actual.rendered.buffer());
+    if(!peak)return {};
+    // Reuse the original native projection only; the preterminal M16
+    // is NOT the independent final safety measurement of any candidate.
+    M10P2FullNativeEvidence measured{std::move(*observed.value()),std::move(*peak.value())};
+    const auto& ticket=job.ticket_identity();
+    auto definitions=m10_frozen::resolve_original_definitions_from_fixed(fixed,input.originals,
+        owners.current_owner,input.exact_generation,ticket);
+    if(!definitions)return {};
+    const auto owner=native_product_candidate_identity(owners.current_owner,ticket);
+    const auto bound=m10_frozen::bind_p2_original_native_triple_from_independent_full_pair(
+        std::move(*definitions),input.originals,measured,owner,
+        static_cast<std::int64_t>(measured.native.exact_observed_active_frames),
+        input.file_based_lra_policy_attested);
+    if(!bound.fragments)return {};
+    m07_frozen::ExactTwentySevenFeatureAssembler assembler{input.exact_generation,true};
+    const auto admission=m07_frozen::collect_existing_m05m06_native_fragments(assembler,*bound.fragments);
+    if(admission.status!=m07_frozen::NativeFragmentAdmission::accepted_complete)return {};
+    auto insertion=assembler.complete_canonical_population();
+    if(!insertion||!m11_frozen::bind_native_fixed_to_candidate(fixed,*insertion,input.amount))return {};
+    return NativeStereoInsertionPopulation{*execution,std::move(*insertion)};
+}
 // Seed geometry only: one full native SIDE-prefix observation, not a
 // scored M10 trial. The original fixed graph and M11 mask remain intact.
 [[nodiscard]] inline std::optional<m09_frozen::NativeFamilySeedBank::PostSideStereo>
@@ -51,15 +105,12 @@ measure_native_post_side_stereo_seed_row(
 {
     namespace m09=m09_frozen;
     const auto& owners=input.owners;
-    if(!input.exact_fixed_stereo_insertion||prefix==0U||prefix>bank.side.size()||
+    if(prefix==0U||prefix>bank.side.size()||
        authority.disposition!=m09::NativeDomainDisposition::legal||
        !authority.available_currently||authority.allocations.size()!=1U||
        authority.allocations.front().role!=m09::IntentRole::stereo_side_eq||
        (cancellation&&cancellation->load(std::memory_order_acquire)))return {};
-    if(std::any_of(owners.frozen_manual.instances().begin(),owners.frozen_manual.instances().end(),
-        [](const auto& node){return node.active()&&node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";}))
-        return {};
-    m09::AbstractFamilyChoice family;family.stereo_side_eq_prefix=static_cast<std::uint8_t>(prefix);
+     m09::AbstractFamilyChoice family;family.stereo_side_eq_prefix=static_cast<std::uint8_t>(prefix);
     const auto& allocation=authority.allocations.front();
     const std::vector<m09::NativeRoleSeed> role{{allocation.role,allocation.instance,allocation.semantic,
         bank.side[prefix-1U].payload}};
@@ -71,31 +122,13 @@ measure_native_post_side_stereo_seed_row(
         owners.current_owner,owners.current_prepared,owners.frozen_registry,
         owners.frozen_manual,owners.frozen_manual_bindings,graph->linked,graph->bindings,ticket,
         owners.maximum_block_frames,true);
-    if(!job||job.value()->exact_fixed_graph_content()!=
-        std::optional<m10_frozen::ExactCacheBytes>{fixed.exact_fixed_graph_content})return {};
-    const auto execution=job.value()->exact_execution_graph_content();
-    if(!execution)return {};
-    auto spec=input.native_spec;spec.retain_native_spectral_energy=false;
-    const auto measured=measure_m10_p2_full_native_once(*job.value(),std::move(spec),nullptr,cancellation);
-    if(!measured||(cancellation&&cancellation->load(std::memory_order_acquire)))return {};
-    auto definitions=m10_frozen::resolve_original_definitions_from_fixed(fixed,input.originals,
-        owners.current_owner,input.exact_generation,ticket);
-    if(!definitions)return {};
-    const auto owner=native_product_candidate_identity(owners.current_owner,ticket);
-    const auto bound=m10_frozen::bind_p2_original_native_triple_from_independent_full_pair(
-        std::move(*definitions),input.originals,*measured.value(),owner,
-        static_cast<std::int64_t>(measured.value()->native.exact_observed_active_frames),
-        input.file_based_lra_policy_attested);
-    if(!bound.fragments)return {};
-    m07_frozen::ExactTwentySevenFeatureAssembler assembler{input.exact_generation,true};
-    const auto admission=m07_frozen::collect_existing_m05m06_native_fragments(assembler,*bound.fragments);
-    if(admission.status!=m07_frozen::NativeFragmentAdmission::accepted_complete)return {};
-    const auto insertion=assembler.complete_canonical_population();
-    if(!insertion||!m11_frozen::bind_native_fixed_to_candidate(fixed,*insertion,input.amount))return {};
-    m09::NativeFamilySeedBank::PostSideStereo row{*execution,{},bank.side[prefix-1U].payload};
+    if(!job)return {};
+    const auto insertion=measure_native_stereo_insertion_population(input,fixed,*job.value(),cancellation);
+    if(!insertion)return {};
+    m09::NativeFamilySeedBank::PostSideStereo row{insertion->graph,{},bank.side[prefix-1U].payload};
     for(std::size_t i=0;i<row.modes.size();++i)
         row.modes[i]=m09::derive_native_stereo_seed(fixed,input.amount,input.requested,
-            i+1U,true,true,&*insertion);
+            i+1U,true,true,&insertion->slots);
     return row;
 }
 template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
