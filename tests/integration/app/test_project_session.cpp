@@ -730,6 +730,16 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(verification->assessment().native_numerical_evidence_passed());
     QVERIFY(action.phase()==Action::Phase::numerical_pass);
     QVERIFY(action.diagnostic());
+    const auto beforeDisplay=fanout.current_owner_snapshot();
+    QVERIFY(beforeDisplay);
+    action.poll();
+    action.poll();
+    const auto afterDisplay=fanout.current_owner_snapshot();
+    QVERIFY(afterDisplay);
+    QCOMPARE(afterDisplay->epoch,beforeDisplay->epoch);
+    QVERIFY(afterDisplay->identity==beforeDisplay->identity);
+    QVERIFY(action.phase()==Action::Phase::numerical_pass);
+    QVERIFY(action.diagnostic());
     QVERIFY(m13::verify_m13_provisional_diagnostic_integrity(action.diagnostic()->canonical_report));
     QVERIFY(!verification->authorizes_verified());
     const auto diagnostic=session.project.seal_private_m13_actual_native_completion(*verification);

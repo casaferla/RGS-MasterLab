@@ -59,6 +59,7 @@ public:
             });
             operation_=std::move(input);cancel_=std::move(cancel);
             completed_.reset();reviewed_.reset();diagnostic_.reset();verification_result_.reset();
+            verification_owner_.reset();
             search_=std::move(task);phase_=Phase::searching;
             return true;
         }catch(...) {phase_=Phase::failed;return false;}
@@ -157,6 +158,11 @@ public:
                 }
                 auto sealed=project().seal_private_m13_actual_native_completion(*done.value());
                 if(!sealed){phase_=Phase::verification_incomplete;return;}
+                // Sealing already acquired the physical M12/M18 lease.
+                // Record its *post-seal* owner. GUI refresh must never
+                // acquire another mutation lease merely to display it.
+                verification_owner_=fanout_.current_owner_snapshot();
+                if(!verification_owner_){phase_=Phase::verification_incomplete;return;}
                 diagnostic_.emplace(std::move(*sealed.value()));
                 verification_result_.emplace(std::move(*done.value()));
                 phase_=verification_result_->assessment().native_numerical_evidence_passed()
@@ -168,10 +174,18 @@ public:
            operation_&&!current(*operation_)) {
             reviewed_.reset();completed_.reset();phase_=Phase::stale;
         }
-        if(verification_result_&&
-           (!project().private_m13_fresh_probe_still_current(verification_result_->fresh().executed_request)||
-            gold_.selection_revision()!=verification_result_->source_reference_owner().reference_selection_revision)) {
-            diagnostic_.reset();verification_result_.reset();phase_=Phase::stale;
+        if(verification_result_) {
+            const auto currentOwner=fanout_.current_owner_snapshot();
+            // Conservative read-only display validity. An intervening
+            // epoch change retires the displayed evidence; it never
+            // revokes a valid M17 render or touches an in-flight Export.
+            if(!currentOwner||!verification_owner_||
+               currentOwner->epoch!=verification_owner_->epoch||
+               currentOwner->identity!=verification_owner_->identity||
+               gold_.selection_revision()!=verification_result_->source_reference_owner().reference_selection_revision) {
+                diagnostic_.reset();verification_result_.reset();verification_owner_.reset();
+                phase_=Phase::stale;
+            }
         }
     }
 private:
@@ -192,6 +206,7 @@ private:
     std::optional<m12_frozen::AcceptedPlanAndOwner> reviewed_;
     std::optional<m13_frozen::M13ProvisionalDiagnosticEnvelope> diagnostic_;
     std::optional<Completion> verification_result_;
+    std::optional<Fanout::OwnerSnapshot> verification_owner_;
     std::future<NativeQtSearchWorkerResult> search_;
     std::future<core::Result<Completion>> verification_;
 };
