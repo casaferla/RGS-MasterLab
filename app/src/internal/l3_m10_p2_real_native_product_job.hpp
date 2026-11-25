@@ -71,6 +71,27 @@ private:
     std::vector<dsp::ModuleExecutionBinding> linked_bindings_;
     core::FrameCount block_;
 };
+// Exact PCM for the protected MANUAL prefix. This is already a
+// complete, source-rate segment of the cold path; reusing it never
+// introduces an additional cut at a stateful module boundary.
+class M10ExactFixedPrefix final {
+    friend class M10P2RealNativeProductJob;
+public:
+    [[nodiscard]] constexpr bool authorizes_m10_score() const noexcept{return false;}
+private:
+    M10ExactFixedPrefix(OfflineProductOwnerStamp owner,
+        std::shared_ptr<const render::RenderResult> prepared,
+        std::shared_ptr<const dsp::ModuleRegistry> registry,
+        std::shared_ptr<const render::RenderResult> rendered,
+        m10_frozen::ExactCacheBytes graph)
+        :owner_(std::move(owner)),prepared_(std::move(prepared)),registry_(std::move(registry)),
+         rendered_(std::move(rendered)),exact_fixed_graph_(std::move(graph)){}
+    OfflineProductOwnerStamp owner_;
+    std::shared_ptr<const render::RenderResult> prepared_;
+    std::shared_ptr<const dsp::ModuleRegistry> registry_;
+    std::shared_ptr<const render::RenderResult> rendered_;
+    m10_frozen::ExactCacheBytes exact_fixed_graph_;
+};
 class M10P2RealNativeProductJob final {
 public:
     [[nodiscard]] static core::Result<M10P2RealNativeProductJob> create(
@@ -265,6 +286,63 @@ private:
     }
 
 public:
+    // All ordinary trials share this upstream segment. Bound storage to
+    // one immutable PCM snapshot; do not retain large telemetry sidecars.
+    [[nodiscard]] core::Result<M10ExactFixedPrefix>
+    prepare_exact_fixed_prefix(std::optional<std::size_t> requested_maximum=std::nullopt) const {
+        using R=core::Result<M10ExactFixedPrefix>;
+        if(!prepared_||!registry_||!preserves_user_terminal())
+            return R::failure(error("L3_M10_FIXED_PREFIX_OWNER_INVALID"));
+        const auto view=prepared_->view();
+        const auto frames=view.frame_count().value();
+        const auto channels=view.format().channel_count();
+        const auto budget=m10_p2_memory::current_budget(requested_maximum);
+        if(frames<=0||channels<1U||channels>2U||
+           static_cast<std::uint64_t>(frames)>budget/(static_cast<std::uint64_t>(channels)*sizeof(double)))
+            return R::failure(error("L3_M10_FIXED_PREFIX_RAM_BUDGET"));
+        // Avoid building/cache-retaining stage telemetry for these
+        // snapshots. Other module types can take the cold path.
+        for(const auto& node:fixed_.instances())
+            if(node.active()&&(node.module_type_id()=="rgsml.dsp.compressor"||
+               node.module_type_id()=="rgsml.dsp.stereo-ms"))
+                return R::failure(error("L3_M10_FIXED_PREFIX_TELEMETRY_UNSUPPORTED"));
+        const auto graph=exact_fixed_graph_content();
+        if(!graph)return R::failure(error("L3_M10_FIXED_PREFIX_GRAPH_INVALID"));
+        auto rendered=render_segment(view,fixed_,fixed_bindings_);
+        if(!rendered)return R::failure(*rendered.error());
+        if(rendered.value()->compressor_telemetry_sidecar()||
+           !rendered.value()->stereo_ms_stage_output_sidecars().empty())
+            return R::failure(error("L3_M10_FIXED_PREFIX_TELEMETRY_UNSUPPORTED"));
+        try {
+            auto pcm=std::make_shared<const render::RenderResult>(std::move(*rendered.value()));
+            return R::success(M10ExactFixedPrefix{owner_,prepared_,registry_,std::move(pcm),*graph});
+        }catch(const std::bad_alloc&) {
+            return R::failure(error("L3_M10_FIXED_PREFIX_OOM"));
+        }
+    }
+    [[nodiscard]] bool matches_exact_fixed_prefix(const M10ExactFixedPrefix& prefix) const {
+        if(!prepared_||!registry_||!prefix.rendered_||!preserves_user_terminal()||
+           prefix.owner_!=owner_||prefix.prepared_!=prepared_||prefix.registry_!=registry_||
+           prefix.rendered_->view().absolute_range()!=prepared_->view().absolute_range()||
+           prefix.rendered_->view().format()!=prepared_->view().format())return false;
+        const auto current=exact_fixed_graph_content();
+        return current&&*current==prefix.exact_fixed_graph_;
+    }
+    [[nodiscard]] core::Result<render::RenderResult>
+    execute_with_exact_fixed_prefix(const M10ExactFixedPrefix& prefix) const {
+        using R=core::Result<render::RenderResult>;
+        if(!matches_exact_fixed_prefix(prefix))return R::failure(error("L3_M10_FIXED_PREFIX_STALE"));
+        auto linked=render_segment(prefix.rendered_->view(),linked_,linked_bindings_);
+        if(!linked)return linked;
+        if(p2_bindings_.empty()) {
+            if(!result_has_expected_scope(*linked.value()))return R::failure(error("L3_M10_FIXED_PREFIX_SCOPE"));
+            return linked;
+        }
+        auto final=render_segment(linked.value()->view(),final_p2_,p2_bindings_);
+        if(!final)return final;
+        if(!result_has_expected_scope(*final.value()))return R::failure(error("L3_M10_FIXED_PREFIX_SCOPE"));
+        return final;
+    }
     // Optional exact PCM prefix cache uses available physical RAM at the
     // time of creation. Never compromise entire-resource output if the
     // budget is too small: execute() takes the correct cold path.

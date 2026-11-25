@@ -1766,6 +1766,21 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(!without_p2.value()->result_has_expected_scope(*owned_pcm.value()));
     QVERIFY(!owned_job.value()->result_has_expected_scope(*no_terminal.value()));
     QCOMPARE(owned_pcm.value()->signatures().back().instance_id,owned_id);
+    QVERIFY(!owned_job.value()->prepare_exact_fixed_prefix(0U));
+    const auto fixed_prefix=owned_job.value()->prepare_exact_fixed_prefix();
+    if(fixed_prefix) {
+        QVERIFY(owned_job.value()->matches_exact_fixed_prefix(*fixed_prefix.value()));
+        QVERIFY(!without_p2.value()->matches_exact_fixed_prefix(*fixed_prefix.value())); // distinct registry owner
+        const auto warm=owned_job.value()->execute_with_exact_fixed_prefix(*fixed_prefix.value());
+        QVERIFY(warm);
+        QCOMPARE(warm.value()->signatures(),owned_pcm.value()->signatures());
+        for(std::size_t channel=0;channel<owned_pcm.value()->view().format().channel_count();++channel) {
+            const auto cold_samples=owned_pcm.value()->view().channel(channel);
+            const auto warm_samples=warm.value()->view().channel(channel);
+            QVERIFY(cold_samples&&warm_samples);
+            QVERIFY(std::equal(cold_samples.value()->begin(),cold_samples.value()->end(),warm_samples.value()->begin()));
+        }
+    }
     const auto owned_tp=analysis::measure_true_peak_full_resource(owned_pcm.value()->buffer());
     QVERIFY(owned_tp);
     QVERIFY(std::isfinite(owned_tp.value()->global_linear_peak()));
