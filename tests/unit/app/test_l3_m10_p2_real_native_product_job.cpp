@@ -81,6 +81,7 @@ private slots:
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
+    void nativeOverBudgetFamilyIsDescribedButNeverExecuted();
     void nativeDomainSelectionKeepsUnavailableNumericWinners();
     void nativeSelectedFamilyChecksExactSeedIdentity();
     void nativeLoudnessSeedUsesFixedIntegratedAndIndependentTp();
@@ -886,6 +887,80 @@ void P2RealNativeProductTest::nativeDomainSelectionKeepsUnavailableNumericWinner
     });
     QVERIFY(!incomplete.ready);
     QVERIFY(!m09::enumerate_retained_domain_cartesian(incomplete));
+}
+void P2RealNativeProductTest::nativeOverBudgetFamilyIsDescribedButNeverExecuted() {
+    namespace m09=a::m09_frozen;
+    namespace m10=a::m10_frozen;
+    auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    auto optin=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*base.value()));
+    QVERIFY(optin);
+    auto registry=std::make_shared<const dsp::ModuleRegistry>(std::move(*optin.value()));
+    unsigned next_id=1U;
+    m09::NativeOwnerAllocations ids([&](){
+        core::Uuid::Bytes bytes{};bytes[0]=0xce;bytes[15]=static_cast<std::uint8_t>(next_id++);
+        return core::Uuid{bytes};
+    });
+    m09::NativeFamilySeedBank bank;
+    std::vector<m09::NativeBandCoordinateAuthority> bands;
+    std::vector<dsp::EqBandParameters> tonal;
+    for(int i=0;i<6;++i) {
+        const auto id=ids.band(m09::IntentRole::tonal_eq,{i,m09::AtomFilter::bell,0.707});
+        QVERIFY(id);
+        const auto band=dsp::EqBandParameters::create(*id,true,dsp::EqFilterType::BELL,
+            dsp::EqRouting::STEREO,dsp::BellPayload{1000.0+100.0*i,1.0,0.707});
+        QVERIFY(band);
+        tonal.push_back(*band.value());
+        const auto eq=dsp::ParametricEqParameters::create(tonal);
+        QVERIFY(eq);
+        bank.tonal.push_back({*eq.value(),{}, {}, {}});
+        bands.push_back({m09::IntentRole::tonal_eq,*id,*ids.band_identity(m09::IntentRole::tonal_eq,*id),
+            {20.0,18000.0}});
+    }
+    std::vector<dsp::DynamicEqBandParameters> dynamic;
+    for(std::size_t i=0;i<3U;++i) {
+        const auto id=ids.dynamic_band(i);
+        QVERIFY(id);
+        dsp::DynamicEqBandSpec spec;spec.band_id=*id;
+        spec.shape=dsp::DynamicEqBellShape{2000.0+100.0*i,0.707};
+        spec.control.range_db=-1.0;
+        const auto band=dsp::DynamicEqBandParameters::create(spec);
+        QVERIFY(band);
+        dynamic.push_back(*band.value());
+        const auto eq=dsp::DynamicEqParameters::create(dynamic);
+        QVERIFY(eq);
+        bank.spectral.push_back({*eq.value(),{}, {}});
+        bands.push_back({m09::IntentRole::spectral_dynamic_eq,*id,
+            *ids.band_identity(m09::IntentRole::spectral_dynamic_eq,*id),{20.0,18000.0}});
+    }
+    const auto compressor=dsp::CompressorParameters::create(dsp::CompressorDetectorMode::RMS,
+        dsp::CompressorChannelLink::LINKED_MAX,-20.0,1.5,6.0,30.0,200.0,50.0,5.0,100.0,0.0);
+    QVERIFY(compressor);
+    bank.macro[0]=m09::NativeCompressorSeed{*compressor.value(),0.5,-20.0,false};
+    m09::AbstractFamilyChoice family;family.tonal_eq_prefix=6U;
+    family.spectral_dynamic_eq_prefix=3U;family.macro=m09::MacroMode::linked_max;
+    std::vector<m09::NativeRoleAllocation> allocations;
+    std::vector<m09::NativeRoleCoordinateAuthority> role_keys;
+    for(const auto role:m09::ordered_abstract_roles(family)) {
+        const auto allocated=ids.role(role);QVERIFY(allocated);
+        allocations.push_back(*allocated);
+        role_keys.push_back({role,m09::NativeOwnerAllocations::role_key(role)});
+    }
+    const auto requests=m09::derive_native_family_coordinate_requests(bank,family,role_keys,bands,48000);
+    QVERIFY(requests);
+    QCOMPARE(requests->size(),std::size_t{50});
+    QVERIFY(!m09::build_native_family_seed(registry,bank,family,allocations,*requests,1U,48000));
+    const m09::CandidateCarrier identity{{0x71},{},{0x72},{0x73},{"inventory-fixture"}};
+    const auto described=m09::bind_native_family_candidate_with_inventory(registry,bank,family,
+        allocations,role_keys,bands,1U,48000,identity,{}, {1.0,{1.0,1.0,1.0,1.0},1U},
+        {true,true,true,true},{});
+    QVERIFY(described);
+    QCOMPARE(described->legal.exact_active_coordinate_count,std::size_t{50});
+    QVERIFY(!described->legal.pre_render_proxy.is_bound());
+    const std::array<m10::BoundLegalCombinedCandidate,1> entries{described->legal};
+    const auto selected=m10::bind_exact_legal_combined_and_select_top32({0x73},entries,true);
+    QVERIFY(selected.status==m10::BoundLegalStatus::all_candidates_parameter_budget_excluded);
+    QVERIFY(selected.combined_consumer.ledger.front().reason==m10::ConsumerReason::topology_parameter_budget_exceeded);
 }
 void P2RealNativeProductTest::nativeFamilyBankDoesNotSubstituteUnavailableRoles() {
     namespace m09=a::m09_frozen;
