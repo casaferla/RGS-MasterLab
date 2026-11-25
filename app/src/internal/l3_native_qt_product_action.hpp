@@ -137,6 +137,7 @@ public:
                                     m08_frozen::effective_amount(operation_->policy.amount,i).rounded>0.0);
                             if(positive) {
                                 error_="L3_PRODUCT_NO_CORRECTION_EVIDENCE_UNAVAILABLE";
+                                completed_.emplace(std::move(done));
                                 phase_=Phase::failed;
                             }else phase_=Phase::zero_amount_prior_retained;
                         }
@@ -145,7 +146,14 @@ public:
                 }
                 auto plan=review_native_qt_product_session_on_owner(project(),product_,fanout_,
                     selector_,gold_,*operation_,done);
-                if(!plan){phase_=Phase::failed;return;}
+                if(!plan){
+                    error_="L3_PRODUCT_SEARCH_NO_REVIEWABLE_WINNER: worker="+
+                        std::to_string(static_cast<int>(done.result.phase))+
+                        " search="+std::to_string(static_cast<int>(done.result.search.status))+
+                        " fixed="+std::to_string(static_cast<int>(done.result.search.fixed_gate.status));
+                    completed_.emplace(std::move(done));
+                    phase_=Phase::failed;return;
+                }
                 completed_.emplace(std::move(done));reviewed_.emplace(std::move(*plan));
                 phase_=Phase::candidate_ready;
             }catch(...) {phase_=Phase::failed;}

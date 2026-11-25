@@ -451,12 +451,20 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     // alter very low-power protected tonal/temporal components.
     const auto writeTone=[&](const QString& name,std::int64_t multiplier) {
         std::vector<std::int64_t> samples(48000U*12U);
+        // Exact shared deterministic broadband excitation, including the
+        // 8–16 kHz slope and low-power fractional-octave bands. Pure
+        // low-frequency tones cannot attest all requested tonal features.
+        std::uint32_t noiseState=UINT32_C(0x4d595df4);
         for(std::size_t i=0;i<samples.size();++i) {
             const double t=static_cast<double>(i)/48000.0;
             constexpr double tau=6.2831853071795864769;
             const double envelope=0.7+0.3*std::sin(tau*0.8*t);
+            noiseState^=noiseState<<13U;
+            noiseState^=noiseState>>17U;
+            noiseState^=noiseState<<5U;
+            const double noise=2.0*static_cast<double>(noiseState)/4294967295.0-1.0;
             const double v=envelope*(0.12*std::sin(tau*55.0*t)+
-                0.08*std::sin(tau*440.0*t)+0.04*std::sin(tau*2200.0*t));
+                0.08*std::sin(tau*440.0*t)+0.04*std::sin(tau*2200.0*t)+0.065*noise);
             samples[i]=static_cast<std::int64_t>(std::llround(v*2097152.0))*multiplier;
         }
         const auto bytes=wav_support::make_wav(1U,24U,1U,48000U,
@@ -853,6 +861,15 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     };
     QVERIFY(clearAction.begin(*noCorrection.value(),clearAllocator));
     QTRY_VERIFY_WITH_TIMEOUT((clearAction.poll(),!clearAction.busy()),180000);
+    if(const auto* outcome=clearAction.result()) {
+        const auto& gate=outcome->result.search.fixed_gate;
+        qInfo("No-correction fixture worker=%d search=%d gate=%d coverageT=%.9g",
+            static_cast<int>(outcome->result.phase),static_cast<int>(outcome->result.search.status),
+            static_cast<int>(gate.status),gate.targets.coverage[0].value_or(-1.0));
+        for(std::size_t i=0;i<6U&&i<gate.targets.features.size();++i)
+            qInfo("Tonal feature %u fixed status=%d",static_cast<unsigned>(i+1U),
+                static_cast<int>(gate.targets.features[i].status));
+    }
     QVERIFY2(clearAction.phase()==Action::Phase::no_correction_prior_retained,clearAction.error().c_str());
     QVERIFY(clearAction.can_adopt());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
