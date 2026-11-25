@@ -157,4 +157,45 @@ native_dynamic_band_cluster_bounds(const NativeDynamicPrefix& prefix,const core:
     }
     return {};
 }
+// Band identity remains supplied by the owner; frequency bounds come
+// exclusively from the selected seed's original eligible evidence.
+template<class ResolveBandIdentity>
+[[nodiscard]] inline std::optional<std::vector<NativeBandCoordinateAuthority>>
+derive_native_family_band_authorities(const NativeFamilySeedBank& bank,
+    const AbstractFamilyChoice& family,double common_low,double common_high,
+    ResolveBandIdentity&& identity)
+{
+    std::vector<NativeBandCoordinateAuthority> out;
+    for(const auto role:ordered_abstract_roles(family)) {
+        const auto payload=native_family_role_payload(bank,family,role);
+        if(!payload)return {};
+        if(const auto* eq=std::get_if<dsp::ParametricEqParameters>(&*payload)) {
+            const bool side=role==IntentRole::stereo_side_eq;
+            if(!side&&role!=IntentRole::tonal_eq)return {};
+            const auto& prefix=side?bank.side[family.stereo_side_eq_prefix-1U]:
+                bank.tonal[family.tonal_eq_prefix-1U];
+            const auto& grid=side?bank.exact_side_grid:bank.exact_tonal_grid;
+            for(const auto& band:eq->bands()) {
+                auto key=std::invoke(identity,role,band.band_id());
+                auto bounds=native_eq_band_run_bounds(prefix,grid,band.band_id(),common_low,common_high);
+                if(!key||key->empty()||!bounds)return {};
+                out.push_back({role,band.band_id(),std::move(*key),*bounds});
+            }
+        } else if(const auto* dynamic=std::get_if<dsp::DynamicEqParameters>(&*payload)) {
+            if(role!=IntentRole::spectral_dynamic_eq)return {};
+            const auto& prefix=bank.spectral[family.spectral_dynamic_eq_prefix-1U];
+            for(const auto& band:dynamic->bands()) {
+                const auto id=band.spec().band_id;
+                auto key=std::invoke(identity,role,id);
+                auto bounds=native_dynamic_band_cluster_bounds(prefix,id,common_low,common_high);
+                if(!key||key->empty()||!bounds)return {};
+                out.push_back({role,id,std::move(*key),*bounds});
+            }
+        }
+    }
+    for(std::size_t i=0;i<out.size();++i)
+        for(std::size_t j=0;j<i;++j)
+            if(out[i].role==out[j].role&&out[i].semantic_band_key==out[j].semantic_band_key)return {};
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
