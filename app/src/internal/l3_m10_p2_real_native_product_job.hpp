@@ -343,6 +343,14 @@ public:
         if(!result_has_expected_scope(*final.value()))return R::failure(error("L3_M10_FIXED_PREFIX_SCOPE"));
         return final;
     }
+    [[nodiscard]] bool owned_p2_prefix_eligible() const noexcept {
+        const auto nodes=linked_.instances();
+        return p2_bindings_.empty()&&!nodes.empty()&&nodes.back().active()&&
+            nodes.back().module_type_id()=="rgsml.dsp.streaming-true-peak-limiter"&&
+            std::all_of(nodes.begin(),nodes.end()-1,[](const auto& n){
+                return n.module_type_id()=="rgsml.dsp.gain"||n.module_type_id()=="rgsml.dsp.parametric-eq";
+            });
+    }
     // Optional exact PCM prefix cache uses available physical RAM at the
     // time of creation. Never compromise entire-resource output if the
     // budget is too small: execute() takes the correct cold path.
@@ -351,7 +359,8 @@ public:
         std::optional<std::size_t> requested_maximum=std::nullopt) const
     {
         using R=core::Result<M10P2ExactPrefix>;
-        if(!prepared_||!registry_||p2_bindings_.empty())
+        const bool owned=owned_p2_prefix_eligible();
+        if(!prepared_||!registry_||(p2_bindings_.empty()&&!owned))
             return R::failure(error("L3_M10_P2_MISSING_IMMUTABLE_OWNER"));
         const auto v=prepared_->view();
         const auto frames=v.frame_count().value();
@@ -366,7 +375,20 @@ public:
                static_cast<std::uint64_t>(channels)*sizeof(double)>
                static_cast<std::uint64_t>(max_cache_bytes))
             return R::failure(error("L3_M10_P2_EXACT_PREFIX_RAM_BUDGET"));
-        auto linked=render_pre_p2();
+        const auto nodes=linked_.instances();
+        const auto prefix_count=nodes.size()-(owned?1U:0U);
+        const auto prefix_end=nodes.begin()+static_cast<std::ptrdiff_t>(prefix_count);
+        const auto binding_end=linked_bindings_.begin()+static_cast<std::ptrdiff_t>(prefix_count);
+        auto linked=[&]()->core::Result<render::RenderResult>{
+            if(!owned)return render_pre_p2();
+            auto fixed=render_segment(prepared_->view(),fixed_,fixed_bindings_);
+            if(!fixed)return fixed;
+            auto prefix=dsp::ProcessingChain::restore(*registry_,linked_.context(),
+                linked_.revision(),{nodes.begin(),prefix_end});
+            if(!prefix)return core::Result<render::RenderResult>::failure(*prefix.error());
+            return render_segment(fixed.value()->view(),*prefix.value(),
+                {linked_bindings_.begin(),binding_end});
+        }();
         if(!linked)return R::failure(*linked.error());
         try {
             auto immutable=std::make_shared<const render::RenderResult>(
@@ -375,34 +397,47 @@ public:
                 owner_,prepared_,registry_,std::move(immutable),
                 baseline_manual_revision_,baseline_manual_nodes_,
                 baseline_manual_bindings_,linked_.revision(),
-                {linked_.instances().begin(),linked_.instances().end()},
-                linked_bindings_,max_block_frames_});
+                {nodes.begin(),prefix_end},
+                {linked_bindings_.begin(),binding_end},max_block_frames_});
         }catch(const std::bad_alloc&) {
             return R::failure(error("L3_M10_P2_PREFIX_SNAPSHOT_OOM"));
         }
+    }
+    [[nodiscard]] bool matches_exact_pre_p2_prefix(const M10P2ExactPrefix& prefix) const noexcept {
+        const bool owned=owned_p2_prefix_eligible();
+        const auto nodes=linked_.instances();
+        const auto count=nodes.size()-(owned?1U:0U);
+        return prepared_&&registry_&&(!p2_bindings_.empty()||owned)&&
+           prefix.rendered_&&prefix.owner_==owner_&&
+           prefix.prepared_==prepared_&&prefix.registry_==registry_&&
+           prefix.block_==max_block_frames_&&
+           prefix.manual_revision_==baseline_manual_revision_&&
+           prefix.manual_nodes_==baseline_manual_nodes_&&
+           prefix.manual_bindings_==baseline_manual_bindings_&&
+           prefix.linked_revision_==linked_.revision()&&
+           prefix.linked_bindings_.size()==count&&prefix.linked_nodes_.size()==count&&
+           std::equal(prefix.linked_bindings_.begin(),prefix.linked_bindings_.end(),linked_bindings_.begin())&&
+           std::equal(prefix.linked_nodes_.begin(),prefix.linked_nodes_.end(),nodes.begin())&&
+           prefix.rendered_->view().absolute_range()==prepared_->view().absolute_range()&&
+           prefix.rendered_->view().format()==prepared_->view().format();
     }
     [[nodiscard]] core::Result<render::RenderResult>
     execute_with_exact_pre_p2_prefix(const M10P2ExactPrefix& prefix) const
     {
         using R=core::Result<render::RenderResult>;
-        if(p2_bindings_.empty()||!prefix.rendered_||prefix.owner_!=owner_||
-           prefix.prepared_!=prepared_||prefix.registry_!=registry_||
-           prefix.block_!=max_block_frames_||
-           prefix.manual_revision_!=baseline_manual_revision_||
-           prefix.manual_nodes_!=baseline_manual_nodes_||
-           prefix.manual_bindings_!=baseline_manual_bindings_||
-           prefix.linked_revision_!=linked_.revision()||
-           prefix.linked_bindings_!=linked_bindings_||
-           prefix.linked_nodes_.size()!=linked_.instances().size()||
-           !std::equal(prefix.linked_nodes_.begin(),
-                       prefix.linked_nodes_.end(),
-                       linked_.instances().begin())||
-           prefix.rendered_->view().absolute_range()!=
-               prepared_->view().absolute_range()||
-           prefix.rendered_->view().format()!=prepared_->view().format())
+        if(!matches_exact_pre_p2_prefix(prefix))
             return R::failure(error("L3_M10_P2_PREFIX_UPSTREAM_STALE"));
-        auto limited=render_segment(
-            prefix.rendered_->view(),final_p2_,p2_bindings_);
+        auto limited=[&]()->R{
+            if(!owned_p2_prefix_eligible())
+                return render_segment(prefix.rendered_->view(),final_p2_,p2_bindings_);
+            // The proof-bound prefix owns the exact fixed+linked PCM.
+            // Its view supplies geometry to the native suffix request;
+            // only the final P2 is executed by the cache renderer.
+            const auto request=render::RenderRequest::create(prefix.rendered_->view(),
+                prefix.rendered_->view().absolute_range(),linked_,linked_bindings_,max_block_frames_);
+            if(!request)return R::failure(*request.error());
+            return render::render_preview_p2_cached_prefix(*request.value(),*prefix.rendered_,*registry_);
+        }();
         if(!limited)return R::failure(*limited.error());
         if(!result_has_expected_scope(*limited.value()))
             return R::failure(error("L3_M10_P2_FULL_RENDER_SCOPE_INVALID"));
