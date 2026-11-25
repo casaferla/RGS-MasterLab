@@ -524,6 +524,11 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
         native_input,definitions,allocate,{}, {0x76});
     QVERIFY(native_result.fixed);
     QVERIFY(native_result.search.refinement);
+    qInfo("native fixture 12s: fixed=%lld ms seeds=%lld ms search=%lld ms; attempts=%u P2=%u exact-prefix=%u pre-P2=%u",
+        static_cast<long long>(native_result.timing.fixed_ms),static_cast<long long>(native_result.timing.seed_ms),
+        static_cast<long long>(native_result.timing.search_ms),native_result.search.refinement->total_attempted,
+        native_result.owned_p2_counts.attempted,native_result.exact_fixed_prefix_uses,
+        native_result.exact_owned_pre_p2_prefix_uses);
     QVERIFY2(native_result.owned_p2_counts.attempted>=2U,
         "owned P2 alternatives never reached the genuine M10 evaluator");
     QVERIFY2(native_result.owned_p2_counts.complete>=1U,
