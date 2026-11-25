@@ -155,6 +155,58 @@ struct NativeCombinedEntry final {
     std::optional<BoundNativeFamilyCandidate> candidate;
     std::string exact_reason;
 };
+struct NativeFamilyBindingAuthority final {
+    NativeDomainDisposition disposition{NativeDomainDisposition::unresolved};
+    CandidateCarrier identity;
+    std::vector<NativeRoleAllocation> allocations;
+    std::vector<NativeRoleCoordinateAuthority> role_keys;
+    bool available_currently{};
+    std::string exact_reason;
+};
+struct NativeFamilyBindingEnvironment final {
+    std::shared_ptr<const dsp::ModuleRegistry> registry;
+    const NativeFamilySeedBank& bank;
+    const m11_frozen::NativeFixedPopulation& fixed;
+    const m08_frozen::AmountConfig& amount;
+    std::uint64_t revision{};
+    std::int64_t rate{};
+    double common_low{},common_high{};
+    m10_frozen::AuthoritativeCostInput constraints;
+};
+// Separate the exact analytical/legality decision from installed
+// availability. A binding failure is unresolved, not not-applicable.
+template<class ResolveBandIdentity>
+[[nodiscard]] inline NativeCombinedEntry bind_native_family_entry(
+    const NativeFamilyBindingEnvironment& env,const AbstractFamilyChoice& family,
+    const NativeFamilyBindingAuthority& authority,const std::array<bool,4>& requested,
+    ResolveBandIdentity&& resolve_band)
+{
+    NativeCombinedEntry out{family,authority.disposition,{},authority.exact_reason};
+    if(authority.disposition!=NativeDomainDisposition::legal)return out;
+    if(authority.exact_reason.empty())return {family,NativeDomainDisposition::unresolved,{},"missing-legality-reason"};
+    auto bound=bind_native_family_with_derived_bounds(env.registry,env.bank,family,
+        authority.allocations,authority.role_keys,env.common_low,env.common_high,
+        env.revision,env.rate,authority.identity,env.fixed,env.amount,requested,
+        env.constraints,std::forward<ResolveBandIdentity>(resolve_band));
+    if(!bound)return {family,NativeDomainDisposition::unresolved,{},"missing-exact-native-binding"};
+    bound->legal.availability_currently=authority.available_currently;
+    out.candidate=std::move(bound);
+    return out;
+}
+template<class ResolveBandIdentity>
+[[nodiscard]] inline NativeDomainEntry bind_native_domain_entry(
+    const NativeFamilyBindingEnvironment& env,std::size_t domain,const AbstractFamilyChoice& family,
+    const NativeFamilyBindingAuthority& authority,ResolveBandIdentity&& resolve_band)
+{
+    if(domain>=4U)return {family,NativeDomainDisposition::unresolved,{},"invalid-domain"};
+    std::array<bool,4> only{};only[domain]=true;
+    auto bound=bind_native_family_entry(env,family,authority,only,
+        std::forward<ResolveBandIdentity>(resolve_band));
+    NativeDomainEntry out{family,bound.disposition,{},std::move(bound.exact_reason)};
+    if(bound.candidate)out.legal=m10_frozen::ConsumerInput{
+        bound.candidate->legal.pre_render_proxy,bound.candidate->legal.availability_currently};
+    return out;
+}
 struct NativeCombinedStream final {
     bool complete{};
     std::vector<NativeCombinedEntry> ledger;
