@@ -175,7 +175,8 @@ target_compile_definitions(rgsml_project_session_tests PRIVATE
 target_link_libraries(rgsml_project_session_tests PRIVATE
     rgsml_project rgsml_render rgsml_platform rgsml_ui Qt6::Core Qt6::Test)
 rgsml_apply_project_warnings(rgsml_project_session_tests)
-add_test(NAME rgsml_project_session_tests COMMAND rgsml_project_session_tests)
+add_test(NAME rgsml_project_session_tests COMMAND rgsml_project_session_tests
+    -o "${CMAKE_CURRENT_BINARY_DIR}/project-session-qtest.txt,txt")
 set_tests_properties(rgsml_project_session_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "project;app")
@@ -3254,7 +3255,8 @@ if(WIN32)
 endif()
 rgsml_apply_project_warnings(rgsml_l3_m10_p2_real_native_product_tests)
 add_test(NAME rgsml_l3_m10_p2_real_native_product_tests
-    COMMAND rgsml_l3_m10_p2_real_native_product_tests)
+    COMMAND rgsml_l3_m10_p2_real_native_product_tests
+    -o "${CMAKE_CURRENT_BINARY_DIR}/native-product-qtest.txt,txt")
 set_tests_properties(rgsml_l3_m10_p2_real_native_product_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;p2;real_product;native_analysis;nonrelease")
