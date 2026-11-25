@@ -119,7 +119,7 @@ build_current_native_definitions(const NativeDefinitionPolicy& policy,
     out.d02.exact_feature_definition_and_all_source_epochs_current=true;
     out.d02.exact_feature_dependency=dep(7);
     out.d03_d04.exact_phase6_feature_definition_current=true;
-    out.d03_d04.all_three_source_reference_grade_attested=macro[0]&&macro[1]&&macro[2];
+    out.d03_d04.exact_per_source_grade=macro;
     out.d03_d04.exact_feature_dependency=dep(8);
     for(std::size_t i=0;i<3U;++i) {
         out.d07_d09.exact_feature_definition_digests[i]=dep(12U+i);

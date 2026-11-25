@@ -17,6 +17,7 @@ struct D03D04FullEvidence final {
     bool exact_phase6_feature_definition_current{};
     bool all_three_source_reference_grade_attested{};
     std::string exact_feature_dependency;
+    std::optional<std::array<bool,3>> exact_per_source_grade{};
 };
 enum class D03D04SlotFailure:std::uint8_t {
     none,stale_or_unauthenticated_input,invalid_real_series,
@@ -32,7 +33,7 @@ struct D03D04SlotProjection final {
 make_real_d03_d04_m07_m08_slots(const D03D04FullEvidence& e)
 {
     if(!e.exact_phase6_feature_definition_current||
-       !e.all_three_source_reference_grade_attested||
+       (!e.all_three_source_reference_grade_attested&&!e.exact_per_source_grade)||
        !e.candidate_owner.full_track_owner_confirmed||
        !e.candidate_owner.generation||
        e.candidate_owner.resource_identity.empty()||
@@ -59,9 +60,14 @@ make_real_d03_d04_m07_m08_slots(const D03D04FullEvidence& e)
     };
     std::array<m08_frozen::AuthenticatedPairSlot,2> feature_slots{
         as_slot(*d03),as_slot(*d04)};
-    const auto add=[](m08_frozen::AuthenticatedPairSlot& to,
+    const auto grades=e.exact_per_source_grade.value_or(std::array<bool,3>{true,true,true});
+    const auto add=[&](m08_frozen::AuthenticatedPairSlot& to,
         std::optional<double> prepared,std::optional<double> gold,
         std::optional<double> observed,std::optional<double> support) {
+        if(!grades[0])prepared.reset();
+        if(!grades[1])gold.reset();
+        if(!grades[2])observed.reset();
+        if(!grades[0]||!grades[1])support.reset();
         to.configured.push_back({
             static_cast<bool>(prepared&&gold&&support&&*support>0),
             support?*support:0.0,
@@ -90,14 +96,14 @@ make_real_d03_d04_m07_m08_slots(const D03D04FullEvidence& e)
     const auto rms_identity=rms_membership.finish();
     const auto crest_identity=crest_membership.finish();
     auto& rms=feature_slots[0].configured.front().candidate_native;
-    rms.value=candidate.d03_type7_rms_p95_minus_p10_db;
+    rms.value=feature_slots[0].configured.front().current_candidate_z;
     rms.valid_count=candidate.valid_rms_windows;
     rms.configured_count=candidate.complete_native_windows;
     rms.selector="P95-P10";
     rms.population_identity=rms_identity;
     for(std::size_t i=0;i<3U;++i) {
         auto& crest=feature_slots[1].configured[i].candidate_native;
-        crest.value=candidate.d04_type7_crest_p10_p50_p90_db[i];
+        crest.value=feature_slots[1].configured[i].current_candidate_z;
         crest.valid_count=candidate.valid_crest_windows;
         crest.configured_count=candidate.complete_native_windows;
         crest.selector=std::array<const char*,3>{{"P10","P50","P90"}}[i];

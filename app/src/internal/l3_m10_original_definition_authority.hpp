@@ -41,6 +41,7 @@ namespace rgsml::app::l3_automatch::m10_frozen {
     out.d03_d04.all_three_source_reference_grade_attested=
         input.d03_d04.all_three_source_reference_grade_attested;
     out.d03_d04.exact_feature_dependency=input.d03_d04.exact_feature_dependency;
+    out.d03_d04.exact_per_source_grade=input.d03_d04.exact_per_source_grade;
     out.d07_d09.exact_feature_definition_digests=input.d07_d09.exact_feature_definition_digests;
     out.d07_d09.per_descriptor_source_grade=input.d07_d09.per_descriptor_source_grade;
     out.d07_d09.same_exact_p04_policy_context_and_generation_attested=
@@ -123,6 +124,8 @@ namespace rgsml::app::l3_automatch::m10_frozen {
     owner(input.d03_d04.candidate_owner);
     integer(input.d03_d04.exact_phase6_feature_definition_current);
     integer(input.d03_d04.all_three_source_reference_grade_attested);
+    integer(input.d03_d04.exact_per_source_grade.has_value());
+    if(input.d03_d04.exact_per_source_grade)grades(*input.d03_d04.exact_per_source_grade);
     field(input.d03_d04.exact_feature_dependency);
     for(const auto& f:input.d07_d09.exact_feature_definition_digests)field(f);
     for(const auto& g:input.d07_d09.per_descriptor_source_grade)grades(g);
