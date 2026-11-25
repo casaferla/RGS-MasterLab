@@ -610,11 +610,19 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
         session.gold,*captured.value()));
     const auto uuidOf=[](const char* value){return *core::Uuid::parse(value).value();};
-    const m12::AcceptedPlanAndOwner plan{
-        uuidOf("e6000000-0000-4000-8000-000000000001"),
-        uuidOf("e6000000-0000-4000-8000-000000000002"),
-        "qt-native-test-plan","qt-native-test-winner","qt-native-test-fixed","qt-native-test-scope",
-        1U,true,true,true,false};
+    const auto planId=uuidOf("e6000000-0000-4000-8000-000000000001");
+    const auto controllerId=uuidOf("e6000000-0000-4000-8000-000000000002");
+    const auto built=a::build_native_qt_measured_plan(*captured.value(),policy,*completed,planId,controllerId);
+    QVERIFY(built);
+    const auto& plan=*built;
+    const auto repeated=a::build_native_qt_measured_plan(*captured.value(),policy,*completed,planId,controllerId);
+    QVERIFY(repeated);
+    QCOMPARE(repeated->exact_plan_content_checksum,plan.exact_plan_content_checksum);
+    QCOMPARE(plan.exact_plan_content_checksum.size(),std::size_t{64});
+    auto changedPolicy=policy;
+    changedPolicy.independent_ceiling_db_tp=-1.0;
+    QVERIFY(!a::build_native_qt_measured_plan(*captured.value(),changedPolicy,*completed,planId,controllerId));
+    QVERIFY(!a::build_native_qt_measured_plan(*captured.value(),policy,*completed,planId,planId));
     const auto linkedId=uuidOf("e6000000-0000-4000-8000-000000000003");
     const m12::M12ProjectTransactionExpected expected{
         doc.sourceResourceId,*doc.references.activeReferenceId,*doc.pipeline.masteringChainId,
