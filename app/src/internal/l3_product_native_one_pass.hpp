@@ -189,7 +189,7 @@ measure_real_full_owned_pcm_native_once(
         s03=stereo->finalize(
             spec.phase6_active_pcm_frames,
             spec.exact_stereo_reference_grade,
-            {},low_zero);
+            {},low_zero,actual_zero_side);
         if(!s03.source_observation_complete||
            s03.native_selected_frames!=
              tonal.value()->selected_spectral_windows)

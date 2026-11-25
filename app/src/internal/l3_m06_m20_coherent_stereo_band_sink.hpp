@@ -127,7 +127,8 @@ public:
         std::uint64_t independently_authenticated_active_pcm_frames,
         bool current_scope_and_phase6_reference_grade_attested,
         std::span<const bool> per_band_exact_zero_side_attested={},
-        const std::array<bool,3>& low_end_zero_side_attested={{false,false,false}})
+        const std::array<bool,3>& low_end_zero_side_attested={{false,false,false}},
+        bool exact_full_pcm_zero_side=false)
         const
     {
         StereoCoherentNativeResult out;
@@ -150,8 +151,8 @@ public:
             independently_authenticated_active_pcm_frames>=fs_;
         out.multiband.reserve(bands_.size());
         for(std::size_t i=0;i<bands_.size();++i) {
-            const bool mono=per_band_exact_zero_side_attested.empty()?
-                false:per_band_exact_zero_side_attested[i];
+            const bool mono=exact_full_pcm_zero_side||(!per_band_exact_zero_side_attested.empty()&&
+                per_band_exact_zero_side_attested[i]);
             out.multiband.push_back({
                 bands_[i].index,
                 bands_[i].observed.width(frames_,active,mono,true),
@@ -160,7 +161,7 @@ public:
         if(low_gate_current_) {
             for(std::size_t i=0;i<3U;++i) {
                 out.low_end_width[i]=low_[i].width(
-                    frames_,active,low_end_zero_side_attested[i],false);
+                    frames_,active,exact_full_pcm_zero_side||low_end_zero_side_attested[i],false);
                 out.low_end_correlation[i]=low_[i].correlation(
                     frames_,active,false);
             }
