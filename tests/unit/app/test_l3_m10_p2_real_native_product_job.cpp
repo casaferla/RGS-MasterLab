@@ -7,6 +7,7 @@
 #include "internal/l3_m10_p2_full_native_evidence.hpp"
 #include "internal/l3_m10_p2_authoritative_native_score.hpp"
 #include "internal/l3_native_automatch_worker.hpp"
+#include "internal/l3_native_common_analysis_spec.hpp"
 #include "internal/l3_m12_preserved_native_winner.hpp"
 #include "internal/l3_m09_native_selected_search.hpp"
 #include "internal/l3_m09_native_role_graph.hpp"
@@ -93,6 +94,7 @@ private slots:
     void nativeEqPrefixesPreserveStoredOrder();
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
+    void nativeCommonAnalysisSpecUsesAllRatePairs();
     void nativeSeedGeometryRejectsSubstitutedStereoGrid();
     void nativeDefinitionPolicyAndGradesAreExact();
     void nativeProductPairMetadataKeepsIndependentRates();
@@ -158,6 +160,29 @@ void P2RealNativeProductTest::nativeSeedGeometryRejectsSubstitutedStereoGrid() {
             QVERIFY(!m09::match_exact_native_stereo_grid(wrong,indices,rate,denominator));
         }
     }
+}
+void P2RealNativeProductTest::nativeCommonAnalysisSpecUsesAllRatePairs() {
+    const std::array<std::uint32_t,6> rates{44100,48000,88200,96000,176400,192000};
+    for(const auto p:rates)for(const auto g:rates) {
+        const auto spec=a::build_current_native_common_analysis_spec(p,g,true);
+        QVERIFY(spec);
+        QCOMPARE(spec->prepared.exact_m20_fft_size,analysis::native_tonal_frame_geometry(p)->fft);
+        QCOMPARE(spec->reference.exact_m20_fft_size,analysis::native_tonal_frame_geometry(g)->fft);
+        QVERIFY(spec->prepared.spectral_bands==spec->reference.spectral_bands);
+        QVERIFY(spec->prepared.stereo_bands==spec->reference.stereo_bands);
+        QVERIFY(spec->prepared.derive_own_m19_temporal_gate);
+        QVERIFY(spec->reference.derive_own_m19_temporal_gate);
+        const auto expected=a::m05m06_real::original_native_common_tonal_bandwidth(p,g);
+        QVERIFY(expected);
+        QCOMPARE(spec->common.low_hz,expected->low_hz);
+        QCOMPARE(spec->common.high_hz,expected->high_hz);
+        for(const auto& band:spec->prepared.spectral_bands) {
+            QVERIFY(band.low_hz>=spec->common.low_hz);
+            QVERIFY(band.high_hz<=spec->common.high_hz);
+        }
+    }
+    QVERIFY(!a::build_current_native_common_analysis_spec(48000,48000,false));
+    QVERIFY(!a::build_current_native_common_analysis_spec(32000,48000,true));
 }
 void P2RealNativeProductTest::nativeM20MetadataUsesSixRateGeometry() {
     for(const auto fs:std::array<std::uint32_t,6>{44100,48000,88200,96000,176400,192000}) {
