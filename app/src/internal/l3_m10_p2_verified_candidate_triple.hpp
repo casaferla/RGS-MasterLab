@@ -6,6 +6,7 @@
 // numerical candidate readings fabricated by the original-triple
 // resolver. No M21 proxy, second rendering, M17 WAV Export, M12 receipt.
 #include "l3_m10_p2_real_native_triple_binding.hpp"
+#include "l3_m10_native_source_grade.hpp"
 #include "l3_m10_p2_full_native_evidence.hpp"
 #include "l3_m05m06_original_prepared_reference_pair.hpp"
 #include <array>
@@ -76,6 +77,21 @@ bind_original_native_triple_from_measured_source(
        !same(original.s03_s06.independent_source_owners[2]))
         return {};
     if(!same(actual.owner))return {};
+    if(original.recheck_candidate_duration_grade) {
+        if(exact_phase6_active_frames<0)return {};
+        const auto grade=m05m06_real::native_full_source_duration_grade(actual,
+            static_cast<std::uint64_t>(exact_phase6_active_frames));
+        if(!grade||!original.d03_d04.exact_per_source_grade)return {};
+        original.t01.phase6_source_reference_grade[2]=grade->spectrum;
+        for(auto& f:original.t02_t06.features)f.reference_grade[2]=grade->spectrum;
+        original.d01.phase6_reference_grade[2]=grade->integrated_and_macro;
+        (*original.d03_d04.exact_per_source_grade)[2]=grade->integrated_and_macro;
+        for(auto& f:original.m19.authority)f.source_reference_grade[2]=grade->integrated_and_macro;
+        for(auto& f:original.d07_d09.per_descriptor_source_grade)f[2]=grade->transient;
+        for(auto& f:original.d10_d12.source_reference_grade)f[2]=grade->spectrum;
+        for(auto& f:original.s01_s02.authority)f.phase6_reference_grade[2]=grade->stereo;
+        for(auto& f:original.s03_s06.source_phase6_reference_grade)f[2]=grade->stereo;
+    }
     original.m19.actual_candidate=actual;
     original.s01_s02.actual_candidate=actual;
     original.t01.actual_sources[2]=actual;

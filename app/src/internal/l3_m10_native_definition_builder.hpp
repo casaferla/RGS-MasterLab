@@ -104,6 +104,7 @@ build_current_native_definitions(const NativeDefinitionPolicy& policy,
     const auto transient=flags(&NativeDurationGrade::transient);
     const auto dep=[&](std::size_t i)->const std::string&{return policy.records[i].exact_dependency;};
     P2OriginalRealNativeTriple out;
+    out.recheck_candidate_duration_grade=true;
     out.t01.authoritative_primary_grid=*grid;
     for(std::size_t i=0;i<2U;++i)
         out.t01.exact_native_band_support_prepared_gold[i]=native_primary_component_support(*grid,*sources[i]);

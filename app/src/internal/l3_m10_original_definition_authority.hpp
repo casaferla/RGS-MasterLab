@@ -13,6 +13,7 @@ namespace rgsml::app::l3_automatch::m10_frozen {
     const P2OriginalRealNativeTriple& input)
 {
     P2OriginalRealNativeTriple out;
+    out.recheck_candidate_duration_grade=input.recheck_candidate_duration_grade;
     out.t01.authoritative_primary_grid=input.t01.authoritative_primary_grid;
     out.t01.exact_native_band_support_prepared_gold=
         input.t01.exact_native_band_support_prepared_gold;
@@ -89,7 +90,8 @@ namespace rgsml::app::l3_automatch::m10_frozen {
         field(source.resource_identity);integer(source.generation);
         out.push_back(source.full_track_owner_confirmed?1U:0U);
     };
-    field("rgsml.l3.native-definition-authority/1");
+    field("rgsml.l3.native-definition-authority/2");
+    integer(input.recheck_candidate_duration_grade);
     integer(input.t01.authoritative_primary_grid.size());
     for(const auto& band:input.t01.authoritative_primary_grid) {
         integer(band.canonical_index);number(band.low_hz);

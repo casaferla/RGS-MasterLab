@@ -24,6 +24,7 @@ struct P2OriginalRealNativeTriple final {
     m05m06_real::M19NativeTriple m19;
     m05m06_real::M20StereoTriple s01_s02;
     m05m06_real::CoherentStereoTripleAuthority s03_s06;
+    bool recheck_candidate_duration_grade{};
 };
 enum class P2RealTripleBindingReason:std::uint8_t {
     ready,missing_owner_or_inconsistent_three_way_scope,
