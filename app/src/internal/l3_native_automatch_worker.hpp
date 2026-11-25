@@ -150,6 +150,10 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
     const auto generation=input.exact_generation_and_policy;
     const auto registry=input.owners.frozen_registry;
     const double ceiling=input.independent_m11_ceiling_db_tp;
+    const auto manual=input.owners.frozen_manual.instances();
+    const bool existing_user_terminal=std::any_of(manual.begin(),manual.end(),[](const auto& n){
+        return n.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
+    });
     auto result=run_native_automatch_with_definitions(std::move(input),definitions,
         [&](auto role,const auto& atom){return allocations.band(role,atom);},
         [&](const auto& bank,const auto& fixed,auto,const auto& family){
@@ -165,7 +169,7 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
             const bool peak_exceeds=!m10_frozen::check_actual_p2_m16_linear_peak(
                 *fixed.measured_m16_linear_peak,ceiling).passes();
             return m09_frozen::resolve_native_owner_family(bank,family,allocations,*registry,
-                generation,dependencies,peak_exceeds);
+                generation,dependencies,peak_exceeds,existing_user_terminal);
         },[&](auto role,const auto& id){return allocations.band_identity(role,id);},cancellation);
     if(allocations.failed()) {
         result.search={};
