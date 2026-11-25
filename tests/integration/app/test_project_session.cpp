@@ -4,7 +4,7 @@
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
 #include "internal/l3_m13_fresh_original_native_import.hpp"
-#include "internal/l3_m13_actual_native_worker.hpp"
+#include "internal/l3_m13_current_search_worker.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -4844,6 +4844,21 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!session.previewController->
         has_private_m12_product_preview_ticket());
     leased=false;
+    // The search handoff must not convert a cancelled worker into
+    // a receipt even if a separately constructed valid draft exists.
+    app::l3_automatch::NativeAutoMatchWorkerResult cancelledSearch;
+    cancelledSearch.phase=app::l3_automatch::NativeAutoMatchWorkerPhase::cancelled;
+    cancelledSearch.search.status=app::l3_automatch::m09_frozen::NativeProductSearchStatus::cancelled;
+    const app::l3_automatch::OfflineProductOwnerStamp unadmittedStamp{};
+    const app::l3_automatch::m10_frozen::P2NativeProductWorkerScope rejectedOwners{
+        unadmittedStamp,prepared,registry,session.masteringChainState->chain(),
+        bindings,*core::FrameCount::create(4096).value(),false};
+    QVERIFY(!m::prepare_current_native_search_transaction(cancelledSearch,plan,rejectedOwners,
+        "cancelled-generation",*before.value(),linkedId,expected));
+    QVERIFY(!session.project.apply_private_m12_current_native_search(cancelledSearch,plan,
+        rejectedOwners,"cancelled-generation",*before.value(),linkedId,expected));
+    QVERIFY(!leased);
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
     auto committed=session.project.apply_private_m12_materialization(
         *draft.value(),registry,prepared);
     QVERIFY2(committed,
@@ -4868,6 +4883,10 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     auto ownedWorkerSpec=app::l3_automatch::m13_frozen::
         M13OwnedNativeSpec::capture(std::move(workerSpec));
     QVERIFY(ownedWorkerSpec);
+    QVERIFY(!app::l3_automatch::m13_frozen::capture_current_search_verification_inputs(
+        cancelledSearch,plan,*m13Owner.value(),*ownedWorkerSpec,{},unadmittedStamp,
+        "cancelled-generation",true,true,true,
+        app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable));
     app::l3_automatch::m13_frozen::M13ActualNativeWorkerInputs rejectedWorker{
         *m13Owner.value(),std::move(*ownedWorkerSpec),{}, {}, {},
         "", "", {}, "", "", false,false,false,false,
