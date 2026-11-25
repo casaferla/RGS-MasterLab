@@ -28,6 +28,8 @@ struct NativeBandCoordinateAuthority final {
     case NativeField::mid_gain_db:return "midGainDb";
     case NativeField::side_gain_db:return "sideGainDb";
     case NativeField::low_width_percent:return "lowBandWidthPercent";
+    case NativeField::p2_ceiling_db_tp:return "ceilingDbTp";
+    case NativeField::p2_drive_db:return "driveDb";
     default:return {};
     }
 }
@@ -59,13 +61,16 @@ derive_native_family_coordinate_requests(const NativeFamilySeedBank& bank,
             const std::optional<core::Uuid> id=band?std::optional<core::Uuid>{band->band_id}:std::nullopt;
             const std::optional<NativeFrequencyBounds> bounds=band&&field==NativeField::frequency_hz?
                 std::optional<NativeFrequencyBounds>{band->bounds}:std::nullopt;
-            if(name.empty()||!native_automatic_coordinate_rule(*payload,field,id,bounds,rate))return false;
+            const auto* policy=roles[i]==IntentRole::terminal_limiter&&bank.owned_p2?
+                &bank.owned_p2->policy:nullptr;
+            if(name.empty()||!native_automatic_coordinate_rule(*payload,field,id,bounds,rate,policy))return false;
             ExactBytes key;
             using namespace m10_frozen::p2_cache_detail;
             append_exact_field(key,"rgsml.l3.native-field/1");
             if(band)append_exact_byte_field(key,band->semantic_band_key);
             append_exact_field(key,name);
-            out.push_back({roles[i],role_keys[i].semantic_node_key,std::move(key),field,id,bounds});
+            out.push_back({roles[i],role_keys[i].semantic_node_key,std::move(key),field,id,bounds,
+                policy?std::optional<NativeP2CoordinatePolicy>{*policy}:std::nullopt});
             return true;
         };
         const auto authority=[&](const core::Uuid& id)->const NativeBandCoordinateAuthority*{
@@ -101,6 +106,8 @@ derive_native_family_coordinate_requests(const NativeFamilySeedBank& bank,
             if(ms->mono_bass_mode()!=dsp::MonoBassMode::OFF&&!add(F::low_width_percent))return {};
         } else if(std::holds_alternative<dsp::GainParameters>(*payload)) {
             if(!add(F::gain_db))return {};
+        } else if(std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(*payload)) {
+            if(roles[i]!=IntentRole::terminal_limiter||!add(F::p2_ceiling_db_tp)||!add(F::p2_drive_db))return {};
         } else return {};
     }
     if(consumed_bands!=band_keys.size())return {};

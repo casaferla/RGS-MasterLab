@@ -8,6 +8,17 @@
 #include "l3_m09_native_stereo_seed.hpp"
 #include "l3_m09_native_loudness_seed.hpp"
 namespace rgsml::app::l3_automatch::m09_frozen {
+struct NativeOwnedP2Seed final {
+    dsp::StreamingTruePeakLimiterParameters payload;
+    NativeP2CoordinatePolicy policy;
+};
+[[nodiscard]] inline bool valid_native_owned_p2_seed(const NativeOwnedP2Seed& seed)
+{
+    if(!valid_native_p2_coordinate_policy(seed.policy))return false;
+    const auto& p=seed.payload;
+    return p.ceiling_db_tp()>=seed.policy.ceiling.lower&&p.ceiling_db_tp()<=seed.policy.ceiling.upper&&
+        p.drive_db()>=seed.policy.drive.lower&&p.drive_db()<=seed.policy.drive.upper;
+}
 struct NativeFamilySeedBank final {
     std::vector<NativeEqPrefix> tonal;
     std::vector<NativeDynamicPrefix> spectral;
@@ -18,6 +29,7 @@ struct NativeFamilySeedBank final {
     std::optional<NativeLoudnessGainSeed> gain;
     std::vector<m05m06_real::T01ConfiguredBand> exact_tonal_grid;
     std::vector<m05m06_real::T01ConfiguredBand> exact_side_grid;
+    std::optional<NativeOwnedP2Seed> owned_p2{};
 };
 struct NativeRoleAllocation final {
     IntentRole role;
@@ -61,7 +73,11 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
     case IntentRole::loudness_gain:
         if(bank.gain)return bank.gain->payload;
         break;
-    case IntentRole::terminal_limiter:break;
+    case IntentRole::terminal_limiter:
+        if(bank.owned_p2&&valid_native_owned_p2_seed(*bank.owned_p2)&&
+           (family.loudness==LoudnessMode::gain_with_terminal_limiter||
+            family.loudness==LoudnessMode::terminal_limiter_only))return bank.owned_p2->payload;
+        break;
     }
     return {};
 }
