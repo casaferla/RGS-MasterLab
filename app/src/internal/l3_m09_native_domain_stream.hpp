@@ -274,4 +274,37 @@ template<class ResolveDomainEntry,class ResolveCombinedEntry>
     return run_bound_native_family_batch(generation,combined.legal,true,bank,revision,rate,
         env,amount,requested,independent_fixed_safety_scope_current,cancellation);
 }
+// The Product supplies owner-issued allocation and applicability
+// authority, not numerical ranking callbacks. Both domain and combined
+// proxies are computed by the same actual native binding path.
+template<class ResolveAuthority,class ResolveBandIdentity>
+[[nodiscard]] inline NativeProductSearchResult run_authorized_native_family_search(
+    const ExactBytes& generation,const NativeFamilyBindingEnvironment& binding,
+    const m10_frozen::PreservedNativeSearchEnvironment& env,
+    const std::array<bool,4>& requested,bool stereo,
+    bool independent_fixed_safety_scope_current,
+    ResolveAuthority&& resolve_authority,ResolveBandIdentity&& resolve_band,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    if(binding.registry!=env.owners.frozen_registry||&binding.fixed!=&env.fixed||
+       generation.empty()||!env.owners.current_prepared||
+       binding.rate!=env.owners.current_prepared->view().format().sample_rate().value()||
+       stereo!=(env.originals.prepared.original_m19_m20.channels==2U))return {};
+    return run_native_domain_cartesian_search(generation,binding.bank,binding.revision,binding.rate,
+        stereo,env,binding.amount,requested,independent_fixed_safety_scope_current,
+        [&](std::size_t domain,const auto& family){
+            auto authority=std::invoke(resolve_authority,std::optional<std::size_t>{domain},family);
+            if(authority.disposition==NativeDomainDisposition::legal&&
+               authority.identity.generation_snapshot!=generation)
+                return NativeDomainEntry{family,NativeDomainDisposition::unresolved,{},"stale-domain-generation"};
+            return bind_native_domain_entry(binding,domain,family,authority,resolve_band);
+        },
+        [&](const auto& family){
+            auto authority=std::invoke(resolve_authority,std::optional<std::size_t>{},family);
+            if(authority.disposition==NativeDomainDisposition::legal&&
+               authority.identity.generation_snapshot!=generation)
+                return NativeCombinedEntry{family,NativeDomainDisposition::unresolved,{},"stale-combined-generation"};
+            return bind_native_family_entry(binding,family,authority,requested,resolve_band);
+        },cancellation);
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
