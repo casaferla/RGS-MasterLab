@@ -82,6 +82,7 @@ private slots:
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate();
     void nativeOwnedP2CoordinatePolicyMustBeExplicitAndBounded();
+    void nativeOwnedP2RoleBuildsTwoCoordinateFinalGraph();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
@@ -169,6 +170,47 @@ void P2RealNativeProductTest::nativeOwnedP2CoordinatePolicyMustBeExplicitAndBoun
     bad=policy;bad.drive.fixed_reference=24.0;
     QVERIFY(!m09::valid_native_p2_coordinate_policy(bad));
     QVERIFY(!m09::native_automatic_coordinate_rule(payload,F::p2_drive_db,{}, {},48000,&bad));
+}
+void P2RealNativeProductTest::nativeOwnedP2RoleBuildsTwoCoordinateFinalGraph() {
+    namespace m09=a::m09_frozen;
+    using F=m09::NativeField;
+    using T=a::m10_frozen::Transform;
+    const auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    const auto registry=a::freeze_native_automatch_execution_registry(
+        std::make_shared<const dsp::ModuleRegistry>(*base.value()));
+    QVERIFY(registry&&*registry);
+    m09::AbstractFamilyChoice family;
+    family.loudness=m09::LoudnessMode::terminal_limiter_only;
+    const auto payload=dsp::StreamingTruePeakLimiterParameters::create(-3.0,0.0,5);
+    QVERIFY(payload);
+    const std::vector<m09::NativeRoleSeed> roles{{
+        m09::IntentRole::terminal_limiter,id("bd000000-0000-4000-8000-000000000081"),
+        uuid("bd000000-0000-4000-8000-000000000082"),*payload.value()}};
+    const m09::NativeP2CoordinatePolicy policy{
+        {T::additive_or_linear,-6.0,0.0,{},0.25},
+        {T::additive_or_linear,-12.0,12.0,0.0,1.0}};
+    const std::vector<m09::NativeRoleCoordinateRequest> requests{
+        {m09::IntentRole::terminal_limiter,{0x81},{0x01},F::p2_ceiling_db_tp,{},{},policy},
+        {m09::IntentRole::terminal_limiter,{0x81},{0x02},F::p2_drive_db,{},{},policy}};
+    const auto typed=m09::assemble_native_artistic_typed_seed(*registry,family,roles,requests,1U,48000);
+    QVERIFY(typed);
+    const auto inventory=m09::native_seed_inventory(*typed);
+    QVERIFY(inventory);
+    QCOMPARE(inventory->size(),std::size_t{2});
+    const std::vector<double> changed{0.25,0.75};
+    const auto decoded=m09::decode_native_typed_seed(*typed,*inventory,changed);
+    QVERIFY(decoded);
+    const auto* result=std::get_if<dsp::StreamingTruePeakLimiterParameters>(
+        &decoded->graph.bindings.front().parameters);
+    QVERIFY(result);
+    QCOMPARE(result->ceiling_db_tp(),-4.5);
+    QCOMPARE(result->drive_db(),6.0);
+    QCOMPARE(result->margin_percent(),5);
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(*registry,family,roles,
+        std::span<const m09::NativeRoleCoordinateRequest>{requests}.first(1),1U,48000));
+    auto absent=requests;absent[0].p2_policy.reset();
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(*registry,family,roles,absent,1U,48000));
 }
 void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
     namespace native=a::m05m06_real;

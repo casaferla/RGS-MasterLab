@@ -23,7 +23,7 @@ native_artistic_role_type(IntentRole role) noexcept {
     case IntentRole::micro_transient:return "rgsml.dsp.transient-shaper";
     case IntentRole::stereo_ms:return "rgsml.dsp.stereo-ms";
     case IntentRole::loudness_gain:return "rgsml.dsp.gain";
-    case IntentRole::terminal_limiter:return std::nullopt;
+    case IntentRole::terminal_limiter:return "rgsml.dsp.streaming-true-peak-limiter";
     }
     return std::nullopt;
 }
@@ -94,13 +94,16 @@ native_artistic_role_type(IntentRole role) noexcept {
         const auto* gain=std::get_if<dsp::GainParameters>(&payload);
         return gain&&std::abs(gain->gain_db())<=6.0;
     }
-    case IntentRole::terminal_limiter:return false;
+    case IntentRole::terminal_limiter:
+        return (family.loudness==LoudnessMode::gain_with_terminal_limiter||
+                family.loudness==LoudnessMode::terminal_limiter_only)&&
+            std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(payload);
     }
     return false;
 }
-// Only the artistic segment is assembled here. A terminal-limiter
-// alternative requires its separate owner-authorized composition;
-// never silently discard it or turn WAV Export into a chain DSP.
+// Assemble the ordered REF_LINKED musical segment. An explicitly
+// supplied owned P2 is last; WAV Export remains outside this graph.
+// The Product worker separately rejects a protected MANUAL P2 conflict.
 [[nodiscard]] inline std::optional<m10_frozen::PreservedNativeGraph>
 assemble_native_artistic_role_graph(
     const dsp::ModuleRegistry& registry,const AbstractFamilyChoice& family,
@@ -142,6 +145,7 @@ struct NativeRoleCoordinateRequest final {
     NativeField field;
     std::optional<core::Uuid> band_id;
     std::optional<NativeFrequencyBounds> frequency_bounds;
+    std::optional<NativeP2CoordinatePolicy> p2_policy{};
 };
 // M09/M12 provide the allocated semantic identities and complete
 // coordinate descriptors. This builds the actual immutable seed and
@@ -171,6 +175,13 @@ assemble_native_artistic_inventory_seed(
     auto graph=assemble_native_artistic_role_graph(*registry,family,roles,revision);
     if(!graph)return std::nullopt;
     const auto nodes=graph->linked.instances();
+    const bool has_p2=std::any_of(roles.begin(),roles.end(),[](const auto& r){
+        return r.role==IntentRole::terminal_limiter;});
+    if(has_p2) {
+        const auto count=[&](NativeField field){return std::count_if(requests.begin(),requests.end(),
+            [&](const auto& r){return r.role==IntentRole::terminal_limiter&&r.field==field&&r.p2_policy.has_value();});};
+        if(count(NativeField::p2_ceiling_db_tp)!=1||count(NativeField::p2_drive_db)!=1)return {};
+    }
     std::vector<NativeSeedCoordinate> coordinates;
     coordinates.reserve(requests.size());
     for(const auto& request:requests) {
@@ -181,7 +192,8 @@ assemble_native_artistic_inventory_seed(
         const auto index=static_cast<std::size_t>(role-roles.begin());
         auto coordinate=make_native_seed_coordinate(nodes[index],graph->bindings[index],
             request.semantic_key,request.stable_parameter_key,request.field,
-            request.band_id,request.frequency_bounds,sample_rate);
+            request.band_id,request.frequency_bounds,sample_rate,
+            request.p2_policy?&*request.p2_policy:nullptr);
         if(!coordinate)return std::nullopt;
         coordinates.push_back(std::move(*coordinate));
     }
