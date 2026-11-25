@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_m07_frozen_binding_projection.hpp"
 #include <rgsml/dsp/module_registry.hpp>
 #include <algorithm>
 #include <memory>
@@ -19,8 +20,14 @@ freeze_native_automatch_execution_registry(std::shared_ptr<const dsp::ModuleRegi
         const auto segments=descriptor.value()->get().allowed_segments();
         return std::find(segments.begin(),segments.end(),dsp::ChainSegment::REF_LINKED)!=segments.end();
     };
-    if(live->has_factory("rgsml.dsp.dynamic-eq")&&
-       live->has_factory("rgsml.dsp.transient-shaper")&&linked_p2(*live))return live;
+    const auto complete=[](const dsp::ModuleRegistry& registry){
+        const auto assessed=m07_frozen::assess_current_product_dsp_snapshot(registry);
+        return std::all_of(assessed.begin(),assessed.end(),[](const auto& intent){
+            return intent.intrinsic_context_matches&&
+                intent.factory_state==m07_frozen::FactoryEvidence::factory_present_unattested;
+        });
+    };
+    if(complete(*live))return live;
     auto registry=*live;
     if(!registry.has_factory("rgsml.dsp.dynamic-eq")) {
         auto next=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(registry));
@@ -37,6 +44,7 @@ freeze_native_automatch_execution_registry(std::shared_ptr<const dsp::ModuleRegi
         if(!next)return {};
         registry=std::move(*next.value());
     }
+    if(!complete(registry))return {};
     return std::make_shared<const dsp::ModuleRegistry>(std::move(registry));
 }
 } // namespace rgsml::app::l3_automatch
