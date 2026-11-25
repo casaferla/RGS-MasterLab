@@ -792,6 +792,30 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     action.poll();
     QVERIFY(action.phase()==Action::Phase::stale);
     QVERIFY(!action.diagnostic());
+    const auto reopenedTicket=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(reopenedTicket&&reopenedTicket->replay);
+    QVERIFY(!session.project.undo_private_m12_materialization());
+    const auto thirdPlanId=uuidOf("e6000000-0000-4000-8000-000000000005");
+    const auto reopenedReplacement=a::begin_native_qt_product_session_on_owner(session.project,
+        controllers,fanout,session.selector,session.gold,amount,requested,0.0,*block.value(),
+        thirdPlanId,controllerId,linkedId,true);
+    QVERIFY2(reopenedReplacement,reopenedReplacement?"":reopenedReplacement.error()->message().c_str());
+    QCOMPARE(reopenedReplacement.value()->capture.linked_revision,UINT64_C(3));
+    next=200U;
+    Action reopenedAction{controllers,fanout,session.selector,session.gold};
+    QVERIFY(reopenedAction.begin(*reopenedReplacement.value(),allocate));
+    QTRY_VERIFY_WITH_TIMEOUT((reopenedAction.poll(),!reopenedAction.busy()),180000);
+    QVERIFY(reopenedAction.phase()==Action::Phase::candidate_ready);
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==reopenedTicket);
+    QVERIFY2(reopenedAction.adopt(),reopenedAction.error().c_str());
+    const auto thirdTicket=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(thirdTicket&&thirdTicket->replay&&thirdTicket!=reopenedTicket);
+    QVERIFY(thirdTicket->replay->plan_id==thirdPlanId);
+    QCOMPARE(thirdTicket->replay->reference_linked.revision(),UINT64_C(3));
+    QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==reopenedTicket);
+    QVERIFY(session.project.redo_private_m12_materialization());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
 }
 
 void ProjectSessionTest::

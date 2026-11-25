@@ -1517,14 +1517,17 @@ ProjectSessionViewModel::capture_private_m12_search_baseline(bool require_owned_
     namespace m=l3_automatch::m12_frozen;
     const auto linked=m::assess_current_product_ref_linked_open_safety(live.value()->document());
     if(linked==m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked)return live;
-    // Mirror the existing physical M12 publication gate before dispatch:
-    // only this session's exact current receipt can be replaced.
+    // Exact live receipt OR an independently rehydrated Project readback
+    // can be replaced. Reopen alone never creates a new receipt or history.
     const auto ticket=previewController_->private_m12_product_preview_ticket();
-    if(!opened_||!ticket||!ticket->replay||m12UndoHistory_.empty()||
-       !m12RedoHistory_.empty()||!m12UndoHistory_.back().receipt||
-       m12UndoHistory_.back().afterTicket!=ticket||
+    const bool currentReceipt=!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
+        m12UndoHistory_.back().afterTicket==ticket&&
+        m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
+    const bool exactReopen=m12UndoHistory_.empty()&&m12ReopenedReadback_&&
+        m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
+    if(!opened_||!ticket||!ticket->replay||!m12RedoHistory_.empty()||
+       (!currentReceipt&&!exactReopen)||
        !m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
-       !m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value())||
        !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
         return fail("L3_M12_BASELINE_PRIOR_OWNER_NOT_CURRENT");
     return live;
@@ -1607,14 +1610,17 @@ ProjectSessionViewModel::apply_private_m12_materialization(
         live.value()->document())!=
         m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
     if(beforeHasLinked) {
-        // An update is legal only for this Product's most recent actual
-        // materialization, never an arbitrary imported/foreign REF graph.
+        // Existing live receipt or exact independently rehydrated replay;
+        // arbitrary imported/foreign or modified REF graphs still fail.
+        const bool currentReceipt=!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
+            m12UndoHistory_.back().afterTicket==beforeTicket&&
+            m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
+        const bool exactReopen=m12UndoHistory_.empty()&&m12ReopenedReadback_&&
+            m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
         if(!opened_||!m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
-           !beforeTicket||m12UndoHistory_.empty()||
-           !m12RedoHistory_.empty()||
-           m12UndoHistory_.back().afterTicket!=beforeTicket||
-           !m::m12_exact_project_snapshot_equal(
-               m12UndoHistory_.back().after,*live.value()))
+           !beforeTicket||!beforeTicket->replay||!m12RedoHistory_.empty()||
+           (!currentReceipt&&!exactReopen)||
+           !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*beforeTicket->replay))
             return fail("L3_M12_PRODUCT_COMMIT_PRIOR_OWNER_NOT_CURRENT");
     } else if(beforeTicket)
         return fail("L3_M12_PRODUCT_COMMIT_ORPHANED_PREVIEW_OWNER");
