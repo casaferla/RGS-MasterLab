@@ -81,4 +81,52 @@ private:
     std::map<IntentRole,NativeRoleAllocation> roles_;
     bool failed_{};
 };
+// Canonical topology carries discrete intent and selected evidence keys,
+// never the allocation table's persistence UUIDs or rounded frequencies.
+// The independently accepted generation/dependency tuple owns the full
+// source-grid, Amount and registry revisions.
+[[nodiscard]] inline std::optional<ExactBytes>
+native_owner_family_topology(const NativeFamilySeedBank& bank,
+    const AbstractFamilyChoice& family,const NativeOwnerAllocations& allocations)
+{
+    ExactBytes out;
+    using namespace m10_frozen::p2_cache_detail;
+    append_exact_field(out,kCandidateSchema);
+    append_exact_field(out,kEnumerationPolicy);
+    for(auto value:{family.tonal_eq_prefix,family.spectral_dynamic_eq_prefix,
+        static_cast<std::uint8_t>(family.macro),static_cast<std::uint8_t>(family.micro),
+        family.stereo_side_eq_prefix,family.stereo_mode_index,
+        static_cast<std::uint8_t>(family.loudness)})
+        append_exact_field(out,std::to_string(value));
+    const auto roles=ordered_abstract_roles(family);
+    append_exact_field(out,std::to_string(roles.size()));
+    for(const auto role:roles) {
+        const auto type=native_artistic_role_type(role);
+        const auto payload=native_family_role_payload(bank,family,role);
+        if(!type||!payload)return {};
+        append_exact_byte_field(out,NativeOwnerAllocations::role_key(role));
+        append_exact_field(out,*type);
+        if(const auto* eq=std::get_if<dsp::ParametricEqParameters>(&*payload)) {
+            const auto& grid=role==IntentRole::tonal_eq?bank.exact_tonal_grid:bank.exact_side_grid;
+            append_exact_field(out,std::to_string(grid.size()));
+            for(const auto& cell:grid)append_exact_field(out,std::to_string(cell.canonical_index));
+            for(const auto& band:eq->bands()) {
+                const auto key=allocations.band_identity(role,band.band_id());
+                if(!key)return {};
+                append_exact_byte_field(out,*key);
+            }
+        } else if(const auto* eq=std::get_if<dsp::DynamicEqParameters>(&*payload)) {
+            const auto& prefix=bank.spectral[family.spectral_dynamic_eq_prefix-1U];
+            if(prefix.ranked_clusters.size()!=eq->bands().size())return {};
+            for(std::size_t i=0;i<eq->bands().size();++i) {
+                const auto key=allocations.band_identity(role,eq->bands()[i].spec().band_id);
+                if(!key)return {};
+                append_exact_byte_field(out,*key);
+                append_exact_field(out,std::to_string(prefix.ranked_clusters[i].first));
+                append_exact_field(out,std::to_string(prefix.ranked_clusters[i].count));
+            }
+        }
+    }
+    return out;
+}
 } // namespace rgsml::app::l3_automatch::m09_frozen
