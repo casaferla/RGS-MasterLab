@@ -698,6 +698,43 @@ Result<ModuleRegistry> ModuleRegistry::with_streaming_true_peak_preview(
     return create(std::move(registrations));
 }
 
+Result<ModuleRegistry> ModuleRegistry::with_streaming_true_peak_automatch(
+    ModuleRegistry baseline)
+{
+    // Reuse the canonical preview registration instead of defining a
+    // second algorithm/schema or replacing an unrelated existing factory.
+    const auto canonical=with_streaming_true_peak_preview(
+        ModuleRegistry{std::vector<ModuleRegistration>{}});
+    if(!canonical)return Result<ModuleRegistry>::failure(*canonical.error());
+    const auto& expected=canonical.value()->registrations_.front().descriptor;
+    auto spec=make_spec(
+        kStreamingPreviewTypeId,{ModuleCategory::DYNAMICS},
+        {ProcessingStage::MASTER},{ChainSegment::MANUAL,ChainSegment::REF_LINKED},
+        false,PlacementClass::INLINE_CHAIN,std::nullopt,{},true,true,
+        std::string(*expected.algorithm_version()),
+        std::string(*expected.parameter_schema_id()));
+    auto descriptor=ModuleDescriptor::create(std::move(spec));
+    if(!descriptor)return Result<ModuleRegistry>::failure(*descriptor.error());
+    auto registrations=std::move(baseline.registrations_);
+    const auto iter=std::find_if(registrations.begin(),registrations.end(),
+        [](const ModuleRegistration& entry){return entry.descriptor.type_id()==kStreamingPreviewTypeId;});
+    if(iter!=registrations.end()) {
+        if(iter->descriptor==*descriptor.value()&&iter->factory)
+            return create(std::move(registrations));
+        if(iter->descriptor!=expected||!iter->factory)
+            return Result<ModuleRegistry>::failure(registry_error(
+                ErrorCode::InvalidState,"P2_AUTOMATCH_DESCRIPTOR_MISMATCH",
+                "Existing P2 registration differs from the native preview identity."));
+        iter->descriptor=*descriptor.value();
+        iter->factory=std::make_shared<StreamingP2PreviewFactory>(iter->descriptor);
+    } else {
+        auto value=std::move(*descriptor.value());
+        auto factory=std::make_shared<StreamingP2PreviewFactory>(value);
+        registrations.push_back(ModuleRegistration{std::move(value),std::move(factory)});
+    }
+    return create(std::move(registrations));
+}
+
 ModuleRegistry::ModuleRegistry(std::vector<ModuleRegistration> registrations)
     : registrations_(std::move(registrations))
 {

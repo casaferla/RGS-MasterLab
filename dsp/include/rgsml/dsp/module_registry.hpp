@@ -42,6 +42,12 @@ public:
     [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
     with_streaming_true_peak_preview(ModuleRegistry baseline);
 
+    // Explicit AutoMatch snapshot extension: same native P2 factory/schema,
+    // permitting an owner-controlled final REF_LINKED streaming DSP.
+    // Does not change the caller's live MANUAL registry or M17.
+    [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
+    with_streaming_true_peak_automatch(ModuleRegistry baseline);
+
     // Explicit L3 offline opt-in, not part of package_v1 or live Product GUI.
     // Typed DynamicEqParameters only; no implicit unbound defaults.
     [[nodiscard]] static rgsml::core::Result<ModuleRegistry>
