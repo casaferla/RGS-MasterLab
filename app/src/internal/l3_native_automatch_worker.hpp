@@ -13,6 +13,8 @@ struct NativeAutoMatchWorkerResult final {
     NativeAutoMatchWorkerPhase phase{NativeAutoMatchWorkerPhase::invalid_owner};
     std::optional<m11_frozen::NativeFixedPopulation> fixed;
     m09_frozen::NativeProductSearchResult search;
+    std::uint32_t exact_fixed_prefix_uses{};
+    std::uint32_t measured_side_insertion_rows{};
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
 };
 // Borrowed from the immutable Product session. This worker owns no
@@ -179,6 +181,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
             const auto authority=resolve_current(std::optional<std::size_t>{2U},family);
             bank->post_side_stereo[prefix-1U]=measure_native_post_side_stereo_seed_row(
                 input,*out.fixed,*bank,prefix,authority,cancellation);
+            if(bank->post_side_stereo[prefix-1U])++out.measured_side_insertion_rows;
         }
     }
     const m09_frozen::NativeFamilyBindingEnvironment binding{owners.frozen_registry,*bank,*out.fixed,
@@ -187,6 +190,7 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     out.search=m09_frozen::run_authorized_native_family_search(input.exact_generation_and_policy,
         binding,env,input.requested,channels==2U,input.exact_current_endpoint_safety_attested,
         resolve_current,std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
+    out.exact_fixed_prefix_uses=fixed_prefix_cache.hits;
     out.phase=cancelled()?NativeAutoMatchWorkerPhase::cancelled:NativeAutoMatchWorkerPhase::search_completed;
     return out;
 }
