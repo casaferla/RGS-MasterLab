@@ -95,6 +95,27 @@ public:
                     candidate_ticket,block,true);
             });
     }
+    // Capture the current Product before M09 has produced any graph.
+    // The empty linked segment is an immutable Fixed-only job; it is
+    // not a replacement or mutation of an existing project REF segment.
+    [[nodiscard]] static core::Result<Accepted> capture_fixed_on_owner(
+        const Controllers& product,const Fanout& fanout,
+        const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
+        const std::string& fixed_ticket,std::uint64_t linked_revision,
+        core::FrameCount max_block_frames,bool exact_current_scope_attested)
+    {
+        using R=core::Result<Accepted>;
+        if(QThread::currentThread()!=product.session.thread()||!linked_revision||
+           fixed_ticket.empty()||!exact_current_scope_attested)
+            return R::failure(error("L3_QT_FIXED_CAPTURE_REQUIRES_CURRENT_OWNER"));
+        const auto registry=product.upstream.chain.registry_snapshot();
+        if(!registry)return R::failure(error("L3_QT_FIXED_CAPTURE_REGISTRY_MISSING"));
+        auto empty=dsp::ProcessingChain::restore(*registry,
+            {dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED},linked_revision,{});
+        if(!empty)return R::failure(*empty.error());
+        return capture_preserving_user_terminal(product,fanout,selector,gold,*empty.value(),{},
+            fixed_ticket,max_block_frames,exact_current_scope_attested);
+    }
 private:
     template<class CreateJob>
     [[nodiscard]] static core::Result<Accepted> capture_impl(
