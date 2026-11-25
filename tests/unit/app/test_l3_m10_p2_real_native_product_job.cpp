@@ -509,7 +509,30 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
         stale,result.search,owners,input.exact_generation));
     QVERIFY(!m12::stage_current_native_search_winner(
         accepted,result.search,owners,"stale-generation"));
+    QCOMPARE(result.owned_p2_counts.attempted,0U);
 
+    // The ordinary Product execution registry must now admit P2 in
+    // the same real 27-slot search (no special direct-render test path).
+    const auto native_registry=a::freeze_native_automatch_execution_registry(registry);
+    QVERIFY(native_registry&&*native_registry);
+    const m10::P2NativeProductWorkerScope native_owners{
+        stamp,prepared,*native_registry,*manual.value(),{},*block.value(),true};
+    a::NativeAutoMatchWorkerInputs native_input{native_owners,*pair.value(),spec->prepared,
+        "p2-real-generation",{0x74,0x75},"p2-real-fixed",1U,{1.0,{1.0,1.0,1.0,1.0},1U},
+        {false,false,false,true},0.0,true,true,false,false,{},constraints};
+    const auto native_result=a::run_native_automatch_with_owner_allocations(
+        native_input,definitions,allocate,{}, {0x76});
+    QVERIFY(native_result.fixed);
+    QVERIFY(native_result.search.refinement);
+    QVERIFY2(native_result.owned_p2_counts.attempted>=2U,
+        "owned P2 alternatives never reached the genuine M10 evaluator");
+    QVERIFY2(native_result.owned_p2_counts.complete>=1U,
+        "no owned P2 alternative completed the real 27-slot and M11 scorer");
+    QVERIFY(native_result.owned_p2_counts.complete<=native_result.owned_p2_counts.attempted);
+    QVERIFY(native_result.owned_p2_counts.attempted<=native_result.search.refinement->total_attempted);
+    QVERIFY(native_result.search.winning_graph);
+    QVERIFY(m12::stage_current_native_search_winner(accepted,native_result.search,native_owners,
+        native_input.exact_generation));
 }
 void P2RealNativeProductTest::nativeOfflineRegistryKeepsLiveManualAuthority() {
     const auto base=dsp::ModuleRegistry::create_dsp_package_v1();
