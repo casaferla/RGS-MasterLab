@@ -36,6 +36,64 @@ struct NativeAutoMatchWorkerInputs final {
     m10_frozen::AuthoritativeCostInput constraints;
     std::optional<m09_frozen::NativeOwnedP2Seed> owned_p2{};
 };
+// Seed geometry only: one full native SIDE-prefix observation, not a
+// scored M10 trial. The original fixed graph and M11 mask remain intact.
+[[nodiscard]] inline std::optional<m09_frozen::NativeFamilySeedBank::PostSideStereo>
+measure_native_post_side_stereo_seed_row(
+    const NativeAutoMatchWorkerInputs& input,const m11_frozen::NativeFixedPopulation& fixed,
+    const m09_frozen::NativeFamilySeedBank& bank,std::size_t prefix,
+    const m09_frozen::NativeFamilyBindingAuthority& authority,
+    const std::atomic<bool>* cancellation)
+{
+    namespace m09=m09_frozen;
+    const auto& owners=input.owners;
+    if(!input.exact_fixed_stereo_insertion||prefix==0U||prefix>bank.side.size()||
+       authority.disposition!=m09::NativeDomainDisposition::legal||
+       !authority.available_currently||authority.allocations.size()!=1U||
+       authority.allocations.front().role!=m09::IntentRole::stereo_side_eq||
+       (cancellation&&cancellation->load(std::memory_order_acquire)))return {};
+    if(std::any_of(owners.frozen_manual.instances().begin(),owners.frozen_manual.instances().end(),
+        [](const auto& node){return node.active()&&node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";}))
+        return {};
+    m09::AbstractFamilyChoice family;family.stereo_side_eq_prefix=static_cast<std::uint8_t>(prefix);
+    const auto& allocation=authority.allocations.front();
+    const std::vector<m09::NativeRoleSeed> role{{allocation.role,allocation.instance,allocation.semantic,
+        bank.side[prefix-1U].payload}};
+    const auto graph=m09::assemble_native_artistic_role_graph(*owners.frozen_registry,family,role,
+        input.accepted_linked_revision);
+    if(!graph)return {};
+    const auto ticket=input.fixed_ticket+"/side-insertion/"+std::to_string(prefix);
+    const auto job=M10P2RealNativeProductJob::create_preserving_user_terminal(
+        owners.current_owner,owners.current_prepared,owners.frozen_registry,
+        owners.frozen_manual,owners.frozen_manual_bindings,graph->linked,graph->bindings,ticket,
+        owners.maximum_block_frames,true);
+    if(!job||job.value()->exact_fixed_graph_content()!=
+        std::optional<m10_frozen::ExactCacheBytes>{fixed.exact_fixed_graph_content})return {};
+    const auto execution=job.value()->exact_execution_graph_content();
+    if(!execution)return {};
+    auto spec=input.native_spec;spec.retain_native_spectral_energy=false;
+    const auto measured=measure_m10_p2_full_native_once(*job.value(),std::move(spec),nullptr,cancellation);
+    if(!measured||(cancellation&&cancellation->load(std::memory_order_acquire)))return {};
+    auto definitions=m10_frozen::resolve_original_definitions_from_fixed(fixed,input.originals,
+        owners.current_owner,input.exact_generation,ticket);
+    if(!definitions)return {};
+    const auto owner=native_product_candidate_identity(owners.current_owner,ticket);
+    const auto bound=bind_p2_original_native_triple_from_independent_full_pair(
+        std::move(*definitions),input.originals,*measured.value(),owner,
+        static_cast<std::int64_t>(measured.value()->native.exact_observed_active_frames),
+        input.file_based_lra_policy_attested);
+    if(!bound.fragments)return {};
+    m07_frozen::ExactTwentySevenFeatureAssembler assembler{input.exact_generation,true};
+    const auto admission=m07_frozen::collect_existing_m05m06_native_fragments(assembler,*bound.fragments);
+    if(admission.status!=m07_frozen::NativeFragmentAdmission::accepted_complete)return {};
+    const auto insertion=assembler.complete_canonical_population();
+    if(!insertion||!m11_frozen::bind_native_fixed_to_candidate(fixed,*insertion,input.amount))return {};
+    m09::NativeFamilySeedBank::PostSideStereo row{*execution,{}};
+    for(std::size_t i=0;i<row.modes.size();++i)
+        row.modes[i]=m09::derive_native_stereo_seed(fixed,input.amount,input.requested,
+            i+1U,true,true,&*insertion);
+    return row;
+}
 template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
 [[nodiscard]] inline NativeAutoMatchWorkerResult run_native_automatch_worker(
     NativeAutoMatchWorkerInputs input,ResolveOriginalDefinitions&& resolve_definitions,
@@ -97,17 +155,28 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     if(out.search.fixed_gate.targets.corrective[3]&&!protected_p2)
         bank->owned_p2=input.owned_p2?input.owned_p2:
             m09_frozen::default_native_owned_p2_seed(input.independent_m11_ceiling_db_tp);
+    const auto resolve_current=[&](auto domain,const auto& family){
+        if constexpr(std::is_invocable_v<ResolveAuthority&,const m09_frozen::NativeFamilySeedBank&,
+            const m11_frozen::NativeFixedPopulation&,decltype(domain),decltype(family)>)
+            return std::invoke(resolve_authority,*bank,*out.fixed,domain,family);
+        else return std::invoke(resolve_authority,*bank,domain,family);
+    };
+    if(channels==2U&&out.search.fixed_gate.targets.corrective[2]&&input.exact_fixed_stereo_insertion) {
+        for(std::size_t prefix=1U;prefix<=bank->side.size()&&prefix<=bank->post_side_stereo.size();++prefix) {
+            if(cancelled()){out.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
+            m09_frozen::AbstractFamilyChoice family;
+            family.stereo_side_eq_prefix=static_cast<std::uint8_t>(prefix);
+            const auto authority=resolve_current(std::optional<std::size_t>{2U},family);
+            bank->post_side_stereo[prefix-1U]=measure_native_post_side_stereo_seed_row(
+                input,*out.fixed,*bank,prefix,authority,cancellation);
+        }
+    }
     const m09_frozen::NativeFamilyBindingEnvironment binding{owners.frozen_registry,*bank,*out.fixed,
         input.amount,input.accepted_linked_revision,rate.value(),geometry->common_low,
         geometry->common_high,input.constraints};
     out.search=m09_frozen::run_authorized_native_family_search(input.exact_generation_and_policy,
         binding,env,input.requested,channels==2U,input.exact_current_endpoint_safety_attested,
-        [&](auto domain,const auto& family){
-            if constexpr(std::is_invocable_v<ResolveAuthority&,const m09_frozen::NativeFamilySeedBank&,
-                const m11_frozen::NativeFixedPopulation&,decltype(domain),decltype(family)>)
-                return std::invoke(resolve_authority,*bank,*out.fixed,domain,family);
-            else return std::invoke(resolve_authority,*bank,domain,family);
-        },std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
+        resolve_current,std::forward<ResolveBandIdentity>(resolve_band_identity),cancellation);
     out.phase=cancelled()?NativeAutoMatchWorkerPhase::cancelled:NativeAutoMatchWorkerPhase::search_completed;
     return out;
 }
