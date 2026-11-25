@@ -24,6 +24,7 @@ public:
         if(cancel_)cancel_->store(true,std::memory_order_release);
     }
     [[nodiscard]] Phase phase()const noexcept{return phase_;}
+    [[nodiscard]] const std::string& error()const noexcept{return error_;}
     [[nodiscard]] bool busy()const noexcept {
         return phase_==Phase::searching||phase_==Phase::cancelling||phase_==Phase::verifying;
     }
@@ -43,6 +44,7 @@ public:
         m09_frozen::NativeOwnerAllocations::AllocateUuid allocate)
     {
         if(!owner()||busy()||!allocate||!current(operation))return false;
+        error_.clear();
         try {
             auto input=std::make_shared<const NativeQtProductSession>(std::move(operation));
             auto cancel=std::make_shared<std::atomic<bool>>(false);
@@ -68,10 +70,14 @@ public:
     [[nodiscard]] bool adopt() {
         if(!owner()||phase_!=Phase::candidate_ready||!operation_||!completed_||!reviewed_)
             return false;
-        if(!current(*operation_)){phase_=Phase::stale;return false;}
+        error_.clear();
+        if(!current(*operation_)){
+            error_="L3_PRODUCT_ACTION_STALE_CANDIDATE";
+            phase_=Phase::stale;return false;
+        }
         auto receipt=apply_native_qt_product_session_on_owner(project(),product_,fanout_,
             selector_,gold_,*operation_,*completed_,*reviewed_);
-        if(!receipt){phase_=Phase::failed;return false;}
+        if(!receipt){error_=receipt.error()->message();phase_=Phase::failed;return false;}
         phase_=Phase::materialized;return true;
     }
     // This argument comes from the Product safety authority, not QML.
@@ -149,6 +155,7 @@ private:
     const AuditionSourceSelector& selector_;
     const GoldSelectionViewModel& gold_;
     Phase phase_{Phase::idle};
+    std::string error_;
     std::shared_ptr<const NativeQtProductSession> operation_;
     std::shared_ptr<std::atomic<bool>> cancel_;
     std::optional<NativeQtSearchWorkerResult> completed_;

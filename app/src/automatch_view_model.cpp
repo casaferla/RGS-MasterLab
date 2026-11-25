@@ -96,7 +96,9 @@ bool AutoMatchViewModel::adopt() {
     const auto accepted=action_.adopt();
     publishing_=false;
     if(!accepted) {
-        error_=QStringLiteral("The candidate is no longer applicable.");refresh();return false;
+        error_=action_.error().empty()?QStringLiteral("The candidate is no longer applicable."):
+            QString::fromStdString(action_.error());
+        refresh();return false;
     }
     // No GUI-generated PASS for independent mandatory predicates.
     // M13 performs the real fresh analysis; any unavailable predicate

@@ -671,19 +671,29 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(!a::build_native_qt_measured_plan(*captured,changedPolicy,*completed,planId,controllerId));
     QVERIFY(!a::build_native_qt_measured_plan(*captured,policy,*completed,planId,planId));
     const auto protectedBindings=session.masteringChainState->execution_bindings();
+    const auto beforeRejected=fanout.current_owner_snapshot();
+    QVERIFY(beforeRejected);
     auto wrongPlan=plan;
     wrongPlan.plan_id=linkedId;
     QVERIFY(!a::apply_native_qt_product_session_on_owner(session.project,controllers,fanout,
         session.selector,session.gold,*operation.value(),*completed,wrongPlan));
     QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
-    const auto stillBefore=session.project.capture_private_m12_search_baseline();
-    QVERIFY(stillBefore);
-    QVERIFY(m12::m12_exact_project_snapshot_equal(operation.value()->baseline,*stillBefore.value()));
+    // The baseline capture itself uses a real Project Save lease and
+    // advances the epoch. Do not invalidate this admitted candidate
+    // merely to inspect a rejected command. M12 checks the exact original
+    // snapshot under its exclusive lease at successful adoption.
+    const auto afterRejected=fanout.current_owner_snapshot();
+    QVERIFY(afterRejected);
+    QCOMPARE(afterRejected->epoch,beforeRejected->epoch);
+    QVERIFY(afterRejected->identity==beforeRejected->identity);
+    QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
+        session.gold,*captured));
     QVERIFY(!a::capture_native_qt_product_session_verification_on_owner(session.project,
         session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed));
     QVERIFY(action.reviewed());
     QCOMPARE(action.reviewed()->exact_plan_content_checksum,plan.exact_plan_content_checksum);
-    QVERIFY(action.adopt());
+    QVERIFY2(action.adopt(),action.error().c_str());
     QVERIFY(action.phase()==Action::Phase::materialized);
     QVERIFY(!action.adopt());
     QVERIFY(session.previewController->has_private_m12_product_preview_ticket());
