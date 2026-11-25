@@ -167,7 +167,8 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
            family.stereo_side_eq_prefix>bank.post_side_stereo.size())
             return conditional("no-native-stereo-seed");
         const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
-        if(!row||row->exact_prefix_graph.empty()) {
+        if(!row||row->exact_prefix_graph.empty()||
+           row->exact_side_payload!=bank.side[family.stereo_side_eq_prefix-1U].payload) {
             if(!bank.stereo[family.stereo_mode_index-1U])
                 return conditional("no-native-stereo-seed");
             out.exact_reason="conditional-post-side-insertion-baseline-unresolved";return out;
@@ -194,7 +195,8 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
     auto dependencies=exact_dependencies;
     if(family.stereo_side_eq_prefix&&family.stereo_mode_index) {
         const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
-        if(!row||row->exact_prefix_graph.empty())return out;
+        if(!row||row->exact_prefix_graph.empty()||
+           row->exact_side_payload!=bank.side[family.stereo_side_eq_prefix-1U].payload)return out;
         m10_frozen::p2_cache_detail::append_exact_byte_field(dependencies,row->exact_prefix_graph);
     }
     if(family.loudness==LoudnessMode::gain_with_terminal_limiter||

@@ -54,6 +54,7 @@ struct NativeFamilySeedBank final {
     struct PostSideStereo final {
         ExactBytes exact_prefix_graph;
         std::array<std::optional<NativeStereoSeed>,7> modes;
+        dsp::ParametricEqParameters exact_side_payload;
     };
     std::array<std::optional<PostSideStereo>,3> post_side_stereo{};
 };
@@ -95,7 +96,9 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
             if(family.stereo_side_eq_prefix>bank.side.size()||
                family.stereo_side_eq_prefix>bank.post_side_stereo.size())break;
             const auto& row=bank.post_side_stereo[family.stereo_side_eq_prefix-1U];
-            if(row&&!row->exact_prefix_graph.empty()&&row->modes[family.stereo_mode_index-1U])
+            if(row&&!row->exact_prefix_graph.empty()&&
+               row->exact_side_payload==bank.side[family.stereo_side_eq_prefix-1U].payload&&
+               row->modes[family.stereo_mode_index-1U])
                 return row->modes[family.stereo_mode_index-1U]->payload;
         }else if(bank.stereo[family.stereo_mode_index-1U])
             return bank.stereo[family.stereo_mode_index-1U]->payload;

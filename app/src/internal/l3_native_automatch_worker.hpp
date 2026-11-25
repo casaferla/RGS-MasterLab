@@ -78,7 +78,7 @@ measure_native_post_side_stereo_seed_row(
         owners.current_owner,input.exact_generation,ticket);
     if(!definitions)return {};
     const auto owner=native_product_candidate_identity(owners.current_owner,ticket);
-    const auto bound=bind_p2_original_native_triple_from_independent_full_pair(
+    const auto bound=m10_frozen::bind_p2_original_native_triple_from_independent_full_pair(
         std::move(*definitions),input.originals,*measured.value(),owner,
         static_cast<std::int64_t>(measured.value()->native.exact_observed_active_frames),
         input.file_based_lra_policy_attested);
@@ -88,7 +88,7 @@ measure_native_post_side_stereo_seed_row(
     if(admission.status!=m07_frozen::NativeFragmentAdmission::accepted_complete)return {};
     const auto insertion=assembler.complete_canonical_population();
     if(!insertion||!m11_frozen::bind_native_fixed_to_candidate(fixed,*insertion,input.amount))return {};
-    m09::NativeFamilySeedBank::PostSideStereo row{*execution,{}};
+    m09::NativeFamilySeedBank::PostSideStereo row{*execution,{},bank.side[prefix-1U].payload};
     for(std::size_t i=0;i<row.modes.size();++i)
         row.modes[i]=m09::derive_native_stereo_seed(fixed,input.amount,input.requested,
             i+1U,true,true,&*insertion);
