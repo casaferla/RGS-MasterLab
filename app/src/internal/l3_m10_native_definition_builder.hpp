@@ -76,6 +76,8 @@ build_current_native_definitions(const NativeDefinitionPolicy& policy,
     using namespace m05m06_real;
     if(!valid_native_definition_policy(policy)||ticket.empty()||
        !original_pair_matches_product_owner(pair,owner)||
+       !pair.prepared.native_temporal_gate_derived_from_owned_pcm||
+       !pair.reference.native_temporal_gate_derived_from_owned_pcm||
        !spec.current_full_phase6_source_and_grid||!spec.derive_own_m19_temporal_gate)return {};
     const auto candidate=native_product_candidate_identity(owner,ticket);
     const auto actual=import_actual_full_source(fixed.native.actual.levels,
