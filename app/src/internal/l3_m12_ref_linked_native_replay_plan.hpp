@@ -170,6 +170,11 @@ prepare_restored_m12_native_replay_plan(
     if(has_p2 && *anchor.current_gap->right_neighbor_instance_id!=
            nodes.back().instance_id())
         return fail("L3_M12_REPLAY_TERMINAL_MOVED");
+    const auto linked_nodes=linked.exact_native_chain.instances();
+    for(const auto& node:linked_nodes)
+        if(node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
+           (has_p2||&node!=&linked_nodes.back()))
+            return fail("L3_M12_REPLAY_OWNED_P2_TERMINAL_CONFLICT");
     const auto prefix_count=nodes.size()-(has_p2?1U:0U);
     std::vector<dsp::ModuleInstance> prefixNodes(
         nodes.begin(),nodes.begin()+static_cast<std::ptrdiff_t>(prefix_count));
