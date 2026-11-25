@@ -143,9 +143,14 @@ decode_exact_m12_ref_linked_product_state(
            m.linkState!="REF_LINKED"||
            !m.semanticNodeId||m.semanticNodeId->is_nil()||
            m.typeId=="rgsml.dsp.true-peak-limiter"||
-           m.typeId=="rgsml.dsp.streaming-true-peak-limiter"||
            m.typeId=="rgsml.dsp.dither")
             return fail("L3_M12_REOPEN_FOREIGN_OR_FORBIDDEN_MODULE");
+        if(m.typeId=="rgsml.dsp.streaming-true-peak-limiter" &&
+           (&m!=&exact_linked->modules.back() ||
+            std::any_of(exact_manual->modules.begin(),exact_manual->modules.end(),
+                [](const auto& prior){return prior.typeId==
+                    "rgsml.dsp.streaming-true-peak-limiter";})))
+            return fail("L3_M12_REOPEN_OWNED_P2_TERMINAL_CONFLICT");
         for(const auto& old:doc.chains)
             if(old.chainId!=exact_linked->chainId)
                 for(const auto& prior:old.modules)

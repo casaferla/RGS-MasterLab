@@ -100,9 +100,15 @@ stage_exact_m12_native_ref_linked(
         if(n.semantic_node_id.is_nil()||
            n.exact_registered_type_id.empty()||
            n.exact_registered_type_id=="rgsml.dsp.true-peak-limiter"||
-           n.exact_registered_type_id=="rgsml.dsp.streaming-true-peak-limiter"||
            n.exact_registered_type_id=="rgsml.dsp.dither")
             return fail("L3_M12_FORBIDDEN_OR_MISSING_NODE");
+        if(n.exact_registered_type_id=="rgsml.dsp.streaming-true-peak-limiter" &&
+           (&n!=&original_m10_ordered_nodes.back() ||
+            std::any_of(protected_manual.instances().begin(),
+                        protected_manual.instances().end(),[](const auto& m){
+                return m.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
+            })))
+            return fail("L3_M12_OWNED_P2_TERMINAL_CONFLICT");
         for(const auto& existing:protected_manual.instances())
             if(existing.instance_id()==n.allocated_instance_id)
                 return fail("L3_M12_PROTECTED_INSTANCE_ID_COLLISION");

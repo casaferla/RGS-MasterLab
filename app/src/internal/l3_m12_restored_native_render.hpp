@@ -105,8 +105,7 @@ render_restored_m12_full_native_pcm_once(
                    node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
                    node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
                    !node.semantic_node_id()||
-                   node.semantic_node_id()->is_nil()||
-                   node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter")
+                   node.semantic_node_id()->is_nil())
                     return false;
             } else if(node.provenance()!=dsp::ModuleProvenance::MANUAL||
                       node.owner()!=dsp::ModuleOwner::USER||
@@ -130,7 +129,11 @@ render_restored_m12_full_native_pcm_once(
                            "rgsml.dsp.streaming-true-peak-limiter";
                    }))
         return fail("L3_M12_REPLAY_DUPLICATE_TERMINAL_P2");
-    for(const auto& linked:plan.reference_linked.instances()) {
+    const auto linked_nodes=plan.reference_linked.instances();
+    for(const auto& linked:linked_nodes) {
+        if(linked.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
+           (plan.terminal_p2 || &linked!=&linked_nodes.back()))
+            return fail("L3_M12_REPLAY_OWNED_P2_TERMINAL_CONFLICT");
         if(linked.module_type_id()=="rgsml.dsp.true-peak-limiter"||
            linked.module_type_id()=="rgsml.dsp.dither")
             return fail("L3_M12_REPLAY_EXPORT_SAFETY_IN_INLINE_REF");
