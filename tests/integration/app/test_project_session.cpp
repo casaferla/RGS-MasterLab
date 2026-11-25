@@ -445,9 +445,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     using platform::windows::internal::M18OwnerMutationFanout;
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    // Physically separate PCM16 resources, 12 s, same spectral content
-    // and envelope but +2 dB reference loudness. Not a synthetic score.
-    const auto writeTone=[&](const QString& name,double factor) {
+    // Physically separate PCM24 resources, with an EXACT 5:4 sample
+    // ratio. Independent PCM16 rounding of source and reference can
+    // alter very low-power protected tonal/temporal components.
+    const auto writeTone=[&](const QString& name,std::int64_t multiplier) {
         std::vector<std::int64_t> samples(48000U*12U);
         for(std::size_t i=0;i<samples.size();++i) {
             const double t=static_cast<double>(i)/48000.0;
@@ -455,10 +456,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
             const double envelope=0.7+0.3*std::sin(tau*0.8*t);
             const double v=envelope*(0.12*std::sin(tau*55.0*t)+
                 0.08*std::sin(tau*440.0*t)+0.04*std::sin(tau*2200.0*t));
-            samples[i]=static_cast<std::int64_t>(std::llround(v*factor*32768.0));
+            samples[i]=static_cast<std::int64_t>(std::llround(v*2097152.0))*multiplier;
         }
-        const auto bytes=wav_support::make_wav(1U,16U,1U,48000U,
-            wav_support::pcm_payload(samples,16U));
+        const auto bytes=wav_support::make_wav(1U,24U,1U,48000U,
+            wav_support::pcm_payload(samples,24U));
         const auto path=dir.filePath(name);
         QFile file{path};
         if(!file.open(QIODevice::WriteOnly|QIODevice::NewOnly)||
@@ -466,8 +467,8 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
              static_cast<qint64>(bytes.size()))!=static_cast<qint64>(bytes.size()))return QString{};
         file.close();return path;
     };
-    const auto sourcePath=writeTone(QStringLiteral("l3-native-source.wav"),1.0);
-    const auto referencePath=writeTone(QStringLiteral("l3-native-reference.wav"),std::pow(10.0,2.0/20.0));
+    const auto sourcePath=writeTone(QStringLiteral("l3-native-source.wav"),4);
+    const auto referencePath=writeTone(QStringLiteral("l3-native-reference.wav"),5);
     QVERIFY(!sourcePath.isEmpty()&&!referencePath.isEmpty());
     Session session;
     QVERIFY(!session.source.has_source());
@@ -536,6 +537,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(session.source.has_source());
     session.gold.selectGold(QUrl::fromLocalFile(referencePath));
     QVERIFY(session.gold.has_gold());
+    // This is deliberately a pure gain fixture. Preserve the MANUAL
+    // nodes but make their bypass identity explicit before capture.
+    QVERIFY(session.masteringChainState->set_user_bypass(session.gainId,true));
+    QVERIFY(session.masteringChainState->set_user_bypass(session.eqId,true));
     session.previewController->set_snapshot_provider([&session]{
         return session.selector.prepared_realization_snapshot();
     });
@@ -600,6 +605,21 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         static_cast<int>(completed->result.search.fixed_gate.status),
         completed->originals?1:0,completed->result.fixed?1:0);
     QVERIFY(completed->originals&&completed->result.fixed);
+    for(const auto& part:completed->result.fixed->measured_fixed) {
+        if(part.binding_id.find(".loudness.")==std::string::npos)continue;
+        for(const auto& c:part.configured)
+            qInfo("Fixed %s P=%.12g G=%.12g F=%.12g support=%.6g",
+                part.binding_id.c_str(),c.prepared.z.value_or(-999.0),
+                c.reference.z.value_or(-999.0),c.current_candidate_z.value_or(-999.0),
+                c.paired_native_support);
+    }
+    if(completed->result.search.refinement) {
+        for(const auto& r:completed->result.search.refinement->candidate_refinements)
+            qInfo("Measured ordinal=%llu nodes=%u J=%.12g Jtarget=%.12g",
+                static_cast<unsigned long long>(r.exact_combined_ordinal),
+                r.numerical.winner.active_owned_modules,r.numerical.winner.total_j,
+                r.numerical.winner.target_j);
+    }
     QVERIFY2(completed->result.search.status==a::m09_frozen::NativeProductSearchStatus::measured_candidate,
         "ordinary real Qt AutoMatch did not produce a measured winner");
     QVERIFY(completed->result.search.winning_graph&&completed->result.search.refinement);
