@@ -1385,7 +1385,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     const auto definition_measured=a::measure_m10_p2_full_native_once(
         *job.value(),definition_spec,&*prefix.value());
     QVERIFY(definition_measured);
-    m10::NativeDefinitionPolicy definition_policy;
+    a::m10_frozen::NativeDefinitionPolicy definition_policy;
     definition_policy.exact_density_floor=1e-12;
     definition_policy.exact_current_registry_and_phase6_policy_attested=true;
     for(std::size_t i=0;i<definition_policy.records.size();++i) {
@@ -1394,7 +1394,7 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
             std::string(binding.source_feature_id),"definition-fixture-"+std::to_string(i)};
     }
     definition_policy.records[9].exact_dependency=definition_policy.records[8].exact_dependency;
-    const auto definitions=m10::build_current_native_definitions(definition_policy,
+    const auto definitions=a::m10_frozen::build_current_native_definitions(definition_policy,
         *definition_pair.value(),*definition_measured.value(),stamp,
         job.value()->ticket_identity(),definition_spec);
     QVERIFY(definitions);
@@ -1405,10 +1405,10 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
     QVERIFY(!definitions->t01.authoritative_primary_grid.empty());
     auto bad_definition_spec=definition_spec;
     bad_definition_spec.spectral_bands.front().high_hz+=1.0;
-    QVERIFY(!m10::build_current_native_definitions(definition_policy,
+    QVERIFY(!a::m10_frozen::build_current_native_definitions(definition_policy,
         *definition_pair.value(),*definition_measured.value(),stamp,
         job.value()->ticket_identity(),bad_definition_spec));
-    QVERIFY(!m10::build_current_native_definitions(definition_policy,
+    QVERIFY(!a::m10_frozen::build_current_native_definitions(definition_policy,
         *original_pair.value(),*definition_measured.value(),stamp,
         job.value()->ticket_identity(),definition_spec));
     const auto candidate_native=
