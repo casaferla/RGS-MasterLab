@@ -1901,6 +1901,15 @@ canonicalP2TrialTicketsCover48OrderedParameters() {
         7,original,aligned)); // unsorted gives NO misleading binding
     QVERIFY(!m10::m10_exact_native_trial_ticket(
         7,*ordered,std::vector<double>{0.5}));
+    const std::vector<m10::Coordinate> empty;
+    QVERIFY(m10::m10_valid_sorted_coordinate_inventory(empty));
+    const auto sorted_empty=m10::m10_sort_exact_inventory(empty);
+    QVERIFY(sorted_empty&&sorted_empty->empty());
+    const auto none=m10::m10_exact_native_trial_ticket(7,empty,{});
+    QVERIFY(none);
+    QVERIFY(none!=exact);
+    QVERIFY(none!=m10::m10_exact_native_trial_ticket(9,empty,{}));
+    QVERIFY(!m10::m10_exact_native_trial_ticket(7,empty,std::vector<double>{0.5}));
     auto duplicated=*ordered;
     duplicated[1]=duplicated[0];
     QVERIFY(!m10::m10_sort_exact_inventory(duplicated));
