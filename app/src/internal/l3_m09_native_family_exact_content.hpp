@@ -2,6 +2,8 @@
 #include "l3_m09_native_selected_family_search.hpp"
 #include "l3_m10_exact_native_graph_content.hpp"
 #include <bit>
+#include <set>
+#include <tuple>
 
 namespace rgsml::app::l3_automatch::m09_frozen {
 [[nodiscard]] inline std::optional<ExactBytes> exact_family_current_content(
@@ -24,6 +26,45 @@ namespace rgsml::app::l3_automatch::m09_frozen {
         append_exact_byte_field(out,c.stable_parameter_id);
         append_exact_field(out,std::to_string(std::bit_cast<std::uint64_t>(c.normalized_u)));
         append_exact_field(out,std::to_string(std::bit_cast<std::uint64_t>(values[i])));
+    }
+    return out;
+}
+// M09 description only: the combined consumer owns the 48-coordinate
+// exclusion. This never creates a valid M10 trial ticket.
+[[nodiscard]] inline std::optional<std::vector<m10_frozen::Coordinate>>
+exact_over_budget_description_inventory(const NativeTypedSeed& seed)
+{
+    if(!seed.registry||seed.coordinates.size()<=m10_frozen::kMaxActiveCoordinates)return {};
+    std::vector<m10_frozen::Coordinate> out;
+    std::set<std::tuple<dsp::ModuleInstanceId,NativeField,std::optional<core::Uuid>>> fields;
+    for(const auto& c:seed.coordinates) {
+        if(c.canonical.semantic_node_id.empty()||c.canonical.stable_parameter_id.empty()||
+           !std::isfinite(c.canonical.normalized_u)||c.canonical.normalized_u<0.0||
+           c.canonical.normalized_u>1.0||
+           !fields.emplace(c.instance_id,c.field,c.band_id).second)return {};
+        out.push_back(c.canonical);
+    }
+    std::sort(out.begin(),out.end(),m10_frozen::m10_canonical_coordinate_less);
+    for(std::size_t i=1;i<out.size();++i)
+        if(!m10_frozen::m10_canonical_coordinate_less(out[i-1U],out[i]))return {};
+    return out;
+}
+[[nodiscard]] inline std::optional<ExactBytes> exact_over_budget_seed_content(
+    const NativeTypedSeed& seed)
+{
+    const auto inventory=exact_over_budget_description_inventory(seed);
+    if(!inventory)return {};
+    const auto graph=m10_frozen::exact_native_graph_content(seed.seed.linked,seed.seed.bindings,*seed.registry);
+    if(!graph)return {};
+    ExactBytes out;
+    using namespace m10_frozen::p2_cache_detail;
+    append_exact_field(out,"rgsml.l3.native-family-over-budget/1");
+    append_exact_byte_field(out,*graph);
+    append_exact_field(out,std::to_string(inventory->size()));
+    for(const auto& c:*inventory) {
+        append_exact_byte_field(out,c.semantic_node_id);
+        append_exact_byte_field(out,c.stable_parameter_id);
+        append_exact_field(out,std::to_string(std::bit_cast<std::uint64_t>(c.normalized_u)));
     }
     return out;
 }
