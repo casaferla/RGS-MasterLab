@@ -4,6 +4,7 @@
 #include "internal/l3_m13_predicted_vs_verified_proximity.hpp"
 #include "internal/l3_m13_verification_state_reasons.hpp"
 #include "internal/l3_m13_27_binding_conformance.hpp"
+#include "internal/l3_m13_fresh_native_population.hpp"
 #include "internal/l3_m13_owned_native_spec.hpp"
 #include "internal/l3_m13_fresh_full_master_probe.hpp"
 #include "internal/l3_automatch_typed_p2_trial.hpp"
@@ -50,6 +51,7 @@ private slots:
     void numericDevelopmentCheckpointRequiresAllNonqualificationPredicates();
     void reasonsOrderAndExactDuplicateSemantics();
     void completeFreshNativeTwentySevenBindingComparison();
+    void nativePopulationDistinguishesUnavailablePairFromRequiredDropout();
     void ownedNativeSpecRetainsGateBytesAcrossDispatch();
 };
 void M13FreshNativeProbeTest::ownedNativeSpecRetainsGateBytesAcrossDispatch()
@@ -595,6 +597,32 @@ void M13FreshNativeProbeTest::reasonsOrderAndExactDuplicateSemantics()
     retained.component_key="left";
     QVERIFY(normalize_verification_reasons({safety,retained})->size()==2U);
 }
+void M13FreshNativeProbeTest::nativePopulationDistinguishesUnavailablePairFromRequiredDropout()
+{
+    using namespace m13;
+    m08_frozen::AuthenticatedPairComponent p;
+    // The default producer flag is true even for non-applicable mono
+    // stereo rows and unsupported spectral/event population members.
+    QVERIFY(p.candidate_required);
+    auto fresh=p;
+    QVERIFY(!m13_requires_native_numeric_comparison(p,fresh));
+    p.current_valid=true;p.paired_native_support=1.0;
+    fresh=p;
+    // Neither candidate value exists: this is a required dropout.
+    QVERIFY(m13_requires_native_numeric_comparison(p,fresh));
+    p.current_valid=false;p.paired_native_support=0.0;
+    fresh=p;
+    p.candidate_native.value=0.5;
+    QVERIFY(m13_requires_native_numeric_comparison(p,fresh));
+    p.candidate_native.value.reset();
+    fresh.current_candidate_z=0.5;
+    QVERIFY(m13_requires_native_numeric_comparison(p,fresh));
+    fresh.current_candidate_z.reset();
+    fresh.candidate_native.valid_count=1U;
+    QVERIFY(m13_requires_native_numeric_comparison(p,fresh));
+    fresh=p;
+    QVERIFY(!m13_requires_native_numeric_comparison(p,fresh));
+}
 void M13FreshNativeProbeTest::
 completeFreshNativeTwentySevenBindingComparison()
 {
@@ -668,6 +696,24 @@ completeFreshNativeTwentySevenBindingComparison()
     comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
     QCOMPARE(comparison.rows[2].outcome,BindingConformance::unavailable);
     all[2].configured[0].exact_fresh_native_transform_attested=true;
+    const auto configured=comparison.configured_components;
+    const auto required=comparison.required_components;
+    for(auto& component:all[2].configured) {
+        component.required=false;
+        component.predicted_native.reset();
+        component.actual_fresh_native.reset();
+    }
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QCOMPARE(comparison.rows[2].outcome,BindingConformance::not_applicable);
+    QCOMPARE(comparison.configured_components,configured);
+    QCOMPARE(comparison.required_components,required-all[2].configured.size());
+    QVERIFY(comparison.every_required_binding_complete);
+    QVERIFY(comparison.every_required_binding_passed);
+    all[2].configured[0].required=true;
+    comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
+    QCOMPARE(comparison.rows[2].outcome,BindingConformance::unavailable);
+    QVERIFY(!comparison.every_required_binding_complete);
+    all[2].configured[0].required=false;
     all[0].selected_source_feature_id=
         std::string(m07_frozen::kBindings[0].exclusive_fallback_feature_id);
     comparison=compare_m13_frozen_twenty_seven_native_bindings(all);

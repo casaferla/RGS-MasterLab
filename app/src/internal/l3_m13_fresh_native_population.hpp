@@ -228,6 +228,23 @@ compare_m13_accepted_and_fresh_native_proximity(
     }
     return std::isfinite(z)&&z==*component.current_candidate_z;
 }
+// candidate_required is a conditional dropout policy for a supported
+// comparison component. Native producers retain it even on a nominal
+// configured slot with no reference-grade P/G evidence (e.g. mono S01).
+// Preserve every slot and its configured count. A supported component,
+// any actual candidate observation, or a changed unavailable observation
+// remains mandatory. Only identical genuinely absent observations outside
+// the original paired K are N/A; never relabel a measured dropout N/A.
+[[nodiscard]] inline bool m13_requires_native_numeric_comparison(
+    const m08_frozen::AuthenticatedPairComponent& predicted,
+    const m08_frozen::AuthenticatedPairComponent& fresh) noexcept
+{
+    return (predicted.current_valid&&predicted.paired_native_support>0.0)||
+        (fresh.current_valid&&fresh.paired_native_support>0.0)||
+        predicted.current_candidate_z.has_value()||fresh.current_candidate_z.has_value()||
+        predicted.candidate_native.value.has_value()||fresh.candidate_native.value.has_value()||
+        predicted.candidate_native!=fresh.candidate_native;
+}
 [[nodiscard]] inline M13TwentySevenConformance
 compare_m13_accepted_and_fresh_native_bindings(
     const std::vector<m08_frozen::AuthenticatedPairSlot>& accepted,
@@ -268,8 +285,7 @@ compare_m13_accepted_and_fresh_native_bindings(
                 c.actual_support_numerator=*v.valid_count;
                 c.actual_support_denominator=*v.configured_count;
             }
-            c.required=x.candidate_required||
-                       (x.current_valid&&x.paired_native_support>0.0);
+            c.required=m13_requires_native_numeric_comparison(x,y);
             c.exact_fresh_native_transform_attested=
                 m13_native_coordinate_consistent(m07_frozen::kBindings[i],x)&&
                 m13_native_coordinate_consistent(m07_frozen::kBindings[i],y);
