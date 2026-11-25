@@ -1498,6 +1498,22 @@ genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis() {
         ->std::optional<m10::P2OriginalRealNativeTriple>{
         return std::nullopt;
     };
+    std::size_t fixed_definition_requests=0U;
+    const auto absent_fixed_definitions=[&](const a::M10P2FullNativeEvidence&)
+        ->std::optional<m10::P2OriginalRealNativeTriple>{
+        ++fixed_definition_requests;return {};
+    };
+    const auto independent_fixed=m10::measure_current_product_fixed(worker,*original_pair.value(),
+        spec_for_authoritative_bridge,"current-phase6-test-generation","fixed-before-m09",
+        1U,true,true,absent_fixed_definitions);
+    QVERIFY(!independent_fixed); // real render cannot invent absent definitions
+    QCOMPARE(fixed_definition_requests,std::size_t{1});
+    auto stale_worker=worker;
+    stale_worker.current_qt_product_epoch_and_m09_m11_attested=false;
+    QVERIFY(!m10::measure_current_product_fixed(stale_worker,*original_pair.value(),
+        spec_for_authoritative_bridge,"current-phase6-test-generation","fixed-before-m09",
+        1U,true,true,absent_fixed_definitions));
+    QCOMPARE(fixed_definition_requests,std::size_t{1});
     // The Product route requires a separately measured Fixed and
     // checks its generation before invoking the native resolver.
     bool unexpected_resolution=false;
