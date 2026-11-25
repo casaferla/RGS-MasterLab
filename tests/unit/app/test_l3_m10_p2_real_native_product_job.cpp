@@ -84,6 +84,7 @@ private slots:
     void nativeOwnedP2CoordinatePolicyMustBeExplicitAndBounded();
     void nativeOwnedP2RoleBuildsTwoCoordinateFinalGraph();
     void nativeOwnedP2BankDerivesCompleteInventory();
+    void nativeOwnedP2OwnerAuthoritySeparatesPolicyAndProtectedSlot();
     void nativeTypedSeedBuildsRealRefinementTrial();
     void nativeRoleAssemblyCreatesActualTypedSeed();
     void nativeFamilyBankDoesNotSubstituteUnavailableRoles();
@@ -246,6 +247,40 @@ void P2RealNativeProductTest::nativeOwnedP2BankDerivesCompleteInventory() {
     bank.owned_p2->policy.ceiling.lower=-2.0;
     QVERIFY(!m09::valid_native_owned_p2_seed(*bank.owned_p2));
     QVERIFY(!m09::derive_native_family_coordinate_requests(bank,family,keys,{},48000));
+}
+void P2RealNativeProductTest::nativeOwnedP2OwnerAuthoritySeparatesPolicyAndProtectedSlot() {
+    namespace m09=a::m09_frozen;
+    using T=a::m10_frozen::Transform;
+    const auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(base);
+    const auto registry=a::freeze_native_automatch_execution_registry(
+        std::make_shared<const dsp::ModuleRegistry>(*base.value()));
+    QVERIFY(registry&&*registry);
+    unsigned next_id=1U;
+    m09::NativeOwnerAllocations ids([&](){
+        core::Uuid::Bytes bytes{};bytes[0]=0xcf;bytes[15]=static_cast<std::uint8_t>(next_id++);
+        return core::Uuid{bytes};
+    });
+    m09::NativeFamilySeedBank bank;
+    m09::AbstractFamilyChoice family;
+    family.loudness=m09::LoudnessMode::terminal_limiter_only;
+    const auto payload=dsp::StreamingTruePeakLimiterParameters::create(-3.0,0.0,2);
+    QVERIFY(payload);
+    const m09::NativeP2CoordinatePolicy policy{
+        {T::additive_or_linear,-6.0,0.0,{},0.25},
+        {T::additive_or_linear,-12.0,12.0,0.0,1.0}};
+    bank.owned_p2=m09::NativeOwnedP2Seed{*payload.value(),policy};
+    const auto first=m09::resolve_native_owner_family(bank,family,ids,**registry,{0x33},{0x32},false);
+    QCOMPARE(first.disposition,m09::NativeDomainDisposition::legal);
+    QCOMPARE(first.allocations.size(),std::size_t{1});
+    auto changed=bank;changed.owned_p2->policy.drive.reference_weight=0.5;
+    const auto second=m09::resolve_native_owner_family(changed,family,ids,**registry,{0x33},{0x32},false);
+    QCOMPARE(second.disposition,m09::NativeDomainDisposition::legal);
+    QVERIFY(first.identity.semantic_tuple!=second.identity.semantic_tuple);
+    QCOMPARE(first.allocations.front().instance,second.allocations.front().instance);
+    const auto protected_slot=m09::resolve_native_owner_family(bank,family,ids,**registry,{0x33},{0x32},true,true);
+    QCOMPARE(protected_slot.disposition,m09::NativeDomainDisposition::not_applicable);
+    QVERIFY(protected_slot.allocations.empty());
 }
 void P2RealNativeProductTest::nativeDefinitionPolicyAndGradesAreExact() {
     namespace native=a::m05m06_real;

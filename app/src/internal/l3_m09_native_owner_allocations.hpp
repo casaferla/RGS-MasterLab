@@ -125,6 +125,20 @@ native_owner_family_topology(const NativeFamilySeedBank& bank,
                 append_exact_field(out,std::to_string(prefix.ranked_clusters[i].first));
                 append_exact_field(out,std::to_string(prefix.ranked_clusters[i].count));
             }
+        } else if(std::holds_alternative<dsp::StreamingTruePeakLimiterParameters>(*payload)) {
+            if(!bank.owned_p2||!valid_native_owned_p2_seed(*bank.owned_p2))return {};
+            // Exact coordinate policy is a topology dependency; neither
+            // a different margin nor a different reference/cost anchor
+            // may alias an earlier solver generation.
+            append_exact_field(out,"rgsml.l3.native-owned-p2-policy/1");
+            const auto bits=[&](double x){append_exact_field(out,std::to_string(std::bit_cast<std::uint64_t>(x)));};
+            for(const auto* rule:{&bank.owned_p2->policy.ceiling,&bank.owned_p2->policy.drive}) {
+                append_exact_field(out,std::to_string(static_cast<unsigned>(rule->kind)));
+                bits(rule->lower);bits(rule->upper);bits(rule->reference_weight);
+                out.push_back(rule->fixed_reference?1U:0U);
+                if(rule->fixed_reference)bits(*rule->fixed_reference);
+            }
+            append_exact_field(out,std::to_string(bank.owned_p2->payload.margin_percent()));
         }
     }
     return out;
@@ -151,12 +165,13 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
        (family.loudness==LoudnessMode::gain_with_terminal_limiter||
         family.loudness==LoudnessMode::terminal_limiter_only))
         return conditional("protected-user-terminal-already-occupies-slot");
+    const bool p2_ready=bank.owned_p2&&valid_native_owned_p2_seed(*bank.owned_p2);
     if(family.loudness==LoudnessMode::gain_with_terminal_limiter) {
-        if(!bank.gain||!bank.gain->terminal_branch_requested)
+        if(!bank.gain||(!p2_ready&&!bank.gain->terminal_branch_requested))
             return conditional("terminal-branch-condition-not-met");
-        out.exact_reason="conditional-terminal-composition-unresolved";return out;
+        if(!p2_ready){out.exact_reason="conditional-terminal-composition-unresolved";return out;}
     }
-    if(family.loudness==LoudnessMode::terminal_limiter_only) {
+    if(family.loudness==LoudnessMode::terminal_limiter_only&&!p2_ready) {
         if(!fixed_peak_exceeds_ceiling)return conditional("fixed-peak-within-independent-ceiling");
         out.exact_reason="conditional-terminal-composition-unresolved";return out;
     }
