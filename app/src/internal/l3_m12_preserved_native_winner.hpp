@@ -2,6 +2,7 @@
 // Bind the actual measured solver winner to the M12 staged typed graph.
 // This is a prepublication guard, never a materialization receipt.
 #include "l3_m10_preserved_native_refinement.hpp"
+#include "l3_m09_native_selected_search.hpp"
 #include "l3_m10_original_definition_authority.hpp"
 #include "l3_m12_ref_linked_native_stage.hpp"
 
@@ -123,5 +124,42 @@ stage_preserved_native_refinement_winner(
         return fail("L3_M12_NATIVE_REFINEMENT_GRAPH_RECONSTRUCTION_FAILED");
     return stage_preserved_native_measured_winner(
         accepted,winner,env.owners,trial->graph,env.generation);
+}
+// The search retains the reconstructed winning graph with its original
+// seed anchors. M12 does not rebuild it from the refined coordinate
+// vector as if that vector were the immutable seed.
+[[nodiscard]] inline core::Result<StagedRefLinkedSegment>
+stage_current_native_search_winner(const AcceptedPlanAndOwner& accepted,
+    const m09_frozen::NativeProductSearchResult& search,
+    const m10_frozen::PreservedNativeSearchEnvironment& env)
+{
+    using R=core::Result<StagedRefLinkedSegment>;
+    const auto fail=[](const char* reason){
+        return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    if(search.status!=m09_frozen::NativeProductSearchStatus::measured_candidate||
+       !search.refinement||!search.winning_graph||
+       !search.refinement->winning_refinement_index||
+       *search.refinement->winning_refinement_index>=search.refinement->candidate_refinements.size())
+        return fail("L3_M12_CURRENT_SEARCH_WINNER_MISSING");
+    const auto& refined=search.refinement->candidate_refinements[*search.refinement->winning_refinement_index];
+    const auto& owned=*search.winning_graph;
+    if(owned.registry!=env.owners.frozen_registry||
+       owned.exact_combined_ordinal!=refined.exact_combined_ordinal||
+       !refined.numerical.winner.native_prediction||
+       owned.exact_ticket!=refined.numerical.winner.native_prediction->exact_candidate_ticket||
+       owned.winning_values.size()!=refined.numerical.coordinates.size()||
+       owned.immutable_seed_inventory.size()!=owned.winning_values.size())
+        return fail("L3_M12_CURRENT_SEARCH_WINNER_IDENTITY_MISMATCH");
+    for(std::size_t i=0;i<owned.winning_values.size();++i)
+        if(owned.winning_values[i]!=refined.numerical.coordinates[i].normalized_u||
+           owned.immutable_seed_inventory[i].semantic_node_id!=refined.numerical.coordinates[i].semantic_node_id||
+           owned.immutable_seed_inventory[i].stable_parameter_id!=refined.numerical.coordinates[i].stable_parameter_id)
+            return fail("L3_M12_CURRENT_SEARCH_WINNER_COORDINATE_MISMATCH");
+    const auto ticket=m10_frozen::m10_exact_native_trial_ticket(owned.exact_combined_ordinal,
+        owned.immutable_seed_inventory,owned.winning_values);
+    if(!ticket||*ticket!=owned.exact_ticket)return fail("L3_M12_CURRENT_SEARCH_WINNER_TICKET_MISMATCH");
+    return stage_preserved_native_measured_winner(accepted,refined.numerical.winner,
+        env.owners,owned.graph,env.generation);
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
