@@ -539,11 +539,17 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     session.previewController->set_snapshot_provider([&session]{
         return session.selector.prepared_realization_snapshot();
     });
+    // A new session must admit AutoMatch before the first SaveAs.
+    // Existing saved-project M12/Undo/Redo coverage remains separate.
     const auto baseline=dir.filePath(QStringLiteral("l3-native-before.rgsml"));
-    session.project.saveProjectAs(QUrl::fromLocalFile(baseline));
-    QVERIFY2(QFileInfo::exists(baseline),session.project.error_message().toUtf8().constData());
-    const auto before=load_project(baseline);
-    QVERIFY(before);
+    QVERIFY(!QFileInfo::exists(baseline));
+    const auto before=session.project.capture_private_m12_search_baseline();
+    QVERIFY2(before,before?"":before.error()->message().c_str());
+    const auto recaptured=session.project.capture_private_m12_search_baseline();
+    QVERIFY(recaptured);
+    QVERIFY(m12::m12_exact_project_snapshot_equal(*before.value(),*recaptured.value()));
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    QVERIFY(!QFileInfo::exists(baseline));
     const auto& doc=before.value()->document();
     QVERIFY(doc.references.activeReferenceId&&doc.pipeline.masteringChainId);
     const auto manual=std::find_if(doc.chains.begin(),doc.chains.end(),[&](const auto& chain){
@@ -620,6 +626,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY2(receipt,receipt?"":receipt.error()->message().c_str());
     QVERIFY(receipt.value()->materialized_not_verified());
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    QVERIFY(!QFileInfo::exists(baseline));
     const auto freshInput=a::capture_native_qt_fresh_verification_on_owner(session.project,
         session.gold,*captured.value(),policy,*completed,plan,true,m13::MandatoryHardPredicate::passed);
     QVERIFY(freshInput);
