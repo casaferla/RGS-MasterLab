@@ -177,6 +177,18 @@ assemble_native_artistic_inventory_seed(
     const auto nodes=graph->linked.instances();
     const bool has_p2=std::any_of(roles.begin(),roles.end(),[](const auto& r){
         return r.role==IntentRole::terminal_limiter;});
+    const NativeP2CoordinatePolicy* exact_p2_policy=nullptr;
+    for(const auto& request:requests) {
+        if(request.role!=IntentRole::terminal_limiter) {
+            if(request.p2_policy)return {};
+            continue;
+        }
+        if(!has_p2||!request.p2_policy||
+           !valid_native_p2_coordinate_policy(*request.p2_policy)||
+           request.band_id||request.frequency_bounds)return {};
+        if(exact_p2_policy&&*exact_p2_policy!=*request.p2_policy)return {};
+        exact_p2_policy=&*request.p2_policy;
+    }
     if(has_p2) {
         const auto count=[&](NativeField field){return std::count_if(requests.begin(),requests.end(),
             [&](const auto& r){return r.role==IntentRole::terminal_limiter&&r.field==field&&r.p2_policy.has_value();});};

@@ -214,6 +214,9 @@ void P2RealNativeProductTest::nativeOwnedP2RoleBuildsTwoCoordinateFinalGraph() {
         std::span<const m09::NativeRoleCoordinateRequest>{requests}.first(1),1U,48000));
     auto absent=requests;absent[0].p2_policy.reset();
     QVERIFY(!m09::assemble_native_artistic_typed_seed(*registry,family,roles,absent,1U,48000));
+    auto changed_policy=requests;
+    changed_policy[1].p2_policy->drive.reference_weight=0.5;
+    QVERIFY(!m09::assemble_native_artistic_typed_seed(*registry,family,roles,changed_policy,1U,48000));
 }
 void P2RealNativeProductTest::nativeOwnedP2BankDerivesCompleteInventory() {
     namespace m09=a::m09_frozen;
@@ -245,6 +248,9 @@ void P2RealNativeProductTest::nativeOwnedP2BankDerivesCompleteInventory() {
     const std::vector<m09::NativeRoleAllocation> allocations{{m09::IntentRole::terminal_limiter,
         id("bd000000-0000-4000-8000-000000000091"),uuid("bd000000-0000-4000-8000-000000000092")}};
     QVERIFY(m09::build_native_family_seed(*registry,bank,family,allocations,*requests,1U,48000));
+    auto altered=*requests;
+    for(auto& coordinate:altered)coordinate.p2_policy->drive.reference_weight=0.5;
+    QVERIFY(!m09::build_native_family_seed(*registry,bank,family,allocations,altered,1U,48000));
     bank.owned_p2->policy.ceiling.lower=-2.0;
     QVERIFY(!m09::valid_native_owned_p2_seed(*bank.owned_p2));
     QVERIFY(!m09::derive_native_family_coordinate_requests(bank,family,keys,{},48000));

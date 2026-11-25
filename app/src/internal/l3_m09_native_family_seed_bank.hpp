@@ -90,6 +90,12 @@ native_family_role_payload(const NativeFamilySeedBank& bank,
 {
     const auto ordered=ordered_abstract_roles(family);
     if(ordered.size()!=allocations.size())return {};
+    for(const auto& coordinate:coordinates) {
+        if(coordinate.role==IntentRole::terminal_limiter) {
+            if(!bank.owned_p2||!coordinate.p2_policy||
+               *coordinate.p2_policy!=bank.owned_p2->policy)return {};
+        }else if(coordinate.p2_policy)return {};
+    }
     std::vector<NativeRoleSeed> seeds;
     for(std::size_t i=0;i<ordered.size();++i) {
         if(allocations[i].role!=ordered[i])return {};

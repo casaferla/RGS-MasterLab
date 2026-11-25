@@ -12,12 +12,14 @@ struct NativeCoordinateRule final {
     double lower{},upper{};
     std::optional<double> fixed_reference;
     double reference_weight{};
+    friend bool operator==(const NativeCoordinateRule&,const NativeCoordinateRule&)=default;
 };
 // P2's two new continuous coordinates require an explicit accepted
 // policy. The old export-limiter fixed-ceiling law cannot provide it.
 struct NativeP2CoordinatePolicy final {
     NativeCoordinateRule ceiling;
     NativeCoordinateRule drive;
+    friend bool operator==(const NativeP2CoordinatePolicy&,const NativeP2CoordinatePolicy&)=default;
 };
 [[nodiscard]] inline bool valid_native_p2_coordinate_policy(const NativeP2CoordinatePolicy& policy)
 {
