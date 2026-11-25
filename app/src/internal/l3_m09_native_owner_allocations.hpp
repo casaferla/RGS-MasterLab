@@ -136,7 +136,8 @@ native_owner_family_topology(const NativeFamilySeedBank& bank,
 resolve_native_owner_family(const NativeFamilySeedBank& bank,
     const AbstractFamilyChoice& family,NativeOwnerAllocations& allocations,
     const dsp::ModuleRegistry& registry,const ExactBytes& generation,
-    const ExactBytes& exact_dependencies,bool fixed_peak_exceeds_ceiling)
+    const ExactBytes& exact_dependencies,bool fixed_peak_exceeds_ceiling,
+    bool existing_user_terminal=false)
 {
     NativeFamilyBindingAuthority out;
     out.exact_reason="missing-current-generation-dependencies";
@@ -146,6 +147,10 @@ resolve_native_owner_family(const NativeFamilySeedBank& bank,
         out.exact_reason=reason;
         return out;
     };
+    if(existing_user_terminal&&
+       (family.loudness==LoudnessMode::gain_with_terminal_limiter||
+        family.loudness==LoudnessMode::terminal_limiter_only))
+        return conditional("protected-user-terminal-already-occupies-slot");
     if(family.loudness==LoudnessMode::gain_with_terminal_limiter) {
         if(!bank.gain||!bank.gain->terminal_branch_requested)
             return conditional("terminal-branch-condition-not-met");
