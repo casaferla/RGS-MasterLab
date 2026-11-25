@@ -33,6 +33,9 @@ public:
     [[nodiscard]] const m12_frozen::AcceptedPlanAndOwner* reviewed()const noexcept {
         return reviewed_?&*reviewed_:nullptr;
     }
+    [[nodiscard]] const Completion* verification_result()const noexcept {
+        return verification_result_?&*verification_result_:nullptr;
+    }
     [[nodiscard]] const m13_frozen::M13ProvisionalDiagnosticEnvelope* diagnostic()const noexcept {
         return diagnostic_?&*diagnostic_:nullptr;
     }
@@ -47,7 +50,7 @@ public:
                 return run_native_qt_product_session_worker(*input,std::move(allocate),cancel.get());
             });
             operation_=std::move(input);cancel_=std::move(cancel);
-            completed_.reset();reviewed_.reset();diagnostic_.reset();
+            completed_.reset();reviewed_.reset();diagnostic_.reset();verification_result_.reset();
             search_=std::move(task);phase_=Phase::searching;
             return true;
         }catch(...) {phase_=Phase::failed;return false;}
@@ -120,12 +123,20 @@ public:
                 auto sealed=project().seal_private_m13_actual_native_completion(*done.value());
                 if(!sealed){phase_=Phase::verification_incomplete;return;}
                 diagnostic_.emplace(std::move(*sealed.value()));
-                phase_=done.value()->assessment().native_numerical_evidence_passed()
+                verification_result_.emplace(std::move(*done.value()));
+                phase_=verification_result_->assessment().native_numerical_evidence_passed()
                     ?Phase::numerical_pass:Phase::verification_incomplete;
             }catch(...) {phase_=Phase::verification_incomplete;}
         }
-        if(phase_==Phase::candidate_ready&&operation_&&!current(*operation_))
-            phase_=Phase::stale;
+        if((phase_==Phase::candidate_ready||phase_==Phase::no_correction)&&
+           operation_&&!current(*operation_)) {
+            reviewed_.reset();completed_.reset();phase_=Phase::stale;
+        }
+        if(verification_result_&&
+           (!project().private_m13_fresh_probe_still_current(verification_result_->fresh().executed_request)||
+            gold_.selection_revision()!=verification_result_->source_reference_owner().reference_selection_revision)) {
+            diagnostic_.reset();verification_result_.reset();phase_=Phase::stale;
+        }
     }
 private:
     [[nodiscard]] ProjectSessionViewModel& project()const noexcept{return product_.upstream.project;}
@@ -143,6 +154,7 @@ private:
     std::optional<NativeQtSearchWorkerResult> completed_;
     std::optional<m12_frozen::AcceptedPlanAndOwner> reviewed_;
     std::optional<m13_frozen::M13ProvisionalDiagnosticEnvelope> diagnostic_;
+    std::optional<Completion> verification_result_;
     std::future<NativeQtSearchWorkerResult> search_;
     std::future<core::Result<Completion>> verification_;
 };

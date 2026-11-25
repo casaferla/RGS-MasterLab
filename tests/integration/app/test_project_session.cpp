@@ -6,7 +6,7 @@
 #include "internal/l3_m13_fresh_original_native_import.hpp"
 #include "internal/l3_m13_current_search_worker.hpp"
 #include "internal/l3_native_qt_search_handoff.hpp"
-#include "internal/l3_native_qt_product_session.hpp"
+#include "internal/l3_native_qt_product_action.hpp"
 #include "internal/m18_product_project_save_binding.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_upstream_binding.hpp"
@@ -612,11 +612,22 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QCOMPARE(next,1U);
     QVERIFY(!a::review_native_qt_product_session_on_owner(session.project,controllers,fanout,
         session.selector,session.gold,*operation.value(),cancelledResult));
-    std::optional<a::NativeQtSearchWorkerResult> completed;
-    std::thread searchThread([&]{
-        completed.emplace(a::run_native_qt_product_session_worker(*operation.value(),allocate));
-    });
-    searchThread.join();
+    using Action=a::NativeQtProductAction;
+    Action action{controllers,fanout,session.selector,session.gold};
+    QVERIFY(action.begin(*operation.value(),allocate));
+    QVERIFY(action.busy());
+    QVERIFY(!action.adopt());
+    QVERIFY(!action.begin(*operation.value(),allocate));
+    action.cancel();
+    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),120000);
+    QVERIFY(action.phase()==Action::Phase::cancelled);
+    QVERIFY(!action.adopt());
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    next=1U;
+    QVERIFY(action.begin(*operation.value(),allocate));
+    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),180000);
+    QVERIFY(action.phase()==Action::Phase::candidate_ready);
+    const auto* completed=action.result();
     QVERIFY(completed);
     qInfo("Qt native search phase=%d status=%d fixed-gate=%d originals=%d fixed=%d",
         static_cast<int>(completed->result.phase),static_cast<int>(completed->result.search.status),
@@ -670,10 +681,12 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(m12::m12_exact_project_snapshot_equal(operation.value()->baseline,*stillBefore.value()));
     QVERIFY(!a::capture_native_qt_product_session_verification_on_owner(session.project,
         session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed));
-    const auto receipt=a::apply_native_qt_product_session_on_owner(session.project,controllers,fanout,
-        session.selector,session.gold,*operation.value(),*completed,plan);
-    QVERIFY2(receipt,receipt?"":receipt.error()->message().c_str());
-    QVERIFY(receipt.value()->materialized_not_verified());
+    QVERIFY(action.reviewed());
+    QCOMPARE(action.reviewed()->exact_plan_content_checksum,plan.exact_plan_content_checksum);
+    QVERIFY(action.adopt());
+    QVERIFY(action.phase()==Action::Phase::materialized);
+    QVERIFY(!action.adopt());
+    QVERIFY(session.previewController->has_private_m12_product_preview_ticket());
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
     QVERIFY(!QFileInfo::exists(baseline));
     QVERIFY(!a::capture_native_qt_product_session_verification_on_owner(session.project,
@@ -683,19 +696,16 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto freshInput=a::capture_native_qt_product_session_verification_on_owner(session.project,
         session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed);
     QVERIFY(freshInput);
-    std::optional<core::Result<m13::M13ActualNativeWorkerCompletion>> verification;
-    std::thread verificationThread([&]{
-        verification.emplace(m13::M13ActualNativeWorkerCompletion::execute(*freshInput,*block.value()));
-    });
-    verificationThread.join();
+    QVERIFY(action.begin_verification(m13::MandatoryHardPredicate::passed));
+    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),180000);
+    const auto* verification=action.verification_result();
     QVERIFY(verification);
-    QVERIFY2(*verification,*verification?"":verification->error()->message().c_str());
-    const auto& fresh=verification->value()->fresh();
+    const auto& fresh=verification->fresh();
     QCOMPARE(fresh.logical_verification_evaluations,1U);
     QVERIFY(fresh.additional_native);
     // Keep all assertions, and expose the actual canonical failed or
     // unavailable predicates if the end-to-end numerical gate fails.
-    const auto& assessment=verification->value()->assessment();
+    const auto& assessment=verification->assessment();
     qInfo("Qt fresh M13 state=%d required=%llu configured=%llu",
         static_cast<int>(assessment.state),
         static_cast<unsigned long long>(assessment.required_native_components),
@@ -706,10 +716,13 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
             static_cast<int>(reason.predicate));
     QVERIFY(assessment.fresh_master_execution_attested);
     QVERIFY(assessment.actual_27_binding_population_attested);
-    QVERIFY(verification->value()->assessment().same_run_proximity_attested);
-    QVERIFY(verification->value()->assessment().native_numerical_evidence_passed());
-    QVERIFY(!verification->value()->authorizes_verified());
-    const auto diagnostic=session.project.seal_private_m13_actual_native_completion(*verification->value());
+    QVERIFY(verification->assessment().same_run_proximity_attested);
+    QVERIFY(verification->assessment().native_numerical_evidence_passed());
+    QVERIFY(action.phase()==Action::Phase::numerical_pass);
+    QVERIFY(action.diagnostic());
+    QVERIFY(m13::verify_m13_provisional_diagnostic_integrity(action.diagnostic()->canonical_report));
+    QVERIFY(!verification->authorizes_verified());
+    const auto diagnostic=session.project.seal_private_m13_actual_native_completion(*verification);
     QVERIFY2(diagnostic,diagnostic?"":diagnostic.error()->message().c_str());
     QVERIFY(m13::verify_m13_provisional_diagnostic_integrity(diagnostic.value()->canonical_report));
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
@@ -725,7 +738,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     session.project.openProject(QUrl::fromLocalFile(after));
     QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());
     QVERIFY(session.previewController->has_private_m12_product_preview_ticket());
-    QVERIFY(!session.project.seal_private_m13_actual_native_completion(*verification->value()));
+    QVERIFY(!session.project.seal_private_m13_actual_native_completion(*verification));
+    action.poll();
+    QVERIFY(action.phase()==Action::Phase::stale);
+    QVERIFY(!action.diagnostic());
 }
 
 void ProjectSessionTest::
