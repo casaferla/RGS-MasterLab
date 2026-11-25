@@ -1490,6 +1490,31 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     clear_error();
 }
 
+core::Result<project::ProjectSnapshot>
+ProjectSessionViewModel::capture_private_m12_search_baseline()
+{
+    using R=core::Result<project::ProjectSnapshot>;
+    const auto fail=[](const char* code){
+        return R::failure(core::Error{core::ErrorCode::InvalidState,code});
+    };
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||
+       !m18ProjectOpenBatchBegin_||!m18ProjectSaveBatchBegin_||
+       (opened_&&!sessionChainMaterialized_)||
+       !masteringChainState_||!previewController_||
+       !source_||!source_->source_resource()||!gold_||!gold_->gold_resource())
+        return fail("L3_M12_BASELINE_NO_CURRENT_PRODUCT_OWNER");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("L3_M12_BASELINE_EPOCH_UNAVAILABLE");
+    const auto heldLease=*lease.value();
+    Q_UNUSED(heldLease);
+    auto stem=opened_?QString::fromStdString(opened_->document().displayName):
+        QFileInfo(source_->display_name()).completeBaseName();
+    if(stem.isEmpty())stem=QStringLiteral("Untitled");
+    return current_snapshot(stem);
+}
+
 core::Result<l3_automatch::m12_frozen::M12ProductMaterializationReceipt>
 ProjectSessionViewModel::apply_private_m12_current_native_search(
     const l3_automatch::NativeAutoMatchWorkerResult& worker,
@@ -1503,7 +1528,7 @@ ProjectSessionViewModel::apply_private_m12_current_native_search(
     namespace m=l3_automatch::m12_frozen;
     using R=core::Result<m::M12ProductMaterializationReceipt>;
     if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
-       !opened_||!m::m12_exact_project_snapshot_equal(*opened_,preSearchProject)||
+       isCommittingProjectOpen_||degraded_||
        !gold_||gold_->selection_revision()!=owners.current_owner.reference_selection_revision)
         return R::failure(core::Error{core::ErrorCode::InvalidState,
             "L3_M12_PRODUCT_SEARCH_HANDOFF_STALE"});
@@ -1533,7 +1558,8 @@ ProjectSessionViewModel::apply_private_m12_materialization(
     if(QThread::currentThread()!=thread()||
        m18ProjectOperationActive_||isCommittingProjectOpen_||
        !m18ProjectOpenBatchBegin_||!m18ProjectSaveBatchBegin_||
-       !opened_||!sessionChainMaterialized_||
+       degraded_||(opened_&&!sessionChainMaterialized_)||
+       !draft.exact_precommit_project||
        !previewController_||!masteringChainState_||
        !source_||!source_->source_resource()||
        !gold_||!gold_->gold_resource()||
@@ -1548,10 +1574,10 @@ ProjectSessionViewModel::apply_private_m12_materialization(
     // memory installation, fresh readback, receipt and history adoption.
     const auto heldLease=*lease.value();
     Q_UNUSED(heldLease);
-    const auto stem=QString::fromStdString(opened_->document().displayName);
+    const auto stem=QString::fromStdString(
+        draft.exact_precommit_project->document().displayName);
     auto live=current_snapshot(stem);
-    if(!live||!m::m12_exact_project_snapshot_equal(
-        *live.value(),*opened_)||
+    if(!live||
        live.value()->document().projectId!=*projectId_||
        live.value()->document().sourceResourceId!=*sourceId_||
        live.value()->document().references.activeReferenceId!=referenceId_||
@@ -1568,7 +1594,8 @@ ProjectSessionViewModel::apply_private_m12_materialization(
     if(beforeHasLinked) {
         // An update is legal only for this Product's most recent actual
         // materialization, never an arbitrary imported/foreign REF graph.
-        if(!beforeTicket||m12UndoHistory_.empty()||
+        if(!opened_||!m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
+           !beforeTicket||m12UndoHistory_.empty()||
            !m12RedoHistory_.empty()||
            m12UndoHistory_.back().afterTicket!=beforeTicket||
            !m::m12_exact_project_snapshot_equal(
@@ -1601,9 +1628,14 @@ ProjectSessionViewModel::apply_private_m12_materialization(
        masteringChainState_->execution_bindings()!=bindings)
         return fail("L3_M12_PRODUCT_COMMIT_RACED_BEFORE_PUBLICATION");
 
+    // Preserve the exact previous in-memory carrier (including absence
+    // for an unsaved session) until physical publication/readback passes.
+    auto beforeOpened=opened_;
+    const bool beforeMaterialized=sessionChainMaterialized_;
     // Atomic Qt owner state: one complete ProjectDocument replaces the
     // previous snapshot. No in-place REF node insertion or manual merge.
     opened_.emplace(entry.after);
+    sessionChainMaterialized_=true;
     previewController_->set_private_m12_product_preview_ticket(afterTicket);
     // Read back via the ACTUAL Product projection. Merely inspecting the
     // caller's draft or the preview ticket would be false positive proof.
@@ -1620,14 +1652,16 @@ ProjectSessionViewModel::apply_private_m12_materialization(
            *opened_,entry.after)) {
         // Readback failure cannot emit a successful materialization.
         // Recover the entire prior Project and its exact preview owner.
-        opened_.emplace(entry.before);
+        opened_=std::move(beforeOpened);
+        sessionChainMaterialized_=beforeMaterialized;
         previewController_->set_private_m12_product_preview_ticket(
             beforeTicket);
         return fail("L3_M12_PRODUCT_COMMIT_READBACK_REJECTED_ROLLED_BACK");
     }
     const auto& adopted=opened_->document();
     if(!adopted.references.activeReferenceId) {
-        opened_.emplace(entry.before);
+        opened_=std::move(beforeOpened);
+        sessionChainMaterialized_=beforeMaterialized;
         previewController_->set_private_m12_product_preview_ticket(
             beforeTicket);
         return fail("L3_M12_PRODUCT_COMMIT_REFERENCE_LOST");

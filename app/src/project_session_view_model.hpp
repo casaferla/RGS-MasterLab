@@ -175,6 +175,12 @@ public:
     Q_INVOKABLE void cancelProjectOpen() noexcept;
     Q_INVOKABLE void cancelProjectSave() noexcept;
 
+    // Capture the live pre-search document under the same physical
+    // owner lease; neither SaveAs nor a prior on-disk project is required.
+    // No REF graph, receipt or history is installed by capture.
+    [[nodiscard]] core::Result<project::ProjectSnapshot>
+    capture_private_m12_search_baseline();
+
     // M12 PRIVATE Qt-Product transaction, never directly Q_INVOKABLE.
     // Requires the existing real exclusive M18 Project mutation batch,
     // a pre-reviewed exact draft and the current immutable PREPARED PCM.
