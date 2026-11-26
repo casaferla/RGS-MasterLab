@@ -27,7 +27,7 @@ public:
         selector_=selector;
         transport_=transport;
         if(selector)connect(selector,&AuditionSourceSelector::changed,this,&DspModuleAdapter::activityChanged);
-        if(transport)connect(transport,&PlaybackTransportViewModel::playbackChanged,this,&DspModuleAdapter::activityChanged);
+        if(transport)connect(transport,&PlaybackTransportViewModel::linkedActivityClockChanged,this,&DspModuleAdapter::activityChanged);
         connect(preview_.data(),&MasteringPreviewController::changed,this,&DspModuleAdapter::activityChanged);
     }
     [[nodiscard]] QVariantMap linked_activity() const override
