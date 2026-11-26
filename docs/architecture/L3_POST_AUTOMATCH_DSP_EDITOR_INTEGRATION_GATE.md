@@ -110,3 +110,7 @@ Product startup explicitly binds the linked adapters to the real audition select
 - The standalone Windows artifact #1 uses the same tested SHA. At this checkpoint its build is still in progress; no artifact or cold-smoke success is claimed. [Run](https://github.com/casaferla/RGS-MasterLab/actions/runs/45893820238).
 
 Keep the qualified candidate frozen while packaging and physical testing proceed. Manual REF_LINKED editing remains locked; physical playback, visual fit, representative full-track performance, formal QTP/FQ and release remain separate open gates. No main merge or extra DSP work is required to document this result.
+
+### Windows artifact #1 startup regression
+
+The [artifact run](https://github.com/casaferla/RGS-MasterLab/actions/runs/45893820238) compiled Release and installed the full standalone Product (including the FIR integrity check), but failed strict Cold Smoke with four Qt Basic Dialog implicitWidth binding-loop warnings at DspPresetHeaderActions.qml:105. The Product smoke warning guard correctly returned 1, so no executable artifact was published. This is a shared GUI sizing failure, not a failed native DSP test. Fix `fc2e6f8880c092e8886608a9d743d8a6b01dc250` assigns independent dialog and label implicit widths for both preset dialogs; no DSP, solver or persistence semantics changed. The strict warning gate remains intact; successful cold startup and actual package publication must be demonstrated by the retry.
