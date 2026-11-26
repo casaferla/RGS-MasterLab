@@ -89,6 +89,7 @@ struct PreservedNativeSearchEnvironment final {
     bool file_lra_policy_attested{};
     NativeFixedPrefixCache* fixed_prefix_cache{};
     NativeOwnedP2EvaluationCounts* owned_p2_counts{};
+    NativeSearchPerformance* performance{};
 };
 [[nodiscard]] inline std::optional<ExactExecutionCacheKey>
 bind_preserved_native_execution_key(
