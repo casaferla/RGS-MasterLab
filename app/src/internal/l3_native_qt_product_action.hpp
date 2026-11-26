@@ -74,8 +74,12 @@ public:
         const auto& perf=worker.performance;
         if(phase_==Phase::candidate_ready&&perf.counts_reconciled()&&
            perf.attempted==attempts) {
-            metrics.first_admissible_ms=perf.first_admissible_ms;
-            metrics.last_attempt_ms=perf.last_attempt_ms;
+            if(perf.first_admissible_ms&&perf.last_attempt_ms&&
+               *perf.first_admissible_ms>=0&&
+               *perf.last_attempt_ms>=*perf.first_admissible_ms) {
+                metrics.first_admissible_ms=perf.first_admissible_ms;
+                metrics.last_attempt_ms=perf.last_attempt_ms;
+            }
             metrics.completed=perf.completed;
             metrics.failed=perf.failed;
             metrics.cache_hits=perf.cache_hits;
