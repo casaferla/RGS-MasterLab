@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QString>
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
