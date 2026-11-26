@@ -26,3 +26,20 @@ performance target (first admissible candidate within a few minutes,
 final bounded search within a practical duration) remains to be
 measured on representative full-track stereo audio and actual Windows
 hardware. No elapsed time may substitute for quality or safety gates.
+
+## Review and audit boundary
+
+The completed candidate review now exposes the first admissible latency
+separately from total search duration, with physical successes, failures
+and exact cache hits. The timing line is suppressed when the worker's
+physical-attempt ledger does not reconcile with the M10 refinement batch
+or timestamps are missing/inconsistent. This is a display-only diagnostic;
+it does not block a separately valid candidate or authorize its adoption.
+
+The last physical attempt includes failed renders and never advances on a
+cache hit. Preserved evaluator preflight rejections and budget refusals
+are counted separately; these are not a count of every skipped direction
+(the refiner can reject out-of-bounds or provably noncompetitive directions
+before the preserved evaluator is entered). Unit tests use a deterministic
+clock; the real Gain and owned-P2 tests reconcile native trial counts, and
+the Windows Product lifecycle checks the review evidence after replacement.
