@@ -6971,6 +6971,18 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             QCOMPARE(std::bit_cast<std::uint64_t>((*a.value())[i]),
                      std::bit_cast<std::uint64_t>((*b.value())[i]));
     }
+    std::unique_ptr<render::linked_activity::LinkedActivityRenderCapture> observedReplay;
+    auto observedCandidate=m::render_restored_m12_full_native_pcm_once(
+        *importedTicket->replay,*importedPrepared,
+        *core::FrameCount::create(4096).value(),nullptr,nullptr,&observedReplay);
+    QVERIFY(observedCandidate&&observedReplay);
+    QVERIFY(observedCandidate.value()->adopt_linked_activity(
+        std::move(observedReplay),importedTicket->replay->exact_plan_checksum));
+    QVERIFY(imported.selector.set_processed_realization(std::move(*observedCandidate.value())));
+    const auto selectedPcm=imported.selector.processed_realization_snapshot();
+    QVERIFY(selectedPcm&&selectedPcm->linked_activity_sidecar());
+    QVERIFY(selectedPcm->linked_activity_sidecar()->realization_id==
+        imported.selector.processed_realization_id());
     const auto importedCopy=dir.filePath(QStringLiteral(
         "m12-reopened-native-identical.rgsml"));
     imported.project.saveProjectAs(QUrl::fromLocalFile(importedCopy));
