@@ -6075,6 +6075,18 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY(m13contract::compare_qtp_native_scalar(
             C::true_peak_db_tp,-1.0,-0.98).outcome==O::mismatch);
     }
+    {
+        using O=m13contract::QtpOutcome;
+        const std::array<double,2> profile{{-10.0,-20.0}};
+        const std::array<double,1> truncated{{-10.0}};
+        QVERIFY(m13contract::compare_qtp_t1_profile(profile,truncated).outcome==
+                O::unavailable);
+        QVERIFY(m13contract::compare_qtp_t1_profile(profile,profile).outcome==
+                O::pass);
+        QVERIFY(m13contract::compare_qtp_native_scalar(
+            m13contract::QtpCategory::band_profile_db,-10.0,-10.0).outcome==
+                O::unavailable);
+    }
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
