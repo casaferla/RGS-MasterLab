@@ -5831,6 +5831,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
                        {0.9,M08ProximityReason::proximity_already_matched}).status==M13Proximity::failed);
     QVERIFY(compareRaw({1.0,M08ProximityReason::proximity_already_matched},
                        {1.0,M08ProximityReason::proximity_already_matched}).status==M13Proximity::passed);
+    std::array<app::l3_automatch::m08_frozen::RequestedDomainReport,4> invalidCoverage{};
+    invalidCoverage[0]={true,{0.5,M08ProximityReason::comparable},1.1};
+    const auto compareCoverage=[](const auto& a,const auto& b){
+        return app::l3_automatch::m13_frozen::
+            compare_frozen_m08_prediction_with_fresh_verified(a,b);
+    };
+    const auto rejectedCoverage=compareCoverage(invalidCoverage,invalidCoverage);
+    QVERIFY(rejectedCoverage.domains[0].status==M13Proximity::failed);
+    QVERIFY(rejectedCoverage.global.status==M13Proximity::failed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
