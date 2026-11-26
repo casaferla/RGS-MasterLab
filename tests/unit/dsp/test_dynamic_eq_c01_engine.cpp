@@ -2,6 +2,7 @@
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <QtTest/QTest>
 #include <cmath>
+#include <bit>
 #include <limits>
 #include <vector>
 #include <array>
@@ -17,6 +18,7 @@ private slots:
     void stereoPartitionInvariantAndBandOrder();
     void finiteFailurePreservesPCMAndState();
     void disabledAndRoutingValidation();
+    void observationParitySixRates();
 };
 namespace {
 [[nodiscard]] core::Uuid id(int i) {
@@ -149,6 +151,47 @@ void C01EngineTest::disabledAndRoutingValidation() {
     QVERIFY(side.value()->process_block(left,right,out_l,out_r));
     QVERIFY(side.value()->states()[0].lanes[1].power>0.0);
     QVERIFY(!C01FrameEngine::create(params(EqRouting::SIDE),48000,1));
+}
+void C01EngineTest::observationParitySixRates() {
+    struct Sink final:IC01ActivitySink {
+        std::size_t frames{};
+        C01BandActivitySample last{};
+        void on_successful_block(std::uint64_t,
+            std::span<const C01FrameActivitySample> values) noexcept override {
+            frames+=values.size();
+            if(!values.empty()&&values.back().band_count==1U)
+                last=values.back().bands[0];
+        }
+    };
+    for(const auto fs:{44100U,48000U,88200U,96000U,176400U,192000U})
+        for(const auto channels:{1U,2U}) {
+            auto plain=C01FrameEngine::create(params(),fs,channels);
+            auto observed=C01FrameEngine::create(params(),fs,channels);
+            QVERIFY(plain&&observed);
+            std::vector<double> input(512);
+            for(std::size_t i=0;i<input.size();++i)
+                input[i]=0.4*std::sin(0.12*static_cast<double>(i));
+            const auto right=channels==2U?input:std::vector<double>{};
+            std::vector<double> a(input.size()),b(input.size()),ar(right.size()),br(right.size());
+            std::vector<C01FrameActivitySample> scratch(input.size());
+            Sink sink;
+            QVERIFY(plain.value()->process_block(input,right,a,ar));
+            QVERIFY(observed.value()->process_block(input,right,b,br,&sink,0,scratch));
+            QCOMPARE(sink.frames,input.size());
+            QVERIFY(sink.last.band_id==id(1));
+            QVERIFY(std::isfinite(sink.last.applied_dynamic_gain_db));
+            QVERIFY(sink.last.applied_dynamic_gain_db<0.0);
+            QVERIFY(plain.value()->states()==observed.value()->states());
+            for(std::size_t i=0;i<a.size();++i)
+                QCOMPARE(std::bit_cast<std::uint64_t>(a[i]),std::bit_cast<std::uint64_t>(b[i]));
+            for(std::size_t i=0;i<ar.size();++i)
+                QCOMPARE(std::bit_cast<std::uint64_t>(ar[i]),std::bit_cast<std::uint64_t>(br[i]));
+            input.back()=std::numeric_limits<double>::quiet_NaN();
+            const auto old=observed.value()->states();
+            QVERIFY(!observed.value()->process_block(input,right,b,br,&sink,512,scratch));
+            QVERIFY(old==observed.value()->states());
+            QCOMPARE(sink.frames,input.size());
+        }
 }
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::C01EngineTest)
