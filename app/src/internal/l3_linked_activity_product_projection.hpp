@@ -6,6 +6,7 @@
 #include <rgsml/render/linked_activity_playback_projection.hpp>
 #include <QVariantMap>
 #include <QVariantList>
+#include <cmath>
 
 namespace rgsml::app::l3_automatch {
 [[nodiscard]] inline render::linked_activity::LinkedActivityWindow resolve_linked_activity(
@@ -43,11 +44,21 @@ namespace rgsml::app::l3_automatch {
        window.dynamic.size()+window.transient.size()>4096U||
        (!window.dynamic.empty()&&!window.transient.empty()))return {};
     QVariantList buckets;
-    const auto valid_range=[&](auto begin,auto end){
-        return begin<end&&end<=window.audible_frame;
+    std::optional<std::uint64_t> previous_end;
+    const auto valid_range=[&](std::uint64_t begin,std::uint64_t end){
+        if(begin>=end||end>window.audible_frame||(previous_end&&*previous_end!=begin))
+            return false;
+        previous_end=end;
+        return true;
+    };
+    const auto valid_gain=[](double low,double last,double high,double limit){
+        return std::isfinite(low)&&std::isfinite(last)&&std::isfinite(high)&&
+            low>=-limit&&high<=limit&&low<=last&&last<=high;
     };
     for(const auto& b:window.transient) {
-        if(!valid_range(b.frame_begin,b.frame_end_exclusive))return {};
+        if(!valid_range(b.frame_begin,b.frame_end_exclusive)||
+           !valid_gain(b.attack_min_db,b.attack_last_db,b.attack_max_db,12.000001)||
+           !valid_gain(b.sustain_min_db,b.sustain_last_db,b.sustain_max_db,12.000001))return {};
         buckets.append(QVariantMap{
             {"frameBegin",double(b.frame_begin)},{"frameEndExclusive",double(b.frame_end_exclusive)},
             {"attackMinDb",b.attack_min_db},{"attackMaxDb",b.attack_max_db},{"attackLastDb",b.attack_last_db},
@@ -61,6 +72,11 @@ namespace rgsml::app::l3_automatch {
         QVariantList bands;
         for(std::size_t i=0;i<b.band_count;++i) {
             const auto& v=b.bands[i];
+            const auto& first=window.dynamic.front().bands[i];
+            if(v.band_id.is_nil()||v.band_id!=first.band_id||v.routing!=first.routing||
+               !valid_gain(v.gain_min_db,v.gain_last_db,v.gain_max_db,18.000001)||
+               !std::isfinite(v.effective_gain_last_db)||!std::isfinite(v.signed_target_last_db)||
+               std::abs(v.effective_gain_last_db)>18.000001||std::abs(v.signed_target_last_db)>18.000001)return {};
             bands.append(QVariantMap{{"bandId",QString::fromStdString(v.band_id.to_string())},
                 {"gainMinDb",v.gain_min_db},{"gainMaxDb",v.gain_max_db},{"gainLastDb",v.gain_last_db},
                 {"effectiveGainLastDb",v.effective_gain_last_db},{"signedTargetLastDb",v.signed_target_last_db}});
