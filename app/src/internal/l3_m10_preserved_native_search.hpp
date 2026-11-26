@@ -2,6 +2,7 @@
 // Real Product-native M10 evaluation without optimizing user P2.
 // Same exact-cache and attempt accounting as the frozen refiner.
 #include "l3_m10_p2_bound_native_worker_score.hpp"
+#include "l3_m10_p2_actual_m16_guard.hpp"
 #include "l3_m10_exact_native_graph_content.hpp"
 #include "l3_m10_p2_canonical_trial_ticket.hpp"
 #include "l3_m11_native_fixed_assessment.hpp"
