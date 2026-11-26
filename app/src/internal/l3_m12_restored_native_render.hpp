@@ -134,6 +134,11 @@ render_restored_m12_full_native_pcm_once(
                            "rgsml.dsp.streaming-true-peak-limiter";
                    }))
         return fail("L3_M12_REPLAY_DUPLICATE_TERMINAL_P2");
+    for(const auto& manual:plan.manual_prefix.instances()) {
+        if(manual.module_type_id()=="rgsml.dsp.true-peak-limiter"||
+           manual.module_type_id()=="rgsml.dsp.dither")
+            return fail("L3_M12_REPLAY_EXPORT_SAFETY_IN_INLINE_MANUAL");
+    }
     const auto linked_nodes=plan.reference_linked.instances();
     for(const auto& linked:linked_nodes) {
         if(linked.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
