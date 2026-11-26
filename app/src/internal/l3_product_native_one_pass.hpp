@@ -167,6 +167,9 @@ measure_real_full_owned_pcm_native_once(
         // canonical M20 normalizer evaluates actual common-band power
         // and excludes fractions below 1e-12 without renormalization.
         std::size_t admitted=0;
+        const bool has_retained_frames=owned_gate&&owned_gate->available&&
+            std::any_of(owned_gate->selected_complete_frames.begin(),
+                owned_gate->selected_complete_frames.end(),[](auto v){return v!=0U;});
         for(std::size_t i=0;i<grid.size();++i) {
             const auto& cell=grid[i];
             if(!cell.fully_supported||cell.low_hz<common->low_hz||cell.high_hz>common->high_hz)
@@ -177,10 +180,7 @@ measure_real_full_owned_pcm_native_once(
             if(cell.band_index!=expected.exact_canonical_index||
                cell.low_hz!=expected.low_hz||cell.high_hz!=expected.high_hz)
                 return fail("L3_ONCE_PROFILE_COMMON_GRID_MISMATCH");
-            if(owned_gate&&owned_gate->available&&
-               std::any_of(owned_gate->selected_complete_frames.begin(),
-                   owned_gate->selected_complete_frames.end(),[](auto v){return v!=0U;}))
-                profile_support[i]=1U;
+            if(has_retained_frames)profile_support[i]=1U;
         }
         if(admitted!=spec.spectral_bands.size()||admitted==0U)
             return fail("L3_ONCE_PROFILE_COMMON_GRID_MISMATCH");
