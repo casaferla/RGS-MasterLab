@@ -344,6 +344,7 @@ Rectangle {
                     height: 20
                     presetController: root.presetController
                     moduleInstanceId: root.activeModule
+                        && !root.activeModule.linkedReadOnly
                         && root.activeModule.editorContentKey !== "TRUE_PEAK_LIMITER"
                         && root.activeModule.editorContentKey !== "TRUE_PEAK_METER"
                         && root.activeModule.editorContentKey !== "MASTER_MONITOR"
