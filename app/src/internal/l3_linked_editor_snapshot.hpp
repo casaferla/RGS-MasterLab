@@ -3,6 +3,7 @@
 // Product replay, never a research demo, MANUAL placeholder or solver seed.
 // A returned snapshot is presentation only; no mutation or Activity grant.
 #include "l3_m12_product_preview_worker_ticket.hpp"
+#include <QThread>
 #include <optional>
 #include <variant>
 
