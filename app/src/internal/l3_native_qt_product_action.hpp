@@ -97,6 +97,15 @@ public:
         if(!receipt){error_=receipt.error()->message();phase_=Phase::failed;return false;}
         phase_=Phase::materialized;return true;
     }
+    // Undo/Redo changes the exact audible state. Retire the previous
+    // action's candidate and diagnostic, not the newly restored ticket.
+    [[nodiscard]] bool retire_after_history_transition() {
+        if(!owner()||busy()||can_adopt())return false;
+        completed_.reset();reviewed_.reset();operation_.reset();
+        diagnostic_.reset();verification_result_.reset();verification_owner_.reset();
+        cancel_.reset();error_.clear();phase_=Phase::idle;
+        return true;
+    }
     // This argument comes from the Product safety authority, not QML.
     [[nodiscard]] bool begin_verification(m13_frozen::MandatoryHardPredicate other_safety) {
         if(!owner()||phase_!=Phase::materialized||!operation_||!completed_||!reviewed_)
