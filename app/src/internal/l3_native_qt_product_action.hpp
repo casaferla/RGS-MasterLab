@@ -78,7 +78,7 @@ public:
     [[nodiscard]] bool begin(NativeQtProductSession operation,
         m09_frozen::NativeOwnerAllocations::AllocateUuid allocate)
     {
-        if(!owner()||busy()||!allocate||!current(operation))return false;
+        if(!owner()||busy()||can_adopt()||!allocate||!current(operation))return false;
         error_.clear();
         try {
             auto input=std::make_shared<const NativeQtProductSession>(std::move(operation));
@@ -91,7 +91,7 @@ public:
             verification_owner_.reset();
             search_=std::move(task);phase_=Phase::searching;
             return true;
-        }catch(...) {phase_=Phase::failed;return false;}
+        }catch(...) {error_="L3_PRODUCT_SEARCH_DISPATCH_EXCEPTION";phase_=Phase::failed;return false;}
     }
     void cancel() {
         if(!owner())return;
@@ -105,7 +105,7 @@ public:
         }
     }
     [[nodiscard]] bool adopt() {
-        if(!owner()||!can_adopt()||!operation_||!completed_)
+        if(!owner()||!can_adopt()||!operation_||!completed_||!review_diff_)
             return false;
         error_.clear();
         if(!current(*operation_)){
@@ -219,7 +219,7 @@ public:
                     operation_->expected.exact_existing_linked_snapshot,std::optional<project::Chain>{*linked});
                 completed_.emplace(std::move(done));reviewed_.emplace(std::move(*plan));
                 phase_=Phase::candidate_ready;
-            }catch(...) {phase_=Phase::failed;}
+            }catch(...) {error_="L3_PRODUCT_SEARCH_COMPLETION_EXCEPTION";phase_=Phase::failed;}
         }
         if(verification_.valid()&&verification_.wait_for(0ms)==std::future_status::ready) {
             try {
