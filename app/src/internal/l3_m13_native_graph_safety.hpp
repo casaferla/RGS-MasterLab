@@ -50,6 +50,12 @@ enum class NativeGraphSafety {passed,failed,unavailable};
            return node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
        }))
         return NativeGraphSafety::failed;
+    const auto linked=replay->reference_linked.instances();
+    for(const auto& node:linked) {
+        if(node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter"&&
+           (replay->terminal_p2||&node!=&linked.back()))
+            return NativeGraphSafety::failed;
+    }
     auto result=check(replay->manual_prefix,false);
     if(result!=NativeGraphSafety::passed)return result;
     result=check(replay->reference_linked,true);
