@@ -974,6 +974,11 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     incompleteManual.protected_manual.pop_back();
     QVERIFY(!m12::m12_native_stage_witness_matches_replay_plan(
         *suspendedTicket->replay,incompleteManual));
+    auto incompleteLinked=witness;
+    QVERIFY(!incompleteLinked.reference_linked.empty());
+    incompleteLinked.reference_linked.pop_back();
+    QVERIFY(!m12::m12_native_stage_witness_matches_replay_plan(
+        *suspendedTicket->replay,incompleteLinked));
     auto cancelledWitness=witness;
     const std::atomic<bool> cancelledReplay{true};
     const auto cancelledPcm=m12::render_restored_m12_full_native_pcm_once(
