@@ -78,6 +78,8 @@ struct NativeSearchPerformance final {
             break;
         case EvaluationKind::attempted_failure:++attempted;++failed;break;
         case EvaluationKind::completed_cache_hit:++cache_hits;break;
+        case EvaluationKind::preflight_rejected:++evaluator_preflight_rejections;break;
+        case EvaluationKind::needs_new_attempt:++budget_refusals;break;
         default:break;
         }
     }
