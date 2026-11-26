@@ -1954,7 +1954,9 @@ ApplicationWindow {
                             id: adaptiveContextWorkspace
                             objectName: "adaptiveContextWorkspace"
                             Layout.fillWidth: true
+                            Layout.minimumHeight: 212
                             Layout.preferredHeight: 212
+                            Layout.maximumHeight: 212
                             color: root.panel
                             border.color: root.border
                             radius: 5
@@ -1975,7 +1977,8 @@ ApplicationWindow {
                                     spacing: 3
 
                                     Text {
-                                        text: "ADAPTIVE CONTEXT"
+                                        text: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
+                                            ? "PREPARED + REF → PROCESSED" : "RAW → PREPARED"
                                         color: "#8A9EA8"
                                         font.family: "Segoe UI"
                                         font.pixelSize: 10
@@ -1987,23 +1990,24 @@ ApplicationWindow {
 
                                         StudioSegmentButton {
                                             objectName: "adaptiveModeToggle_Gold"
-                                            text: "Reference / AutoMatch"
+                                            text: "AutoMatch"
                                             selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            minimumControlWidth: 166
+                                            minimumControlWidth: 0
+                                            Layout.fillWidth: true
                                             contentPadding: 3
                                             onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
                                         }
 
                                         StudioSegmentButton {
                                             objectName: "adaptiveModeToggle_Restoration"
-                                            text: "Prepare / Restoration"
+                                            text: "Prepare"
                                             selected: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
-                                            minimumControlWidth: 115
+                                            minimumControlWidth: 0
+                                            Layout.fillWidth: true
                                             contentPadding: 3
                                             onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
                                         }
 
-                                        Item { Layout.fillWidth: true }
                                     }
                                 }
 
@@ -2043,9 +2047,9 @@ ApplicationWindow {
 
                                                 RowLayout {
                                                     anchors.fill: parent
-                                                    anchors.leftMargin: 8
-                                                    anchors.rightMargin: 8
-                                                    spacing: 6
+                                                    anchors.leftMargin: 3
+                                                    anchors.rightMargin: 3
+                                                    spacing: 2
                                                     StudioIcon {
                                                         width: 16
                                                         height: 18
@@ -2060,7 +2064,8 @@ ApplicationWindow {
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 10
                                                         font.weight: Font.DemiBold
-                                                        elide: Text.ElideNone
+                                                        elide: Text.ElideRight
+                                                        maximumLineCount: 2
                                                         wrapMode: Text.WrapAnywhere
                                                         Layout.fillHeight: true
                                                         Layout.fillWidth: true
@@ -2071,7 +2076,7 @@ ApplicationWindow {
                                             // Global Control Container: Total Match Amount Rotary Knob
                                             Rectangle {
                                                 objectName: "totalMatchAmountContainer"
-                                                Layout.preferredWidth: 130
+                                                Layout.preferredWidth: 88
                                                 Layout.fillHeight: true
                                                 color: "#122434"
                                                 border.color: "#2C4356"
@@ -2114,7 +2119,7 @@ ApplicationWindow {
                                                         spacing: 1
 
                                                         Text {
-                                                            text: "TOTAL MATCH"
+                                                            text: "TOTAL"
                                                             color: root.textPrimary
                                                             font.family: "Segoe UI"
                                                             font.pixelSize: 9
@@ -2122,9 +2127,9 @@ ApplicationWindow {
                                                         }
                                                         Text {
                                                             text: autoMatchDialog.amountText(0)
-                                                            color: "#586D7C"
+                                                            color: root.textPrimary
                                                             font.family: "Segoe UI"
-                                                            font.pixelSize: 8
+                                                            font.pixelSize: 10
                                                         }
                                                     }
                                                 }
@@ -2134,7 +2139,10 @@ ApplicationWindow {
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 26
-                                            Button {
+                                            StudioSegmentButton {
+                                                minimumControlWidth: 76
+                                                tone: "primary"
+                                                Layout.preferredHeight: 24
                                                 objectName: "openAutoMatchDialog"
                                                 text: "AutoMatch…"
                                                 enabled: !!root.appAutoMatchModel && !root.monitorExclusive
@@ -2170,9 +2178,9 @@ ApplicationWindow {
 
                                             RowLayout {
                                                 anchors.fill: parent
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                spacing: 4
+                                                anchors.leftMargin: 2
+                                                anchors.rightMargin: 2
+                                                spacing: 2
 
                                                 // Domain 1: Tonal
                                                 ColumnLayout {
@@ -2182,8 +2190,8 @@ ApplicationWindow {
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Tonal"
-                                                        Layout.preferredWidth: 30
-                                                        Layout.preferredHeight: 30
+                                                        Layout.preferredWidth: 28
+                                                        Layout.preferredHeight: 28
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#4E86C6"
                                                         value: autoMatchDialog.amountValue(1)
@@ -2221,8 +2229,8 @@ ApplicationWindow {
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Dynamics"
-                                                        Layout.preferredWidth: 30
-                                                        Layout.preferredHeight: 30
+                                                        Layout.preferredWidth: 28
+                                                        Layout.preferredHeight: 28
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#C4774A"
                                                         value: autoMatchDialog.amountValue(2)
@@ -2260,8 +2268,8 @@ ApplicationWindow {
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Stereo"
-                                                        Layout.preferredWidth: 30
-                                                        Layout.preferredHeight: 30
+                                                        Layout.preferredWidth: 28
+                                                        Layout.preferredHeight: 28
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#4A9A88"
                                                         value: autoMatchDialog.amountValue(3)
@@ -2299,8 +2307,8 @@ ApplicationWindow {
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Loudness"
-                                                        Layout.preferredWidth: 30
-                                                        Layout.preferredHeight: 30
+                                                        Layout.preferredWidth: 28
+                                                        Layout.preferredHeight: 28
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#D3AE66"
                                                         value: autoMatchDialog.amountValue(4)
@@ -2359,7 +2367,7 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 28
                                                 color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "SOURCE HEALTH: OPTIMAL"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
+                                                Text { anchors.centerIn: parent; text: "RAW → PREPARED"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
                                             }
 
                                             Rectangle {
@@ -2367,7 +2375,7 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 28
                                                 color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "RESTORATION PLAN"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
+                                                Text { anchors.centerIn: parent; text: "L5 · MOCKUP"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
                                             }
                                         }
 
@@ -2404,7 +2412,7 @@ ApplicationWindow {
                                                     Layout.preferredHeight: 18
                                                     spacing: 4
                                                     Text {
-                                                        text: "PREPARE · SAMPLE RATE / RAM"
+                                                        text: "SAMPLE RATE / RAM"
                                                         color: "#A9C7D8"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
