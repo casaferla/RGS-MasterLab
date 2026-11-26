@@ -34,6 +34,11 @@ enum class NativeGraphSafety {passed,failed,unavailable};
                 node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
                 !node.semantic_node_id()||node.semantic_node_id()->is_nil()))
                 return NativeGraphSafety::failed;
+            if(!linked&&(node.provenance()!=dsp::ModuleProvenance::MANUAL||
+                node.owner()!=dsp::ModuleOwner::USER||
+                node.link_state()!=dsp::ModuleLinkState::UNLINKED||
+                node.semantic_node_id()))
+                return NativeGraphSafety::failed;
             if(node.active()&&std::find(known.begin(),known.end(),node.module_type_id())==known.end())
                 return NativeGraphSafety::unavailable;
         }
