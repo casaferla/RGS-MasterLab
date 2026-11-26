@@ -7044,6 +7044,18 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(activeWindow.available()&&!activeWindow.transient.empty());
     QVERIFY(activeWindow.dynamic.empty());
     QVERIFY(!activeWindow.paused);
+    const auto transientQt=app::l3_automatch::project_linked_activity_qt(activeWindow);
+    QVERIFY(transientQt.value("available").toBool());
+    QCOMPARE(transientQt.value("sampleRateHz").toUInt(),sampleRateHz);
+    QCOMPARE(transientQt.value("realizationId").toString(),QString::number(acceptedId->value));
+    QCOMPARE(transientQt.value("stateText").toString(),QStringLiteral("PLAYBACK SYNCED"));
+    const auto transientBuckets=transientQt.value("buckets").toList();
+    QCOMPARE(transientBuckets.size(),static_cast<qsizetype>(activeWindow.transient.size()));
+    QCOMPARE(transientBuckets.back().toMap().value("attackLastDb").toDouble(),
+        activeWindow.transient.back().attack_last_db);
+    auto corruptWindow=activeWindow;
+    corruptWindow.transient.back().attack_last_db=std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(app::l3_automatch::project_linked_activity_qt(corruptWindow).isEmpty());
     audible.state=core::PlaybackState::PAUSED;
     const auto pausedWindow=la::project_linked_activity(*selectedPcm,playbackContext,
         audible,winningNodes[1].allocated_instance_id);
