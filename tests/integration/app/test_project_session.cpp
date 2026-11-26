@@ -1062,6 +1062,28 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(!session.project.can_resume_private_m12_suspension());
     QVERIFY(!session.project.resume_private_m12_suspension());
     QVERIFY(!session.project.undo_private_m12_materialization());
+    const auto changedReference=writeTone(QStringLiteral("l3-native-reference-replaced.wav"),6);
+    QVERIFY(!changedReference.isEmpty());
+    session.gold.selectGold(QUrl::fromLocalFile(changedReference));
+    QVERIFY(session.gold.has_gold());
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    QVERIFY(session.project.private_m12_match_state()==app::ProjectSessionViewModel::M12CurrentMatchState::stale);
+    const auto staleBaseline=session.project.capture_private_m12_search_baseline(true);
+    QVERIFY2(staleBaseline,staleBaseline?"":staleBaseline.error()->message().c_str());
+    const auto staleTicket=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(staleTicket&&staleTicket->replay);
+    QVERIFY(staleTicket->replay->controller_id==controllerId);
+    QVERIFY(staleTicket->replay->linked_chain_id==linkedId);
+    QVERIFY(staleTicket->replay->plan_id==restoredSuspension->replay->plan_id);
+    QVERIFY(staleTicket->replay->reference_id!=restoredSuspension->replay->reference_id);
+    QVERIFY(staleTicket->replay->reference_bindings==restoredSuspension->replay->reference_bindings);
+    const auto staleNodes=staleTicket->replay->reference_linked.instances();
+    QVERIFY(std::equal(staleNodes.begin(),staleNodes.end(),restoredNodes.begin(),restoredNodes.end()));
+    QVERIFY(session.project.can_save_project());
+    QVERIFY(session.project.private_m12_match_state()==app::ProjectSessionViewModel::M12CurrentMatchState::stale);
+    QVERIFY(!session.project.can_resume_private_m12_suspension());
+    QVERIFY(!session.project.can_undo_private_m12_materialization());
+    QVERIFY(!session.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
 }
 
 void ProjectSessionTest::
