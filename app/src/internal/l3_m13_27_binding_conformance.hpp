@@ -95,6 +95,22 @@ compare_m13_frozen_twenty_seven_native_bindings(
             result.every_required_binding_passed=false;
             continue;
         }
+        // Each configured selector is a distinct frozen component; a
+        // duplicate would count the same evidence twice in profile RMS.
+        bool duplicate_selector=false;
+        for(std::size_t j=0;j<slot.configured.size();++j) {
+            const auto& selector=slot.configured[j].expected_selector;
+            if(selector.empty())continue;
+            for(std::size_t k=0;k<j;++k)
+                if(slot.configured[k].expected_selector==selector)
+                    duplicate_selector=true;
+        }
+        if(duplicate_selector) {
+            row.outcome=BindingConformance::failed;
+            result.every_required_binding_complete=false;
+            result.every_required_binding_passed=false;
+            continue;
+        }
         row.outcome=BindingConformance::not_applicable;
         std::vector<double> expected_t1,actual_t1;
         bool missing=false,failed=false,has_required=false;
