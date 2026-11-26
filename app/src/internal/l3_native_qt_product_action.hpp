@@ -68,8 +68,19 @@ public:
             attempts=r->total_attempted;
         }else if(worker.fixed)peak=worker.fixed->measured_m16_linear_peak;
         if(!peak||!std::isfinite(*peak)||*peak<0.0)return {};
-        return ReviewMetrics{*peak,operation_->policy.independent_ceiling_db_tp,attempts,
-            completed_->original_pair_ms,worker.timing.fixed_ms,worker.timing.seed_ms,worker.timing.search_ms};
+        ReviewMetrics metrics{*peak,operation_->policy.independent_ceiling_db_tp,attempts,
+            completed_->original_pair_ms,worker.timing.fixed_ms,worker.timing.seed_ms,worker.timing.search_ms,
+            {},{},0U,0U,0U};
+        const auto& perf=worker.performance;
+        if(phase_==Phase::candidate_ready&&perf.counts_reconciled()&&
+           perf.attempted==attempts) {
+            metrics.first_admissible_ms=perf.first_admissible_ms;
+            metrics.last_attempt_ms=perf.last_attempt_ms;
+            metrics.completed=perf.completed;
+            metrics.failed=perf.failed;
+            metrics.cache_hits=perf.cache_hits;
+        }
+        return metrics;
     }
     [[nodiscard]] const Completion* verification_result()const noexcept {
         return verification_result_?&*verification_result_:nullptr;
