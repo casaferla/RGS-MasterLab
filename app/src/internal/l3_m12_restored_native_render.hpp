@@ -177,7 +177,7 @@ render_restored_m12_full_native_pcm_once(
         return fail("L3_M12_REPLAY_OWNER_BINDING_OR_SEGMENT_INVALID");
     if(!plan.registry_owner||plan.project_id.is_nil()||
        plan.source_id.is_nil()||plan.reference_id.is_nil()||
-       plan.plan_id.is_nil()||plan.linked_chain_id.is_nil()||
+       plan.plan_id.is_nil()||plan.controller_id.is_nil()||plan.linked_chain_id.is_nil()||
        plan.exact_plan_checksum.empty()||
        plan.exact_m10_winner_checksum.empty()||
        plan.exact_m11_protection_checksum.empty()||
