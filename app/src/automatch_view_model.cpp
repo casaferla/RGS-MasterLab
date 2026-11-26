@@ -90,6 +90,26 @@ QString AutoMatchViewModel::review_text()const {
     }
     return lines.isEmpty()?QStringLiteral("No linked DSP changes"):lines.join(QLatin1Char('\n'));
 }
+QString AutoMatchViewModel::review_metrics_text()const {
+    if(!owner())return {};
+    const auto metrics=action_.review_metrics();
+    if(!metrics)return {};
+    const auto peak=metrics->exact_m16_linear_peak==0.0?QStringLiteral("-inf"):
+        QString::number(20.0*std::log10(metrics->exact_m16_linear_peak),'f',2);
+    const auto elapsed=static_cast<double>(metrics->original_ms+metrics->fixed_ms+
+        metrics->seed_ms+metrics->search_ms)/1000.0;
+    return QStringLiteral("Full-output TP: %1 dBTP / limit %2\nTrials: %3 | %4 s")
+        .arg(peak).arg(metrics->independent_ceiling_db_tp,0,'f',2)
+        .arg(metrics->attempted).arg(elapsed,0,'f',1);
+}
+QString AutoMatchViewModel::verification_note()const {
+    if(!owner()||!action_.verification_result())return {};
+    const auto& assessment=action_.verification_result()->assessment();
+    if(assessment.native_numerical_evidence_passed())
+        return QStringLiteral("Numerical evidence passed; formal qualification not granted.");
+    if(assessment.canonical_reasons.empty())return QStringLiteral("Verification incomplete.");
+    return QString::fromStdString(assessment.canonical_reasons.front().code);
+}
 QString AutoMatchViewModel::status_text()const {
     if(!owner())return QStringLiteral("UNAVAILABLE");
     using P=Action::Phase;
