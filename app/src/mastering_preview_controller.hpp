@@ -103,6 +103,7 @@ public:
     // cannot be analyzed under new parameter-only DSP settings merely
     // because ProcessingChain::revision() remains unchanged.
     [[nodiscard]] bool published_preview_matches_current_bindings() const;
+    [[nodiscard]] bool published_preview_is_exact_owner(const std::shared_ptr<const render::RenderResult>& owner) const;
 
     Q_INVOKABLE void request_preview();
 
