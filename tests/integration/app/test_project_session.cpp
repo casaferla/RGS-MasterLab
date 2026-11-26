@@ -6063,6 +6063,18 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY(m13contract::compare_qtp_native_scalar(
             C::positive_ms,-1.0,-1.0).outcome==O::mismatch);
     }
+    {
+        using C=m13contract::QtpCategory;
+        using O=m13contract::QtpOutcome;
+        QVERIFY(m13contract::compare_qtp_native_scalar(
+            C::lra_lu,5.0,5.015).outcome==O::pass);
+        QVERIFY(m13contract::compare_qtp_native_scalar(
+            C::loudness_lu,-14.0,-13.985).outcome==O::mismatch);
+        QVERIFY(m13contract::compare_qtp_native_scalar(
+            C::true_peak_db_tp,-1.0,-0.995).outcome==O::pass);
+        QVERIFY(m13contract::compare_qtp_native_scalar(
+            C::true_peak_db_tp,-1.0,-0.98).outcome==O::mismatch);
+    }
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
