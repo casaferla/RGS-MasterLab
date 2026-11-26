@@ -92,7 +92,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: 12
         y: 5
-        text: root.graphAvailable ? "PLAYBACK SYNCED" : "TELEMETRY UNAVAILABLE"
+        text: root.graphAvailable ? root.stateText : "TELEMETRY UNAVAILABLE"
         color: root.graphAvailable ? "#45BFAE" : "#72899A"
         font.family: "Segoe UI"; font.pixelSize: 10
     }
