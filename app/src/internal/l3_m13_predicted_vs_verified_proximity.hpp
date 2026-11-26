@@ -91,7 +91,9 @@ compare_frozen_m08_prediction_with_fresh_verified(
             out.all_requested_domains_comparable=false;
             continue;
         }
-        if(*a.effective_coverage!=*b.effective_coverage) {
+        if(*a.effective_coverage<0.0||*a.effective_coverage>1.0||
+           *b.effective_coverage<0.0||*b.effective_coverage>1.0||
+           *a.effective_coverage!=*b.effective_coverage) {
             out.domains[i]={ProximityComparisonStatus::failed,{},{}};
             out.all_requested_domains_comparable=false;
             continue;
