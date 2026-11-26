@@ -2,6 +2,7 @@
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_linked_editor_snapshot.hpp"
 #include "internal/l3_linked_editor_parameter_projection.hpp"
+#include "internal/l3_linked_dsp_module_adapter.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
@@ -5898,6 +5899,28 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(dynamicEditor->exact_owner==transientEditor->exact_owner);
     QVERIFY(!dynamicEditor->manual_editable());
     QVERIFY(!dynamicEditor->activity_authorized());
+    app::l3_automatch::LinkedDspModuleAdapter transientAdapter(
+        *transientEditor,*session.previewController,*session.masteringChainState,
+        QStringLiteral("Mastering"));
+    app::l3_automatch::LinkedDspModuleAdapter dynamicAdapter(
+        *dynamicEditor,*session.previewController,*session.masteringChainState,
+        QStringLiteral("Mastering"));
+    QCOMPARE(transientAdapter.editor_content_key(),QStringLiteral("TRANSIENT_SHAPER"));
+    QCOMPARE(dynamicAdapter.editor_content_key(),QStringLiteral("DYNAMIC_EQ"));
+    QVERIFY(transientAdapter.linked_read_only());
+    QVERIFY(dynamicAdapter.linked_read_only());
+    QVERIFY(!transientAdapter.bypass_supported());
+    QVERIFY(!dynamicAdapter.reset_supported());
+    QVERIFY(!dynamicAdapter.history_supported());
+    const auto beforeLockedCommands=transientAdapter.linked_parameters();
+    QVERIFY(!beforeLockedCommands.isEmpty());
+    const auto oldPreviewGeneration=session.previewController->preview_generation();
+    transientAdapter.setBypass(true);
+    transientAdapter.resetToDefault();
+    transientAdapter.undo();
+    transientAdapter.redo();
+    QCOMPARE(transientAdapter.linked_parameters(),beforeLockedCommands);
+    QCOMPARE(session.previewController->preview_generation(),oldPreviewGeneration);
     const auto c00=app::l3_automatch::project_linked_editor_parameters(*transientEditor);
     QCOMPARE(c00.value("attackAmountDb").toDouble(),2.0);
     QCOMPARE(c00.value("sustainAmountDb").toDouble(),-1.0);
