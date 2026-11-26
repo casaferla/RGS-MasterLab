@@ -3,6 +3,7 @@
 // Product DSP registry, editor, parameter codec and AutoMatch binding are
 // deliberately not modified by this staging integration.
 #include <rgsml/dsp/imodule.hpp>
+#include <rgsml/dsp/linked_dsp_activity_observation.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <memory>
 
@@ -17,6 +18,9 @@ public:
     [[nodiscard]] const ModuleDescriptor& descriptor() const noexcept override;
     [[nodiscard]] core::Result<DspRuntimeRequirements>
     runtime_requirements(const DspProcessSpec& spec) const override;
+    // Borrowed render-local sink; attach before prepare, detach at any
+    // point. No observer allocation or publication in ordinary rendering.
+    [[nodiscard]] bool set_activity_sink(internal::IC01ActivitySink* sink) noexcept;
     [[nodiscard]] core::Status prepare(const DspProcessSpec& spec) override;
     void reset() noexcept override;
     [[nodiscard]] core::Status process(
