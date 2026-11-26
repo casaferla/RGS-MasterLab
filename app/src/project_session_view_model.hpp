@@ -210,6 +210,8 @@ public:
         const std::shared_ptr<const render::RenderResult>& prepared,
         bool suspend_for_zero_amount);
     // Non-mutating eligibility; actual operations recheck under M18.
+    enum class M12CurrentMatchState {none,active,suspended,stale};
+    [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
     [[nodiscard]] bool can_undo_private_m12_materialization() const;
     [[nodiscard]] bool can_redo_private_m12_materialization() const;
     [[nodiscard]] core::Status undo_private_m12_materialization();

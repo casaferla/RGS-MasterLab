@@ -2064,6 +2064,21 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
     return core::Status::success();
 }
 
+ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m12_match_state() const
+{
+    namespace m=l3_automatch::m12_frozen;
+    using S=M12CurrentMatchState;
+    if(QThread::currentThread()!=thread())return S::stale;
+    const auto ticket=previewController_?previewController_->private_m12_product_preview_ticket():nullptr;
+    const bool persisted=opened_&&m::assess_current_product_ref_linked_open_safety(opened_->document())!=
+        m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
+    if(!persisted&&!ticket)return S::none;
+    if(!ticket||!ticket->replay||!persisted||!can_save_project())return S::stale;
+    const auto nodes=ticket->replay->reference_linked.instances();
+    return !nodes.empty()&&std::all_of(nodes.begin(),nodes.end(),
+        [](const auto& node){return node.controller_suspended();})?S::suspended:S::active;
+}
+
 bool ProjectSessionViewModel::can_undo_private_m12_materialization() const
 {
     namespace m=l3_automatch::m12_frozen;
