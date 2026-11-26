@@ -78,6 +78,8 @@ static_assert(std::is_same_v<
 class P2RealNativeProductTest final:public QObject {
     Q_OBJECT
 private slots:
+    void nativePerformanceSeparatesAttemptsAndCacheHits();
+    void nativePerformanceNeedsIndependentM16ForFirstAdmissible();
     void genuineM10CandidateRunsPostLinkedP2AndNativeAnalysis();
     void nativeAutomaticPayloadsRespectFixedTopologyAndBounds();
     void nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate();
