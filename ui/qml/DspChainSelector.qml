@@ -74,6 +74,8 @@ Rectangle {
         switch(moduleAdapter.editorContentKey) {
         case "INPUT_GAIN": return "module-gain"
         case "PARAMETRIC_EQ": return "module-eq"
+        case "DYNAMIC_EQ": return "module-dynamic-eq"
+        case "TRANSIENT_SHAPER": return "module-transient-shaper"
         case "COMPRESSOR": return "module-compressor"
         case "STEREO_MS": return "module-stereo"
         case "TRUE_PEAK_METER": return "module-peak-meter"
