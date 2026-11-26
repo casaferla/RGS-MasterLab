@@ -5916,6 +5916,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     tonalEvidence.configured[1].actual_support_denominator=0U;
     QVERIFY(compareT1().rows[0].outcome==M13Binding::unavailable);
     tonalEvidence.configured[1].actual_support_denominator=1U;
+    tonalEvidence.selected_source_feature_id=
+        std::string(frozenT1.exclusive_fallback_feature_id);
+    QVERIFY(compareT1().rows[0].outcome==M13Binding::passed);
+    tonalEvidence.selected_source_feature_id="foreign-source";
+    QVERIFY(compareT1().rows[0].outcome==M13Binding::unavailable);
+    tonalEvidence.selected_source_feature_id=std::string(frozenT1.source_feature_id);
+    tonalEvidence.exact_phase6_feature_dependency.clear();
+    QVERIFY(compareT1().rows[0].outcome==M13Binding::unavailable);
+    tonalEvidence.exact_phase6_feature_dependency="test-frozen-t1";
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
