@@ -5867,6 +5867,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     const auto linkedEditors=app::l3_automatch::inspect_current_linked_editors(
         *session.previewController,prepared,session.masteringChainState->chain(),bindings);
     QVERIFY(linkedEditors);
+    const auto liveEditors=app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,*session.masteringChainState);
+    QVERIFY(liveEditors);
+    QCOMPARE(liveEditors->size(),linkedEditors->size());
+    for(std::size_t i=0;i<liveEditors->size();++i) {
+        QVERIFY((*liveEditors)[i].instance==(*linkedEditors)[i].instance);
+        QVERIFY((*liveEditors)[i].parameters==(*linkedEditors)[i].parameters);
+        QVERIFY((*liveEditors)[i].exact_owner==(*linkedEditors)[i].exact_owner);
+    }
     QCOMPARE(linkedEditors->size(),std::size_t{2});
     QVERIFY((*linkedEditors)[0].instance.instance_id()==winningNodes[0].allocated_instance_id);
     QVERIFY((*linkedEditors)[1].instance.instance_id()==winningNodes[1].allocated_instance_id);
