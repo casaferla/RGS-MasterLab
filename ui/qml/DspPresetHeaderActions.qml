@@ -109,13 +109,17 @@ Item {
         standardButtons: Dialog.Ok | Dialog.Cancel
         parent: Overlay.overlay
         anchors.centerIn: parent
+        // Basic Dialog's implicit size otherwise depends on the wrapped
+        // label, whose width is assigned by the Dialog itself.
+        implicitWidth: 372
+        width: implicitWidth
         contentItem: Label {
             text: "This will replace the current MANUAL settings for "
                 + root.scopeName()
                 + ". The change is not an AutoMatch approval."
             color: "#DDE6F3"
             wrapMode: Text.WordWrap
-            width: 340
+            implicitWidth: 340
             font.pixelSize: 12
         }
         onAccepted: {
@@ -134,11 +138,15 @@ Item {
         standardButtons: Dialog.Ok
         parent: Overlay.overlay
         anchors.centerIn: parent
+        // Basic Dialog's implicit size otherwise depends on the wrapped
+        // label, whose width is assigned by the Dialog itself.
+        implicitWidth: 372
+        width: implicitWidth
         contentItem: Label {
             id: problemMessage
             color: "#F2B3BB"
             wrapMode: Text.WordWrap
-            width: 340
+            implicitWidth: 340
             font.pixelSize: 12
         }
     }
