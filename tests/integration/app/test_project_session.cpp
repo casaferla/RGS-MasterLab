@@ -6394,6 +6394,20 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             QVERIFY(!verifyRehashedDiagnostic(root));
         }
     }
+    {
+        auto root=validJson.object();
+        auto reasons=root.value("canonicalReasons").toArray();
+        for(qsizetype i=0;i<reasons.size();++i) {
+            auto item=reasons.at(i).toObject();
+            if(item.value("code").toString()=="VERIFICATION_PROFILE_UNAVAILABLE") {
+                item.insert("fieldPath",QStringLiteral("/unrelated"));
+                reasons[i]=item;
+            }
+        }
+        root.insert("canonicalReasons",reasons);
+        root.insert("primaryReason",reasons.first().toObject());
+        QVERIFY(!verifyRehashedDiagnostic(root));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
