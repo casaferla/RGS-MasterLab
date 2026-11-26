@@ -1,6 +1,6 @@
 # L3 real native search performance evidence — 2026-11-26
 
-Status: implementation on Writer, awaiting focused CI. The measurement
+Status: baseline telemetry passed Windows/Linux Focused #139; optional full-track benchmark on Writer, awaiting its own CI. The measurement
 is diagnostic only and does not alter the frozen M09 selection, M10
 coordinate search, 800 render/analyze attempt budget, M11 safety, M12
 adoption or M13 independent verification.
@@ -79,3 +79,26 @@ actual first admissible time, full search time, physical trial ledger,
 separate M13 elapsed time, hardware, rate and duration. No 5-minute
 music benchmark has yet been run by this change; numerical and formal
 qualification remain separate.
+
+## Actual baseline telemetry — Focused #139
+
+Exact tested SHA: `b47b3b96219ae4dc62be0521b2b15b96c812ac8b`.
+[Windows job 140050777225](https://github.com/casaferla/RGS-MasterLab/actions/runs/45860738130/job/140050777225), controlled 12-second mono 48 kHz fixture:
+
+| Observation | Actual log value |
+|---|---:|
+| Original pair | 564 ms |
+| Fixed | 271 ms |
+| Seeds | 0 ms (integer millisecond resolution) |
+| Search | 3695 ms |
+| First admissible | 1106 ms |
+| Attempted/completed | 12/12 |
+| Failed/cache hits | 0/0 |
+| Evaluator rejected/budget refused | 0/0 |
+| M13 required/configured components | 491/751 |
+
+M13 reported only `VERIFICATION_PROFILE_UNAVAILABLE` at the formal
+approval reference; numerical evidence passed. The 12 s fixture does
+not establish a runtime scaling law or performance of representative
+stereo music. The separate native owned-P2 fixture measured 12 attempts,
+6 owned-P2 attempts and 12 exact fixed-prefix uses.
