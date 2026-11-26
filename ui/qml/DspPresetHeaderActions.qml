@@ -16,6 +16,10 @@ Item {
     property string moduleInstanceId: ""
     property string moduleDisplayName: ""
     property color familyAccent: "#6CBCCF"
+    readonly property string presetSuffix: entireChain ? "rgschain" : "rgsdsp"
+    readonly property string presetFilter: entireChain
+        ? "RGS DSP Chain Preset (*.rgschain)"
+        : "RGS DSP Module Preset (*.rgsdsp)"
     readonly property bool actionsAvailable: !!presetController
         && (entireChain || moduleInstanceId.length > 0)
     visible: actionsAvailable
@@ -89,8 +93,8 @@ Item {
         id: saveFileDialog
         title: "Save " + root.scopeName() + " preset"
         fileMode: FileDialog.SaveFile
-        nameFilters: ["RGS DSP Preset (*.rgspreset)", "JSON (*.json)"]
-        defaultSuffix: "rgspreset"
+        nameFilters: [root.presetFilter]
+        defaultSuffix: root.presetSuffix
         onAccepted: {
             if (!root.presetController) return
             const ok = root.entireChain
@@ -104,7 +108,8 @@ Item {
         id: openFileDialog
         title: "Open " + root.scopeName() + " preset"
         fileMode: FileDialog.OpenFile
-        nameFilters: ["RGS DSP Preset (*.rgspreset)", "JSON (*.json)"]
+        nameFilters: [root.presetFilter,
+            "Legacy RGS DSP Preset (*.rgspreset)", "Legacy JSON (*.json)"]
         onAccepted: confirmRestoreDialog.open()
     }
     Dialog {
