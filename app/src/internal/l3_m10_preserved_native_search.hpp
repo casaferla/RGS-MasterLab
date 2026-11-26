@@ -61,6 +61,7 @@ struct NativeSearchPerformance final {
     using Clock=std::chrono::steady_clock;
     std::optional<Clock::time_point> start;
     std::optional<std::int64_t> first_admissible_ms;
+    std::optional<std::int64_t> last_attempt_ms;
     std::uint32_t attempted{},completed{},failed{},cache_hits{};
     std::uint32_t evaluator_preflight_rejections{},budget_refusals{};
     void observe(const Evaluation& event,Clock::time_point now) noexcept {
