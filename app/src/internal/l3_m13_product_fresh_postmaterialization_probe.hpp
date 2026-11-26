@@ -137,14 +137,12 @@ run_fresh_m13_product_postmaterialization_probe(
     if(!render)return R::failure(*render.error());
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return fail("L3_M13_PRODUCT_FRESH_CANCELLED_AFTER_RENDER");
-    auto m16=analysis::measure_true_peak_full_resource(
-        render.value()->buffer());
-    if(!m16)return R::failure(*m16.error());
-    const double observed=m16.value()->global_linear_peak();
     const double allowed=std::pow(10.0,ceiling/20.0);
-    if(!std::isfinite(observed)||!std::isfinite(allowed)||
-       allowed<=0.0||observed>allowed)
-        return fail("L3_M13_PRODUCT_FRESH_M16_SAFETY_EXCEEDED");
+    const auto safe_peak=[&](const analysis::TruePeakMeasurement& m16) {
+        const double observed=m16.global_linear_peak();
+        return std::isfinite(observed)&&observed>=0.0&&
+            std::isfinite(allowed)&&allowed>0.0&&observed<=allowed;
+    };
     // Use the ORIGINAL full-resource native analyzer when exact Phase6
     // inputs exist. It owns M19 and M20, so do not run either a second
     // time or use the earlier M10 candidate's PCM/observations.
@@ -154,8 +152,12 @@ run_fresh_m13_product_postmaterialization_probe(
             cancellation);
         if(!observed_native)return R::failure(*observed_native.error());
         auto& n=*observed_native.value();
+        if(!n.exact_full_resource_m16)
+            return fail("L3_M13_PRODUCT_FRESH_M16_UNAVAILABLE");
+        if(!safe_peak(*n.exact_full_resource_m16))
+            return fail("L3_M13_PRODUCT_FRESH_M16_SAFETY_EXCEEDED");
         return R::success(M13FreshProductMasterProbe{
-            std::move(*render.value()),std::move(*m16.value()),
+            std::move(*render.value()),std::move(*n.exact_full_resource_m16),
             std::move(n.levels),std::move(n.tonal),
             std::move(witness),ceiling,1U,
             M13FreshAdditionalNativeObservations{
@@ -164,6 +166,9 @@ run_fresh_m13_product_postmaterialization_probe(
                 std::move(n.selected_original_m20_ordinals),
                 n.exact_observed_active_frames},admitted});
     }
+    auto m16=analysis::measure_true_peak_full_resource(render.value()->buffer());
+    if(!m16)return R::failure(*m16.error());
+    if(!safe_peak(*m16.value()))return fail("L3_M13_PRODUCT_FRESH_M16_SAFETY_EXCEEDED");
     auto m19=analysis::measure_basic_level_full_resource(
         render.value()->buffer());
     if(!m19)return R::failure(*m19.error());
