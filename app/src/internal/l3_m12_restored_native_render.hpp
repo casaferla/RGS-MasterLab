@@ -8,6 +8,7 @@
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/core/result.hpp>
+#include <algorithm>
 #include <cstddef>
 #include <atomic>
 #include <span>
