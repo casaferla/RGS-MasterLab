@@ -5384,6 +5384,17 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
     fresh.native_population=accepted;
     QVERIFY(!m13::verify_m13_fresh_protected_population(
         accepted,fresh,acceptedK,false,true).is_admissible());
+    {
+        auto wrong=accepted;
+        wrong[1].source_feature_id="foreign-source";
+        m13::M13FreshNativePopulation twin{{},wrong};
+        QVERIFY(!m13::m13_same_accepted_native_population(wrong,twin));
+        wrong=accepted;
+        wrong[0].source_feature_id=std::string(
+            a::m07_frozen::kBindings[0].exclusive_fallback_feature_id);
+        twin.native_population=wrong;
+        QVERIFY(m13::m13_same_accepted_native_population(wrong,twin));
+    }
     // The L02 raw scalar must satisfy the native QTP tolerance and
     // identical structural membership, independently of solver ranking.
     auto& native=accepted[25].configured.front().candidate_native;
