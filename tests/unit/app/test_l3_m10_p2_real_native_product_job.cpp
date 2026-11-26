@@ -104,6 +104,8 @@ private slots:
     void nativeEqPrefixesPreserveStoredOrder();
     void nativeDynamicClustersUseRetainedEnergyAndC01Parameters();
     void nativeM20MetadataUsesSixRateGeometry();
+    void nativeBroadbandCommonProfileAtSixRates_data();
+    void nativeBroadbandCommonProfileAtSixRates();
     void nativeCommonAnalysisSpecUsesAllRatePairs();
     void nativeOfflineRegistryKeepsLiveManualAuthority();
     void nativeAutomaticGainSearchMeasuresRealOwnedPcm();
@@ -378,6 +380,62 @@ void P2RealNativeProductTest::nativeSeedGeometryRejectsSubstitutedStereoGrid() {
             QVERIFY(!m09::match_exact_native_stereo_grid(wrong,indices,rate,denominator));
         }
     }
+}
+void P2RealNativeProductTest::nativeBroadbandCommonProfileAtSixRates_data() {
+    QTest::addColumn<int>("sampleRate");
+    for(const auto fs:std::array<int,6>{44100,48000,88200,96000,176400,192000}) {
+        const auto label=std::to_string(fs);
+        QTest::newRow(label.c_str())<<fs;
+    }
+}
+void P2RealNativeProductTest::nativeBroadbandCommonProfileAtSixRates() {
+    QFETCH(int,sampleRate);
+    const auto rate=core::SampleRate::create(sampleRate);
+    QVERIFY(rate);
+    const auto fmt=audio::AudioFormat::create(*rate.value(),audio::ChannelLayout::MONO_C);
+    const auto frames=core::FrameCount::create(static_cast<std::int64_t>(sampleRate)*3);
+    QVERIFY(fmt&&frames);
+    auto pcm=audio::AudioBuffer::create(*fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(pcm);
+    const auto channel=pcm.value()->mutable_view().channel(0);
+    QVERIFY(channel);
+    std::uint32_t rng=UINT32_C(0x4d595df4);
+    for(std::size_t i=0;i<channel.value()->size();++i) {
+        rng^=rng<<13U;rng^=rng>>17U;rng^=rng<<5U;
+        const double t=static_cast<double>(i)/static_cast<double>(sampleRate);
+        const double noise=2.0*static_cast<double>(rng)/4294967295.0-1.0;
+        (*channel.value())[i]=0.08*noise+0.10*std::sin(2.0*std::numbers::pi*55.0*t);
+    }
+    // A 44.1 kHz reference limits all comparisons to the same exact
+    // common frequency interval, regardless of source sample rate.
+    const auto spec=a::build_current_native_common_analysis_spec(
+        static_cast<std::uint32_t>(sampleRate),44100U,true);
+    QVERIFY(spec);
+    const auto observed=a::measure_real_full_owned_pcm_native_once(*pcm.value(),spec->prepared);
+    QVERIFY2(observed,observed?"":observed.error()->message().c_str());
+    QVERIFY(observed.value()->exact_full_resource_m16);
+    const auto standalone=analysis::measure_true_peak_full_resource(*pcm.value());
+    QVERIFY(standalone);
+    QCOMPARE(observed.value()->exact_full_resource_m16->global_linear_peak(),
+        standalone.value()->global_linear_peak());
+    QCOMPARE(observed.value()->tonal.sample_rate_hz,static_cast<std::int64_t>(sampleRate));
+    QVERIFY(observed.value()->tonal.selected_spectral_windows>0U);
+    std::size_t configured=0,eligible=0;
+    for(const auto& band:observed.value()->tonal.primary_bands_1_12) {
+        const bool common=band.fully_supported&&band.low_hz>=spec->common.low_hz&&
+            band.high_hz<=spec->common.high_hz;
+        if(common)++configured;
+        if(band.normalized_fraction.value) {
+            QVERIFY(common);
+            QVERIFY(std::isfinite(*band.normalized_fraction.value));
+            QVERIFY(*band.normalized_fraction.value>=1e-12);
+            ++eligible;
+        }
+    }
+    QCOMPARE(configured,spec->prepared.spectral_bands.size());
+    QVERIFY(configured>0U);
+    QVERIFY(5U*eligible>=4U*configured);
 }
 void P2RealNativeProductTest::nativeFullPcmZeroSideIsNotAWidthFloor() {
     const auto fs=core::SampleRate::create(48000);
