@@ -7042,6 +7042,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(transientAdapter.linked_parameters().isEmpty());
     QVERIFY(dynamicAdapter.linked_parameters().isEmpty());
     QVERIFY(transientAdapter.has_error());
+    QTRY_COMPARE(session.adapterModel->modules().size(),beforeLinkedModelCount);
+    QVERIFY(session.adapterModel->selected_instance_id()!=dynamicAdapter.instance_id());
     const auto retiredProductDiagnosis=session.project.
         assess_private_m13_completed_fresh_worker(
             *m13Owner.value(),*m13Result.value(),
@@ -7086,6 +7088,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY((*redoneEditors)[i].parameters==(*linkedEditors)[i].parameters);
     QCOMPARE(transientAdapter.linked_parameters(),beforeLockedCommands);
     QVERIFY(!dynamicAdapter.linked_parameters().isEmpty());
+    QTRY_COMPARE(session.adapterModel->modules().size(),beforeLinkedModelCount+qsizetype{2});
     // Undo/Redo can restore bit-identical linked PCM and the SAME
     // original ticket pointer. Still, prior verification is NOT fresh.
     QVERIFY(!session.project.private_m13_fresh_probe_still_current(
