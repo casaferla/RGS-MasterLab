@@ -146,6 +146,12 @@ public:
                             const bool zero=native_qt_zero_effective_amount(*operation_);
                             completed_.emplace(std::move(done));
                             auto after=operation_->expected.exact_existing_linked_snapshot;
+                            if(zero&&std::all_of(after->modules.begin(),after->modules.end(),
+                                    [](const auto& node){return node.controllerSuspended;})) {
+                                // Already suspended: the actual measured Fixed gate
+                                // has passed, but there is no new state change to adopt.
+                                phase_=Phase::match_suspended;return;
+                            }
                             if(zero)for(auto& node:after->modules)node.controllerSuspended=true;
                             else after.reset();
                             review_diff_=m12_frozen::describe_exact_m12_review_diff(
@@ -156,7 +162,14 @@ public:
                             completed_.emplace(std::move(done));
                             phase_=Phase::failed;
                         }
-                    }else phase_=Phase::no_correction;
+                    }else if(native_qt_fixed_only_no_correction(*operation_,done)) {
+                        completed_.emplace(std::move(done));
+                        phase_=Phase::no_correction;
+                    }else {
+                        completed_.emplace(std::move(done));
+                        error_="L3_PRODUCT_NO_CORRECTION_EVIDENCE_UNAVAILABLE";
+                        phase_=Phase::failed;
+                    }
                     return;
                 }
                 auto plan=review_native_qt_product_session_on_owner(project(),product_,fanout_,
