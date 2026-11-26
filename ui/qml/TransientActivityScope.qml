@@ -13,6 +13,7 @@ Item {
     property int sampleRateHz: 48000
     property bool auditioningProcessed: false
     property bool bypassed: false
+    property string stateText: "TELEMETRY UNAVAILABLE"
     readonly property real secondsVisible: 5.0
     readonly property int maxBuckets: 4096
     readonly property color attackHue: "#C4774A"
