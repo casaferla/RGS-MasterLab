@@ -5879,6 +5879,12 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(dynamicEditor->exact_owner==transientEditor->exact_owner);
     QVERIFY(!dynamicEditor->manual_editable());
     QVERIFY(!dynamicEditor->activity_authorized());
+    QVERIFY(!app::l3_automatch::inspect_current_linked_editor(
+        *session.previewController,{},session.masteringChainState->chain(),
+        bindings,winningNodes[1].allocated_instance_id));
+    QVERIFY(!app::l3_automatch::inspect_current_linked_editor(
+        *session.previewController,prepared,session.masteringChainState->chain(),
+        bindings,session.gainId));
     // M13 may capture a fresh numerical job ONLY from the actual
     // Product receipt, never an uncommitted native REF staging ticket.
     const auto m13Owner=session.project.
