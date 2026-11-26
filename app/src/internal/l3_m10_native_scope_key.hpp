@@ -18,9 +18,10 @@ exact_native_analysis_scope_content(const ProductNativeOnePassSpec& spec)
     using namespace p2_cache_detail;
     const auto integer=[&](auto x){append_exact_field(out,std::to_string(x));};
     const auto real=[&](double x){integer(std::bit_cast<std::uint64_t>(x));};
-    append_exact_field(out,"rgsml.l3.actual-native-analysis-scope/2");
+    append_exact_field(out,"rgsml.l3.actual-native-analysis-scope/3");
     integer(spec.exact_m20_fft_size);
     integer(spec.derive_own_m19_temporal_gate);
+    integer(spec.derive_native_common_profile_support);
     integer(spec.phase6_active_pcm_frames);
     integer(spec.exact_stereo_reference_grade);
     integer(spec.exact_m19_low_end_gate_same_as_m20_stft);

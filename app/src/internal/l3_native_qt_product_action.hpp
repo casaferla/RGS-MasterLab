@@ -11,7 +11,7 @@ public:
     using Controllers=ProductQtP2NativeAdmission::Controllers;
     using Fanout=ProductQtP2NativeAdmission::Fanout;
     using Completion=m13_frozen::M13ActualNativeWorkerCompletion;
-    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,no_correction_prior_retained,no_correction_cleared,zero_amount_prior_retained,kept_current,
+    enum class Phase {idle,searching,cancelling,candidate_ready,no_correction,no_correction_prior_retained,no_correction_cleared,zero_amount_prior_retained,match_suspended,kept_current,
         cancelled,stale,failed,materialized,verifying,numerical_pass,verification_incomplete};
     NativeQtProductAction(Controllers product,const Fanout& fanout,
         const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold)
@@ -29,7 +29,8 @@ public:
         return operation_&&operation_->expected.exact_existing_linked_snapshot.has_value();
     }
     [[nodiscard]] bool can_adopt()const noexcept {
-        return phase_==Phase::candidate_ready||phase_==Phase::no_correction_prior_retained;
+        return phase_==Phase::candidate_ready||phase_==Phase::no_correction_prior_retained||
+            phase_==Phase::zero_amount_prior_retained;
     }
     [[nodiscard]] bool busy()const noexcept {
         return phase_==Phase::searching||phase_==Phase::cancelling||phase_==Phase::verifying;
@@ -83,11 +84,12 @@ public:
             error_="L3_PRODUCT_ACTION_STALE_CANDIDATE";
             phase_=Phase::stale;return false;
         }
-        if(phase_==Phase::no_correction_prior_retained) {
-            const auto cleared=apply_native_qt_no_correction_on_owner(project(),product_,fanout_,
+        if(phase_==Phase::no_correction_prior_retained||phase_==Phase::zero_amount_prior_retained) {
+            const bool suspending=phase_==Phase::zero_amount_prior_retained;
+            const auto applied=apply_native_qt_fixed_only_on_owner(project(),product_,fanout_,
                 selector_,gold_,*operation_,*completed_);
-            if(!cleared){error_=cleared.error()->message();phase_=Phase::failed;return false;}
-            phase_=Phase::no_correction_cleared;return true;
+            if(!applied){error_=applied.error()->message();phase_=Phase::failed;return false;}
+            phase_=suspending?Phase::match_suspended:Phase::no_correction_cleared;return true;
         }
         if(!reviewed_)return false;
         auto receipt=apply_native_qt_product_session_on_owner(project(),product_,fanout_,
@@ -127,19 +129,14 @@ public:
                 if(done.result.phase==NativeAutoMatchWorkerPhase::search_completed&&
                    done.result.search.status==m09_frozen::NativeProductSearchStatus::no_correction_required) {
                     if(replacing()) {
-                        if(native_qt_positive_no_correction(*operation_,done)) {
+                        if(native_qt_fixed_only_no_correction(*operation_,done)) {
+                            const bool zero=native_qt_zero_effective_amount(*operation_);
                             completed_.emplace(std::move(done));
-                            phase_=Phase::no_correction_prior_retained;
+                            phase_=zero?Phase::zero_amount_prior_retained:Phase::no_correction_prior_retained;
                         } else {
-                            bool positive=false;
-                            for(std::size_t i=0;i<4U;++i)
-                                positive=positive||(operation_->policy.requested[i]&&
-                                    m08_frozen::effective_amount(operation_->policy.amount,i).rounded>0.0);
-                            if(positive) {
-                                error_="L3_PRODUCT_NO_CORRECTION_EVIDENCE_UNAVAILABLE";
-                                completed_.emplace(std::move(done));
-                                phase_=Phase::failed;
-                            }else phase_=Phase::zero_amount_prior_retained;
+                            error_="L3_PRODUCT_NO_CORRECTION_EVIDENCE_UNAVAILABLE";
+                            completed_.emplace(std::move(done));
+                            phase_=Phase::failed;
                         }
                     }else phase_=Phase::no_correction;
                     return;

@@ -726,7 +726,9 @@ ApplicationWindow {
                     objectName: "autoMatchAdoptButton"
                     text: root.appAutoMatchModel
                         && root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
-                        ? "Remove match" : "Apply"
+                        ? "Remove match" : (root.appAutoMatchModel
+                        && root.appAutoMatchModel.statusText === "AMOUNT ZERO / REVIEW SUSPENSION"
+                        ? "Suspend match" : "Apply")
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
                         && !root.monitorExclusive
                     onClicked: root.appAutoMatchModel.adopt()
@@ -735,7 +737,8 @@ ApplicationWindow {
                     objectName: "autoMatchCancelButton"
                     text: root.appAutoMatchModel
                         && (root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
-                            || root.appAutoMatchModel.statusText === "REPLACEMENT READY")
+                            || root.appAutoMatchModel.statusText === "REPLACEMENT READY"
+                            || root.appAutoMatchModel.statusText === "AMOUNT ZERO / REVIEW SUSPENSION")
                         ? "Keep current" : "Cancel"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canCancel
                     onClicked: root.appAutoMatchModel.cancel()

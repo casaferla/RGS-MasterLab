@@ -52,7 +52,8 @@ QString AutoMatchViewModel::status_text()const {
     case P::no_correction:return QStringLiteral("NO CORRECTION REQUIRED");
     case P::no_correction_prior_retained:return QStringLiteral("NO CORRECTION / REVIEW REMOVAL");
     case P::no_correction_cleared:return QStringLiteral("NO CORRECTION / MANUAL");
-    case P::zero_amount_prior_retained:return QStringLiteral("PRIOR MATCH RETAINED");
+    case P::zero_amount_prior_retained:return QStringLiteral("AMOUNT ZERO / REVIEW SUSPENSION");
+    case P::match_suspended:return QStringLiteral("MATCH SUSPENDED");
     case P::kept_current:return QStringLiteral("KEEP CURRENT");
     case P::cancelled:return QStringLiteral("CANCELLED");
     case P::stale:return QStringLiteral("INPUT CHANGED");
@@ -108,7 +109,8 @@ bool AutoMatchViewModel::adopt() {
     // No GUI-generated PASS for independent mandatory predicates.
     // M13 performs the real fresh analysis; any unavailable predicate
     // remains incomplete until Product supplies its actual authority.
-    if(action_.phase()==Action::Phase::no_correction_cleared) {refresh();return true;}
+    if(action_.phase()==Action::Phase::no_correction_cleared||
+       action_.phase()==Action::Phase::match_suspended) {refresh();return true;}
     const auto checking=action_.begin_verification(a::m13_frozen::MandatoryHardPredicate::unavailable);
     if(checking)timer_.start();
     refresh();return true;
