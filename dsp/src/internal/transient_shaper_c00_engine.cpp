@@ -42,7 +42,8 @@ namespace {
 
 core::Result<TransientShaperC00Engine> TransientShaperC00Engine::create(
     const TransientShaperParameters& params,std::uint32_t fs,
-    std::uint32_t channels,std::size_t max)
+    std::uint32_t channels,std::size_t max,
+    bool enable_activity_observation)
 {
     using R=core::Result<TransientShaperC00Engine>;
     if(!supported_rate(fs)||channels<1U||channels>2U||max==0U)
@@ -62,9 +63,11 @@ core::Result<TransientShaperC00Engine> TransientShaperC00Engine::create(
     try {
         std::vector<double> left(max,0.0);
         std::vector<double> right(channels==2U?max:0U,0.0);
+        std::vector<TransientC00AppliedGains> gains(
+            enable_activity_observation?max:0U);
         return R::success(TransientShaperC00Engine{
             params,fs,channels,max,a_f,a_m,a_l,a_g,
-            std::move(left),std::move(right)});
+            std::move(left),std::move(right),std::move(gains)});
     }catch(const std::bad_alloc&) {
         return R::failure(core::Error{
             core::ErrorCode::IoFailure,
@@ -96,7 +99,9 @@ core::Status TransientShaperC00Engine::restore_state(
 
 core::Status TransientShaperC00Engine::process_block(
     std::span<const double> in_l,std::span<const double> in_r,
-    std::span<double> out_l,std::span<double> out_r)
+    std::span<double> out_l,std::span<double> out_r,
+    ITransientC00ActivitySink* activity_sink,
+    std::uint64_t absolute_first_frame)
 {
     const auto n=in_l.size();
     if(n==0U||n>maximum_block_frames_||out_l.size()!=n
@@ -105,6 +110,14 @@ core::Status TransientShaperC00Engine::process_block(
        ||overlap(out_l,out_r))
         return fail(core::ErrorCode::InvalidArgument,
                     "TRANSIENT_C00_INVALID_PROCESS_VIEWS");
+    // No observer means no changed execution path and no extra allocation.
+    // A refused observation request must not mutate audio or the C00 state.
+    if(activity_sink &&
+       (activity_scratch_.size()<n ||
+        n>std::numeric_limits<std::uint64_t>::max()
+          -absolute_first_frame))
+        return fail(core::ErrorCode::InvalidArgument,
+                    "TRANSIENT_C00_OBSERVATION_BUFFER_OR_FRAME_RANGE");
     for(std::size_t i=0;i<n;++i)
         if(!std::isfinite(in_l[i])||
            (channels_==2U&&!std::isfinite(in_r[i])))
@@ -142,6 +155,10 @@ core::Status TransientShaperC00Engine::process_block(
             return fail(core::ErrorCode::InvalidAudioSample,
                         "TRANSIENT_C00_NONFINITE_INTERMEDIATE");
         staged={f,m,l,g_attack,g_sustain};
+        // Collect only in the already preallocated scratch. An upstream
+        // failure later in this block can never leak telemetry to the sink.
+        if(activity_sink)
+            activity_scratch_[i]={g_attack,g_sustain};
         if(neutral) {
             // Signed-zero and subnormal preserving active identity:
             // states STILL advance, no multiplication by computed gain.
@@ -164,6 +181,13 @@ core::Status TransientShaperC00Engine::process_block(
     if(channels_==2U)
         std::copy_n(scratch_right_.data(),n,out_r.data());
     state_=staged;
+    // Success-only callback, synchronous and noexcept. Collector errors
+    // affect observation validity only, never already committed audio.
+    if(activity_sink)
+        activity_sink->on_successful_block(
+            absolute_first_frame,
+            std::span<const TransientC00AppliedGains>(
+                activity_scratch_.data(),n));
     return core::Status::success();
 }
 } // namespace rgsml::dsp::internal
