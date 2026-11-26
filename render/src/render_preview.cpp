@@ -8,7 +8,9 @@
 #include <rgsml/dsp/compressor_module.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_module.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_module.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -863,6 +865,21 @@ rgsml::core::Result<RenderResult> render_preview(
             }
             cumulative_latency = *next_cum_res.value();
 
+            // Only an explicitly observed, active native instance receives a
+            // borrowed render-local sink. Ordinary search requests have none.
+            if(auto* observation=request.linked_activity()) {
+                if(is_dynamic_eq) {
+                    if(auto* typed=dynamic_cast<rgsml::dsp::DynamicEqModule*>(
+                            module.value()->get()))
+                        static_cast<void>(typed->set_activity_sink(
+                            observation->dynamic_eq_sink(instance.instance_id())));
+                } else if(is_transient) {
+                    if(auto* typed=dynamic_cast<rgsml::dsp::TransientShaperModule*>(
+                            module.value()->get()))
+                        static_cast<void>(typed->set_activity_sink(
+                            observation->transient_shaper_sink(instance.instance_id())));
+                }
+            }
             auto prepared = (*module.value())->prepare(process_spec);
             if (!prepared) {
                 return rgsml::core::Result<RenderResult>::failure(*prepared.error());
