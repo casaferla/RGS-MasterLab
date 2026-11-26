@@ -738,6 +738,17 @@ ApplicationWindow {
                 wrapMode: Text.WrapAnywhere
             }
             Text {
+                objectName: "autoMatchFailureDiagnostics"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.appAutoMatchModel
+                    ? root.appAutoMatchModel.failureDiagnosticsText : ""
+                color: root.textSecondary
+                font.family: "Consolas"
+                font.pixelSize: 10
+                wrapMode: Text.WordWrap
+            }
+            Text {
                 objectName: "autoMatchReviewMetrics"
                 Layout.fillWidth: true
                 visible: text.length > 0
