@@ -169,6 +169,17 @@ void P2RealNativeProductTest::nativePerformanceNeedsIndependentM16ForFirstAdmiss
     QCOMPARE(perf.cache_hits,1U);
     QVERIFY(perf.last_attempt_ms==3);
     QVERIFY(!perf.first_admissible_ms);
+    auto prediction=std::make_shared<m::NativePredictionSnapshot>();
+    score.native_prediction=prediction;
+    perf.observe({K::attempted_complete,score},at(7));
+    QVERIFY(!perf.first_admissible_ms);
+    prediction->independent_full_m16_linear_peak=1.01;
+    prediction->independent_m11_ceiling_db_tp=0.0;
+    perf.observe({K::attempted_complete,score},at(9));
+    QVERIFY(!perf.first_admissible_ms);
+    prediction->independent_full_m16_linear_peak=0.8;
+    perf.observe({K::attempted_complete,score},at(12));
+    QVERIFY(perf.first_admissible_ms==12);
 }
 void P2RealNativeProductTest::nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate() {
     namespace m09=a::m09_frozen;
