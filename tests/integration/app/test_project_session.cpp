@@ -6987,6 +6987,17 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         *importedTicket->replay,*importedPrepared,
         *core::FrameCount::create(4096).value(),nullptr,nullptr,&observedReplay);
     QVERIFY(observedCandidate&&observedReplay);
+    // A separate failed replay must clear a previous successful output
+    // capture rather than leaving stale data for an eventual publication.
+    std::unique_ptr<render::linked_activity::LinkedActivityRenderCapture> rejectedActivity;
+    rejectedActivity=std::make_unique<render::linked_activity::LinkedActivityRenderCapture>(
+        importedTicket->replay->reference_linked,sampleRateHz,
+        static_cast<std::uint64_t>(importedPrepared->view().frame_count().value()));
+    const std::atomic<bool> cancelledActivity{true};
+    const auto cancelledObserved=m::render_restored_m12_full_native_pcm_once(
+        *importedTicket->replay,*importedPrepared,
+        *core::FrameCount::create(4096).value(),nullptr,&cancelledActivity,&rejectedActivity);
+    QVERIFY(!cancelledObserved&&!rejectedActivity);
     QVERIFY(observedCandidate.value()->adopt_linked_activity(
         std::move(observedReplay),importedTicket->replay->exact_plan_checksum));
     // Independent selector: do not disturb the imported session's existing
