@@ -5829,6 +5829,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
                        {1.1,M08ProximityReason::comparable}).status==M13Proximity::failed);
     QVERIFY(compareRaw({0.9,M08ProximityReason::proximity_already_matched},
                        {0.9,M08ProximityReason::proximity_already_matched}).status==M13Proximity::failed);
+    QVERIFY(compareRaw({1.0,M08ProximityReason::proximity_already_matched},
+                       {1.0,M08ProximityReason::proximity_already_matched}).status==M13Proximity::passed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
