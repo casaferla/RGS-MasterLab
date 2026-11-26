@@ -201,12 +201,14 @@ public:
         const project::ProjectSnapshot& preSearchProject,
         core::Uuid linkedChainId,
         const l3_automatch::m12_frozen::M12ProjectTransactionExpected& expected);
-    // Explicit, separately reviewed positive no-correction transaction.
-    // Only the exact owned REF segment may be removed; never MANUAL.
-    [[nodiscard]] core::Status clear_private_m12_owned_match(
+    // Explicit, separately reviewed Fixed-only transaction. Positive
+    // no-correction removes the exact owned REF segment; Amount zero
+    // suspends its nodes without altering identities or parameters.
+    [[nodiscard]] core::Status apply_private_m12_fixed_only_match(
         const project::ProjectSnapshot& expected,
         core::Uuid controller_id,core::Uuid linked_id,
-        const std::shared_ptr<const render::RenderResult>& prepared);
+        const std::shared_ptr<const render::RenderResult>& prepared,
+        bool suspend_for_zero_amount);
     [[nodiscard]] core::Status undo_private_m12_materialization();
     [[nodiscard]] core::Status redo_private_m12_materialization();
 

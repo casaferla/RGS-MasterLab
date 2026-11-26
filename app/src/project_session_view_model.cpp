@@ -4,6 +4,7 @@
 #include "internal/l3_m12_exact_postcommit_readback.hpp"
 #include "internal/l3_m12_current_search_transaction.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
+#include "internal/l3_m12_owned_controller_suspension.hpp"
 #include "internal/l3_m13_actual_native_worker.hpp"
 
 #include "audition_region_view_model.hpp"
@@ -1927,9 +1928,10 @@ ProjectSessionViewModel::seal_private_m13_actual_native_completion(
         request,fresh,completion.assessment(),next_id());
 }
 
-core::Status ProjectSessionViewModel::clear_private_m12_owned_match(
+core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
     const project::ProjectSnapshot& expected,core::Uuid controller_id,
-    core::Uuid linked_id,const std::shared_ptr<const render::RenderResult>& prepared)
+    core::Uuid linked_id,const std::shared_ptr<const render::RenderResult>& prepared,
+    bool suspend_for_zero_amount)
 {
     namespace m=l3_automatch::m12_frozen;
     const auto fail=[](const char* code){return core::Status::failure(
@@ -1960,6 +1962,39 @@ core::Status ProjectSessionViewModel::clear_private_m12_owned_match(
        !m::m12_exact_project_snapshot_equal(*opened_,expected)||
        !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
         return fail("L3_M12_CLEAR_PRIOR_OWNER_STALE");
+    // Stage the complete new owner, then publish through the same exact
+    // rollback and history path as explicit positive no-correction.
+    std::optional<project::ProjectSnapshot> staged;
+    std::shared_ptr<const m::M12ImmutableProductPreviewTicket> afterTicket;
+    if(suspend_for_zero_amount) {
+        auto draft=m::prepare_m12_owned_controller_suspension(*live.value(),
+            controller_id,linked_id,m::ControllerSuspensionCause::amount_zero,true);
+        if(!draft)return core::Status::failure(*draft.error());
+        staged.emplace(std::move(draft.value()->updated_project_not_committed));
+        const auto decoded=m::decode_exact_m12_ref_linked_product_state(
+            staged->document(),ticket->replay->registry_owner);
+        if(!decoded)return core::Status::failure(*decoded.error());
+        const auto bindings=masteringChainState_->execution_bindings();
+        auto replay=m::prepare_restored_m12_native_replay_plan(staged->document(),
+            *decoded.value(),masteringChainState_->chain_id(),
+            masteringChainState_->chain(),bindings,true);
+        if(!replay)return core::Status::failure(*replay.error());
+        const auto next=m::prepare_m12_immutable_product_preview_ticket(
+            std::make_shared<const m::RestoredM12NativeReplayPlan>(std::move(*replay.value())),
+            prepared,masteringChainState_->chain(),bindings);
+        if(!next)return core::Status::failure(*next.error());
+        afterTicket=std::make_shared<const m::M12ImmutableProductPreviewTicket>(*next.value());
+        // Never claim a suspended graph has fresh verification or remove
+        // a stored DSP as a side effect of Amount zero.
+        const auto beforeNodes=ticket->replay->reference_linked.instances();
+        const auto afterNodes=afterTicket->replay->reference_linked.instances();
+        if(beforeNodes.size()!=afterNodes.size()||
+           ticket->replay->reference_bindings!=afterTicket->replay->reference_bindings||
+           std::any_of(afterNodes.begin(),afterNodes.end(),[](const auto& node){
+               return !node.controller_suspended()||node.active();
+           }))
+            return fail("L3_M12_SUSPEND_STORED_GRAPH_CHANGED");
+    } else {
     auto doc=live.value()->document();
     const auto removed=std::erase_if(doc.chains,[&](const auto& chain){
         return chain.stage=="MASTER"&&chain.segment=="REF_LINKED"&&chain.chainId==linked_id;
@@ -1978,23 +2013,35 @@ core::Status ProjectSessionViewModel::clear_private_m12_owned_match(
     if(m::assess_current_product_ref_linked_open_safety(after.value()->document())!=
        m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked)
         return fail("L3_M12_CLEAR_FOREIGN_LINKED_CONTENT");
-    M12MaterializationHistoryEntry entry{*live.value(),*after.value(),ticket,nullptr,std::nullopt};
+    staged.emplace(std::move(*after.value()));
+    }
+    M12MaterializationHistoryEntry entry{*live.value(),*staged,ticket,afterTicket,std::nullopt};
     m12UndoHistory_.reserve(m12UndoHistory_.size()+1U);
     const auto bindings=masteringChainState_->execution_bindings();
     opened_.emplace(entry.after);
-    previewController_->set_private_m12_product_preview_ticket(nullptr);
+    previewController_->set_private_m12_product_preview_ticket(afterTicket);
     const auto readback=current_snapshot(QString::fromStdString(expected.document().displayName));
     if(!readback||!m::m12_exact_project_snapshot_equal(*readback.value(),entry.after)||
-       previewController_->private_m12_product_preview_ticket()||provider()!=prepared||
+       previewController_->private_m12_product_preview_ticket()!=afterTicket||provider()!=prepared||
        masteringChainState_->execution_bindings()!=bindings) {
         opened_.emplace(entry.before);
         previewController_->set_private_m12_product_preview_ticket(ticket);
         return fail("L3_M12_CLEAR_READBACK_ROLLED_BACK");
     }
+    if(afterTicket) {
+        const auto& replay=*afterTicket->replay;
+        // A receipt attests actual publication/readback, not a new
+        // calculated plan or a VERIFIED result. Suspension retains plan.
+        m::M12ProductMaterializationReceipt receipt{replay.project_id,replay.source_id,
+            replay.reference_id,replay.plan_id,replay.controller_id,replay.linked_chain_id,
+            replay.exact_plan_checksum};
+        entry.receipt.emplace(std::move(receipt));
+    }
     m12UndoHistory_.push_back(std::move(entry));
     m12RedoHistory_.clear();
     ++m12ProductOwnershipEpoch_;
-    statusText_=QStringLiteral("NO CORRECTION / MANUAL");
+    statusText_=suspend_for_zero_amount?QStringLiteral("MATCH SUSPENDED / NOT_VERIFIED"):
+        QStringLiteral("NO CORRECTION / MANUAL");
     clear_error();
     return core::Status::success();
 }
