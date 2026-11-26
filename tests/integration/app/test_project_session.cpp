@@ -5815,6 +5815,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!m13Result.value()->is_m13_verified());
     QVERIFY(!m13Result.value()->is_qualification_receipt());
     QVERIFY(!m13Result.value()->authorizes_wav_export());
+    // Exercise frozen comparison semantics without another expensive
+    // native render. The inputs here are deliberately malformed evidence.
+    using M13Proximity=app::l3_automatch::m13_frozen::ProximityComparisonStatus;
+    using M08ProximityReason=app::l3_automatch::m08_frozen::ProximityReason;
+    using M08DomainProximity=app::l3_automatch::m08_frozen::DomainProximity;
+    const auto compareRaw=[](M08DomainProximity a,M08DomainProximity b){
+        return app::l3_automatch::m13_frozen::compare_exact_m08_raw_proximity(a,b,true);
+    };
+    QVERIFY(compareRaw({-0.5,M08ProximityReason::comparable},
+                       {-0.5,M08ProximityReason::comparable}).status==M13Proximity::passed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
