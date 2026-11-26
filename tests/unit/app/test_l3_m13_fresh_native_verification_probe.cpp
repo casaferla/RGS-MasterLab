@@ -496,6 +496,18 @@ void M13FreshNativeProbeTest::sameRunPredictedVerifiedRawProximity()
         fake.allowable_raw_delta=kSameRunProximityFractionBound;
         QVERIFY(fake.passed());
     }
+    {
+        auto fake=pass.global;
+        fake.absolute_raw_delta=-0.1;
+        QVERIFY(!fake.passed());
+        fake.absolute_raw_delta=std::numeric_limits<double>::infinity();
+        QVERIFY(!fake.passed());
+        fake.absolute_raw_delta=0.0006;
+        QVERIFY(!fake.passed());
+        fake.absolute_raw_delta=0.0;
+        fake.allowable_raw_delta=1.0;
+        QVERIFY(!fake.passed());
+    }
     verified[1].effective_coverage=0.75;
     QVERIFY(!compare_frozen_m08_prediction_with_fresh_verified(
         predicted,verified).all_required_pass());
