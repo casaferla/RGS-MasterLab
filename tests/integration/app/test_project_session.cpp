@@ -716,6 +716,9 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(searchPerformance.first_admissible_ms.has_value());
     QVERIFY(*searchPerformance.first_admissible_ms>=completed->original_pair_ms);
     QVERIFY(searchPerformance.completed>0U);
+    QVERIFY(searchPerformance.last_attempt_ms.has_value());
+    QVERIFY(*searchPerformance.last_attempt_ms>=*searchPerformance.first_admissible_ms);
+    QVERIFY(searchPerformance.counts_reconciled());
     QCOMPARE(searchPerformance.attempted,
         searchPerformance.completed+searchPerformance.failed);
     QCOMPARE(searchPerformance.attempted,
