@@ -6998,6 +6998,19 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         *importedTicket->replay,*importedPrepared,
         *core::FrameCount::create(4096).value(),nullptr,&cancelledActivity,&rejectedActivity);
     QVERIFY(!cancelledObserved&&!rejectedActivity);
+    using Capture=render::linked_activity::LinkedActivityRenderCapture;
+    Capture budgetDenied(importedTicket->replay->reference_linked,sampleRateHz,
+        static_cast<std::uint64_t>(importedPrepared->view().frame_count().value()),0);
+    QVERIFY(!budgetDenied.dynamic_eq_sink(winningNodes[1].allocated_instance_id));
+    QVERIFY(!budgetDenied.transient_shaper_sink(winningNodes[0].allocated_instance_id));
+    budgetDenied.seal_after_success();
+    QVERIFY(budgetDenied.dynamic_history(winningNodes[1].allocated_instance_id).empty());
+    QVERIFY(budgetDenied.transient_history(winningNodes[0].allocated_instance_id).empty());
+    Capture missingFrames(importedTicket->replay->reference_linked,sampleRateHz,
+        static_cast<std::uint64_t>(importedPrepared->view().frame_count().value()));
+    missingFrames.seal_after_success();
+    QVERIFY(missingFrames.dynamic_history(winningNodes[1].allocated_instance_id).empty());
+    QVERIFY(missingFrames.transient_history(winningNodes[0].allocated_instance_id).empty());
     QVERIFY(observedCandidate.value()->adopt_linked_activity(
         std::move(observedReplay),importedTicket->replay->exact_plan_checksum));
     // Independent selector: do not disturb the imported session's existing
