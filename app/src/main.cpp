@@ -2116,6 +2116,42 @@ int main(int argc, char* argv[])
         });
     }
 
+    // Explicit CI-only capture of the actual Product, not a recreated mockup.
+    const auto contextShotDir=qEnvironmentVariable("RGSML_CONTEXT_SCREENSHOT_DIR");
+    if(!contextShotDir.isEmpty() && !engine.rootObjects().isEmpty()) {
+        auto* win=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if(!win)return EXIT_FAILURE;
+        QTimer::singleShot(900,&application,[win,&application,&dspChainAdapterModel,contextShotDir] {
+            auto* panel=win->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
+            if(!panel){application.exit(EXIT_FAILURE);return;}
+            win->setWidth(1184);
+            win->setHeight(688);
+            bool ok=true;
+            const auto capture=[&](const QString& name) {
+                QEventLoop settle;
+                QTimer::singleShot(350,&settle,&QEventLoop::quit);
+                settle.exec();
+                const auto image=win->grabWindow();
+                return !image.isNull() && image.save(contextShotDir+"/"+name+".png","PNG");
+            };
+            for(int i=0;i<4;++i) {
+                dspChainAdapterModel.setSelectedIndex(i);
+                ok=capture(QStringLiteral("minimum-dsp-%1").arg(i))&&ok;
+            }
+            panel->setProperty("activeContextMode",QStringLiteral("PREPARE_RESTORATION"));
+            ok=capture(QStringLiteral("minimum-prepare"))&&ok;
+            panel->setProperty("activeContextMode",QStringLiteral("GOLD_AUTOMATCH"));
+            if(win->screen() && win->screen()->availableGeometry().width()>=1440
+               && win->screen()->availableGeometry().height()>=900) {
+                win->showMaximized();
+                ok=capture(QStringLiteral("maximized-automatch"))&&ok;
+                panel->setProperty("activeContextMode",QStringLiteral("PREPARE_RESTORATION"));
+                ok=capture(QStringLiteral("maximized-prepare"))&&ok;
+            }
+            application.exit(ok?EXIT_SUCCESS:EXIT_FAILURE);
+        });
+    }
+
     const int result = application.exec();
     return smokeWarningObserved ? EXIT_FAILURE : result;
 }
