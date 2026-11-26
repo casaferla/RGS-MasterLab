@@ -2046,6 +2046,46 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
     return core::Status::success();
 }
 
+bool ProjectSessionViewModel::can_undo_private_m12_materialization() const
+{
+    namespace m=l3_automatch::m12_frozen;
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||!opened_||
+       !m18ProjectSaveBatchBegin_||!m18ProjectOpenBatchBegin_||
+       !previewController_||!masteringChainState_||m12UndoHistory_.empty())return false;
+    const auto& last=m12UndoHistory_.back();
+    const auto witness=last.afterTicket?last.afterTicket:last.beforeTicket;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto& chain=masteringChainState_->chain();
+    return witness&&witness->replay&&provider&&provider()==witness->exact_prepared_owner&&
+        previewController_->private_m12_product_preview_ticket()==last.afterTicket&&
+        m::m12_exact_project_snapshot_equal(*opened_,last.after)&&
+        chain.revision()==witness->exact_manual_chain_revision&&
+        std::equal(chain.instances().begin(),chain.instances().end(),
+            witness->exact_manual_nodes.begin(),witness->exact_manual_nodes.end())&&
+        masteringChainState_->execution_bindings()==witness->exact_manual_bindings;
+}
+
+bool ProjectSessionViewModel::can_redo_private_m12_materialization() const
+{
+    namespace m=l3_automatch::m12_frozen;
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||!opened_||
+       !m18ProjectSaveBatchBegin_||!m18ProjectOpenBatchBegin_||
+       !previewController_||!masteringChainState_||m12RedoHistory_.empty())return false;
+    const auto& next=m12RedoHistory_.back();
+    const auto witness=next.afterTicket?next.afterTicket:next.beforeTicket;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto& chain=masteringChainState_->chain();
+    return witness&&witness->replay&&provider&&provider()==witness->exact_prepared_owner&&
+        previewController_->private_m12_product_preview_ticket()==next.beforeTicket&&
+        m::m12_exact_project_snapshot_equal(*opened_,next.before)&&
+        chain.revision()==witness->exact_manual_chain_revision&&
+        std::equal(chain.instances().begin(),chain.instances().end(),
+            witness->exact_manual_nodes.begin(),witness->exact_manual_nodes.end())&&
+        masteringChainState_->execution_bindings()==witness->exact_manual_bindings;
+}
+
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
 {
     namespace m=l3_automatch::m12_frozen;
