@@ -127,6 +127,8 @@ struct DynamicEqModule::Impl final {
     std::unique_ptr<internal::C01FrameEngine> engine;
     std::optional<core::FrameIndex> next;
     bool ended{false};
+    internal::IC01ActivitySink* activity_sink{nullptr};
+    std::vector<internal::C01FrameActivitySample> activity_scratch{};
 };
 DynamicEqModule::DynamicEqModule(std::unique_ptr<Impl> p) noexcept
     :impl_(std::move(p)) {}
@@ -183,6 +185,12 @@ DynamicEqModule::runtime_requirements(const DspProcessSpec& spec) const
         bad(core::ErrorCode::UnsupportedOperation,
             "DYN_EQ_EFFECTIVE_MEMORY_CERTIFICATE_REQUIRED"));
 }
+bool DynamicEqModule::set_activity_sink(internal::IC01ActivitySink* sink) noexcept
+{
+    if(sink&&impl_->spec)return false;
+    impl_->activity_sink=sink;
+    return true;
+}
 core::Status DynamicEqModule::prepare(const DspProcessSpec& spec)
 {
     const auto valid=validate(spec,impl_->parameters);
@@ -195,6 +203,17 @@ core::Status DynamicEqModule::prepare(const DspProcessSpec& spec)
         if(!engine)return core::Status::failure(*engine.error());
         auto staged=std::make_unique<internal::C01FrameEngine>(
             std::move(*engine.value()));
+        // Telemetry memory is optional; allocation failure must not
+        // compromise ordinary PCM processing.
+        impl_->activity_scratch.clear();
+        if(impl_->activity_sink) {
+            try {
+                constexpr std::size_t max_observed_block=65536U;
+                const auto count=static_cast<std::uint64_t>(spec.maximum_block_frames.value());
+                if(count>max_observed_block)impl_->activity_sink=nullptr;
+                else impl_->activity_scratch.resize(static_cast<std::size_t>(count));
+            } catch(...) {impl_->activity_sink=nullptr;}
+        }
         impl_->engine=std::move(staged);
         impl_->spec=spec;
         impl_->next.reset();
@@ -252,7 +271,11 @@ core::Status DynamicEqModule::process(
             in1=*a.value();out1=*b.value();
         }
         const auto result=impl_->engine->process_block(
-            *in0.value(),in1,*out0.value(),out1);
+            *in0.value(),in1,*out0.value(),out1,
+            impl_->activity_sink,
+            static_cast<std::uint64_t>(context.output_frame_range.begin().value()),
+            impl_->activity_sink?std::span<internal::C01FrameActivitySample>{impl_->activity_scratch}
+                                :std::span<internal::C01FrameActivitySample>{});
         if(!result)return result;
         impl_->next=context.output_frame_range.end();
         impl_->ended=context.ends_stream;
