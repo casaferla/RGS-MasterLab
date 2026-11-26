@@ -287,7 +287,7 @@ encode_m13_provisional_diagnostic(
             str.data(),str.data()+str.size(),value,
             std::chars_format::general);
         if(err!=std::errc{}||end!=str.data()+str.size()||
-           !std::isfinite(value))return std::nullopt;
+           !std::isfinite(value)||m13_decimal_from_binary64(value)!=token.toString())return std::nullopt;
         return value;
     };
     const auto configured=exact_uint("configuredNativeComponents");
