@@ -5922,6 +5922,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QJsonValue(QStringLiteral("1")))));
     QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("configuredNativeComponents",
         QJsonValue(QStringLiteral("00")))));
+    QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("fullResourceM16LinearPeak",
+        QJsonValue(QStringLiteral("nan")))));
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
