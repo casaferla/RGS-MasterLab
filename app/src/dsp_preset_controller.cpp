@@ -3,6 +3,7 @@
 #include "dsp_chain_adapter_model.hpp"
 #include <rgsml/core/uuid.hpp>
 #include <QFile>
+#include <QFileInfo>
 #include <QSaveFile>
 #include <QByteArray>
 #include <algorithm>
@@ -61,6 +62,12 @@ bool DspPresetController::save(
 {
     if(!state_||!target.isLocalFile()||target.toLocalFile().isEmpty())
         return error(QStringLiteral("Choose a local preset file."));
+    const auto required=moduleIndex?QStringLiteral("rgsdsp"):
+        QStringLiteral("rgschain");
+    if(QFileInfo(target.toLocalFile()).suffix().compare(required,Qt::CaseInsensitive)!=0)
+        return error(moduleIndex
+            ?QStringLiteral("Save one DSP module as .rgsdsp.")
+            :QStringLiteral("Save the DSP Chain as .rgschain."));
     const auto registry=state_->registry_snapshot();
     if(!registry)return error(QStringLiteral("DSP registry is unavailable."));
     const auto snapshot=dsp_presets::capture(
@@ -84,6 +91,14 @@ bool DspPresetController::open(
 {
     if(!state_||!source.isLocalFile()||source.toLocalFile().isEmpty())
         return error(QStringLiteral("Choose a local preset file."));
+    const auto suffix=QFileInfo(source.toLocalFile()).suffix().toLower();
+    const bool legacy=suffix==QStringLiteral("rgspreset")||
+        suffix==QStringLiteral("json");
+    if(!legacy&&suffix!=(moduleIndex?QStringLiteral("rgsdsp"):
+                                         QStringLiteral("rgschain")))
+        return error(moduleIndex
+            ?QStringLiteral("Choose a .rgsdsp module preset (or legacy .rgspreset).")
+            :QStringLiteral("Choose a .rgschain chain preset (or legacy .rgspreset)."));
     QFile file(source.toLocalFile());
     if(!file.open(QIODevice::ReadOnly)||
        file.size()<=0||file.size()>4*1024*1024)
