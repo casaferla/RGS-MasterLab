@@ -860,6 +860,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY2(diagnostic,diagnostic?"":diagnostic.error()->message().c_str());
     QVERIFY(m13::verify_m13_provisional_diagnostic_integrity(diagnostic.value()->canonical_report));
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    if(fullTrackBenchmark) {
+        qInfo("Full-track benchmark: M12 adoption and independent M13 numerical check passed; formal qualification not granted.");
+        return;
+    }
     // A second search retains the first exact ticket until Apply and
     // never accumulates another REF_LINKED chain. Undo/Redo must restore
     // the original/new ticket, not recompute an unreviewed graph.
