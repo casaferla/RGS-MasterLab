@@ -6,6 +6,7 @@
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
 #include "internal/l3_m12_retained_controller.hpp"
+#include "internal/l3_m12_stale_rebind.hpp"
 #include "internal/l3_m13_actual_native_worker.hpp"
 
 #include "audition_region_view_model.hpp"
@@ -1554,12 +1555,42 @@ ProjectSessionViewModel::capture_private_m12_search_baseline(bool require_owned_
         m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
     const bool exactReopen=m12UndoHistory_.empty()&&m12ExactReplayReadback_&&
         m::m12_exact_project_snapshot_equal(*m12ExactReplayReadback_,*live.value());
-    if(!opened_||!ticket||!ticket->replay||
-       (!currentReceipt&&!exactReopen)||
-       !m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
-       !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
+    if(opened_&&ticket&&ticket->replay&&(currentReceipt||exactReopen)&&
+       m::m12_exact_project_snapshot_equal(*opened_,*live.value())&&
+       m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
+        return live;
+    // Dependency replacement is not controller retirement. Under the
+    // same physical M18 owner lease preserve the previous exact graph
+    // as suspended/STALE, then admit a NEW search against the new Fixed.
+    const auto retired=ticket&&ticket->replay?ticket:m12RetiredReplayIdentity_;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto prepared=provider?provider():nullptr;
+    if(!opened_||!retired||!retired->replay||!prepared)
         return fail("L3_M12_BASELINE_PRIOR_OWNER_NOT_CURRENT");
-    return live;
+    auto rebound=m::prepare_m12_stale_rebind(*opened_,*live.value(),*retired,
+        *masteringChainState_,prepared);
+    if(!rebound)return R::failure(*rebound.error());
+    const auto previous=*opened_;
+    const auto& newTicket=rebound.value()->ticket;
+    opened_.emplace(rebound.value()->suspended);
+    previewController_->set_private_m12_product_preview_ticket(newTicket);
+    auto readback=current_snapshot(stem);
+    if(!readback||!m::m12_exact_project_snapshot_equal(*readback.value(),*opened_)||
+       previewController_->private_m12_product_preview_ticket()!=newTicket||
+       !provider||provider()!=prepared||
+       masteringChainState_->chain().revision()!=newTicket->exact_manual_chain_revision||
+       masteringChainState_->execution_bindings()!=newTicket->exact_manual_bindings) {
+        opened_.emplace(previous);
+        previewController_->set_private_m12_product_preview_ticket(ticket);
+        return fail("L3_M12_STALE_REBIND_READBACK_ROLLED_BACK");
+    }
+    m12UndoHistory_.clear();m12RedoHistory_.clear();
+    m12RetiredReplayIdentity_.reset();
+    m12ExactReplayReadback_.emplace(*readback.value());
+    ++m12ProductOwnershipEpoch_;
+    statusText_=QStringLiteral("STALE MATCH / SUSPENDED");
+    clear_error();
+    return readback;
 }
 
 core::Result<l3_automatch::m12_frozen::M12ProductMaterializationReceipt>
