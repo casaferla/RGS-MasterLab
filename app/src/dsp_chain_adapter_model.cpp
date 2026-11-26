@@ -53,6 +53,7 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         for(const auto& snapshot:*linked) {
             auto adapter=std::make_unique<l3_automatch::LinkedDspModuleAdapter>(
                 snapshot,*linkedEditorPreviewController_,*chainState_,workflowContext_);
+            adapter->bind_activity(linkedActivitySelector_.data(),linkedActivityTransport_.data());
             lastLinkedEditorIds_.append(adapter->instance_id());
             connect(adapter.get(),&DspModuleAdapter::changed,
                 this,&DspChainAdapterModel::changed);
@@ -273,6 +274,15 @@ void DspChainAdapterModel::bindLinkedEditorPreviewController(MasteringPreviewCon
             this,&DspChainAdapterModel::reconcile_linked_editor_rows,
             Qt::QueuedConnection);
     }
+    rebuild_adapters_from_authority();
+    emit changed();
+}
+
+void DspChainAdapterModel::bindLinkedEditorActivity(AuditionSourceSelector* selector,PlaybackTransportViewModel* transport)
+{
+    if(linkedActivitySelector_==selector&&linkedActivityTransport_==transport)return;
+    linkedActivitySelector_=selector;
+    linkedActivityTransport_=transport;
     rebuild_adapters_from_authority();
     emit changed();
 }
