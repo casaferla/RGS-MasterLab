@@ -25,7 +25,7 @@ namespace rgsml::app::l3_automatch {
     const auto id=selector.processed_realization_id();
     const auto rate=transport.linked_activity_source_rate();
     const auto audible=transport.playback_snapshot();
-    if(!pcm||!id||!rate||!audible)return {};
+    if(!pcm||!id||!rate||!audible||!preview.published_preview_is_exact_owner(pcm))return {};
     const auto& replay=*snapshot.exact_owner->replay;
     return render::linked_activity::project_linked_activity(*pcm,
         {*id,replay.exact_plan_checksum,replay.reference_linked.revision(),
