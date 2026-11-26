@@ -7,6 +7,7 @@
 #include "l3_m12_ref_linked_native_replay_plan.hpp"
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/linked_activity_render_capture.hpp>
 #include <rgsml/core/result.hpp>
 #include <algorithm>
 #include <cstddef>
@@ -76,10 +77,12 @@ render_restored_m12_full_native_pcm_once(
     const render::RenderResult& current_owned_prepared,
     core::FrameCount maximum_block_frames,
     M12NativeStageExecutionWitness* stage_witness = nullptr,
-    const std::atomic<bool>* cancellation=nullptr)
+    const std::atomic<bool>* cancellation=nullptr,
+    std::unique_ptr<render::linked_activity::LinkedActivityRenderCapture>* activity_capture=nullptr)
 {
     // Never leak a prior successful witness across a rejected render.
     if(stage_witness)*stage_witness={};
+    if(activity_capture)activity_capture->reset();
     using R=core::Result<render::RenderResult>;
     const auto fail=[](const char* reason){
         return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
@@ -195,13 +198,15 @@ render_restored_m12_full_native_pcm_once(
         return fail("L3_M12_REPLAY_INVALID_PREPARED_OR_PLAN");
     const auto run=[&](const audio::AudioBufferView& input,
                        const dsp::ProcessingChain& chain,
-                       std::span<const dsp::ModuleExecutionBinding> bindings)
+                       std::span<const dsp::ModuleExecutionBinding> bindings,
+                       render::LinkedDspActivitySinkProvider* activity=nullptr)
                        ->R {
         if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
         auto request=render::RenderRequest::create(
             input,input.absolute_range(),chain,
             std::vector<dsp::ModuleExecutionBinding>{
-                bindings.begin(),bindings.end()},maximum_block_frames);
+                bindings.begin(),bindings.end()},maximum_block_frames,
+                std::nullopt,std::nullopt,activity);
         if(!request)return R::failure(*request.error());
         auto pcm=render::render_preview(*request.value(),*plan.registry_owner);
         if(!pcm)return pcm;
@@ -218,8 +223,23 @@ render_restored_m12_full_native_pcm_once(
     };
     auto manual=run(original,plan.manual_prefix,plan.manual_bindings);
     if(!manual)return manual;
+    std::unique_ptr<render::linked_activity::LinkedActivityRenderCapture> capture;
+    if(activity_capture) {
+        try {
+            capture=std::make_unique<render::linked_activity::LinkedActivityRenderCapture>(
+                plan.reference_linked,
+                static_cast<std::uint32_t>(original.format().sample_rate().value()),
+                static_cast<std::uint64_t>(original.frame_count().value()));
+        } catch(...) { /* optional observation, never fatal to PCM */ }
+    }
+    const auto seal=[&] {
+        if(capture&&activity_capture) {
+            capture->seal_after_success();
+            *activity_capture=std::move(capture);
+        }
+    };
     auto linked=run(manual.value()->view(),plan.reference_linked,
-                    plan.reference_bindings);
+                    plan.reference_bindings,capture.get());
     if(!linked)return linked;
     if(!plan.terminal_p2) {
         M12NativeStageExecutionWitness observed{
@@ -228,6 +248,7 @@ render_restored_m12_full_native_pcm_once(
             return fail("L3_M12_NATIVE_STAGE_EXECUTION_WITNESS_STALE");
         if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
         if(stage_witness)*stage_witness=std::move(observed);
+        seal();
         return linked;
     }
     auto final=run(linked.value()->view(),*plan.terminal_p2,
@@ -240,6 +261,7 @@ render_restored_m12_full_native_pcm_once(
         return fail("L3_M12_NATIVE_STAGE_EXECUTION_WITNESS_STALE");
     if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
     if(stage_witness)*stage_witness=std::move(observed);
+    seal();
     return final;
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
