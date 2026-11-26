@@ -60,6 +60,16 @@ jobs:
           if (!$tag) { throw 'L3_RATE_INVALID_MATRIX_VALUE' }
           $pattern='PASS\s+:.*::nativeMeasuredWinnerUsesRealQtM12AndM13\(' + [regex]::Escape($tag) + '\)'
           if (!(Select-String -Path $report -Pattern $pattern -Quiet)) { throw 'L3_RATE_EXPECTED_ROW_NOT_PASSED' }
+          # Explicitly qualify the real linked editor/capture/Activity carrier
+          # at the same source rate, not only the native search lifecycle.
+          $activityReport=Join-Path $env:RUNNER_TEMP "l3-rate-$env:RGSML_L3_E2E_RATE-activity.txt"
+          $row="m12RealProductAtomicMaterializationUndoRedoAndSaveAs:$tag"
+          & $exe.FullName $row -o -,txt -o "$activityReport,txt"
+          $activityExit=$LASTEXITCODE
+          if (!(Test-Path $activityReport)) { throw 'L3_RATE_ACTIVITY_REPORT_MISSING' }
+          if ($activityExit -ne 0) { throw 'L3_RATE_ACTIVITY_FAILURE' }
+          $activityPattern='PASS\s+:.*::m12RealProductAtomicMaterializationUndoRedoAndSaveAs\(' + [regex]::Escape($tag) + '\)'
+          if (!(Select-String -Path $activityReport -Pattern $activityPattern -Quiet)) { throw 'L3_RATE_ACTIVITY_ROW_NOT_PASSED' }
       - name: Retain native qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,6 +77,7 @@ jobs:
           name: l3-rate-${{ matrix.rate }}-report
           path: |
             ${{ runner.temp }}/l3-rate-${{ matrix.rate }}.txt
+            ${{ runner.temp }}/l3-rate-${{ matrix.rate }}-activity.txt
             ${{ runner.temp }}/l3-rate-${{ matrix.rate }}-provenance.txt
             ${{ runner.temp }}/l3-six-rate-build.log
           if-no-files-found: warn
