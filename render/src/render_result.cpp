@@ -1,4 +1,5 @@
 #include <rgsml/render/render_result.hpp>
+#include <rgsml/render/linked_activity_render_capture.hpp>
 
 #include <rgsml/core/error.hpp>
 
@@ -22,6 +23,37 @@ RenderResult::RenderResult(
     , compressor_telemetry_sidecar_(std::move(compressor_telemetry_sidecar))
     , stereo_ms_stage_output_sidecars_(std::move(stereo_ms_stage_output_sidecars))
 {
+}
+
+bool RenderResult::adopt_linked_activity(
+    std::unique_ptr<linked_activity::LinkedActivityRenderCapture> capture,
+    std::string_view exact_plan_checksum) noexcept
+{
+    if(linked_activity_sidecar_||!capture||!capture->sealed()||
+       exact_plan_checksum.empty()||
+       frame_domain_id_!=audio::FrameDomainId::SOURCE_PROCESSING_RATE||
+       view().absolute_start_frame().value()!=0||
+       capture->frame_count()!=static_cast<std::uint64_t>(view().frame_count().value())||
+       capture->sample_rate_hz()!=static_cast<std::uint32_t>(view().format().sample_rate().value()))
+        return false;
+    try {
+        linked_activity_sidecar_.emplace(LinkedDspActivitySidecar{
+            std::shared_ptr<const linked_activity::LinkedActivityRenderCapture>{std::move(capture)},
+            std::string{exact_plan_checksum},std::nullopt});
+        return true;
+    } catch(...) {return false;}
+}
+
+void RenderResult::bind_linked_activity_realization_id(core::RealizationId id) noexcept
+{
+    if(!linked_activity_sidecar_)return;
+    auto& evidence=*linked_activity_sidecar_;
+    if(id.value==0||(evidence.realization_id&&*evidence.realization_id!=id)) {
+        // Optional evidence never prevents a legitimate PCM publication.
+        linked_activity_sidecar_.reset();
+        return;
+    }
+    evidence.realization_id=id;
 }
 
 const rgsml::audio::AudioBuffer& RenderResult::buffer() const noexcept
