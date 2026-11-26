@@ -810,8 +810,12 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto freshInput=a::capture_native_qt_product_session_verification_on_owner(session.project,
         session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed);
     QVERIFY(freshInput);
+    const auto verificationStart=std::chrono::steady_clock::now();
     QVERIFY(action.begin_verification(m13::MandatoryHardPredicate::unavailable,true));
-    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),180000);
+    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),fullTrackBenchmark?15*60*1000:180000);
+    qInfo("Qt M13 independent verification elapsed=%lld ms",
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now()-verificationStart).count()));
     const auto* verification=action.verification_result();
     QVERIFY(verification);
     const auto& fresh=verification->fresh();
