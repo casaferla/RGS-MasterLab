@@ -984,6 +984,18 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         clearedProject.value()->document().chains.end(),[](const auto& chain){
             return chain.segment=="REF_LINKED";
         }));
+    session.project.openProject(QUrl::fromLocalFile(cleared));
+    QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());
+    QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
+    const auto renewedPlan=uuidOf("e6000000-0000-4000-8000-000000000008");
+    const auto renewed=a::begin_native_qt_product_session_on_owner(session.project,
+        controllers,fanout,session.selector,session.gold,amount,requested,0.0,*block.value(),
+        renewedPlan,uuidOf("e6000000-0000-4000-8000-000000000009"),
+        uuidOf("e6000000-0000-4000-8000-00000000000a"),true);
+    QVERIFY2(renewed,renewed?"":renewed.error()->message().c_str());
+    QVERIFY(renewed.value()->controller_id==controllerId);
+    QVERIFY(renewed.value()->linked_chain_id==linkedId);
+    QCOMPARE(renewed.value()->capture.linked_revision,UINT64_C(4));
     session.project.openProject(QUrl::fromLocalFile(suspendedPath));
     QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());
     const auto restoredSuspension=session.previewController->private_m12_product_preview_ticket();
