@@ -1,0 +1,48 @@
+name: L3 six-rate real Product qualification (nonrelease)
+on:
+  push:
+    branches:
+      - staging/l3-six-rate-qualification-20261126
+permissions:
+  contents: read
+jobs:
+  product-rate:
+    strategy:
+      fail-fast: false
+      matrix:
+        rate: [44100, 48000, 88200, 96000, 176400, 192000]
+    runs-on: windows-2022
+    timeout-minutes: 55
+    env:
+      RGSML_L3_E2E_RATE: ${{ matrix.rate }}
+      QTEST_FUNCTION_TIMEOUT: 900000
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install Qt
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          if ($LASTEXITCODE -ne 0) { throw 'L3_QT_DEP_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'L3_QT_FAILED' }
+      - name: Build actual Product session test
+        shell: pwsh
+        run: |
+          $log=Join-Path $env:RUNNER_TEMP 'l3-six-rate-build.log'
+          cmake -S . -B build-l3 -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64" *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 95; throw 'L3_RATE_CONFIGURE_FAILED' }
+          cmake --build build-l3 --config Release --parallel 4 --target rgsml_project_session_tests *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 95; throw 'L3_RATE_BUILD_FAILED' }
+      - name: Run native Product lifecycle at exact rate
+        shell: pwsh
+        run: |
+          $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
+          $exe=Get-ChildItem build-l3 -Filter rgsml_project_session_tests.exe -Recurse
+          if (@($exe).Count -ne 1) { throw 'L3_RATE_TEST_EXECUTABLE_NOT_UNIQUE' }
+          & $exe.FullName nativeMeasuredWinnerUsesRealQtM12AndM13 -o -,txt
+          if ($LASTEXITCODE -ne 0) { throw 'L3_RATE_REAL_PRODUCT_FAILURE' }
