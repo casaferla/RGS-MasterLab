@@ -727,7 +727,8 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         static_cast<unsigned>(nativeRateHz),
         static_cast<long long>(*searchPerformance.first_admissible_ms),
         searchPerformance.attempted,searchPerformance.completed,
-        searchPerformance.failed,searchPerformance.cache_hits);
+        searchPerformance.failed,searchPerformance.cache_hits,
+        searchPerformance.evaluator_preflight_rejections,searchPerformance.budget_refusals);
     QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
         session.gold,*captured));
     const auto built=a::review_native_qt_product_session_on_owner(session.project,controllers,fanout,
