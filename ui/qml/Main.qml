@@ -2059,14 +2059,15 @@ ApplicationWindow {
                                                     Text {
                                                         id: goldReferenceStatus
                                                         objectName: "goldReferenceStatus"
-                                                        text: goldSelection.hasGold ? ("REFERENCE  " + goldSelection.displayName) : "NO REFERENCE LOADED"
+                                                        text: goldSelection.hasGold ? ("REFERENCE\n" + goldSelection.displayName) : "NO REFERENCE\nLOADED"
                                                         color: goldSelection.hasGold ? root.textPrimary : "#586D7C"
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 10
                                                         font.weight: Font.DemiBold
                                                         elide: Text.ElideRight
                                                         maximumLineCount: 2
-                                                        wrapMode: Text.WrapAnywhere
+                                                        wrapMode: Text.NoWrap
+                                                        verticalAlignment: Text.AlignVCenter
                                                         Layout.fillHeight: true
                                                         Layout.fillWidth: true
                                                     }
@@ -2393,7 +2394,7 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 28
                                                 color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "RESTORATION · MOCKUP"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
+                                                Text { anchors.centerIn: parent; text: "RESTORE · MOCKUP"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
                                             }
                                         }
 
@@ -2527,10 +2528,18 @@ ApplicationWindow {
                                                 Text {
                                                     Layout.fillWidth: true
                                                     Layout.preferredHeight: 12
-                                                    text: "Minimum PCM estimate · CPU not qualified · refresh before allocation"
+                                                    text: "PCM estimate · CPU not qualified"
                                                     font.pixelSize: 8
                                                     color: "#8FAAB9"
                                                     elide: Text.ElideRight
+                                                    Accessible.description: "Minimum PCM estimate; CPU not qualified; refresh before allocation"
+                                                    StudioTooltipDwell {
+                                                        id: prepareEstimateDwell
+                                                        anchors.fill: parent
+                                                    }
+                                                    ToolTip.text: "Minimum PCM estimate · CPU not qualified · refresh before allocation"
+                                                    ToolTip.visible: prepareEstimateDwell.ready
+                                                    ToolTip.delay: 0
                                                 }
                                             }
                                         }
