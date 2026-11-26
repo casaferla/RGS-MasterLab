@@ -787,6 +787,13 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(replaceAction.review_diff());
     QVERIFY(!replaceAction.review_diff()->nodes.empty());
     QVERIFY(!replaceAction.review_diff()->authorizes_commit());
+    const auto reviewMetrics=replaceAction.review_metrics();
+    QVERIFY(reviewMetrics);
+    QCOMPARE(reviewMetrics->independent_ceiling_db_tp,0.0);
+    QVERIFY(reviewMetrics->exact_m16_linear_peak>0.0&&reviewMetrics->exact_m16_linear_peak<=1.0);
+    QVERIFY(reviewMetrics->attempted>0U);
+    QVERIFY(!replaceAction.begin(*replacement.value(),allocate));
+    QVERIFY(replaceAction.phase()==Action::Phase::candidate_ready);
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==priorTicket);
     QVERIFY2(replaceAction.adopt(),replaceAction.error().c_str());
     const auto replacementTicket=session.previewController->private_m12_product_preview_ticket();
@@ -994,6 +1001,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     }
     QVERIFY2(clearAction.phase()==Action::Phase::no_correction_prior_retained,clearAction.error().c_str());
     QVERIFY(clearAction.can_adopt());
+    const auto fixedReview=clearAction.review_metrics();
+    QVERIFY(fixedReview);
+    QCOMPARE(fixedReview->attempted,0U);
+    QVERIFY(fixedReview->exact_m16_linear_peak>0.0&&fixedReview->exact_m16_linear_peak<=1.0);
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
     clearAction.cancel();
     QVERIFY(clearAction.phase()==Action::Phase::kept_current);
