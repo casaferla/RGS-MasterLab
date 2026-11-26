@@ -1735,6 +1735,8 @@ ProjectSessionViewModel::capture_private_m13_fresh_postmaterialization_probe(
        !projectId_||!sourceId_||!referenceId_||
        !std::isfinite(independent_m16_safety_ceiling_db_tp))
         return fail("L3_M13_PRODUCT_FRESH_NO_CURRENT_M12_OWNER");
+    if(private_m12_match_state()!=M12CurrentMatchState::active)
+        return fail("L3_M13_PRODUCT_FRESH_MATCH_NOT_ACTIVE");
     M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
     // A read-only capture must also respect an active M18 worker's
     // physical Project mutation epoch. The lease ends with this method;
@@ -1807,7 +1809,8 @@ bool ProjectSessionViewModel::private_m13_fresh_probe_still_current(
        !source_||!source_->source_resource()||
        !gold_||!gold_->gold_resource()||
        !previewController_||!masteringChainState_||
-       !std::isfinite(completed_request.ceilingDbTp_))
+       !std::isfinite(completed_request.ceilingDbTp_)||
+       private_m12_match_state()!=M12CurrentMatchState::active)
         return false;
     M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
     const auto lease=begin_m18_project_save();
