@@ -5958,6 +5958,20 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QCOMPARE(dynamics.value("release").toDouble(),nativeBand.control.release_ms);
     QVERIFY(presentedBand.value("qApplicable").toBool());
     QVERIFY(!presentedBand.contains("shelfSlope"));
+    const auto response=dynamicAdapter.linkedBandResponse(0);
+    QVERIFY(nativeBand.enabled);
+    QCOMPARE(response.size(),qsizetype{257});
+    QCOMPARE(response.front().toMap().value("frequency").toDouble(),20.0);
+    const double upper=std::min(20000.0,0.45*static_cast<double>(sampleRateHz));
+    QVERIFY(std::abs(response.back().toMap().value("frequency").toDouble()-upper)<1e-8);
+    for(const auto& point:response) {
+        const auto map=point.toMap();
+        QVERIFY(std::isfinite(map.value("phaseRad").toDouble()));
+        QVERIFY(std::abs(map.value("magnitudeDb").toDouble())<1e-8);
+    }
+    QVERIFY(dynamicAdapter.linkedBandResponse(-1).isEmpty());
+    QVERIFY(dynamicAdapter.linkedBandResponse(99).isEmpty());
+    QVERIFY(transientAdapter.linkedBandResponse(0).isEmpty());
     QVERIFY(!app::l3_automatch::inspect_current_linked_editor(
         *session.previewController,{},session.masteringChainState->chain(),
         bindings,winningNodes[1].allocated_instance_id));
