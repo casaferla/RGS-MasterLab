@@ -4,6 +4,7 @@
 #include "l3_native_qt_product_policy.hpp"
 #include "l3_native_qt_search_handoff.hpp"
 #include "m18_product_complete_binding.hpp"
+#include "l3_m12_retained_controller.hpp"
 #include <set>
 #include <limits>
 
@@ -44,7 +45,18 @@ begin_native_qt_product_session_on_owner(
         return c.stage=="MASTER"&&c.segment=="REF_LINKED";
     });
     const bool replacing=prior!=doc.chains.end();
+    const auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    if(!metadata.isObject())return fail("L3_PRODUCT_SESSION_METADATA_INVALID");
+    const auto retained=m12_frozen::decode_m12_retained_controller(metadata.object());
+    if(metadata.object().contains(QStringLiteral("retainedController"))&&!retained)
+        return fail("L3_PRODUCT_SESSION_RETAINED_CONTROLLER_INVALID");
     std::uint64_t revision=1U;
+    if(retained&&!replacing) {
+        if(retained->last_removed_revision==std::numeric_limits<std::uint64_t>::max())
+            return fail("L3_PRODUCT_SESSION_LINKED_REVISION_EXHAUSTED");
+        controller_id=retained->controller_id;linked_chain_id=retained->linked_chain_id;
+        revision=retained->last_removed_revision+1U;
+    }
     if(replacing) {
         if(!allow_existing_replacement)
             return fail("L3_PRODUCT_SESSION_EXISTING_LINKED_REQUIRES_REPLACEMENT");
@@ -88,6 +100,10 @@ begin_native_qt_product_session_on_owner(
            exact.persisted_linked_chain_id!=prior->chainId||
            exact.exact_native_chain.revision()!=prior->revision)
             return fail("L3_PRODUCT_SESSION_PRIOR_OWNER_MISMATCH");
+        if(retained&&(retained->controller_id!=exact.controller_id||
+           retained->linked_chain_id!=exact.persisted_linked_chain_id||
+           retained->last_removed_revision>=prior->revision))
+            return fail("L3_PRODUCT_SESSION_RETAINED_CONTROLLER_CONFLICT");
         controller_id=exact.controller_id;
         linked_chain_id=exact.persisted_linked_chain_id;
         used.insert(controller_id);
