@@ -1,5 +1,6 @@
 #include "project_session_view_model.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
+#include "internal/l3_linked_editor_snapshot.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
