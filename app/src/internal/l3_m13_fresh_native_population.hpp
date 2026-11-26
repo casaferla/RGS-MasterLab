@@ -239,6 +239,7 @@ compare_m13_accepted_and_fresh_native_proximity(
             z=std::atanh(std::clamp(x,-1.0+1e-6,1.0-1e-6));
         }
         break;
+    default:return false;
     }
     return std::isfinite(z)&&z==*component.current_candidate_z;
 }
