@@ -90,10 +90,12 @@ public:
             return out;
         const auto start=audible_frame>window_frames
             ?audible_frame-window_frames:0U;
-        for(const auto& b:buckets_)
-            if(b.frame_end_exclusive>start &&
-               b.frame_end_exclusive<=audible_frame)
-                out.push_back(b);
+        const auto first=std::upper_bound(buckets_.begin(),buckets_.end(),start,
+            [](std::uint64_t frame,const C01ActivityBucket& b) {
+                return frame<b.frame_end_exclusive;
+            });
+        for(auto it=first;it!=buckets_.end()&&it->frame_end_exclusive<=audible_frame;++it)
+            out.push_back(*it);
         return out;
     }
     [[nodiscard]] C01HistoryStatus status() const noexcept {return status_;}
