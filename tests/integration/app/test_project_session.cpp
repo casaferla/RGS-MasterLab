@@ -672,7 +672,12 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         policy.amount,policy.requested,0.1));
     unsigned next=1U;
     const auto allocate=[&](){
-        core::Uuid::Bytes bytes{};bytes[0]=0xd3;bytes[15]=static_cast<std::uint8_t>(next++);
+        core::Uuid::Bytes bytes{};bytes[0]=0xd3;
+        const auto serial=next++;
+        bytes[12]=static_cast<std::uint8_t>(serial>>24U);
+        bytes[13]=static_cast<std::uint8_t>(serial>>16U);
+        bytes[14]=static_cast<std::uint8_t>(serial>>8U);
+        bytes[15]=static_cast<std::uint8_t>(serial);
         return core::Uuid{bytes};
     };
     std::atomic<bool> cancelled{true};
