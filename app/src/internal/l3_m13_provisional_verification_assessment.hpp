@@ -92,6 +92,7 @@ assess_provisional_m13_product_fresh_evidence(
     const bool correctFresh=source&&owner.replay&&
         fresh.matches_executed_request(request)&&
         fresh.logical_verification_evaluations==1U&&
+        &fresh.fresh_full_master_pcm.buffer()!=&source->buffer()&&
         fresh.fresh_full_master_pcm.view().absolute_range()==
             source->view().absolute_range()&&
         fresh.fresh_full_master_pcm.view().format()==
