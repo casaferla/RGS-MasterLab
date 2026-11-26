@@ -60,6 +60,7 @@ struct M13TwentySevenConformance final {
         if(!every_required_binding_complete||!every_required_binding_passed||
            required_components==0U||required_components>configured_components)
             return false;
+        std::size_t counted=0U,passed=0U;
         for(std::size_t i=0;i<rows.size();++i) {
             const auto& row=rows[i];
             const auto& binding=m07_frozen::kBindings[i];
