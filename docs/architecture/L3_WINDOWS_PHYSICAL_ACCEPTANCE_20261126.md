@@ -25,7 +25,7 @@ This checklist is for an isolated CI artifact, never a release approval. Keep th
 
 ## D. Full-track musical performance
 
-Use the local optional benchmark documented in L3_NATIVE_SEARCH_PERFORMANCE_EVIDENCE_20261126.md (same-rate stereo WAV pair; source 240–360 seconds). Keep audio local. Report wall time, first admissible latency, full search, independent M13 duration, physical evaluation ledger and numerical acceptance. A failed/no-correction result is not an accepted performance measurement. The 12-second controlled fixture does not predict music performance.
+Use the optional `benchmark` directory in the standalone package (same-rate stereo WAV pair; source 240–360 seconds). From the extracted folder, run `powershell -File .\benchmark\run_l3_local_music_benchmark.ps1 -SourceWav 'C:\Music\source.wav' -ReferenceWav 'C:\Music\reference.wav' -SampleRate 48000 -ReportDirectory '.\local-benchmark-reports'`. Change the paths and rate to the actual files. The package includes the matching native test executable and the performance-evidence notes; this is not a physical-device timing certification. Keep audio local. Report wall time, first admissible latency, full search, independent M13 duration, physical evaluation ledger and numerical acceptance. A failed/no-correction result is not an accepted performance measurement. The 12-second controlled fixture does not predict music performance.
 
 ## Result
 
