@@ -152,8 +152,15 @@ assess_provisional_m13_product_fresh_evidence(
     if(!features.every_required_binding_complete)
         state.mandatory_evidence_missing=true;
     output.actual_27_binding_population_attested=
-        features.every_required_binding_complete&&
-        features.every_required_binding_passed;
+        features.complete_passing_evidence();
+    if(features.every_required_binding_complete&&
+       features.every_required_binding_passed&&
+       !output.actual_27_binding_population_attested) {
+        state.evaluated_predicate_failed=true;
+        record(VerificationStage::input_integrity,
+            "VERIFICATION_ARTIFACT_INTEGRITY_FAILURE",
+            "/featureResults/summary",PredicateState::failed);
+    }
     for(std::size_t i=0;i<proximity.domains.size();++i) {
         const auto& domain=proximity.domains[i];
         if(domain.status==ProximityComparisonStatus::failed) {
