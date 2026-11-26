@@ -5925,6 +5925,38 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     tonalEvidence.exact_phase6_feature_dependency.clear();
     QVERIFY(compareT1().rows[0].outcome==M13Binding::unavailable);
     tonalEvidence.exact_phase6_feature_dependency="test-frozen-t1";
+    namespace m13contract=app::l3_automatch::m13_frozen;
+    namespace m07contract=app::l3_automatch::m07_frozen;
+    // Synthetic carrier-only contract test: not actual native evidence.
+    std::vector<m13contract::M13BindingNativeEvidence> canonicalBindings;
+    for(const auto& binding:m07contract::kBindings) {
+        m13contract::M13BindingNativeEvidence slot;
+        slot.binding_id=std::string(binding.binding_id);
+        slot.selected_source_feature_id=std::string(binding.source_feature_id);
+        slot.exact_phase6_feature_dependency="synthetic-contract-only";
+        slot.current_authoritative_source_and_config=true;
+        const std::size_t count=binding.component_share==
+            m07contract::ComponentShare::thirds?3U:
+            binding.component_share==m07contract::ComponentShare::configured_n?2U:1U;
+        for(std::size_t i=0;i<count;++i) {
+            auto component=band;
+            component.expected_selector=component.fresh_selector=
+                "selector-"+std::to_string(i);
+            component.predicted_native=component.actual_fresh_native=0.5;
+            slot.configured.push_back(std::move(component));
+        }
+        canonicalBindings.push_back(std::move(slot));
+    }
+    const auto compareBindings=[](const auto& input) {
+        return m13contract::compare_m13_frozen_twenty_seven_native_bindings(input);
+    };
+    const auto allBindings=compareBindings(canonicalBindings);
+    QVERIFY(allBindings.every_required_binding_complete);
+    QVERIFY(allBindings.every_required_binding_passed);
+    QVERIFY(!allBindings.authorizes_release_verified());
+    QCOMPARE(allBindings.configured_components,allBindings.required_components);
+    for(const auto& row:allBindings.rows)
+        QVERIFY(row.outcome==M13Binding::passed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
