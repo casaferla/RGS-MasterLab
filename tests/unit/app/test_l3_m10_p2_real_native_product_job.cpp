@@ -198,6 +198,16 @@ void P2RealNativeProductTest::nativePerformanceNeedsIndependentM16ForFirstAdmiss
     QCOMPARE(perf.failed,1U);
     QCOMPARE(perf.cache_hits,2U);
     QVERIFY(perf.counts_reconciled());
+    perf.attempted=m::kMaxRenderAnalyzeAttempts;
+    perf.completed=perf.attempted;
+    perf.failed=0U;
+    QVERIFY(perf.counts_reconciled());
+    ++perf.attempted;
+    ++perf.completed;
+    QVERIFY(!perf.counts_reconciled());
+    perf.attempted=1U;
+    perf.completed=2U;
+    QVERIFY(!perf.counts_reconciled());
 }
 void P2RealNativeProductTest::nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate() {
     namespace m09=a::m09_frozen;
