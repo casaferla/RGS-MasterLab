@@ -128,7 +128,7 @@ assess_provisional_m13_product_fresh_evidence(
         10.0,request.frozen_independent_m16_ceiling_db_tp()/20.0);
     const double measured=fresh.fresh_m16.global_linear_peak();
     if(!std::isfinite(maxAllowed)||maxAllowed<=0.0||
-       !std::isfinite(measured)||measured>maxAllowed) {
+       !std::isfinite(measured)||measured<0.0||measured>maxAllowed) {
         state.evaluated_predicate_failed=true;
         record(VerificationStage::safety,"HARD_SAFETY_VIOLATION",
             "/safetyResults/freshM16",PredicateState::failed);
