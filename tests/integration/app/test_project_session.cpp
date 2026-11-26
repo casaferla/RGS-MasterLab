@@ -795,6 +795,17 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(replacementTicket->replay->controller_id==controllerId);
     QVERIFY(replacementTicket->replay->linked_chain_id==linkedId);
     QCOMPARE(replacementTicket->replay->reference_linked.revision(),UINT64_C(2));
+    const auto stableGain=a::m09_frozen::native_controller_role_semantic_id(
+        controllerId,a::m09_frozen::IntentRole::loudness_gain);
+    QVERIFY(stableGain);
+    const auto oldLinked=priorTicket->replay->reference_linked.instances();
+    const auto newLinked=replacementTicket->replay->reference_linked.instances();
+    const auto oldGain=std::find_if(oldLinked.begin(),oldLinked.end(),
+        [&](const auto& n){return n.semantic_node_id()==stableGain;});
+    const auto newGain=std::find_if(newLinked.begin(),newLinked.end(),
+        [&](const auto& n){return n.semantic_node_id()==stableGain;});
+    QVERIFY(oldGain!=oldLinked.end()&&newGain!=newLinked.end());
+    QVERIFY(oldGain->instance_id()==newGain->instance_id());
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
     QVERIFY(session.project.can_undo_private_m12_materialization());
     QVERIFY(!session.project.can_redo_private_m12_materialization());
@@ -860,6 +871,11 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto thirdTicket=session.previewController->private_m12_product_preview_ticket();
     QVERIFY(thirdTicket&&thirdTicket->replay&&thirdTicket!=reopenedTicket);
     QVERIFY(thirdTicket->replay->plan_id==thirdPlanId);
+    const auto thirdNodes=thirdTicket->replay->reference_linked.instances();
+    const auto thirdGain=std::find_if(thirdNodes.begin(),thirdNodes.end(),
+        [&](const auto& n){return n.semantic_node_id()==stableGain;});
+    QVERIFY(thirdGain!=thirdNodes.end());
+    QVERIFY(thirdGain->instance_id()==oldGain->instance_id());
     QCOMPARE(thirdTicket->replay->reference_linked.revision(),UINT64_C(3));
     QVERIFY(session.project.undo_private_m12_materialization());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==reopenedTicket);
