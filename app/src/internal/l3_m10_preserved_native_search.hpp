@@ -240,6 +240,7 @@ template<class ResolveOriginalTriple>
             },cancellation,prefix.fixed);
         return score.as_exact_cache_evidence();
     });
+    if(env.performance)env.performance->observe(evaluated,NativeSearchPerformance::Clock::now());
     if(env.owned_p2_counts&&std::any_of(graph.linked.instances().begin(),graph.linked.instances().end(),
         [](const auto& n){return n.active()&&n.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";})) {
         if(evaluated.kind==EvaluationKind::attempted_complete||
