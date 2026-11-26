@@ -6934,6 +6934,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         *importedTicket->replay,*importedPrepared,
         *core::FrameCount::create(4096).value());
     QVERIFY(oracle);
+    QVERIFY(!oracle.value()->linked_activity_sidecar());
+    const auto& activity=importedProcessed->linked_activity_sidecar();
+    QVERIFY(activity&&activity->capture);
+    QVERIFY(!activity->realization_id); // this fixture publisher is not the selector
+    QCOMPARE(activity->exact_plan_checksum,importedTicket->replay->exact_plan_checksum);
+    QVERIFY(activity->capture->sealed());
+    QCOMPARE(activity->capture->revision(),importedTicket->replay->reference_linked.revision());
+    QCOMPARE(activity->capture->sample_rate_hz(),sampleRateHz);
+    QCOMPARE(activity->capture->frame_count(),
+        static_cast<std::uint64_t>(importedProcessed->view().frame_count().value()));
     const auto actualView=importedProcessed->view();
     const auto oracleView=oracle.value()->view();
     QCOMPARE(actualView.format(),oracleView.format());
