@@ -66,10 +66,14 @@ Item {
                 ctx.setLineDash([3,4]);ctx.lineWidth=1
                 ctx.beginPath();ctx.moveTo(left,y0);ctx.lineTo(right,y0)
                 ctx.stroke();ctx.setLineDash([])
-                const hue=root.bandHues[b]
+                const summaries=root.activityViewModel.bandSummaries || []
+                const id=buckets[0].bands[b].bandId
+                const bandIndex=summaries.findIndex(entry => entry.bandId === id)
+                if(bandIndex<0) continue
+                const hue=root.bandHues[bandIndex]
                 ctx.fillStyle=hue
                 ctx.font="11px Consolas"
-                ctx.fillText("B"+(b+1),12,y0+4)
+                ctx.fillText("B"+(bandIndex+1),12,y0+4)
                 ctx.fillStyle="rgba(114,153,174,0.75)"
                 ctx.font="9px Consolas"
                 ctx.fillText("0 dB",34,y0+3)
