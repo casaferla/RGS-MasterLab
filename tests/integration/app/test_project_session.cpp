@@ -3,6 +3,7 @@
 #include "internal/l3_linked_editor_snapshot.hpp"
 #include "internal/l3_linked_editor_parameter_projection.hpp"
 #include "internal/l3_linked_dsp_module_adapter.hpp"
+#include <rgsml/render/linked_activity_playback_projection.hpp>
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
@@ -7023,6 +7024,47 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(selectedPcm&&selectedPcm->linked_activity_sidecar());
     QVERIFY(selectedPcm->linked_activity_sidecar()->realization_id==
         activityPublisher.selector.processed_realization_id());
+    // Pure playback projection test: the explicit snapshot below is a
+    // controlled test witness, not a physical WASAPI listening claim.
+    namespace la=render::linked_activity;
+    const auto acceptedId=activityPublisher.selector.processed_realization_id();
+    QVERIFY(acceptedId);
+    const la::LinkedActivityPlaybackContext playbackContext{
+        *acceptedId,importedTicket->replay->exact_plan_checksum,
+        importedTicket->replay->reference_linked.revision(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,sampleRateHz,true,true};
+    core::PlaybackSnapshot audible;
+    audible.state=core::PlaybackState::PLAYING;
+    audible.position=core::FrameIndex{selectedPcm->view().frame_count().value()};
+    audible.duration=selectedPcm->view().frame_count();
+    audible.audibleRealization.phase=core::AudibleHandoffPhase::NEW;
+    audible.audibleRealization.realizationId=acceptedId;
+    const auto activeWindow=la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[0].allocated_instance_id);
+    QVERIFY(activeWindow.available()&&!activeWindow.transient.empty());
+    QVERIFY(activeWindow.dynamic.empty());
+    QVERIFY(!activeWindow.paused);
+    audible.state=core::PlaybackState::PAUSED;
+    const auto pausedWindow=la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[1].allocated_instance_id);
+    QVERIFY(pausedWindow.available()&&pausedWindow.paused);
+    QVERIFY(!pausedWindow.dynamic.empty()&&pausedWindow.transient.empty());
+    audible.state=core::PlaybackState::STOPPED;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[1].allocated_instance_id).available());
+    audible.state=core::PlaybackState::PLAYING;
+    audible.audibleRealization.phase=core::AudibleHandoffPhase::TRANSITION;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[0].allocated_instance_id).available());
+    audible.audibleRealization.phase=core::AudibleHandoffPhase::NEW;
+    auto wrongClock=playbackContext;
+    wrongClock.playback_rate_hz=22050;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,wrongClock,
+        audible,winningNodes[0].allocated_instance_id).available());
+    wrongClock=playbackContext;
+    wrongClock.playback_domain=audio::FrameDomainId::OUTPUT_RATE;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,wrongClock,
+        audible,winningNodes[0].allocated_instance_id).available());
     const auto importedCopy=dir.filePath(QStringLiteral(
         "m12-reopened-native-identical.rgsml"));
     imported.project.saveProjectAs(QUrl::fromLocalFile(importedCopy));
