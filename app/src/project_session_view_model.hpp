@@ -329,6 +329,10 @@ private:
     // This binds the actual graph to its current ticket without claiming
     // a NEW M12 materialization receipt or fresh numerical verification.
     std::optional<project::ProjectSnapshot> m12ExactReplayReadback_;
+    // Never an executable or resumable ticket after a dependency change.
+    // Retains the prior exact graph identity for a state-only stale rebind.
+    std::shared_ptr<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>
+        m12RetiredReplayIdentity_;
     std::optional<core::Uuid> projectId_;
     std::optional<core::Uuid> sourceId_;
     std::optional<core::Uuid> goldId_;

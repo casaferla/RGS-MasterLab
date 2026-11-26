@@ -673,8 +673,15 @@ void ProjectSessionViewModel::on_source_changed()
           !lastSource_->same_resource_identity(source->reference()))
         :lastSource_.has_value();
     if(resourceChanged&&previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket())
+       previewController_->has_private_m12_product_preview_ticket()) {
+        if(!isCommittingProjectOpen_&&opened_) {
+            const auto prior=previewController_->private_m12_product_preview_ticket();
+            if(prior&&prior->replay&&l3_automatch::m12_frozen::
+                m12_reopened_persisted_replay_matches_exact_ticket(opened_->document(),*prior->replay))
+                m12RetiredReplayIdentity_=prior;
+        }
         previewController_->set_private_m12_product_preview_ticket({});
+    }
     if(resourceChanged) {
         ++m12ProductOwnershipEpoch_;
         m12UndoHistory_.clear();
@@ -697,8 +704,15 @@ void ProjectSessionViewModel::on_gold_changed()
           !lastGold_->same_resource_identity(gold->reference()))
         :lastGold_.has_value();
     if(resourceChanged&&previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket())
+       previewController_->has_private_m12_product_preview_ticket()) {
+        if(!isCommittingProjectOpen_&&opened_) {
+            const auto prior=previewController_->private_m12_product_preview_ticket();
+            if(prior&&prior->replay&&l3_automatch::m12_frozen::
+                m12_reopened_persisted_replay_matches_exact_ticket(opened_->document(),*prior->replay))
+                m12RetiredReplayIdentity_=prior;
+        }
         previewController_->set_private_m12_product_preview_ticket({});
+    }
     if(resourceChanged) {
         ++m12ProductOwnershipEpoch_;
         m12UndoHistory_.clear();
@@ -1457,6 +1471,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     m12UndoHistory_.clear();
     m12RedoHistory_.clear();
     m12ExactReplayReadback_.reset();
+    m12RetiredReplayIdentity_.reset();
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
