@@ -713,6 +713,16 @@ completeFreshNativeTwentySevenBindingComparison()
         invalid.rows[1].component_comparisons[0].allowed_bound.reset();
         QVERIFY(!invalid.complete_passing_evidence());
     }
+    {
+        auto invalid=comparison;
+        invalid.rows[1].component_comparisons[0].absolute_delta=-0.01;
+        QVERIFY(!invalid.complete_passing_evidence());
+        invalid.rows[1].component_comparisons[0].absolute_delta=
+            std::numeric_limits<double>::infinity();
+        QVERIFY(!invalid.complete_passing_evidence());
+        invalid.rows[1].component_comparisons[0].absolute_delta=100.0;
+        QVERIFY(!invalid.complete_passing_evidence());
+    }
     all[0].configured[0].actual_fresh_native=0.508;
     comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
     QVERIFY(!comparison.every_required_binding_passed);
