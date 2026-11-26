@@ -737,7 +737,9 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY2(completed->result.search.status==a::m09_frozen::NativeProductSearchStatus::measured_candidate,
         "ordinary real Qt AutoMatch did not produce a measured winner");
     QVERIFY(completed->result.search.winning_graph&&completed->result.search.refinement);
-    qInfo("Qt physical fixture 12s Fs=%u: originals=%lld ms fixed=%lld ms seeds=%lld ms search=%lld ms attempts=%u",
+    qInfo("Qt physical %s duration=%.3f s Fs=%u: originals=%lld ms fixed=%lld ms seeds=%lld ms search=%lld ms attempts=%u",
+        fullTrackBenchmark?"music benchmark":"controlled fixture",
+        static_cast<double>(benchmarkSourceFrames)/static_cast<double>(nativeRateHz),
         static_cast<unsigned>(nativeRateHz),static_cast<long long>(completed->original_pair_ms),static_cast<long long>(completed->result.timing.fixed_ms),
         static_cast<long long>(completed->result.timing.seed_ms),static_cast<long long>(completed->result.timing.search_ms),
         completed->result.search.refinement->total_attempted);
