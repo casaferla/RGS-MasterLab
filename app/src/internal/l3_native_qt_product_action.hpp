@@ -2,6 +2,7 @@
 // Owner-thread action; only immutable input and cancellation cross threads.
 // Search completion never applies a graph. Adoption is a separate command.
 #include "l3_native_qt_product_session.hpp"
+#include "l3_m12_review_diff.hpp"
 #include <chrono>
 #include <future>
 
@@ -41,6 +42,9 @@ public:
     [[nodiscard]] const m12_frozen::AcceptedPlanAndOwner* reviewed()const noexcept {
         return reviewed_?&*reviewed_:nullptr;
     }
+    [[nodiscard]] const m12_frozen::M12ReviewDiff* review_diff()const noexcept {
+        return review_diff_?&*review_diff_:nullptr;
+    }
     [[nodiscard]] const Completion* verification_result()const noexcept {
         return verification_result_?&*verification_result_:nullptr;
     }
@@ -59,7 +63,7 @@ public:
                 return run_native_qt_product_session_worker(*input,std::move(allocate),cancel.get());
             });
             operation_=std::move(input);cancel_=std::move(cancel);
-            completed_.reset();reviewed_.reset();diagnostic_.reset();verification_result_.reset();
+            completed_.reset();reviewed_.reset();review_diff_.reset();diagnostic_.reset();verification_result_.reset();
             verification_owner_.reset();
             search_=std::move(task);phase_=Phase::searching;
             return true;
@@ -72,7 +76,7 @@ public:
             phase_=Phase::cancelling;
         }else if(can_adopt()) {
             const bool keep=replacing();
-            completed_.reset();reviewed_.reset();operation_.reset();
+            completed_.reset();reviewed_.reset();review_diff_.reset();operation_.reset();
             phase_=keep?Phase::kept_current:Phase::cancelled;
         }
     }
@@ -101,7 +105,7 @@ public:
     // action's candidate and diagnostic, not the newly restored ticket.
     [[nodiscard]] bool retire_after_history_transition() {
         if(!owner()||busy()||can_adopt())return false;
-        completed_.reset();reviewed_.reset();operation_.reset();
+        completed_.reset();reviewed_.reset();review_diff_.reset();operation_.reset();
         diagnostic_.reset();verification_result_.reset();verification_owner_.reset();
         cancel_.reset();error_.clear();phase_=Phase::idle;
         return true;
@@ -141,6 +145,11 @@ public:
                         if(native_qt_fixed_only_no_correction(*operation_,done)) {
                             const bool zero=native_qt_zero_effective_amount(*operation_);
                             completed_.emplace(std::move(done));
+                            auto after=operation_->expected.exact_existing_linked_snapshot;
+                            if(zero)for(auto& node:after->modules)node.controllerSuspended=true;
+                            else after.reset();
+                            review_diff_=m12_frozen::describe_exact_m12_review_diff(
+                                operation_->expected.exact_existing_linked_snapshot,after);
                             phase_=zero?Phase::zero_amount_prior_retained:Phase::no_correction_prior_retained;
                         } else {
                             error_="L3_PRODUCT_NO_CORRECTION_EVIDENCE_UNAVAILABLE";
@@ -160,6 +169,17 @@ public:
                     completed_.emplace(std::move(done));
                     phase_=Phase::failed;return;
                 }
+                const auto draft=m12_frozen::prepare_current_native_search_transaction(
+                    done.result,*plan,operation_->capture.native_worker_scope(),operation_->policy.exact_generation,
+                    operation_->baseline,operation_->linked_chain_id,operation_->expected);
+                if(!draft){error_=draft.error()->message();phase_=Phase::failed;return;}
+                const auto& chains=draft.value()->candidate_not_yet_committed.document().chains;
+                const auto linked=std::find_if(chains.begin(),chains.end(),[&](const auto& c){
+                    return c.chainId==operation_->linked_chain_id&&c.stage=="MASTER"&&c.segment=="REF_LINKED";
+                });
+                if(linked==chains.end()){phase_=Phase::failed;return;}
+                review_diff_=m12_frozen::describe_exact_m12_review_diff(
+                    operation_->expected.exact_existing_linked_snapshot,std::optional<project::Chain>{*linked});
                 completed_.emplace(std::move(done));reviewed_.emplace(std::move(*plan));
                 phase_=Phase::candidate_ready;
             }catch(...) {phase_=Phase::failed;}
@@ -186,7 +206,7 @@ public:
         if((phase_==Phase::candidate_ready||phase_==Phase::no_correction||
             phase_==Phase::no_correction_prior_retained||phase_==Phase::zero_amount_prior_retained)&&
            operation_&&!current(*operation_)) {
-            reviewed_.reset();completed_.reset();phase_=Phase::stale;
+            reviewed_.reset();review_diff_.reset();completed_.reset();phase_=Phase::stale;
         }
         if(verification_result_) {
             const auto currentOwner=fanout_.current_owner_snapshot();
@@ -218,6 +238,7 @@ private:
     std::shared_ptr<std::atomic<bool>> cancel_;
     std::optional<NativeQtSearchWorkerResult> completed_;
     std::optional<m12_frozen::AcceptedPlanAndOwner> reviewed_;
+    std::optional<m12_frozen::M12ReviewDiff> review_diff_;
     std::optional<m13_frozen::M13ProvisionalDiagnosticEnvelope> diagnostic_;
     std::optional<Completion> verification_result_;
     std::optional<Fanout::OwnerSnapshot> verification_owner_;
