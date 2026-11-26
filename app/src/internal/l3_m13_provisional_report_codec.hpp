@@ -318,7 +318,8 @@ encode_m13_provisional_diagnostic(
             str.data(),str.data()+str.size(),decoded,
             std::chars_format::general);
         if(err!=std::errc{}||end!=str.data()+str.size()||
-           !std::isfinite(decoded)||decoded<0.0)return std::nullopt;
+           !std::isfinite(decoded)||decoded<0.0||
+           m13_decimal_from_binary64(decoded)!=item.toString())return std::nullopt;
         return std::optional<std::optional<double>>{
             std::optional<double>{decoded}};
     };
