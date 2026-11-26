@@ -784,6 +784,9 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QTRY_VERIFY_WITH_TIMEOUT((replaceAction.poll(),!replaceAction.busy()),180000);
     QVERIFY(replaceAction.phase()==Action::Phase::candidate_ready);
     QVERIFY(replaceAction.replacing());
+    QVERIFY(replaceAction.review_diff());
+    QVERIFY(!replaceAction.review_diff()->nodes.empty());
+    QVERIFY(!replaceAction.review_diff()->authorizes_commit());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==priorTicket);
     QVERIFY2(replaceAction.adopt(),replaceAction.error().c_str());
     const auto replacementTicket=session.previewController->private_m12_product_preview_ticket();
@@ -793,9 +796,18 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(replacementTicket->replay->linked_chain_id==linkedId);
     QCOMPARE(replacementTicket->replay->reference_linked.revision(),UINT64_C(2));
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    QVERIFY(session.project.can_undo_private_m12_materialization());
+    QVERIFY(!session.project.can_redo_private_m12_materialization());
+    const auto historyOwnerBefore=fanout.current_owner_snapshot();
+    QVERIFY(historyOwnerBefore);
+    QVERIFY(session.project.can_undo_private_m12_materialization());
+    const auto historyOwnerAfter=fanout.current_owner_snapshot();
+    QVERIFY(historyOwnerAfter);
+    QCOMPARE(historyOwnerBefore->epoch,historyOwnerAfter->epoch);
     const auto undone=session.project.undo_private_m12_materialization();
     QVERIFY2(undone,undone?"":undone.error()->message().c_str());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==priorTicket);
+    QVERIFY(session.project.can_redo_private_m12_materialization());
     const auto redone=session.project.redo_private_m12_materialization();
     QVERIFY2(redone,redone?"":redone.error()->message().c_str());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==replacementTicket);
