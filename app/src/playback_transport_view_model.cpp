@@ -532,9 +532,21 @@ void PlaybackTransportViewModel::refresh()
     }
     auto snapshot = service_->snapshot();
     if (!snapshot) {
+        if(lastLinkedClock_||lastLinkedRate_) {
+            lastLinkedClock_.reset();lastLinkedRate_.reset();
+            emit linkedActivityClockChanged();
+        }
         publish_failure(*snapshot.error());
         return;
     }
+
+    // Identity/seek/loop/handoff transitions may happen without a position
+    // change. Notify Activity separately even when the transport labels match.
+    const auto rate=linked_activity_source_rate();
+    const bool linkedClockChanged=lastLinkedClock_!=*snapshot.value()||lastLinkedRate_!=rate;
+    lastLinkedClock_=*snapshot.value();
+    lastLinkedRate_=rate;
+    if(linkedClockChanged)emit linkedActivityClockChanged();
 
     // Never present OUTPUT_RATE positions or duration as SOURCE frames.
     auto mapped=source_display_snapshot();
