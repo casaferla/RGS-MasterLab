@@ -47,8 +47,12 @@ QtObject {
     readonly property string previewStatus: module ? module.previewStatus : "UNAVAILABLE"
     readonly property string previewError: module ? module.previewError : ""
     readonly property string responseSemantics: "C01 BASE GAIN RESPONSE, NOT APPLIED ACTIVITY"
-    readonly property var selectedBandResponsePoints: loaded && module
-        ? module.linkedBandResponse(selectedIndex) : []
+    readonly property var selectedBandResponsePoints: {
+        // Depend on the exact projected snapshot, not only loaded's bool.
+        const snapshot = parameters
+        return snapshot.instanceId && loaded && module
+            ? module.linkedBandResponse(selectedIndex) : []
+    }
     readonly property var values: band.dynamics || ({})
     readonly property var texts: {
         let t={}
