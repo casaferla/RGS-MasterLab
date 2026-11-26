@@ -120,6 +120,12 @@ prepare_m12_owned_controller_suspension(
             }
         }
     }
+    for(const auto& chain:doc.chains) {
+        if(&chain==&*it)continue;
+        for(const auto& node:chain.modules)
+            if(linked_instance_ids.contains(node.instanceId))
+                return fail("L3_M12_CONTROLLER_SUSPENSION_INSTANCE_COLLISION");
+    }
     const bool suspend=cause!=ControllerSuspensionCause::
         current_amount_restored;
     if(cause==ControllerSuspensionCause::current_amount_restored) {
