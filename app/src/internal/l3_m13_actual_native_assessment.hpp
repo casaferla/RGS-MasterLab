@@ -6,6 +6,7 @@
 #include "l3_m10_native_prediction_snapshot.hpp"
 #include "l3_m10_frozen_coordinate_refiner.hpp"
 #include "l3_m11_actual_native_stereo_safety.hpp"
+#include "l3_m13_native_graph_safety.hpp"
 
 namespace rgsml::app::l3_automatch::m13_frozen {
 [[nodiscard]] inline M13ProvisionalAssessment
@@ -25,7 +26,8 @@ assess_m13_actual_native_completion(
     bool independent_source_reference_and_scopes_current,
     bool exact_file_based_lra_policy_attested,
     bool independent_endpoint_and_safety_attested,
-    MandatoryHardPredicate other_hard_safety)
+    MandatoryHardPredicate other_hard_safety,
+    bool derive_product_native_safety=false)
 {
     const auto& replay=request.exact_materialized_preview_owner().replay;
     const bool current=replay&&accepted_winner_evidence_attested&&
@@ -42,6 +44,12 @@ assess_m13_actual_native_completion(
         compare_m13_frozen_twenty_seven_native_bindings({});
     FullM08Comparison proximity;
     auto protection=MandatoryHardPredicate::unavailable;
+    if(derive_product_native_safety&&other_hard_safety!=MandatoryHardPredicate::failed) {
+        const auto graph=current?audit_m13_native_graph_safety(request,fresh):NativeGraphSafety::unavailable;
+        other_hard_safety=graph==NativeGraphSafety::passed&&independent_endpoint_and_safety_attested
+            ?MandatoryHardPredicate::passed:graph==NativeGraphSafety::failed
+            ?MandatoryHardPredicate::failed:MandatoryHardPredicate::unavailable;
+    }
     if(current) {
         const auto& prediction=*accepted_winner.native_prediction;
         const m05m06_real::SourceIdentity accepted_candidate_owner{
@@ -72,7 +80,9 @@ assess_m13_actual_native_completion(
                     independent_pair.prepared.full_native.s03_s06,
                     *fresh_readings.source,fresh.additional_native->s03_s06,
                     independent_endpoint_and_safety_attested,
-                    independent_endpoint_and_safety_attested)
+                    independent_endpoint_and_safety_attested&&
+                        (!derive_product_native_safety||
+                         other_hard_safety==MandatoryHardPredicate::passed))
                 :m11_frozen::NativeStereoRawSafety{};
             const auto check=m11_frozen::verify_m11_native_stereo_hard_safety(raw);
             if(other_hard_safety!=MandatoryHardPredicate::failed) {

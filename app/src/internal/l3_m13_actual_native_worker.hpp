@@ -27,6 +27,7 @@ struct M13ActualNativeWorkerInputs final {
     bool file_based_lra_policy_attested{};
     bool endpoint_and_independent_safety_attested{};
     MandatoryHardPredicate other_hard_safety{MandatoryHardPredicate::unavailable};
+    bool derive_product_native_safety{};
 };
 
 class M13ActualNativeWorkerCompletion final {
@@ -126,7 +127,8 @@ public:
             input.accepted_protection_checksum,input.accepted_winner_evidence_attested,
             true,input.independent_source_reference_and_scopes_attested,
             input.file_based_lra_policy_attested,
-            input.endpoint_and_independent_safety_attested,input.other_hard_safety);
+            input.endpoint_and_independent_safety_attested,input.other_hard_safety,
+            input.derive_product_native_safety);
         if(cancellation&&cancellation->load(std::memory_order_acquire))
             return R::failure(core::Error{core::ErrorCode::InvalidState,
                 "L3_M13_ACTUAL_WORKER_CANCELLED_AFTER_ASSESSMENT"});
