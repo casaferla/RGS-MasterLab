@@ -822,8 +822,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QCOMPARE(fresh.logical_verification_evaluations,1U);
     QCOMPARE(fresh.fresh_full_master_pcm.view().format().sample_rate().value(),
              static_cast<std::int64_t>(nativeRateHz));
-    QCOMPARE(fresh.fresh_full_master_pcm.view().frame_count().value(),
-             static_cast<std::int64_t>(nativeRateHz)*12);
+    QCOMPARE(fresh.fresh_full_master_pcm.view().frame_count().value(),benchmarkSourceFrames);
     QCOMPARE(fresh.fresh_m16.sample_rate_hz(),static_cast<std::int64_t>(nativeRateHz));
     QCOMPARE(fresh.fresh_m19.sample_rate_hz,static_cast<std::int64_t>(nativeRateHz));
     QCOMPARE(fresh.fresh_m20.sample_rate_hz,static_cast<std::int64_t>(nativeRateHz));
