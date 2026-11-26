@@ -2123,6 +2123,12 @@ ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m
         m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
     if(!persisted&&!ticket)return S::none;
     if(!ticket||!ticket->replay||!persisted||!can_save_project())return S::stale;
+    const auto meta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        opened_->document().referenceMatch.canonical_utf8()));
+    if(!meta.isObject())return S::stale;
+    const auto freshness=meta.object().value(QStringLiteral("materialization")).toObject()
+        .value(QStringLiteral("freshnessState"));
+    if(!freshness.isUndefined()&&freshness.toString()!=QStringLiteral("CURRENT"))return S::stale;
     const auto nodes=ticket->replay->reference_linked.instances();
     return !nodes.empty()&&std::all_of(nodes.begin(),nodes.end(),
         [](const auto& node){return node.controller_suspended();})?S::suspended:S::active;
