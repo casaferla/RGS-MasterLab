@@ -284,7 +284,7 @@ Rectangle {
                             width: 18
                             height: 18
                             kind: root.detachedWindow ? "dock" : "undock"
-                            strokeColor: "#77C7EA"
+                            strokeColor: root.activeFamilyAccent
                             strokeWidth: 1.85
                         }
                         MouseArea {
@@ -310,7 +310,9 @@ Rectangle {
                         objectName: "dspHostResetToDefaultButton"
                         iconKind: "preset-reset"
                         controlSize: 19
-                        iconSize: 15
+                        iconSize: 17
+                        familyHeaderUtility: true
+                        accentColor: root.activeFamilyAccent
                         visible: !!root.activeModule
                             && root.activeModule.resetSupported
                         enabled: visible && (!root.isLimiterEditor
@@ -353,6 +355,7 @@ Rectangle {
                         && root.activeModule.editorContentKey !== "M21_ANALYSIS"
                         ? root.activeModule.instanceId : ""
                     moduleDisplayName: root.moduleTitle
+                    familyAccent: root.activeFamilyAccent
                 }
             }
 
