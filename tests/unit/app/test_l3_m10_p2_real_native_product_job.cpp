@@ -183,6 +183,14 @@ void P2RealNativeProductTest::nativePerformanceNeedsIndependentM16ForFirstAdmiss
     perf.observe({K::attempted_complete,score},at(15));
     perf.observe({K::attempted_failure,{}},at(20));
     perf.observe({K::completed_cache_hit,score},at(25));
+    m::NativeSearchPerformance noClock;
+    noClock.observe({K::attempted_complete,score},at(12));
+    QVERIFY(!noClock.first_admissible_ms);
+    QVERIFY(!noClock.last_attempt_ms);
+    noClock.start=at(15);
+    noClock.observe({K::attempted_complete,score},at(12));
+    QVERIFY(!noClock.first_admissible_ms);
+    QVERIFY(!noClock.last_attempt_ms);
     QVERIFY(perf.first_admissible_ms==12);
     QVERIFY(perf.last_attempt_ms==20);
     QCOMPARE(perf.attempted,6U);
