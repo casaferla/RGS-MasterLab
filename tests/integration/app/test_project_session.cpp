@@ -5518,6 +5518,18 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
         observed.current_candidate_z=0.0;
         QVERIFY(m13::m13_requires_native_numeric_comparison(predicted,observed));
     }
+    {
+        auto truncated=acceptedK;
+        truncated.pop_back();
+        QVERIFY(!m13::verify_m13_fresh_protected_population(
+            accepted,fresh,truncated,true,true).is_admissible());
+        truncated=acceptedK;
+        truncated.push_back(truncated.front());
+        QVERIFY(!m13::verify_m13_fresh_protected_population(
+            accepted,fresh,truncated,true,true).is_admissible());
+        QVERIFY(!m13::verify_m13_fresh_protected_population(
+            accepted,fresh,acceptedK,true,false).is_admissible());
+    }
     // The L02 raw scalar must satisfy the native QTP tolerance and
     // identical structural membership, independently of solver ranking.
     auto& native=accepted[25].configured.front().candidate_native;
