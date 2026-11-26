@@ -3,6 +3,7 @@
 // Transient Shaper, two controls, exact full-prefix streaming. The Product
 // registry/UI/persistence and M04 listening qualification remain separate.
 #include <rgsml/dsp/imodule.hpp>
+#include <rgsml/dsp/linked_dsp_activity_observation.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <memory>
 
@@ -17,6 +18,9 @@ public:
     [[nodiscard]] const TransientShaperParameters& parameters() const noexcept;
     [[nodiscard]] core::Result<DspRuntimeRequirements>
     runtime_requirements(const DspProcessSpec& spec) const override;
+    // Borrowed render-local sink; attach before prepare, detach at any
+    // point. No observer allocation or publication in ordinary rendering.
+    [[nodiscard]] bool set_activity_sink(internal::ITransientC00ActivitySink* sink) noexcept;
     [[nodiscard]] core::Status prepare(const DspProcessSpec& spec) override;
     void reset() noexcept override;
     [[nodiscard]] core::Status process(
