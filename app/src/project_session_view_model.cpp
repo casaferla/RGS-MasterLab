@@ -5,6 +5,7 @@
 #include "internal/l3_m12_current_search_transaction.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
+#include "internal/l3_m12_retained_controller.hpp"
 #include "internal/l3_m13_actual_native_worker.hpp"
 
 #include "audition_region_view_model.hpp"
@@ -2003,6 +2004,13 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
     auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
     if(!metadata.isObject())return fail("L3_M12_CLEAR_METADATA_INVALID");
     auto object=metadata.object();
+    const auto retained=m::decode_m12_retained_controller(object);
+    if(object.contains(QStringLiteral("retainedController"))&&
+       (!retained||retained->controller_id!=controller_id||retained->linked_chain_id!=linked_id||
+        retained->last_removed_revision>=ticket->replay->reference_linked.revision()))
+        return fail("L3_M12_CLEAR_RETAINED_CONTROLLER_CONFLICT");
+    object.insert(QStringLiteral("retainedController"),m::encode_m12_retained_controller(
+        {controller_id,linked_id,ticket->replay->reference_linked.revision()}));
     object.remove(QStringLiteral("materialization"));
     auto canonical=project::OpaqueJsonValue::parse(QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString());
     if(!canonical)return core::Status::failure(*canonical.error());
