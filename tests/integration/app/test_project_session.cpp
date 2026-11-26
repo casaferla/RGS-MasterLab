@@ -699,8 +699,9 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
     next=1U;
     QVERIFY(action.begin(*operation.value(),allocate));
-    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),180000);
-    QVERIFY(action.phase()==Action::Phase::candidate_ready);
+    const int searchTimeoutMs=fullTrackBenchmark?45*60*1000:180000;
+    QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),searchTimeoutMs);
+    QVERIFY2(action.phase()==Action::Phase::candidate_ready,action.error().c_str());
     const auto* completed=action.result();
     QVERIFY(completed);
     qInfo("Qt native search phase=%d status=%d fixed-gate=%d originals=%d fixed=%d",
