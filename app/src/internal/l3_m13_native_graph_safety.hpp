@@ -71,6 +71,12 @@ enum class NativeGraphSafety {passed,failed,unavailable};
            nodes.front().owner()!=dsp::ModuleOwner::USER||
            nodes.front().link_state()!=dsp::ModuleLinkState::UNLINKED)
             return NativeGraphSafety::failed;
+        const auto collides=[&](const auto& node){
+            return node.instance_id()==nodes.front().instance_id();
+        };
+        if(std::any_of(manual.begin(),manual.end(),collides)||
+           std::any_of(linked.begin(),linked.end(),collides))
+            return NativeGraphSafety::failed;
         return check(*replay->terminal_p2,false);
     }
     return NativeGraphSafety::passed;
