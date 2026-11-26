@@ -5916,6 +5916,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QJsonValue(QStringLiteral("2")))));
     QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("freshNativeRender",
         QJsonValue(QStringLiteral("true")))));
+    QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("freshBindingPopulationComplete",
+        QJsonValue(true))));
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
