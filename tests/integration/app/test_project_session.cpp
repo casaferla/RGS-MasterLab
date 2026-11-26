@@ -5840,6 +5840,9 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     const auto rejectedCoverage=compareCoverage(invalidCoverage,invalidCoverage);
     QVERIFY(rejectedCoverage.domains[0].status==M13Proximity::failed);
     QVERIFY(rejectedCoverage.global.status==M13Proximity::failed);
+    invalidCoverage[0].effective_coverage=0.5;
+    const auto belowCoverage=compareCoverage(invalidCoverage,invalidCoverage);
+    QVERIFY(belowCoverage.global.status==M13Proximity::failed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
