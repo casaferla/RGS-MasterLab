@@ -109,6 +109,7 @@ private slots:
     void nativeCommonAnalysisSpecUsesAllRatePairs();
     void nativeOfflineRegistryKeepsLiveManualAuthority();
     void nativeAutomaticGainSearchMeasuresRealOwnedPcm();
+    void nativeFullPcmZeroSideIsNotAWidthFloor_data();
     void nativeFullPcmZeroSideIsNotAWidthFloor();
     void nativeSeedGeometryRejectsSubstitutedStereoGrid();
     void nativeDefinitionPolicyAndGradesAreExact();
@@ -437,10 +438,15 @@ void P2RealNativeProductTest::nativeBroadbandCommonProfileAtSixRates() {
     QVERIFY(configured>0U);
     QVERIFY(5U*eligible>=4U*configured);
 }
+void P2RealNativeProductTest::nativeFullPcmZeroSideIsNotAWidthFloor_data() {
+    nativeBroadbandCommonProfileAtSixRates_data();
+}
 void P2RealNativeProductTest::nativeFullPcmZeroSideIsNotAWidthFloor() {
-    const auto fs=core::SampleRate::create(48000);
+    QFETCH(int,sampleRate);
+    const auto fs=core::SampleRate::create(sampleRate);
+    QVERIFY(fs);
     const auto fmt=audio::AudioFormat::create(*fs.value(),audio::ChannelLayout::STEREO_LR);
-    const auto frames=core::FrameCount::create(48000*2);
+    const auto frames=core::FrameCount::create(static_cast<std::int64_t>(sampleRate)*2);
     QVERIFY(fmt&&frames);
     auto pcm=audio::AudioBuffer::create(*fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
         core::FrameIndex{0},*frames.value());
@@ -448,11 +454,12 @@ void P2RealNativeProductTest::nativeFullPcmZeroSideIsNotAWidthFloor() {
     auto l=pcm.value()->mutable_view().channel(0),r=pcm.value()->mutable_view().channel(1);
     QVERIFY(l&&r);
     for(std::size_t i=0;i<l.value()->size();++i) {
-        const double v=0.2*std::sin(2.0*std::numbers::pi*55.0*i/48000.0);
+        const double v=0.2*std::sin(2.0*std::numbers::pi*55.0*static_cast<double>(i)/static_cast<double>(sampleRate));
         (*l.value())[i]=v;(*r.value())[i]=v;
     }
     QVERIFY(a::actual_full_pcm_has_exact_zero_side(pcm.value()->view()));
-    auto spec=a::build_current_native_common_analysis_spec(48000,48000,true);
+    const auto rate=static_cast<std::uint32_t>(sampleRate);
+    auto spec=a::build_current_native_common_analysis_spec(rate,rate,true);
     QVERIFY(spec);
     const auto observed=a::measure_real_full_owned_pcm_native_once(*pcm.value(),spec->prepared);
     QVERIFY(observed);
