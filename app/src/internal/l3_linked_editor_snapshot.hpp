@@ -1,0 +1,68 @@
+#pragma once
+// First post-AutoMatch editor integration seam. Inspect the actual current
+// Product replay, never a research demo, MANUAL placeholder or solver seed.
+// A returned snapshot is presentation only; no mutation or Activity grant.
+#include "l3_m12_product_preview_worker_ticket.hpp"
+#include <optional>
+#include <variant>
+
+namespace rgsml::app::l3_automatch {
+struct LinkedEditorSnapshot final {
+    using Ticket=m12_frozen::M12ImmutableProductPreviewTicket;
+    std::shared_ptr<const Ticket> exact_owner;
+    dsp::ModuleInstance instance;
+    dsp::ModuleParameterPayload parameters;
+    [[nodiscard]] constexpr bool manual_editable() const noexcept{return false;}
+    [[nodiscard]] constexpr bool activity_authorized() const noexcept{return false;}
+};
+
+[[nodiscard]] inline std::optional<LinkedEditorSnapshot> inspect_current_linked_editor(
+    const MasteringPreviewController& preview,
+    const std::shared_ptr<const render::RenderResult>& current_prepared,
+    const dsp::ProcessingChain& current_manual,
+    std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
+    const dsp::ModuleInstanceId& requested_instance)
+{
+    const auto ticket=preview.private_m12_product_preview_ticket();
+    if(!ticket||!ticket->replay||!ticket->replay->registry_owner||
+       !current_prepared||ticket->exact_prepared_owner!=current_prepared||
+       current_manual.context()!=dsp::ProcessingChainContext{
+           dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL}||
+       current_manual.revision()!=ticket->exact_manual_chain_revision||
+       current_manual.instances().size()!=ticket->exact_manual_nodes.size()||
+       !std::equal(current_manual.instances().begin(),current_manual.instances().end(),
+                   ticket->exact_manual_nodes.begin())||
+       current_manual_bindings.size()!=ticket->exact_manual_bindings.size()||
+       !std::equal(current_manual_bindings.begin(),current_manual_bindings.end(),
+                   ticket->exact_manual_bindings.begin()))return {};
+    const auto& replay=*ticket->replay;
+    if(replay.reference_linked.context()!=dsp::ProcessingChainContext{
+        dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED}||
+       replay.plan_id.is_nil()||replay.controller_id.is_nil()||
+       replay.linked_chain_id.is_nil()||replay.exact_plan_checksum.empty())return {};
+    const auto nodes=replay.reference_linked.instances();
+    if(nodes.size()!=replay.reference_bindings.size())return {};
+    std::optional<LinkedEditorSnapshot> result;
+    for(std::size_t i=0;i<nodes.size();++i) {
+        const auto& node=nodes[i];
+        const auto& binding=replay.reference_bindings[i];
+        if(!binding_matches_instance(node,binding)||
+           node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
+           node.provenance()!=dsp::ModuleProvenance::REFERENCE_MATCH||
+           node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
+           !node.semantic_node_id()||node.semantic_node_id()->is_nil())
+            return {};
+        if(node.instance_id()!=requested_instance)continue;
+        if(result)return {};
+        const auto type=node.module_type_id();
+        const bool supported=
+            (type=="rgsml.dsp.dynamic-eq"&&
+             std::holds_alternative<dsp::DynamicEqParameters>(binding.parameters))||
+            (type=="rgsml.dsp.transient-shaper"&&
+             std::holds_alternative<dsp::TransientShaperParameters>(binding.parameters));
+        if(!supported||!replay.registry_owner->has_factory(type))return {};
+        result=LinkedEditorSnapshot{ticket,node,binding.parameters};
+    }
+    return result;
+}
+} // namespace rgsml::app::l3_automatch
