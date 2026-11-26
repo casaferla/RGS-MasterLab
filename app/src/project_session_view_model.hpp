@@ -331,7 +331,7 @@ private:
     std::optional<project::ProjectSnapshot> m12ExactReplayReadback_;
     // Never an executable or resumable ticket after a dependency change.
     // Retains the prior exact graph identity for a state-only stale rebind.
-    std::shared_ptr<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>
+    std::shared_ptr<const l3_automatch::m12_frozen::RestoredM12NativeReplayPlan>
         m12RetiredReplayIdentity_;
     std::optional<core::Uuid> projectId_;
     std::optional<core::Uuid> sourceId_;

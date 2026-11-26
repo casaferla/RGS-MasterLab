@@ -9,25 +9,25 @@ struct StaleM12Rebind final {
 };
 [[nodiscard]] inline core::Result<StaleM12Rebind>
 prepare_m12_stale_rebind(const project::ProjectSnapshot& prior,
-    const project::ProjectSnapshot& live,const M12ImmutableProductPreviewTicket& old,
+    const project::ProjectSnapshot& live,const RestoredM12NativeReplayPlan& old,
     const MasteringChainState& manual,std::shared_ptr<const render::RenderResult> prepared)
 {
     using R=core::Result<StaleM12Rebind>;
     const auto fail=[](const char* why){return R::failure(core::Error{core::ErrorCode::InvalidState,why});};
-    if(!old.replay||!prepared||prior.document().projectId!=live.document().projectId||
-       !m12_reopened_persisted_replay_matches_exact_ticket(prior.document(),*old.replay)||
+    if(!prepared||prior.document().projectId!=live.document().projectId||
+       !m12_reopened_persisted_replay_matches_exact_ticket(prior.document(),old)||
        prior.document().referenceMatch!=live.document().referenceMatch)
         return fail("L3_M12_STALE_REBIND_PRIOR_OWNER_UNAVAILABLE");
     const auto owned=[&](const project::ProjectDocument& doc)->const project::Chain* {
-        for(const auto& c:doc.chains)if(c.chainId==old.replay->linked_chain_id&&
+        for(const auto& c:doc.chains)if(c.chainId==old.linked_chain_id&&
            c.stage=="MASTER"&&c.segment=="REF_LINKED")return &c;
         return nullptr;
     };
     const auto before=owned(prior.document()),current=owned(live.document());
     if(!before||!current||!exact_project_chain_equal(*before,*current))
         return fail("L3_M12_STALE_REBIND_LINKED_GRAPH_CHANGED");
-    auto draft=prepare_m12_owned_controller_suspension(live,old.replay->controller_id,
-        old.replay->linked_chain_id,ControllerSuspensionCause::plan_stale,true);
+    auto draft=prepare_m12_owned_controller_suspension(live,old.controller_id,
+        old.linked_chain_id,ControllerSuspensionCause::plan_stale,true);
     if(!draft)return R::failure(*draft.error());
     auto suspended=std::move(draft.value()->updated_project_not_committed);
     const auto after=owned(suspended.document());

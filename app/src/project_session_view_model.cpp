@@ -679,7 +679,7 @@ void ProjectSessionViewModel::on_source_changed()
             const auto prior=previewController_->private_m12_product_preview_ticket();
             if(prior&&prior->replay&&l3_automatch::m12_frozen::
                 m12_reopened_persisted_replay_matches_exact_ticket(opened_->document(),*prior->replay))
-                m12RetiredReplayIdentity_=prior;
+                m12RetiredReplayIdentity_=prior->replay;
         }
         previewController_->set_private_m12_product_preview_ticket({});
     }
@@ -710,7 +710,7 @@ void ProjectSessionViewModel::on_gold_changed()
             const auto prior=previewController_->private_m12_product_preview_ticket();
             if(prior&&prior->replay&&l3_automatch::m12_frozen::
                 m12_reopened_persisted_replay_matches_exact_ticket(opened_->document(),*prior->replay))
-                m12RetiredReplayIdentity_=prior;
+                m12RetiredReplayIdentity_=prior->replay;
         }
         previewController_->set_private_m12_product_preview_ticket({});
     }
@@ -1562,10 +1562,10 @@ ProjectSessionViewModel::capture_private_m12_search_baseline(bool require_owned_
     // Dependency replacement is not controller retirement. Under the
     // same physical M18 owner lease preserve the previous exact graph
     // as suspended/STALE, then admit a NEW search against the new Fixed.
-    const auto retired=ticket&&ticket->replay?ticket:m12RetiredReplayIdentity_;
+    const auto retired=ticket&&ticket->replay?ticket->replay:m12RetiredReplayIdentity_;
     const auto& provider=previewController_->snapshot_provider();
     const auto prepared=provider?provider():nullptr;
-    if(!opened_||!retired||!retired->replay||!prepared)
+    if(!opened_||!retired||!prepared)
         return fail("L3_M12_BASELINE_PRIOR_OWNER_NOT_CURRENT");
     auto rebound=m::prepare_m12_stale_rebind(*opened_,*live.value(),*retired,
         *masteringChainState_,prepared);
