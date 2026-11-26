@@ -853,11 +853,58 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==reopenedTicket);
     QVERIFY(session.project.redo_private_m12_materialization());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    // Amount zero is a separate, measured Fixed-only operation. It
+    // retains the exact stored DSPs, parameters, ownership and IDs.
+    const auto zeroAmount=a::m08_frozen::AmountConfig{0.0,{1.0,1.0,1.0,1.0},2U};
+    const auto zeroPlanId=uuidOf("e6000000-0000-4000-8000-000000000007");
+    const auto suspension=a::begin_native_qt_product_session_on_owner(session.project,
+        controllers,fanout,session.selector,session.gold,zeroAmount,requested,0.0,*block.value(),
+        zeroPlanId,controllerId,linkedId,true);
+    QVERIFY2(suspension,suspension?"":suspension.error()->message().c_str());
+    Action suspendAction{controllers,fanout,session.selector,session.gold};
+    QVERIFY(suspendAction.begin(*suspension.value(),allocate));
+    QTRY_VERIFY_WITH_TIMEOUT((suspendAction.poll(),!suspendAction.busy()),180000);
+    QVERIFY2(suspendAction.phase()==Action::Phase::zero_amount_prior_retained,suspendAction.error().c_str());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY2(suspendAction.adopt(),suspendAction.error().c_str());
+    QVERIFY(suspendAction.phase()==Action::Phase::match_suspended);
+    const auto suspendedTicket=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(suspendedTicket&&suspendedTicket->replay&&suspendedTicket!=thirdTicket);
+    QVERIFY(suspendedTicket->replay->plan_id==thirdTicket->replay->plan_id);
+    QVERIFY(suspendedTicket->replay->linked_chain_id==linkedId);
+    QVERIFY(suspendedTicket->replay->reference_bindings==thirdTicket->replay->reference_bindings);
+    const auto oldNodes=thirdTicket->replay->reference_linked.instances();
+    const auto suspendedNodes=suspendedTicket->replay->reference_linked.instances();
+    QCOMPARE(suspendedNodes.size(),oldNodes.size());
+    for(std::size_t i=0;i<oldNodes.size();++i) {
+        QVERIFY(suspendedNodes[i].controller_suspended());
+        QVERIFY(!suspendedNodes[i].active());
+        QVERIFY(suspendedNodes[i].instance_id()==oldNodes[i].instance_id());
+        QVERIFY(suspendedNodes[i].semantic_node_id()==oldNodes[i].semantic_node_id());
+        QCOMPARE(suspendedNodes[i].user_bypass(),oldNodes[i].user_bypass());
+        QCOMPARE(suspendedNodes[i].enabled(),oldNodes[i].enabled());
+    }
+    QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
+    QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(session.project.redo_private_m12_materialization());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
+    const auto suspendedPath=dir.filePath(QStringLiteral("l3-native-suspended.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(suspendedPath));
+    QVERIFY2(QFileInfo::exists(suspendedPath),session.project.error_message().toUtf8().constData());
+    const auto savedSuspension=load_project(suspendedPath);
+    QVERIFY(savedSuspension);
+    const auto storedSuspension=std::find_if(savedSuspension.value()->document().chains.begin(),
+        savedSuspension.value()->document().chains.end(),[&](const auto& c){return c.chainId==linkedId;});
+    QVERIFY(storedSuspension!=savedSuspension.value()->document().chains.end());
+    QCOMPARE(storedSuspension->modules.size(),suspendedNodes.size());
+    QVERIFY(std::all_of(storedSuspension->modules.begin(),storedSuspension->modules.end(),
+        [](const auto& node){return node.controllerSuspended;}));
     // The same tone at a different amplitude has no tonal correction
     // requirement. A positive Tonal-only search should therefore offer
     // removal of the previous Loudness match, never silently remove it.
     const std::array<bool,4> tonalOnly{true,false,false,false};
-    const auto tonalAmount=a::m08_frozen::AmountConfig{1.0,{1.0,0.0,0.0,0.0},2U};
+    const auto tonalAmount=a::m08_frozen::AmountConfig{1.0,{1.0,0.0,0.0,0.0},3U};
     const auto fourthPlanId=uuidOf("e6000000-0000-4000-8000-000000000006");
     const auto noCorrection=a::begin_native_qt_product_session_on_owner(session.project,
         controllers,fanout,session.selector,session.gold,tonalAmount,tonalOnly,0.0,*block.value(),
@@ -882,10 +929,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     }
     QVERIFY2(clearAction.phase()==Action::Phase::no_correction_prior_retained,clearAction.error().c_str());
     QVERIFY(clearAction.can_adopt());
-    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
     clearAction.cancel();
     QVERIFY(clearAction.phase()==Action::Phase::kept_current);
-    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
     QVERIFY(clearAction.begin(*noCorrection.value(),clearAllocator));
     QTRY_VERIFY_WITH_TIMEOUT((clearAction.poll(),!clearAction.busy()),180000);
     QVERIFY(clearAction.phase()==Action::Phase::no_correction_prior_retained);
@@ -893,7 +940,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(clearAction.phase()==Action::Phase::no_correction_cleared);
     QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
     QVERIFY(session.project.undo_private_m12_materialization());
-    QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
     QVERIFY(session.project.redo_private_m12_materialization());
     QVERIFY(!session.previewController->has_private_m12_product_preview_ticket());
     const auto cleared=dir.filePath(QStringLiteral("l3-native-cleared.rgsml"));

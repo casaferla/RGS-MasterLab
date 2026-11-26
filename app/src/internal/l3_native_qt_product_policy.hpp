@@ -18,8 +18,12 @@ build_current_native_qt_product_policy(const NativeQtSearchCapture& capture,
     if(!stamp.populated()||!capture.current.job.fixed_only()||
        !capture.execution_registry||!capture.linked_revision||
        !std::isfinite(independent_ceiling_db_tp)||
-       independent_ceiling_db_tp< -12.0||independent_ceiling_db_tp>0.0||
-       std::none_of(requested.begin(),requested.end(),[](bool b){return b;}))return {};
+       independent_ceiling_db_tp< -12.0||independent_ceiling_db_tp>0.0)return {};
+    // All-zero domain settings are legitimate suspension intent. A
+    // zero-request vector with positive stored domain Amount is not.
+    if(std::none_of(requested.begin(),requested.end(),[](bool b){return b;})&&
+       amount.global>0.0&&std::any_of(amount.domains.begin(),amount.domains.end(),
+           [](double value){return value>0.0;}))return {};
     std::array<m08_frozen::DomainAmount,4> domains;
     for(std::size_t i=0;i<domains.size();++i)
         domains[i]={m07_frozen::kDomainIds[i],amount.domains[i]};
