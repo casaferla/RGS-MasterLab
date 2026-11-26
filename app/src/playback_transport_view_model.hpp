@@ -101,6 +101,8 @@ public:
     void set_reference_audition_checker(std::function<bool()> checker)
     {referenceAuditionChecker_=std::move(checker);}
     [[nodiscard]] core::Result<core::PlaybackSnapshot> playback_snapshot() const;
+    // Only an actual ordinary PCM transport can supply the SOURCE clock.
+    [[nodiscard]] std::optional<std::uint32_t> linked_activity_source_rate() const noexcept;
 
     Q_INVOKABLE void playOrResume();
     Q_INVOKABLE void pause();
