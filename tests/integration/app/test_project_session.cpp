@@ -5908,6 +5908,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QJsonValue(QStringLiteral("0.0")))));
     QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("fullResourceM16LinearPeak",
         QJsonValue(QStringLiteral("-0.25")))));
+    QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("frameCount",
+        QJsonValue(QStringLiteral("9223372036854775808")))));
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
