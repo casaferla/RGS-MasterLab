@@ -61,6 +61,24 @@ jobs:
           if (Test-Path -LiteralPath $err) { Get-Content $err -Tail 80 }
           if ($p.ExitCode -ne 0) { throw "L3_ARTIFACT_COLD_SMOKE_FAILURE=$($p.ExitCode)" }
           Write-Host 'L3_STANDALONE_COLD_SMOKE=PASS'
+      - name: Capture actual Product context and header screenshots
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/stage/L3-INTEGRATED-NONFQ'
+          $shots=Join-Path $env:RUNNER_TEMP 'l3-context-shots'
+          New-Item -ItemType Directory -Force $shots | Out-Null
+          $env:RGSML_CONTEXT_SCREENSHOT_DIR=$shots
+          $env:QT_QUICK_BACKEND='software'
+          $p=Start-Process -FilePath (Join-Path $stage 'bin/RGSMasterLab.exe') -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw 'L3_CONTEXT_CAPTURE_FAILED' }
+          if (@(Get-ChildItem $shots -Filter 'minimum-*.png').Count -ne 5) { throw 'L3_CONTEXT_CAPTURE_MISSING' }
+      - name: Upload actual Product screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: L3-Product-Context-and-DSP-Headers
+          path: ${{ runner.temp }}/l3-context-shots/*.png
+          if-no-files-found: error
+          retention-days: 30
       - name: Include exact artifact provenance and physical replay checklist
         shell: pwsh
         run: |
