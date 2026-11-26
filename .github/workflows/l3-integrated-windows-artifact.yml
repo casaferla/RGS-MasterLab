@@ -71,12 +71,23 @@ jobs:
           $env:QT_QUICK_BACKEND='software'
           $p=Start-Process -FilePath (Join-Path $stage 'bin/RGSMasterLab.exe') -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw 'L3_CONTEXT_CAPTURE_FAILED' }
-          if (@(Get-ChildItem $shots -Filter 'minimum-*.png').Count -ne 5) { throw 'L3_CONTEXT_CAPTURE_MISSING' }
+          foreach ($file in @('minimum-dsp-0.png','minimum-dsp-1.png','minimum-dsp-2.png','minimum-dsp-3.png','minimum-prepare.png','capture-geometry.txt')) {
+            if (!(Test-Path -LiteralPath (Join-Path $shots $file))) { throw "L3_CONTEXT_CAPTURE_MISSING=$file" }
+          }
+          $geometry=Get-Content -LiteralPath (Join-Path $shots 'capture-geometry.txt')
+          $geometry | Write-Host
+          if ($geometry -notcontains 'maximized=SKIPPED_INSUFFICIENT_SCREEN_GEOMETRY') {
+            foreach ($file in @('maximized-automatch.png','maximized-prepare.png')) {
+              if (!(Test-Path -LiteralPath (Join-Path $shots $file))) { throw "L3_CONTEXT_CAPTURE_MISSING=$file" }
+            }
+          }
       - name: Upload actual Product screenshots
         uses: actions/upload-artifact@v4
         with:
           name: L3-Product-Context-and-DSP-Headers
-          path: ${{ runner.temp }}/l3-context-shots/*.png
+          path: |
+            ${{ runner.temp }}/l3-context-shots/*.png
+            ${{ runner.temp }}/l3-context-shots/capture-geometry.txt
           if-no-files-found: error
           retention-days: 30
       - name: Include exact artifact provenance and physical replay checklist
