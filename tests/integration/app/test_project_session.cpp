@@ -7095,6 +7095,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     session.previewController->set_snapshot_provider(
         []{return std::shared_ptr<const render::RenderResult>{};});
     QVERIFY(!session.project.can_save_project());
+    QVERIFY(!app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,*session.masteringChainState));
     const auto noPrepared=dir.filePath(QStringLiteral(
         "m12-removed-prepared-must-not-save.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(noPrepared));
