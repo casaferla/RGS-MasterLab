@@ -591,14 +591,22 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QCOMPARE(session.gold.gold_resource()->wav_info().audio_format().sample_rate().value(),
              static_cast<std::int64_t>(nativeRateHz));
     QVERIFY(session.source.source_resource());
-    QCOMPARE(session.source.source_resource()->wav_info().frame_count().value(),
-             static_cast<std::int64_t>(nativeRateHz)*12);
-    QCOMPARE(session.gold.gold_resource()->wav_info().frame_count().value(),
-             static_cast<std::int64_t>(nativeRateHz)*12);
-    QCOMPARE(session.source.source_resource()->wav_info().encoded_sample_format(),
-             audio::WavSampleFormat::PCM_S24);
-    QCOMPARE(session.gold.gold_resource()->wav_info().encoded_sample_format(),
-             audio::WavSampleFormat::PCM_S24);
+    const auto& sourceWav=session.source.source_resource()->wav_info();
+    const auto& referenceWav=session.gold.gold_resource()->wav_info();
+    const auto benchmarkSourceFrames=sourceWav.frame_count().value();
+    if(fullTrackBenchmark) {
+        QVERIFY(sourceWav.audio_format().channel_count()==2U);
+        QVERIFY(referenceWav.audio_format().channel_count()==2U);
+        QVERIFY2(benchmarkSourceFrames>=static_cast<std::int64_t>(nativeRateHz)*240&&
+                 benchmarkSourceFrames<=static_cast<std::int64_t>(nativeRateHz)*360,
+                 "Full-track benchmark SOURCE must be between four and six minutes");
+        QVERIFY(referenceWav.frame_count().value()>0);
+    }else {
+        QCOMPARE(benchmarkSourceFrames,static_cast<std::int64_t>(nativeRateHz)*12);
+        QCOMPARE(referenceWav.frame_count().value(),static_cast<std::int64_t>(nativeRateHz)*12);
+        QCOMPARE(sourceWav.encoded_sample_format(),audio::WavSampleFormat::PCM_S24);
+        QCOMPARE(referenceWav.encoded_sample_format(),audio::WavSampleFormat::PCM_S24);
+    }
     // This is deliberately a pure gain fixture. Preserve the MANUAL
     // nodes but make their bypass identity explicit before capture.
     QVERIFY(session.masteringChainState->set_user_bypass(session.gainId,true));
