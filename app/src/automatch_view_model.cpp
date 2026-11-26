@@ -150,19 +150,19 @@ QString AutoMatchViewModel::failure_diagnostics_text()const {
         case R::invalid_seed_trial:reason=QStringLiteral("invalid seed trial");break;
         case R::invalid_evaluation:reason=QStringLiteral("invalid evaluation");break;
         }
-        text+=QStringLiteral("\\nRefinement: %1 | attempts: %2")
+        text+=QStringLiteral("\nRefinement: %1 | attempts: %2")
             .arg(reason).arg(batch.total_attempted);
     } else {
-        text+=QStringLiteral("\\nRefinement: not reached");
+        text+=QStringLiteral("\nRefinement: not reached");
     }
     const auto& perf=worker.performance;
-    text+=QStringLiteral("\\nNative renders: %1 complete, %2 failed, %3 cache hits")
+    text+=QStringLiteral("\nNative renders: %1 complete, %2 failed, %3 cache hits")
         .arg(perf.completed).arg(perf.failed).arg(perf.cache_hits);
-    text+=QStringLiteral("\\nPreflight rejected: %1 | budget refusals: %2")
+    text+=QStringLiteral("\nPreflight rejected: %1 | budget refusals: %2")
         .arg(perf.evaluator_preflight_rejections).arg(perf.budget_refusals);
     const auto elapsed=completed.original_pair_ms+worker.timing.fixed_ms+
         worker.timing.seed_ms+worker.timing.search_ms;
-    text+=QStringLiteral("\\nMeasured phases: %1 s (original %2 / fixed %3 / seed %4 / search %5)")
+    text+=QStringLiteral("\nMeasured phases: %1 s (original %2 / fixed %3 / seed %4 / search %5)")
         .arg(static_cast<double>(elapsed)/1000.0,0,'f',1)
         .arg(static_cast<double>(completed.original_pair_ms)/1000.0,0,'f',1)
         .arg(static_cast<double>(worker.timing.fixed_ms)/1000.0,0,'f',1)
