@@ -5876,6 +5876,10 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(compareT1().rows[0].outcome==M13Binding::failed);
     tonalEvidence.configured[0].actual_fresh_native=-10.0;
     QVERIFY(compareT1().rows[0].outcome==M13Binding::unavailable);
+    tonalEvidence.configured[1].actual_fresh_native=-10.0;
+    tonalEvidence.configured[0].expected_support_numerator=2U;
+    tonalEvidence.configured[0].actual_support_numerator=2U;
+    QVERIFY(compareT1().rows[0].outcome==M13Binding::failed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
