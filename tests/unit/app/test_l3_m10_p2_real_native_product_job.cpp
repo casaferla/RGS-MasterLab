@@ -697,6 +697,12 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
         "no owned P2 alternative completed the real 27-slot and M11 scorer");
     QVERIFY(native_result.owned_p2_counts.complete<=native_result.owned_p2_counts.attempted);
     QVERIFY(native_result.owned_p2_counts.attempted<=native_result.search.refinement->total_attempted);
+    QVERIFY(native_result.performance.first_admissible_ms);
+    QVERIFY(native_result.performance.counts_reconciled());
+    QCOMPARE(native_result.performance.attempted,native_result.search.refinement->total_attempted);
+    QVERIFY(native_result.owned_p2_counts.attempted<=native_result.performance.attempted);
+    QVERIFY(native_result.owned_p2_counts.complete<=native_result.performance.completed);
+    QVERIFY(native_result.owned_p2_counts.cache_hits<=native_result.performance.cache_hits);
     QVERIFY(native_result.search.winning_graph);
     QVERIFY(m12::stage_current_native_search_winner(accepted,native_result.search,native_owners,
         native_input.exact_generation));
