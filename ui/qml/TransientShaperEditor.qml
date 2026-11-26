@@ -387,6 +387,7 @@ Item {
                         sampleRateHz: root.activity.sampleRateHz || 0
                         auditioningProcessed: root.activity.available === true
                         bypassed: false
+                        stateText: root.activity.stateText || "TELEMETRY UNAVAILABLE"
                     }
                 }
             }
