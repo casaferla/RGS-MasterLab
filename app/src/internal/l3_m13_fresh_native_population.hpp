@@ -100,7 +100,11 @@ bind_m13_fresh_native_population(
            a.exact_feature_dependency.empty()||
            a.exact_feature_dependency!=b.exact_feature_dependency||
            !a.feature_authority_attested||!b.feature_authority_attested||
-           a.configured.empty()||a.configured.size()!=b.configured.size())
+           a.configured.empty()||a.configured.size()!=b.configured.size()||
+           (binding.component_share==m07_frozen::ComponentShare::one&&
+            a.configured.size()!=1U)||
+           (binding.component_share==m07_frozen::ComponentShare::thirds&&
+            a.configured.size()!=3U))
             return false;
         for(std::size_t j=0;j<a.configured.size();++j) {
             const auto& x=a.configured[j];
