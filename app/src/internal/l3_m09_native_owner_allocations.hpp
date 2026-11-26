@@ -1,11 +1,17 @@
 #pragma once
 #include "l3_m09_native_domain_stream.hpp"
+#include "l3_m09_controller_semantic_identity.hpp"
 #include "l3_m09_native_eq_dictionary.hpp"
 #include <functional>
 #include <map>
 #include <set>
 
 namespace rgsml::app::l3_automatch::m09_frozen {
+struct NativeControllerRoleContext final {
+    core::Uuid controller;
+    std::vector<NativeRoleAllocation> compatible_prior;
+    std::set<core::Uuid> owned_semantics;
+};
 // One worker-local allocation table for the whole accepted generation.
 // UUIDs are issued by the existing Product allocator, not by hashing
 // floating point frequency or deriving persistent IDs from topology.
@@ -13,8 +19,22 @@ class NativeOwnerAllocations final {
 public:
     using AllocateUuid=std::function<core::Uuid()>;
     explicit NativeOwnerAllocations(AllocateUuid allocate,
-        std::span<const core::Uuid> protected_ids={})
-        :allocate_(std::move(allocate)),used_(protected_ids.begin(),protected_ids.end()) {}
+        std::span<const core::Uuid> protected_ids={},
+        std::optional<NativeControllerRoleContext> context={})
+        :allocate_(std::move(allocate)),used_(protected_ids.begin(),protected_ids.end()),
+         controller_(std::move(context)) {
+        if(!controller_)return;
+        if(controller_->controller.is_nil()){failed_=true;return;}
+        std::set<core::Uuid> reused;
+        for(const auto& prior:controller_->compatible_prior) {
+            const auto expected=native_controller_role_semantic_id(controller_->controller,prior.role);
+            if(!expected||*expected!=prior.semantic||
+               !controller_->owned_semantics.contains(prior.semantic)||
+               !used_.contains(prior.semantic)||!used_.contains(prior.instance.uuid())||
+               !reused.insert(prior.instance.uuid()).second||
+               !roles_.emplace(prior.role,prior).second) {failed_=true;return;}
+        }
+    }
     [[nodiscard]] std::optional<core::Uuid> band(IntentRole role,const NativeEqDictionaryIdentity& atom) {
         if(role!=IntentRole::tonal_eq&&role!=IntentRole::stereo_side_eq)return {};
         if(!std::isfinite(atom.q_or_slope))return {};
@@ -48,9 +68,18 @@ public:
         return out;
     }
     [[nodiscard]] std::optional<NativeRoleAllocation> role(IntentRole role) {
-        if(!native_artistic_role_type(role))return {};
+        if(failed_||!native_artistic_role_type(role))return {};
         if(const auto found=roles_.find(role);found!=roles_.end())return found->second;
-        const auto instance=next(),semantic=next();
+        std::optional<core::Uuid> semantic;
+        if(controller_) {
+            semantic=native_controller_role_semantic_id(controller_->controller,role);
+            if(!semantic||
+               (!controller_->owned_semantics.contains(*semantic)&&!used_.insert(*semantic).second)) {
+                failed_=true;return {};
+            }
+        }
+        const auto instance=next();
+        if(!controller_)semantic=next();
         if(!instance||!semantic)return {};
         auto typed=dsp::ModuleInstanceId::from_uuid(*instance);
         if(!typed)return {};
@@ -79,6 +108,7 @@ private:
     std::map<ExactBytes,core::Uuid> bands_;
     std::map<core::Uuid,std::pair<IntentRole,ExactBytes>> band_keys_;
     std::map<IntentRole,NativeRoleAllocation> roles_;
+    std::optional<NativeControllerRoleContext> controller_;
     bool failed_{};
 };
 // Canonical topology carries discrete intent and selected evidence keys,
