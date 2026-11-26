@@ -4,6 +4,7 @@
 // but every parameter read must recheck the actual current Product graph.
 #include "dsp_module_adapter.hpp"
 #include "l3_linked_editor_parameter_projection.hpp"
+#include "l3_linked_activity_product_projection.hpp"
 #include <QPointer>
 #include <string>
 
@@ -19,6 +20,21 @@ public:
     {
         connect(&preview,&MasteringPreviewController::changed,
             this,&DspModuleAdapter::changed);
+    }
+
+    void bind_activity(AuditionSourceSelector* selector,PlaybackTransportViewModel* transport)
+    {
+        selector_=selector;
+        transport_=transport;
+        if(selector)connect(selector,&AuditionSourceSelector::changed,this,&DspModuleAdapter::activityChanged);
+        if(transport)connect(transport,&PlaybackTransportViewModel::playbackChanged,this,&DspModuleAdapter::activityChanged);
+        connect(preview_.data(),&MasteringPreviewController::changed,this,&DspModuleAdapter::activityChanged);
+    }
+    [[nodiscard]] QVariantMap linked_activity() const override
+    {
+        const auto s=current();
+        if(!s||!selector_||!transport_)return {};
+        return project_linked_activity_qt(resolve_linked_activity(*s,*preview_,*selector_,*transport_));
     }
 
     [[nodiscard]] QString instance_id() const override
@@ -89,6 +105,8 @@ private:
         return *it;
     }
     QPointer<MasteringPreviewController> preview_;
+    QPointer<AuditionSourceSelector> selector_;
+    QPointer<PlaybackTransportViewModel> transport_;
     MasteringChainState* manual_{};
     std::weak_ptr<const LinkedEditorSnapshot::Ticket> exact_owner_;
     dsp::ModuleInstanceId id_;
