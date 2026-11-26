@@ -119,6 +119,8 @@ bind_m13_fresh_native_population(
                x.prepared.endpoint!=y.prepared.endpoint||
                x.reference.z!=y.reference.z||
                x.reference.endpoint!=y.reference.endpoint||
+               (x.current_valid&&x.paired_native_support>0.0&&
+                (!x.prepared.z||!x.reference.z))||
                x.candidate_required!=y.candidate_required)
                 return false;
         }
