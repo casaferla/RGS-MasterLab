@@ -1,5 +1,6 @@
 #include "automatch_view_model.hpp"
 #include <QUuid>
+#include <QStringList>
 #include <QThread>
 #include <cmath>
 #include <algorithm>
@@ -47,6 +48,27 @@ bool AutoMatchViewModel::can_undo()const {
 bool AutoMatchViewModel::can_redo()const {
     return owner()&&!busy()&&!action_.can_adopt()&&
         product_.upstream.project.can_redo_private_m12_materialization();
+}
+QString AutoMatchViewModel::review_text()const {
+    if(!owner()||!action_.can_adopt()||!action_.review_diff())return {};
+    using C=a::m12_frozen::ReviewNodeChange;
+    QStringList lines;
+    for(const auto& row:action_.review_diff()->nodes) {
+        QString operation;
+        switch(row.change) {
+        case C::add:operation=QStringLiteral("Add");break;
+        case C::remove:operation=QStringLiteral("Remove");break;
+        case C::update:operation=QStringLiteral("Update");break;
+        case C::retain:operation=QStringLiteral("Retain");break;
+        case C::suspend:operation=QStringLiteral("Suspend");break;
+        case C::resume:operation=QStringLiteral("Resume");break;
+        }
+        auto type=QString::fromStdString(row.type);
+        if(type.startsWith(QStringLiteral("rgsml.dsp.")))type.remove(0,10);
+        type.replace(QLatin1Char('-'),QLatin1Char(' '));
+        lines.push_back(operation+QStringLiteral(": ")+type);
+    }
+    return lines.isEmpty()?QStringLiteral("No linked DSP changes"):lines.join(QLatin1Char('\n'));
 }
 QString AutoMatchViewModel::status_text()const {
     if(!owner())return QStringLiteral("UNAVAILABLE");

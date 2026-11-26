@@ -15,6 +15,7 @@ class AutoMatchViewModel final : public QObject {
     Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
+    Q_PROPERTY(QString reviewText READ review_text NOTIFY changed)
 public:
     using Action=l3_automatch::NativeQtProductAction;
     AutoMatchViewModel(Action::Controllers product,const Action::Fanout& fanout,
@@ -28,6 +29,7 @@ public:
     [[nodiscard]] bool can_redo()const;
     [[nodiscard]] QString status_text()const;
     [[nodiscard]] QString error_text()const{return error_;}
+    [[nodiscard]] QString review_text()const;
     // All values are captured once before dispatch; the ceiling is the
     // independent AutoMatch/M16 safety limit, never the WAV Export setting.
     Q_INVOKABLE bool start(double total,double tonal,double dynamics,double stereo,
