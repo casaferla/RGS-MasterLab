@@ -5849,6 +5849,28 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     const auto invalidCategory=app::l3_automatch::m13_frozen::
         compare_qtp_native_scalar(static_cast<app::l3_automatch::m13_frozen::QtpCategory>(255),1.0,1.0);
     QVERIFY(invalidCategory.outcome==app::l3_automatch::m13_frozen::QtpOutcome::unavailable);
+    using M13Binding=app::l3_automatch::m13_frozen::BindingConformance;
+    app::l3_automatch::m13_frozen::M13BindingNativeEvidence tonalEvidence;
+    const auto& frozenT1=app::l3_automatch::m07_frozen::kBindings[0];
+    tonalEvidence.binding_id=std::string(frozenT1.binding_id);
+    tonalEvidence.selected_source_feature_id=std::string(frozenT1.source_feature_id);
+    tonalEvidence.exact_phase6_feature_dependency="test-frozen-t1";
+    tonalEvidence.current_authoritative_source_and_config=true;
+    app::l3_automatch::m13_frozen::ExpectedFreshNativeComponent band;
+    band.expected_selector=band.fresh_selector="band-a";
+    band.expected_population_id=band.fresh_population_id="test-population";
+    band.predicted_native=band.actual_fresh_native=-10.0;
+    band.expected_support_numerator=band.actual_support_numerator=1U;
+    band.expected_support_denominator=band.actual_support_denominator=1U;
+    band.exact_fresh_native_transform_attested=true;
+    tonalEvidence.configured.push_back(band);
+    band.expected_selector=band.fresh_selector="band-b";
+    tonalEvidence.configured.push_back(band);
+    const auto compareT1=[&](){
+        return app::l3_automatch::m13_frozen::
+            compare_m13_frozen_twenty_seven_native_bindings({tonalEvidence});
+    };
+    QVERIFY(compareT1().rows[0].outcome==M13Binding::passed);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
