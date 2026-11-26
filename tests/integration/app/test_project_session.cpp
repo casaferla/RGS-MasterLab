@@ -7071,6 +7071,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QCOMPARE(redoneEditors->size(),linkedEditors->size());
     for(std::size_t i=0;i<redoneEditors->size();++i)
         QVERIFY((*redoneEditors)[i].parameters==(*linkedEditors)[i].parameters);
+    QCOMPARE(transientAdapter.linked_parameters(),beforeLockedCommands);
+    QVERIFY(!dynamicAdapter.linked_parameters().isEmpty());
     // Undo/Redo can restore bit-identical linked PCM and the SAME
     // original ticket pointer. Still, prior verification is NOT fresh.
     QVERIFY(!session.project.private_m13_fresh_probe_still_current(
