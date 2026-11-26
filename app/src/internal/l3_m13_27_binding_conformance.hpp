@@ -149,6 +149,7 @@ compare_m13_frozen_twenty_seven_native_bindings(
                 const double delta=std::abs(
                     *component.actual_fresh_native-*component.predicted_native);
                 const bool component_pass=std::isfinite(delta)&&delta<=0.01;
+                if(!component_pass)failed=true;
                 row.component_comparisons.push_back({
                     component_pass?QtpOutcome::pass:QtpOutcome::mismatch,
                     std::isfinite(delta)?std::optional<double>{delta}:std::nullopt,0.01});
