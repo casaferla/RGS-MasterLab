@@ -364,6 +364,12 @@ std::uint64_t MasteringPreviewController::stale_results_discarded() const noexce
     return staleResultsDiscarded_;
 }
 
+bool MasteringPreviewController::published_preview_is_exact_owner(
+    const std::shared_ptr<const render::RenderResult>& owner) const
+{
+    return owner&&published_preview_matches_current_bindings()&&acceptedPreviewOwner_.lock()==owner;
+}
+
 bool MasteringPreviewController::published_preview_matches_current_bindings() const
 {
     // Only the Qt owner may inspect accepted preview and mutable chain
