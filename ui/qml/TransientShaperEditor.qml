@@ -11,6 +11,7 @@ Item {
     readonly property bool editorEnabled: !!transientModule
         && transientModule.manualEditable === true
 
+    property var activity: ({})
     implicitWidth: 760
     implicitHeight: 570
     // Preserve P2's top-left-anchored geometry and control interaction.
