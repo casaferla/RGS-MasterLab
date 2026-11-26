@@ -113,14 +113,20 @@ Item {
         // label, whose width is assigned by the Dialog itself.
         implicitWidth: 372
         width: implicitWidth
-        contentItem: Label {
-            text: "This will replace the current MANUAL settings for "
-                + root.scopeName()
-                + ". The change is not an AutoMatch approval."
-            color: "#DDE6F3"
-            wrapMode: Text.WordWrap
+        contentItem: Item {
+            // Item owns the writable implicit size; Label (Text) does not.
             implicitWidth: 340
-            font.pixelSize: 12
+            implicitHeight: confirmationMessage.implicitHeight
+            Label {
+                id: confirmationMessage
+                width: parent.width
+                text: "This will replace the current MANUAL settings for "
+                    + root.scopeName()
+                    + ". The change is not an AutoMatch approval."
+                color: "#DDE6F3"
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+            }
         }
         onAccepted: {
             if (!root.presetController) return
@@ -142,12 +148,16 @@ Item {
         // label, whose width is assigned by the Dialog itself.
         implicitWidth: 372
         width: implicitWidth
-        contentItem: Label {
-            id: problemMessage
-            color: "#F2B3BB"
-            wrapMode: Text.WordWrap
+        contentItem: Item {
             implicitWidth: 340
-            font.pixelSize: 12
+            implicitHeight: problemMessage.implicitHeight
+            Label {
+                id: problemMessage
+                width: parent.width
+                color: "#F2B3BB"
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+            }
         }
     }
 }
