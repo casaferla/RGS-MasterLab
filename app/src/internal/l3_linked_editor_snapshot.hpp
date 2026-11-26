@@ -24,6 +24,7 @@ struct LinkedEditorSnapshot final {
     std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
     const dsp::ModuleInstanceId& requested_instance)
 {
+    if(QThread::currentThread()!=preview.thread())return {};
     const auto ticket=preview.private_m12_product_preview_ticket();
     if(!ticket||!ticket->replay||!ticket->replay->registry_owner||
        !current_prepared||ticket->exact_prepared_owner!=current_prepared||
