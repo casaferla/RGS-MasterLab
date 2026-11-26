@@ -142,6 +142,13 @@ void P2RealNativeProductTest::nativePerformanceSeparatesAttemptsAndCacheHits() {
     QVERIFY(!perf.last_attempt_ms);
     QVERIFY(!perf.first_admissible_ms);
     QVERIFY(perf.counts_reconciled());
+    perf.observe({K::attempted_failure,{}},at(9));
+    QCOMPARE(perf.attempted,1U);
+    QCOMPARE(perf.failed,1U);
+    QCOMPARE(perf.completed,0U);
+    QVERIFY(perf.last_attempt_ms==9);
+    QVERIFY(!perf.first_admissible_ms);
+    QVERIFY(perf.counts_reconciled());
 }
 void P2RealNativeProductTest::nativePerformanceNeedsIndependentM16ForFirstAdmissible() {
     namespace m=a::m10_frozen;
