@@ -56,6 +56,11 @@ enum class NativeGraphSafety {passed,failed,unavailable};
            (replay->terminal_p2||&node!=&linked.back()))
             return NativeGraphSafety::failed;
     }
+    for(const auto& node:linked)
+        if(std::any_of(manual.begin(),manual.end(),[&](const auto& user){
+            return user.instance_id()==node.instance_id();
+        }))
+            return NativeGraphSafety::failed;
     auto result=check(replay->manual_prefix,false);
     if(result!=NativeGraphSafety::passed)return result;
     result=check(replay->reference_linked,true);
