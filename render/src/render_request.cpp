@@ -50,7 +50,8 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
     rgsml::core::FrameCount maximum_block_frames,
     std::optional<std::size_t> max_telemetry_bytes,
-    std::optional<rgsml::core::RealizationId> realization_id)
+    std::optional<rgsml::core::RealizationId> realization_id,
+    LinkedDspActivitySinkProvider* linked_activity)
 {
     if (source.timebase().frame_domain_id()
         != rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE) {
@@ -196,7 +197,7 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
             std::move(bindings),
             maximum_block_frames,
             effective_telemetry_bytes,
-            realization_id});
+            realization_id,linked_activity});
     } catch (...) {
         return rgsml::core::Result<RenderRequest>::failure(request_error(
             rgsml::core::ErrorCode::IoFailure,
@@ -214,7 +215,8 @@ RenderRequest::RenderRequest(
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
     rgsml::core::FrameCount maximum_block_frames,
     std::optional<std::size_t> max_telemetry_bytes,
-    std::optional<rgsml::core::RealizationId> realization_id) noexcept
+    std::optional<rgsml::core::RealizationId> realization_id,
+    LinkedDspActivitySinkProvider* linked_activity) noexcept
     : source_(source)
     , render_window_(render_window)
     , chain_context_(chain_context)
@@ -224,6 +226,7 @@ RenderRequest::RenderRequest(
     , maximum_block_frames_(maximum_block_frames)
     , max_telemetry_bytes_(max_telemetry_bytes)
     , realization_id_(realization_id)
+    , linked_activity_(linked_activity)
 {
 }
 
