@@ -6126,10 +6126,10 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QCOMPARE(report.rows[0].component_comparisons.size(),std::size_t{2});
     }
     {
-        auto empty=canonicalBindings;
-        for(auto& slot:empty)
+        auto noRequiredBindings=canonicalBindings;
+        for(auto& slot:noRequiredBindings)
             for(auto& component:slot.configured)component.required=false;
-        const auto report=compareBindings(empty);
+        const auto report=compareBindings(noRequiredBindings);
         QVERIFY(!report.every_required_binding_complete);
         QVERIFY(!report.every_required_binding_passed);
         QCOMPARE(report.required_components,std::size_t{0});
@@ -6166,12 +6166,12 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
                        {0.5,M08ProximityReason::comparable}).status==
             M13Proximity::unavailable);
     {
-        const M08DomainProximity expected{0.5,M08ProximityReason::comparable};
-        const M08DomainProximity fresh{0.5003,M08ProximityReason::comparable};
-        QVERIFY(compareRaw(expected,fresh).status==M13Proximity::passed);
+        const M08DomainProximity proximityExpected{0.5,M08ProximityReason::comparable};
+        const M08DomainProximity proximityFresh{0.5003,M08ProximityReason::comparable};
+        QVERIFY(compareRaw(proximityExpected,proximityFresh).status==M13Proximity::passed);
         QVERIFY(m13contract::compare_exact_m08_raw_proximity(
-            expected,fresh,false).status==M13Proximity::failed);
-        QVERIFY(compareRaw(expected,{0.5006,M08ProximityReason::comparable}).status==
+            proximityExpected,proximityFresh,false).status==M13Proximity::failed);
+        QVERIFY(compareRaw(proximityExpected,{0.5006,M08ProximityReason::comparable}).status==
                 M13Proximity::failed);
     }
     {

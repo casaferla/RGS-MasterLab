@@ -446,28 +446,37 @@ void M13FreshNativeProbeTest::sameRunPredictedVerifiedRawProximity()
     using namespace m13;
     using M=m08_frozen::ProximityReason;
     const m08_frozen::DomainProximity prediction{
-        1.25,M::comparable};
+        -0.25,M::comparable};
     const m08_frozen::DomainProximity justInside{
-        1.25049,M::comparable};
+        -0.25049,M::comparable};
     const m08_frozen::DomainProximity tooFar{
-        1.25051,M::comparable};
+        -0.25051,M::comparable};
     QCOMPARE(compare_exact_m08_raw_proximity(prediction,justInside,true).
              status,ProximityComparisonStatus::passed);
     QCOMPARE(compare_exact_m08_raw_proximity(prediction,tooFar,true).
              status,ProximityComparisonStatus::failed);
     QCOMPARE(compare_exact_m08_raw_proximity(prediction,
-        {1.25019,M::comparable},false).status,
+        {-0.25019,M::comparable},false).status,
         ProximityComparisonStatus::passed);
     QCOMPARE(compare_exact_m08_raw_proximity(prediction,
-        {1.25021,M::comparable},false).status,
+        {-0.25021,M::comparable},false).status,
         ProximityComparisonStatus::failed);
     QCOMPARE(compare_exact_m08_raw_proximity(prediction,
-        {1.25,M::proximity_already_matched},true).status,
+        {-0.25,M::proximity_already_matched},true).status,
         ProximityComparisonStatus::failed);
     QCOMPARE(compare_exact_m08_raw_proximity(
         {std::nullopt,M::candidate_required_component_missing},
         {std::nullopt,M::candidate_required_component_missing},true).status,
         ProximityComparisonStatus::unavailable);
+    // Raw proximity is unbounded below but cannot exceed one:
+    // 1 - candidateDistance / baselineDistance with nonnegative distances.
+    QCOMPARE(compare_exact_m08_raw_proximity(
+        {1.25,M::comparable},{1.25,M::comparable},true).status,
+        ProximityComparisonStatus::failed);
+    QCOMPARE(compare_exact_m08_raw_proximity(
+        {1.0,M::proximity_already_matched},
+        {1.0,M::proximity_already_matched},true).status,
+        ProximityComparisonStatus::passed);
     std::array<m08_frozen::RequestedDomainReport,4> predicted{};
     std::array<m08_frozen::RequestedDomainReport,4> verified{};
     for(std::size_t i=0;i<4;++i) {
