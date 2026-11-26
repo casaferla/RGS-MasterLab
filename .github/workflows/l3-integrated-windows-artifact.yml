@@ -30,9 +30,9 @@ jobs:
           if ($actual -ne $env:GITHUB_SHA) { throw 'L3_ARTIFACT_WRONG_CHECKOUT' }
           $qt=Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64'
           $log=Join-Path $env:RUNNER_TEMP 'l3-artifact-build.log'
-          cmake -S . -B build-l3-package -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=OFF -DRGSML_WARNINGS_AS_ERRORS=ON -DRGSML_PROVENANCE_TYPE=CI "-DRGSML_PROVENANCE_RUN_NUMBER=$env:GITHUB_RUN_NUMBER" "-DRGSML_PROVENANCE_GIT_SHA=$actual" "-DRGSML_QT_ROOT=$qt" *> $log
+          cmake -S . -B build-l3-package -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON -DRGSML_PROVENANCE_TYPE=CI "-DRGSML_PROVENANCE_RUN_NUMBER=$env:GITHUB_RUN_NUMBER" "-DRGSML_PROVENANCE_GIT_SHA=$actual" "-DRGSML_QT_ROOT=$qt" *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw 'L3_ARTIFACT_CONFIGURE_FAILURE' }
-          cmake --build build-l3-package --config Release --parallel 4 --target rgsml_app *> $log
+          cmake --build build-l3-package --config Release --parallel 4 --target rgsml_app rgsml_project_session_tests *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 100; throw 'L3_ARTIFACT_PRODUCT_BUILD_FAILURE' }
       - name: Install complete standalone Windows Product
         shell: pwsh
@@ -65,6 +65,27 @@ jobs:
           @("commit=$env:GITHUB_SHA","run=$env:GITHUB_RUN_ID","configuration=Release","qualification=NONFQ","physical_playback=NOT_RUN") |
             Set-Content (Join-Path $stage 'L3_ARTIFACT_PROVENANCE.txt') -Encoding utf8
           Copy-Item -LiteralPath 'docs/architecture/L3_WINDOWS_PHYSICAL_ACCEPTANCE_20261126.md' -Destination (Join-Path $stage 'L3_PHYSICAL_ACCEPTANCE.md')
+      - name: Stage independent optional local music benchmark
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/stage/L3-INTEGRATED-NONFQ'
+          $qt=Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64'
+          $bench=New-Item -ItemType Directory -Force -Path (Join-Path $stage 'benchmark')
+          $test=@(Get-ChildItem build-l3-package -Filter rgsml_project_session_tests.exe -Recurse)
+          if ($test.Count -ne 1) { throw 'L3_BENCH_EXE_NOT_UNIQUE' }
+          Copy-Item -LiteralPath $test[0].FullName -Destination $bench.FullName
+          Copy-Item -LiteralPath (Join-Path $qt 'bin/Qt6Test.dll') -Destination $bench.FullName
+          Copy-Item -LiteralPath 'tools/qualification/run_l3_local_music_benchmark.ps1' -Destination $bench.FullName
+          Copy-Item -LiteralPath 'docs/architecture/L3_NATIVE_SEARCH_PERFORMANCE_EVIDENCE_20261126.md' -Destination $bench.FullName
+          $env:PATH="$($bench.FullName);$stage/bin;$env:PATH"
+          $env:RGSML_PLAYBACK_FIR_ROOT=Join-Path $stage 'bin/resources/fir'
+          $env:RGSML_L3_E2E_RATE='48000'
+          $env:QTEST_FUNCTION_TIMEOUT='900000'
+          $report=Join-Path $env:RUNNER_TEMP 'l3-benchmark-bundle-smoke.txt'
+          & (Join-Path $bench.FullName 'rgsml_project_session_tests.exe') nativeMeasuredWinnerUsesRealQtM12AndM13 -o "$report,txt"
+          if ($LASTEXITCODE -ne 0) { Get-Content $report -Tail 80; throw 'L3_BENCH_BUNDLE_SMOKE_FAILED' }
+          if (!(Select-String -Path $report -Pattern 'PASS\s+:.*::nativeMeasuredWinnerUsesRealQtM12AndM13\(48k\)' -Quiet)) { throw 'L3_BENCH_BUNDLE_ROW_MISSING' }
+          Copy-Item -LiteralPath $report -Destination $bench.FullName
       - name: Publish exact standalone artifact
         uses: actions/upload-artifact@v4
         with:
