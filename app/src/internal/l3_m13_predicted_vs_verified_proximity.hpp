@@ -108,7 +108,9 @@ compare_frozen_m08_prediction_with_fresh_verified(
     out.full_global_population=
         p.completeness==m08_frozen::GlobalCompleteness::complete&&
         v.completeness==m08_frozen::GlobalCompleteness::complete;
-    if(p.completeness!=v.completeness) {
+    if(p.completeness==m08_frozen::GlobalCompleteness::invalid_evidence||
+       v.completeness==m08_frozen::GlobalCompleteness::invalid_evidence||
+       p.completeness!=v.completeness) {
         out.global={ProximityComparisonStatus::failed,{},{}};
         return out;
     }
