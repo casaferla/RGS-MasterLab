@@ -67,6 +67,7 @@ jobs:
           name: l3-rate-${{ matrix.rate }}-report
           path: |
             ${{ runner.temp }}/l3-rate-${{ matrix.rate }}.txt
+            ${{ runner.temp }}/l3-rate-${{ matrix.rate }}-provenance.txt
             ${{ runner.temp }}/l3-six-rate-build.log
           if-no-files-found: warn
           retention-days: 14
