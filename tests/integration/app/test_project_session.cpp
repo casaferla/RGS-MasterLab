@@ -6944,6 +6944,20 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QCOMPARE(activity->capture->sample_rate_hz(),sampleRateHz);
     QCOMPARE(activity->capture->frame_count(),
         static_cast<std::uint64_t>(importedProcessed->view().frame_count().value()));
+    const auto transientHistory=activity->capture->transient_history(winningNodes[0].allocated_instance_id);
+    const auto dynamicHistory=activity->capture->dynamic_history(winningNodes[1].allocated_instance_id);
+    QVERIFY(!transientHistory.empty()&&!dynamicHistory.empty());
+    QCOMPARE(transientHistory.front().frame_begin,std::uint64_t{0});
+    QCOMPARE(dynamicHistory.front().frame_begin,std::uint64_t{0});
+    QCOMPARE(transientHistory.back().frame_end_exclusive,activity->capture->frame_count());
+    QCOMPARE(dynamicHistory.back().frame_end_exclusive,activity->capture->frame_count());
+    for(const auto& b:dynamicHistory) {
+        QCOMPARE(b.band_count,std::size_t{1});
+        QVERIFY(b.bands[0].band_id==nativeBand.band_id);
+        QCOMPARE(b.bands[0].gain_last_db,0.0);
+    }
+    QVERIFY(activity->capture->dynamic_history(winningNodes[0].allocated_instance_id).empty());
+    QVERIFY(activity->capture->transient_history(winningNodes[1].allocated_instance_id).empty());
     const auto actualView=importedProcessed->view();
     const auto oracleView=oracle.value()->view();
     QCOMPARE(actualView.format(),oracleView.format());
