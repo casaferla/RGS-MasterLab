@@ -112,6 +112,8 @@ assess_provisional_m13_product_fresh_evidence(
     if(fresh.fresh_m16.sample_rate_hz()!=rate||
        fresh.fresh_m19.sample_rate_hz!=rate||
        fresh.fresh_m20.sample_rate_hz!=rate||
+       fresh.fresh_m19.scope_begin_frame!=0||
+       fresh.fresh_m20.scope_begin_frame!=0||
        fresh.fresh_m19.scope_frame_count!=
          fresh.fresh_full_master_pcm.view().frame_count().value()||
        fresh.fresh_m20.scope_frame_count!=
