@@ -104,7 +104,8 @@ prepare_m12_owned_controller_suspension(
            !module.semanticNodeId||
            module.semanticNodeId->is_nil()||
            !linked_semantic_ids.insert(*module.semanticNodeId).second||
-           !module.algorithmVersion||!module.parameterSchemaId||
+           !module.algorithmVersion||module.algorithmVersion->empty()||
+           !module.parameterSchemaId||module.parameterSchemaId->empty()||
            module.typeId=="rgsml.dsp.true-peak-limiter"||
            module.typeId=="rgsml.dsp.dither")
             return fail("L3_M12_CONTROLLER_SUSPENSION_INVALID_LINKED_NODE");
