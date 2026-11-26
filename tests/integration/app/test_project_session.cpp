@@ -6341,6 +6341,17 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QJsonValue(QStringLiteral("00")))));
     QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("fullResourceM16LinearPeak",
         QJsonValue(QStringLiteral("nan")))));
+    {
+        auto invalid=currentProductDiagnosis;
+        invalid.configured_native_components=0U;
+        invalid.required_native_components=1U;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+        invalid.required_native_components=0U;
+        invalid.actual_27_binding_population_attested=true;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
