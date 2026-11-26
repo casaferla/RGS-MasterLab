@@ -110,6 +110,8 @@ bind_m13_fresh_native_population(
             const auto& x=a.configured[j];
             const auto& y=b.configured[j];
             if(x.current_valid!=y.current_valid||
+               !std::isfinite(x.paired_native_support)||
+               x.paired_native_support<0.0||x.paired_native_support>1.0||
                x.paired_native_support!=y.paired_native_support||
                x.prepared.z!=y.prepared.z||
                x.prepared.endpoint!=y.prepared.endpoint||
