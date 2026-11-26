@@ -2119,6 +2119,39 @@ bool ProjectSessionViewModel::can_redo_private_m12_materialization() const
         masteringChainState_->execution_bindings()==witness->exact_manual_bindings;
 }
 
+bool ProjectSessionViewModel::can_resume_private_m12_suspension() const
+{
+    namespace m=l3_automatch::m12_frozen;
+    if(private_m12_match_state()!=M12CurrentMatchState::suspended||
+       !can_undo_private_m12_materialization())return false;
+    const auto& entry=m12UndoHistory_.back();
+    if(!entry.beforeTicket||!entry.beforeTicket->replay||!entry.afterTicket||
+       !entry.afterTicket->replay)return false;
+    const auto& prior=*entry.beforeTicket->replay;
+    const auto old=prior.reference_linked.instances();
+    if(old.empty()||std::none_of(old.begin(),old.end(),
+        [](const auto& node){return node.active();}))return false;
+    const auto meta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        entry.before.document().referenceMatch.canonical_utf8()));
+    if(!meta.isObject())return false;
+    const auto freshness=meta.object().value(QStringLiteral("materialization")).toObject()
+        .value(QStringLiteral("freshnessState"));
+    if(!freshness.isUndefined()&&freshness.toString()!=QStringLiteral("CURRENT"))return false;
+    const auto suspended=m::prepare_m12_owned_controller_suspension(entry.before,
+        prior.controller_id,prior.linked_chain_id,m::ControllerSuspensionCause::amount_zero,true);
+    return suspended&&m::m12_exact_project_snapshot_equal(
+        suspended.value()->updated_project_not_committed,entry.after);
+}
+core::Status ProjectSessionViewModel::resume_private_m12_suspension()
+{
+    // This is precisely Undo of the last accepted state-only suspension,
+    // not a new positive Amount or an assertion of fresh M13 evidence.
+    if(!can_resume_private_m12_suspension())
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
+            "L3_M12_RESUME_REQUIRES_EXACT_CURRENT_SUSPENSION_HISTORY"});
+    return undo_private_m12_materialization();
+}
+
 core::Status ProjectSessionViewModel::undo_private_m12_materialization()
 {
     namespace m=l3_automatch::m12_frozen;

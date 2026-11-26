@@ -214,6 +214,8 @@ public:
     [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
     [[nodiscard]] bool can_undo_private_m12_materialization() const;
     [[nodiscard]] bool can_redo_private_m12_materialization() const;
+    [[nodiscard]] bool can_resume_private_m12_suspension() const;
+    [[nodiscard]] core::Status resume_private_m12_suspension();
     [[nodiscard]] core::Status undo_private_m12_materialization();
     [[nodiscard]] core::Status redo_private_m12_materialization();
 
