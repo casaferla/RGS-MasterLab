@@ -460,6 +460,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
     if (!msIdentityBound) {
         return msIdentityBound;
     }
+    realization.bind_linked_activity_realization_id(candidateRealizationId);
     auto candidate = std::make_shared<const render::RenderResult>(
         std::move(realization));
 
