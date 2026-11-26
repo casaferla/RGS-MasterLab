@@ -68,7 +68,10 @@ struct NativeSearchPerformance final {
             ++attempted;
             ++completed;
             if(!first_admissible_ms&&start&&now>=*start&&event.measured&&
-               event.measured->native_prediction&&valid_key(*event.measured))
+               event.measured->native_prediction&&valid_key(*event.measured)&&
+               event.measured->native_prediction->independent_m11_ceiling_db_tp&&
+               native_prediction_passes_current_m16(*event.measured->native_prediction,
+                   *event.measured->native_prediction->independent_m11_ceiling_db_tp))
                 first_admissible_ms=std::chrono::duration_cast<std::chrono::milliseconds>(
                     now-*start).count();
             break;
