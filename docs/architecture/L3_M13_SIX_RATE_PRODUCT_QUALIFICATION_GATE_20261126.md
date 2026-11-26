@@ -15,13 +15,21 @@ render the physical full master and measure M16/M19/M20 at that rate.
 The fixture is a controlled mono gain case, not an artistic multi-domain
 benchmark or proof of every DSP at every rate.
 
-Linux, from a configured and built tree:
+The real ProjectSession test depends on the Windows Product resource
+reader/writer path. Linux continues running the native M12/M13 unit and
+integration macro suite; it is not a substitute for the Windows
+six-rate Product lifecycle.
 
-```sh
-RGSML_L3_ALL_RATE_E2E=1 ctest --test-dir build-l3 --output-on-failure -V -R '^rgsml_project_session_tests$'
-```
+The dedicated workflow `.github/workflows/l3-six-rate-qualification.yml`
+runs six independent Windows jobs on an explicit fast-forward of
+`staging/l3-six-rate-qualification-20261126` to a green reviewed revision.
+Do not push the Writer head or launch this qualification during an
+unvalidated Focused run. Each job selects one exact rate through
+`RGSML_L3_E2E_RATE`, requires the matching PASS data tag, and retains
+the report and commit/rate provenance even when a job fails. It does
+not run on ordinary Writer/Focused updates.
 
-Windows PowerShell:
+Windows PowerShell, optional local all-rate run:
 
 ```powershell
 $env:RGSML_L3_ALL_RATE_E2E = '1'
