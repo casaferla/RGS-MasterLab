@@ -161,6 +161,14 @@ void P2RealNativeProductTest::nativePerformanceNeedsIndependentM16ForFirstAdmiss
     m::MeasuredOrderKey score{0.1,0.08,0.05,1,{0x31},{0x41}};
     perf.observe({K::attempted_complete,score},at(3));
     QVERIFY(!perf.first_admissible_ms);
+    QCOMPARE(perf.attempted,1U);
+    QCOMPARE(perf.completed,1U);
+    QVERIFY(perf.last_attempt_ms==3);
+    perf.observe({K::completed_cache_hit,score},at(5));
+    QCOMPARE(perf.attempted,1U);
+    QCOMPARE(perf.cache_hits,1U);
+    QVERIFY(perf.last_attempt_ms==3);
+    QVERIFY(!perf.first_admissible_ms);
 }
 void P2RealNativeProductTest::nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate() {
     namespace m09=a::m09_frozen;
