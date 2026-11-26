@@ -110,6 +110,7 @@ public:
 
 signals:
     void playbackChanged();
+    void linkedActivityClockChanged();
 
 private:
     void refresh();
@@ -128,6 +129,8 @@ private:
     qint64 positionFrames_{0};
     qint64 durationFrames_{0};
     qint64 sampleRateHz_{0};
+    std::optional<audio::FrameDomainId> linkedPcmDomain_;
+    std::optional<core::PlaybackSnapshot> lastLinkedClock_;
     bool playbackAvailable_{false};
     QString errorMessage_;
 };
