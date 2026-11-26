@@ -1,0 +1,85 @@
+name: L3 integrated Windows Product artifact (non-FQ)
+on:
+  push:
+    branches:
+      - staging/l3-windows-product-artifact-20261126
+permissions:
+  contents: read
+jobs:
+  product:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install Qt 6.8.3
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          if ($LASTEXITCODE -ne 0) { throw 'L3_ARTIFACT_DEPENDENCY_FAILURE' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'L3_ARTIFACT_QT_FAILURE' }
+      - name: Build actual Product Release with exact CI provenance
+        shell: pwsh
+        run: |
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw 'L3_ARTIFACT_WRONG_CHECKOUT' }
+          $qt=Join-Path $env:GITHUB_WORKSPACE '6.8.3/msvc2022_64'
+          $log=Join-Path $env:RUNNER_TEMP 'l3-artifact-build.log'
+          cmake -S . -B build-l3-package -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=OFF -DRGSML_WARNINGS_AS_ERRORS=ON -DRGSML_PROVENANCE_TYPE=CI "-DRGSML_PROVENANCE_RUN_NUMBER=$env:GITHUB_RUN_NUMBER" "-DRGSML_PROVENANCE_GIT_SHA=$actual" "-DRGSML_QT_ROOT=$qt" *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw 'L3_ARTIFACT_CONFIGURE_FAILURE' }
+          cmake --build build-l3-package --config Release --parallel 4 --target rgsml_app *> $log
+          if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 100; throw 'L3_ARTIFACT_PRODUCT_BUILD_FAILURE' }
+      - name: Install complete standalone Windows Product
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/stage/L3-INTEGRATED-NONFQ'
+          cmake --install build-l3-package --config Release --prefix "$stage"
+          if ($LASTEXITCODE -ne 0) { throw 'L3_ARTIFACT_INSTALL_FAILURE' }
+          foreach ($relative in @('bin/RGSMasterLab.exe','plugins/platforms/qwindows.dll','share/RGSMasterLab/ToolchainManifest.json')) {
+            if (!(Test-Path -LiteralPath (Join-Path $stage $relative))) { throw "L3_ARTIFACT_MISSING=$relative" }
+          }
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root (Join-Path $stage 'bin/resources/fir')
+          if ($LASTEXITCODE -ne 0) { throw 'L3_ARTIFACT_FIR_PIN_FAILURE' }
+      - name: Cold smoke actual installed Product
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/stage/L3-INTEGRATED-NONFQ'
+          $exe=Join-Path $stage 'bin/RGSMasterLab.exe'
+          $env:QML2_IMPORT_PATH=''
+          $env:QML_IMPORT_PATH=''
+          $env:QT_PLUGIN_PATH=''
+          $env:PATH=($env:PATH -split ';' | Where-Object { $_ -notlike "*6.8.3*msvc2022_64*" }) -join ';'
+          $out=Join-Path $env:RUNNER_TEMP 'l3-artifact-cold-out.log'
+          $err=Join-Path $env:RUNNER_TEMP 'l3-artifact-cold-err.log'
+          $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          if ($p.ExitCode -ne 0) { Get-Content $err -Tail 80; throw "L3_ARTIFACT_COLD_SMOKE_FAILURE=$($p.ExitCode)" }
+      - name: Include exact artifact provenance and physical replay checklist
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/stage/L3-INTEGRATED-NONFQ'
+          @("commit=$env:GITHUB_SHA","run=$env:GITHUB_RUN_ID","configuration=Release","qualification=NONFQ","physical_playback=NOT_RUN") |
+            Set-Content (Join-Path $stage 'L3_ARTIFACT_PROVENANCE.txt') -Encoding utf8
+          Copy-Item -LiteralPath 'docs/architecture/L3_WINDOWS_PHYSICAL_ACCEPTANCE_20261126.md' -Destination (Join-Path $stage 'L3_PHYSICAL_ACCEPTANCE.md')
+      - name: Publish exact standalone artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-L3-Win64-INTEGRATED-NONFQ-${{ github.run_number }}-${{ github.sha }}
+          path: build-l3-package/stage/L3-INTEGRATED-NONFQ/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l3-windows-artifact-diagnostics
+          path: |
+            ${{ runner.temp }}/l3-artifact-build.log
+            ${{ runner.temp }}/l3-artifact-cold-out.log
+            ${{ runner.temp }}/l3-artifact-cold-err.log
+          if-no-files-found: warn
+          retention-days: 14
