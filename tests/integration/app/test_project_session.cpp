@@ -6408,6 +6408,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         root.insert("primaryReason",reasons.first().toObject());
         QVERIFY(!verifyRehashedDiagnostic(root));
     }
+    {
+        auto invalid=currentProductDiagnosis;
+        invalid.state=m13contract::VerificationState::verification_failed;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+        invalid.state=m13contract::VerificationState::stale;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
