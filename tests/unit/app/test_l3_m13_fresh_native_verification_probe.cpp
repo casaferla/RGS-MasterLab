@@ -681,6 +681,14 @@ completeFreshNativeTwentySevenBindingComparison()
     flagOnly.required_components=27U;
     flagOnly.configured_components=27U;
     QVERIFY(!flagOnly.complete_passing_evidence());
+    {
+        auto invalid=comparison;
+        invalid.rows[0].binding_id="foreign";
+        QVERIFY(!invalid.complete_passing_evidence());
+        invalid=comparison;
+        invalid.rows[0].category=QtpCategory::generic_db;
+        QVERIFY(!invalid.complete_passing_evidence());
+    }
     all[0].configured[0].actual_fresh_native=0.508;
     comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
     QVERIFY(!comparison.every_required_binding_passed);
