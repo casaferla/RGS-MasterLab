@@ -12,6 +12,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
+#include <QVariantList>
 
 #include <memory>
 #include <utility>
@@ -81,6 +82,7 @@ public:
     // Existing MANUAL modules and nonprocessing services remain unchanged.
     [[nodiscard]] virtual bool linked_read_only() const noexcept {return false;}
     [[nodiscard]] virtual QVariantMap linked_parameters() const {return {};}
+    Q_INVOKABLE virtual QVariantList linkedBandResponse(int) const {return {};}
 
     Q_INVOKABLE virtual void setBypass(bool bypass) = 0;
     Q_INVOKABLE virtual void undo() = 0;
