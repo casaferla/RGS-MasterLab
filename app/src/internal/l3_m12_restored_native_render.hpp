@@ -229,11 +229,6 @@ render_restored_m12_full_native_pcm_once(
         if(stage_witness)*stage_witness=std::move(observed);
         return linked;
     }
-    if(plan.terminal_p2_bindings.size()!=1U||
-       plan.terminal_p2->instances().size()!=1U||
-       plan.terminal_p2->instances().front().module_type_id()!=
-           "rgsml.dsp.streaming-true-peak-limiter")
-        return fail("L3_M12_REPLAY_TERMINAL_NOT_OWNED_P2");
     auto final=run(linked.value()->view(),*plan.terminal_p2,
                    plan.terminal_p2_bindings);
     if(!final)return final;
