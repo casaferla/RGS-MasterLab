@@ -16,6 +16,8 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <memory>
+#include <string_view>
 #include <string>
 #include <variant>
 #include <vector>
@@ -28,6 +30,12 @@ namespace rgsml::render {
 
 class RenderRequest;
 class RenderResult;
+namespace linked_activity {class LinkedActivityRenderCapture;}
+struct LinkedDspActivitySidecar final {
+    std::shared_ptr<const linked_activity::LinkedActivityRenderCapture> capture;
+    std::string exact_plan_checksum;
+    std::optional<core::RealizationId> realization_id;
+};
 
 struct CompressorTelemetryBucket final {
     double end_reduction_db{0.0};
@@ -320,6 +328,12 @@ public:
     RenderResult& operator=(const RenderResult&) = delete;
     ~RenderResult() = default;
 
+    [[nodiscard]] bool adopt_linked_activity(
+        std::unique_ptr<linked_activity::LinkedActivityRenderCapture> capture,
+        std::string_view exact_plan_checksum) noexcept;
+    void bind_linked_activity_realization_id(core::RealizationId id) noexcept;
+    [[nodiscard]] const std::optional<LinkedDspActivitySidecar>& linked_activity_sidecar() const noexcept
+    {return linked_activity_sidecar_;}
     [[nodiscard]] const rgsml::audio::AudioBuffer& buffer() const noexcept;
     [[nodiscard]] rgsml::audio::AudioBufferView view() const noexcept;
     [[nodiscard]] rgsml::core::FrameRange render_window() const noexcept;
@@ -354,6 +368,7 @@ private:
         std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar = std::nullopt,
         std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_output_sidecars = {}) noexcept;
 
+    std::optional<LinkedDspActivitySidecar> linked_activity_sidecar_;
     rgsml::audio::AudioBuffer buffer_;
     rgsml::core::FrameRange render_window_;
     rgsml::audio::FrameDomainId frame_domain_id_;
