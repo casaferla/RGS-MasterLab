@@ -640,8 +640,9 @@ ApplicationWindow {
     // M18 Product-authorized output choice. The File menu remains
     // disabled until the application owns the complete M18 gate bundle.
     // No QML surface can mint a Ticket or invoke a detached worker.
-    // Numeric fallback exposes the real action without freezing the
-    // pending PO choice of rotary knobs versus vertical faders.
+    // The native Product action remains authoritative. Five compact,
+    // editable Canvas knobs mirror the exact numeric fields; the popup
+    // retains manual precision, ceiling, review, and consent controls.
     Dialog {
         id: autoMatchDialog
         objectName: "autoMatchDialog"
@@ -650,6 +651,20 @@ ApplicationWindow {
             let item = autoMatchInputs.itemAt(index)
             return item && item.numericField.acceptableInput
                 ? item.numericField.text + "%" : "—"
+        }
+        function amountValue(index) {
+            const item = autoMatchInputs.itemAt(index)
+            return item && item.numericField.acceptableInput
+                ? Number(item.numericField.text) : 0
+        }
+        function setAmountValue(index, next) {
+            if (index < 0 || index > 4 || !Number.isFinite(next)
+                || !root.appAutoMatchModel || root.appAutoMatchModel.busy
+                || root.appAutoMatchModel.canAdopt)
+                return
+            const item = autoMatchInputs.itemAt(index)
+            if (item)
+                item.numericField.text = String(Math.round(next * 10) / 10)
         }
         modal: false
         anchors.centerIn: parent
@@ -1986,7 +2001,7 @@ ApplicationWindow {
                                         anchors.margins: 6
                                         spacing: 6
 
-                                        // Global Row: Gold Reference Card + Global Total Match Amount Rotary Knob
+                                        // Global Row: Reference card + real Total Match Amount knob
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Layout.minimumHeight: 46
@@ -2047,24 +2062,27 @@ ApplicationWindow {
                                                     spacing: 6
 
                                                     // Primary Global Knob
-                                                    Rectangle {
+                                                    StudioMatchKnob {
                                                         id: totalMatchAmountKnob
                                                         objectName: "totalMatchAmountKnob"
-                                                        Layout.preferredWidth: 32
-                                                        Layout.preferredHeight: 32
+                                                        Layout.preferredWidth: 38
+                                                        Layout.preferredHeight: 38
                                                         Layout.alignment: Qt.AlignVCenter
-                                                        radius: 16
-                                                        color: "#1A3248"
-                                                        border.color: root.accent
-                                                        border.width: 1.5
-
-                                                        Rectangle {
-                                                            width: 2
-                                                            height: 10
-                                                            color: root.accent
-                                                            anchors.top: parent.top
-                                                            anchors.topMargin: 3
-                                                            anchors.horizontalCenter: parent.horizontalCenter
+                                                        prominent: true
+                                                        accentColor: root.accent
+                                                        value: autoMatchDialog.amountValue(0)
+                                                        editable: !!root.appAutoMatchModel
+                                                            && !root.appAutoMatchModel.busy
+                                                            && !root.appAutoMatchModel.canAdopt
+                                                        onValueEdited: function(nextValue) {
+                                                            autoMatchDialog.setAmountValue(0, nextValue)
+                                                        }
+                                                        Accessible.name: "Total Match Amount"
+                                                        ToolTip.text: "Total Match Amount " + autoMatchDialog.amountText(0)
+                                                        ToolTip.visible: totalMatchMouseDwell.ready
+                                                        StudioTooltipDwell {
+                                                            id: totalMatchMouseDwell
+                                                            anchors.fill: parent
                                                         }
                                                     }
 
@@ -2129,31 +2147,35 @@ ApplicationWindow {
                                                     Layout.alignment: Qt.AlignVCenter
                                                     spacing: 3
 
-                                                    Rectangle {
+                                                    StudioMatchKnob {
                                                         objectName: "automatchKnob_Tonal"
-                                                        Layout.preferredWidth: 26
-                                                        Layout.preferredHeight: 26
+                                                        Layout.preferredWidth: 30
+                                                        Layout.preferredHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
-                                                        radius: 13
-                                                        color: "#162838"
-                                                        border.color: "#2C4356"
-                                                        border.width: 1
-
-                                                        Rectangle {
-                                                            width: 2
-                                                            height: 8
-                                                            color: "#586D7C"
-                                                            anchors.top: parent.top
-                                                            anchors.topMargin: 3
-                                                            anchors.horizontalCenter: parent.horizontalCenter
+                                                        accentColor: "#4E86C6"
+                                                        value: autoMatchDialog.amountValue(1)
+                                                        editable: !!root.appAutoMatchModel
+                                                            && !root.appAutoMatchModel.busy
+                                                            && !root.appAutoMatchModel.canAdopt
+                                                        onValueEdited: function(nextValue) {
+                                                            autoMatchDialog.setAmountValue(1, nextValue)
                                                         }
+                                                        Accessible.name: "Tonal Match Amount"
                                                     }
 
                                                     Text {
-                                                        text: "Tonal " + autoMatchDialog.amountText(1)
-                                                        color: "#586D7C"
+                                                        text: "Tonal"
+                                                        color: root.textSecondary
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
+                                                        Layout.alignment: Qt.AlignHCenter
+                                                    }
+                                                    Text {
+                                                        text: autoMatchDialog.amountText(1)
+                                                        color: root.textPrimary
+                                                        font.family: "Segoe UI"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
                                                         Layout.alignment: Qt.AlignHCenter
                                                     }
                                                 }
@@ -2164,31 +2186,35 @@ ApplicationWindow {
                                                     Layout.alignment: Qt.AlignVCenter
                                                     spacing: 3
 
-                                                    Rectangle {
+                                                    StudioMatchKnob {
                                                         objectName: "automatchKnob_Dynamics"
-                                                        Layout.preferredWidth: 26
-                                                        Layout.preferredHeight: 26
+                                                        Layout.preferredWidth: 30
+                                                        Layout.preferredHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
-                                                        radius: 13
-                                                        color: "#162838"
-                                                        border.color: "#2C4356"
-                                                        border.width: 1
-
-                                                        Rectangle {
-                                                            width: 2
-                                                            height: 8
-                                                            color: "#586D7C"
-                                                            anchors.top: parent.top
-                                                            anchors.topMargin: 3
-                                                            anchors.horizontalCenter: parent.horizontalCenter
+                                                        accentColor: "#C4774A"
+                                                        value: autoMatchDialog.amountValue(2)
+                                                        editable: !!root.appAutoMatchModel
+                                                            && !root.appAutoMatchModel.busy
+                                                            && !root.appAutoMatchModel.canAdopt
+                                                        onValueEdited: function(nextValue) {
+                                                            autoMatchDialog.setAmountValue(2, nextValue)
                                                         }
+                                                        Accessible.name: "Dynamics Match Amount"
                                                     }
 
                                                     Text {
-                                                        text: "Dynamics " + autoMatchDialog.amountText(2)
-                                                        color: "#586D7C"
+                                                        text: "Dynamics"
+                                                        color: root.textSecondary
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
+                                                        Layout.alignment: Qt.AlignHCenter
+                                                    }
+                                                    Text {
+                                                        text: autoMatchDialog.amountText(2)
+                                                        color: root.textPrimary
+                                                        font.family: "Segoe UI"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
                                                         Layout.alignment: Qt.AlignHCenter
                                                     }
                                                 }
@@ -2199,31 +2225,35 @@ ApplicationWindow {
                                                     Layout.alignment: Qt.AlignVCenter
                                                     spacing: 3
 
-                                                    Rectangle {
+                                                    StudioMatchKnob {
                                                         objectName: "automatchKnob_Stereo"
-                                                        Layout.preferredWidth: 26
-                                                        Layout.preferredHeight: 26
+                                                        Layout.preferredWidth: 30
+                                                        Layout.preferredHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
-                                                        radius: 13
-                                                        color: "#162838"
-                                                        border.color: "#2C4356"
-                                                        border.width: 1
-
-                                                        Rectangle {
-                                                            width: 2
-                                                            height: 8
-                                                            color: "#586D7C"
-                                                            anchors.top: parent.top
-                                                            anchors.topMargin: 3
-                                                            anchors.horizontalCenter: parent.horizontalCenter
+                                                        accentColor: "#4A9A88"
+                                                        value: autoMatchDialog.amountValue(3)
+                                                        editable: !!root.appAutoMatchModel
+                                                            && !root.appAutoMatchModel.busy
+                                                            && !root.appAutoMatchModel.canAdopt
+                                                        onValueEdited: function(nextValue) {
+                                                            autoMatchDialog.setAmountValue(3, nextValue)
                                                         }
+                                                        Accessible.name: "Stereo Match Amount"
                                                     }
 
                                                     Text {
-                                                        text: "Stereo " + autoMatchDialog.amountText(3)
-                                                        color: "#586D7C"
+                                                        text: "Stereo"
+                                                        color: root.textSecondary
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
+                                                        Layout.alignment: Qt.AlignHCenter
+                                                    }
+                                                    Text {
+                                                        text: autoMatchDialog.amountText(3)
+                                                        color: root.textPrimary
+                                                        font.family: "Segoe UI"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
                                                         Layout.alignment: Qt.AlignHCenter
                                                     }
                                                 }
@@ -2234,31 +2264,35 @@ ApplicationWindow {
                                                     Layout.alignment: Qt.AlignVCenter
                                                     spacing: 3
 
-                                                    Rectangle {
+                                                    StudioMatchKnob {
                                                         objectName: "automatchKnob_Loudness"
-                                                        Layout.preferredWidth: 26
-                                                        Layout.preferredHeight: 26
+                                                        Layout.preferredWidth: 30
+                                                        Layout.preferredHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
-                                                        radius: 13
-                                                        color: "#162838"
-                                                        border.color: "#2C4356"
-                                                        border.width: 1
-
-                                                        Rectangle {
-                                                            width: 2
-                                                            height: 8
-                                                            color: "#586D7C"
-                                                            anchors.top: parent.top
-                                                            anchors.topMargin: 3
-                                                            anchors.horizontalCenter: parent.horizontalCenter
+                                                        accentColor: "#D3AE66"
+                                                        value: autoMatchDialog.amountValue(4)
+                                                        editable: !!root.appAutoMatchModel
+                                                            && !root.appAutoMatchModel.busy
+                                                            && !root.appAutoMatchModel.canAdopt
+                                                        onValueEdited: function(nextValue) {
+                                                            autoMatchDialog.setAmountValue(4, nextValue)
                                                         }
+                                                        Accessible.name: "Loudness Match Amount"
                                                     }
 
                                                     Text {
-                                                        text: "Loudness " + autoMatchDialog.amountText(4)
-                                                        color: "#586D7C"
+                                                        text: "Loudness"
+                                                        color: root.textSecondary
                                                         font.family: "Segoe UI"
                                                         font.pixelSize: 9
+                                                        Layout.alignment: Qt.AlignHCenter
+                                                    }
+                                                    Text {
+                                                        text: autoMatchDialog.amountText(4)
+                                                        color: root.textPrimary
+                                                        font.family: "Segoe UI"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
                                                         Layout.alignment: Qt.AlignHCenter
                                                     }
                                                 }
