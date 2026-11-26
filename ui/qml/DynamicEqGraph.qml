@@ -29,7 +29,8 @@ Rectangle {
                 }
             }
         }
-        return 20000.0
+        return root.viewModel && root.viewModel.maximumFrequencyHz > minFreq
+            ? root.viewModel.maximumFrequencyHz : 20000.0
     }
     readonly property double minGain: -18.0
     readonly property double maxGain: 18.0
