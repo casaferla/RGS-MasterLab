@@ -6019,6 +6019,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(compareRaw({{},M08ProximityReason::comparable},
                        {0.5,M08ProximityReason::comparable}).status==
             M13Proximity::unavailable);
+    {
+        const M08DomainProximity expected{0.5,M08ProximityReason::comparable};
+        const M08DomainProximity fresh{0.5003,M08ProximityReason::comparable};
+        QVERIFY(compareRaw(expected,fresh).status==M13Proximity::passed);
+        QVERIFY(m13contract::compare_exact_m08_raw_proximity(
+            expected,fresh,false).status==M13Proximity::failed);
+        QVERIFY(compareRaw(expected,{0.5006,M08ProximityReason::comparable}).status==
+                M13Proximity::failed);
+    }
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
