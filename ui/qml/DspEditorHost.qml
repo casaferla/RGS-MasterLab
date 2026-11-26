@@ -310,7 +310,7 @@ Rectangle {
                         objectName: "dspHostResetToDefaultButton"
                         iconKind: "preset-reset"
                         controlSize: 19
-                        iconSize: 17
+                        iconSize: 18
                         familyHeaderUtility: true
                         accentColor: root.activeFamilyAccent
                         visible: !!root.activeModule
