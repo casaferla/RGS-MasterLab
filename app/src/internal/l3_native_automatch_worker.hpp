@@ -51,6 +51,7 @@ struct NativeAutoMatchWorkerInputs final {
     std::vector<core::Uuid> dynamic_band_ids;
     m10_frozen::AuthoritativeCostInput constraints;
     std::optional<m09_frozen::NativeOwnedP2Seed> owned_p2{};
+    std::optional<m10_frozen::NativeSearchPerformance::Clock::time_point> performance_start{};
 };
 // Nonpublishing adapter for an actual insertion observation. The
 // ordinary M10 scorer never consumes this view or its preterminal PCM.
