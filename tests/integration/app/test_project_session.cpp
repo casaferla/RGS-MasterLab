@@ -5871,6 +5871,14 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(std::get<dsp::TransientShaperParameters>(transientEditor->parameters)==*transient.value());
     QVERIFY(!transientEditor->manual_editable());
     QVERIFY(!transientEditor->activity_authorized());
+    const auto dynamicEditor=app::l3_automatch::inspect_current_linked_editor(
+        *session.previewController,prepared,session.masteringChainState->chain(),
+        bindings,winningNodes[1].allocated_instance_id);
+    QVERIFY(dynamicEditor);
+    QVERIFY(std::get<dsp::DynamicEqParameters>(dynamicEditor->parameters)==*dynamic.value());
+    QVERIFY(dynamicEditor->exact_owner==transientEditor->exact_owner);
+    QVERIFY(!dynamicEditor->manual_editable());
+    QVERIFY(!dynamicEditor->activity_authorized());
     // M13 may capture a fresh numerical job ONLY from the actual
     // Product receipt, never an uncommitted native REF staging ticket.
     const auto m13Owner=session.project.
