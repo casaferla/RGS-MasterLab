@@ -379,6 +379,19 @@ encode_m13_provisional_diagnostic(
                 reason.predicate==PredicateState::unavailable;
         });
     if(outcome!="NOT_VERIFIED"&&!approvalMissing)return false;
+    const auto hasPredicate=[&](PredicateState predicate) {
+        return std::any_of(decodedReasons.begin(),decodedReasons.end(),
+            [predicate](const auto& reason){return reason.predicate==predicate;});
+    };
+    if(outcome!="NOT_VERIFIED") {
+        const auto expected=hasPredicate(PredicateState::stale)?"STALE":
+            hasPredicate(PredicateState::failed)?"VERIFICATION_FAILED":
+            "VERIFICATION_UNAVAILABLE";
+        if(outcome!=QString::fromLatin1(expected))return false;
+    } else if(hasPredicate(PredicateState::stale)||
+              hasPredicate(PredicateState::failed)||approvalMissing) {
+        return false;
+    }
     const auto first=root.value("primaryReason");
     if(reasons.isEmpty()) {
         if(!first.isNull())return false;
