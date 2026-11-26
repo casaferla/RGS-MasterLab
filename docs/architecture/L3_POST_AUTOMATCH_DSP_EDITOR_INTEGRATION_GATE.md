@@ -102,3 +102,11 @@ C00 and C01 observation are opt-in at the real engine/module/render boundary; or
 ## Fourth integration lot — playback projection and reviewed Activity surfaces
 
 Product startup explicitly binds the linked adapters to the real audition selector and playback transport. Activity requires exact current accepted PCM owner, plan checksum, native linked revision, active node, stable NEW audible RealizationId, source-rate PCM domain, and completed history. Paused playback retains the current window; unavailable, stopped, foreign/transition and independent audition suppress it. Separate transport identity notifications prevent unnecessary EQ curve recomputation or shared chain row rebuilding, including handoff changes at an unchanged position. The reviewed C00 scope and C01 companion are restored; C01 colors and numbers follow native band UUIDs. Qt map regression exercises native values, pause and invalid evidence. This lot remains unqualified until Focused CI passes; visual fit and actual WASAPI listening must still be checked on the Windows artifact. No manual editing, FQ, release or musical benchmark is implied.
+
+## Updated integration qualification — 2026-11-26
+
+- Focused #144, SHA `15874fe1ff35644eb6dc7f43fc3d4d7dc94bbc11`: SUCCESS, Windows/Linux macro gate including Product Activity integration.
+- Six-rate Product qualification #2, SHA `6a3ab745f8490e0f3a99ed92bf21dc83558fd6f8`: [SUCCESS](https://github.com/casaferla/RGS-MasterLab/actions/runs/45893828867). All six Windows matrix jobs (44100, 48000, 88200, 96000, 176400, 192000 Hz) completed successfully, including native Product search lifecycle and the corresponding linked M12 editor/Activity lifecycle row. Evidence retention steps passed in all jobs.
+- The standalone Windows artifact #1 uses the same tested SHA. At this checkpoint its build is still in progress; no artifact or cold-smoke success is claimed. [Run](https://github.com/casaferla/RGS-MasterLab/actions/runs/45893820238).
+
+Keep the qualified candidate frozen while packaging and physical testing proceed. Manual REF_LINKED editing remains locked; physical playback, visual fit, representative full-track performance, formal QTP/FQ and release remain separate open gates. No main merge or extra DSP work is required to document this result.
