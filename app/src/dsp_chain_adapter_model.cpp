@@ -1,4 +1,5 @@
 #include "dsp_chain_adapter_model.hpp"
+#include "internal/l3_linked_dsp_module_adapter.hpp"
 
 #include <QVariant>
 
@@ -37,6 +38,28 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
 {
     moduleAdapters_.clear();
 
+    lastLinkedEditorOwner_.reset();
+    lastLinkedEditorIds_.clear();
+    const auto linked=(linkedEditorPreviewController_&&chainState_)
+        ?l3_automatch::inspect_current_linked_editors(
+            *linkedEditorPreviewController_,*chainState_)
+        :std::nullopt;
+    bool linkedAppended=false;
+    const auto appendLinked=[&] {
+        if(linkedAppended)return;
+        linkedAppended=true;
+        if(!linked||linked->empty())return;
+        lastLinkedEditorOwner_=linked->front().exact_owner;
+        for(const auto& snapshot:*linked) {
+            auto adapter=std::make_unique<l3_automatch::LinkedDspModuleAdapter>(
+                snapshot,*linkedEditorPreviewController_,*chainState_,workflowContext_);
+            lastLinkedEditorIds_.append(adapter->instance_id());
+            connect(adapter.get(),&DspModuleAdapter::changed,
+                this,&DspChainAdapterModel::changed);
+            moduleAdapters_.push_back(std::move(adapter));
+        }
+    };
+
     if (chainState_ != nullptr) {
         for (const auto& instance : chainState_->instances()) {
             const auto typeId = instance.module_type_id();
@@ -60,6 +83,8 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                         this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(adapter));
             } else if (typeId=="rgsml.dsp.streaming-true-peak-limiter") {
+                // Native linked processing precedes the optional terminal P2.
+                appendLinked();
                 // Real fifth MANUAL instance only; no presentation-only fake.
                 auto adapter=std::make_unique<StreamingTruePeakPreviewModuleAdapter>(
                     chainState_,p2PreviewController_,workflowContext_);
@@ -82,6 +107,8 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(compAdapter));
     }
+
+    appendLinked();
 
     // Analysis-only presentation entry, never a ProcessingChain instance.
     // Opt-in keeps legacy project/standalone tests and DSP topology unchanged.
@@ -226,6 +253,40 @@ void DspChainAdapterModel::bindAnalysisStatusViewModel(QObject* statusVm)
 {
     if(analysisStatusViewModel_==statusVm)return;
     analysisStatusViewModel_=statusVm;
+    rebuild_adapters_from_authority();
+    emit changed();
+}
+
+void DspChainAdapterModel::bindLinkedEditorPreviewController(MasteringPreviewController* preview)
+{
+    if(linkedEditorPreviewController_==preview)return;
+    disconnect(linkedEditorConnection_);
+    linkedEditorPreviewController_=preview;
+    if(preview) {
+        // A queued rebuild cannot destroy an adapter while its own
+        // preview-change notification is still on the stack.
+        linkedEditorConnection_=connect(preview,&MasteringPreviewController::changed,
+            this,&DspChainAdapterModel::reconcile_linked_editor_rows,
+            Qt::QueuedConnection);
+    }
+    rebuild_adapters_from_authority();
+    emit changed();
+}
+
+void DspChainAdapterModel::reconcile_linked_editor_rows()
+{
+    QStringList ids;
+    std::shared_ptr<const l3_automatch::LinkedEditorSnapshot::Ticket> owner;
+    if(linkedEditorPreviewController_&&chainState_) {
+        const auto linked=l3_automatch::inspect_current_linked_editors(
+            *linkedEditorPreviewController_,*chainState_);
+        if(linked&&!linked->empty()) {
+            owner=linked->front().exact_owner;
+            for(const auto& snapshot:*linked)
+                ids.append(QString::fromStdString(snapshot.instance.instance_id().to_string()));
+        }
+    }
+    if(ids==lastLinkedEditorIds_&&owner==lastLinkedEditorOwner_.lock())return;
     rebuild_adapters_from_authority();
     emit changed();
 }
