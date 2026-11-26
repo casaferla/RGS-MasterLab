@@ -4,8 +4,12 @@
 // A returned snapshot is presentation only; no mutation or Activity grant.
 #include "l3_m12_product_preview_worker_ticket.hpp"
 #include <QThread>
+#include <algorithm>
+#include <memory>
 #include <optional>
+#include <span>
 #include <variant>
+#include <vector>
 
 namespace rgsml::app::l3_automatch {
 struct LinkedEditorSnapshot final {
@@ -17,12 +21,13 @@ struct LinkedEditorSnapshot final {
     [[nodiscard]] constexpr bool activity_authorized() const noexcept{return false;}
 };
 
-[[nodiscard]] inline std::optional<LinkedEditorSnapshot> inspect_current_linked_editor(
+// One coherent list for the Product chain model. Empty is a valid current
+// linked graph with no supported editors; nullopt means authority failed.
+[[nodiscard]] inline std::optional<std::vector<LinkedEditorSnapshot>> inspect_current_linked_editors(
     const MasteringPreviewController& preview,
     const std::shared_ptr<const render::RenderResult>& current_prepared,
     const dsp::ProcessingChain& current_manual,
-    std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
-    const dsp::ModuleInstanceId& requested_instance)
+    std::span<const dsp::ModuleExecutionBinding> current_manual_bindings)
 {
     if(QThread::currentThread()!=preview.thread())return {};
     const auto ticket=preview.private_m12_product_preview_ticket();
@@ -44,7 +49,7 @@ struct LinkedEditorSnapshot final {
        replay.linked_chain_id.is_nil()||replay.exact_plan_checksum.empty())return {};
     const auto nodes=replay.reference_linked.instances();
     if(nodes.size()!=replay.reference_bindings.size())return {};
-    std::optional<LinkedEditorSnapshot> result;
+    std::vector<LinkedEditorSnapshot> result;
     for(std::size_t i=0;i<nodes.size();++i) {
         const auto& node=nodes[i];
         const auto& binding=replay.reference_bindings[i];
@@ -59,17 +64,30 @@ struct LinkedEditorSnapshot final {
         for(std::size_t j=0;j<i;++j)
             if(nodes[j].instance_id()==node.instance_id()||
                nodes[j].semantic_node_id()==node.semantic_node_id())return {};
-        if(node.instance_id()!=requested_instance)continue;
-        if(result)return {};
         const auto type=node.module_type_id();
-        const bool supported=
-            (type=="rgsml.dsp.dynamic-eq"&&
-             std::holds_alternative<dsp::DynamicEqParameters>(binding.parameters))||
-            (type=="rgsml.dsp.transient-shaper"&&
-             std::holds_alternative<dsp::TransientShaperParameters>(binding.parameters));
-        if(!supported||!replay.registry_owner->has_factory(type))return {};
-        result=LinkedEditorSnapshot{ticket,node,binding.parameters};
+        const bool dynamic=type=="rgsml.dsp.dynamic-eq";
+        const bool transient=type=="rgsml.dsp.transient-shaper";
+        if(!dynamic&&!transient)continue;
+        if((dynamic&&!std::holds_alternative<dsp::DynamicEqParameters>(binding.parameters))||
+           (transient&&!std::holds_alternative<dsp::TransientShaperParameters>(binding.parameters))||
+           !replay.registry_owner->has_factory(type))return {};
+        result.push_back(LinkedEditorSnapshot{ticket,node,binding.parameters});
     }
     return result;
+}
+[[nodiscard]] inline std::optional<LinkedEditorSnapshot> inspect_current_linked_editor(
+    const MasteringPreviewController& preview,
+    const std::shared_ptr<const render::RenderResult>& current_prepared,
+    const dsp::ProcessingChain& current_manual,
+    std::span<const dsp::ModuleExecutionBinding> current_manual_bindings,
+    const dsp::ModuleInstanceId& requested_instance)
+{
+    const auto snapshots=inspect_current_linked_editors(
+        preview,current_prepared,current_manual,current_manual_bindings);
+    if(!snapshots)return {};
+    const auto it=std::find_if(snapshots->begin(),snapshots->end(),
+        [&](const auto& snapshot){return snapshot.instance.instance_id()==requested_instance;});
+    if(it==snapshots->end())return {};
+    return *it;
 }
 } // namespace rgsml::app::l3_automatch
