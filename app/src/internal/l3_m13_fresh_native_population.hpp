@@ -90,8 +90,12 @@ bind_m13_fresh_native_population(
     for(std::size_t i=0;i<accepted.size();++i) {
         const auto& a=accepted[i];
         const auto& b=(*fresh.native_population)[i];
-        if(a.binding_id!=m07_frozen::kBindings[i].binding_id||
+        const auto& binding=m07_frozen::kBindings[i];
+        if(a.binding_id!=binding.binding_id||
            a.binding_id!=b.binding_id||
+           (a.source_feature_id!=binding.source_feature_id&&
+            (binding.exclusive_fallback_feature_id.empty()||
+             a.source_feature_id!=binding.exclusive_fallback_feature_id))||
            a.source_feature_id!=b.source_feature_id||
            a.exact_feature_dependency.empty()||
            a.exact_feature_dependency!=b.exact_feature_dependency||
