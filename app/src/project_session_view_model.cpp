@@ -1528,7 +1528,7 @@ ProjectSessionViewModel::capture_private_m12_search_baseline(bool require_owned_
         m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
     const bool exactReopen=m12UndoHistory_.empty()&&m12ReopenedReadback_&&
         m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
-    if(!opened_||!ticket||!ticket->replay||!m12RedoHistory_.empty()||
+    if(!opened_||!ticket||!ticket->replay||
        (!currentReceipt&&!exactReopen)||
        !m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
        !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*ticket->replay))
@@ -1621,7 +1621,7 @@ ProjectSessionViewModel::apply_private_m12_materialization(
         const bool exactReopen=m12UndoHistory_.empty()&&m12ReopenedReadback_&&
             m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
         if(!opened_||!m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
-           !beforeTicket||!beforeTicket->replay||!m12RedoHistory_.empty()||
+           !beforeTicket||!beforeTicket->replay||
            (!currentReceipt&&!exactReopen)||
            !m::m12_reopened_persisted_replay_matches_exact_ticket(live.value()->document(),*beforeTicket->replay))
             return fail("L3_M12_PRODUCT_COMMIT_PRIOR_OWNER_NOT_CURRENT");
@@ -1955,7 +1955,7 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
     const bool reopened=live&&m12UndoHistory_.empty()&&m12ReopenedReadback_&&
         m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
     if(!live||!ticket||!ticket->replay||!provider||provider()!=prepared||
-       ticket->exact_prepared_owner!=prepared||!m12RedoHistory_.empty()||
+       ticket->exact_prepared_owner!=prepared||
        (!receipt&&!reopened)||ticket->replay->controller_id!=controller_id||
        ticket->replay->linked_chain_id!=linked_id||
        !m::m12_exact_project_snapshot_equal(*live.value(),expected)||
