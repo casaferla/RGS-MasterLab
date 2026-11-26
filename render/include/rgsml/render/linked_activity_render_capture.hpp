@@ -101,6 +101,7 @@ public:
             return e->collector.visible_window(frames_,frames_);
         return {};
     }
+    [[nodiscard]] bool sealed() const noexcept{return sealed_;}
     [[nodiscard]] std::uint64_t revision() const noexcept{return revision_;}
     [[nodiscard]] std::uint64_t frame_count() const noexcept{return frames_;}
     [[nodiscard]] std::uint32_t sample_rate_hz() const noexcept{return fs_;}
