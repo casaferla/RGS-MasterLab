@@ -5846,6 +5846,9 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     invalidCoverage[0].effective_coverage=0.8;
     const auto validCoverage=compareCoverage(invalidCoverage,invalidCoverage);
     QVERIFY(validCoverage.all_required_pass());
+    const auto invalidCategory=app::l3_automatch::m13_frozen::
+        compare_qtp_native_scalar(static_cast<app::l3_automatch::m13_frozen::QtpCategory>(255),1.0,1.0);
+    QVERIFY(invalidCategory.outcome==app::l3_automatch::m13_frozen::QtpOutcome::unavailable);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
