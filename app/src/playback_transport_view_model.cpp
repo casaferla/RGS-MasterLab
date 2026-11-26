@@ -172,6 +172,7 @@ core::Status PlaybackTransportViewModel::stop_and_clear()
     }
     terminalLease_.reset();
     terminalGate_ = nullptr;
+    linkedPcmDomain_.reset();
     sampleRateHz_ = 0;
     errorMessage_.clear();
     refresh();
@@ -224,6 +225,7 @@ core::Status PlaybackTransportViewModel::prepare_pcm(
         publish_failure(*prepared.error());
         return prepared;
     }
+    linkedPcmDomain_=source.timebase().frame_domain_id();
     sampleRateHz_ = source.format().sample_rate().value();
     errorMessage_.clear();
     refresh();
@@ -251,6 +253,7 @@ core::Status PlaybackTransportViewModel::handoff_pcm(
         publish_failure(*handedOff.error());
         return handedOff;
     }
+    linkedPcmDomain_=source.timebase().frame_domain_id();
     sampleRateHz_ = source.format().sample_rate().value();
     errorMessage_.clear();
     refresh();
@@ -451,7 +454,9 @@ PlaybackTransportViewModel::playback_snapshot() const
 
 std::optional<std::uint32_t> PlaybackTransportViewModel::linked_activity_source_rate() const noexcept
 {
-    if(terminalGate_||!sourceDerivedActive_||sampleRateHz_<=0||sampleRateHz_>192000)return {};
+    if(terminalGate_||!sourceDerivedActive_||
+       linkedPcmDomain_!=audio::FrameDomainId::SOURCE_PROCESSING_RATE||
+       sampleRateHz_<=0||sampleRateHz_>192000)return {};
     return static_cast<std::uint32_t>(sampleRateHz_);
 }
 
