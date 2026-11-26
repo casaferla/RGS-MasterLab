@@ -149,8 +149,12 @@ assess_provisional_m13_product_fresh_evidence(
                 PredicateState::unavailable,row.binding_id);
         }
     }
-    if(!features.every_required_binding_complete)
+    if(!features.every_required_binding_complete) {
         state.mandatory_evidence_missing=true;
+        record(VerificationStage::analysis,
+            "CANDIDATE_REQUIRED_COMPONENT_MISSING",
+            "/featureResults/configuredPopulation",PredicateState::unavailable);
+    }
     output.actual_27_binding_population_attested=
         features.complete_passing_evidence();
     if(features.every_required_binding_complete&&
