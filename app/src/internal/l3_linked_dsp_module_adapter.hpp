@@ -63,6 +63,9 @@ public:
     [[nodiscard]] QVariantMap linked_parameters() const override
     {const auto s=current();return s?project_linked_editor_parameters(*s):QVariantMap{};}
 
+    [[nodiscard]] QVariantList linkedBandResponse(int index) const override
+    {const auto s=current();return s?project_linked_dynamic_response(*s,index):QVariantList{};}
+
     // Neither QML nor a caller holding the old adapter can mutate the
     // linked chain, bypass it, trigger a render or manufacture history.
     void setBypass(bool) override {}
