@@ -89,6 +89,9 @@ m13_provisional_payload_without_own_checksum(
        !fresh.matches_executed_request(admitted)||
        assessment.state==VerificationState::verified||
        assessment.verified_profile_approval_exists||
+       assessment.required_native_components>assessment.configured_native_components||
+       (assessment.actual_27_binding_population_attested&&
+        assessment.required_native_components==0U)||
        !admitted.exact_materialized_preview_owner().replay||
        !admitted.exact_materialized_preview_owner().exact_prepared_owner)
         return std::nullopt;
