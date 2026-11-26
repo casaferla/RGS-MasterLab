@@ -6367,6 +6367,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
             *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
     }
+    {
+        auto invalid=currentProductDiagnosis;
+        auto& reasons=invalid.canonical_reasons;
+        reasons.erase(std::remove_if(reasons.begin(),reasons.end(),[](const auto& reason){
+            return reason.code=="VERIFICATION_PROFILE_UNAVAILABLE";
+        }),reasons.end());
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
