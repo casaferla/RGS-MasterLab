@@ -6,6 +6,7 @@
 #include "l3_m10_p2_canonical_trial_ticket.hpp"
 #include "l3_m11_native_fixed_assessment.hpp"
 #include "l3_m10_native_scope_key.hpp"
+#include <chrono>
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 struct PreservedNativeGraph final {
