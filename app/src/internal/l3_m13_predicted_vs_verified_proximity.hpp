@@ -31,8 +31,15 @@ compare_exact_m08_raw_proximity(
 {
     if(predicted.reason!=verified.reason)
         return {ProximityComparisonStatus::failed,{},{}};
-    if(!predicted.comparable()||!verified.comparable())
+    if(!predicted.comparable()||!verified.comparable()) {
+        // An unavailable reason must not carry a fabricated raw value.
+        // Missing comparable values remain unavailable rather than a
+        // numerical mismatch, consistently with the frozen M08 report.
+        if((predicted.raw&&!predicted.comparable())||
+           (verified.raw&&!verified.comparable()))
+            return {ProximityComparisonStatus::failed,{},{}};
         return {ProximityComparisonStatus::unavailable,{},{}};
+    }
     const double a=*predicted.raw,b=*verified.raw;
     if(predicted.reason==m08_frozen::ProximityReason::proximity_already_matched&&
        (a!=1.0||b!=1.0))
