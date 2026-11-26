@@ -7084,6 +7084,20 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     audible.audibleRealization.realizationId=core::RealizationId{acceptedId->value+1U};
     QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
         audible,winningNodes[0].allocated_instance_id).available());
+    audible.audibleRealization.realizationId=acceptedId;
+    audible.position=core::FrameIndex{0};
+    ++audible.seekSerial;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[0].allocated_instance_id).available());
+    audible.position=core::FrameIndex{selectedPcm->view().frame_count().value()/2};
+    ++audible.loopWrapCount;
+    const auto rewound=la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[0].allocated_instance_id);
+    for(const auto& bucket:rewound.transient)
+        QVERIFY(bucket.frame_end_exclusive<=static_cast<std::uint64_t>(audible.position.value()));
+    audible.position=core::FrameIndex{selectedPcm->view().frame_count().value()+1};
+    QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[0].allocated_instance_id).available());
     const auto importedCopy=dir.filePath(QStringLiteral(
         "m12-reopened-native-identical.rgsml"));
     imported.project.saveProjectAs(QUrl::fromLocalFile(importedCopy));
