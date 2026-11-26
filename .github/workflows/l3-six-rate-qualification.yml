@@ -30,6 +30,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'L3_QT_DEP_FAILED' }
           python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
           if ($LASTEXITCODE -ne 0) { throw 'L3_QT_FAILED' }
+      - name: Record exact qualification input
+        shell: pwsh
+        run: |
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw 'L3_RATE_WRONG_CHECKOUT' }
+          @("commit=$actual","source_rate_hz=$env:RGSML_L3_E2E_RATE","qt=6.8.3","configuration=Release") |
+            Set-Content (Join-Path $env:RUNNER_TEMP "l3-rate-$env:RGSML_L3_E2E_RATE-provenance.txt")
       - name: Build actual Product session test
         shell: pwsh
         run: |
