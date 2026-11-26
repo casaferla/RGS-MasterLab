@@ -7122,6 +7122,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         capture_private_m13_fresh_postmaterialization_probe(0.0));
     QVERIFY(!session.project.private_m13_fresh_probe_still_current(
         *m13Owner.value()));
+    QVERIFY(!app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,*session.masteringChainState));
     const auto forbidden=dir.filePath(QStringLiteral(
         "m12-stale-manual-must-not-save.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(forbidden));
