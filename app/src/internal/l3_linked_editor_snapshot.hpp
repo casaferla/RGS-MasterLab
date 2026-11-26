@@ -82,8 +82,7 @@ struct LinkedEditorSnapshot final {
     const MasteringPreviewController& preview,
     const MasteringChainState& manual)
 {
-    if(QThread::currentThread()!=preview.thread()||
-       QThread::currentThread()!=manual.thread()||
+    if(!preview.private_m12_linked_editor_owner_matches(manual)||
        !preview.snapshot_provider())return {};
     const auto prepared=preview.snapshot_provider()();
     const auto bindings=manual.execution_bindings();
