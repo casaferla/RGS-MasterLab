@@ -723,7 +723,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         searchPerformance.completed+searchPerformance.failed);
     QCOMPARE(searchPerformance.attempted,
         completed->result.search.refinement->total_attempted);
-    qInfo("Qt native search Fs=%u: first admissible=%lld ms attempted=%u completed=%u failed=%u cache hits=%u",
+    qInfo("Qt native search Fs=%u: first admissible=%lld ms attempted=%u completed=%u failed=%u cache hits=%u evaluator rejected=%u budget refusals=%u",
         static_cast<unsigned>(nativeRateHz),
         static_cast<long long>(*searchPerformance.first_admissible_ms),
         searchPerformance.attempted,searchPerformance.completed,
