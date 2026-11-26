@@ -104,6 +104,9 @@ QString AutoMatchViewModel::review_metrics_text()const {
     if(metrics->first_admissible_ms)
         text+=QStringLiteral("\nFirst admissible: %1 s")
             .arg(static_cast<double>(*metrics->first_admissible_ms)/1000.0,0,'f',1);
+    if(metrics->first_admissible_ms)
+        text+=QStringLiteral(" | %1 complete, %2 failed, %3 cached")
+            .arg(metrics->completed).arg(metrics->failed).arg(metrics->cache_hits);
     return text;
 }
 QString AutoMatchViewModel::verification_note()const {
