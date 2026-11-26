@@ -212,6 +212,8 @@ encode_m13_provisional_diagnostic(
     auto sealed=project::OpaqueJsonValue::parse(
         QJsonDocument(*payload).toJson(QJsonDocument::Compact).toStdString());
     if(!sealed)return R::failure(*sealed.error());
+    if(!verify_m13_provisional_diagnostic_integrity(*sealed.value()))
+        return fail("L3_M13_PROVISIONAL_DIAGNOSTIC_SCHEMA_INVALID");
     return R::success(M13ProvisionalDiagnosticEnvelope{
         std::move(*sealed.value()),checksum});
 }
