@@ -1084,6 +1084,18 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(!session.project.can_resume_private_m12_suspension());
     QVERIFY(!session.project.can_undo_private_m12_materialization());
     QVERIFY(!session.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
+    const auto stalePath=dir.filePath(QStringLiteral("l3-native-stale.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(stalePath));
+    QVERIFY2(QFileInfo::exists(stalePath),session.project.error_message().toUtf8().constData());
+    session.project.openProject(QUrl::fromLocalFile(stalePath));
+    QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());
+    QVERIFY(session.project.private_m12_match_state()==app::ProjectSessionViewModel::M12CurrentMatchState::stale);
+    QVERIFY(!session.project.can_resume_private_m12_suspension());
+    QVERIFY(session.project.can_save_project());
+    const auto staleReopened=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(staleReopened&&staleReopened->replay);
+    QVERIFY(staleReopened->replay->reference_bindings==staleTicket->replay->reference_bindings);
+    QVERIFY(staleReopened->replay->reference_id==staleTicket->replay->reference_id);
 }
 
 void ProjectSessionTest::
