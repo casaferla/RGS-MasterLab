@@ -1,6 +1,7 @@
 #include "project_session_view_model.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
 #include "internal/l3_linked_editor_snapshot.hpp"
+#include "internal/l3_linked_editor_parameter_projection.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m13_provisional_verification_assessment.hpp"
 #include "internal/l3_m13_provisional_report_codec.hpp"
@@ -5897,6 +5898,30 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(dynamicEditor->exact_owner==transientEditor->exact_owner);
     QVERIFY(!dynamicEditor->manual_editable());
     QVERIFY(!dynamicEditor->activity_authorized());
+    const auto c00=app::l3_automatch::project_linked_editor_parameters(*transientEditor);
+    QCOMPARE(c00.value("attackAmountDb").toDouble(),2.0);
+    QCOMPARE(c00.value("sustainAmountDb").toDouble(),-1.0);
+    QVERIFY(!c00.value("manualEditable").toBool());
+    QVERIFY(!c00.value("activityAuthorized").toBool());
+    const auto c01=app::l3_automatch::project_linked_editor_parameters(*dynamicEditor);
+    QVERIFY(!c01.value("manualEditable").toBool());
+    QVERIFY(!c01.value("activityAuthorized").toBool());
+    const auto presentedBands=c01.value("bands").toList();
+    QCOMPARE(presentedBands.size(),static_cast<qsizetype>(dynamic.value()->bands().size()));
+    const auto& nativeBand=dynamic.value()->bands().front().spec();
+    const auto presentedBand=presentedBands.front().toMap();
+    QCOMPARE(presentedBand.value("bandId").toString(),
+        QString::fromStdString(nativeBand.band_id.to_string()));
+    const auto dynamics=presentedBand.value("dynamics").toMap();
+    QCOMPARE(dynamics.size(),qsizetype{6});
+    QCOMPARE(dynamics.value("range").toDouble(),nativeBand.control.range_db);
+    QCOMPARE(dynamics.value("threshold").toDouble(),nativeBand.control.threshold_dbfs);
+    QCOMPARE(dynamics.value("ratio").toDouble(),nativeBand.control.ratio);
+    QCOMPARE(dynamics.value("rmsTime").toDouble(),nativeBand.control.rms_time_constant_ms);
+    QCOMPARE(dynamics.value("attack").toDouble(),nativeBand.control.attack_ms);
+    QCOMPARE(dynamics.value("release").toDouble(),nativeBand.control.release_ms);
+    QVERIFY(presentedBand.value("qApplicable").toBool());
+    QVERIFY(!presentedBand.contains("shelfSlope"));
     QVERIFY(!app::l3_automatch::inspect_current_linked_editor(
         *session.previewController,{},session.masteringChainState->chain(),
         bindings,winningNodes[1].allocated_instance_id));
