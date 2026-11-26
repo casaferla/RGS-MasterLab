@@ -149,7 +149,7 @@ public:
             return false;
         auto input=capture_native_qt_product_session_verification_on_owner(project(),gold_,
             *operation_,*completed_,*reviewed_,true,other_safety);
-        if(!input){phase_=Phase::verification_incomplete;return false;}
+        if(!input){error_="L3_PRODUCT_VERIFICATION_CAPTURE_UNAVAILABLE";phase_=Phase::verification_incomplete;return false;}
         input->derive_product_native_safety=derive_product_native_safety;
         try {
             auto cancel=std::make_shared<std::atomic<bool>>(false);
@@ -159,7 +159,7 @@ public:
             });
             cancel_=std::move(cancel);verification_=std::move(task);
             phase_=Phase::verifying;return true;
-        }catch(...) {phase_=Phase::verification_incomplete;return false;}
+        }catch(...) {error_="L3_PRODUCT_VERIFICATION_DISPATCH_EXCEPTION";phase_=Phase::verification_incomplete;return false;}
     }
     // Nonblocking. Called on the Qt owner by a timer or queued callback.
     void poll() {
@@ -235,21 +235,22 @@ public:
         if(verification_.valid()&&verification_.wait_for(0ms)==std::future_status::ready) {
             try {
                 auto done=verification_.get();
-                if(cancel_->load(std::memory_order_acquire)||!done) {
-                    phase_=Phase::verification_incomplete;return;
+                if(cancel_->load(std::memory_order_acquire)) {
+                    error_="L3_PRODUCT_VERIFICATION_CANCELLED";phase_=Phase::verification_incomplete;return;
                 }
+                if(!done){error_=done.error()->message();phase_=Phase::verification_incomplete;return;}
                 auto sealed=project().seal_private_m13_actual_native_completion(*done.value());
-                if(!sealed){phase_=Phase::verification_incomplete;return;}
+                if(!sealed){error_=sealed.error()->message();phase_=Phase::verification_incomplete;return;}
                 // Sealing already acquired the physical M12/M18 lease.
                 // Record its *post-seal* owner. GUI refresh must never
                 // acquire another mutation lease merely to display it.
                 verification_owner_=fanout_.current_owner_snapshot();
-                if(!verification_owner_){phase_=Phase::verification_incomplete;return;}
+                if(!verification_owner_){error_="L3_PRODUCT_VERIFICATION_OWNER_UNAVAILABLE";phase_=Phase::verification_incomplete;return;}
                 diagnostic_.emplace(std::move(*sealed.value()));
                 verification_result_.emplace(std::move(*done.value()));
                 phase_=verification_result_->assessment().native_numerical_evidence_passed()
                     ?Phase::numerical_pass:Phase::verification_incomplete;
-            }catch(...) {phase_=Phase::verification_incomplete;}
+            }catch(...) {error_="L3_PRODUCT_VERIFICATION_COMPLETION_EXCEPTION";phase_=Phase::verification_incomplete;}
         }
         if((phase_==Phase::candidate_ready||phase_==Phase::no_correction||
             phase_==Phase::no_correction_prior_retained||phase_==Phase::zero_amount_prior_retained)&&
