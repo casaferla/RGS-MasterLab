@@ -44,5 +44,18 @@ jobs:
           $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
           $exe=Get-ChildItem build-l3 -Filter rgsml_project_session_tests.exe -Recurse
           if (@($exe).Count -ne 1) { throw 'L3_RATE_TEST_EXECUTABLE_NOT_UNIQUE' }
-          & $exe.FullName nativeMeasuredWinnerUsesRealQtM12AndM13 -o -,txt
-          if ($LASTEXITCODE -ne 0) { throw 'L3_RATE_REAL_PRODUCT_FAILURE' }
+          $report=Join-Path $env:RUNNER_TEMP "l3-rate-$env:RGSML_L3_E2E_RATE.txt"
+          & $exe.FullName nativeMeasuredWinnerUsesRealQtM12AndM13 -o -,txt -o "$report,txt"
+          $testExit=$LASTEXITCODE
+          if (!(Test-Path $report)) { throw 'L3_RATE_TEST_REPORT_MISSING' }
+          if ($testExit -ne 0) { throw 'L3_RATE_REAL_PRODUCT_FAILURE' }
+      - name: Retain native qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l3-rate-${{ matrix.rate }}-report
+          path: |
+            ${{ runner.temp }}/l3-rate-${{ matrix.rate }}.txt
+            ${{ runner.temp }}/l3-six-rate-build.log
+          if-no-files-found: warn
+          retention-days: 14
