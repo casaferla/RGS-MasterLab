@@ -133,7 +133,7 @@ run_fresh_m13_product_postmaterialization_probe(
     m12_frozen::M12NativeStageExecutionWitness witness;
     auto render=m12_frozen::render_restored_m12_full_native_pcm_once(
         *owner.replay,*owner.exact_prepared_owner,maximum_block_frames,
-        &witness);
+        &witness,cancellation);
     if(!render)return R::failure(*render.error());
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return fail("L3_M13_PRODUCT_FRESH_CANCELLED_AFTER_RENDER");

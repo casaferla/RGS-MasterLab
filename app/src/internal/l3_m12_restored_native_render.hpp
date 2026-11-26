@@ -9,6 +9,7 @@
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/core/result.hpp>
 #include <cstddef>
+#include <atomic>
 #include <span>
 #include <utility>
 #include <vector>
@@ -73,7 +74,8 @@ render_restored_m12_full_native_pcm_once(
     const RestoredM12NativeReplayPlan& plan,
     const render::RenderResult& current_owned_prepared,
     core::FrameCount maximum_block_frames,
-    M12NativeStageExecutionWitness* stage_witness = nullptr)
+    M12NativeStageExecutionWitness* stage_witness = nullptr,
+    const std::atomic<bool>* cancellation=nullptr)
 {
     // Never leak a prior successful witness across a rejected render.
     if(stage_witness)*stage_witness={};
@@ -81,6 +83,8 @@ render_restored_m12_full_native_pcm_once(
     const auto fail=[](const char* reason){
         return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
     };
+    const auto cancelled=[&](){return cancellation&&cancellation->load(std::memory_order_acquire);};
+    if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
     const auto original=current_owned_prepared.view();
     // The worker must validate the live, typed graph itself, not merely
     // trust a prepared ticket supplied by another component. Each native
@@ -178,6 +182,7 @@ render_restored_m12_full_native_pcm_once(
                        const dsp::ProcessingChain& chain,
                        std::span<const dsp::ModuleExecutionBinding> bindings)
                        ->R {
+        if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
         auto request=render::RenderRequest::create(
             input,input.absolute_range(),chain,
             std::vector<dsp::ModuleExecutionBinding>{
@@ -185,6 +190,7 @@ render_restored_m12_full_native_pcm_once(
         if(!request)return R::failure(*request.error());
         auto pcm=render::render_preview(*request.value(),*plan.registry_owner);
         if(!pcm)return pcm;
+        if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
         if(pcm.value()->view().absolute_range()!=original.absolute_range()||
            pcm.value()->view().format()!=original.format())
             return fail("L3_M12_REPLAY_DSP_CHANGED_FRAME_DOMAIN");
