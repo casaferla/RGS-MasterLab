@@ -124,6 +124,37 @@ private slots:
     void allNativeTripleOwnersAgreeBeforeBuildingAnyFeature();
     void m16ActualSafetyRejectsExcessAndInvalidCeilings();
 };
+void P2RealNativeProductTest::nativePerformanceSeparatesAttemptsAndCacheHits() {
+    namespace m=a::m10_frozen;
+    using K=m::EvaluationKind;
+    using Clock=m::NativeSearchPerformance::Clock;
+    const auto start=Clock::time_point{};
+    m::NativeSearchPerformance perf;
+    perf.start=start;
+    const auto at=[&](std::int64_t ms){return start+std::chrono::milliseconds(ms);};
+    perf.observe({K::preflight_rejected,{}},at(1));
+    perf.observe({K::needs_new_attempt,{}},at(2));
+    perf.observe({K::completed_cache_hit,{}},at(3));
+    QCOMPARE(perf.attempted,0U);
+    QCOMPARE(perf.evaluator_preflight_rejections,1U);
+    QCOMPARE(perf.budget_refusals,1U);
+    QCOMPARE(perf.cache_hits,1U);
+    QVERIFY(!perf.last_attempt_ms);
+    QVERIFY(!perf.first_admissible_ms);
+    QVERIFY(perf.counts_reconciled());
+}
+void P2RealNativeProductTest::nativePerformanceNeedsIndependentM16ForFirstAdmissible() {
+    namespace m=a::m10_frozen;
+    using K=m::EvaluationKind;
+    using Clock=m::NativeSearchPerformance::Clock;
+    const auto start=Clock::time_point{};
+    m::NativeSearchPerformance perf;
+    perf.start=start;
+    const auto at=[&](std::int64_t ms){return start+std::chrono::milliseconds(ms);};
+    m::MeasuredOrderKey score{0.1,0.08,0.05,1,{0x31},{0x41}};
+    perf.observe({K::attempted_complete,score},at(3));
+    QVERIFY(!perf.first_admissible_ms);
+}
 void P2RealNativeProductTest::nativeOwnedP2PhysicalCoordinatesKeepMarginAndExportSeparate() {
     namespace m09=a::m09_frozen;
     using F=m09::NativeField;
