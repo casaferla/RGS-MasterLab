@@ -171,6 +171,8 @@ run_fresh_m13_product_postmaterialization_probe(
     auto m16=analysis::measure_true_peak_full_resource(render.value()->buffer());
     if(!m16)return R::failure(*m16.error());
     if(!safe_peak(*m16.value()))return fail("L3_M13_PRODUCT_FRESH_M16_SAFETY_EXCEEDED");
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_M13_PRODUCT_FRESH_CANCELLED_AFTER_M16");
     auto m19=analysis::measure_basic_level_full_resource(
         render.value()->buffer());
     if(!m19)return R::failure(*m19.error());
