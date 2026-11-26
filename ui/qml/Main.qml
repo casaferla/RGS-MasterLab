@@ -711,6 +711,22 @@ ApplicationWindow {
                 color: root.error
                 wrapMode: Text.WrapAnywhere
             }
+            Text {
+                objectName: "autoMatchReviewMetrics"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewMetricsText : ""
+                color: root.textSecondary
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                objectName: "autoMatchVerificationNote"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.appAutoMatchModel ? root.appAutoMatchModel.verificationNote : ""
+                color: root.textSecondary
+                wrapMode: Text.WrapAnywhere
+            }
             ScrollView {
                 objectName: "autoMatchReviewScroll"
                 Layout.fillWidth: true
@@ -744,8 +760,10 @@ ApplicationWindow {
                 }
                 Button {
                     objectName: "autoMatchResumeButton"
-                    text: "Resume"
+                    text: "Resume prior"
                     visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canResume
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Restore the exact previous match; numeric fields are for the next search."
                     enabled: visible && !root.monitorExclusive
                     onClicked: root.appAutoMatchModel.resume()
                 }
