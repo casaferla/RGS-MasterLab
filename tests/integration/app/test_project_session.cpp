@@ -439,17 +439,24 @@ m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen()
 void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13_data()
 {
     QTest::addColumn<std::uint32_t>("nativeRateHz");
-    QTest::newRow("48k")<<std::uint32_t{48000};
-    // The full lifecycle includes several complete native searches.
-    // Keep the iterative macro gate bounded; qualification explicitly
-    // opts into all six Product SOURCE processing frequencies.
-    if(qEnvironmentVariableIntValue("RGSML_L3_ALL_RATE_E2E")==1) {
-        QTest::newRow("44k1")<<std::uint32_t{44100};
-        QTest::newRow("88k2")<<std::uint32_t{88200};
-        QTest::newRow("96k")<<std::uint32_t{96000};
-        QTest::newRow("176k4")<<std::uint32_t{176400};
-        QTest::newRow("192k")<<std::uint32_t{192000};
+    // Ordinary macro runs use one row. Qualification may request all
+    // six in-process, or one isolated rate per independent CI job.
+    constexpr std::array<std::pair<std::uint32_t,const char*>,6> rates{{
+        {44100U,"44k1"},{48000U,"48k"},{88200U,"88k2"},
+        {96000U,"96k"},{176400U,"176k4"},{192000U,"192k"}}};
+    const auto selected=qEnvironmentVariable("RGSML_L3_E2E_RATE");
+    const bool all=qEnvironmentVariableIntValue("RGSML_L3_ALL_RATE_E2E")==1;
+    QVERIFY2(selected.isEmpty()||!all,
+        "Choose a single rate OR the all-rate qualification mode");
+    bool emitted=false;
+    for(const auto& [hz,tag]:rates) {
+        if(all||(!selected.isEmpty()&&selected==QString::number(hz))||
+           (selected.isEmpty()&&hz==48000U)) {
+            QTest::newRow(tag)<<hz;
+            emitted=true;
+        }
     }
+    QVERIFY2(emitted,"Unknown RGSML_L3_E2E_RATE; no default-rate fallback");
 }
 
 void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
