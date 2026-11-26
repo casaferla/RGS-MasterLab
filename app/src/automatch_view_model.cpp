@@ -40,6 +40,14 @@ bool AutoMatchViewModel::can_cancel()const {
     return owner()&&!publishing_&&(action_.phase()==Action::Phase::searching||
         action_.can_adopt()||action_.phase()==Action::Phase::verifying);
 }
+bool AutoMatchViewModel::can_undo()const {
+    return owner()&&!busy()&&!action_.can_adopt()&&
+        product_.upstream.project.can_undo_private_m12_materialization();
+}
+bool AutoMatchViewModel::can_redo()const {
+    return owner()&&!busy()&&!action_.can_adopt()&&
+        product_.upstream.project.can_redo_private_m12_materialization();
+}
 QString AutoMatchViewModel::status_text()const {
     if(!owner())return QStringLiteral("UNAVAILABLE");
     using P=Action::Phase;
@@ -114,6 +122,24 @@ bool AutoMatchViewModel::adopt() {
     const auto checking=action_.begin_verification(a::m13_frozen::MandatoryHardPredicate::unavailable);
     if(checking)timer_.start();
     refresh();return true;
+}
+bool AutoMatchViewModel::undo() {
+    if(!can_undo())return false;
+    publishing_=true;
+    const auto result=product_.upstream.project.undo_private_m12_materialization();
+    publishing_=false;
+    if(!result)error_=QString::fromStdString(result.error()->message());
+    else {error_.clear();(void)action_.retire_after_history_transition();}
+    refresh();return static_cast<bool>(result);
+}
+bool AutoMatchViewModel::redo() {
+    if(!can_redo())return false;
+    publishing_=true;
+    const auto result=product_.upstream.project.redo_private_m12_materialization();
+    publishing_=false;
+    if(!result)error_=QString::fromStdString(result.error()->message());
+    else {error_.clear();(void)action_.retire_after_history_transition();}
+    refresh();return static_cast<bool>(result);
 }
 void AutoMatchViewModel::refresh() {
     if(!owner()||publishing_)return;

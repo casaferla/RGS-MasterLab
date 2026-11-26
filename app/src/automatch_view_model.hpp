@@ -11,6 +11,8 @@ class AutoMatchViewModel final : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool canAdopt READ can_adopt NOTIFY changed)
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
+    Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
+    Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
 public:
@@ -22,6 +24,8 @@ public:
     [[nodiscard]] bool busy()const;
     [[nodiscard]] bool can_adopt()const;
     [[nodiscard]] bool can_cancel()const;
+    [[nodiscard]] bool can_undo()const;
+    [[nodiscard]] bool can_redo()const;
     [[nodiscard]] QString status_text()const;
     [[nodiscard]] QString error_text()const{return error_;}
     // All values are captured once before dispatch; the ceiling is the
@@ -30,6 +34,8 @@ public:
         double loudness,double ceiling);
     Q_INVOKABLE void cancel();
     Q_INVOKABLE bool adopt();
+    Q_INVOKABLE bool undo();
+    Q_INVOKABLE bool redo();
     Q_INVOKABLE void refresh();
 signals:
     void changed();
