@@ -7039,6 +7039,12 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(m::m12_exact_project_snapshot_equal(
         *restoredBefore.value(),*before.value()));
     QVERIFY(session.project.redo_private_m12_materialization());
+    const auto redoneEditors=app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,*session.masteringChainState);
+    QVERIFY(redoneEditors);
+    QCOMPARE(redoneEditors->size(),linkedEditors->size());
+    for(std::size_t i=0;i<redoneEditors->size();++i)
+        QVERIFY((*redoneEditors)[i].parameters==(*linkedEditors)[i].parameters);
     // Undo/Redo can restore bit-identical linked PCM and the SAME
     // original ticket pointer. Still, prior verification is NOT fresh.
     QVERIFY(!session.project.private_m13_fresh_probe_still_current(
