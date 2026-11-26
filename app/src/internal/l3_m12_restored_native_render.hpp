@@ -226,6 +226,7 @@ render_restored_m12_full_native_pcm_once(
             manual.value()->signatures(),linked.value()->signatures(),{}};
         if(!m12_native_stage_witness_matches_replay_plan(plan,observed))
             return fail("L3_M12_NATIVE_STAGE_EXECUTION_WITNESS_STALE");
+        if(cancelled())return fail("L3_M12_REPLAY_CANCELLED");
         if(stage_witness)*stage_witness=std::move(observed);
         return linked;
     }
