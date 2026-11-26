@@ -143,12 +143,14 @@ public:
         return true;
     }
     // This argument comes from the Product safety authority, not QML.
-    [[nodiscard]] bool begin_verification(m13_frozen::MandatoryHardPredicate other_safety) {
+    [[nodiscard]] bool begin_verification(m13_frozen::MandatoryHardPredicate other_safety,
+        bool derive_product_native_safety=false) {
         if(!owner()||phase_!=Phase::materialized||!operation_||!completed_||!reviewed_)
             return false;
         auto input=capture_native_qt_product_session_verification_on_owner(project(),gold_,
             *operation_,*completed_,*reviewed_,true,other_safety);
         if(!input){phase_=Phase::verification_incomplete;return false;}
+        input->derive_product_native_safety=derive_product_native_safety;
         try {
             auto cancel=std::make_shared<std::atomic<bool>>(false);
             const auto block=operation_->capture.current.frozen_max_block_frames;

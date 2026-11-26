@@ -176,12 +176,11 @@ bool AutoMatchViewModel::adopt() {
             QString::fromStdString(action_.error());
         refresh();return false;
     }
-    // No GUI-generated PASS for independent mandatory predicates.
-    // M13 performs the real fresh analysis; any unavailable predicate
-    // remains incomplete until Product supplies its actual authority.
+    // The worker derives hard safety from the actual fresh native
+    // execution, exact graph and raw stereo predicates; QML grants no PASS.
     if(action_.phase()==Action::Phase::no_correction_cleared||
        action_.phase()==Action::Phase::match_suspended) {refresh();return true;}
-    const auto checking=action_.begin_verification(a::m13_frozen::MandatoryHardPredicate::unavailable);
+    const auto checking=action_.begin_verification(a::m13_frozen::MandatoryHardPredicate::unavailable,true);
     if(checking)timer_.start();
     refresh();return true;
 }
