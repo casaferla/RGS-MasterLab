@@ -37,7 +37,7 @@ compare_exact_m08_raw_proximity(
     if(predicted.reason==m08_frozen::ProximityReason::proximity_already_matched&&
        (a!=1.0||b!=1.0))
         return {ProximityComparisonStatus::failed,{},{}};
-    if(!std::isfinite(a)||!std::isfinite(b))
+    if(!std::isfinite(a)||!std::isfinite(b)||a>1.0||b>1.0)
         return {ProximityComparisonStatus::failed,{},{}};
     const double bound=same_run_not_independent_platform
         ?kSameRunProximityFractionBound
