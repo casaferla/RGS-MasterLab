@@ -45,6 +45,30 @@ public:
     [[nodiscard]] const m12_frozen::M12ReviewDiff* review_diff()const noexcept {
         return review_diff_?&*review_diff_:nullptr;
     }
+    struct ReviewMetrics final {
+        double exact_m16_linear_peak{};
+        double independent_ceiling_db_tp{};
+        std::uint32_t attempted{};
+        std::int64_t original_ms{},fixed_ms{},seed_ms{},search_ms{};
+    };
+    [[nodiscard]] std::optional<ReviewMetrics> review_metrics()const noexcept {
+        if(!operation_||!completed_||!can_adopt())return {};
+        const auto& worker=completed_->result;
+        std::optional<double> peak;
+        std::uint32_t attempts=0;
+        if(phase_==Phase::candidate_ready) {
+            const auto& r=worker.search.refinement;
+            if(!r||!r->winning_refinement_index||
+               *r->winning_refinement_index>=r->candidate_refinements.size())return {};
+            const auto& winner=r->candidate_refinements[*r->winning_refinement_index].numerical.winner;
+            if(!winner.native_prediction)return {};
+            peak=winner.native_prediction->independent_full_m16_linear_peak;
+            attempts=r->total_attempted;
+        }else if(worker.fixed)peak=worker.fixed->measured_m16_linear_peak;
+        if(!peak||!std::isfinite(*peak)||*peak<0.0)return {};
+        return ReviewMetrics{*peak,operation_->policy.independent_ceiling_db_tp,attempts,
+            completed_->original_pair_ms,worker.timing.fixed_ms,worker.timing.seed_ms,worker.timing.search_ms};
+    }
     [[nodiscard]] const Completion* verification_result()const noexcept {
         return verification_result_?&*verification_result_:nullptr;
     }
