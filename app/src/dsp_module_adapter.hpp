@@ -47,6 +47,7 @@ class DspModuleAdapter : public QObject {
     Q_PROPERTY(bool hasError READ has_error NOTIFY changed)
     Q_PROPERTY(bool linkedReadOnly READ linked_read_only NOTIFY changed)
     Q_PROPERTY(QVariantMap linkedParameters READ linked_parameters NOTIFY changed)
+    Q_PROPERTY(QVariantMap linkedActivity READ linked_activity NOTIFY activityChanged)
 
 public:
     explicit DspModuleAdapter(QObject* parent = nullptr);
@@ -83,6 +84,7 @@ public:
     [[nodiscard]] virtual bool linked_read_only() const noexcept {return false;}
     [[nodiscard]] virtual QVariantMap linked_parameters() const {return {};}
     Q_INVOKABLE virtual QVariantList linkedBandResponse(int) const {return {};}
+    [[nodiscard]] virtual QVariantMap linked_activity() const {return {};}
 
     Q_INVOKABLE virtual void setBypass(bool bypass) = 0;
     Q_INVOKABLE virtual void undo() = 0;
@@ -90,6 +92,7 @@ public:
     Q_INVOKABLE virtual void resetToDefault() = 0;
 
 signals:
+    void activityChanged();
     void changed();
 };
 
