@@ -17,6 +17,12 @@ qt_add_qml_module(rgsml_ui
         qml/MasterMonitorPopup.qml
         qml/MonitorEditor.qml
         qml/ParametricEqEditor.qml
+        qml/DynamicEqEditor.qml
+        qml/DynamicEqGraph.qml
+        qml/DynamicEqDynamicsCompanion.qml
+        qml/DynamicEqDynamicsStrip.qml
+        qml/LinkedDynamicEqViewModel.qml
+        qml/TransientShaperEditor.qml
         qml/ParametricEqEditorWindow.qml
         qml/ParametricEqGraph.qml
         qml/SegmentedTimeEditor.qml
