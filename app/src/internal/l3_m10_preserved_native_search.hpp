@@ -126,7 +126,11 @@ template<class ResolveOriginalTriple>
     ResolveOriginalTriple&& resolve,
     const std::atomic<bool>* cancellation=nullptr)
 {
-    const auto rejected=[](){return Evaluation{EvaluationKind::preflight_rejected,{}};};
+    const auto rejected=[&env](){
+        const Evaluation event{EvaluationKind::preflight_rejected,{}};
+        if(env.performance)env.performance->observe(event,NativeSearchPerformance::Clock::now());
+        return event;
+    };
     const auto& owners=env.owners;
     if(!current_typed_graph_preflight_passed||
        !owners.current_qt_product_epoch_and_m09_m11_attested||
