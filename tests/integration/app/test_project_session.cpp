@@ -988,6 +988,16 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     substitutedOwner.reference_linked.front().instance_id=core::Uuid{};
     QVERIFY(!m12::m12_native_stage_witness_matches_replay_plan(
         *suspendedTicket->replay,substitutedOwner));
+    auto missingController=*suspendedTicket->replay;
+    missingController.controller_id=core::Uuid{};
+    auto invalidControllerWitness=witness;
+    const auto invalidControllerPcm=m12::render_restored_m12_full_native_pcm_once(
+        missingController,*suspendedTicket->exact_prepared_owner,*block.value(),
+        &invalidControllerWitness);
+    QVERIFY(!invalidControllerPcm);
+    QVERIFY(invalidControllerWitness.protected_manual.empty()&&
+        invalidControllerWitness.reference_linked.empty()&&
+        invalidControllerWitness.user_terminal_p2.empty());
     auto cancelledWitness=witness;
     const std::atomic<bool> cancelledReplay{true};
     const auto cancelledPcm=m12::render_restored_m12_full_native_pcm_once(
