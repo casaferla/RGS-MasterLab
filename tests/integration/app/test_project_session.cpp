@@ -896,6 +896,8 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
     QVERIFY2(suspendAction.adopt(),suspendAction.error().c_str());
     QVERIFY(suspendAction.phase()==Action::Phase::match_suspended);
+    QVERIFY(session.project.private_m12_match_state()==app::ProjectSessionViewModel::M12CurrentMatchState::suspended);
+    QVERIFY(session.project.can_resume_private_m12_suspension());
     const auto suspendedTicket=session.previewController->private_m12_product_preview_ticket();
     QVERIFY(suspendedTicket&&suspendedTicket->replay&&suspendedTicket!=thirdTicket);
     QVERIFY(suspendedTicket->replay->plan_id==thirdTicket->replay->plan_id);
@@ -913,8 +915,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         QCOMPARE(suspendedNodes[i].enabled(),oldNodes[i].enabled());
     }
     QVERIFY(session.masteringChainState->execution_bindings()==protectedBindings);
-    QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(session.project.resume_private_m12_suspension());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==thirdTicket);
+    QVERIFY(session.project.private_m12_match_state()==app::ProjectSessionViewModel::M12CurrentMatchState::active);
+    QVERIFY(!session.project.can_resume_private_m12_suspension());
     QVERIFY(session.project.redo_private_m12_materialization());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
     const auto suspendedPath=dir.filePath(QStringLiteral("l3-native-suspended.rgsml"));
@@ -1020,6 +1024,8 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto restoredNodes=restoredSuspension->replay->reference_linked.instances();
     QCOMPARE(restoredNodes.size(),suspendedNodes.size());
     QVERIFY(std::equal(restoredNodes.begin(),restoredNodes.end(),suspendedNodes.begin()));
+    QVERIFY(!session.project.can_resume_private_m12_suspension());
+    QVERIFY(!session.project.resume_private_m12_suspension());
     QVERIFY(!session.project.undo_private_m12_materialization());
 }
 
