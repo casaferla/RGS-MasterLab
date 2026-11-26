@@ -6387,6 +6387,13 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             ?QJsonValue(QJsonValue::Null):QJsonValue(retained.first().toObject()));
         QVERIFY(!verifyRehashedDiagnostic(root));
     }
+    {
+        for(const auto* token:{"VERIFICATION_FAILED","STALE","NOT_VERIFIED"}) {
+            auto root=validJson.object();
+            root.insert("reportRunOutcome",QString::fromLatin1(token));
+            QVERIFY(!verifyRehashedDiagnostic(root));
+        }
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
