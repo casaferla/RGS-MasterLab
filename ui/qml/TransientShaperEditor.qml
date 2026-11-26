@@ -367,9 +367,28 @@ Item {
                     }
                 }
 
-                // Only a genuine accepted C00 history may populate Activity.
-                // Leave it absent until the Product sidecar is integrated.
-                Item { Layout.fillHeight: true; Layout.minimumHeight: 0 }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 90
+                    Layout.preferredHeight: 180
+                    radius: 6
+                    color: "#081824"
+                    border.width: 1
+                    border.color: "#1A3E55"
+                    TransientActivityScope {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        history: root.activity.buckets || []
+                        telemetryAvailable: root.activity.available === true
+                        telemetryRealizationId: root.activity.realizationId || ""
+                        audibleRealizationId: root.activity.realizationId || ""
+                        audibleFrame: root.activity.audibleFrame === undefined ? -1 : root.activity.audibleFrame
+                        sampleRateHz: root.activity.sampleRateHz || 0
+                        auditioningProcessed: root.activity.available === true
+                        bypassed: false
+                    }
+                }
             }
         }
     }
