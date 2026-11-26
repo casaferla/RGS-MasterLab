@@ -6417,6 +6417,25 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
             *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
     }
+    {
+        auto failed=currentProductDiagnosis;
+        failed.state=m13contract::VerificationState::verification_failed;
+        m13contract::VerificationReason reason;
+        reason.stage=m13contract::VerificationStage::safety;
+        reason.code="HARD_SAFETY_VIOLATION";
+        reason.field_path="/safetyResults/test";
+        reason.predicate=m13contract::PredicateState::failed;
+        failed.canonical_reasons.push_back(reason);
+        auto normalized=m13contract::normalize_verification_reasons(failed.canonical_reasons);
+        QVERIFY(normalized);
+        failed.canonical_reasons=*normalized;
+        auto encoded=m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),failed,*diagnosticId.value());
+        QVERIFY(encoded);
+        QVERIFY(m13contract::verify_m13_provisional_diagnostic_integrity(
+            encoded.value()->canonical_report));
+        QVERIFY(!encoded.value()->authorizes_wav_export());
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
