@@ -449,6 +449,12 @@ PlaybackTransportViewModel::playback_snapshot() const
     return service_->snapshot();
 }
 
+std::optional<std::uint32_t> PlaybackTransportViewModel::linked_activity_source_rate() const noexcept
+{
+    if(terminalGate_||!sourceDerivedActive_||sampleRateHz_<=0||sampleRateHz_>192000)return {};
+    return static_cast<std::uint32_t>(sampleRateHz_);
+}
+
 void PlaybackTransportViewModel::playOrResume()
 {
     if (!service_) {
