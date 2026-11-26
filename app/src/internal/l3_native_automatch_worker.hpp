@@ -28,6 +28,7 @@ struct NativeAutoMatchWorkerResult final {
     std::uint32_t measured_side_insertion_rows{};
     m10_frozen::NativeOwnedP2EvaluationCounts owned_p2_counts{};
     NativeAutoMatchTiming timing{};
+    m10_frozen::NativeSearchPerformance performance{};
     [[nodiscard]] constexpr bool authorizes_product_publication()const noexcept{return false;}
 };
 // Borrowed from the immutable Product session. This worker owns no
