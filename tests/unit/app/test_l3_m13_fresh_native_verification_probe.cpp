@@ -487,6 +487,15 @@ void M13FreshNativeProbeTest::sameRunPredictedVerifiedRawProximity()
         predicted,verified);
     QVERIFY(pass.all_required_pass());
     QCOMPARE(pass.global.status,ProximityComparisonStatus::passed);
+    {
+        ProximityComparison fake;
+        fake.status=ProximityComparisonStatus::passed;
+        QVERIFY(!fake.passed());
+        fake.absolute_raw_delta=0.0;
+        QVERIFY(!fake.passed());
+        fake.allowable_raw_delta=kSameRunProximityFractionBound;
+        QVERIFY(fake.passed());
+    }
     verified[1].effective_coverage=0.75;
     QVERIFY(!compare_frozen_m08_prediction_with_fresh_verified(
         predicted,verified).all_required_pass());
