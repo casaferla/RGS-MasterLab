@@ -90,6 +90,10 @@ struct NativeSearchPerformance final {
         default:break;
         }
     }
+    [[nodiscard]] bool counts_reconciled() const noexcept {
+        return attempted<=kMaxRenderAnalyzeAttempts&&
+            completed<=attempted&&failed==attempted-completed;
+    }
 };
 struct PreservedNativeSearchEnvironment final {
     const P2NativeProductWorkerScope& owners;
