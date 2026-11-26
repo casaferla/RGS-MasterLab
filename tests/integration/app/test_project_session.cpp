@@ -985,7 +985,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(!m12::m12_native_stage_witness_matches_replay_plan(
         *suspendedTicket->replay,forgedTerminal));
     auto substitutedOwner=witness;
-    substitutedOwner.reference_linked.front().instance_id=core::Uuid{};
+    substitutedOwner.reference_linked.front().instance_id=witness.protected_manual.front().instance_id;
     QVERIFY(!m12::m12_native_stage_witness_matches_replay_plan(
         *suspendedTicket->replay,substitutedOwner));
     auto missingController=*suspendedTicket->replay;
