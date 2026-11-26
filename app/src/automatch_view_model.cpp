@@ -109,6 +109,17 @@ QString AutoMatchViewModel::review_metrics_text()const {
             .arg(metrics->completed).arg(metrics->failed).arg(metrics->cache_hits);
     return text;
 }
+QString AutoMatchViewModel::elapsed_time_text()const {
+    if(!owner()||!search_clock_.isValid())return {};
+    const auto elapsed=search_clock_running_
+        ? search_clock_.elapsed() : finished_search_ms_;
+    if(elapsed<0)return {};
+    const auto minutes=elapsed/60000;
+    const auto seconds=(elapsed/1000)%60;
+    const auto tenths=(elapsed%1000)/100;
+    return QStringLiteral("%1:%2.%3")
+        .arg(minutes).arg(seconds,2,10,QLatin1Char('0')).arg(tenths);
+}
 QString AutoMatchViewModel::verification_note()const {
     if(!owner()||!action_.verification_result())return {};
     const auto& assessment=action_.verification_result()->assessment();
@@ -167,6 +178,9 @@ bool AutoMatchViewModel::start(double total,double tonal,double dynamics,double 
     if(!action_.begin(std::move(*operation.value()),[] {return new_uuid();})) {
         error_=QStringLiteral("AutoMatch search could not start.");emit changed();return false;
     }
+    search_clock_.start();
+    finished_search_ms_=-1;
+    search_clock_running_=true;
     timer_.start();emit changed();return true;
 }
 void AutoMatchViewModel::cancel() {
@@ -221,6 +235,13 @@ bool AutoMatchViewModel::resume() {
 void AutoMatchViewModel::refresh() {
     if(!owner()||publishing_)return;
     action_.poll();
+    // Freeze search wall time on the first terminal/search-review phase.
+    // M13 verification may run later and must not inflate search duration.
+    if(search_clock_running_ && action_.phase()!=Action::Phase::searching
+       && action_.phase()!=Action::Phase::cancelling) {
+        finished_search_ms_=search_clock_.elapsed();
+        search_clock_running_=false;
+    }
     if(!action_.busy())timer_.stop();
     emit changed();
 }
