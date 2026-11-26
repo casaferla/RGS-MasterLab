@@ -2032,10 +2032,10 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
         const auto& replay=*afterTicket->replay;
         // A receipt attests actual publication/readback, not a new
         // calculated plan or a VERIFIED result. Suspension retains plan.
-        m::M12ProductMaterializationReceipt receipt{replay.project_id,replay.source_id,
+        m::M12ProductMaterializationReceipt suspensionReceipt{replay.project_id,replay.source_id,
             replay.reference_id,replay.plan_id,replay.controller_id,replay.linked_chain_id,
             replay.exact_plan_checksum};
-        entry.receipt.emplace(std::move(receipt));
+        entry.receipt.emplace(std::move(suspensionReceipt));
     }
     m12UndoHistory_.push_back(std::move(entry));
     m12RedoHistory_.clear();
