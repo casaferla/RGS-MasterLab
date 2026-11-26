@@ -5906,6 +5906,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     };
     QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("independentM16CeilingDbTp",
         QJsonValue(QStringLiteral("0.0")))));
+    QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("fullResourceM16LinearPeak",
+        QJsonValue(QStringLiteral("-0.25")))));
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
