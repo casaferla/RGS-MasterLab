@@ -731,6 +731,17 @@ completeFreshNativeTwentySevenBindingComparison()
         invalid.rows[1].component_comparisons[0].outcome=QtpOutcome::mismatch;
         QVERIFY(!invalid.complete_passing_evidence());
     }
+    {
+        auto invalid=comparison;
+        invalid.rows[0].t1_profile.reset();
+        QVERIFY(!invalid.complete_passing_evidence());
+        invalid=comparison;
+        invalid.rows[0].t1_profile->unweighted_rms_error_db=0.004;
+        QVERIFY(!invalid.complete_passing_evidence());
+        invalid=comparison;
+        invalid.rows[0].t1_profile->max_component_error_db=0.011;
+        QVERIFY(!invalid.complete_passing_evidence());
+    }
     all[0].configured[0].actual_fresh_native=0.508;
     comparison=compare_m13_frozen_twenty_seven_native_bindings(all);
     QVERIFY(!comparison.every_required_binding_passed);
