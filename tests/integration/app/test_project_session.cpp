@@ -575,6 +575,11 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(session.gold.gold_resource());
     QCOMPARE(session.gold.gold_resource()->wav_info().audio_format().sample_rate().value(),
              static_cast<std::int64_t>(nativeRateHz));
+    QVERIFY(session.source.source_resource());
+    QCOMPARE(session.source.source_resource()->wav_info().frame_count().value(),
+             static_cast<std::int64_t>(nativeRateHz)*12);
+    QCOMPARE(session.gold.gold_resource()->wav_info().frame_count().value(),
+             static_cast<std::int64_t>(nativeRateHz)*12);
     // This is deliberately a pure gain fixture. Preserve the MANUAL
     // nodes but make their bypass identity explicit before capture.
     QVERIFY(session.masteringChainState->set_user_bypass(session.gainId,true));
