@@ -29,8 +29,10 @@ enum class NativeGraphSafety {passed,failed,unavailable};
             if(node.module_type_id()=="rgsml.dsp.true-peak-limiter"||
                node.module_type_id()=="rgsml.dsp.dither")
                 return NativeGraphSafety::failed;
-            if(linked&&(node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
-                node.link_state()!=dsp::ModuleLinkState::REF_LINKED))
+            if(linked&&(node.provenance()!=dsp::ModuleProvenance::REFERENCE_MATCH||
+                node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
+                node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
+                !node.semantic_node_id()||node.semantic_node_id()->is_nil()))
                 return NativeGraphSafety::failed;
             if(node.active()&&std::find(known.begin(),known.end(),node.module_type_id())==known.end())
                 return NativeGraphSafety::unavailable;
