@@ -3,6 +3,7 @@
 // Product replay, never a research demo, MANUAL placeholder or solver seed.
 // A returned snapshot is presentation only; no mutation or Activity grant.
 #include "l3_m12_product_preview_worker_ticket.hpp"
+#include "mastering_chain_state.hpp"
 #include <QThread>
 #include <algorithm>
 #include <memory>
@@ -74,6 +75,19 @@ struct LinkedEditorSnapshot final {
         result.push_back(LinkedEditorSnapshot{ticket,node,binding.parameters});
     }
     return result;
+}
+// UI callers may not inject a saved PREPARED owner or stale binding vector.
+// Resolve both from the actual current Product at the point of inspection.
+[[nodiscard]] inline std::optional<std::vector<LinkedEditorSnapshot>> inspect_current_linked_editors(
+    const MasteringPreviewController& preview,
+    const MasteringChainState& manual)
+{
+    if(QThread::currentThread()!=preview.thread()||
+       QThread::currentThread()!=manual.thread()||
+       !preview.snapshot_provider())return {};
+    const auto prepared=preview.snapshot_provider()();
+    const auto bindings=manual.execution_bindings();
+    return inspect_current_linked_editors(preview,prepared,manual.chain(),bindings);
 }
 [[nodiscard]] inline std::optional<LinkedEditorSnapshot> inspect_current_linked_editor(
     const MasteringPreviewController& preview,
