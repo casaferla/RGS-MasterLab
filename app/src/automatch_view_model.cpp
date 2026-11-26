@@ -98,9 +98,13 @@ QString AutoMatchViewModel::review_metrics_text()const {
         QString::number(20.0*std::log10(metrics->exact_m16_linear_peak),'f',2);
     const auto elapsed=static_cast<double>(metrics->original_ms+metrics->fixed_ms+
         metrics->seed_ms+metrics->search_ms)/1000.0;
-    return QStringLiteral("Full-output TP: %1 dBTP / limit %2\nTrials: %3 | %4 s")
+    auto text=QStringLiteral("Full-output TP: %1 dBTP / limit %2\nTrials: %3 | %4 s")
         .arg(peak).arg(metrics->independent_ceiling_db_tp,0,'f',2)
         .arg(metrics->attempted).arg(elapsed,0,'f',1);
+    if(metrics->first_admissible_ms)
+        text+=QStringLiteral("\nFirst admissible: %1 s")
+            .arg(static_cast<double>(*metrics->first_admissible_ms)/1000.0,0,'f',1);
+    return text;
 }
 QString AutoMatchViewModel::verification_note()const {
     if(!owner()||!action_.verification_result())return {};
