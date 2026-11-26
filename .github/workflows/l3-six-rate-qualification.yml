@@ -49,6 +49,10 @@ jobs:
           $testExit=$LASTEXITCODE
           if (!(Test-Path $report)) { throw 'L3_RATE_TEST_REPORT_MISSING' }
           if ($testExit -ne 0) { throw 'L3_RATE_REAL_PRODUCT_FAILURE' }
+          $tag=@{'44100'='44k1';'48000'='48k';'88200'='88k2';'96000'='96k';'176400'='176k4';'192000'='192k'}[$env:RGSML_L3_E2E_RATE]
+          if (!$tag) { throw 'L3_RATE_INVALID_MATRIX_VALUE' }
+          $pattern='PASS\s+:.*::nativeMeasuredWinnerUsesRealQtM12AndM13\(' + [regex]::Escape($tag) + '\)'
+          if (!(Select-String -Path $report -Pattern $pattern -Quiet)) { throw 'L3_RATE_EXPECTED_ROW_NOT_PASSED' }
       - name: Retain native qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
