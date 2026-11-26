@@ -681,6 +681,17 @@ ApplicationWindow {
                 font.bold: true
             }
             Text {
+                objectName: "autoMatchElapsedTimeText"
+                Layout.fillWidth: true
+                visible: !!root.appAutoMatchModel
+                    && root.appAutoMatchModel.elapsedTimeText.length > 0
+                text: root.appAutoMatchModel
+                    ? "Elapsed search: " + root.appAutoMatchModel.elapsedTimeText : ""
+                color: root.textPrimary
+                font.family: "Segoe UI"
+                font.pixelSize: 12
+            }
+            Text {
                 objectName: "autoMatchCurrentStateText"
                 Layout.fillWidth: true
                 text: root.appAutoMatchModel ? root.appAutoMatchModel.currentMatchText : ""
@@ -2124,6 +2135,17 @@ ApplicationWindow {
                                                 color: root.textSecondary
                                                 font.pixelSize: 10
                                                 elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                objectName: "autoMatchElapsedContext"
+                                                visible: !!root.appAutoMatchModel
+                                                    && root.appAutoMatchModel.elapsedTimeText.length > 0
+                                                text: root.appAutoMatchModel
+                                                    ? root.appAutoMatchModel.elapsedTimeText : ""
+                                                color: root.accent
+                                                font.family: "Consolas"
+                                                font.pixelSize: 10
+                                                font.weight: Font.DemiBold
                                             }
                                         }
                                         // Domain Controls Row: Four Equal Domain Knobs
