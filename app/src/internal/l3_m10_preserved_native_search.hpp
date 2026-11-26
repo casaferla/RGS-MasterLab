@@ -55,6 +55,29 @@ struct NativeFixedPrefixCache final {
 struct NativeOwnedP2EvaluationCounts final {
     std::uint32_t attempted{},complete{},cache_hits{};
 };
+// Monotonic diagnostics only. Never used by ranking, budget, cache
+// identity, hard gates or owner publication.
+struct NativeSearchPerformance final {
+    using Clock=std::chrono::steady_clock;
+    std::optional<Clock::time_point> start;
+    std::optional<std::int64_t> first_admissible_ms;
+    std::uint32_t attempted{},completed{},failed{},cache_hits{};
+    void observe(const Evaluation& event,Clock::time_point now) noexcept {
+        switch(event.kind) {
+        case EvaluationKind::attempted_complete:
+            ++attempted;
+            ++completed;
+            if(!first_admissible_ms&&start&&now>=*start&&event.measured&&
+               event.measured->native_prediction&&valid_key(*event.measured))
+                first_admissible_ms=std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now-*start).count();
+            break;
+        case EvaluationKind::attempted_failure:++attempted;++failed;break;
+        case EvaluationKind::completed_cache_hit:++cache_hits;break;
+        default:break;
+        }
+    }
+};
 struct PreservedNativeSearchEnvironment final {
     const P2NativeProductWorkerScope& owners;
     const OriginalPreparedReferenceNativeFacts& originals;
