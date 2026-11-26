@@ -18,6 +18,9 @@
 
 namespace rgsml::app {
 
+class AuditionSourceSelector;
+class PlaybackTransportViewModel;
+
 class DspChainAdapterModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList modules READ modules NOTIFY changed)
@@ -68,6 +71,7 @@ public:
     // Explicit opt-in until the shared Product QML host supports both
     // linked editor keys. Never infer it from the optional P2 controller.
     void bindLinkedEditorPreviewController(MasteringPreviewController* preview);
+    void bindLinkedEditorActivity(AuditionSourceSelector* selector,PlaybackTransportViewModel* transport);
 
     void refreshFromAuthority();
     void resetForNewSource();
@@ -86,6 +90,8 @@ private:
     MasteringPreviewController* p2PreviewController_{nullptr};
     QPointer<MasteringPreviewController> linkedEditorPreviewController_;
     QMetaObject::Connection linkedEditorConnection_;
+    QPointer<AuditionSourceSelector> linkedActivitySelector_;
+    QPointer<PlaybackTransportViewModel> linkedActivityTransport_;
     std::weak_ptr<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>
         lastLinkedEditorOwner_;
     QStringList lastLinkedEditorIds_;
