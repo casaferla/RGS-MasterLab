@@ -65,6 +65,12 @@ struct NativeSearchPerformance final {
     std::uint32_t attempted{},completed{},failed{},cache_hits{};
     std::uint32_t evaluator_preflight_rejections{},budget_refusals{};
     void observe(const Evaluation& event,Clock::time_point now) noexcept {
+        if((event.kind==EvaluationKind::attempted_complete||
+            event.kind==EvaluationKind::attempted_failure)&&start&&now>=*start) {
+            const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(
+                now-*start).count();
+            if(!last_attempt_ms||elapsed>=*last_attempt_ms)last_attempt_ms=elapsed;
+        }
         switch(event.kind) {
         case EvaluationKind::attempted_complete:
             ++attempted;
