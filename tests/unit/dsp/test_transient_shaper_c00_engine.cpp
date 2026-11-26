@@ -67,6 +67,7 @@ private slots:
     void allSixRatesMonoStereoIndependentOracle();
     void chunkingResetAndStateRestore();
     void stereoLinkAndTransactionalFailures();
+    void observationParitySixRates();
 };
 void TransientShaperC00Test::parametersAndRates() {
     auto neutral=TransientShaperParameters::create_default();
@@ -335,6 +336,51 @@ void TransientShaperC00Test::stereoLinkAndTransactionalFailures() {
     QVERIFY(!overflow.value()->process_block(huge,{},untouched,{}));
     QCOMPARE(untouched[0],-123.0);
     QVERIFY(overflow.value()->state()==TransientShaperC00State{});
+}
+void TransientShaperC00Test::observationParitySixRates() {
+    using dsp::internal::ITransientC00ActivitySink;
+    using dsp::internal::TransientC00AppliedGains;
+    struct Sink final:ITransientC00ActivitySink {
+        std::size_t frames{};
+        std::uint64_t first{};
+        TransientC00AppliedGains last{};
+        void on_successful_block(std::uint64_t offset,
+            std::span<const TransientC00AppliedGains> values) noexcept override {
+            first=offset;frames+=values.size();
+            if(!values.empty())last=values.back();
+        }
+    };
+    const auto p=TransientShaperParameters::create(8.0,-5.0);
+    QVERIFY(p);
+    for(const auto fs:{44100U,48000U,88200U,96000U,176400U,192000U})
+        for(const auto channels:{1U,2U}) {
+            auto plain=TransientShaperC00Engine::create(*p.value(),fs,channels,512);
+            auto observed=TransientShaperC00Engine::create(*p.value(),fs,channels,512,true);
+            QVERIFY(plain&&observed);
+            const auto input=programme(512,static_cast<double>(fs));
+            const auto right=channels==2U?input:std::vector<double>{};
+            std::vector<double> a(input.size()),b(input.size()),ar(right.size()),br(right.size());
+            Sink sink;
+            QVERIFY(plain.value()->process_block(input,right,a,ar));
+            QVERIFY(observed.value()->process_block(input,right,b,br,&sink,0));
+            QCOMPARE(sink.frames,input.size());
+            QCOMPARE(sink.first,std::uint64_t{0});
+            QVERIFY(plain.value()->state()==observed.value()->state());
+            QCOMPARE(sink.last.attack_db,observed.value()->state().g_attack_db);
+            QCOMPARE(sink.last.sustain_db,observed.value()->state().g_sustain_db);
+            for(std::size_t i=0;i<a.size();++i)
+                QCOMPARE(std::bit_cast<std::uint64_t>(a[i]),std::bit_cast<std::uint64_t>(b[i]));
+            for(std::size_t i=0;i<ar.size();++i)
+                QCOMPARE(std::bit_cast<std::uint64_t>(ar[i]),std::bit_cast<std::uint64_t>(br[i]));
+            auto bad=input;
+            bad.back()=std::numeric_limits<double>::quiet_NaN();
+            const auto old=observed.value()->state();
+            QVERIFY(!observed.value()->process_block(bad,right,b,br,&sink,512));
+            QVERIFY(old==observed.value()->state());
+            QCOMPARE(sink.frames,input.size());
+            QVERIFY(!plain.value()->process_block(input,right,a,ar,&sink,512));
+            QCOMPARE(sink.frames,input.size());
+        }
 }
 } // namespace
 } // namespace rgsml::tests
