@@ -6978,11 +6978,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(observedCandidate&&observedReplay);
     QVERIFY(observedCandidate.value()->adopt_linked_activity(
         std::move(observedReplay),importedTicket->replay->exact_plan_checksum));
-    QVERIFY(imported.selector.set_processed_realization(std::move(*observedCandidate.value())));
-    const auto selectedPcm=imported.selector.processed_realization_snapshot();
+    // Independent selector: do not disturb the imported session's existing
+    // M13 authority, which later negative tests deliberately retain.
+    Session activityPublisher;
+    activityPublisher.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(activityPublisher.source.has_source());
+    QVERIFY(activityPublisher.selector.set_processed_realization(std::move(*observedCandidate.value())));
+    const auto selectedPcm=activityPublisher.selector.processed_realization_snapshot();
     QVERIFY(selectedPcm&&selectedPcm->linked_activity_sidecar());
     QVERIFY(selectedPcm->linked_activity_sidecar()->realization_id==
-        imported.selector.processed_realization_id());
+        activityPublisher.selector.processed_realization_id());
     const auto importedCopy=dir.filePath(QStringLiteral(
         "m12-reopened-native-identical.rgsml"));
     imported.project.saveProjectAs(QUrl::fromLocalFile(importedCopy));
