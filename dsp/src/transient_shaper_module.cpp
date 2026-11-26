@@ -148,6 +148,10 @@ core::Status TransientShaperModule::prepare(const DspProcessSpec& spec)
     const auto v=validate(spec);
     if(!v)return v;
     try {
+        // Keep optional per-block observer scratch bounded independently
+        // of the ordinary engine's valid process-block size.
+        if(impl_->activity_sink&&spec.maximum_block_frames.value()>65536)
+            impl_->activity_sink=nullptr;
         auto engine=internal::TransientShaperC00Engine::create(
             impl_->params,
             static_cast<std::uint32_t>(
