@@ -303,6 +303,8 @@ encode_m13_provisional_diagnostic(
        (*fs!=44100U&&*fs!=48000U&&*fs!=88200U&&*fs!=96000U&&
         *fs!=176400U&&*fs!=192000U)||
        *measured<0.0||*frames>static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))return false;
+    if(observed.value("freshBindingPopulationComplete").toBool()&&*required==0U)
+        return false;
     const auto reasons=root.value("canonicalReasons").toArray();
     std::vector<VerificationReason> decodedReasons;
     decodedReasons.reserve(static_cast<std::size_t>(reasons.size()));
