@@ -853,6 +853,7 @@ Rectangle {
                         readonly property bool available: observation.available === true
                         readonly property var buckets: observation.buckets || []
                         readonly property int bandCount: observation.bandCount || 0
+                        readonly property var bandSummaries: linkedDynamicModel.bandSummaries
                         readonly property real audibleFrame: observation.audibleFrame === undefined ? -1 : observation.audibleFrame
                         readonly property int sampleRateHz: observation.sampleRateHz || 0
                         readonly property string stateText: observation.stateText || "TELEMETRY UNAVAILABLE"
