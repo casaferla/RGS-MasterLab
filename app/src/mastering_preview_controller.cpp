@@ -295,6 +295,15 @@ void MasteringPreviewController::set_preview_executor(PreviewExecutor executor)
     previewExecutor_ = std::move(executor);
 }
 
+bool MasteringPreviewController::private_m12_linked_editor_owner_matches(
+    const MasteringChainState& candidate) const noexcept
+{
+    return QThread::currentThread()==thread()&&m12ReplayTicket_&&
+        chainState_==&candidate&&m12ManualChainOwner_==&candidate&&
+        m12ManualRegistryOwner_&&
+        candidate.registry_snapshot()==m12ManualRegistryOwner_;
+}
+
 void MasteringPreviewController::set_private_m12_product_preview_ticket(
     std::shared_ptr<const l3_automatch::m12_frozen::
         M12ImmutableProductPreviewTicket> ticket)
