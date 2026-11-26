@@ -113,6 +113,8 @@ bind_m13_fresh_native_population(
                !std::isfinite(x.paired_native_support)||
                x.paired_native_support<0.0||x.paired_native_support>1.0||
                x.paired_native_support!=y.paired_native_support||
+               (x.prepared.z&&!std::isfinite(*x.prepared.z))||
+               (x.reference.z&&!std::isfinite(*x.reference.z))||
                x.prepared.z!=y.prepared.z||
                x.prepared.endpoint!=y.prepared.endpoint||
                x.reference.z!=y.reference.z||
