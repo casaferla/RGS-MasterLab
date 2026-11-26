@@ -8,6 +8,7 @@
 // No secondary engine, no P2 duplication, no M17 export control.
 // Even a successful parse does not mint M12 receipt or M13 VERIFIED.
 #include "l3_m12_ref_linked_native_stage.hpp"
+#include "l3_m12_retained_controller.hpp"
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/project/project_document.hpp>
 #include <rgsml/core/error.hpp>
@@ -132,6 +133,13 @@ decode_exact_m12_ref_linked_product_state(
        meta.value(QStringLiteral("linkedChainRevision")).toString().
            toStdString()!=exact_revision)
         return fail("L3_M12_REOPEN_MATERIALIZATION_OWNER_OR_REV_STALE");
+    if(document.object().contains(QStringLiteral("retainedController"))) {
+        const auto retained=decode_m12_retained_controller(document.object());
+        if(!retained||retained->controller_id!=*controller.value()||
+           retained->linked_chain_id!=exact_linked->chainId||
+           retained->last_removed_revision>=exact_linked->revision)
+            return fail("L3_M12_REOPEN_RETAINED_CONTROLLER_CONFLICT");
+    }
     std::vector<dsp::ModuleInstance> nodes;
     std::vector<dsp::ModuleExecutionBinding> bindings;
     nodes.reserve(exact_linked->modules.size());

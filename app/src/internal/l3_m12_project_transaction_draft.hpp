@@ -5,6 +5,7 @@
 // may adopt/persist it and then issue a true materialization receipt.
 // A prepared document is NOT an M12 receipt, M13 VERIFIED, or export.
 #include "l3_m12_ref_linked_project_carrier.hpp"
+#include "l3_m12_retained_controller.hpp"
 
 #include <rgsml/project/project_snapshot.hpp>
 #include <rgsml/project/opaque_json_value.hpp>
@@ -459,6 +460,13 @@ prepare_exact_m12_project_transaction(
     }else if(expected.exact_existing_linked_snapshot)
         return fail("L3_M12_PROJECT_TRANSACTION_PRIOR_META_ABSENT");
     const auto& ident=accepted_stage.accepted_identity;
+    if(record.contains(QStringLiteral("retainedController"))) {
+        const auto retained=decode_m12_retained_controller(record);
+        if(!retained||retained->controller_id!=ident.reference_match_controller_id||
+           retained->linked_chain_id!=exact_native_carrier.native_project_chain.chainId||
+           retained->last_removed_revision>=ident.exact_accepted_plan_revision)
+            return fail("L3_M12_PROJECT_TRANSACTION_RETAINED_CONTROLLER_CONFLICT");
+    }
     const auto q=[](const std::string& value){
         return QString::fromStdString(value);
     };
