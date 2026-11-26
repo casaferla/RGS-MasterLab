@@ -129,12 +129,17 @@ private:
 
 [[nodiscard]] bool has_future_semantics(const project::ProjectDocument& doc)
 {
+    const auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    auto unknown=metadata.object();
+    if(l3_automatch::m12_frozen::decode_m12_retained_controller(unknown))
+        unknown.remove(QStringLiteral("retainedController"));
+    const bool unknownReferenceMatch=!metadata.isObject()||!unknown.isEmpty();
     if (doc.pipeline.repairChainId || doc.pipeline.conditioningChainId ||
         doc.activeProfileApplication ||
         doc.timeSelections.analysisScopes.canonical_utf8() != "[]" ||
         doc.timeSelections.processingRegions.canonical_utf8() != "[]" ||
         doc.analyses.canonical_utf8() != "[]" || doc.plans.canonical_utf8() != "[]" ||
-        doc.referenceMatch.canonical_utf8() != "{}" ||
+        unknownReferenceMatch ||
         doc.masteringDNA.canonical_utf8() != "{}" ||
         !project::MasterOutputRatePreference::only_known_fields(doc.output) ||
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
@@ -162,8 +167,13 @@ private:
         [](const project::Chain& chain) {
             return chain.stage=="MASTER"&&chain.segment=="REF_LINKED";
         });
-    withoutKnownLinked.referenceMatch=
-        project::OpaqueJsonValue::empty_object();
+    const auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(saved.referenceMatch.canonical_utf8()));
+    if(!metadata.isObject())return true;
+    auto other=metadata.object();
+    other.remove(QStringLiteral("materialization"));
+    const auto canonical=project::OpaqueJsonValue::parse(QJsonDocument(other).toJson(QJsonDocument::Compact).toStdString());
+    if(!canonical)return true;
+    withoutKnownLinked.referenceMatch=*canonical.value();
     return has_future_semantics(withoutKnownLinked);
 }
 
