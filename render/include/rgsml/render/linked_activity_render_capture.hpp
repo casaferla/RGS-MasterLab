@@ -89,17 +89,25 @@ public:
                 !e->collector.finish();
         });
     }
+    [[nodiscard]] std::vector<C01ActivityBucket> dynamic_window(
+        const dsp::ModuleInstanceId& id,std::uint64_t frame,std::uint64_t window) const {
+        if(sealed_&&frame<=frames_)for(const auto& e:dynamic_)if(e->id==id)
+            return e->collector.visible_window(frame,window);
+        return {};
+    }
+    [[nodiscard]] std::vector<AppliedGainBucket> transient_window(
+        const dsp::ModuleInstanceId& id,std::uint64_t frame,std::uint64_t window) const {
+        if(sealed_&&frame<=frames_)for(const auto& e:transient_)if(e->id==id)
+            return e->collector.visible_window(frame,window);
+        return {};
+    }
     [[nodiscard]] std::vector<C01ActivityBucket> dynamic_history(
         const dsp::ModuleInstanceId& id) const {
-        if(sealed_)for(const auto& e:dynamic_)if(e->id==id)
-            return e->collector.visible_window(frames_,frames_);
-        return {};
+        return dynamic_window(id,frames_,frames_);
     }
     [[nodiscard]] std::vector<AppliedGainBucket> transient_history(
         const dsp::ModuleInstanceId& id) const {
-        if(sealed_)for(const auto& e:transient_)if(e->id==id)
-            return e->collector.visible_window(frames_,frames_);
-        return {};
+        return transient_window(id,frames_,frames_);
     }
     [[nodiscard]] bool sealed() const noexcept{return sealed_;}
     [[nodiscard]] std::uint64_t revision() const noexcept{return revision_;}
