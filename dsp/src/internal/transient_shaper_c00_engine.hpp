@@ -4,6 +4,7 @@
 // Three envelope states + two gain-smoother states, zero lookahead/tail.
 // Input/output can alias; failed process leaves both authoritative state and
 // caller output unchanged. All DSP staging allocated by create().
+#include <rgsml/dsp/linked_dsp_activity_observation.hpp>
 #include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/core/result.hpp>
 #include <cstddef>
@@ -13,20 +14,6 @@
 #include <vector>
 
 namespace rgsml::dsp::internal {
-// C00 observation is optional, block-scoped and below IModule. The sink
-// receives EXACT gains already calculated by this engine, only after a
-// successful transactional block. Never store the provided span.
-struct TransientC00AppliedGains final {
-    double attack_db{};
-    double sustain_db{};
-};
-struct ITransientC00ActivitySink {
-    virtual ~ITransientC00ActivitySink() = default;
-    virtual void on_successful_block(
-        std::uint64_t absolute_first_frame,
-        std::span<const TransientC00AppliedGains> gains) noexcept = 0;
-};
-
 struct TransientShaperC00State final {
     double f{0.0};
     double m{0.0};
