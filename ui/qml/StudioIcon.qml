@@ -75,6 +75,24 @@ Canvas {
             ctx.lineWidth = 2.2
             line(10.5, 5.2, 10.5, 12.8)
             ctx.restore()
+        } else if (kind === "module-dynamic-eq") {
+            // EQ response with dynamic control arrows, in the shared canvas grammar.
+            line(2.0, 14.5, 16.0, 14.5)
+            line(2.0, 10.5, 5.0, 10.5)
+            line(5.0, 10.5, 8.8, 5.0)
+            line(8.8, 5.0, 12.5, 10.5)
+            line(12.5, 10.5, 16.0, 10.5)
+            line(8.8, 1.5, 8.8, 3.5)
+            line(7.0, 2.0, 8.8, 3.5)
+            line(10.6, 2.0, 8.8, 3.5)
+        } else if (kind === "module-transient-shaper") {
+            // Sharp transient followed by controlled sustain.
+            line(1.8, 13.5, 4.4, 13.5)
+            line(4.4, 13.5, 6.0, 2.0)
+            line(6.0, 2.0, 8.2, 9.0)
+            line(8.2, 9.0, 10.0, 8.0)
+            line(10.0, 8.0, 13.0, 10.0)
+            line(13.0, 10.0, 16.0, 10.0)
         } else if (kind === "module-eq") {
             // Three VERTICAL mixing faders, staggered per source artwork.
             line(3.5, 2.0, 3.5, 9.2)
