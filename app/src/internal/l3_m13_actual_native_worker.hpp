@@ -41,6 +41,9 @@ public:
         const std::atomic<bool>* cancellation=nullptr)
     {
         using R=core::Result<M13ActualNativeWorkerCompletion>;
+        if(cancellation&&cancellation->load(std::memory_order_acquire))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_CANCELLED_BEFORE_PREFLIGHT"});
         if(!input.independent_pair||
            !original_pair_matches_product_owner(*input.independent_pair,
                                                 input.source_reference_owner)||
