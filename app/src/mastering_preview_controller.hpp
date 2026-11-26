@@ -86,6 +86,10 @@ public:
         M12ImmutableProductPreviewTicket>
     private_m12_product_preview_ticket() const noexcept
     {return m12ReplayTicket_;}
+    // Read-only linked editor inspection must use the actual installed
+    // MANUAL chain and registry owner, never an equivalent foreign copy.
+    [[nodiscard]] bool private_m12_linked_editor_owner_matches(
+        const MasteringChainState& candidate) const noexcept;
     // Research-only timing evidence, never used in ordinary Product builds.
     // Call once on the owner thread before scheduling any preview jobs.
     void set_research_p2_timing_log_path(QString path);
