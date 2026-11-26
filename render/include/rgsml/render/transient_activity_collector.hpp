@@ -111,11 +111,12 @@ public:
             return result;
         const auto start = audible_frame > window_frames
             ? audible_frame - window_frames : 0U;
-        for (const auto& b : completed_) {
-            if (b.frame_end_exclusive > start
-                && b.frame_end_exclusive <= audible_frame)
-                result.push_back(b);
-        }
+        const auto first=std::upper_bound(completed_.begin(),completed_.end(),start,
+            [](std::uint64_t frame,const AppliedGainBucket& b) {
+                return frame<b.frame_end_exclusive;
+            });
+        for(auto it=first;it!=completed_.end()&&it->frame_end_exclusive<=audible_frame;++it)
+            result.push_back(*it);
         return result;
     }
 
