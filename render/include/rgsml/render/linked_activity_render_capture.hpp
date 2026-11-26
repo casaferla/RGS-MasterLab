@@ -7,6 +7,9 @@
 #include <rgsml/render/transient_c00_activity_sink.hpp>
 #include <rgsml/render/dynamic_eq_activity_history.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
