@@ -74,8 +74,28 @@ struct M13TwentySevenConformance final {
                (row.outcome!=BindingConformance::passed&&
                 row.outcome!=BindingConformance::not_applicable))
                 return false;
+            counted+=row.component_comparisons.size();
+            std::size_t row_passed=0U;
+            for(const auto& component:row.component_comparisons) {
+                if(component.outcome==QtpOutcome::mismatch)return false;
+                if(component.outcome==QtpOutcome::pass) {
+                    if(!component.absolute_delta||!component.allowed_bound||
+                       !std::isfinite(*component.absolute_delta)||
+                       !std::isfinite(*component.allowed_bound)||
+                       *component.absolute_delta<0.0||
+                       *component.allowed_bound<0.0||
+                       *component.absolute_delta>*component.allowed_bound)
+                        return false;
+                    ++row_passed;
+                }else if(component.outcome!=QtpOutcome::unavailable||
+                         component.absolute_delta||component.allowed_bound)
+                    return false;
+            }
+            if((row.outcome==BindingConformance::passed)!=(row_passed>0U))
+                return false;
+            passed+=row_passed;
         }
-        return true;
+        return counted==configured_components&&passed==required_components;
     }
     [[nodiscard]] constexpr bool authorizes_release_verified()
         const noexcept {return false;}
