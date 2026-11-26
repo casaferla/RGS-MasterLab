@@ -7056,6 +7056,7 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(transientAdapter.linked_parameters().isEmpty());
     QVERIFY(dynamicAdapter.linked_parameters().isEmpty());
     QVERIFY(transientAdapter.has_error());
+    QVERIFY(dynamicAdapter.linkedBandResponse(0).isEmpty());
     QTRY_COMPARE(session.adapterModel->modules().size(),beforeLinkedModelCount);
     QVERIFY(session.adapterModel->selected_instance_id()!=dynamicAdapter.instance_id());
     const auto retiredProductDiagnosis=session.project.
