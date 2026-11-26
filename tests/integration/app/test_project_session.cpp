@@ -6870,6 +6870,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     const auto importedPrepared=
         imported.selector.prepared_realization_snapshot();
     QVERIFY(importedPrepared);
+    const auto reopenedEditors=app::l3_automatch::inspect_current_linked_editors(
+        *imported.previewController,*imported.masteringChainState);
+    QVERIFY(reopenedEditors);
+    QCOMPARE(reopenedEditors->size(),linkedEditors->size());
+    for(std::size_t i=0;i<reopenedEditors->size();++i) {
+        QVERIFY((*reopenedEditors)[i].instance.instance_id()==
+                (*linkedEditors)[i].instance.instance_id());
+        QVERIFY((*reopenedEditors)[i].parameters==(*linkedEditors)[i].parameters);
+        QVERIFY((*reopenedEditors)[i].exact_owner==importedTicket);
+    }
     auto oracle=m::render_restored_m12_full_native_pcm_once(
         *importedTicket->replay,*importedPrepared,
         *core::FrameCount::create(4096).value());
