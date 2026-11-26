@@ -5904,6 +5904,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         root.insert("freshEvidence",evidence);
         return root;
     };
+    QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("independentM16CeilingDbTp",
+        QJsonValue(QStringLiteral("0.0")))));
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
