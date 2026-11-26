@@ -186,6 +186,9 @@ m13_provisional_payload_without_own_checksum(
             ?QJsonValue(QJsonValue::Null):QJsonValue(orderedReasons[0].toObject())}
     };
 }
+[[nodiscard]] inline bool verify_m13_provisional_diagnostic_integrity(
+    const project::OpaqueJsonValue& serialized);
+
 [[nodiscard]] inline core::Result<M13ProvisionalDiagnosticEnvelope>
 encode_m13_provisional_diagnostic(
     const M13ImmutableProductFreshProbeRequest& admitted,
