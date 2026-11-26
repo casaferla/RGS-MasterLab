@@ -11,6 +11,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 
 #include <memory>
 #include <utility>
@@ -43,6 +44,8 @@ class DspModuleAdapter : public QObject {
     Q_PROPERTY(QString familyAccent READ family_accent NOTIFY changed)
     Q_PROPERTY(QString stateText READ state_text NOTIFY changed)
     Q_PROPERTY(bool hasError READ has_error NOTIFY changed)
+    Q_PROPERTY(bool linkedReadOnly READ linked_read_only NOTIFY changed)
+    Q_PROPERTY(QVariantMap linkedParameters READ linked_parameters NOTIFY changed)
 
 public:
     explicit DspModuleAdapter(QObject* parent = nullptr);
@@ -74,6 +77,10 @@ public:
     [[nodiscard]] virtual QString family_accent() const = 0;
     [[nodiscard]] virtual QString state_text() const = 0;
     [[nodiscard]] virtual bool has_error() const noexcept = 0;
+    // Optional read-only projection for Product-owned REF_LINKED DSPs.
+    // Existing MANUAL modules and nonprocessing services remain unchanged.
+    [[nodiscard]] virtual bool linked_read_only() const noexcept {return false;}
+    [[nodiscard]] virtual QVariantMap linked_parameters() const {return {};}
 
     Q_INVOKABLE virtual void setBypass(bool bypass) = 0;
     Q_INVOKABLE virtual void undo() = 0;
