@@ -5437,6 +5437,15 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
         twin.native_population=wrong;
         QVERIFY(m13::m13_same_accepted_native_population(wrong,twin));
     }
+    {
+        auto definition=a::m07_frozen::kBindings[1];
+        auto component=accepted[1].configured.front();
+        component.candidate_native.value=0.0;
+        component.current_candidate_z=0.0;
+        QVERIFY(m13::m13_native_coordinate_consistent(definition,component));
+        definition.transform=static_cast<a::m07_frozen::Transform>(255);
+        QVERIFY(!m13::m13_native_coordinate_consistent(definition,component));
+    }
     // The L02 raw scalar must satisfy the native QTP tolerance and
     // identical structural membership, independently of solver ranking.
     auto& native=accepted[25].configured.front().candidate_native;
