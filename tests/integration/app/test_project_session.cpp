@@ -5503,6 +5503,21 @@ m13FreshProtectedPopulationUsesActualNotPredictedCandidate()
         item.candidate_native.value=0.5;
         QVERIFY(!m13::m13_native_coordinate_consistent(definition,item));
     }
+    {
+        a::m08_frozen::AuthenticatedPairComponent predicted;
+        auto observed=predicted;
+        QVERIFY(!m13::m13_requires_native_numeric_comparison(predicted,observed));
+        predicted.current_valid=true;
+        predicted.paired_native_support=1.0;
+        QVERIFY(m13::m13_requires_native_numeric_comparison(predicted,observed));
+        predicted.current_valid=false;
+        predicted.paired_native_support=0.0;
+        observed.candidate_native.selector="different-selector";
+        QVERIFY(m13::m13_requires_native_numeric_comparison(predicted,observed));
+        observed=predicted;
+        observed.current_candidate_z=0.0;
+        QVERIFY(m13::m13_requires_native_numeric_comparison(predicted,observed));
+    }
     // The L02 raw scalar must satisfy the native QTP tolerance and
     // identical structural membership, independently of solver ranking.
     auto& native=accepted[25].configured.front().candidate_native;
