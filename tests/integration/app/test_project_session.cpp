@@ -5777,6 +5777,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(m::m12_native_stage_witness_matches_replay_plan(
         *m13Owner.value()->exact_materialized_preview_owner().replay,
         m13Result.value()->stage_witness));
+    // Native graph safety must reject missing execution evidence even
+    // when the freshly measured PCM and immutable request are unchanged.
+    auto savedWitness=m13Result.value()->stage_witness;
+    QVERIFY(!savedWitness.protected_manual.empty());
+    m13Result.value()->stage_witness.protected_manual.pop_back();
+    QVERIFY(app::l3_automatch::m13_frozen::audit_m13_native_graph_safety(
+        *m13Owner.value(),*m13Result.value())==
+        app::l3_automatch::m13_frozen::NativeGraphSafety::failed);
+    m13Result.value()->stage_witness=std::move(savedWitness);
     QVERIFY(!m13Result.value()->is_m13_verified());
     QVERIFY(!m13Result.value()->is_qualification_receipt());
     QVERIFY(!m13Result.value()->authorizes_wav_export());
