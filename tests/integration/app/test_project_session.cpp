@@ -5768,6 +5768,13 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             *m13Owner.value(),*m13Result.value(),
             {20.0,16000.0},1e-12,0,false,false));
     m13Result.value()->independent_m16_ceiling_db_tp=genuineCeiling;
+    const auto genuineEvaluations=m13Result.value()->logical_verification_evaluations;
+    m13Result.value()->logical_verification_evaluations=2U;
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        import_m13_product_fresh_original_native_source(
+            *m13Owner.value(),*m13Result.value(),
+            {20.0,16000.0},1e-12,0,false,false));
+    m13Result.value()->logical_verification_evaluations=genuineEvaluations;
     // Never infer an upstream Phase-6 density/grid attestation from
     // M19/M20's mere successful completion.
     QVERIFY(!app::l3_automatch::m13_frozen::
