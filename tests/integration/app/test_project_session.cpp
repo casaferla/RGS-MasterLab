@@ -720,6 +720,11 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         searchPerformance.completed+searchPerformance.failed);
     QCOMPARE(searchPerformance.attempted,
         completed->result.search.refinement->total_attempted);
+    qInfo("Qt native search Fs=%u: first admissible=%lld ms attempted=%u completed=%u failed=%u cache hits=%u",
+        static_cast<unsigned>(nativeRateHz),
+        static_cast<long long>(*searchPerformance.first_admissible_ms),
+        searchPerformance.attempted,searchPerformance.completed,
+        searchPerformance.failed,searchPerformance.cache_hits);
     QVERIFY(a::native_qt_search_still_current_on_owner(controllers,fanout,session.selector,
         session.gold,*captured));
     const auto built=a::review_native_qt_product_session_on_owner(session.project,controllers,fanout,
