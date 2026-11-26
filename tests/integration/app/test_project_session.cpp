@@ -969,6 +969,14 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         *suspendedTicket->replay,*suspendedTicket->exact_prepared_owner,*block.value(),&witness);
     QVERIFY2(suspendedPcm,suspendedPcm?"":suspendedPcm.error()->message().c_str());
     QVERIFY(m12::m12_native_stage_witness_matches_replay_plan(*suspendedTicket->replay,witness));
+    auto cancelledWitness=witness;
+    const std::atomic<bool> cancelledReplay{true};
+    const auto cancelledPcm=m12::render_restored_m12_full_native_pcm_once(
+        *suspendedTicket->replay,*suspendedTicket->exact_prepared_owner,*block.value(),
+        &cancelledWitness,&cancelledReplay);
+    QVERIFY(!cancelledPcm);
+    QVERIFY(cancelledWitness.protected_manual.empty()&&cancelledWitness.reference_linked.empty()&&
+        cancelledWitness.user_terminal_p2.empty());
     QVERIFY(std::all_of(witness.reference_linked.begin(),witness.reference_linked.end(),
         [](const auto& signature){return signature.disposition==render::ModuleExecutionDisposition::BYPASS_IDENTITY;}));
     const auto fixedRequest=render::RenderRequest::create(
