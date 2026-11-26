@@ -306,7 +306,8 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
     m09_frozen::NativeOwnerAllocations::AllocateUuid allocate_uuid,
     std::span<const core::Uuid> protected_project_ids,
     const m09_frozen::ExactBytes& exact_accepted_dependencies,
-    const std::atomic<bool>* cancellation=nullptr)
+    const std::atomic<bool>* cancellation=nullptr,
+    std::optional<m09_frozen::NativeControllerRoleContext> controller_context={})
 {
     if(cancellation&&cancellation->load(std::memory_order_acquire)) {
         NativeAutoMatchWorkerResult cancelled;cancelled.phase=NativeAutoMatchWorkerPhase::cancelled;
@@ -317,7 +318,9 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
     std::vector<core::Uuid> protected_ids(protected_project_ids.begin(),protected_project_ids.end());
     for(const auto& instance:input.owners.frozen_manual.instances())
         protected_ids.push_back(instance.instance_id().uuid());
-    m09_frozen::NativeOwnerAllocations allocations(std::move(allocate_uuid),protected_ids);
+    m09_frozen::NativeOwnerAllocations allocations(std::move(allocate_uuid),protected_ids,
+        std::move(controller_context));
+    if(allocations.failed())return {};
     input.dynamic_band_ids.clear();
     for(std::size_t i=0;i<3U;++i) {
         const auto id=allocations.dynamic_band(i);

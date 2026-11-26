@@ -30,7 +30,8 @@ struct NativeQtSearchWorkerResult final {
     const NativeQtSearchCapture& captured,const NativeQtSearchPolicy& policy,
     m09_frozen::NativeOwnerAllocations::AllocateUuid allocate_uuid,
     std::span<const core::Uuid> protected_ids,
-    const std::atomic<bool>* cancellation=nullptr)
+    const std::atomic<bool>* cancellation=nullptr,
+    std::optional<m09_frozen::NativeControllerRoleContext> controller_context={})
 {
     NativeQtSearchWorkerResult out;
     const auto cancelled=[&](){return cancellation&&cancellation->load(std::memory_order_acquire);};
@@ -61,7 +62,8 @@ struct NativeQtSearchWorkerResult final {
         policy.exact_current_endpoint_safety_attested,policy.file_based_lra_policy_attested,
         policy.exact_event_context,exact_fixed_stereo_insertion,{},policy.constraints,policy.owned_p2};
     out.result=run_native_automatch_with_owner_allocations(std::move(input),policy.definitions,
-        std::move(allocate_uuid),protected_ids,policy.accepted_dependencies,cancellation);
+        std::move(allocate_uuid),protected_ids,policy.accepted_dependencies,cancellation,
+        std::move(controller_context));
     return out;
 }
 } // namespace rgsml::app::l3_automatch
