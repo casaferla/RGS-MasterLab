@@ -119,6 +119,45 @@ begin_native_qt_product_session_on_owner(
         std::move(*capture.value()),std::move(*policy),std::move(expected),
         std::move(protected_ids),plan_id,controller_id,linked_chain_id});
 }
+// The exact previous Project is already owner-authenticated. The
+// role namespace derives from the durable controller, never plan or
+// Amount. Only compatible old instances can be reused in the search.
+[[nodiscard]] inline std::optional<m09_frozen::NativeControllerRoleContext>
+native_qt_controller_role_context(const NativeQtProductSession& operation)
+{
+    using namespace m09_frozen;
+    if(operation.controller_id.is_nil()||!operation.capture.execution_registry)return {};
+    NativeControllerRoleContext context{operation.controller_id,{},{}};
+    const auto& prior=operation.expected.exact_existing_linked_snapshot;
+    if(!prior)return context;
+    constexpr std::array<IntentRole,8> roles{IntentRole::tonal_eq,IntentRole::spectral_dynamic_eq,
+        IntentRole::macro_compressor,IntentRole::micro_transient,IntentRole::stereo_side_eq,
+        IntentRole::stereo_ms,IntentRole::loudness_gain,IntentRole::terminal_limiter};
+    for(const auto& node:prior->modules) {
+        if(!node.semanticNodeId||node.owner!="REFERENCE_MATCH"||node.provenance!="REFERENCE_MATCH"||
+           node.linkState!="REF_LINKED"||!context.owned_semantics.insert(*node.semanticNodeId).second)
+            return {};
+        for(const auto role:roles) {
+            const auto semantic=native_controller_role_semantic_id(operation.controller_id,role);
+            if(!semantic||*semantic!=*node.semanticNodeId)continue;
+            const auto type=native_artistic_role_type(role);
+            if(!type||*type!=node.typeId)continue; // incompatible identity -> explicit replacement
+            const auto descriptor=operation.capture.execution_registry->find_descriptor(*type);
+            if(!descriptor)return {};
+            const auto& d=descriptor.value()->get();
+            if(!node.algorithmVersion||!node.parameterSchemaId||
+               d.algorithm_version()!=std::optional<std::string_view>{*node.algorithmVersion}||
+               d.parameter_schema_id()!=std::optional<std::string_view>{*node.parameterSchemaId})continue;
+            const auto instance=dsp::ModuleInstanceId::from_uuid(node.instanceId);
+            if(!instance)return {};
+            // A positive search is a new reviewed active topology. Do not
+            // silently override independent user bypass/disabled state.
+            if(node.userBypass||!node.enabled||node.domainSuspended)return {};
+            context.compatible_prior.push_back({role,*instance.value(),*semantic});
+        }
+    }
+    return context;
+}
 // Worker entry point for a single admitted Product operation. All of
 // its dependencies and reserved identities travel with the session.
 [[nodiscard]] inline NativeQtSearchWorkerResult
@@ -127,8 +166,10 @@ run_native_qt_product_session_worker(
     m09_frozen::NativeOwnerAllocations::AllocateUuid allocate_uuid,
     const std::atomic<bool>* cancellation=nullptr)
 {
+    auto context=native_qt_controller_role_context(operation);
+    if(!context)return {};
     return run_native_qt_search_worker(operation.capture,operation.policy,
-        std::move(allocate_uuid),operation.protected_ids,cancellation);
+        std::move(allocate_uuid),operation.protected_ids,cancellation,std::move(context));
 }
 
 // Review is not publication. A GUI may retain the immutable result,
