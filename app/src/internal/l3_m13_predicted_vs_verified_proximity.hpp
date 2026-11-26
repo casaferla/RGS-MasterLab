@@ -69,11 +69,19 @@ struct FullM08Comparison final {
     bool full_global_population{};
     [[nodiscard]] bool all_required_pass() const noexcept {
         if(!all_requested_domains_comparable||!full_global_population||
-           !global.passed())return false;
-        for(const auto& d:domains)
-            if(d.status==ProximityComparisonStatus::failed||
-               d.status==ProximityComparisonStatus::unavailable)return false;
-        return true;
+           !global.passed()||
+           global.allowable_raw_delta!=kSameRunProximityFractionBound)return false;
+        bool any_requested=false;
+        for(const auto& d:domains) {
+            if(d.status==ProximityComparisonStatus::not_applicable) {
+                if(d.absolute_raw_delta||d.allowable_raw_delta)return false;
+                continue;
+            }
+            if(!d.passed()||d.allowable_raw_delta!=kSameRunProximityFractionBound)
+                return false;
+            any_requested=true;
+        }
+        return any_requested;
     }
 };
 [[nodiscard]] inline FullM08Comparison
