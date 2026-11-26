@@ -1261,6 +1261,7 @@ int main(int argc, char* argv[])
     dspChainAdapterModel.bindAnalysisStatusViewModel(
         &m21ProductStatusViewModel);
     dspChainAdapterModel.bindLinkedEditorPreviewController(&previewController);
+    dspChainAdapterModel.bindLinkedEditorActivity(&auditionSelector,&playbackTransport);
     // All these signals are QUEUED: the full Product mutation has
     // finished before we reconcile the three independent measurements.
     // Reauthenticate cache first, THEN refresh QML, instead of showing
