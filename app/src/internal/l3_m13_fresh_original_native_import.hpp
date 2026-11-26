@@ -122,6 +122,7 @@ import_m13_product_fresh_original_native_source(
            phase6_active_frames>view.frame_count().value()||
            !std::isfinite(common_tonal.low_hz)||
            !std::isfinite(common_tonal.high_hz)||
+           common_tonal.low_hz<0.0||common_tonal.high_hz<=common_tonal.low_hz||
            !std::isfinite(exact_phase6_density_floor)||
            exact_phase6_density_floor<=0.0)
             return fail("L3_M13_FRESH_NATIVE_PHASE6_CONFIG_INVALID");
