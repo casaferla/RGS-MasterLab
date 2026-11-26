@@ -898,6 +898,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(suspendAction.phase()==Action::Phase::match_suspended);
     QVERIFY(session.project.private_m12_match_state()==app::ProjectSessionViewModel::M12CurrentMatchState::suspended);
     QVERIFY(session.project.can_resume_private_m12_suspension());
+    QVERIFY(!session.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
     const auto suspendedTicket=session.previewController->private_m12_product_preview_ticket();
     QVERIFY(suspendedTicket&&suspendedTicket->replay&&suspendedTicket!=thirdTicket);
     QVERIFY(suspendedTicket->replay->plan_id==thirdTicket->replay->plan_id);
@@ -921,6 +922,18 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QVERIFY(!session.project.can_resume_private_m12_suspension());
     QVERIFY(session.project.redo_private_m12_materialization());
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
+    const auto repeatedZeroPlan=uuidOf("e6000000-0000-4000-8000-00000000000b");
+    const auto repeatedZero=a::begin_native_qt_product_session_on_owner(session.project,
+        controllers,fanout,session.selector,session.gold,zeroAmount,requested,0.0,*block.value(),
+        repeatedZeroPlan,controllerId,linkedId,true);
+    QVERIFY2(repeatedZero,repeatedZero?"":repeatedZero.error()->message().c_str());
+    Action repeatZeroAction{controllers,fanout,session.selector,session.gold};
+    QVERIFY(repeatZeroAction.begin(*repeatedZero.value(),allocate));
+    QTRY_VERIFY_WITH_TIMEOUT((repeatZeroAction.poll(),!repeatZeroAction.busy()),180000);
+    QVERIFY(repeatZeroAction.phase()==Action::Phase::match_suspended);
+    QVERIFY(!repeatZeroAction.can_adopt());
+    QVERIFY(session.previewController->private_m12_product_preview_ticket()==suspendedTicket);
+    QVERIFY(session.project.can_resume_private_m12_suspension());
     const auto suspendedPath=dir.filePath(QStringLiteral("l3-native-suspended.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(suspendedPath));
     QVERIFY2(QFileInfo::exists(suspendedPath),session.project.error_message().toUtf8().constData());
