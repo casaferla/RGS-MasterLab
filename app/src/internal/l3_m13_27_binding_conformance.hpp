@@ -93,6 +93,18 @@ struct M13TwentySevenConformance final {
             }
             if((row.outcome==BindingConformance::passed)!=(row_passed>0U))
                 return false;
+            if(row.category==QtpCategory::band_profile_db&&row_passed>0U) {
+                if(!row.t1_profile||row.t1_profile->outcome!=QtpOutcome::pass||
+                   !row.t1_profile->max_component_error_db||
+                   !row.t1_profile->unweighted_rms_error_db||
+                   !std::isfinite(*row.t1_profile->max_component_error_db)||
+                   !std::isfinite(*row.t1_profile->unweighted_rms_error_db)||
+                   *row.t1_profile->max_component_error_db<0.0||
+                   *row.t1_profile->max_component_error_db>0.01||
+                   *row.t1_profile->unweighted_rms_error_db<0.0||
+                   *row.t1_profile->unweighted_rms_error_db>0.003)
+                    return false;
+            }else if(row.t1_profile)return false;
             passed+=row_passed;
         }
         return counted==configured_components&&passed==required_components;
