@@ -32,7 +32,16 @@ Canvas {
         ctx.clearRect(0, 0, width, height)
         const sx = width / 18.0
         const sy = height / 18.0
-        ctx.scale(sx, sy)
+        // Utility glyphs must retain a square design coordinate system
+        // even if a Controls content slot acquires a rectangular size.
+        if (kind === "preset-reset" || kind === "preset-open" || kind === "preset-save") {
+            const uniform = Math.min(sx, sy)
+            ctx.translate((width - 18.0 * uniform) / 2.0,
+                          (height - 18.0 * uniform) / 2.0)
+            ctx.scale(uniform, uniform)
+        } else {
+            ctx.scale(sx, sy)
+        }
         ctx.strokeStyle = strokeColor
         ctx.fillStyle = fillColor
         ctx.lineWidth = strokeWidth
@@ -229,82 +238,83 @@ Canvas {
             ctx.closePath()
             ctx.stroke()
         } else if (kind === "preset-reset") {
-            // Unambiguous return-to-default: almost-complete circular
-            // arrow around a tiny zero mark. Unlike Undo/Redo this is
-            // a full rotation; no extra halo or accent light.
+            // Same optical family as the approved Dock/Undock glyph:
+            // a compact circular silhouette, broad arrow and single zero.
             ctx.save()
             ctx.shadowBlur = 0
-            ctx.lineWidth = 1.7
+            ctx.lineWidth = 1.9
             ctx.beginPath()
-            ctx.arc(9.0,9.2,5.9,-2.45,2.65,false)
+            ctx.arc(9.1,9.0,5.9,-2.35,3.35,false)
             ctx.stroke()
             ctx.beginPath()
-            ctx.moveTo(3.3,4.8)
-            ctx.lineTo(2.7,9.0)
-            ctx.lineTo(6.6,7.5)
+            ctx.moveTo(1.9,10.7)
+            ctx.lineTo(3.33,7.78)
+            ctx.lineTo(6.4,10.0)
             ctx.stroke()
-            ctx.lineWidth = 1.4
+            ctx.lineWidth = 1.6
             ctx.beginPath()
-            ctx.moveTo(9.0,7.15)
-            ctx.bezierCurveTo(10.8,7.15,10.8,11.25,9.0,11.25)
-            ctx.bezierCurveTo(7.2,11.25,7.2,7.15,9.0,7.15)
+            ctx.moveTo(9.1,6.6)
+            ctx.bezierCurveTo(11.5,6.6,11.5,11.4,9.1,11.4)
+            ctx.bezierCurveTo(6.7,11.4,6.7,6.6,9.1,6.6)
             ctx.closePath()
             ctx.stroke()
             ctx.restore()
         } else if (kind === "preset-open") {
-            // Single lightweight folder with an upward-opening lip.
-            // Not the native-window Undock icon: this always means
-            // load a DSP or whole-chain settings preset from disk.
-            // One 18x18 painter for docked and floating headers.
+            // Broad, shallow folder: match the Dock's visual weight
+            // without making a folder into a square window.
             ctx.save()
             ctx.shadowBlur = 0
-            ctx.lineWidth = 1.65
+            ctx.lineWidth = 1.9
             ctx.beginPath()
-            ctx.moveTo(2.1,6.0)
-            ctx.lineTo(2.1,4.9)
-            ctx.quadraticCurveTo(2.1,4.0,3.0,4.0)
-            ctx.lineTo(7.0,4.0)
-            ctx.lineTo(8.4,5.5)
-            ctx.lineTo(15.0,5.5)
-            ctx.quadraticCurveTo(15.9,5.5,15.9,6.4)
-            ctx.lineTo(15.9,7.5)
+            ctx.moveTo(2.2,8.1)
+            ctx.lineTo(2.2,5.5)
+            ctx.quadraticCurveTo(2.2,4.6,3.1,4.6)
+            ctx.lineTo(7.0,4.6)
+            ctx.lineTo(8.4,6.1)
+            ctx.lineTo(14.9,6.1)
+            ctx.quadraticCurveTo(15.8,6.1,15.8,7.0)
+            ctx.lineTo(15.8,8.1)
             ctx.stroke()
             ctx.beginPath()
-            ctx.moveTo(3.2,8.0)
-            ctx.lineTo(16.2,8.0)
-            ctx.lineTo(13.8,14.6)
-            ctx.quadraticCurveTo(13.6,15.2,12.8,15.2)
-            ctx.lineTo(3.0,15.2)
-            ctx.quadraticCurveTo(2.0,15.2,2.2,14.3)
+            ctx.moveTo(3.4,8.1)
+            ctx.lineTo(16.1,8.1)
+            ctx.lineTo(14.2,13.4)
+            ctx.quadraticCurveTo(14.0,14.0,13.2,14.0)
+            ctx.lineTo(3.0,14.0)
+            ctx.quadraticCurveTo(2.0,14.0,2.2,13.1)
             ctx.closePath()
             ctx.stroke()
             ctx.restore()
         } else if (kind === "preset-save") {
-            // Recognizable small floppy, deliberately schematic.
-            // No M17 WAV-export suggestion and no phosphor glow.
+            // Compact floppy silhouette with a wider body and rounded
+            // corners; internal details share the Dock's stroke grammar.
             ctx.save()
             ctx.shadowBlur = 0
-            ctx.lineWidth = 1.55
+            ctx.lineWidth = 1.9
             ctx.beginPath()
-            ctx.moveTo(3.0,2.6)
-            ctx.lineTo(13.0,2.6)
-            ctx.lineTo(15.2,4.8)
-            ctx.lineTo(15.2,15.4)
-            ctx.lineTo(2.8,15.4)
-            ctx.lineTo(2.8,3.0)
+            ctx.moveTo(3.1,3.2)
+            ctx.lineTo(13.7,3.2)
+            ctx.lineTo(15.7,5.2)
+            ctx.lineTo(15.7,13.9)
+            ctx.quadraticCurveTo(15.7,14.8,14.8,14.8)
+            ctx.lineTo(3.1,14.8)
+            ctx.quadraticCurveTo(2.2,14.8,2.2,13.9)
+            ctx.lineTo(2.2,4.1)
+            ctx.quadraticCurveTo(2.2,3.2,3.1,3.2)
             ctx.closePath()
             ctx.stroke()
+            ctx.lineWidth = 1.65
             ctx.beginPath()
-            ctx.moveTo(5.3,2.6)
-            ctx.lineTo(5.3,7.2)
-            ctx.lineTo(12.7,7.2)
-            ctx.lineTo(12.7,2.6)
+            ctx.moveTo(5.4,3.2)
+            ctx.lineTo(5.4,7.1)
+            ctx.lineTo(12.2,7.1)
+            ctx.lineTo(12.2,3.2)
             ctx.stroke()
             ctx.beginPath()
-            ctx.moveTo(5.3,15.4)
-            ctx.lineTo(5.3,10.2)
-            ctx.lineTo(12.7,10.2)
-            ctx.lineTo(12.7,15.4)
+            ctx.moveTo(5.2,14.8)
+            ctx.lineTo(5.2,10.0)
+            ctx.lineTo(12.8,10.0)
+            ctx.lineTo(12.8,14.8)
             ctx.stroke()
             ctx.restore()
         } else if (kind === "dock-large") {
