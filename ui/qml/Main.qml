@@ -1966,20 +1966,20 @@ ApplicationWindow {
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 6
+                                spacing: 4
 
                                 // Compact header: title and mode tabs use separate rows so neither clips.
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    Layout.minimumHeight: 44
-                                    Layout.preferredHeight: 44
-                                    Layout.maximumHeight: 44
+                                    Layout.minimumHeight: 42
+                                    Layout.preferredHeight: 42
+                                    Layout.maximumHeight: 42
                                     spacing: 3
 
                                     Text {
                                         text: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            ? "PREPARED + REF → PROCESSED" : "RAW → PREPARED"
-                                        color: "#8A9EA8"
+                                            ? "PREPARED + REFERENCE → PROCESSED" : "RAW → PREPARED"
+                                        color: root.textSecondary
                                         font.family: "Segoe UI"
                                         font.pixelSize: 10
                                         font.weight: Font.Bold
@@ -2024,8 +2024,8 @@ ApplicationWindow {
 
                                     ColumnLayout {
                                         anchors.fill: parent
-                                        anchors.margins: 6
-                                        spacing: 6
+                                        anchors.margins: 5
+                                        spacing: 4
 
                                         // Global Row: Reference card + real Total Match Amount knob
                                         RowLayout {
@@ -2138,7 +2138,9 @@ ApplicationWindow {
 
                                         RowLayout {
                                             Layout.fillWidth: true
-                                            Layout.preferredHeight: 26
+                                            Layout.minimumHeight: 24
+                                            Layout.preferredHeight: 24
+                                            Layout.maximumHeight: 24
                                             StudioSegmentButton {
                                                 minimumControlWidth: 76
                                                 tone: "primary"
@@ -2171,7 +2173,7 @@ ApplicationWindow {
                                         Rectangle {
                                             Layout.fillWidth: true
                                             Layout.fillHeight: true
-                                            Layout.minimumHeight: 48
+                                            Layout.minimumHeight: 56
                                             color: "#0F2030"
                                             border.color: "#192D3E"
                                             radius: 4
@@ -2186,12 +2188,16 @@ ApplicationWindow {
                                                 ColumnLayout {
                                                     Layout.fillWidth: true
                                                     Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 3
+                                                    spacing: 2
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Tonal"
-                                                        Layout.preferredWidth: 28
-                                                        Layout.preferredHeight: 28
+                                                        Layout.minimumWidth: 30
+                                                        Layout.preferredWidth: 30
+                                                        Layout.maximumWidth: 30
+                                                        Layout.minimumHeight: 30
+                                                        Layout.preferredHeight: 30
+                                                        Layout.maximumHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#4E86C6"
                                                         value: autoMatchDialog.amountValue(1)
@@ -2225,12 +2231,16 @@ ApplicationWindow {
                                                 ColumnLayout {
                                                     Layout.fillWidth: true
                                                     Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 3
+                                                    spacing: 2
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Dynamics"
-                                                        Layout.preferredWidth: 28
-                                                        Layout.preferredHeight: 28
+                                                        Layout.minimumWidth: 30
+                                                        Layout.preferredWidth: 30
+                                                        Layout.maximumWidth: 30
+                                                        Layout.minimumHeight: 30
+                                                        Layout.preferredHeight: 30
+                                                        Layout.maximumHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#C4774A"
                                                         value: autoMatchDialog.amountValue(2)
@@ -2264,12 +2274,16 @@ ApplicationWindow {
                                                 ColumnLayout {
                                                     Layout.fillWidth: true
                                                     Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 3
+                                                    spacing: 2
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Stereo"
-                                                        Layout.preferredWidth: 28
-                                                        Layout.preferredHeight: 28
+                                                        Layout.minimumWidth: 30
+                                                        Layout.preferredWidth: 30
+                                                        Layout.maximumWidth: 30
+                                                        Layout.minimumHeight: 30
+                                                        Layout.preferredHeight: 30
+                                                        Layout.maximumHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#4A9A88"
                                                         value: autoMatchDialog.amountValue(3)
@@ -2303,12 +2317,16 @@ ApplicationWindow {
                                                 ColumnLayout {
                                                     Layout.fillWidth: true
                                                     Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 3
+                                                    spacing: 2
 
                                                     StudioMatchKnob {
                                                         objectName: "automatchKnob_Loudness"
-                                                        Layout.preferredWidth: 28
-                                                        Layout.preferredHeight: 28
+                                                        Layout.minimumWidth: 30
+                                                        Layout.preferredWidth: 30
+                                                        Layout.maximumWidth: 30
+                                                        Layout.minimumHeight: 30
+                                                        Layout.preferredHeight: 30
+                                                        Layout.maximumHeight: 30
                                                         Layout.alignment: Qt.AlignHCenter
                                                         accentColor: "#D3AE66"
                                                         value: autoMatchDialog.amountValue(4)
@@ -2367,7 +2385,7 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 28
                                                 color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "RAW → PREPARED"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
+                                                Text { anchors.centerIn: parent; text: "RAW SOURCE"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
                                             }
 
                                             Rectangle {
@@ -2375,7 +2393,7 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 28
                                                 color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "L5 · MOCKUP"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
+                                                Text { anchors.centerIn: parent; text: "RESTORATION · MOCKUP"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
                                             }
                                         }
 
