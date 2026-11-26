@@ -131,6 +131,7 @@ private:
     qint64 sampleRateHz_{0};
     std::optional<audio::FrameDomainId> linkedPcmDomain_;
     std::optional<core::PlaybackSnapshot> lastLinkedClock_;
+    std::optional<std::uint32_t> lastLinkedRate_;
     bool playbackAvailable_{false};
     QString errorMessage_;
 };
