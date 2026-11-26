@@ -109,6 +109,67 @@ QString AutoMatchViewModel::review_metrics_text()const {
             .arg(metrics->completed).arg(metrics->failed).arg(metrics->cache_hits);
     return text;
 }
+QString AutoMatchViewModel::failure_diagnostics_text()const {
+    if(!owner()||action_.phase()!=Action::Phase::failed||!action_.result())
+        return {};
+    const auto& completed=*action_.result();
+    const auto& worker=completed.result;
+    using S=a::m09_frozen::NativeProductSearchStatus;
+    using F=a::m10_frozen::NativeFixedSearchStatus;
+    using R=a::m10_frozen::RefinementBatchReason;
+    QString search;
+    switch(worker.search.status) {
+    case S::unavailable:search=QStringLiteral("unavailable");break;
+    case S::no_correction_required:search=QStringLiteral("no correction required");break;
+    case S::measured_candidate:search=QStringLiteral("measured candidate");break;
+    case S::no_measured_candidate:search=QStringLiteral("no measured candidate");break;
+    case S::cancelled:search=QStringLiteral("cancelled");break;
+    case S::measured_none_candidate:search=QStringLiteral("empty candidate");break;
+    }
+    QString fixed;
+    switch(worker.search.fixed_gate.status) {
+    case F::unavailable:fixed=QStringLiteral("unavailable");break;
+    case F::no_correction_required:fixed=QStringLiteral("no correction required");break;
+    case F::correction_required:fixed=QStringLiteral("correction required");break;
+    case F::targets_met_but_safety_unavailable_or_failed:
+        fixed=QStringLiteral("safety unavailable/failed");break;
+    }
+    QString text=QStringLiteral("Fixed: %1 | Search: %2").arg(fixed,search);
+    if(worker.search.refinement) {
+        const auto& batch=*worker.search.refinement;
+        QString reason;
+        switch(batch.reason) {
+        case R::complete:reason=QStringLiteral("complete");break;
+        case R::budget_exhausted:reason=QStringLiteral("budget exhausted");break;
+        case R::cancelled:reason=QStringLiteral("cancelled");break;
+        case R::invalid_inventory:reason=QStringLiteral("invalid inventory");break;
+        case R::no_complete_seed_or_stale_source:
+            reason=QStringLiteral("no complete seed / stale source");break;
+        case R::seed_attempt_budget_exceeded:
+            reason=QStringLiteral("seed attempt budget exhausted");break;
+        case R::invalid_seed_trial:reason=QStringLiteral("invalid seed trial");break;
+        case R::invalid_evaluation:reason=QStringLiteral("invalid evaluation");break;
+        }
+        text+=QStringLiteral("\\nRefinement: %1 | attempts: %2")
+            .arg(reason).arg(batch.total_attempted);
+    } else {
+        text+=QStringLiteral("\\nRefinement: not reached");
+    }
+    const auto& perf=worker.performance;
+    text+=QStringLiteral("\\nNative renders: %1 complete, %2 failed, %3 cache hits")
+        .arg(perf.completed).arg(perf.failed).arg(perf.cache_hits);
+    text+=QStringLiteral("\\nPreflight rejected: %1 | budget refusals: %2")
+        .arg(perf.evaluator_preflight_rejections).arg(perf.budget_refusals);
+    const auto elapsed=completed.original_pair_ms+worker.timing.fixed_ms+
+        worker.timing.seed_ms+worker.timing.search_ms;
+    text+=QStringLiteral("\\nMeasured phases: %1 s (original %2 / fixed %3 / seed %4 / search %5)")
+        .arg(static_cast<double>(elapsed)/1000.0,0,'f',1)
+        .arg(static_cast<double>(completed.original_pair_ms)/1000.0,0,'f',1)
+        .arg(static_cast<double>(worker.timing.fixed_ms)/1000.0,0,'f',1)
+        .arg(static_cast<double>(worker.timing.seed_ms)/1000.0,0,'f',1)
+        .arg(static_cast<double>(worker.timing.search_ms)/1000.0,0,'f',1);
+    return text;
+}
 QString AutoMatchViewModel::elapsed_time_text()const {
     if(!owner()||!search_clock_.isValid())return {};
     const auto elapsed=search_clock_running_
