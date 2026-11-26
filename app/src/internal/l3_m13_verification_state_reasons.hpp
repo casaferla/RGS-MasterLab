@@ -143,6 +143,8 @@ normalize_verification_reasons(std::vector<VerificationReason> reasons)
 {
     for(const auto& r:reasons)
         if(!accepted_reason_stage(r)||r.code.empty()||
+           static_cast<std::uint8_t>(r.predicate)>
+               static_cast<std::uint8_t>(PredicateState::stale)||
            (r.measured_delta&&(!std::isfinite(*r.measured_delta)||
              *r.measured_delta<0.0))||
            (r.allowed_bound&&(!std::isfinite(*r.allowed_bound)||
