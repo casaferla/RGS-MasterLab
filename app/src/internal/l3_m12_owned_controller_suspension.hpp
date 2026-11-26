@@ -100,7 +100,8 @@ prepare_m12_owned_controller_suspension(
     std::set<core::Uuid> linked_instance_ids;
     std::set<core::Uuid> linked_semantic_ids;
     for(const auto& module:it->modules) {
-        if(module.instanceId.is_nil()||!module.semanticNodeId||
+        if(module.instanceId.is_nil()||!linked_instance_ids.insert(module.instanceId).second||
+           !module.semanticNodeId||
            module.semanticNodeId->is_nil()||
            !linked_semantic_ids.insert(*module.semanticNodeId).second||
            !module.algorithmVersion||!module.parameterSchemaId||
