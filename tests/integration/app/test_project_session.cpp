@@ -6469,6 +6469,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY(normalized.has_value());
         QVERIFY(*normalized==original);
     }
+    {
+        auto reasons=currentProductDiagnosis.canonical_reasons;
+        QVERIFY(!reasons.empty());
+        reasons.front().allowed_bound=-0.1;
+        QVERIFY(!m13contract::normalize_verification_reasons(reasons));
+        reasons.front().allowed_bound=0.01;
+        reasons.front().measured_delta=std::numeric_limits<double>::infinity();
+        QVERIFY(!m13contract::normalize_verification_reasons(reasons));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
