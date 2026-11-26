@@ -25,12 +25,18 @@ public:
          controller_(std::move(context)) {
         if(!controller_)return;
         if(controller_->controller.is_nil()){failed_=true;return;}
+        for(const auto& semantic:controller_->owned_semantics) {
+            if(semantic.is_nil()||!used_.contains(semantic)||
+               semantic==controller_->controller){failed_=true;return;}
+        }
         std::set<core::Uuid> reused;
         for(const auto& prior:controller_->compatible_prior) {
             const auto expected=native_controller_role_semantic_id(controller_->controller,prior.role);
             if(!expected||*expected!=prior.semantic||
                !controller_->owned_semantics.contains(prior.semantic)||
                !used_.contains(prior.semantic)||!used_.contains(prior.instance.uuid())||
+               prior.instance.uuid()==controller_->controller||
+               controller_->owned_semantics.contains(prior.instance.uuid())||
                !reused.insert(prior.instance.uuid()).second||
                !roles_.emplace(prior.role,prior).second) {failed_=true;return;}
         }
