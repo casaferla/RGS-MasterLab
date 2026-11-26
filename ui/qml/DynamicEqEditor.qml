@@ -13,7 +13,7 @@ Rectangle {
     property bool showActivity: false
     property var dynamicsControls: null
     property bool showDynamics: false
-    onVisibleChanged: if (!visible) showDynamics = false
+    onVisibleChanged: if (!visible) { showDynamics = false; showActivity = false }
     readonly property bool activityAvailable: !!dynamicActivity
         && dynamicActivity.available === true
     property var viewModel: null
