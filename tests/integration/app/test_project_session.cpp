@@ -639,7 +639,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto controllerId=uuidOf("e6000000-0000-4000-8000-000000000002");
     const auto linkedId=uuidOf("e6000000-0000-4000-8000-000000000003");
     const auto amount=a::m08_frozen::AmountConfig{1.0,{1.0,1.0,1.0,1.0},1U};
-    const std::array<bool,4> requested{false,false,false,true};
+    const std::array<bool,4> requested{fullTrackBenchmark,fullTrackBenchmark,fullTrackBenchmark,true};
     QVERIFY(!a::begin_native_qt_product_session_on_owner(session.project,controllers,fanout,
         session.selector,session.gold,amount,requested,0.0,*block.value(),planId,planId,linkedId));
     const auto operation=a::begin_native_qt_product_session_on_owner(session.project,controllers,fanout,
