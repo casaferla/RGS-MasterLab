@@ -704,6 +704,21 @@ ApplicationWindow {
                 color: root.error
                 wrapMode: Text.WrapAnywhere
             }
+            ScrollView {
+                objectName: "autoMatchReviewScroll"
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 88 : 0
+                visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
+                clip: true
+                TextArea {
+                    objectName: "autoMatchReviewText"
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    color: root.textPrimary
+                    text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewText : ""
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Button {
