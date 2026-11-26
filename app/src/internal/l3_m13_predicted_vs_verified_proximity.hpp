@@ -20,7 +20,14 @@ struct ProximityComparison final {
     std::optional<double> absolute_raw_delta;
     std::optional<double> allowable_raw_delta;
     [[nodiscard]] bool passed() const noexcept {
-        return status==ProximityComparisonStatus::passed;
+        return status==ProximityComparisonStatus::passed&&
+            absolute_raw_delta&&allowable_raw_delta&&
+            std::isfinite(*absolute_raw_delta)&&
+            std::isfinite(*allowable_raw_delta)&&
+            *absolute_raw_delta>=0.0&&
+            (*allowable_raw_delta==kSameRunProximityFractionBound||
+             *allowable_raw_delta==kIndependentPlatformProximityFractionBound)&&
+            *absolute_raw_delta<=*allowable_raw_delta;
     }
 };
 [[nodiscard]] inline ProximityComparison
