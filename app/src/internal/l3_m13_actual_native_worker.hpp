@@ -122,6 +122,9 @@ public:
         auto fresh=run_fresh_m13_product_postmaterialization_probe(
             input.request,maximum_block_frames,std::move(native_spec),cancellation);
         if(!fresh)return R::failure(*fresh.error());
+        if(cancellation&&cancellation->load(std::memory_order_acquire))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "L3_M13_ACTUAL_WORKER_CANCELLED_BEFORE_ASSESSMENT"});
         auto diagnosis=assess_m13_actual_native_completion(
             input.request,*fresh.value(),*input.independent_pair,
             input.source_reference_owner,*prediction.original_definition_authority,
