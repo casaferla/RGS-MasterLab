@@ -86,6 +86,8 @@ m13_provisional_payload_without_own_checksum(
     core::Uuid exact_report_id)
 {
     if(exact_report_id.is_nil()||
+       std::string_view(m13_state_token(assessment.state)).empty()||
+       fresh.fresh_m16.global_linear_peak()<0.0||
        !fresh.matches_executed_request(admitted)||
        assessment.state==VerificationState::verified||
        assessment.verified_profile_approval_exists||
