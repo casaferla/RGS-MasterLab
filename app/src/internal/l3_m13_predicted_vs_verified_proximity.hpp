@@ -34,6 +34,9 @@ compare_exact_m08_raw_proximity(
     if(!predicted.comparable()||!verified.comparable())
         return {ProximityComparisonStatus::unavailable,{},{}};
     const double a=*predicted.raw,b=*verified.raw;
+    if(predicted.reason==m08_frozen::ProximityReason::proximity_already_matched&&
+       (a!=1.0||b!=1.0))
+        return {ProximityComparisonStatus::failed,{},{}};
     if(!std::isfinite(a)||!std::isfinite(b))
         return {ProximityComparisonStatus::failed,{},{}};
     const double bound=same_run_not_independent_platform
