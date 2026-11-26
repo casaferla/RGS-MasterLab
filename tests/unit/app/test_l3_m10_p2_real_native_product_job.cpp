@@ -667,6 +667,11 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
     QVERIFY(!m12::stage_current_native_search_winner(
         accepted,result.search,owners,"stale-generation"));
     QCOMPARE(result.owned_p2_counts.attempted,0U);
+    QVERIFY(result.performance.first_admissible_ms);
+    QVERIFY(result.performance.last_attempt_ms);
+    QVERIFY(*result.performance.last_attempt_ms>=*result.performance.first_admissible_ms);
+    QVERIFY(result.performance.counts_reconciled());
+    QCOMPARE(result.performance.attempted,result.search.refinement->total_attempted);
 
     // The ordinary Product execution registry must now admit P2 in
     // the same real 27-slot search (no special direct-render test path).
