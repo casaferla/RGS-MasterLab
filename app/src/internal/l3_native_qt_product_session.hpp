@@ -130,6 +130,10 @@ native_qt_controller_role_context(const NativeQtProductSession& operation)
     NativeControllerRoleContext context{operation.controller_id,{},{}};
     const auto& prior=operation.expected.exact_existing_linked_snapshot;
     if(!prior)return context;
+    bool positive=false;
+    for(std::size_t i=0;i<4U;++i)
+        positive=positive||(operation.policy.requested[i]&&
+            m08_frozen::effective_amount(operation.policy.amount,i).rounded>0.0);
     constexpr std::array<IntentRole,8> roles{IntentRole::tonal_eq,IntentRole::spectral_dynamic_eq,
         IntentRole::macro_compressor,IntentRole::micro_transient,IntentRole::stereo_side_eq,
         IntentRole::stereo_ms,IntentRole::loudness_gain,IntentRole::terminal_limiter};
@@ -152,7 +156,7 @@ native_qt_controller_role_context(const NativeQtProductSession& operation)
             if(!instance)return {};
             // A positive search is a new reviewed active topology. Do not
             // silently override independent user bypass/disabled state.
-            if(node.userBypass||!node.enabled||node.domainSuspended)return {};
+            if(positive&&(node.userBypass||!node.enabled||node.domainSuspended))return {};
             context.compatible_prior.push_back({role,*instance.value(),*semantic});
         }
     }
