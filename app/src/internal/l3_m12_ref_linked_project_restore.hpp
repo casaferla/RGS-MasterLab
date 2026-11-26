@@ -133,6 +133,14 @@ decode_exact_m12_ref_linked_product_state(
        meta.value(QStringLiteral("linkedChainRevision")).toString().
            toStdString()!=exact_revision)
         return fail("L3_M12_REOPEN_MATERIALIZATION_OWNER_OR_REV_STALE");
+    const auto freshness=meta.value(QStringLiteral("freshnessState"));
+    if(!freshness.isUndefined()&&freshness.toString()!=QStringLiteral("CURRENT")&&
+       freshness.toString()!=QStringLiteral("STALE"))
+        return fail("L3_M12_REOPEN_FRESHNESS_UNSUPPORTED");
+    if(freshness.toString()==QStringLiteral("STALE")&&
+       std::any_of(exact_linked->modules.begin(),exact_linked->modules.end(),
+           [](const auto& node){return !node.controllerSuspended;}))
+        return fail("L3_M12_REOPEN_STALE_PLAN_ACTIVE");
     if(document.object().contains(QStringLiteral("retainedController"))) {
         const auto retained=decode_m12_retained_controller(document.object());
         if(!retained||retained->controller_id!=*controller.value()||
