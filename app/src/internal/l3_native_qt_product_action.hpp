@@ -50,6 +50,8 @@ public:
         double independent_ceiling_db_tp{};
         std::uint32_t attempted{};
         std::int64_t original_ms{},fixed_ms{},seed_ms{},search_ms{};
+        std::optional<std::int64_t> first_admissible_ms,last_attempt_ms;
+        std::uint32_t completed{},failed{},cache_hits{};
     };
     [[nodiscard]] std::optional<ReviewMetrics> review_metrics()const noexcept {
         if(!operation_||!completed_||!can_adopt())return {};
