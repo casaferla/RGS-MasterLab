@@ -13,6 +13,8 @@ class AutoMatchViewModel final : public QObject {
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
     Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
     Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
+    Q_PROPERTY(bool canResume READ can_resume NOTIFY changed)
+    Q_PROPERTY(QString currentMatchText READ current_match_text NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
     Q_PROPERTY(QString reviewText READ review_text NOTIFY changed)
@@ -27,6 +29,8 @@ public:
     [[nodiscard]] bool can_cancel()const;
     [[nodiscard]] bool can_undo()const;
     [[nodiscard]] bool can_redo()const;
+    [[nodiscard]] bool can_resume()const;
+    [[nodiscard]] QString current_match_text()const;
     [[nodiscard]] QString status_text()const;
     [[nodiscard]] QString error_text()const;
     [[nodiscard]] QString review_text()const;
@@ -38,6 +42,7 @@ public:
     Q_INVOKABLE bool adopt();
     Q_INVOKABLE bool undo();
     Q_INVOKABLE bool redo();
+    Q_INVOKABLE bool resume();
     Q_INVOKABLE void refresh();
 signals:
     void changed();

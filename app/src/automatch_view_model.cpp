@@ -49,6 +49,21 @@ bool AutoMatchViewModel::can_redo()const {
     return owner()&&!busy()&&!action_.can_adopt()&&
         product_.upstream.project.can_redo_private_m12_materialization();
 }
+bool AutoMatchViewModel::can_resume()const {
+    return owner()&&!busy()&&!action_.can_adopt()&&
+        product_.upstream.project.can_resume_private_m12_suspension();
+}
+QString AutoMatchViewModel::current_match_text()const {
+    if(!owner())return {};
+    using S=ProjectSessionViewModel::M12CurrentMatchState;
+    switch(product_.upstream.project.private_m12_match_state()) {
+    case S::none:return QStringLiteral("No linked match");
+    case S::active:return QStringLiteral("Linked match");
+    case S::suspended:return QStringLiteral("Linked match suspended");
+    case S::stale:return QStringLiteral("Linked match unavailable / stale");
+    }
+    return {};
+}
 QString AutoMatchViewModel::error_text()const {
     if(!owner())return {};
     if(!error_.isEmpty())return error_;
@@ -163,6 +178,15 @@ bool AutoMatchViewModel::redo() {
     if(!can_redo())return false;
     publishing_=true;
     const auto result=product_.upstream.project.redo_private_m12_materialization();
+    publishing_=false;
+    if(!result)error_=QString::fromStdString(result.error()->message());
+    else {error_.clear();(void)action_.retire_after_history_transition();}
+    refresh();return static_cast<bool>(result);
+}
+bool AutoMatchViewModel::resume() {
+    if(!can_resume())return false;
+    publishing_=true;
+    const auto result=product_.upstream.project.resume_private_m12_suspension();
     publishing_=false;
     if(!result)error_=QString::fromStdString(result.error()->message());
     else {error_.clear();(void)action_.retire_after_history_transition();}
