@@ -149,6 +149,10 @@ compare_frozen_m08_prediction_with_fresh_verified(
         return out;
     }
     const double delta=std::abs(b-a);
+    if(!std::isfinite(delta)) {
+        out.global={ProximityComparisonStatus::failed,{},{}};
+        return out;
+    }
     out.global={delta<=kSameRunProximityFractionBound
         ?ProximityComparisonStatus::passed:
          ProximityComparisonStatus::failed,
