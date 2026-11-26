@@ -6958,6 +6958,17 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     }
     QVERIFY(activity->capture->dynamic_history(winningNodes[0].allocated_instance_id).empty());
     QVERIFY(activity->capture->transient_history(winningNodes[1].allocated_instance_id).empty());
+    const auto end=activity->capture->frame_count();
+    const auto middle=end/2U;
+    const auto span=static_cast<std::uint64_t>(sampleRateHz)*5U;
+    for(const auto& bucket:activity->capture->dynamic_window(
+        winningNodes[1].allocated_instance_id,middle,span))
+        QVERIFY(bucket.frame_end_exclusive<=middle);
+    for(const auto& bucket:activity->capture->transient_window(
+        winningNodes[0].allocated_instance_id,middle,span))
+        QVERIFY(bucket.frame_end_exclusive<=middle);
+    QVERIFY(activity->capture->dynamic_window(winningNodes[1].allocated_instance_id,end+1U,span).empty());
+    QVERIFY(activity->capture->transient_window(winningNodes[0].allocated_instance_id,0,span).empty());
     const auto actualView=importedProcessed->view();
     const auto oracleView=oracle.value()->view();
     QCOMPARE(actualView.format(),oracleView.format());
