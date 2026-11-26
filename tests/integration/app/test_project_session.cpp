@@ -5881,6 +5881,29 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QByteArray::fromStdString(
             sealedM13.value()->canonical_report.canonical_utf8()));
     QVERIFY(validJson.isObject());
+    // Rehash altered payloads so these cases exercise semantic schema
+    // admission rather than merely detecting an outdated SHA-256.
+    const auto verifyRehashedDiagnostic=[](QJsonObject root) {
+        root.remove("VerificationContentChecksum");
+        const auto payload=project::OpaqueJsonValue::parse(
+            QJsonDocument(root).toJson(QJsonDocument::Compact).toStdString());
+        if(!payload)return false;
+        root.insert("VerificationContentChecksum",
+            QString::fromStdString(app::l3_automatch::m13_frozen::
+                m13_digest_canonical_json(*payload.value())));
+        const auto sealed=project::OpaqueJsonValue::parse(
+            QJsonDocument(root).toJson(QJsonDocument::Compact).toStdString());
+        return sealed&&app::l3_automatch::m13_frozen::
+            verify_m13_provisional_diagnostic_integrity(*sealed.value());
+    };
+    QVERIFY(verifyRehashedDiagnostic(validJson.object()));
+    const auto alteredEvidence=[&](const char* field,QJsonValue replacement) {
+        auto root=validJson.object();
+        auto evidence=root.value("freshEvidence").toObject();
+        evidence.insert(QString::fromLatin1(field),replacement);
+        root.insert("freshEvidence",evidence);
+        return root;
+    };
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
