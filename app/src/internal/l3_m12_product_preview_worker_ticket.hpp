@@ -232,7 +232,13 @@ render_m12_exact_product_preview_job(
         return R::failure(core::Error{
             core::ErrorCode::InvalidState,
             "L3_M12_WORKER_PREVIEW_OWNER_OR_MANUAL_STALE"});
-    return render_restored_m12_full_native_pcm_once(
-        *ticket.replay,*ticket.exact_prepared_owner,maximum_block_frames);
+    std::unique_ptr<render::linked_activity::LinkedActivityRenderCapture> activity;
+    auto result=render_restored_m12_full_native_pcm_once(
+        *ticket.replay,*ticket.exact_prepared_owner,maximum_block_frames,
+        nullptr,nullptr,&activity);
+    if(result&&activity)
+        static_cast<void>(result.value()->adopt_linked_activity(
+            std::move(activity),ticket.replay->exact_plan_checksum));
+    return result;
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
