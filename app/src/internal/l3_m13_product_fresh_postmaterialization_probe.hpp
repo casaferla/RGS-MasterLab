@@ -176,6 +176,8 @@ run_fresh_m13_product_postmaterialization_probe(
     auto m19=analysis::measure_basic_level_full_resource(
         render.value()->buffer());
     if(!m19)return R::failure(*m19.error());
+    if(cancellation&&cancellation->load(std::memory_order_acquire))
+        return fail("L3_M13_PRODUCT_FRESH_CANCELLED_AFTER_M19");
     const auto view=render.value()->view();
     auto m20=analysis::measure_tonal_stereo_scope(
         view,view.absolute_start_frame(),view.frame_count(),
