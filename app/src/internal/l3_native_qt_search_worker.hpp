@@ -60,7 +60,7 @@ struct NativeQtSearchWorkerResult final {
         policy.exact_generation,policy.generation_and_policy,captured.current.job.ticket_identity(),
         captured.linked_revision,policy.amount,policy.requested,policy.independent_ceiling_db_tp,
         policy.exact_current_endpoint_safety_attested,policy.file_based_lra_policy_attested,
-        policy.exact_event_context,exact_fixed_stereo_insertion,{},policy.constraints,policy.owned_p2};
+        policy.exact_event_context,exact_fixed_stereo_insertion,{},policy.constraints,policy.owned_p2,pair_start};
     out.result=run_native_automatch_with_owner_allocations(std::move(input),policy.definitions,
         std::move(allocate_uuid),protected_ids,policy.accepted_dependencies,cancellation,
         std::move(controller_context));
