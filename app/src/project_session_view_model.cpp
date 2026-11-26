@@ -600,9 +600,9 @@ bool ProjectSessionViewModel::can_save_project() const
             l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
                 *opened_,m12UndoHistory_.back().after);
         const bool importedWithExactReadback=
-            m12ReopenedReadback_.has_value()&&
+            m12ExactReplayReadback_.has_value()&&
             l3_automatch::m12_frozen::m12_exact_project_snapshot_equal(
-                *opened_,*m12ReopenedReadback_);
+                *opened_,*m12ExactReplayReadback_);
         if(!receiptFromThisSession&&!importedWithExactReadback)
             return false;
         const auto& persisted=opened_->document();
@@ -657,7 +657,7 @@ bool ProjectSessionViewModel::chooseM18WavEncoding(int index)
     if(m18OutputPreference_&&*m18OutputPreference_==next)return true;
     m18OutputPreference_=next;
     // M12 imported proof binds the entire OUTPUT/project content.
-    m12ReopenedReadback_.reset();
+    m12ExactReplayReadback_.reset();
     emit changed();
     return true;
 }
@@ -681,7 +681,7 @@ void ProjectSessionViewModel::on_source_changed()
         m12RedoHistory_.clear();
         // Persisted REF replay is tied to the exact original owners,
         // not merely to the same displayed Source/Reference names.
-        m12ReopenedReadback_.reset();
+        m12ExactReplayReadback_.reset();
     }
     if (source && lastSource_ &&
         !lastSource_->same_resource_identity(source->reference())) sourceId_.reset();
@@ -705,7 +705,7 @@ void ProjectSessionViewModel::on_gold_changed()
         m12RedoHistory_.clear();
         // Persisted REF replay is tied to the exact original owners,
         // not merely to the same displayed Source/Reference names.
-        m12ReopenedReadback_.reset();
+        m12ExactReplayReadback_.reset();
     }
     if (!gold) {
         goldId_.reset(); referenceId_.reset();
@@ -723,7 +723,7 @@ void ProjectSessionViewModel::on_gold_changed()
 
 void ProjectSessionViewModel::on_region_changed()
 {
-    if(!isCommittingProjectOpen_)m12ReopenedReadback_.reset();
+    if(!isCommittingProjectOpen_)m12ExactReplayReadback_.reset();
     if (!region_->region() && regionId_) {
         clearedRegionId_ = regionId_;
         regionId_.reset();
@@ -733,7 +733,7 @@ void ProjectSessionViewModel::on_region_changed()
 
 void ProjectSessionViewModel::on_reference_region_changed()
 {
-    if(!isCommittingProjectOpen_)m12ReopenedReadback_.reset();
+    if(!isCommittingProjectOpen_)m12ExactReplayReadback_.reset();
     if(referenceRegion_ &&!referenceRegion_->region())
         referenceRegionId_.reset();
     emit changed();
@@ -1456,7 +1456,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // across a different Project Open, even with identical SOURCE WAV.
     m12UndoHistory_.clear();
     m12RedoHistory_.clear();
-    m12ReopenedReadback_.reset();
+    m12ExactReplayReadback_.reset();
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
@@ -1482,7 +1482,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
                *readback.value(),*opened_)||
            !previewController_||
            !previewController_->has_private_m12_product_preview_ticket()) {
-            m12ReopenedReadback_.reset();
+            m12ExactReplayReadback_.reset();
             previewController_->set_private_m12_product_preview_ticket(
                 std::make_shared<const l3_automatch::m12_frozen::
                     M12ImmutableProductPreviewTicket>());
@@ -1492,7 +1492,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
                 "L3_M12_PROJECT_OPEN_REF_LINKED_READBACK_MISMATCH"});
             return;
         }
-        m12ReopenedReadback_=std::move(*readback.value());
+        m12ExactReplayReadback_=std::move(*readback.value());
         statusText_=QStringLiteral(
             "Project reopened: REF_LINKED MATERIALIZED / NOT_VERIFIED.");
     } else {
@@ -1537,8 +1537,8 @@ ProjectSessionViewModel::capture_private_m12_search_baseline(bool require_owned_
     const bool currentReceipt=!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
         m12UndoHistory_.back().afterTicket==ticket&&
         m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
-    const bool exactReopen=m12UndoHistory_.empty()&&m12ReopenedReadback_&&
-        m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
+    const bool exactReopen=m12UndoHistory_.empty()&&m12ExactReplayReadback_&&
+        m::m12_exact_project_snapshot_equal(*m12ExactReplayReadback_,*live.value());
     if(!opened_||!ticket||!ticket->replay||
        (!currentReceipt&&!exactReopen)||
        !m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
@@ -1629,8 +1629,8 @@ ProjectSessionViewModel::apply_private_m12_materialization(
         const bool currentReceipt=!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
             m12UndoHistory_.back().afterTicket==beforeTicket&&
             m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
-        const bool exactReopen=m12UndoHistory_.empty()&&m12ReopenedReadback_&&
-            m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
+        const bool exactReopen=m12UndoHistory_.empty()&&m12ExactReplayReadback_&&
+            m::m12_exact_project_snapshot_equal(*m12ExactReplayReadback_,*live.value());
         if(!opened_||!m::m12_exact_project_snapshot_equal(*opened_,*live.value())||
            !beforeTicket||!beforeTicket->replay||
            (!currentReceipt&&!exactReopen)||
@@ -1757,9 +1757,9 @@ ProjectSessionViewModel::capture_private_m13_fresh_postmaterialization_probe(
         m12::m12_exact_project_snapshot_equal(
             *opened_,m12UndoHistory_.back().after);
     const auto reopenedWithExactOwner=
-        m12ReopenedReadback_&&
+        m12ExactReplayReadback_&&
         m12::m12_exact_project_snapshot_equal(
-            *opened_,*m12ReopenedReadback_);
+            *opened_,*m12ExactReplayReadback_);
     if(!receiptFromCurrentSession&&!reopenedWithExactOwner)
         return fail("L3_M13_PRODUCT_FRESH_NO_M12_RECEIPT_OR_REOPEN_PROOF");
     const auto& doc=opened_->document();
@@ -1829,9 +1829,9 @@ bool ProjectSessionViewModel::private_m13_fresh_probe_still_current(
         m12UndoHistory_.back().afterTicket==ticket&&
         m12::m12_exact_project_snapshot_equal(
             *opened_,m12UndoHistory_.back().after);
-    const auto reopenedCurrent=m12ReopenedReadback_&&
+    const auto reopenedCurrent=m12ExactReplayReadback_&&
         m12::m12_exact_project_snapshot_equal(
-            *opened_,*m12ReopenedReadback_);
+            *opened_,*m12ExactReplayReadback_);
     if(!committedHere&&!reopenedCurrent)return false;
     const auto& doc=opened_->document();
     if(!projectId_||!sourceId_||!referenceId_||
@@ -1966,8 +1966,8 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
     const bool receipt=live&&!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
         m12UndoHistory_.back().afterTicket==ticket&&
         m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
-    const bool reopened=live&&m12UndoHistory_.empty()&&m12ReopenedReadback_&&
-        m::m12_exact_project_snapshot_equal(*m12ReopenedReadback_,*live.value());
+    const bool reopened=live&&m12UndoHistory_.empty()&&m12ExactReplayReadback_&&
+        m::m12_exact_project_snapshot_equal(*m12ExactReplayReadback_,*live.value());
     if(!live||!ticket||!ticket->replay||!provider||provider()!=prepared||
        ticket->exact_prepared_owner!=prepared||
        (!receipt&&!reopened)||ticket->replay->controller_id!=controller_id||
@@ -2312,10 +2312,10 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     // An imported Project may have a persisted MATERIALIZED record and
     // a complete rehydrated native REF replay, but it must not be given
     // a fresh receipt or an invented Undo entry by Project Open.
-    const bool imported=(opened_&&m12ReopenedReadback_&&linkedTicket&&
+    const bool imported=(opened_&&m12ExactReplayReadback_&&linkedTicket&&
         linkedTicket->replay&&
         m::m12_exact_project_snapshot_equal(
-            *opened_,*m12ReopenedReadback_));
+            *opened_,*m12ExactReplayReadback_));
     if((linkedTicket||persistedLinked)&&
        (!opened_||(!materialized&&!imported)||
         (materialized&&
@@ -2349,7 +2349,7 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
         const auto& ticket=materialized
             ?*materialized->afterTicket:*linkedTicket;
         const auto& expected=materialized
-            ?materialized->after:*m12ReopenedReadback_;
+            ?materialized->after:*m12ExactReplayReadback_;
         const auto currentBindings=masteringChainState_
             ?masteringChainState_->execution_bindings()
             :std::vector<dsp::ModuleExecutionBinding>{};

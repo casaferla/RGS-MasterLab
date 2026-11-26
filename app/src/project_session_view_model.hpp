@@ -325,10 +325,10 @@ private:
     // Product-owned exact snapshots, not a parallel DSP engine.
     std::vector<M12MaterializationHistoryEntry> m12UndoHistory_;
     std::vector<M12MaterializationHistoryEntry> m12RedoHistory_;
-    // A reopened persisted plan has a historical MATERIALIZED record,
-    // but never a NEW M12 receipt. This independent Product readback
-    // binds its exact Project contents to the current native REF ticket.
-    std::optional<project::ProjectSnapshot> m12ReopenedReadback_;
+    // Exact independent Product readback of an adopted persisted replay.
+    // This binds the actual graph to its current ticket without claiming
+    // a NEW M12 materialization receipt or fresh numerical verification.
+    std::optional<project::ProjectSnapshot> m12ExactReplayReadback_;
     std::optional<core::Uuid> projectId_;
     std::optional<core::Uuid> sourceId_;
     std::optional<core::Uuid> goldId_;
