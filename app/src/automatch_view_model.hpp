@@ -28,7 +28,7 @@ public:
     [[nodiscard]] bool can_undo()const;
     [[nodiscard]] bool can_redo()const;
     [[nodiscard]] QString status_text()const;
-    [[nodiscard]] QString error_text()const{return error_;}
+    [[nodiscard]] QString error_text()const;
     [[nodiscard]] QString review_text()const;
     // All values are captured once before dispatch; the ceiling is the
     // independent AutoMatch/M16 safety limit, never the WAV Export setting.

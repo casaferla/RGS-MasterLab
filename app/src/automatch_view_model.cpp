@@ -49,6 +49,11 @@ bool AutoMatchViewModel::can_redo()const {
     return owner()&&!busy()&&!action_.can_adopt()&&
         product_.upstream.project.can_redo_private_m12_materialization();
 }
+QString AutoMatchViewModel::error_text()const {
+    if(!owner())return {};
+    if(!error_.isEmpty())return error_;
+    return QString::fromStdString(action_.error());
+}
 QString AutoMatchViewModel::review_text()const {
     if(!owner()||!action_.can_adopt()||!action_.review_diff())return {};
     using C=a::m12_frozen::ReviewNodeChange;
