@@ -725,6 +725,14 @@ Rectangle {
     // Research-only detached companion: never covers the graph's plot,
     // frequency axis, Spectrum or the original Parametric EQ controls.
     // The Product host owns the editor and companion lifecycle.
+    DynamicEqActivityCompanion {
+        id: activityCompanion
+        activityViewModel: root.dynamicActivity
+        transientParent: root.Window.window
+        visible: root.visible && root.showActivity
+        onClosing: root.showActivity = false
+    }
+
     DynamicEqDynamicsCompanion {
         id: dynamicCompanion
         objectName: "dynamicEqDynamicsCompanion"
