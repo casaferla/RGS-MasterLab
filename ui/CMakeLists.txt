@@ -35,6 +35,7 @@ qt_add_qml_module(rgsml_ui
         qml/StudioButton.qml
         qml/StudioIcon.qml
         qml/StudioIconButton.qml
+        qml/StudioMatchKnob.qml
         qml/StudioNumericField.qml
         qml/StudioReadOnlyMeasurement.qml
         qml/AnalysisApprovedContent.qml
