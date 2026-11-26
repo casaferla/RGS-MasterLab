@@ -128,8 +128,8 @@ Rectangle {
                 Layout.minimumWidth: 92
                 Layout.preferredWidth: 92
                 Layout.maximumWidth: 92
-                visible: root.activityAvailable
-                enabled: root.activityAvailable
+                visible: !!root.dynamicActivity
+                enabled: !!root.dynamicActivity
                 onClicked: root.showActivity = !root.showActivity
                 Accessible.name: "Toggle truthful dynamic EQ activity"
                 ToolTip.text: "Show observed DSP band activity when accepted render telemetry exists"
