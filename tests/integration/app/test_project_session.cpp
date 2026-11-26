@@ -5779,6 +5779,10 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         import_m13_product_fresh_original_native_source(
             *m13Owner.value(),*m13Result.value(),
             {16000.0,20.0},1e-12,0,false,true));
+    QVERIFY(!app::l3_automatch::m13_frozen::
+        import_m13_product_fresh_original_native_source(
+            *m13Owner.value(),*m13Result.value(),
+            {20.0,20.0},1e-12,0,false,true));
     // Never infer an upstream Phase-6 density/grid attestation from
     // M19/M20's mere successful completion.
     QVERIFY(!app::l3_automatch::m13_frozen::
