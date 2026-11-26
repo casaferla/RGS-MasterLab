@@ -369,6 +369,16 @@ encode_m13_provisional_diagnostic(
     }
     const auto normalized=normalize_verification_reasons(decodedReasons);
     if(!normalized||*normalized!=decodedReasons)return false;
+    // A physical verification attempt with a PROVISIONAL profile
+    // cannot omit the missing qualification authority from its report.
+    const auto approvalMissing=std::any_of(decodedReasons.begin(),decodedReasons.end(),
+        [](const auto& reason) {
+            return reason.stage==VerificationStage::execution_prerequisites&&
+                reason.code=="VERIFICATION_PROFILE_UNAVAILABLE"&&
+                reason.field_path=="/qualificationToleranceProfile/approvalRef"&&
+                reason.predicate==PredicateState::unavailable;
+        });
+    if(outcome!="NOT_VERIFIED"&&!approvalMissing)return false;
     const auto first=root.value("primaryReason");
     if(reasons.isEmpty()) {
         if(!first.isNull())return false;
