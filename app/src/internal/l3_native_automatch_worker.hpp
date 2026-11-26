@@ -151,6 +151,8 @@ template<class ResolveOriginalDefinitions,class AllocateBand,class ResolveAuthor
     ResolveBandIdentity&& resolve_band_identity,const std::atomic<bool>* cancellation=nullptr)
 {
     NativeAutoMatchWorkerResult out;
+    out.performance.start=input.performance_start.value_or(
+        m10_frozen::NativeSearchPerformance::Clock::now());
     const auto cancelled=[&](){return cancellation&&cancellation->load(std::memory_order_acquire);};
     if(cancelled()){out.phase=NativeAutoMatchWorkerPhase::cancelled;return out;}
     const auto& owners=input.owners;
