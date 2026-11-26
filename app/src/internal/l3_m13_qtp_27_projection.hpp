@@ -160,6 +160,7 @@ struct QtpNumericPredicate final {
     case QtpCategory::generic_db:
     case QtpCategory::loudness_lu: bound=0.01;break;
     case QtpCategory::band_profile_db: return {};
+    default: return {};
     }
     const double delta=std::abs(*actual-*reference);
     if(!std::isfinite(delta)||!std::isfinite(bound))
