@@ -13,6 +13,20 @@
 #include <vector>
 
 namespace rgsml::dsp::internal {
+// C00 observation is optional, block-scoped and below IModule. The sink
+// receives EXACT gains already calculated by this engine, only after a
+// successful transactional block. Never store the provided span.
+struct TransientC00AppliedGains final {
+    double attack_db{};
+    double sustain_db{};
+};
+struct ITransientC00ActivitySink {
+    virtual ~ITransientC00ActivitySink() = default;
+    virtual void on_successful_block(
+        std::uint64_t absolute_first_frame,
+        std::span<const TransientC00AppliedGains> gains) noexcept = 0;
+};
+
 struct TransientShaperC00State final {
     double f{0.0};
     double m{0.0};
@@ -28,12 +42,15 @@ public:
     [[nodiscard]] static core::Result<TransientShaperC00Engine> create(
         const TransientShaperParameters& params,
         std::uint32_t sample_rate_hz,std::uint32_t channels,
-        std::size_t maximum_block_frames);
+        std::size_t maximum_block_frames,
+        bool enable_activity_observation = false);
     [[nodiscard]] core::Status process_block(
         std::span<const double> input_left,
         std::span<const double> input_right,
         std::span<double> output_left,
-        std::span<double> output_right);
+        std::span<double> output_right,
+        ITransientC00ActivitySink* activity_sink = nullptr,
+        std::uint64_t absolute_first_frame = 0);
     [[nodiscard]] core::Status restore_state(
         const TransientShaperC00State& candidate) noexcept;
     void reset() noexcept {state_={};}
@@ -57,11 +74,13 @@ private:
         TransientShaperParameters params,std::uint32_t fs,
         std::uint32_t channels,std::size_t max,
         double a_f,double a_m,double a_l,double a_g,
-        std::vector<double> left,std::vector<double> right)
+        std::vector<double> left,std::vector<double> right,
+        std::vector<TransientC00AppliedGains> activity_scratch)
         :params_(params),sample_rate_hz_(fs),channels_(channels),
          maximum_block_frames_(max),a_f_(a_f),a_m_(a_m),
          a_l_(a_l),a_g_(a_g),scratch_left_(std::move(left)),
-         scratch_right_(std::move(right)){}
+         scratch_right_(std::move(right)),
+         activity_scratch_(std::move(activity_scratch)){}
     TransientShaperParameters params_;
     std::uint32_t sample_rate_hz_{};
     std::uint32_t channels_{};
@@ -70,5 +89,7 @@ private:
     TransientShaperC00State state_{};
     std::vector<double> scratch_left_;
     std::vector<double> scratch_right_;
+    // Empty in the normal unobserved Product/AutoMatch engine.
+    std::vector<TransientC00AppliedGains> activity_scratch_;
 };
 } // namespace rgsml::dsp::internal
