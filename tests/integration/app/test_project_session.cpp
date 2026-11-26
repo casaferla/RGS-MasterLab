@@ -7065,6 +7065,25 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     wrongClock.playback_domain=audio::FrameDomainId::OUTPUT_RATE;
     QVERIFY(!la::project_linked_activity(*selectedPcm,wrongClock,
         audible,winningNodes[0].allocated_instance_id).available());
+    auto wrongOwner=playbackContext;
+    wrongOwner.exact_plan_checksum="foreign-plan";
+    QVERIFY(!la::project_linked_activity(*selectedPcm,wrongOwner,
+        audible,winningNodes[0].allocated_instance_id).available());
+    wrongOwner=playbackContext;
+    ++wrongOwner.linked_revision;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,wrongOwner,
+        audible,winningNodes[1].allocated_instance_id).available());
+    wrongOwner=playbackContext;
+    wrongOwner.active_node=false;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,wrongOwner,
+        audible,winningNodes[0].allocated_instance_id).available());
+    wrongOwner=playbackContext;
+    wrongOwner.processed_audition=false;
+    QVERIFY(!la::project_linked_activity(*selectedPcm,wrongOwner,
+        audible,winningNodes[1].allocated_instance_id).available());
+    audible.audibleRealization.realizationId=core::RealizationId{acceptedId->value+1U};
+    QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
+        audible,winningNodes[0].allocated_instance_id).available());
     const auto importedCopy=dir.filePath(QStringLiteral(
         "m12-reopened-native-identical.rgsml"));
     imported.project.saveProjectAs(QUrl::fromLocalFile(importedCopy));
