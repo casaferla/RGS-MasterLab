@@ -5638,6 +5638,13 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         *m13Owner.value(),std::move(*ownedWorkerSpec),{}, {}, {},
         "", "", {}, "", "", false,false,false,false,
         app::l3_automatch::m13_frozen::MandatoryHardPredicate::unavailable};
+    const std::atomic<bool> cancelledBeforeWorker{true};
+    const auto cancelledWorker=app::l3_automatch::m13_frozen::
+        M13ActualNativeWorkerCompletion::execute(
+            rejectedWorker,*core::FrameCount::create(4096).value(),&cancelledBeforeWorker);
+    QVERIFY(!cancelledWorker);
+    QCOMPARE(cancelledWorker.error()->message(),
+             std::string("L3_M13_ACTUAL_WORKER_CANCELLED_BEFORE_PREFLIGHT"));
     const auto noPrediction=app::l3_automatch::m13_frozen::
         M13ActualNativeWorkerCompletion::execute(
             std::move(rejectedWorker),*core::FrameCount::create(4096).value());
