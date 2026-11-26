@@ -707,6 +707,24 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true
                 Button {
+                    objectName: "autoMatchUndoButton"
+                    text: "Undo match"
+                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canUndo
+                        && !root.monitorExclusive
+                    onClicked: root.appAutoMatchModel.undo()
+                }
+                Button {
+                    objectName: "autoMatchRedoButton"
+                    text: "Redo match"
+                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canRedo
+                        && !root.monitorExclusive
+                    onClicked: root.appAutoMatchModel.redo()
+                }
+                Item { Layout.fillWidth: true }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
                     objectName: "autoMatchStartButton"
                     text: "Search"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canStart
