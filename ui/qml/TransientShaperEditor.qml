@@ -17,7 +17,7 @@ Item {
     // Preserve P2's top-left-anchored geometry and control interaction.
     // The activity plot below uses only remaining vertical space.
     readonly property real verticalSpaceFactor:
-        Math.max(0, Math.min(1, (root.height - 290) / 220))
+        Math.max(0, Math.min(1, (root.height - 480) / 220))
     readonly property double attackDb: transientModule ? transientModule.attackAmountDb : 0.0
     readonly property double sustainDb: transientModule ? transientModule.sustainAmountDb : 0.0
     // Numeric drafts never trigger DSP work on each keystroke. Same 120x32,
