@@ -900,6 +900,26 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QCOMPARE(storedSuspension->modules.size(),suspendedNodes.size());
     QVERIFY(std::all_of(storedSuspension->modules.begin(),storedSuspension->modules.end(),
         [](const auto& node){return node.controllerSuspended;}));
+    // Render the actual native suspended replay, not a mocked state bit.
+    m12::M12NativeStageExecutionWitness witness;
+    const auto suspendedPcm=m12::render_restored_m12_full_native_pcm_once(
+        *suspendedTicket->replay,*suspendedTicket->exact_prepared_owner,*block.value(),&witness);
+    QVERIFY2(suspendedPcm,suspendedPcm?"":suspendedPcm.error()->message().c_str());
+    QVERIFY(m12::m12_native_stage_witness_matches_replay_plan(*suspendedTicket->replay,witness));
+    QVERIFY(std::all_of(witness.reference_linked.begin(),witness.reference_linked.end(),
+        [](const auto& signature){return signature.disposition==render::ModuleExecutionDisposition::BYPASS_IDENTITY;}));
+    const auto fixedRequest=render::RenderRequest::create(
+        suspendedTicket->exact_prepared_owner->view(),
+        suspendedTicket->exact_prepared_owner->view().absolute_range(),
+        session.masteringChainState->chain(),protectedBindings,*block.value());
+    QVERIFY(fixedRequest);
+    const auto fixedPcm=render::render_preview(*fixedRequest.value(),*suspendedTicket->replay->registry_owner);
+    QVERIFY(fixedPcm);
+    const auto suspendedSamples=suspendedPcm.value()->view().channel(0);
+    const auto fixedSamples=fixedPcm.value()->view().channel(0);
+    QVERIFY(suspendedSamples&&fixedSamples);
+    QCOMPARE(suspendedSamples.value()->size(),fixedSamples.value()->size());
+    QVERIFY(std::equal(suspendedSamples.value()->begin(),suspendedSamples.value()->end(),fixedSamples.value()->begin()));
     // The same tone at a different amplitude has no tonal correction
     // requirement. A positive Tonal-only search should therefore offer
     // removal of the previous Loudness match, never silently remove it.
@@ -952,6 +972,15 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         clearedProject.value()->document().chains.end(),[](const auto& chain){
             return chain.segment=="REF_LINKED";
         }));
+    session.project.openProject(QUrl::fromLocalFile(suspendedPath));
+    QVERIFY2(!session.project.degraded(),session.project.error_message().toUtf8().constData());
+    const auto restoredSuspension=session.previewController->private_m12_product_preview_ticket();
+    QVERIFY(restoredSuspension&&restoredSuspension->replay);
+    QVERIFY(restoredSuspension->replay->reference_bindings==suspendedTicket->replay->reference_bindings);
+    const auto restoredNodes=restoredSuspension->replay->reference_linked.instances();
+    QCOMPARE(restoredNodes.size(),suspendedNodes.size());
+    QVERIFY(std::equal(restoredNodes.begin(),restoredNodes.end(),suspendedNodes.begin()));
+    QVERIFY(!session.project.undo_private_m12_materialization());
 }
 
 void ProjectSessionTest::
