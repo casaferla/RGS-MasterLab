@@ -4,6 +4,7 @@
 // IModule timeline, authoritative checkpoint carrier and DYN_EQ_EFFECTIVE_MEMORY_V1
 // certificate are separate integration responsibilities, not fabricated here.
 #include "dynamic_eq_c01_coefficients.hpp"
+#include <rgsml/dsp/linked_dsp_activity_observation.hpp>
 #include <rgsml/dsp/dynamic_eq_parameters.hpp>
 #include <array>
 #include <cstdint>
@@ -28,34 +29,6 @@ struct C01BandState final {
     std::array<C01LaneState,2> lanes{};
     double unsigned_magnitude_db{0.0};
     friend bool operator==(const C01BandState&,const C01BandState&)=default;
-};
-
-// Isolated research-only observational carrier: the six arrays preserve
-// ENABLED-band execution order, each with its frozen UUID and routing.
-// Zero power is tagged by has_detector_level=false, never -inf or NaN.
-// These are C01 engine states, NOT a Qt/QML detector or inferred response.
-struct C01BandActivitySample final {
-    core::Uuid band_id{};
-    EqRouting routing{EqRouting::STEREO};
-    double linked_power{0.0};
-    bool has_detector_level{false};
-    double detector_level_dbfs{0.0};
-    double unsigned_target_db{0.0};
-    double signed_target_dynamic_gain_db{0.0};
-    double applied_dynamic_gain_db{0.0};
-    double effective_gain_db{0.0};
-};
-struct C01FrameActivitySample final {
-    std::size_t band_count{0};
-    std::array<C01BandActivitySample,6> bands{};
-};
-struct IC01ActivitySink {
-    virtual ~IC01ActivitySink() = default;
-    // SUCCESS-ONLY callback, after all PCM + DSP states were committed.
-    // The caller supplies preallocated scratch; sink may not retain it.
-    virtual void on_successful_block(
-        std::uint64_t absolute_first_frame,
-        std::span<const C01FrameActivitySample> observed) noexcept=0;
 };
 
 class C01FrameEngine final {
