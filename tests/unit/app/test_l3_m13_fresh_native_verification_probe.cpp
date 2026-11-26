@@ -530,6 +530,23 @@ void M13FreshNativeProbeTest::sameRunPredictedVerifiedRawProximity()
         QVERIFY(fake.domains[0].passed());
         QVERIFY(!fake.all_required_pass());
     }
+    {
+        auto onePredicted=predicted;
+        auto oneVerified=verified;
+        for(std::size_t i=1;i<onePredicted.size();++i) {
+            onePredicted[i]={};
+            oneVerified[i]={};
+        }
+        const auto oneDomain=compare_frozen_m08_prediction_with_fresh_verified(
+            onePredicted,oneVerified);
+        QVERIFY(oneDomain.all_required_pass());
+        QCOMPARE(oneDomain.domains[1].status,ProximityComparisonStatus::not_applicable);
+        QVERIFY(!oneDomain.domains[1].absolute_raw_delta);
+        onePredicted[0]={};
+        oneVerified[0]={};
+        QVERIFY(!compare_frozen_m08_prediction_with_fresh_verified(
+            onePredicted,oneVerified).all_required_pass());
+    }
     verified[1].effective_coverage=0.75;
     QVERIFY(!compare_frozen_m08_prediction_with_fresh_verified(
         predicted,verified).all_required_pass());
