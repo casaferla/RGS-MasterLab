@@ -6436,6 +6436,29 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
             encoded.value()->canonical_report));
         QVERIFY(!encoded.value()->authorizes_wav_export());
     }
+    {
+        auto stale=currentProductDiagnosis;
+        stale.state=m13contract::VerificationState::stale;
+        m13contract::VerificationReason reason;
+        reason.stage=m13contract::VerificationStage::safety;
+        reason.code="HARD_SAFETY_VIOLATION";
+        reason.field_path="/safetyResults/test";
+        reason.predicate=m13contract::PredicateState::failed;
+        stale.canonical_reasons.push_back(reason);
+        reason.stage=m13contract::VerificationStage::dependency_currentness;
+        reason.code="STALE_DEPENDENCY";
+        reason.field_path="/currentM12ProductOwner";
+        reason.predicate=m13contract::PredicateState::stale;
+        stale.canonical_reasons.push_back(reason);
+        auto normalized=m13contract::normalize_verification_reasons(stale.canonical_reasons);
+        QVERIFY(normalized);
+        stale.canonical_reasons=*normalized;
+        QVERIFY(m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),stale,*diagnosticId.value()));
+        stale.state=m13contract::VerificationState::verification_failed;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),stale,*diagnosticId.value()));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
