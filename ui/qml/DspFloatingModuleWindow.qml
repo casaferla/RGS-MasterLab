@@ -21,7 +21,9 @@ Window {
     readonly property int safeEditorWidth: {
         switch (editorKind) {
         case "INPUT_GAIN": return 700
-        case "PARAMETRIC_EQ": return 940
+        case "PARAMETRIC_EQ":
+        case "DYNAMIC_EQ": return 940
+        case "TRANSIENT_SHAPER": return 760
         case "COMPRESSOR": return 940
         case "STEREO_MS": return 920
         case "TRUE_PEAK_METER": return 760
