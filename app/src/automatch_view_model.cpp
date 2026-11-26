@@ -206,7 +206,7 @@ QString AutoMatchViewModel::status_text()const {
     case P::kept_current:return QStringLiteral("KEEP CURRENT");
     case P::cancelled:return QStringLiteral("CANCELLED");
     case P::stale:return QStringLiteral("INPUT CHANGED");
-    case P::failed:return QStringLiteral("AUTOMATCH UNAVAILABLE");
+    case P::failed:return QStringLiteral("SEARCH FAILED");
     case P::materialized:return QStringLiteral("APPLIED");
     case P::verifying:return QStringLiteral("CHECKING RESULT");
     case P::numerical_pass:return QStringLiteral("NUMERICAL CHECK PASSED");
