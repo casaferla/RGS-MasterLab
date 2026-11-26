@@ -2122,8 +2122,11 @@ int main(int argc, char* argv[])
         auto* win=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
         if(!win)return EXIT_FAILURE;
         QTimer::singleShot(900,&application,[win,&application,&dspChainAdapterModel,contextShotDir] {
-            auto* panel=win->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
-            if(!panel){application.exit(EXIT_FAILURE);return;}
+            auto* panel=win->findChild<QQuickItem*>(QStringLiteral("adaptiveContextWorkspace"));
+            QFile manifest(contextShotDir+QStringLiteral("/capture-geometry.txt"));
+            if(!panel || !manifest.open(QIODevice::WriteOnly | QIODevice::Text)){
+                application.exit(EXIT_FAILURE);return;
+            }
             win->setWidth(1184);
             win->setHeight(688);
             bool ok=true;
@@ -2132,7 +2135,18 @@ int main(int argc, char* argv[])
                 QTimer::singleShot(350,&settle,&QEventLoop::quit);
                 settle.exec();
                 const auto image=win->grabWindow();
-                return !image.isNull() && image.save(contextShotDir+"/"+name+".png","PNG");
+                const auto geometry=QStringLiteral(
+                    "%1 logical=%2x%3 image=%4x%5 panel=%6x%7 maximized=%8\n")
+                    .arg(name).arg(win->width()).arg(win->height())
+                    .arg(image.width()).arg(image.height())
+                    .arg(panel->width()).arg(panel->height())
+                    .arg(win->windowState()==Qt::WindowMaximized ? 1 : 0).toUtf8();
+                const bool logged=manifest.write(geometry)==geometry.size();
+                const bool minimumOk=!name.startsWith(QStringLiteral("minimum-"))
+                    || (win->width()==1184 && win->height()==688);
+                const bool panelOk=std::abs(panel->height()-212.0)<=1.0;
+                return logged && minimumOk && panelOk && !image.isNull()
+                    && image.save(contextShotDir+"/"+name+".png","PNG");
             };
             for(int i=0;i<4;++i) {
                 dspChainAdapterModel.setSelectedIndex(i);
@@ -2147,7 +2161,11 @@ int main(int argc, char* argv[])
                 ok=capture(QStringLiteral("maximized-automatch"))&&ok;
                 panel->setProperty("activeContextMode",QStringLiteral("PREPARE_RESTORATION"));
                 ok=capture(QStringLiteral("maximized-prepare"))&&ok;
+            } else {
+                const auto skipped=QByteArrayLiteral("maximized=SKIPPED_INSUFFICIENT_SCREEN_GEOMETRY\n");
+                ok=(manifest.write(skipped)==skipped.size())&&ok;
             }
+            ok=manifest.flush()&&ok;
             application.exit(ok?EXIT_SUCCESS:EXIT_FAILURE);
         });
     }
