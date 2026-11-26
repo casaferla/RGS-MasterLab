@@ -49,7 +49,7 @@ Item {
                 ? "dspChainPresetOpen" : "dspModulePresetOpen"
             iconKind: "preset-open"
             controlSize: 19
-            iconSize: 17
+            iconSize: 18
             familyHeaderUtility: true
             accentColor: root.familyAccent
             enabled: root.actionsAvailable
@@ -71,7 +71,7 @@ Item {
                 ? "dspChainPresetSave" : "dspModulePresetSave"
             iconKind: "preset-save"
             controlSize: 19
-            iconSize: 17
+            iconSize: 18
             familyHeaderUtility: true
             accentColor: root.familyAccent
             enabled: root.actionsAvailable
