@@ -54,6 +54,11 @@ struct LinkedEditorSnapshot final {
            node.link_state()!=dsp::ModuleLinkState::REF_LINKED||
            !node.semantic_node_id()||node.semantic_node_id()->is_nil())
             return {};
+        if(std::any_of(current_manual.instances().begin(),current_manual.instances().end(),
+            [&](const auto& manual){return manual.instance_id()==node.instance_id();}))return {};
+        for(std::size_t j=0;j<i;++j)
+            if(nodes[j].instance_id()==node.instance_id()||
+               nodes[j].semantic_node_id()==node.semantic_node_id())return {};
         if(node.instance_id()!=requested_instance)continue;
         if(result)return {};
         const auto type=node.module_type_id();
