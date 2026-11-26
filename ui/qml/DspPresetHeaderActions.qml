@@ -15,6 +15,7 @@ Item {
     property bool entireChain: false
     property string moduleInstanceId: ""
     property string moduleDisplayName: ""
+    property color familyAccent: "#6CBCCF"
     readonly property bool actionsAvailable: !!presetController
         && (entireChain || moduleInstanceId.length > 0)
     visible: actionsAvailable
@@ -44,7 +45,9 @@ Item {
                 ? "dspChainPresetOpen" : "dspModulePresetOpen"
             iconKind: "preset-open"
             controlSize: 19
-            iconSize: 15
+            iconSize: 17
+            familyHeaderUtility: true
+            accentColor: root.familyAccent
             enabled: root.actionsAvailable
             onClicked: openFileDialog.open()
             Accessible.name: "Open settings for " + root.scopeName()
@@ -64,7 +67,9 @@ Item {
                 ? "dspChainPresetSave" : "dspModulePresetSave"
             iconKind: "preset-save"
             controlSize: 19
-            iconSize: 15
+            iconSize: 17
+            familyHeaderUtility: true
+            accentColor: root.familyAccent
             enabled: root.actionsAvailable
             onClicked: saveFileDialog.open()
             Accessible.name: "Save settings for " + root.scopeName()
