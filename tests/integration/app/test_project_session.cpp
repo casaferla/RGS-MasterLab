@@ -724,7 +724,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto freshInput=a::capture_native_qt_product_session_verification_on_owner(session.project,
         session.gold,*operation.value(),*completed,plan,true,m13::MandatoryHardPredicate::passed);
     QVERIFY(freshInput);
-    QVERIFY(action.begin_verification(m13::MandatoryHardPredicate::passed));
+    QVERIFY(action.begin_verification(m13::MandatoryHardPredicate::unavailable,true));
     QTRY_VERIFY_WITH_TIMEOUT((action.poll(),!action.busy()),180000);
     const auto* verification=action.verification_result();
     QVERIFY(verification);
