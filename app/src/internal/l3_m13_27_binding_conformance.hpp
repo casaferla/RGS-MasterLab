@@ -56,6 +56,26 @@ struct M13TwentySevenConformance final {
     bool every_required_binding_passed{};
     std::size_t configured_components{};
     std::size_t required_components{};
+    [[nodiscard]] bool complete_passing_evidence() const noexcept {
+        if(!every_required_binding_complete||!every_required_binding_passed||
+           required_components==0U||required_components>configured_components)
+            return false;
+        for(std::size_t i=0;i<rows.size();++i) {
+            const auto& row=rows[i];
+            const auto& binding=m07_frozen::kBindings[i];
+            if(row.binding_id!=binding.binding_id||
+               row.category!=kQtpBindings[i].category||
+               row.component_comparisons.empty()||
+               (binding.component_share==m07_frozen::ComponentShare::one&&
+                row.component_comparisons.size()!=1U)||
+               (binding.component_share==m07_frozen::ComponentShare::thirds&&
+                row.component_comparisons.size()!=3U)||
+               (row.outcome!=BindingConformance::passed&&
+                row.outcome!=BindingConformance::not_applicable))
+                return false;
+        }
+        return true;
+    }
     [[nodiscard]] constexpr bool authorizes_release_verified()
         const noexcept {return false;}
 };
