@@ -805,6 +805,17 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     const auto stableGain=a::m09_frozen::native_controller_role_semantic_id(
         controllerId,a::m09_frozen::IntentRole::loudness_gain);
     QVERIFY(stableGain);
+    QVERIFY(stableGain==a::m09_frozen::native_controller_role_semantic_id(
+        controllerId,a::m09_frozen::IntentRole::loudness_gain));
+    QVERIFY(stableGain!=a::m09_frozen::native_controller_role_semantic_id(
+        linkedId,a::m09_frozen::IntentRole::loudness_gain));
+    QVERIFY(stableGain!=a::m09_frozen::native_controller_role_semantic_id(
+        controllerId,a::m09_frozen::IntentRole::tonal_eq));
+    const std::array<core::Uuid,2> foreignCollision{controllerId,*stableGain};
+    a::m09_frozen::NativeOwnerAllocations collisionAllocator{allocate,foreignCollision,
+        a::m09_frozen::NativeControllerRoleContext{controllerId,{},{}}};
+    QVERIFY(!collisionAllocator.role(a::m09_frozen::IntentRole::loudness_gain));
+    QVERIFY(collisionAllocator.failed());
     const auto oldLinked=priorTicket->replay->reference_linked.instances();
     const auto newLinked=replacementTicket->replay->reference_linked.instances();
     const auto oldGain=std::find_if(oldLinked.begin(),oldLinked.end(),
