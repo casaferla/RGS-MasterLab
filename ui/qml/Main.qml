@@ -665,6 +665,13 @@ ApplicationWindow {
                 color: root.accent
                 font.bold: true
             }
+            Text {
+                objectName: "autoMatchCurrentStateText"
+                Layout.fillWidth: true
+                text: root.appAutoMatchModel ? root.appAutoMatchModel.currentMatchText : ""
+                color: root.textSecondary
+                elide: Text.ElideRight
+            }
             GridLayout {
                 columns: 2
                 Layout.fillWidth: true
@@ -734,6 +741,13 @@ ApplicationWindow {
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canRedo
                         && !root.monitorExclusive
                     onClicked: root.appAutoMatchModel.redo()
+                }
+                Button {
+                    objectName: "autoMatchResumeButton"
+                    text: "Resume"
+                    visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canResume
+                    enabled: visible && !root.monitorExclusive
+                    onClicked: root.appAutoMatchModel.resume()
                 }
                 Item { Layout.fillWidth: true }
             }
