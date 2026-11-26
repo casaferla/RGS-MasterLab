@@ -5891,6 +5891,13 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     tonalEvidence.configured[1].expected_selector="band-b";
     tonalEvidence.configured[1].fresh_selector="band-b";
     QVERIFY(compareT1().rows[0].outcome==M13Binding::passed);
+    tonalEvidence.configured[0].actual_fresh_native=-9.996;
+    tonalEvidence.configured[1].actual_fresh_native=-9.996;
+    const auto profileRms=compareT1();
+    QVERIFY(profileRms.rows[0].t1_profile.has_value());
+    QVERIFY(profileRms.rows[0].outcome==M13Binding::failed);
+    tonalEvidence.configured[0].actual_fresh_native=-10.0;
+    tonalEvidence.configured[1].actual_fresh_native=-10.0;
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
