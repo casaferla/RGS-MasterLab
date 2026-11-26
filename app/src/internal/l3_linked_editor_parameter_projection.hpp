@@ -2,6 +2,10 @@
 // Presentation only: project the accepted native C00/C01 parameters with
 // the research editor's vocabulary. No default values, edits or telemetry.
 #include "l3_linked_editor_snapshot.hpp"
+#include "../../../dsp/src/internal/dynamic_eq_c01_coefficients.hpp"
+#include <cmath>
+#include <complex>
+#include <numbers>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -55,6 +59,41 @@ namespace rgsml::app::l3_automatch {
     } else return {};
     return out;
 }
+// Exact C01 base-gain coefficients, not detector/activity or an Overall curve.
+[[nodiscard]] inline QVariantList project_linked_dynamic_response(
+    const LinkedEditorSnapshot& snapshot,int band_index)
+{
+    const auto* p=std::get_if<dsp::DynamicEqParameters>(&snapshot.parameters);
+    if(!p||band_index<0||static_cast<std::size_t>(band_index)>=p->bands().size()||
+       !snapshot.exact_owner||!snapshot.exact_owner->exact_prepared_owner)return {};
+    const auto& band=p->bands()[static_cast<std::size_t>(band_index)];
+    if(!band.spec().enabled)return {};
+    const auto format=snapshot.exact_owner->exact_prepared_owner->view().format();
+    const auto fs=format.sample_rate().value();
+    const auto channels=static_cast<std::uint32_t>(format.channel_count());
+    auto generator=dsp::internal::C01CoefficientGenerator::create(band,fs,channels);
+    if(!generator)return {};
+    const auto coeff=generator.value()->audio_coefficients(band.spec().control.base_gain_db);
+    if(!coeff)return {};
+    const auto c=*coeff.value();
+    const double max_hz=std::min(20000.0,0.45*static_cast<double>(fs));
+    QVariantList out;
+    constexpr int count=257;
+    out.reserve(count);
+    for(int i=0;i<count;++i) {
+        const double hz=20.0*std::pow(max_hz/20.0,static_cast<double>(i)/(count-1));
+        const auto z=std::polar(1.0,-2.0*std::numbers::pi*hz/static_cast<double>(fs));
+        const auto denominator=1.0+c.a1*z+c.a2*z*z;
+        if(std::abs(denominator)==0.0)return {};
+        const auto h=(c.b0+c.b1*z+c.b2*z*z)/denominator;
+        const double magnitude=std::abs(h);
+        if(!std::isfinite(magnitude)||magnitude<=0.0)return {};
+        const double db=20.0*std::log10(magnitude);
+        if(!std::isfinite(db))return {};
+        out.append(QVariantMap{{"frequency",hz},{"magnitudeDb",db},{"phaseRad",std::arg(h)}});
+    }
+    return out;
+}
 [[nodiscard]] inline QVariantMap project_linked_editor_parameters(
     const LinkedEditorSnapshot& snapshot)
 {
@@ -77,6 +116,9 @@ namespace rgsml::app::l3_automatch {
         if(entry.isEmpty())return {};
         bands.append(entry);
     }
+    if(!snapshot.exact_owner||!snapshot.exact_owner->exact_prepared_owner)return {};
+    const auto fs=snapshot.exact_owner->exact_prepared_owner->view().format().sample_rate().value();
+    out.insert("maximumFrequencyHz",std::min(20000.0,0.45*static_cast<double>(fs)));
     out.insert("bands",bands);
     return out;
 }
