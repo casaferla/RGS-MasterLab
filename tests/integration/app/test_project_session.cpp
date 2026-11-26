@@ -6010,6 +6010,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QVERIFY(!missing.every_required_binding_complete);
         QVERIFY(!missing.every_required_binding_passed);
     }
+    QVERIFY(compareRaw({0.5,M08ProximityReason::source_evidence_unavailable},
+                       {0.5,M08ProximityReason::source_evidence_unavailable}).status==
+            M13Proximity::failed);
+    QVERIFY(compareRaw({{},M08ProximityReason::source_evidence_unavailable},
+                       {{},M08ProximityReason::source_evidence_unavailable}).status==
+            M13Proximity::unavailable);
+    QVERIFY(compareRaw({{},M08ProximityReason::comparable},
+                       {0.5,M08ProximityReason::comparable}).status==
+            M13Proximity::unavailable);
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
