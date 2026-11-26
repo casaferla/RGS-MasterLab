@@ -6478,6 +6478,16 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         reasons.front().measured_delta=std::numeric_limits<double>::infinity();
         QVERIFY(!m13contract::normalize_verification_reasons(reasons));
     }
+    {
+        auto invalid=currentProductDiagnosis;
+        invalid.verified_profile_approval_exists=true;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+        invalid.verified_profile_approval_exists=false;
+        invalid.state=m13contract::VerificationState::verified;
+        QVERIFY(!m13contract::encode_m13_provisional_diagnostic(
+            *m13Owner.value(),*m13Result.value(),invalid,*diagnosticId.value()));
+    }
     auto wrongPrimary=validJson.object();
     wrongPrimary.insert("primaryReason",QJsonValue(QJsonValue::Null));
     QVERIFY(!verifyRehashedDiagnostic(wrongPrimary));
