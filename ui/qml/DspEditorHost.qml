@@ -828,6 +828,54 @@ Rectangle {
             spectrumViewModel: root.spectrumViewModel
         }
 
+        Loader {
+            id: linkedDynamicEqLoader
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            active: !!root.activeModule && root.activeModule.editorContentKey === "DYNAMIC_EQ"
+                && !!root.activeModule.linkedParameters.instanceId
+            visible: active
+            sourceComponent: Component {
+                DynamicEqEditor {
+                    LinkedDynamicEqViewModel {
+                        id: linkedDynamicModel
+                        module: root.activeModule
+                    }
+                    viewModel: linkedDynamicModel
+                    dynamicsControls: linkedDynamicModel
+                    spectrumViewModel: root.spectrumViewModel
+                    showLocalValidation: !root.errorsInGlobalStatusBar
+                }
+            }
+        }
+
+        Loader {
+            id: linkedTransientLoader
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            active: !!root.activeModule && root.activeModule.editorContentKey === "TRANSIENT_SHAPER"
+                && !!root.activeModule.linkedParameters.instanceId
+            visible: active
+            sourceComponent: Component {
+                TransientShaperEditor {
+                    QtObject {
+                        id: linkedTransientModel
+                        readonly property var parameters: root.activeModule
+                            ? root.activeModule.linkedParameters : ({})
+                        readonly property bool manualEditable: false
+                        readonly property real attackAmountDb: parameters.attackAmountDb === undefined ? 0 : parameters.attackAmountDb
+                        readonly property real sustainAmountDb: parameters.sustainAmountDb === undefined ? 0 : parameters.sustainAmountDb
+                        function setAttackAmountDb(value) {}
+                        function setSustainAmountDb(value) {}
+                        function resetToDefault() {}
+                    }
+                    transientModule: linkedTransientModel
+                }
+            }
+        }
+
         CompressorEditor {
             showLocalValidation: !root.errorsInGlobalStatusBar
             id: compressorEditor
