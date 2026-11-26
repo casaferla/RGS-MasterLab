@@ -57,7 +57,10 @@ jobs:
           $out=Join-Path $env:RUNNER_TEMP 'l3-artifact-cold-out.log'
           $err=Join-Path $env:RUNNER_TEMP 'l3-artifact-cold-err.log'
           $p=Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
-          if ($p.ExitCode -ne 0) { Get-Content $err -Tail 80; throw "L3_ARTIFACT_COLD_SMOKE_FAILURE=$($p.ExitCode)" }
+          if (Test-Path -LiteralPath $out) { Get-Content $out -Tail 40 }
+          if (Test-Path -LiteralPath $err) { Get-Content $err -Tail 80 }
+          if ($p.ExitCode -ne 0) { throw "L3_ARTIFACT_COLD_SMOKE_FAILURE=$($p.ExitCode)" }
+          Write-Host 'L3_STANDALONE_COLD_SMOKE=PASS'
       - name: Include exact artifact provenance and physical replay checklist
         shell: pwsh
         run: |
