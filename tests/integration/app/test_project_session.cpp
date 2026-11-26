@@ -7061,6 +7061,19 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         audible,winningNodes[1].allocated_instance_id);
     QVERIFY(pausedWindow.available()&&pausedWindow.paused);
     QVERIFY(!pausedWindow.dynamic.empty()&&pausedWindow.transient.empty());
+    const auto dynamicQt=app::l3_automatch::project_linked_activity_qt(pausedWindow);
+    QVERIFY(dynamicQt.value("available").toBool());
+    QCOMPARE(dynamicQt.value("stateText").toString(),QStringLiteral("PAUSED"));
+    QCOMPARE(dynamicQt.value("bandCount").toInt(),1);
+    const auto dynamicQtBands=dynamicQt.value("buckets").toList().back().toMap().value("bands").toList();
+    QCOMPARE(dynamicQtBands.front().toMap().value("bandId").toString(),
+        QString::fromStdString(nativeBand.band_id.to_string()));
+    QCOMPARE(dynamicQtBands.front().toMap().value("gainLastDb").toDouble(),
+        pausedWindow.dynamic.back().bands[0].gain_last_db);
+    auto wrongBandWindow=pausedWindow;
+    wrongBandWindow.dynamic.back().bands[0].band_id=core::Uuid{};
+    QVERIFY(app::l3_automatch::project_linked_activity_qt(wrongBandWindow).isEmpty());
+    QVERIFY(app::l3_automatch::project_linked_activity_qt({}).isEmpty());
     audible.state=core::PlaybackState::STOPPED;
     QVERIFY(!la::project_linked_activity(*selectedPcm,playbackContext,
         audible,winningNodes[1].allocated_instance_id).available());
