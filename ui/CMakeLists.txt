@@ -18,6 +18,9 @@ qt_add_qml_module(rgsml_ui
         qml/MonitorEditor.qml
         qml/ParametricEqEditor.qml
         qml/DynamicEqEditor.qml
+        qml/DynamicEqActivityCompanion.qml
+        qml/DynamicEqActivityHistoryGraph.qml
+        qml/TransientActivityScope.qml
         qml/DynamicEqGraph.qml
         qml/DynamicEqDynamicsCompanion.qml
         qml/DynamicEqDynamicsStrip.qml
