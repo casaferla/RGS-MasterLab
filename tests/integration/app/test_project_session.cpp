@@ -5910,6 +5910,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         QJsonValue(QStringLiteral("-0.25")))));
     QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("frameCount",
         QJsonValue(QStringLiteral("9223372036854775808")))));
+    QVERIFY(!verifyRehashedDiagnostic(alteredEvidence("frameCount",
+        QJsonValue(QStringLiteral("0")))));
     auto forged=validJson.object();
     forged.insert("reportRunOutcome",QStringLiteral("VERIFIED"));
     forged.remove("VerificationContentChecksum");
