@@ -1,5 +1,6 @@
 #pragma once
 #include "l3_m13_product_fresh_postmaterialization_probe.hpp"
+#include <algorithm>
 #include <array>
 #include <string_view>
 namespace rgsml::app::l3_automatch::m13_frozen {
