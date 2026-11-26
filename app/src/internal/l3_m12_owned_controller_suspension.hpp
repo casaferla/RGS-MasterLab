@@ -97,6 +97,7 @@ prepare_m12_owned_controller_suspension(
                 }))
             return fail("L3_M12_CONTROLLER_SUSPENSION_FOREIGN_SEGMENT");
     }
+    std::set<core::Uuid> linked_instance_ids;
     std::set<core::Uuid> linked_semantic_ids;
     for(const auto& module:it->modules) {
         if(module.instanceId.is_nil()||!module.semanticNodeId||
