@@ -22,6 +22,9 @@ enum class NativeGraphSafety {passed,failed,unavailable};
         "rgsml.dsp.dynamic-eq","rgsml.dsp.transient-shaper",
         "rgsml.dsp.stereo-ms","rgsml.dsp.streaming-true-peak-limiter"};
     const auto check=[&](const dsp::ProcessingChain& chain,bool linked) {
+        const dsp::ProcessingChainContext expected{dsp::ProcessingStage::MASTER,
+            linked?dsp::ChainSegment::REF_LINKED:dsp::ChainSegment::MANUAL};
+        if(chain.context()!=expected)return NativeGraphSafety::failed;
         for(const auto& node:chain.instances()) {
             if(node.module_type_id()=="rgsml.dsp.true-peak-limiter"||
                node.module_type_id()=="rgsml.dsp.dither")
