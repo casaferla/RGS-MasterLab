@@ -501,8 +501,23 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
              static_cast<qint64>(bytes.size()))!=static_cast<qint64>(bytes.size()))return QString{};
         file.close();return path;
     };
-    const auto sourcePath=writeTone(QStringLiteral("l3-native-source.wav"),4);
-    const auto referencePath=writeTone(QStringLiteral("l3-native-reference.wav"),5);
+    const auto musicSource=qEnvironmentVariable("RGSML_L3_BENCH_SOURCE_WAV");
+    const auto musicReference=qEnvironmentVariable("RGSML_L3_BENCH_REFERENCE_WAV");
+    const bool fullTrackBenchmark=!musicSource.isEmpty()||!musicReference.isEmpty();
+    if(fullTrackBenchmark) {
+        QVERIFY2(!musicSource.isEmpty()&&!musicReference.isEmpty(),
+            "Supply both benchmark WAV paths, never substitute a synthetic resource");
+        QVERIFY2(qEnvironmentVariable("RGSML_L3_E2E_RATE")==QString::number(nativeRateHz),
+            "Benchmark requires one explicit native source rate");
+        const QFileInfo sourceInfo{musicSource},referenceInfo{musicReference};
+        QVERIFY(sourceInfo.isAbsolute()&&sourceInfo.isFile()&&sourceInfo.isReadable());
+        QVERIFY(referenceInfo.isAbsolute()&&referenceInfo.isFile()&&referenceInfo.isReadable());
+        QVERIFY(sourceInfo.canonicalFilePath()!=referenceInfo.canonicalFilePath());
+    }
+    const auto sourcePath=fullTrackBenchmark?musicSource:
+        writeTone(QStringLiteral("l3-native-source.wav"),4);
+    const auto referencePath=fullTrackBenchmark?musicReference:
+        writeTone(QStringLiteral("l3-native-reference.wav"),5);
     QVERIFY(!sourcePath.isEmpty()&&!referencePath.isEmpty());
     Session session;
     QVERIFY(!session.source.has_source());
