@@ -5864,6 +5864,15 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(committed.value()->materialized_not_verified());
     QVERIFY(!committed.value()->authorizes_m13_verified());
     QCOMPARE(committed.value()->plan_id(),plan.plan_id);
+    const auto linkedEditors=app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,prepared,session.masteringChainState->chain(),bindings);
+    QVERIFY(linkedEditors);
+    QCOMPARE(linkedEditors->size(),std::size_t{2});
+    QVERIFY((*linkedEditors)[0].instance.instance_id()==winningNodes[0].allocated_instance_id);
+    QVERIFY((*linkedEditors)[1].instance.instance_id()==winningNodes[1].allocated_instance_id);
+    QVERIFY((*linkedEditors)[0].exact_owner==(*linkedEditors)[1].exact_owner);
+    QVERIFY(!app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,{},session.masteringChainState->chain(),bindings));
     const auto transientEditor=app::l3_automatch::inspect_current_linked_editor(
         *session.previewController,prepared,session.masteringChainState->chain(),
         bindings,winningNodes[0].allocated_instance_id);
