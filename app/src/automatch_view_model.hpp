@@ -20,6 +20,7 @@ class AutoMatchViewModel final : public QObject {
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
     Q_PROPERTY(QString reviewText READ review_text NOTIFY changed)
     Q_PROPERTY(QString reviewMetricsText READ review_metrics_text NOTIFY changed)
+    Q_PROPERTY(QString failureDiagnosticsText READ failure_diagnostics_text NOTIFY changed)
     Q_PROPERTY(QString elapsedTimeText READ elapsed_time_text NOTIFY changed)
     Q_PROPERTY(QString verificationNote READ verification_note NOTIFY changed)
 public:
@@ -39,6 +40,7 @@ public:
     [[nodiscard]] QString error_text()const;
     [[nodiscard]] QString review_text()const;
     [[nodiscard]] QString review_metrics_text()const;
+    [[nodiscard]] QString failure_diagnostics_text()const;
     [[nodiscard]] QString elapsed_time_text()const;
     [[nodiscard]] QString verification_note()const;
     // All values are captured once before dispatch; the ceiling is the
