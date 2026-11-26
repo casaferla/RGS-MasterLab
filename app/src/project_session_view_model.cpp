@@ -2093,10 +2093,7 @@ core::Status ProjectSessionViewModel::undo_private_m12_materialization()
         return core::Status::failure(
             core::Error{core::ErrorCode::InvalidState,why});
     };
-    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
-       isCommittingProjectOpen_||!m18ProjectOpenBatchBegin_||
-       !m18ProjectSaveBatchBegin_||!previewController_||
-       !masteringChainState_||!opened_||m12UndoHistory_.empty())
+    if(!can_undo_private_m12_materialization())
         return fail("L3_M12_UNDO_NO_EXCLUSIVE_OWNER_OR_HISTORY");
     M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
     auto lease=begin_m18_project_save();
@@ -2154,10 +2151,7 @@ core::Status ProjectSessionViewModel::redo_private_m12_materialization()
         return core::Status::failure(
             core::Error{core::ErrorCode::InvalidState,why});
     };
-    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
-       isCommittingProjectOpen_||!m18ProjectOpenBatchBegin_||
-       !m18ProjectSaveBatchBegin_||!previewController_||
-       !masteringChainState_||!opened_||m12RedoHistory_.empty())
+    if(!can_redo_private_m12_materialization())
         return fail("L3_M12_REDO_NO_EXCLUSIVE_OWNER_OR_HISTORY");
     M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
     auto lease=begin_m18_project_save();
