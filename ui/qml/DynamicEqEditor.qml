@@ -1,0 +1,757 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Window
+
+Rectangle {
+    id: root
+    objectName: "dynamicEqEditor"
+    // Product REF_LINKED presentation: editing stays disabled until an authorized native transaction exists.
+    readonly property bool manualEditable: !!viewModel
+        && viewModel.manualEditable === true
+    property var dynamicActivity: null
+    property bool showActivity: false
+    property var dynamicsControls: null
+    property bool showDynamics: false
+    onVisibleChanged: if (!visible) showDynamics = false
+    readonly property bool activityAvailable: !!dynamicActivity
+        && dynamicActivity.available === true
+    property var viewModel: null
+    property var spectrumViewModel: null
+    property bool showLocalValidation: true
+
+    implicitWidth: 992
+    implicitHeight: 612
+
+    color: "transparent"
+
+    // One visual scale at every supported window size.
+    // Responsive behavior may redistribute free space, but never miniaturizes controls.
+
+    readonly property var bandColors: [
+        "#2ED3FF", // 1 Cyan
+        "#2FD98F", // 2 Emerald
+        "#FFD84A", // 3 Warm Yellow
+        "#FF6B6B", // 4 Coral Red
+        "#4F7CFF", // 5 Cobalt Blue
+        "#F5F8FC"  // 6 Neutral White
+    ]
+    readonly property color selectedBandHue: bandColors[
+        root.viewModel ? Math.max(0, Math.min(5, root.viewModel.selectedIndex)) : 0]
+    readonly property bool whiteSelectedBand:
+        root.viewModel && root.viewModel.selectedIndex === 5
+
+    function getFilterAbbrev(token) {
+        if (token === "BELL") return "BELL"
+        if (token === "LOW_SHELF") return "LS"
+        if (token === "HIGH_SHELF") return "HS"
+        return token
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        // Never steal from the graph's 102px canonical minimum.
+        // Validation errors transiently overlay its bottom 16px rather
+        // than reserving a permanently empty footer.
+        spacing: 2
+
+        // Unified toolbar: fixed control scale at every supported width.
+        RowLayout {
+            objectName: "eqTopToolbarRegion"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 32
+            spacing: 6
+
+            StudioToggle {
+                objectName: "bandEnabledToggle"
+                enabled: root.manualEditable
+                text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
+                checked: root.viewModel ? root.viewModel.enabled : true
+                onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
+                Accessible.name: "Enable or disable band"
+            }
+
+            // C01-only Undo/Redo live in unused elastic toolbar space.
+            // Existing Parametric EQ controls remain in their original slots.
+            StudioButton {
+                objectName: "dynamicEqUndoButton"
+                text: "Undo"
+                minimumControlWidth: 64
+                contentPadding: 10
+                enabled: root.manualEditable && !!root.viewModel
+                         && root.viewModel.canUndo
+                onClicked: if (root.manualEditable && root.viewModel)
+                    root.viewModel.undo()
+                Accessible.name: "Undo the last Dynamic EQ edit"
+                ToolTip.text: "Undo the last accepted manual C01 edit"
+            }
+
+            StudioButton {
+                objectName: "dynamicEqRedoButton"
+                text: "Redo"
+                minimumControlWidth: 64
+                contentPadding: 10
+                enabled: root.manualEditable && !!root.viewModel
+                         && root.viewModel.canRedo
+                onClicked: if (root.manualEditable && root.viewModel)
+                    root.viewModel.redo()
+                Accessible.name: "Redo the last Dynamic EQ edit"
+                ToolTip.text: "Redo the last undone manual C01 edit"
+            }
+
+            Item { Layout.fillWidth: true }
+
+            StudioButton {
+                objectName: "eqResetFlatButton"
+                text: "Reset Flat"
+                minimumControlWidth: 88
+                enabled: root.manualEditable
+                onClicked: if (root.manualEditable) root.viewModel.resetToFlat()
+                Accessible.name: "Reset EQ to Flat"
+                ToolTip.text: "Reset all EQ parameters to Flat baseline"
+                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell1
+                    anchors.fill: parent
+                }
+            }
+
+            StudioButton {
+                objectName: "dynamicEqActivityToggleButton"
+                text: "Activity"
+                selected: root.showActivity
+                tone: root.showActivity ? "primary" : "secondary"
+                accentColor: "#A989F2"
+                minimumControlWidth: 72
+                // FIX-UI-001: reserve identical geometry for OFF/ON text metrics.
+                Layout.minimumWidth: 92
+                Layout.preferredWidth: 92
+                Layout.maximumWidth: 92
+                visible: root.activityAvailable
+                enabled: root.activityAvailable
+                onClicked: root.showActivity = !root.showActivity
+                Accessible.name: "Toggle truthful dynamic EQ activity"
+                ToolTip.text: "Show observed DSP band activity when accepted render telemetry exists"
+                ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell2
+                    anchors.fill: parent
+                }
+            }
+
+            StudioButton {
+                objectName: "eqSpectrumToggleButton"
+                text: "Spectrum"
+                selected: root.spectrumViewModel ? root.spectrumViewModel.spectrumEnabled : true
+                tone: root.spectrumViewModel && root.spectrumViewModel.spectrumEnabled ? "primary" : "secondary"
+                accentColor: "#3A7BD5"
+                minimumControlWidth: 80
+                // FIX-UI-001: reserve identical geometry for OFF/ON text metrics.
+                Layout.minimumWidth: 100
+                Layout.preferredWidth: 100
+                Layout.maximumWidth: 100
+                enabled: root.spectrumViewModel !== null && root.spectrumViewModel !== undefined
+                onClicked: {
+                    if (root.spectrumViewModel) {
+                        root.spectrumViewModel.toggleSpectrum()
+                    }
+                }
+                Accessible.name: "Toggle Live Spectrum display"
+                ToolTip.text: "Show or hide the real-time Live Spectrum overlay"
+                ToolTip.visible: (hovered) && stationaryTooltipDwell3.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell3
+                    anchors.fill: parent
+                }
+            }
+
+            Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
+
+            StudioButton {
+                objectName: "addBandButton"
+                text: "+ Add Band"
+                minimumControlWidth: 110
+                contentPadding: 10
+                enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
+                onClicked: if (root.viewModel) root.viewModel.addBand()
+                Accessible.name: "Add Band"
+                ToolTip.text: "Add a new EQ band"
+                ToolTip.visible: (hovered) && stationaryTooltipDwell4.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell4
+                    anchors.fill: parent
+                }
+            }
+
+            StudioButton {
+                objectName: "removeBandButton"
+                text: "- Remove Band"
+                minimumControlWidth: 110
+                contentPadding: 10
+                enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
+                onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
+                Accessible.name: "Remove Band"
+                ToolTip.text: "Remove the selected EQ band"
+                ToolTip.visible: (hovered) && stationaryTooltipDwell5.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell5
+                    anchors.fill: parent
+                }
+            }
+        }
+
+        // Band Selector Strip (36 lp): buttons keep their original 32px
+        // implicit height, with 2px vertical breathing room on each side.
+        Rectangle {
+            objectName: "eqBandStripRegion"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 36
+            color: "#12243F"
+            border.color: "#2C5A78"
+            border.width: 1
+            radius: 6
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 4
+
+                Repeater {
+                    model: root.viewModel ? root.viewModel.bandCount : 0
+                    delegate: StudioButton {
+                        required property int index
+
+                        readonly property var bandSummary: (root.viewModel && root.viewModel.bandSummaries && index < root.viewModel.bandSummaries.length) ? root.viewModel.bandSummaries[index] : null
+                        readonly property bool isSelectedBand: root.viewModel !== null && root.viewModel.selectedIndex === index
+                        readonly property bool isEnabledBand: bandSummary ? bandSummary.enabled : true
+                        readonly property string filterType: bandSummary ? bandSummary.filter : "BELL"
+                        readonly property string routingType: bandSummary ? bandSummary.routing : "STEREO"
+                        readonly property color bandHue: root.bandColors[index % root.bandColors.length]
+
+                        objectName: "bandSelectorButton_" + index
+                        text: (index + 1) + " " + root.getFilterAbbrev(filterType)
+                        selected: isSelectedBand
+                        tone: isSelectedBand ? "primary" : "secondary"
+                        accentColor: bandHue
+                        minimumControlWidth: 90
+                        contentPadding: 8
+                        activeFocusOnTab: true
+                        opacity: isEnabledBand ? 1.0 : 0.5
+
+                        onClicked: if (root.viewModel) root.viewModel.selectBand(index)
+
+                        Accessible.name: "Band " + (index + 1) + " " + filterType.replace("_", " ") + (isEnabledBand ? "" : " (disabled)")
+                        ToolTip.text: "Select Band " + (index + 1) + " (" + filterType.replace("_", " ") + ", " + routingType + ")"
+                        ToolTip.visible: (hovered) && stationaryTooltipDwell6.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: stationaryTooltipDwell6
+                            anchors.fill: parent
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // New Dynamic-only button uses the unused RIGHT end of the
+                // band strip. Shared L1 controls never shift. No Product
+                // instance exists until L3 AutoMatch closes.
+                StudioButton {
+                    objectName: "dynamicEqDynamicsWindowButton"
+                    text: root.showDynamics ? "Hide Dynamics" : "Dynamics"
+                    minimumControlWidth: 112
+                    Layout.minimumWidth: 112
+                    Layout.preferredWidth: 112
+                    Layout.maximumWidth: 112
+                    enabled: !!root.dynamicsControls && root.dynamicsControls.loaded
+                    selected: root.showDynamics
+                    tone: root.showDynamics ? "primary" : "secondary"
+                    onClicked: root.showDynamics = !root.showDynamics
+                    Accessible.name: "Show or hide Dynamic EQ controls window"
+                    ToolTip.text: "Open the separate six-parameter Dynamic EQ panel"
+                }
+            }
+        }
+
+        // Response Graph (Flexible min 200 lp)
+        DynamicEqGraph {
+            objectName: "parametricEqGraph"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            // The response graph is the vertically elastic surface. A constant low
+            // minimum avoids a vertical breakpoint and lets the layout consume exactly
+            // the height left after the fixed control tiers.
+            Layout.minimumHeight: 102
+            viewModel: root.viewModel
+            spectrumViewModel: root.spectrumViewModel
+            manualEditable: root.manualEditable
+
+            // A validation problem becomes a nonpersistent overlay at the
+            // graph's lower edge; no extra height is consumed in the root.
+            Rectangle {
+                objectName: "eqStatusRegion"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 16
+                z: 40
+                visible: root.showLocalValidation && messageText.text.length > 0
+                color: "#E012243F"
+                radius: 3
+    
+                Text {
+                    id: messageText
+                    objectName: "validationMessageText"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: {
+                        if (!root.viewModel) return ""
+                        if (root.viewModel.validationMessage.length > 0) return root.viewModel.validationMessage
+                        if (root.viewModel.previewStatus === "ERROR") return root.viewModel.previewError
+                        return ""
+                    }
+                    color: "#F27683"
+                    font.family: "Segoe UI"
+                    font.pixelSize: 12
+                    visible: text.length > 0
+                    elide: Text.ElideRight
+    
+                    ToolTip.text: text
+                    ToolTip.visible: (messageMouseArea.containsMouse && text.length > 0) && stationaryTooltipDwell7.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell7
+                        anchors.fill: parent
+                    }
+    
+                    Accessible.name: text
+                    Accessible.description: text
+    
+                    MouseArea {
+                        id: messageMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+                }
+            }
+
+        }
+
+        // Selected-Band Inspector: extended down for compact slider tier,
+        // retaining the existing 164px numeric fields and graph elasticity.
+        Rectangle {
+            objectName: "eqInspectorRegion"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 160
+            color: "#12243F"
+            border.color: "#2C5A78"
+            border.width: 1
+            radius: 6
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                anchors.topMargin: 4
+                anchors.bottomMargin: 4
+                spacing: 8
+
+                // Right Column: Two Subrows + Numeric Tier
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 4
+
+                    // Subrow 1: Filter Selection (581 lp group)
+                    RowLayout {
+                        objectName: "eqFilterGroup"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 28
+                        spacing: 8
+
+                        Text {
+                            objectName: "eqFilterLabel"
+                            text: "FILTER"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            font.weight: Font.Bold
+                            Layout.preferredWidth: 64
+                        }
+
+                        RowLayout {
+                            spacing: 1
+                            Repeater {
+                                model: [
+                                    { label: "Bell", token: "BELL" },
+                                    // Invisible slot retains the EXACT historical
+                                    // Low Shelf and High Shelf button positions.
+                                    { label: "Notch", token: "RESERVED_NOT_A_FILTER" },
+                                    { label: "Low Shelf", token: "LOW_SHELF" },
+                                    { label: "High Shelf", token: "HIGH_SHELF" },
+                                    // No pass filters exist in C01. Retain
+                                    // only their old spatial slots, invisible.
+                                    { label: "High Pass", token: "RESERVED_HP" },
+                                    { label: "Low Pass", token: "RESERVED_LP" }
+                                ]
+                                delegate: StudioSegmentButton {
+                                    required property var modelData
+                                    objectName: "filterButton_" + modelData.token
+                                    text: modelData.label
+                                    minimumControlWidth: 88
+                                    contentPadding: 4
+                                    opacity: modelData.token.startsWith("RESERVED_") ? 0 : 1
+                                    enabled: root.manualEditable && !modelData.token.startsWith("RESERVED_")
+                                    selected: root.viewModel && root.viewModel.filter === modelData.token
+                                    tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
+                                    onClicked: {
+                                        if (root.manualEditable && root.viewModel
+                                            && !modelData.token.startsWith("RESERVED_"))
+                                            root.viewModel.setFilter(modelData.token)
+                                    }
+                                    Accessible.name: "Filter type " + modelData.label
+                                    ToolTip.text: "Set filter type to " + modelData.label
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell8.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell8
+                                        anchors.fill: parent
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    // Subrow 2: Routing Selection (404 lp group) + Mixed Badge (164 lp)
+                    RowLayout {
+                        objectName: "eqRoutingGroup"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 28
+                        spacing: 8
+
+                        Text {
+                            objectName: "eqRoutingLabel"
+                            text: "ROUTING"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            font.weight: Font.Bold
+                            Layout.preferredWidth: 64
+                        }
+
+                        RowLayout {
+                            spacing: 1
+                            Repeater {
+                                model: [
+                                    { label: "Stereo", token: "STEREO" },
+                                    { label: "Mid", token: "MID" },
+                                    { label: "Side", token: "SIDE" },
+                                    { label: "Left", token: "LEFT" },
+                                    { label: "Right", token: "RIGHT" }
+                                ]
+                                delegate: StudioSegmentButton {
+                                    required property var modelData
+                                    objectName: "routingButton_" + modelData.token
+                                    text: modelData.label
+                                    minimumControlWidth: 80
+                                    contentPadding: 4
+                                    enabled: root.manualEditable && (modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable))
+                                    selected: root.viewModel && root.viewModel.routing === modelData.token
+                                    tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
+                                    onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
+                                    Accessible.name: "Routing " + modelData.label
+                                    ToolTip.text: "Set channel routing to " + modelData.label
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell9.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell9
+                                        anchors.fill: parent
+                                    }
+                                }
+                            }
+                        }
+
+                        // Mixed Routing Badge (140 x 28 lp)
+                        Rectangle {
+                            objectName: "mixedRoutingBadge"
+                            visible: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.mixedRouting
+                            Layout.preferredHeight: 28
+                            Layout.preferredWidth: 140
+                            radius: 8
+                            color: "#336C4EA6"
+                            border.color: "#B3A989F2"
+                            border.width: 1
+
+                            Text {
+                                id: mixedText
+                                objectName: "mixedText"
+                                anchors.centerIn: parent
+                                text: "MIXED ROUTING ACTIVE"
+                                color: "#EEE9DCFF"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#1C3A59" }
+
+                    // Editable numeric boxes plus their third input mode:
+                    // a common secondary track with a selected-band ring.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 78
+                        spacing: 12
+
+                        StudioNumericSliderPair {
+                            objectName: "eqFrequencyControl"
+                            enabled: root.manualEditable
+                            fieldObjectName: "frequencyField"
+                            sliderObjectName: "eqFrequencySlider"
+                            compact: false
+                            sliderCompact: true
+                            labelText: "FREQUENCY"
+                            unitText: "Hz"
+                            fieldName: "frequency"
+                            rawText: root.viewModel ? root.viewModel.frequencyText : "1000"
+                            value: root.viewModel ? root.viewModel.frequency : 1000.0
+                            viewModel: root.viewModel
+                            from: 20.0
+                            to: root.viewModel ? root.viewModel.maximumFrequencyHz : 20000.0
+                            stepSize: 1.0
+                            logarithmic: true
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Drag the EQ point left/right or use slider to adjust\nEnter to apply • Esc to cancel"
+                            sliderAccessibleName: "FREQUENCY selected-band adjustment"
+                        }
+
+                        StudioNumericSliderPair {
+                            objectName: "eqGainControl"
+                            enabled: root.manualEditable
+                            fieldObjectName: "gainField"
+                            sliderObjectName: "eqGainSlider"
+                            compact: false
+                            sliderCompact: true
+                            labelText: "GAIN"
+                            unitText: "dB"
+                            fieldName: "gain"
+                            rawText: root.viewModel ? root.viewModel.gainText : "0"
+                            value: root.viewModel ? root.viewModel.gain : 0.0
+                            viewModel: root.viewModel
+                            visible: root.viewModel ? root.viewModel.gainApplicable : true
+                            from: -18.0
+                            to: 18.0
+                            stepSize: 0.1
+                            logarithmic: false
+                            fillFromOrigin: true
+                            positionFillOrigin: 0.0
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Drag the EQ point up/down or use slider to adjust\nEnter to apply • Esc to cancel"
+                            sliderAccessibleName: "GAIN selected-band adjustment"
+                        }
+
+                        StudioNumericSliderPair {
+                            objectName: "eqQControl"
+                            enabled: root.manualEditable
+                            fieldObjectName: "qField"
+                            sliderObjectName: "eqQSlider"
+                            compact: false
+                            sliderCompact: true
+                            labelText: "Q"
+                            unitText: ""
+                            fieldName: "q"
+                            rawText: root.viewModel ? root.viewModel.qText : "0.707"
+                            value: root.viewModel ? root.viewModel.q : 0.707
+                            viewModel: root.viewModel
+                            visible: root.viewModel ? root.viewModel.qApplicable : true
+                            from: 0.10
+                            to: 12.0
+                            stepSize: 0.01
+                            logarithmic: true
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Mouse wheel over the EQ point or use slider to adjust\nShift + wheel for fine adjustment"
+                            sliderAccessibleName: "Q selected-band adjustment"
+                        }
+
+                        StudioNumericSliderPair {
+                            objectName: "eqShelfSlopeControl"
+                            enabled: root.manualEditable
+                            fieldObjectName: "shelfSlopeField"
+                            sliderObjectName: "eqShelfSlopeSlider"
+                            compact: false
+                            sliderCompact: true
+                            labelText: "SHELF SLOPE"
+                            unitText: ""
+                            fieldName: "shelfSlope"
+                            rawText: root.viewModel ? root.viewModel.shelfSlopeText : "1"
+                            value: root.viewModel ? root.viewModel.shelfSlope : 1.0
+                            viewModel: root.viewModel
+                            visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
+                            from: 0.10
+                            to: 1.0
+                            stepSize: 0.01
+                            logarithmic: false
+                            positionFillColor: Qt.alpha("#C4774A", 0.38)
+                            accentColor: root.selectedBandHue
+                            semanticAccent: root.selectedBandHue
+                            hasSemanticAccent: true
+                            haloOnFocus: true
+                            lightAccentSeparator: root.whiteSelectedBand
+                            interactionHint: "Mouse wheel over the EQ point or use slider to adjust\nShift + wheel for fine adjustment"
+                            sliderAccessibleName: "SHELF SLOPE selected-band adjustment"
+                        }
+
+                        // HP/LP Slope DB/OCT: one fixed visual scale at every width.
+                        // Two permanent rows avoid both clipping and responsive miniaturization.
+                        RowLayout {
+                            objectName: "slopeControls"
+                            visible: root.viewModel ? root.viewModel.slopeApplicable : false
+                            spacing: 8
+
+                            Text {
+                                objectName: "eqSlopeLabel"
+                                text: "SLOPE"
+                                color: "#A1B5C9"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                                Layout.preferredWidth: 44
+                                Layout.alignment: Qt.AlignTop
+                                Layout.topMargin: 6
+                            }
+
+                            ColumnLayout {
+                                spacing: 1
+
+                                RowLayout {
+                                    spacing: 1
+                                    Repeater {
+                                        model: [6, 12, 18]
+                                        delegate: StudioSegmentButton {
+                                            required property int modelData
+                                            objectName: "slopeButton_" + modelData
+                                            text: modelData + " dB"
+                                            minimumControlWidth: 80
+                                            contentPadding: 4
+                                            selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                            tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                            onClicked: {
+                                                if (root.viewModel) {
+                                                    root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                                    root.viewModel.commitDraft()
+                                                }
+                                            }
+                                            Accessible.name: "Slope " + modelData + " dB per octave"
+                                            ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                            ToolTip.visible: (hovered) && stationaryTooltipDwell10.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: stationaryTooltipDwell10
+                                                anchors.fill: parent
+                                            }
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: 1
+                                    Repeater {
+                                        model: [24, 36, 48]
+                                        delegate: StudioSegmentButton {
+                                            required property int modelData
+                                            objectName: "slopeButton_" + modelData
+                                            text: modelData + " dB"
+                                            minimumControlWidth: 80
+                                            contentPadding: 4
+                                            selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                            tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                            onClicked: {
+                                                if (root.viewModel) {
+                                                    root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                                    root.viewModel.commitDraft()
+                                                }
+                                            }
+                                            Accessible.name: "Slope " + modelData + " dB per octave"
+                                            ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                            ToolTip.visible: (hovered) && stationaryTooltipDwell11.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: stationaryTooltipDwell11
+                                                anchors.fill: parent
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+                }
+            }
+        }
+
+
+    }
+
+    // Research-only detached companion: never covers the graph's plot,
+    // frequency axis, Spectrum or the original Parametric EQ controls.
+    // The Product host owns the editor and companion lifecycle.
+    DynamicEqDynamicsCompanion {
+        id: dynamicCompanion
+        objectName: "dynamicEqDynamicsCompanion"
+        dynamicsViewModel: root.dynamicsControls
+        bandViewModel: root.viewModel
+        visible: root.visible && root.showDynamics && !!root.dynamicsControls && root.dynamicsControls.loaded
+        transientParent: root.Window.window
+        // A fixed "to the right" location can put this 1050px window
+        // off a single Full HD screen. Place once using the actual current
+        // main-window screen's taskbar-aware available geometry.
+        x: 0
+        y: 0
+        onVisibleChanged: {
+            if (visible) {
+                const host = root.Window.window
+                const bounds = host && host.screen
+                    ? host.screen.availableGeometry : null
+                if (host && bounds && bounds.width > 0 && bounds.height > 0) {
+                    const target = dynamicCompanion.suggestedPosition(
+                        host.x, host.y, host.width, host.height,
+                        bounds.x, bounds.y, bounds.width, bounds.height)
+                    dynamicCompanion.x = target.x
+                    dynamicCompanion.y = target.y
+                }
+            } else if (root.showDynamics) {
+                root.showDynamics = false
+            }
+        }
+    }
+}
