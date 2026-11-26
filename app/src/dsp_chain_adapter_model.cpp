@@ -165,7 +165,11 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         }
     }
 
-    if (!selectionFound && !selectedTypeId_.isEmpty()) {
+    // Never replace a retired REF_LINKED instance with a different one
+    // merely because the new plan happens to use the same DSP type.
+    const bool selectedWasLinked=selectedTypeId_==QStringLiteral("rgsml.dsp.dynamic-eq")||
+        selectedTypeId_==QStringLiteral("rgsml.dsp.transient-shaper");
+    if (!selectionFound && !selectedTypeId_.isEmpty()&&!selectedWasLinked) {
         for (const auto& adapter : moduleAdapters_) {
             if (adapter->type_id() == selectedTypeId_) {
                 selectedInstanceId_ = adapter->instance_id();
