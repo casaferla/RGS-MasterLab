@@ -74,3 +74,13 @@ No merge to main, official FQ or physical-audio success may be inferred from
 isolated research Qt CI. Release/FQ retains its own approval process.
 
 This file is a coordination decision; it certifies no Product code or CI.
+
+## Development gate review — 2026-11-26
+
+**Trigger satisfied for the controlled Product lifecycle; editor integration may begin.**
+
+- Focused #138, exact SHA `ea15ebe4af814b6ac1f0cfb2757a0c11643600c7`, Windows/Linux SUCCESS; six-rate Windows run #1 at the same SHA SUCCESS on all six rates (run 45860788999).
+- Focused #139, SHA `b47b3b96219ae4dc62be0521b2b15b96c812ac8b`, Windows/Linux SUCCESS; real native candidate, exclusive adoption, independent M13 numerical evidence, replacement, persistence/reopen, Undo/Redo and stale/rejected owner checks exercised by the Product lifecycle test.
+- Formal QTP approval remains unavailable. This is the development trigger described above, not FQ or a general multidomain music qualification. The optional full-track benchmark remains a separate pending performance test.
+
+The next coherent integration lot is owned by the operational Writer. Use the current `DspChainAdapterModel`, `DspModuleAdapter`, `DspEditorHost.qml` and `DspFloatingModuleWindow.qml`. The current adapter list enumerates MANUAL plus analysis/export/monitor services; it does not expose the REF_LINKED Dynamic EQ and Transient Shaper nodes. Start with authenticated exact instance identity and read-only linked parameters from the current Product owner; do not pretend those nodes are MANUAL or add default nodes to existing projects. Adapt the research controls/graphs to that owner, then implement explicit authorized edit/persistence and render invalidation only through Product transactions. Keep Activity hidden until accepted actual DSP sidecars are wired. Recheck the research handoff HEADs before importing any implementation.
