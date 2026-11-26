@@ -854,6 +854,10 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     QCOMPARE(reviewMetrics->independent_ceiling_db_tp,0.0);
     QVERIFY(reviewMetrics->exact_m16_linear_peak>0.0&&reviewMetrics->exact_m16_linear_peak<=1.0);
     QVERIFY(reviewMetrics->attempted>0U);
+    QVERIFY(reviewMetrics->first_admissible_ms.has_value());
+    QVERIFY(reviewMetrics->last_attempt_ms.has_value());
+    QVERIFY(*reviewMetrics->last_attempt_ms>=*reviewMetrics->first_admissible_ms);
+    QCOMPARE(reviewMetrics->attempted,reviewMetrics->completed+reviewMetrics->failed);
     QVERIFY(!replaceAction.begin(*replacement.value(),allocate));
     QVERIFY(replaceAction.phase()==Action::Phase::candidate_ready);
     QVERIFY(session.previewController->private_m12_product_preview_ticket()==priorTicket);
