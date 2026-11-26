@@ -139,6 +139,15 @@ render_restored_m12_full_native_pcm_once(
            manual.module_type_id()=="rgsml.dsp.dither")
             return fail("L3_M12_REPLAY_EXPORT_SAFETY_IN_INLINE_MANUAL");
     }
+    if(plan.terminal_p2) {
+        const auto terminal=plan.terminal_p2->instances();
+        if(terminal.size()!=1U||plan.terminal_p2_bindings.size()!=1U||
+           terminal.front().module_type_id()!= "rgsml.dsp.streaming-true-peak-limiter")
+            return fail("L3_M12_REPLAY_TERMINAL_NOT_OWNED_P2");
+        for(const auto& manual:plan.manual_prefix.instances())
+            if(manual.instance_id()==terminal.front().instance_id())
+                return fail("L3_M12_REPLAY_MANUAL_P2_ID_COLLISION");
+    }
     const auto linked_nodes=plan.reference_linked.instances();
     for(const auto& linked:linked_nodes) {
         if(linked.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
