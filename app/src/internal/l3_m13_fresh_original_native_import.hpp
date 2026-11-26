@@ -83,6 +83,7 @@ import_m13_product_fresh_original_native_source(
        admitted.exact_product_ownership_epoch()==0U||
        !fresh.matches_executed_request(admitted)||
        fresh.logical_verification_evaluations!=1U||
+       &fresh.fresh_full_master_pcm.buffer()==&owner.exact_prepared_owner->buffer()||
        !m12_frozen::m12_native_stage_witness_matches_replay_plan(
            *owner.replay,fresh.stage_witness))
         return fail("L3_M13_FRESH_NATIVE_NO_AUTHENTIC_M12_EXECUTION");
