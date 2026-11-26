@@ -7001,6 +7001,8 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
     QVERIFY(!importedLease);
 
     QVERIFY(session.project.undo_private_m12_materialization());
+    QVERIFY(!app::l3_automatch::inspect_current_linked_editors(
+        *session.previewController,*session.masteringChainState));
     const auto retiredProductDiagnosis=session.project.
         assess_private_m13_completed_fresh_worker(
             *m13Owner.value(),*m13Result.value(),
