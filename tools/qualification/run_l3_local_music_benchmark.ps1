@@ -4,8 +4,8 @@ param(
     [Parameter(Mandatory=$true)][string]$SourceWav,
     [Parameter(Mandatory=$true)][string]$ReferenceWav,
     [Parameter(Mandatory=$true)][ValidateSet(44100,48000,88200,96000,176400,192000)][int]$SampleRate,
-    [Parameter(Mandatory=$true)][string]$TestExe,
-    [Parameter(Mandatory=$true)][string]$QtBin,
+    [string]$TestExe=(Join-Path $PSScriptRoot 'rgsml_project_session_tests.exe'),
+    [string]$QtBin=(Join-Path $PSScriptRoot '../bin'),
     [Parameter(Mandatory=$true)][string]$ReportDirectory
 )
 $ErrorActionPreference='Stop'
@@ -24,11 +24,13 @@ if (!(Test-Path -LiteralPath (Join-Path $qt 'Qt6Core.dll'))) { throw 'Qt runtime
 $reportRoot=New-Item -ItemType Directory -Force -Path $ReportDirectory
 $stamp=Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $report=Join-Path $reportRoot.FullName "L3-music-$SampleRate-$stamp.txt"
-$keys=@('PATH','RGSML_L3_E2E_RATE','RGSML_L3_BENCH_SOURCE_WAV','RGSML_L3_BENCH_REFERENCE_WAV','QTEST_FUNCTION_TIMEOUT')
+$keys=@('PATH','RGSML_L3_E2E_RATE','RGSML_L3_BENCH_SOURCE_WAV','RGSML_L3_BENCH_REFERENCE_WAV','QTEST_FUNCTION_TIMEOUT','RGSML_PLAYBACK_FIR_ROOT')
 $previous=@{}
 foreach ($key in $keys) { $previous[$key]=[Environment]::GetEnvironmentVariable($key,'Process') }
 try {
-    $env:PATH="$qt;$env:PATH"
+    $env:PATH="$(Split-Path -Parent $exe);$qt;$env:PATH"
+    $fir=Join-Path $qt 'resources/fir'
+    if (Test-Path -LiteralPath $fir -PathType Container) { $env:RGSML_PLAYBACK_FIR_ROOT=$fir }
     $env:RGSML_L3_E2E_RATE=[string]$SampleRate
     $env:RGSML_L3_BENCH_SOURCE_WAV=$src
     $env:RGSML_L3_BENCH_REFERENCE_WAV=$ref
