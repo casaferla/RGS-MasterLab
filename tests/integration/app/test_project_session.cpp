@@ -5999,6 +5999,17 @@ m12RealProductAtomicMaterializationUndoRedoAndSaveAs()
         broken[0].configured.clear();
         QVERIFY(!compareBindings(broken).every_required_binding_complete);
     }
+    {
+        auto broken=canonicalBindings;
+        broken[1].configured[0].actual_fresh_native=10.0;
+        const auto mismatch=compareBindings(broken);
+        QVERIFY(mismatch.every_required_binding_complete);
+        QVERIFY(!mismatch.every_required_binding_passed);
+        broken[2].configured[0].actual_fresh_native.reset();
+        const auto missing=compareBindings(broken);
+        QVERIFY(!missing.every_required_binding_complete);
+        QVERIFY(!missing.every_required_binding_passed);
+    }
     // Even with a genuine independent fresh Product rendering, no
     // fabricated M05/M06 27-feature or QTP-qualified result may escape.
     const auto provisional=app::l3_automatch::m13_frozen::
