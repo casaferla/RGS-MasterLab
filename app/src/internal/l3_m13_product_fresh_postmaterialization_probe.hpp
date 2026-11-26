@@ -151,6 +151,8 @@ run_fresh_m13_product_postmaterialization_probe(
             render.value()->buffer(),std::move(*exact_native_spec),
             cancellation);
         if(!observed_native)return R::failure(*observed_native.error());
+        if(cancellation&&cancellation->load(std::memory_order_acquire))
+            return fail("L3_M13_PRODUCT_FRESH_CANCELLED_AFTER_ANALYSIS");
         auto& n=*observed_native.value();
         if(!n.exact_full_resource_m16)
             return fail("L3_M13_PRODUCT_FRESH_M16_UNAVAILABLE");
