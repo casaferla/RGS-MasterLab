@@ -86,6 +86,7 @@ struct TransientShaperModule::Impl final {
     std::unique_ptr<internal::TransientShaperC00Engine> engine;
     std::optional<core::FrameIndex> next;
     bool finalized{false};
+    internal::ITransientC00ActivitySink* activity_sink{nullptr};
 };
 TransientShaperModule::TransientShaperModule(std::unique_ptr<Impl> impl) noexcept
     :impl_(std::move(impl)){}
@@ -136,6 +137,12 @@ TransientShaperModule::runtime_requirements(const DspProcessSpec& spec) const
         *zero.value(),*zero.value(),*h.value(),
         *zero.value(),*zero.value(),false});
 }
+bool TransientShaperModule::set_activity_sink(internal::ITransientC00ActivitySink* sink) noexcept
+{
+    if(sink&&impl_->spec)return false;
+    impl_->activity_sink=sink;
+    return true;
+}
 core::Status TransientShaperModule::prepare(const DspProcessSpec& spec)
 {
     const auto v=validate(spec);
@@ -147,7 +154,17 @@ core::Status TransientShaperModule::prepare(const DspProcessSpec& spec)
                 spec.audio_format.sample_rate().value()),
             static_cast<std::uint32_t>(
                 spec.audio_format.channel_count()),
-            static_cast<std::size_t>(spec.maximum_block_frames.value()));
+            static_cast<std::size_t>(spec.maximum_block_frames.value()),
+            impl_->activity_sink!=nullptr);
+        // Observation scratch is optional: retry without it on failure.
+        if(!engine&&impl_->activity_sink) {
+            impl_->activity_sink=nullptr;
+            engine=internal::TransientShaperC00Engine::create(
+                impl_->params,
+                static_cast<std::uint32_t>(spec.audio_format.sample_rate().value()),
+                static_cast<std::uint32_t>(spec.audio_format.channel_count()),
+                static_cast<std::size_t>(spec.maximum_block_frames.value()));
+        }
         if(!engine)return core::Status::failure(*engine.error());
         impl_->engine=std::make_unique<internal::TransientShaperC00Engine>(
             std::move(*engine.value()));
@@ -205,7 +222,8 @@ core::Status TransientShaperModule::process(
             in1=*l.value();out1=*r.value();
         }
         const auto status=impl_->engine->process_block(
-            *in0.value(),in1,*out0.value(),out1);
+            *in0.value(),in1,*out0.value(),out1,impl_->activity_sink,
+            static_cast<std::uint64_t>(context.output_frame_range.begin().value()));
         if(!status)return status;
         impl_->next=context.output_frame_range.end();
         impl_->finalized=context.ends_stream;
