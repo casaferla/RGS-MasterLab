@@ -845,6 +845,20 @@ Rectangle {
                     }
                     viewModel: linkedDynamicModel
                     dynamicsControls: linkedDynamicModel
+                    dynamicActivity: linkedDynamicActivityModel
+                    QtObject {
+                        id: linkedDynamicActivityModel
+                        readonly property var observation: root.activeModule
+                            ? root.activeModule.linkedActivity : ({})
+                        readonly property bool available: observation.available === true
+                        readonly property var buckets: observation.buckets || []
+                        readonly property int bandCount: observation.bandCount || 0
+                        readonly property real audibleFrame: observation.audibleFrame === undefined ? -1 : observation.audibleFrame
+                        readonly property int sampleRateHz: observation.sampleRateHz || 0
+                        readonly property string stateText: observation.stateText || "TELEMETRY UNAVAILABLE"
+                        signal changed()
+                        onObservationChanged: changed()
+                    }
                     spectrumViewModel: root.spectrumViewModel
                     showLocalValidation: !root.errorsInGlobalStatusBar
                 }
@@ -873,6 +887,7 @@ Rectangle {
                         function resetToDefault() {}
                     }
                     transientModule: linkedTransientModel
+                    activity: root.activeModule ? root.activeModule.linkedActivity : ({})
                 }
             }
         }
