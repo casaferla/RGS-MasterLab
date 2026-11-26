@@ -8,6 +8,8 @@
 #include "stereo_ms_view_model.hpp"
 
 #include <QObject>
+#include <QPointer>
+#include <QStringList>
 #include <QString>
 #include <QVariantList>
 
@@ -63,6 +65,10 @@ public:
     // Three independent non-processing GUI rows, never project DSP instances.
     void bindAnalysisStatusViewModel(QObject* statusVm);
 
+    // Explicit opt-in until the shared Product QML host supports both
+    // linked editor keys. Never infer it from the optional P2 controller.
+    void bindLinkedEditorPreviewController(MasteringPreviewController* preview);
+
     void refreshFromAuthority();
     void resetForNewSource();
 
@@ -71,12 +77,18 @@ signals:
 
 private:
     void rebuild_adapters_from_authority();
+    void reconcile_linked_editor_rows();
 
     GainViewModel* gainViewModel_{nullptr};
     EqViewModel* eqViewModel_{nullptr};
     CompressorViewModel* compressorViewModel_{nullptr};
     StereoMsViewModel* stereoMsViewModel_{nullptr};
     MasteringPreviewController* p2PreviewController_{nullptr};
+    QPointer<MasteringPreviewController> linkedEditorPreviewController_;
+    QMetaObject::Connection linkedEditorConnection_;
+    std::weak_ptr<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>
+        lastLinkedEditorOwner_;
+    QStringList lastLinkedEditorIds_;
     bool includeTruePeakAnalysis_{false};
     TerminalLimiterState* terminalLimiterState_{nullptr};
     TerminalLimiterViewModel* terminalLimiterViewModel_{nullptr};
