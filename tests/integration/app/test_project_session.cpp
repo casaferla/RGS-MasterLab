@@ -329,6 +329,7 @@ private slots:
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs_data();
     void m12RealProductAtomicMaterializationUndoRedoAndSaveAs();
     void m18FreshStartupBindsBeforeFirstSourceSelection();
+    void nativeMeasuredWinnerUsesRealQtM12AndM13_data();
     void nativeMeasuredWinnerUsesRealQtM12AndM13();
     void m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen();
     void m18GoldReplacementAndClearDeniedBeforeSelectorMutation();
@@ -435,8 +436,25 @@ m18CanonicalWavPreferenceSurvivesSaveAsAndProjectOpen()
         persisted.value()->document().output));
 }
 
+void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13_data()
+{
+    QTest::addColumn<std::uint32_t>("nativeRateHz");
+    QTest::newRow("48k")<<std::uint32_t{48000};
+    // The full lifecycle includes several complete native searches.
+    // Keep the iterative macro gate bounded; qualification explicitly
+    // opts into all six Product SOURCE processing frequencies.
+    if(qEnvironmentVariableIntValue("RGSML_L3_ALL_RATE_E2E")==1) {
+        QTest::newRow("44k1")<<std::uint32_t{44100};
+        QTest::newRow("88k2")<<std::uint32_t{88200};
+        QTest::newRow("96k")<<std::uint32_t{96000};
+        QTest::newRow("176k4")<<std::uint32_t{176400};
+        QTest::newRow("192k")<<std::uint32_t{192000};
+    }
+}
+
 void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
 {
+    QFETCH(std::uint32_t,nativeRateHz);
     namespace a=app::l3_automatch;
     namespace m12=a::m12_frozen;
     namespace m13=a::m13_frozen;
@@ -450,13 +468,13 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
     // ratio. Independent PCM16 rounding of source and reference can
     // alter very low-power protected tonal/temporal components.
     const auto writeTone=[&](const QString& name,std::int64_t multiplier) {
-        std::vector<std::int64_t> samples(48000U*12U);
+        std::vector<std::int64_t> samples(static_cast<std::size_t>(nativeRateHz)*12U);
         // Exact shared deterministic broadband excitation, including the
         // 8–16 kHz slope and low-power fractional-octave bands. Pure
         // low-frequency tones cannot attest all requested tonal features.
         std::uint32_t noiseState=UINT32_C(0x4d595df4);
         for(std::size_t i=0;i<samples.size();++i) {
-            const double t=static_cast<double>(i)/48000.0;
+            const double t=static_cast<double>(i)/static_cast<double>(nativeRateHz);
             constexpr double tau=6.2831853071795864769;
             const double envelope=0.7+0.3*std::sin(tau*0.8*t);
             noiseState^=noiseState<<13U;
@@ -467,7 +485,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
                 0.08*std::sin(tau*440.0*t)+0.04*std::sin(tau*2200.0*t)+0.065*noise);
             samples[i]=static_cast<std::int64_t>(std::llround(v*2097152.0))*multiplier;
         }
-        const auto bytes=wav_support::make_wav(1U,24U,1U,48000U,
+        const auto bytes=wav_support::make_wav(1U,24U,1U,nativeRateHz,
             wav_support::pcm_payload(samples,24U));
         const auto path=dir.filePath(name);
         QFile file{path};
@@ -525,7 +543,7 @@ void ProjectSessionTest::nativeMeasuredWinnerUsesRealQtM12AndM13()
         []{return false;}};
     const M18ProductExportIdentity initial{
         1U,1U,1U,session.masteringChainState->chain().revision(),
-        48000U,rate.rate_revision()};
+        nativeRateHz,rate.rate_revision()};
     auto owner=std::make_shared<M18ProductEpochTicketAuthority>(1U,initial);
     M18OwnerMutationFanout fanout{owner,1U,initial};
     app::internal::M18ProductUpstreamBinding::Controllers upstream{
