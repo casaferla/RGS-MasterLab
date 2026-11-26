@@ -124,6 +124,8 @@ compare_m13_frozen_twenty_seven_native_bindings(
                    component.expected_support_denominator||
                component.actual_support_numerator!=
                    component.expected_support_numerator||
+               component.expected_support_numerator>
+                   component.expected_support_denominator||
                component.actual_support_numerator>
                    component.actual_support_denominator||
                component.predicted_endpoint!=component.actual_endpoint) {
