@@ -23,7 +23,7 @@
 namespace rgsml::dsp { class ModuleRegistry; }
 namespace rgsml::render { class RenderResult; }
 namespace rgsml::app {
-namespace l3_automatch { struct NativeAutoMatchWorkerResult; }
+namespace l3_automatch { struct NativeAutoMatchWorkerResult; struct ManualMatchTransferCapture; }
 namespace l3_automatch::m10_frozen { struct P2NativeProductWorkerScope; }
 namespace l3_automatch::m12_frozen {
 struct AcceptedPlanAndOwner;
@@ -209,6 +209,12 @@ public:
         core::Uuid controller_id,core::Uuid linked_id,
         const std::shared_ptr<const render::RenderResult>& prepared,
         bool suspend_for_zero_amount);
+    // Capture an exact candidate for the separate off-thread audition;
+    // no live mutation or accepted solver receipt is issued by capture.
+    [[nodiscard]] core::Result<std::shared_ptr<const l3_automatch::ManualMatchTransferCapture>>
+    capture_private_manual_match_transfer(const core::Uuid& linked_instance);
+    [[nodiscard]] bool private_manual_match_transfer_still_current(
+        const l3_automatch::ManualMatchTransferCapture& capture);
     // Non-mutating eligibility; actual operations recheck under M18.
     enum class M12CurrentMatchState {none,active,suspended,stale};
     [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
