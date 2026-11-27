@@ -97,7 +97,10 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
     };
     const auto manualContent=encode(manual,mb);
     const auto linkedContent=encode(draft.linked_after,lb);
-    if(!manualContent||!linkedContent)return fail("MANUAL_MATCH_IDENTITY_INVALID_GRAPH");
+    const auto priorManualContent=encode(*priorManual.value(),prior->exact_manual_bindings);
+    const auto priorLinkedContent=encode(replay.reference_linked,replay.reference_bindings);
+    if(!manualContent||!linkedContent||!priorManualContent||!priorLinkedContent)
+        return fail("MANUAL_MATCH_IDENTITY_INVALID_GRAPH");
     const auto q=[](const std::string& v){return QString::fromStdString(v);};
     const QJsonObject provenance{
         {"projectId",q(replay.project_id.to_string())},{"sourceId",q(replay.source_id.to_string())},
@@ -113,6 +116,10 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
         {"linkedInstance",q(draft.linked_instance.to_string())},
         {"manualInstance",q(draft.manual_instance.to_string())},
         {"manual",*manualContent},{"referenceLinked",*linkedContent},
+        // Recovery data is part of the same canonical digest. It permits
+        // exact reversal of the single authorized transfer after reopen;
+        // the old accepted receipt alone does not record prior MANUAL values.
+        {"priorManual",*priorManualContent},{"priorReferenceLinked",*priorLinkedContent},
         {"verificationState",QStringLiteral("NOT_VERIFIED")},
         {"candidateState",QStringLiteral("PROVISIONAL")}};
     auto canonical=project::OpaqueJsonValue::parse(
