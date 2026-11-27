@@ -1323,6 +1323,16 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
                     });
         });
     if(needsMatchFactories) {
+        // Until the Product installs both real manual editors, do not open
+        // a project whose audible processors would be invisible in the UI.
+        const auto currentRegistry=masteringChainState_
+            ?masteringChainState_->registry_snapshot():nullptr;
+        if(!currentRegistry || !currentRegistry->has_factory("rgsml.dsp.dynamic-eq")
+           || !currentRegistry->has_factory("rgsml.dsp.transient-shaper")) {
+            publish_error(core::Error{core::ErrorCode::UnsupportedOperation,
+                "Manual Dynamic EQ / Transient Shaper requires the enabled Product integration"});
+            return;
+        }
         extendedRegistry=*restoreRegistry;
         if(!extendedRegistry->has_factory("rgsml.dsp.dynamic-eq")) {
             auto next=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*extendedRegistry));
