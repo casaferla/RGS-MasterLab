@@ -114,6 +114,13 @@ Rectangle {
     readonly property bool m17Preparing: root.terminalLimiterViewModel
         && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
             || root.terminalLimiterViewModel.nonconformingDevicePreparing)
+    // The exceptional offline path used to live in Master Audition.
+    // Keep its native authorization; do not synthesize a MANUAL device.
+    readonly property bool canRenderWithoutDevice: !!root.terminalMonitorViewModel
+        && root.terminalMonitorViewModel.canPrepareOffline
+        && !!root.masterRateState && root.masterRateState.currentMasterRateAdmissible
+    readonly property bool offlineMasterRendering: !!root.terminalMonitorViewModel
+        && root.terminalMonitorViewModel.statusText === "PREPARING FINAL MASTER · NOT DEVICE AUDIO"
     // Presentation-only vocabulary. Native M17 state-machine strings,
     // preparation* API names, readiness guards and the PREPARED audition
     // identity remain unchanged. Prepare never means the M17 Master action.
@@ -613,21 +620,27 @@ Rectangle {
             }
             StudioButton {
                 visible: root.isLimiterEditor && !root.m17Preparing
-                    && !root.m18ExportActive
+                    && !root.offlineMasterRendering && !root.m18ExportActive
                 objectName: "m17PrepareButton"
                 // PREPARED is an audio pipeline role. This action renders
                 // and verifies M17's final Master, NOT PREPARED state.
                 text: "Render Master"
                 minimumControlWidth: 124
                 accentColor: "#C4774A"
-                enabled: !root.monitorExclusive && root.terminalLimiterViewModel
+                enabled: !root.monitorExclusive && !!root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
-                    && root.terminalLimiterViewModel.audioStatus.startsWith("NEEDS PREPARATION")
-                    && !!root.masterRateState
-                    && root.masterRateState.currentMasterRateAdmissible
-                onClicked: root.terminalLimiterViewModel.requestPrepare()
+                    && !!root.masterRateState && root.masterRateState.currentMasterRateAdmissible
+                    && (root.canRenderWithoutDevice
+                        || root.terminalLimiterViewModel.audioStatus.startsWith("NEEDS PREPARATION"))
+                onClicked: {
+                    if (root.canRenderWithoutDevice)
+                        root.terminalMonitorViewModel.requestMaster(root.masterRateState.masterRateHz)
+                    else root.terminalLimiterViewModel.requestPrepare()
+                }
                 Accessible.name: "Render and verify full Master with Export TP Limiter"
-                ToolTip.text: root.masterRateState
+                ToolTip.text: root.canRenderWithoutDevice
+                    ? "Render offline without an available Source playback device. Native authorization still applies."
+                    : root.masterRateState
                     && !root.masterRateState.currentMasterRateAdmissible
                     ? root.masterRateState.final_src_path_status(
                         root.masterRateState.masterRateHz)
@@ -647,7 +660,7 @@ Rectangle {
                 }
             }
             StudioButton {
-                visible: root.isLimiterEditor && root.m17Preparing
+                visible: root.isLimiterEditor && (root.m17Preparing || root.offlineMasterRendering)
                 objectName: "m17CancelPreparationButton"
                 ToolTip.text: "Cancel the offline Master rendering."
                 ToolTip.visible: m17CancelPreparationButtonDwell.ready
@@ -660,11 +673,15 @@ Rectangle {
                 // Same width as Render Master: WAV Export never jumps
                 // during an in-flight full-resource job.
                 minimumControlWidth: 124
-                enabled: !root.monitorExclusive && root.terminalLimiterViewModel
-                    && !root.terminalLimiterViewModel.bypass
-                    && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
-                        || root.terminalLimiterViewModel.nonconformingDevicePreparing)
-                onClicked: root.terminalLimiterViewModel.cancelPreparation()
+                enabled: !root.monitorExclusive && (root.offlineMasterRendering
+                    || (root.terminalLimiterViewModel && !root.terminalLimiterViewModel.bypass
+                        && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+                            || root.terminalLimiterViewModel.nonconformingDevicePreparing)))
+                onClicked: {
+                    if (root.offlineMasterRendering && root.terminalMonitorViewModel)
+                        root.terminalMonitorViewModel.cancel()
+                    else root.terminalLimiterViewModel.cancelPreparation()
+                }
                 Accessible.name: "Cancel offline Master rendering"
             }
             StudioButton {
