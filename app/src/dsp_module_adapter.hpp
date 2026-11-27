@@ -15,6 +15,7 @@
 #include <QVariantList>
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 namespace rgsml::app {
@@ -51,6 +52,9 @@ class DspModuleAdapter : public QObject {
 
 public:
     explicit DspModuleAdapter(QObject* parent = nullptr);
+    // Consult the current immutable replay, never UI row visibility.
+    [[nodiscard]] static bool linked_match_type_active(
+        const MasteringPreviewController* preview,std::string_view type);
     ~DspModuleAdapter() override = default;
 
     [[nodiscard]] virtual QString instance_id() const = 0;
@@ -345,6 +349,10 @@ public:
     }
     void setBypass(bool value) override {
         if(!params()||bypass()==value)return;
+        if(!value&&linked_match_type_active(preview_,"rgsml.dsp.transient-shaper")){
+            operationError_=QStringLiteral("AutoMatch owns the active Transient Shaper. Transfer or suspend the match first.");
+            emit changed();return;
+        }
         auto status=state_->set_user_bypass(*id_,value);
         if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return;}
         operationError_.clear();publish();
