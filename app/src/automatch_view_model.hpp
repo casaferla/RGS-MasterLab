@@ -45,7 +45,12 @@ public:
     [[nodiscard]] QString verification_note()const;
     // All values are captured once before dispatch; the ceiling is the
     // independent AutoMatch/M16 safety limit, never the WAV Export setting.
-    Q_INVOKABLE bool start(double total,double tonal,double dynamics,double stereo,
+    // Product presents only the five artistic amounts. The independent
+    // M16 safety policy is fixed at 0 dBTP, not an artistic parameter.
+    Q_INVOKABLE bool startProduct(double total,double tonal,double dynamics,double stereo,
+        double loudness);
+    // Explicit native entry for research and regression tests.
+    bool start(double total,double tonal,double dynamics,double stereo,
         double loudness,double ceiling);
     Q_INVOKABLE void cancel();
     Q_INVOKABLE bool adopt();
