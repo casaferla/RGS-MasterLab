@@ -137,6 +137,14 @@ Item {
                             TextInput {
                                 id: ceilingEntry
                                 objectName: "streamingP2CeilingNumericInput"
+                                ToolTip.text: "Set the streaming limiter ceiling in dBTP. Enter or click away to apply; Esc to cancel."
+                                ToolTip.visible: streamingP2CeilingNumericInputDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: streamingP2CeilingNumericInputDwell
+                                    anchors.fill: parent
+                                    interacting: parent.activeFocus
+                                }
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
@@ -279,6 +287,14 @@ Item {
                             TextInput {
                                 id: driveEntry
                                 objectName: "streamingP2DriveNumericInput"
+                                ToolTip.text: "Set the gain before the streaming limiter in dB. Enter or click away to apply; Esc to cancel."
+                                ToolTip.visible: streamingP2DriveNumericInputDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: streamingP2DriveNumericInputDwell
+                                    anchors.fill: parent
+                                    interacting: parent.activeFocus
+                                }
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
