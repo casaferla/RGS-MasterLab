@@ -925,6 +925,30 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(m::exact_project_module_equal(
         afterDocument.chains.back().modules[0],transferDocument.chains.back().modules[0]));
     QVERIFY(!m::decode_exact_m12_ref_linked_product_state(afterDocument,reg));
+    const auto recovered=transfer::recover_manual_match_transfer_before(projectDraft.value()->after);
+    QVERIFY(recovered);
+    QVERIFY(projectDraft.value()->matches_before(*recovered.value()));
+    QVERIFY(m::decode_exact_m12_ref_linked_product_state(recovered.value()->document(),reg));
+    QVERIFY(!transfer::recover_manual_match_transfer_before(*beforeTransfer.value()));
+    auto corruptedCandidate=afterDocument;
+    auto candidateMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        corruptedCandidate.referenceMatch.canonical_utf8())).object();
+    auto candidateRecord=candidateMeta.value(QStringLiteral("manualTransferCandidate")).toObject();
+    candidateRecord.insert(QStringLiteral("identitySha256"),QString(64,QLatin1Char('0')));
+    candidateMeta.insert(QStringLiteral("manualTransferCandidate"),candidateRecord);
+    const auto corruptMeta=project::OpaqueJsonValue::parse(
+        QJsonDocument(candidateMeta).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(corruptMeta);
+    corruptedCandidate.referenceMatch=*corruptMeta.value();
+    const auto corruptCandidateSnapshot=project::ProjectSnapshot::create(corruptedCandidate);
+    QVERIFY(corruptCandidateSnapshot);
+    QVERIFY(!transfer::recover_manual_match_transfer_before(*corruptCandidateSnapshot.value()));
+    auto wrongRevision=afterDocument;
+    ++wrongRevision.chains.front().revision;
+    const auto wrongRevisionSnapshot=project::ProjectSnapshot::create(wrongRevision);
+    QVERIFY(wrongRevisionSnapshot);
+    QVERIFY(!transfer::recover_manual_match_transfer_before(*wrongRevisionSnapshot.value()));
+
     auto staleDocument=transferDocument;
     staleDocument.chains.front().modules.front().userBypass=true;
     const auto staleSnapshot=project::ProjectSnapshot::create(staleDocument);
