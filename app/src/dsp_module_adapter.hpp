@@ -278,6 +278,7 @@ class StreamingTruePeakPreviewModuleAdapter final : public DspModuleAdapter {
     Q_PROPERTY(double ceilingDbTp READ ceiling_db_tp WRITE setCeilingDbTp NOTIFY changed)
     Q_PROPERTY(double driveDb READ drive_db WRITE setDriveDb NOTIFY changed)
     Q_PROPERTY(int marginPercent READ margin_percent WRITE setMarginPercent NOTIFY changed)
+    Q_PROPERTY(QString numericValidationMessage READ numeric_validation_message NOTIFY changed)
 public:
     StreamingTruePeakPreviewModuleAdapter(
         MasteringChainState* state, MasteringPreviewController* preview,
@@ -361,6 +362,15 @@ public:
     [[nodiscard]] int margin_percent() const noexcept {
         return params()?params()->margin_percent():2;
     }
+    [[nodiscard]] QString numeric_validation_message() const { return numericValidationMessage_; }
+    Q_INVOKABLE void reportNumericValidation(const QString& field,const QString& message) {
+        if(field!=QStringLiteral("Ceiling") && field!=QStringLiteral("Drive"))return;
+        if(message.isEmpty() && numericValidationField_!=field)return;
+        if(numericValidationField_==field && numericValidationMessage_==message)return;
+        numericValidationField_=message.isEmpty()?QString{}:field;
+        numericValidationMessage_=message;
+        emit changed();
+    }
     Q_INVOKABLE void setCeilingDbTp(double value) {
         commit(value,drive_db(),margin_percent());
     }
@@ -394,7 +404,10 @@ public:
     }
     void undo() override {}
     void redo() override {}
-    void resetToDefault() override {commit(-1.0,0.0,2);}
+    void resetToDefault() override {
+        numericValidationMessage_.clear();numericValidationField_.clear();
+        commit(-1.0,0.0,2);emit changed();
+    }
 private:
     [[nodiscard]] const dsp::StreamingTruePeakLimiterParameters* params() const noexcept {
         return state_&&state_->streaming_p2_preview_parameters()
@@ -429,6 +442,8 @@ private:
     MasteringPreviewController* preview_{nullptr};
     QString context_;
     QString localError_;
+    QString numericValidationField_;
+    QString numericValidationMessage_;
 };
 
 // Genuine product M17 terminal INSTANCE. Presentation is BYP/read-only
