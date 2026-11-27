@@ -66,6 +66,7 @@ class MasteringChainStateTest final : public QObject {
 
 private slots:
     void defaultTopologyAndCanonicalOrder();
+    void manualMatchDspsRequireRealFactoriesAndRetainTypedBindings();
     void productStartupHasFourModulesWithStereoMsInitiallyBypassed();
     void stableInstanceIdsDuringEdits();
     void m18OptInChainEpochBlocksAllFiveEdits();
@@ -91,6 +92,63 @@ void m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread();
     void terminalPrivateWorkerStagesOnlyCurrentOwnedOutput();
     void terminalPrivateEndToEndRenderInstallAndRollback();
 };
+
+void MasteringChainStateTest::manualMatchDspsRequireRealFactoriesAndRetainTypedBindings()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chain=test_uuid("be000000-0000-4000-8000-000000000001");
+    const auto gain=test_instance_id("be000000-0000-4000-8000-000000000011");
+    const auto eq=test_instance_id("be000000-0000-4000-8000-000000000012");
+    const auto comp=test_instance_id("be000000-0000-4000-8000-000000000013");
+    const auto dynamic=test_instance_id("be000000-0000-4000-8000-000000000014");
+    const auto transient=test_instance_id("be000000-0000-4000-8000-000000000015");
+    auto de=DynamicEqParameters::create_default(test_uuid("be000000-0000-4000-8000-000000000016"));
+    auto ts=TransientShaperParameters::create_default();
+    QVERIFY(de && ts);
+    auto baseline=MasteringChainState::create_default(*registry.value(),chain,gain,eq,comp);
+    QVERIFY(baseline);
+    QVERIFY(!MasteringChainState::with_manual_match_dsps(*baseline.value(),dynamic,*de.value(),transient,*ts.value()));
+    auto c01=ModuleRegistry::with_dynamic_eq_offline(std::move(*registry.value()));
+    QVERIFY(c01);
+    auto c00=ModuleRegistry::with_transient_shaper_offline(std::move(*c01.value()));
+    QVERIFY(c00);
+    baseline=MasteringChainState::create_default(*c00.value(),chain,gain,eq,comp);
+    QVERIFY(baseline);
+    QVERIFY(!MasteringChainState::with_manual_match_dsps(*baseline.value(),eq,*de.value(),transient,*ts.value()));
+    auto extended=MasteringChainState::with_manual_match_dsps(*baseline.value(),dynamic,*de.value(),transient,*ts.value());
+    QVERIFY(extended);
+    QCOMPARE(baseline.value()->module_count(),std::size_t{3});
+    auto& state=*extended.value();
+    QCOMPARE(state.module_count(),std::size_t{5});
+    const auto nodes=state.instances();
+    const auto bindings=state.execution_bindings();
+    QCOMPARE(bindings.size(),nodes.size());
+    for(std::size_t i=0;i<nodes.size();++i) {
+        QVERIFY(bindings[i].instance_id==nodes[i].instance_id());
+        QVERIFY(nodes[i].owner()==ModuleOwner::USER);
+        QVERIFY(nodes[i].provenance()==ModuleProvenance::MANUAL);
+        QVERIFY(nodes[i].link_state()==ModuleLinkState::UNLINKED);
+    }
+    QVERIFY(nodes[2].instance_id()==dynamic && nodes[2].user_bypass());
+    QVERIFY(nodes[3].instance_id()==transient && nodes[3].user_bypass());
+    QVERIFY(nodes[4].instance_id()==comp);
+    QVERIFY(std::holds_alternative<DynamicEqParameters>(bindings[2].parameters));
+    QVERIFY(std::holds_alternative<TransientShaperParameters>(bindings[3].parameters));
+    auto edit=TransientShaperParameters::create(2.0,-1.0);
+    QVERIFY(edit);
+    QVERIFY(state.set_transient_shaper_parameters(*edit.value()));
+    QVERIFY(*state.transient_shaper_parameters()==*edit.value());
+    QVERIFY(std::get<TransientShaperParameters>(state.execution_bindings()[3].parameters)==*edit.value());
+    state.set_private_m18_chain_mutation_admission([](const char*) {
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,"TEST_EPOCH_BLOCKED"});
+    });
+    QVERIFY(!state.set_transient_shaper_parameters(*ts.value()));
+    QVERIFY(*state.transient_shaper_parameters()==*edit.value());
+    QVERIFY(!state.set_user_bypass(transient,false));
+    QVERIFY(state.is_bypassed(transient) && *state.is_bypassed(transient).value());
+    QVERIFY(!MasteringChainState::with_manual_match_dsps(state,dynamic,*de.value(),transient,*ts.value()));
+}
 
 void MasteringChainStateTest::
 explicitUserPresetIsOneAtomicM18GatedDspTransaction() {
