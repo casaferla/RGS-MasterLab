@@ -96,6 +96,7 @@ private:
     QPointer<PlaybackTransportViewModel> linkedActivityTransport_;
     std::weak_ptr<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>
         lastLinkedEditorOwner_;
+    std::weak_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> lastProvisionalEditorOwner_;
     QStringList lastLinkedEditorIds_;
     bool includeTruePeakAnalysis_{false};
     TerminalLimiterState* terminalLimiterState_{nullptr};

@@ -39,6 +39,7 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
     moduleAdapters_.clear();
 
     lastLinkedEditorOwner_.reset();
+    lastProvisionalEditorOwner_.reset();
     lastLinkedEditorIds_.clear();
     const auto linked=(linkedEditorPreviewController_&&chainState_)
         ?l3_automatch::inspect_current_linked_editors(
@@ -50,6 +51,7 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         linkedAppended=true;
         if(!linked||linked->empty())return;
         lastLinkedEditorOwner_=linked->front().exact_owner;
+        lastProvisionalEditorOwner_=linked->front().provisional_owner;
         for(const auto& snapshot:*linked) {
             auto adapter=std::make_unique<l3_automatch::LinkedDspModuleAdapter>(
                 snapshot,*linkedEditorPreviewController_,*chainState_,workflowContext_);
@@ -311,16 +313,19 @@ void DspChainAdapterModel::reconcile_linked_editor_rows()
 {
     QStringList ids;
     std::shared_ptr<const l3_automatch::LinkedEditorSnapshot::Ticket> owner;
+    std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> provisional;
     if(linkedEditorPreviewController_&&chainState_) {
         const auto linked=l3_automatch::inspect_current_linked_editors(
             *linkedEditorPreviewController_,*chainState_);
         if(linked&&!linked->empty()) {
             owner=linked->front().exact_owner;
+            provisional=linked->front().provisional_owner;
             for(const auto& snapshot:*linked)
                 ids.append(QString::fromStdString(snapshot.instance.instance_id().to_string()));
         }
     }
-    if(ids==lastLinkedEditorIds_&&owner==lastLinkedEditorOwner_.lock())return;
+    if(ids==lastLinkedEditorIds_&&owner==lastLinkedEditorOwner_.lock()&&
+       provisional==lastProvisionalEditorOwner_.lock())return;
     rebuild_adapters_from_authority();
     emit changed();
 }

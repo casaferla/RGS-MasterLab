@@ -15,7 +15,8 @@ public:
         MasteringPreviewController& preview,MasteringChainState& manual,
         QString context,QObject* parent=nullptr)
         :DspModuleAdapter(parent),preview_(&preview),manual_(&manual),
-         exact_owner_(snapshot.exact_owner),id_(snapshot.instance.instance_id()),
+         exact_owner_(snapshot.exact_owner),provisional_owner_(snapshot.provisional_owner),
+         id_(snapshot.instance.instance_id()),
          type_(snapshot.instance.module_type_id()),context_(std::move(context))
     {
         connect(&preview,&MasteringPreviewController::changed,
@@ -45,7 +46,12 @@ public:
     {return dynamic()?QStringLiteral("Dynamic EQ"):QStringLiteral("Transient Shaper");}
     [[nodiscard]] QString workspace_context_label() const override {return context_;}
     [[nodiscard]] QString configuration_state() const override
-    {return current()?QStringLiteral("Reference Linked"):QStringLiteral("Unavailable");}
+    {
+        const auto s=current();
+        if(!s)return QStringLiteral("Unavailable");
+        return s->provisional_owner?QStringLiteral("Reference Linked / Not verified"):
+            QStringLiteral("Reference Linked");
+    }
     [[nodiscard]] bool bypass_supported() const noexcept override {return false;}
     [[nodiscard]] bool bypass() const noexcept override
     {const auto s=current();return !s||s->instance.user_bypass();}
@@ -71,6 +77,9 @@ public:
     {
         const auto s=current();
         if(!s)return QStringLiteral("Unavailable");
+        if(s->provisional_owner)
+            return s->instance.active()?QStringLiteral("REF LINKED · Not verified"):
+                QStringLiteral("REF LINKED · Inactive");
         return s->instance.active()?QStringLiteral("REF LINKED · Read only"):
             QStringLiteral("REF LINKED · Inactive");
     }
@@ -95,11 +104,12 @@ private:
     {
         if(!preview_||!manual_)return {};
         const auto owner=exact_owner_.lock();
-        if(!owner)return {};
+        const auto provisional=provisional_owner_.lock();
+        if(!owner&&!provisional)return {};
         const auto snapshots=inspect_current_linked_editors(*preview_,*manual_);
         if(!snapshots)return {};
         const auto it=std::find_if(snapshots->begin(),snapshots->end(),
-            [&](const auto& s){return s.exact_owner==owner&&
+            [&](const auto& s){return s.exact_owner==owner&&s.provisional_owner==provisional&&
                 s.instance.instance_id()==id_&&s.instance.module_type_id()==type_;});
         if(it==snapshots->end())return {};
         return *it;
@@ -109,6 +119,7 @@ private:
     QPointer<PlaybackTransportViewModel> transport_;
     MasteringChainState* manual_{};
     std::weak_ptr<const LinkedEditorSnapshot::Ticket> exact_owner_;
+    std::weak_ptr<const ManualMatchTransferPreviewTicket> provisional_owner_;
     dsp::ModuleInstanceId id_;
     std::string type_;
     QString context_;
