@@ -1,5 +1,7 @@
 #pragma once
 #include "internal/l3_native_qt_product_action.hpp"
+#include "internal/l3_manual_match_transfer_project.hpp"
+#include <future>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -9,6 +11,10 @@ namespace rgsml::app {
 class AutoMatchViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool canStart READ can_start NOTIFY changed)
+    Q_PROPERTY(bool transferBusy READ transfer_busy NOTIFY changed)
+    Q_PROPERTY(bool transferReady READ transfer_ready NOTIFY changed)
+    Q_PROPERTY(bool canBeginTransfer READ can_begin_transfer NOTIFY changed)
+    Q_PROPERTY(QString transferText READ transfer_text NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool canAdopt READ can_adopt NOTIFY changed)
     Q_PROPERTY(bool canCancel READ can_cancel NOTIFY changed)
@@ -28,6 +34,14 @@ public:
     AutoMatchViewModel(Action::Controllers product,const Action::Fanout& fanout,
         const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
         QObject* parent=nullptr);
+    ~AutoMatchViewModel() override;
+    [[nodiscard]] bool transfer_busy()const;
+    [[nodiscard]] bool transfer_ready()const;
+    [[nodiscard]] bool can_begin_transfer()const;
+    [[nodiscard]] QString transfer_text()const;
+    Q_INVOKABLE bool beginTransfer(const QString& instanceId);
+    Q_INVOKABLE void discardTransfer();
+    Q_INVOKABLE bool applyTransfer();
     [[nodiscard]] bool can_start()const;
     [[nodiscard]] bool busy()const;
     [[nodiscard]] bool can_adopt()const;
@@ -67,6 +81,12 @@ private:
     const AuditionSourceSelector& selector_;
     const GoldSelectionViewModel& gold_;
     Action action_;
+    using TransferResult=core::Result<l3_automatch::ManualMatchTransferAudition>;
+    std::shared_ptr<std::atomic<bool>> transfer_cancel_;
+    std::future<TransferResult> transfer_worker_;
+    std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> transfer_candidate_;
+    QString transfer_text_;
+    void poll_transfer();
     QTimer timer_;
     // Monotonic wall clock for this actual Product search, distinct from
     // native phase-duration accounting and later M13 verification.

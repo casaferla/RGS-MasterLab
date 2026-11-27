@@ -28,10 +28,90 @@ AutoMatchViewModel::AutoMatchViewModel(Action::Controllers product,const Action:
     connect(&product_.upstream.project,&ProjectSessionViewModel::changed,
         this,&AutoMatchViewModel::refresh,Qt::QueuedConnection);
 }
+AutoMatchViewModel::~AutoMatchViewModel()
+{
+    if(transfer_cancel_)transfer_cancel_->store(true,std::memory_order_release);
+}
+bool AutoMatchViewModel::transfer_busy()const{return owner()&&transfer_worker_.valid();}
+bool AutoMatchViewModel::transfer_ready()const{return owner()&&static_cast<bool>(transfer_candidate_);}
+bool AutoMatchViewModel::can_begin_transfer()const
+{
+    return owner()&&!busy()&&!action_.can_adopt()&&!transfer_ready()&&
+        product_.upstream.project.private_m12_match_state()==ProjectSessionViewModel::M12CurrentMatchState::active;
+}
+QString AutoMatchViewModel::transfer_text()const{return owner()?transfer_text_:QString{};}
+bool AutoMatchViewModel::beginTransfer(const QString& instanceId)
+{
+    if(!can_begin_transfer())return false;
+    auto id=core::Uuid::parse(instanceId.toStdString());
+    if(!id)return false;
+    auto capture=product_.upstream.project.capture_private_manual_match_transfer(*id.value());
+    if(!capture){
+        transfer_text_=QString::fromStdString(capture.error()->message());emit changed();return false;
+    }
+    try {
+        auto cancel=std::make_shared<std::atomic<bool>>(false);
+        auto frozen=*capture.value();
+        auto task=std::async(std::launch::async,[frozen,cancel]{
+            return a::ManualMatchTransferAudition::create(frozen,
+                *core::FrameCount::create(4096).value(),cancel.get());
+        });
+        transfer_cancel_=std::move(cancel);
+        transfer_worker_=std::move(task);
+        transfer_text_=QStringLiteral("Rendering transfer candidate…");
+        timer_.start();emit changed();return true;
+    }catch(...) {
+        transfer_text_=QStringLiteral("Transfer render could not start.");emit changed();return false;
+    }
+}
+void AutoMatchViewModel::discardTransfer()
+{
+    if(!owner()||publishing_)return;
+    if(transfer_cancel_)transfer_cancel_->store(true,std::memory_order_release);
+    transfer_candidate_.reset();
+    transfer_text_=QStringLiteral("Transfer discarded.");
+    emit changed();
+}
+bool AutoMatchViewModel::applyTransfer()
+{
+    if(!transfer_ready()||busy()||action_.can_adopt())return false;
+    publishing_=true;
+    const auto candidate=transfer_candidate_;
+    const auto& capture=candidate->capture();
+    const a::ManualMatchTransferConfirmation confirmation{capture.product_epoch,capture.project.identity.sha256};
+    const auto result=product_.upstream.project.apply_private_manual_match_transfer(candidate,confirmation);
+    publishing_=false;
+    transfer_candidate_.reset();
+    if(!result)transfer_text_=QString::fromStdString(result.error()->message());
+    else {
+        transfer_text_=QStringLiteral("Transfer applied / not verified.");
+        (void)action_.retire_after_history_transition();
+    }
+    refresh();return static_cast<bool>(result);
+}
+void AutoMatchViewModel::poll_transfer()
+{
+    using namespace std::chrono_literals;
+    if(transfer_worker_.valid()&&transfer_worker_.wait_for(0ms)==std::future_status::ready) {
+        try {
+            auto done=transfer_worker_.get();
+            if(transfer_cancel_&&transfer_cancel_->load(std::memory_order_acquire))
+                transfer_text_=QStringLiteral("Transfer discarded.");
+            else if(!done)transfer_text_=QString::fromStdString(done.error()->message());
+            else if(!product_.upstream.project.private_manual_match_transfer_still_current(done.value()->capture()))
+                transfer_text_=QStringLiteral("Transfer expired: project changed.");
+            else {
+                transfer_candidate_=std::make_shared<const a::ManualMatchTransferAudition>(std::move(*done.value()));
+                transfer_text_=QStringLiteral("Candidate rendered. Apply to move the DSP into MANUAL; a fresh verification is required.");
+            }
+        }catch(...) {transfer_text_=QStringLiteral("Transfer render failed.");}
+        transfer_cancel_.reset();
+    }
+}
 bool AutoMatchViewModel::owner()const{return QThread::currentThread()==thread();}
-bool AutoMatchViewModel::busy()const{return owner()&&(publishing_||action_.busy());}
+bool AutoMatchViewModel::busy()const{return owner()&&(publishing_||action_.busy()||transfer_busy());}
 bool AutoMatchViewModel::can_start()const {
-    return owner()&&!busy()&&product_.upstream.source.has_source()&&gold_.has_gold()&&
+    return owner()&&!busy()&&!transfer_ready()&&product_.upstream.source.has_source()&&gold_.has_gold()&&
         selector_.prepared_available();
 }
 bool AutoMatchViewModel::can_adopt()const {
@@ -304,6 +384,7 @@ bool AutoMatchViewModel::resume() {
 void AutoMatchViewModel::refresh() {
     if(!owner()||publishing_)return;
     action_.poll();
+    poll_transfer();
     // Freeze search wall time on the first terminal/search-review phase.
     // M13 verification may run later and must not inflate search duration.
     if(search_clock_running_ && action_.phase()!=Action::Phase::searching
@@ -311,7 +392,7 @@ void AutoMatchViewModel::refresh() {
         finished_search_ms_=search_clock_.elapsed();
         search_clock_running_=false;
     }
-    if(!action_.busy())timer_.stop();
+    if(!action_.busy()&&!transfer_busy())timer_.stop();
     emit changed();
 }
 } // namespace rgsml::app
