@@ -221,6 +221,25 @@ recover_manual_match_transfer_before(const project::ProjectSnapshot& persisted)
     return project::ProjectSnapshot::create(std::move(doc),
         {persisted.optional_entries().begin(),persisted.optional_entries().end()});
 }
+// Recovery bytes are not a receipt. Rebuild the one legal native delta
+// from a separately decoded original owner, then compare the COMPLETE
+// persisted after snapshot. Never use recovered bytes as an executable
+// graph until this forward proof has succeeded.
+[[nodiscard]] inline core::Result<ManualMatchTransferProjectDraft>
+validate_recovered_manual_match_transfer(
+    const project::ProjectSnapshot& persisted,
+    const ManualMatchTransferDraft& exact_native)
+{
+    using R=core::Result<ManualMatchTransferProjectDraft>;
+    auto before=recover_manual_match_transfer_before(persisted);
+    if(!before)return R::failure(*before.error());
+    auto draft=prepare_manual_match_transfer_project(*before.value(),exact_native);
+    if(!draft)return draft;
+    const auto checked=validate_manual_match_transfer_project_readback(
+        persisted,*draft.value(),exact_native);
+    if(!checked)return R::failure(*checked.error());
+    return draft;
+}
 // This immutable capture is issued by the Qt Project owner under its
 // physical mutation lease. The worker owns PCM and value snapshots only;
 // it cannot write the Product or manufacture an acceptance receipt.
