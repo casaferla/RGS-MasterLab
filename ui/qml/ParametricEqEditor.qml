@@ -55,6 +55,13 @@ Rectangle {
 
             StudioToggle {
                 objectName: "bandEnabledToggle"
+                ToolTip.text: "Enable or disable the selected EQ band without deleting its settings."
+                ToolTip.visible: bandEnabledToggleDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: bandEnabledToggleDwell
+                    anchors.fill: parent
+                }
                 text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
                 checked: root.viewModel ? root.viewModel.enabled : true
                 onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
