@@ -649,6 +649,13 @@ Rectangle {
             StudioButton {
                 visible: root.isLimiterEditor && root.m17Preparing
                 objectName: "m17CancelPreparationButton"
+                ToolTip.text: "Cancel the offline Master rendering."
+                ToolTip.visible: m17CancelPreparationButtonDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17CancelPreparationButtonDwell
+                    anchors.fill: parent
+                }
                 text: "Cancel"
                 // Same width as Render Master: WAV Export never jumps
                 // during an in-flight full-resource job.
@@ -690,6 +697,13 @@ Rectangle {
             StudioButton {
                 visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 objectName: "m17PreviewPreparedButton"
+                ToolTip.text: "Preview the prepared Master audio."
+                ToolTip.visible: m17PreviewPreparedButtonDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17PreviewPreparedButtonDwell
+                    anchors.fill: parent
+                }
                 text: "Preview Master"
                 minimumControlWidth: 130
                 accentColor: "#C4774A"
@@ -748,6 +762,13 @@ Rectangle {
             }
             StudioButton {
                 objectName: "m17ReturnSourceButton"
+                ToolTip.text: "Leave Master listening or cancel the pending playback conversion and return to Source."
+                ToolTip.visible: m17ReturnSourceButtonDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17ReturnSourceButtonDwell
+                    anchors.fill: parent
+                }
                 text: root.terminalMonitorViewModel
                         && root.terminalMonitorViewModel.monitorPreparing
                     ? "Cancel Playback Conversion"
