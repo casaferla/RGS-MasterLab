@@ -278,7 +278,8 @@ class StreamingTruePeakPreviewModuleAdapter final : public DspModuleAdapter {
     Q_PROPERTY(double ceilingDbTp READ ceiling_db_tp WRITE setCeilingDbTp NOTIFY changed)
     Q_PROPERTY(double driveDb READ drive_db WRITE setDriveDb NOTIFY changed)
     Q_PROPERTY(int marginPercent READ margin_percent WRITE setMarginPercent NOTIFY changed)
-    Q_PROPERTY(QString numericValidationMessage READ numeric_validation_message NOTIFY changed)
+    Q_PROPERTY(QString ceilingValidationMessage READ ceiling_validation_message NOTIFY changed)
+    Q_PROPERTY(QString driveValidationMessage READ drive_validation_message NOTIFY changed)
 public:
     StreamingTruePeakPreviewModuleAdapter(
         MasteringChainState* state, MasteringPreviewController* preview,
@@ -362,13 +363,14 @@ public:
     [[nodiscard]] int margin_percent() const noexcept {
         return params()?params()->margin_percent():2;
     }
-    [[nodiscard]] QString numeric_validation_message() const { return numericValidationMessage_; }
+    [[nodiscard]] QString ceiling_validation_message() const { return ceilingValidationMessage_; }
+    [[nodiscard]] QString drive_validation_message() const { return driveValidationMessage_; }
     Q_INVOKABLE void reportNumericValidation(const QString& field,const QString& message) {
-        if(field!=QStringLiteral("Ceiling") && field!=QStringLiteral("Drive"))return;
-        if(message.isEmpty() && numericValidationField_!=field)return;
-        if(numericValidationField_==field && numericValidationMessage_==message)return;
-        numericValidationField_=message.isEmpty()?QString{}:field;
-        numericValidationMessage_=message;
+        QString* target=nullptr;
+        if(field==QStringLiteral("Ceiling"))target=&ceilingValidationMessage_;
+        else if(field==QStringLiteral("Drive"))target=&driveValidationMessage_;
+        if(!target||*target==message)return;
+        *target=message;
         emit changed();
     }
     Q_INVOKABLE void setCeilingDbTp(double value) {
@@ -405,7 +407,7 @@ public:
     void undo() override {}
     void redo() override {}
     void resetToDefault() override {
-        numericValidationMessage_.clear();numericValidationField_.clear();
+        ceilingValidationMessage_.clear();driveValidationMessage_.clear();
         commit(-1.0,0.0,2);emit changed();
     }
 private:
@@ -442,8 +444,8 @@ private:
     MasteringPreviewController* preview_{nullptr};
     QString context_;
     QString localError_;
-    QString numericValidationField_;
-    QString numericValidationMessage_;
+    QString ceilingValidationMessage_;
+    QString driveValidationMessage_;
 };
 
 // Genuine product M17 terminal INSTANCE. Presentation is BYP/read-only
