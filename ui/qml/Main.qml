@@ -335,9 +335,8 @@ ApplicationWindow {
         ? terminalPostLimiterTruePeak : null
     readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
 
-    // Single, permanently allocated 24lp status bar. The selected module
-    // alone supplies its validation/preview errors; inactive drafts remain
-    // local to their owning ViewModel and never replace another DSP status.
+    // Selected module identity remains available for editor routing and tests.
+    // The active status register below is independent of selection.
     readonly property var statusDspModule: typeof dspChainAdapterModel !== "undefined"
         && dspChainAdapterModel ? dspChainAdapterModel.activeModule : null
     // The original host remains a persistent QObject and is transferred,
@@ -558,19 +557,115 @@ ApplicationWindow {
             return root.activeAuditionRegion.errorMessage
         return ""
     }
-    readonly property string statusSeverity: {
-        if (root.applicationErrorText.length > 0) return "ERROR"
-        if (projectSession.degraded) return "WARNING"
-        if (root.statusDspErrorText.length > 0) return "ERROR"
-        return "INFO"
+    // Active register, derived from live owner state rather than a log.
+    // One stable key per operation/validation; reading never mutates owners.
+    readonly property var statusMessages: {
+        const entries = []
+        const seen = ({})
+        function add(key, kind, message) {
+            if (message === undefined || message === null || String(message).trim() === "" || seen[key]) return
+            seen[key] = true
+            const ranks = { ERROR: 0, VALIDATION: 1, WARNING: 2, BUSY: 3, SUCCESS: 4, INFO: 5 }
+            entries.push({ key: key, kind: kind, message: String(message), rank: ranks[kind], order: entries.length })
+        }
+        function report(key, name, model) {
+            if (model && model.errorText) add(key, "ERROR", name + ": " + model.errorText)
+        }
+        const monitor = root.appTerminalMonitorViewModel
+        const match = root.appAutoMatchModel
+        const exporter = root.appM18ExportModel
+        const terminal = root.appTerminalLimiterViewModel
+        report("monitor", "Master Monitor", monitor)
+        add("project", "ERROR", projectSession.errorMessage)
+        add("source", "ERROR", sourceSelection.errorMessage)
+        add("reference", "ERROR", goldSelection.errorMessage)
+        add("routing", "ERROR", auditionSelector.statusText)
+        add("transport", "ERROR", playbackTransport.errorMessage)
+        add("sourceRegion", "ERROR", auditionRegion.errorMessage)
+        add("referenceRegion", "ERROR", referenceRegion.errorMessage)
+        report("automatch", "AutoMatch", match)
+        report("export", "WAV Export", exporter)
+        if (typeof dspPresetController !== "undefined") report("preset", "DSP Preset", dspPresetController)
+        if (projectSession.degraded) add("projectWarning", "WARNING", projectSession.statusText)
+        // Visit every live adapter, not just the currently selected editor.
+        // The shared chain preview is one operation, not N copies of it.
+        const modules = typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel
+            ? dspChainAdapterModel.modules : []
+        const ordered = modules.slice ? modules.slice() : Array.from(modules)
+        for (const module of ordered) {
+            if (!module) continue
+            const name = module.displayName || "DSP"
+            const key = "dsp:" + module.instanceId
+            const vm = module.gainViewModel || module.eqViewModel || module.compressorViewModel
+                || module.stereoMsViewModel
+            if (vm) {
+                const message = module.editorContentKey === "INPUT_GAIN" ? vm.validationError : vm.validationMessage
+                if (message) add(key + ":validation", "VALIDATION", name + ": " + message)
+            }
+            if (module.previewStatus === "ERROR" && module.previewError)
+                add("chain:" + module.previewError, "ERROR", "DSP Chain: " + module.previewError)
+            else if (module.hasError && module.previewError)
+                add(key + ":error", "ERROR", name + ": " + module.previewError)
+            if (module.previewStatus === "RENDERING")
+                add("chainRender", "BUSY", "DSP Chain: Rendering")
+        }
+        if (terminal) {
+            if (terminal.validationMessage)
+                add("terminalValidation", terminal.validationField === "audio" ? "ERROR" : "VALIDATION",
+                    "Export TP Limiter: " + terminal.validationMessage)
+            const state = String(terminal.audioStatus)
+            if (state.startsWith("Preparing") || terminal.nonconformingDevicePreparing)
+                add("terminalRender", "BUSY", "Export TP Limiter: Rendering Master")
+            else if (state.startsWith("NON-CONFORMING"))
+                add("terminalRender", "WARNING", "Export TP Limiter: " + state)
+        }
+        if (match) {
+            for (let i = 0; i < 5; ++i) {
+                const problem = autoMatchDialog.amountError(i)
+                if (problem) add("matchAmount:" + i, "VALIDATION",
+                    "AutoMatch · " + ["Total", "Tonal", "Dynamics", "Stereo", "Loudness"][i] + ": " + problem)
+            }
+            const state = String(match.statusText)
+            if (match.busy) add("automatch", "BUSY", "AutoMatch: " + state
+                + (match.elapsedTimeText ? " · " + match.elapsedTimeText : ""))
+            else if (match.canAdopt) add("automatch", "INFO", "AutoMatch: " + state)
+            else if (state === "APPLIED" || state === "NUMERICAL CHECK PASSED" || state === "NO CORRECTION REQUIRED")
+                add("automatch", "SUCCESS", "AutoMatch: " + state)
+            else if (state === "CHECK INCOMPLETE" || state === "INPUT CHANGED")
+                add("automatch", "WARNING", "AutoMatch: " + state)
+            else if (state === "SEARCH FAILED") add("automatch", "ERROR", "AutoMatch: " + state)
+        }
+        if (exporter) {
+            if (exporter.exportInProgress) add("export", "BUSY", "WAV Export: " + exporter.statusText)
+            else if (exporter.canAcknowledge && exporter.statusText === "VERIFIED DELIVERED")
+                add("export", "SUCCESS", "WAV Export: " + exporter.statusText)
+        }
+        if (monitor && (monitor.monitorPreparing || monitor.monitorCancelling))
+            add("monitor", "BUSY", "Master Monitor: " + monitor.statusText)
+        if (sourceWaveform.state === "BUILDING") add("sourceWaveform", "BUSY", "Analyzing Source waveform")
+        else if (sourceWaveform.state === "FAILED") add("sourceWaveform", "ERROR", "Source waveform: " + sourceWaveform.statusText)
+        if (referenceWaveform.state === "BUILDING") add("referenceWaveform", "BUSY", "Analyzing Reference waveform")
+        else if (referenceWaveform.state === "FAILED") add("referenceWaveform", "ERROR", "Reference waveform: " + referenceWaveform.statusText)
+        const analysis = typeof m21ProductStatusViewModel !== "undefined" ? m21ProductStatusViewModel : null
+        if (analysis && analysis.runningAnalysisRole)
+            add("analysis", "BUSY", "Analyzing " + analysis.runningAnalysisRole)
+        entries.sort(function(a, b) { return a.rank - b.rank || a.order - b.order })
+        return entries
     }
+    readonly property int statusMessageCount: statusMessages.length
+    readonly property string statusKind: statusMessageCount ? statusMessages[0].kind : "INFO"
+    // Keep the existing public ERROR severity contract for typed validation.
+    readonly property string statusSeverity: statusKind === "VALIDATION" ? "ERROR" : statusKind
     readonly property bool hasError: root.statusSeverity === "ERROR"
-
+    function statusColor(kind) {
+        if (kind === "ERROR" || kind === "VALIDATION") return root.error
+        if (kind === "WARNING") return root.warning
+        if (kind === "BUSY") return "#66AEEC"
+        if (kind === "SUCCESS") return "#00D47A"
+        return "#00E6E6"
+    }
     property string statusText: {
-        if (root.applicationErrorText.length > 0) return root.applicationErrorText
-        if (projectSession.degraded) return projectSession.statusText
-        if (root.statusDspErrorText.length > 0) return root.statusDspErrorText
-        if (sourceWaveform.state === "BUILDING") return "Analyzing Source waveform"
+        if (statusMessageCount) return statusMessages[0].message
         if (!sourceSelection.hasSource) return "Ready | Open a Source WAV"
         return "Ready | " + sourceSelection.sampleRateHz + " Hz | "
             + sourceSelection.sampleFormatLabel + " | " + sourceSelection.channelLayoutLabel
@@ -2671,20 +2766,18 @@ ApplicationWindow {
                     Layout.preferredWidth: 8
                     Layout.preferredHeight: 8
                     radius: 4
-                    color: root.statusSeverity === "ERROR" ? root.error
-                        : root.statusSeverity === "WARNING" ? root.warning : "#00E6E6"
+                    color: root.statusColor(root.statusKind)
                 }
                 Label {
                     id: statusMessage
                     objectName: "statusBarMessage"
                     Layout.fillWidth: true
                     text: root.statusText
-                    color: root.statusSeverity === "ERROR" ? root.error
-                        : root.statusSeverity === "WARNING" ? root.warning : root.textSecondary
+                    color: root.statusKind === "INFO" ? root.textSecondary : root.statusColor(root.statusKind)
                     font.pixelSize: 10
                     elide: Text.ElideRight
                     HoverHandler { id: globalStatusHover }
-                    ToolTip.text: root.statusText
+                    ToolTip.text: root.statusText + "\n" + root.statusMessageCount + " active messages. Click to " + (statusDetails.opened ? "collapse." : "expand.")
                     ToolTip.visible: (globalStatusHover.hovered && root.statusText.length > 0) && stationaryTooltipDwell1.ready
                     ToolTip.delay: 0
                     StudioTooltipDwell {
@@ -2693,6 +2786,20 @@ ApplicationWindow {
                     }
                     Accessible.name: root.statusText
                     Accessible.description: root.statusSeverity + ": " + root.statusText
+                    TapHandler { onTapped: root.toggleStatusDetails() }
+                }
+                StudioButton {
+                    objectName: "statusMessageCounter"
+                    text: String(root.statusMessageCount) + (statusDetails.opened ? "  ▾" : "  ▴")
+                    minimumControlWidth: 38
+                    contentPadding: 4
+                    Layout.preferredHeight: 20
+                    onClicked: root.toggleStatusDetails()
+                    ToolTip.text: root.statusMessageCount + " active messages. Click to " + (statusDetails.opened ? "collapse." : "expand.")
+                    ToolTip.visible: counterDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell { id: counterDwell; anchors.fill: parent }
+                    Accessible.name: root.statusMessageCount + " active messages"
                 }
                 Text {
                     id: statusBuildProvenanceLabel
@@ -2702,6 +2809,83 @@ ApplicationWindow {
                     font.family: "Segoe UI"
                     font.pixelSize: 10
                     Layout.alignment: Qt.AlignVCenter
+                }
+            }
+        }
+    }
+
+    function toggleStatusDetails() {
+        if (statusDetails.opened) statusDetails.close()
+        else statusDetails.open()
+    }
+    Popup {
+        id: statusDetails
+        objectName: "activeStatusMessagesPopup"
+        parent: Overlay.overlay
+        x: 0
+        y: Math.max(0, parent.height - 24 - height)
+        width: Math.min(parent.width, 820)
+        height: Math.min(parent.height - 24, 260, Math.max(64, 36 + root.statusMessageCount * 48))
+        padding: 8
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: "#0F2030"; border.color: root.border; radius: 4 }
+        contentItem: ColumnLayout {
+            spacing: 4
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: "ACTIVE STATUS MESSAGES (" + root.statusMessageCount + ")"
+                    color: root.textSecondary
+                    font.pixelSize: 11
+                    font.bold: true
+                    Layout.fillWidth: true
+                }
+                StudioButton {
+                    text: "Close"
+                    minimumControlWidth: 48
+                    onClicked: statusDetails.close()
+                }
+            }
+            Label {
+                visible: root.statusMessageCount === 0
+                text: "No active messages."
+                color: root.textPrimary
+            }
+            ListView {
+                objectName: "activeStatusMessagesList"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: root.statusMessages
+                spacing: 2
+                ScrollBar.vertical: ScrollBar {}
+                delegate: Rectangle {
+                    required property var modelData
+                    width: ListView.view.width
+                    height: Math.max(32, detailText.implicitHeight + 10)
+                    color: "#13222F"
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        spacing: 8
+                        Rectangle { width: 7; height: 7; radius: 4; color: root.statusColor(modelData.kind) }
+                        Text {
+                            text: modelData.kind
+                            color: root.statusColor(modelData.kind)
+                            font.pixelSize: 10
+                            Layout.preferredWidth: 78
+                        }
+                        Text {
+                            id: detailText
+                            text: modelData.message
+                            color: root.textPrimary
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+                    }
                 }
             }
         }
