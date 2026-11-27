@@ -102,4 +102,46 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
         QCryptographicHash::Sha256).toHex().toStdString();
     return R::success(ManualMatchTransferIdentity{std::move(*canonical.value()),hash});
 }
+// Render the exact derived graph once, using the same native engine and
+// the same PREPARED owner as the original. No ticket is installed and
+// no verification receipt can arise from this audition.
+[[nodiscard]] inline core::Result<render::RenderResult>
+render_manual_match_transfer_candidate(const ManualMatchTransferDraft& draft,
+    const ManualMatchTransferIdentity& identity,core::FrameCount maxBlock,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    using R=core::Result<render::RenderResult>;
+    const auto fail=[](const char* why){
+        return R::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    const auto current=identify_manual_match_transfer(draft);
+    if(!current||current.value()->sha256!=identity.sha256||
+       current.value()->canonical_content!=identity.canonical_content)
+        return fail("MANUAL_MATCH_TRANSFER_CANDIDATE_IDENTITY_MISMATCH");
+    const auto prior=draft.exact_prior_owner;
+    const auto& registry=prior->replay->registry_owner;
+    const auto& manual=draft.manual_after.proposed_manual_chain;
+    const auto& bindings=draft.manual_after.proposed_bindings;
+    const auto nodes=manual.instances();
+    const bool p2=!nodes.empty()&&nodes.back().module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
+    const auto prefixCount=nodes.size()-(p2?1U:0U);
+    std::vector<dsp::ModuleInstance> prefixNodes(
+        nodes.begin(),nodes.begin()+static_cast<std::ptrdiff_t>(prefixCount));
+    auto prefix=dsp::ProcessingChain::restore(*registry,manual.context(),
+        manual.revision(),std::move(prefixNodes));
+    if(!prefix)return R::failure(*prefix.error());
+    std::optional<dsp::ProcessingChain> terminal;
+    std::vector<dsp::ModuleExecutionBinding> terminalBindings;
+    if(p2) {
+        auto tail=dsp::ProcessingChain::restore(*registry,manual.context(),manual.revision(),{nodes.back()});
+        if(!tail)return R::failure(*tail.error());
+        terminal=std::move(*tail.value());
+        terminalBindings.push_back(bindings.back());
+    }
+    const m12_frozen::M12NativeExecutionGraphView graph{
+        registry,*prefix.value(),std::span<const dsp::ModuleExecutionBinding>(bindings).first(prefixCount),
+        draft.linked_after,draft.linked_bindings_after,terminal,terminalBindings};
+    return m12_frozen::render_m12_native_graph_pcm_once(graph,*prior->exact_prepared_owner,
+        maxBlock,nullptr,cancellation);
+}
 } // namespace rgsml::app::l3_automatch
