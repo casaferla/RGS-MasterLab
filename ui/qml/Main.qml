@@ -737,6 +737,10 @@ ApplicationWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 prominent: amountControl.amountIndex === 0
                 stepSize: 1
+                interactionHint: (amountControl.amountIndex === 0
+                    ? "Overall strength of the reference match."
+                    : "Strength of matching in the " + amountControl.amountLabel + " domain.")
+                    + "\nDrag vertically or use the wheel / arrow keys in 1% steps."
                 accentColor: amountControl.hue
                 value: amountControl.matching && amountControl.amountStore
                     ? amountControl.amountStore.amountValue(amountControl.amountIndex) : 0
@@ -871,6 +875,14 @@ ApplicationWindow {
                         TextField {
                             id: amountField
                             objectName: "autoMatchAmount_" + index
+                            ToolTip.text: index === 5 ? "Independent AutoMatch true-peak safety limit, not the streaming or export limiter ceiling." : "Match amount: whole percentage from 0 to 100. Enter to apply; Esc to cancel."
+                            ToolTip.visible: autoMatchDialogAmountDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: autoMatchDialogAmountDwell
+                                anchors.fill: parent
+                                interacting: parent.activeFocus
+                            }
                             Layout.preferredWidth: 110
                             text: index === 5 ? "0" : autoMatchDialog.amountDrafts[index]
                             enabled: autoMatchDialog.amountsEditable
@@ -961,6 +973,13 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Button {
                     objectName: "autoMatchUndoButton"
+                    ToolTip.text: "Undo the last adopted match."
+                    ToolTip.visible: autoMatchUndoButtonDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: autoMatchUndoButtonDwell
+                        anchors.fill: parent
+                    }
                     text: "Undo match"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canUndo
                         && !root.monitorExclusive
@@ -968,6 +987,13 @@ ApplicationWindow {
                 }
                 Button {
                     objectName: "autoMatchRedoButton"
+                    ToolTip.text: "Restore the last undone match."
+                    ToolTip.visible: autoMatchRedoButtonDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: autoMatchRedoButtonDwell
+                        anchors.fill: parent
+                    }
                     text: "Redo match"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canRedo
                         && !root.monitorExclusive
@@ -977,8 +1003,10 @@ ApplicationWindow {
                     objectName: "autoMatchResumeButton"
                     text: "Resume prior"
                     visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canResume
-                    ToolTip.visible: hovered
+                    ToolTip.visible: autoMatchResumeDwell.ready
+                    ToolTip.delay: 0
                     ToolTip.text: "Restore the exact previous match; numeric fields are for the next search."
+                    StudioTooltipDwell { id: autoMatchResumeDwell; anchors.fill: parent }
                     enabled: visible && !root.monitorExclusive
                     onClicked: root.appAutoMatchModel.resume()
                 }
@@ -988,6 +1016,13 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Button {
                     objectName: "autoMatchStartButton"
+                    ToolTip.text: "Start the offline reference-match search with the selected amounts."
+                    ToolTip.visible: autoMatchStartButtonDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: autoMatchStartButtonDwell
+                        anchors.fill: parent
+                    }
                     text: "Search"
                     enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canStart
                         && !root.appAutoMatchModel.canAdopt && !root.monitorExclusive
@@ -1005,6 +1040,13 @@ ApplicationWindow {
                 }
                 Button {
                     objectName: "autoMatchAdoptButton"
+                    ToolTip.text: "Accept the reviewed match or the indicated removal / suspension."
+                    ToolTip.visible: autoMatchAdoptButtonDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: autoMatchAdoptButtonDwell
+                        anchors.fill: parent
+                    }
                     text: root.appAutoMatchModel
                         && root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
                         ? "Remove match" : (root.appAutoMatchModel
@@ -1016,6 +1058,13 @@ ApplicationWindow {
                 }
                 Button {
                     objectName: "autoMatchCancelButton"
+                    ToolTip.text: "Cancel the search or discard the pending change and keep the current match."
+                    ToolTip.visible: autoMatchCancelButtonDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: autoMatchCancelButtonDwell
+                        anchors.fill: parent
+                    }
                     text: root.appAutoMatchModel
                         && (root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
                             || root.appAutoMatchModel.statusText === "REPLACEMENT READY"
@@ -2383,6 +2432,13 @@ ApplicationWindow {
                                     spacing: 4
                                     StudioSegmentButton {
                                         objectName: "adaptiveModeToggle_Restoration"
+                                        ToolTip.text: "Switch to the RAW → PREPARED workspace. Restoration controls are not active yet."
+                                        ToolTip.visible: adaptiveModeToggle_RestorationDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: adaptiveModeToggle_RestorationDwell
+                                            anchors.fill: parent
+                                        }
                                         text: "Prepare"
                                         selected: !adaptiveContextWorkspace.matching
                                         minimumControlWidth: 0
@@ -2395,6 +2451,13 @@ ApplicationWindow {
                                     }
                                     StudioSegmentButton {
                                         objectName: "adaptiveModeToggle_Gold"
+                                        ToolTip.text: "Switch to reference-guided mastering: PREPARED + REFERENCE → PROCESSED."
+                                        ToolTip.visible: adaptiveModeToggle_GoldDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: adaptiveModeToggle_GoldDwell
+                                            anchors.fill: parent
+                                        }
                                         text: "AutoMatch"
                                         selected: adaptiveContextWorkspace.matching
                                         minimumControlWidth: 0
@@ -2450,6 +2513,13 @@ ApplicationWindow {
                                         }
                                         StudioSegmentButton {
                                             objectName: adaptiveContextWorkspace.matching ? "openAutoMatchDialog" : "openPrepareAdviceDialog"
+                                            ToolTip.text: adaptiveContextWorkspace.matching ? "Open search, review and match history controls." : "View sample-rate and available RAM guidance."
+                                            ToolTip.visible: adaptiveActionDwell.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: adaptiveActionDwell
+                                                anchors.fill: parent
+                                            }
                                             text: adaptiveContextWorkspace.matching ? "AutoMatch…" : "Sample rate / RAM…"
                                             tone: "primary"
                                             Layout.fillWidth: true
