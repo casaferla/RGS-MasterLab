@@ -27,6 +27,7 @@ private slots:
     void testMonitorUtilityHasNoDSPBypassOrAudioStage();
     void testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMonitor();
     void testP2DuplicateCommandsDoNotScheduleRendering();
+    void testManualTransientShaperEditsAndHistory();
     void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
@@ -44,6 +45,63 @@ private slots:
     void testIndependentModuleHistories();
     void testWorkflowContextLabel();
 };
+
+void DspModuleAdapterTest::testManualTransientShaperEditsAndHistory()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto deRegistry=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*registry.value()));
+    QVERIFY(deRegistry);
+    auto full=dsp::ModuleRegistry::with_transient_shaper_offline(std::move(*deRegistry.value()));
+    QVERIFY(full);
+    const auto uuid=[](const char* s){return *core::Uuid::parse(s).value();};
+    const auto id=[&](const char* s){return *dsp::ModuleInstanceId::from_uuid(uuid(s)).value();};
+    auto baseline=MasteringChainState::create_default(*full.value(),
+        uuid("ad310000-0000-4000-8000-000000000001"),
+        id("ad310000-0000-4000-8000-000000000011"),
+        id("ad310000-0000-4000-8000-000000000012"),
+        id("ad310000-0000-4000-8000-000000000013"));
+    QVERIFY(baseline);
+    auto de=dsp::DynamicEqParameters::create_default(uuid("ad310000-0000-4000-8000-000000000021"));
+    auto ts=dsp::TransientShaperParameters::create_default();
+    QVERIFY(de&&ts);
+    auto state=MasteringChainState::with_manual_match_dsps(std::move(*baseline.value()),
+        id("ad310000-0000-4000-8000-000000000014"),*de.value(),
+        id("ad310000-0000-4000-8000-000000000015"),*ts.value());
+    QVERIFY(state);
+    ManualTransientShaperModuleAdapter adapter(state.value(),nullptr,QStringLiteral("Mastering"));
+    QVERIFY(adapter.manual_editable()&&adapter.bypass());
+    QVERIFY(adapter.setAttackAmountDb(3.0));
+    QVERIFY(adapter.setSustainAmountDb(-2.0));
+    QCOMPARE(adapter.attack_amount_db(),3.0);
+    QCOMPARE(adapter.sustain_amount_db(),-2.0);
+    QVERIFY(!adapter.setAttackAmountDb(99.0));
+    QVERIFY(!adapter.attack_validation_message().isEmpty());
+    adapter.reportNumericValidation(QStringLiteral("Sustain"),QStringLiteral("Invalid"));
+    QVERIFY(!adapter.sustain_validation_message().isEmpty());
+    adapter.reportNumericValidation(QStringLiteral("Attack"),QString{});
+    QVERIFY(adapter.attack_validation_message().isEmpty());
+    QVERIFY(!adapter.sustain_validation_message().isEmpty());
+    adapter.undo();
+    QCOMPARE(adapter.sustain_amount_db(),0.0);
+    adapter.redo();
+    QCOMPARE(adapter.sustain_amount_db(),-2.0);
+    adapter.setBypass(false);
+    QVERIFY(!adapter.bypass());
+    adapter.resetToDefault();
+    QCOMPARE(adapter.attack_amount_db(),0.0);
+    QCOMPARE(adapter.sustain_amount_db(),0.0);
+    adapter.undo();
+    QCOMPARE(adapter.attack_amount_db(),3.0);
+    state.value()->set_private_m18_chain_mutation_admission([](const char*){
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,"TEST_REFUSED"});
+    });
+    QVERIFY(!adapter.setAttackAmountDb(4.0));
+    QCOMPARE(adapter.attack_amount_db(),3.0);
+    QVERIFY(adapter.preview_error().contains(QStringLiteral("TEST_REFUSED")));
+    adapter.undo();
+    QCOMPARE(adapter.attack_amount_db(),3.0);
+}
 
 void DspModuleAdapterTest::testP2DuplicateCommandsDoNotScheduleRendering()
 {
