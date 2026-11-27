@@ -778,12 +778,12 @@ Status MasteringChainState::set_user_bypass(const ModuleInstanceId& instance_id,
     return chain_.set_user_bypass(instance_id, bypassed);
 }
 
-Status MasteringChainState::apply_explicit_manual_preset_draft(
+core::Result<MasteringChainState> MasteringChainState::prepare_explicit_manual_preset_state(
     const dsp::ProcessingChain& nextChain,
-    std::span<const ModuleExecutionBinding> nextBindings)
+    std::span<const ModuleExecutionBinding> nextBindings) const
 {
     const auto invalid=[](const char* reason){
-        return Status::failure(Error{ErrorCode::InvalidState,reason});
+        return core::Result<MasteringChainState>::failure(Error{ErrorCode::InvalidState,reason});
     };
     const auto oldNodes=chain_.instances();
     const auto newNodes=nextChain.instances();
@@ -833,7 +833,7 @@ Status MasteringChainState::apply_explicit_manual_preset_draft(
     std::vector<ModuleInstance> nodes(newNodes.begin(),newNodes.end());
     auto checked=ProcessingChain::restore(
         *registry_,chain_.context(),nextChain.revision(),std::move(nodes));
-    if(!checked)return Status::failure(*checked.error());
+    if(!checked)return core::Result<MasteringChainState>::failure(*checked.error());
     // Preallocate the entire after-state BEFORE acquiring the one M18
     // admission. No partial setter sequence, no duplicate DSP render.
     auto after=*this;
@@ -856,10 +856,19 @@ Status MasteringChainState::apply_explicit_manual_preset_draft(
                     std::get_if<StreamingTruePeakLimiterParameters>(&payload))
             after.streaming_p2_preview_params_=*p2;
     }
+    return core::Result<MasteringChainState>::success(std::move(after));
+}
+
+Status MasteringChainState::apply_explicit_manual_preset_draft(
+    const dsp::ProcessingChain& nextChain,
+    std::span<const ModuleExecutionBinding> nextBindings)
+{
+    auto after=prepare_explicit_manual_preset_state(nextChain,nextBindings);
+    if(!after)return Status::failure(*after.error());
     if(const auto admitted=admit_m18_chain_mutation(
            "explicit_user_manual_preset_restore");!admitted)
         return admitted;
-    *this=std::move(after);
+    *this=std::move(*after.value());
     return Status::success();
 }
 
