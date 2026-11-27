@@ -137,6 +137,15 @@ int main(int argc, char* argv[])
         std::fprintf(stderr, "P2_I2_GUI_SMOKE_REQUIRES_OPT_IN\n");
         return EXIT_FAILURE;
     }
+    // Staged manual C01/C00 qualification, never the ordinary startup.
+    const bool manualMatchSmoke=application.arguments().contains(
+        QStringLiteral("--rgsml-manual-match-dsp-smoke"));
+    const bool manualMatchOptIn=manualMatchSmoke || application.arguments().contains(
+        QStringLiteral("--rgsml-manual-match-dsps"));
+    if(manualMatchOptIn&&p2PreviewOptIn) {
+        std::fprintf(stderr,"MANUAL_MATCH_DSP_RESEARCH_P2_COMBINATION_NOT_QUALIFIED\n");
+        return EXIT_FAILURE;
+    }
     // Opt-in CI-only REAL product Main Qt screenshot; never a user render path.
     const bool m17MainEvidence = application.arguments().contains(
         QStringLiteral("--rgsml-m17-ui-evidence"));
@@ -370,6 +379,14 @@ int main(int argc, char* argv[])
             return EXIT_FAILURE;
         }
     }
+    if(manualMatchOptIn) {
+        moduleRegistry=rgsml::dsp::ModuleRegistry::with_dynamic_eq_offline(
+            std::move(*moduleRegistry.value()));
+        if(!moduleRegistry)return EXIT_FAILURE;
+        moduleRegistry=rgsml::dsp::ModuleRegistry::with_transient_shaper_offline(
+            std::move(*moduleRegistry.value()));
+        if(!moduleRegistry)return EXIT_FAILURE;
+    }
     const auto chainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
@@ -415,6 +432,25 @@ int main(int argc, char* argv[])
         if (!masteringChainStateRes) {
             std::fprintf(stderr, "Research P2 MANUAL chain refused: %s\n",
                          masteringChainStateRes.error()->message().c_str());
+            return EXIT_FAILURE;
+        }
+    }
+    if(manualMatchOptIn) {
+        const auto newUuid=[](){
+            return *rgsml::core::Uuid::parse(
+                QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+        };
+        const auto dynamicId=rgsml::dsp::ModuleInstanceId::from_uuid(newUuid());
+        const auto transientId=rgsml::dsp::ModuleInstanceId::from_uuid(newUuid());
+        auto dynamic=rgsml::dsp::DynamicEqParameters::create_default(newUuid());
+        auto transient=rgsml::dsp::TransientShaperParameters::create_default();
+        if(!dynamicId||!transientId||!dynamic||!transient)return EXIT_FAILURE;
+        masteringChainStateRes=rgsml::app::MasteringChainState::with_manual_match_dsps(
+            std::move(*masteringChainStateRes.value()),*dynamicId.value(),
+            std::move(*dynamic.value()),*transientId.value(),std::move(*transient.value()));
+        if(!masteringChainStateRes) {
+            std::fprintf(stderr,"MANUAL_MATCH_DSP_BOOTSTRAP_REFUSED=%s\n",
+                masteringChainStateRes.error()->message().c_str());
             return EXIT_FAILURE;
         }
     }
@@ -1529,7 +1565,7 @@ int main(int argc, char* argv[])
 
     // An explicit real-Main M17/M18 geometry probe must run its delayed
     // physical-layout checks, not exit through the zero-delay deploy smoke.
-    if (deploySmoke && !p2GuiSmoke && !m17MainEvidence
+    if (deploySmoke && !p2GuiSmoke && !m17MainEvidence && !manualMatchSmoke
         && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
     }
