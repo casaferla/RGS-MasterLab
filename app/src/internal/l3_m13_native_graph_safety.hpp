@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_manual_match_dsp_conflict.hpp"
 #include "l3_m13_product_fresh_postmaterialization_probe.hpp"
 #include <algorithm>
 #include <array>
@@ -51,6 +52,8 @@ enum class NativeGraphSafety {passed,failed,unavailable};
        }))
         return NativeGraphSafety::failed;
     const auto linked=replay->reference_linked.instances();
+    if(conflicting_active_match_dsps(manual,linked))
+        return NativeGraphSafety::failed;
     for(const auto& node:linked) {
         if(node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter"&&
            (replay->terminal_p2||&node!=&linked.back()))
