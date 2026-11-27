@@ -679,6 +679,13 @@ Item {
                                     spacing: 2
                                     StudioButton {
                                         objectName: "detectorRmsButton"
+                                        ToolTip.text: "Use RMS detection for average signal energy."
+                                        ToolTip.visible: detectorRmsButtonDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: detectorRmsButtonDwell
+                                            anchors.fill: parent
+                                        }
                                         emphasizeSelectedText: false
                                         text: "RMS"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "RMS") : true
@@ -688,6 +695,13 @@ Item {
                                     }
                                     StudioButton {
                                         objectName: "detectorPeakButton"
+                                        ToolTip.text: "Use peak detection for instantaneous signal peaks."
+                                        ToolTip.visible: detectorPeakButtonDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: detectorPeakButtonDwell
+                                            anchors.fill: parent
+                                        }
                                         emphasizeSelectedText: false
                                         text: "PEAK"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "PEAK") : false
@@ -726,6 +740,13 @@ Item {
                                     spacing: 2
                                     StudioButton {
                                         objectName: "linkMaxButton"
+                                        ToolTip.text: "Link both channels using the stronger detector signal."
+                                        ToolTip.visible: linkMaxButtonDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: linkMaxButtonDwell
+                                            anchors.fill: parent
+                                        }
                                         emphasizeSelectedText: false
                                         text: "LINKED MAX"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "LINKED_MAX") : true
@@ -735,6 +756,13 @@ Item {
                                     }
                                     StudioButton {
                                         objectName: "linkMeanButton"
+                                        ToolTip.text: "Link both channels using the mean detector signal."
+                                        ToolTip.visible: linkMeanButtonDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: linkMeanButtonDwell
+                                            anchors.fill: parent
+                                        }
                                         emphasizeSelectedText: false
                                         text: "LINKED MEAN"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "LINKED_MEAN") : false
@@ -744,6 +772,13 @@ Item {
                                     }
                                     StudioButton {
                                         objectName: "linkDualMonoButton"
+                                        ToolTip.text: "Process the left and right channels independently."
+                                        ToolTip.visible: linkDualMonoButtonDwell.ready
+                                        ToolTip.delay: 0
+                                        StudioTooltipDwell {
+                                            id: linkDualMonoButtonDwell
+                                            anchors.fill: parent
+                                        }
                                         emphasizeSelectedText: false
                                         text: "DUAL MONO"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "DUAL_MONO") : false
