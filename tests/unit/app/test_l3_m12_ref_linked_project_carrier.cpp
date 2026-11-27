@@ -6,7 +6,7 @@
 #include "internal/l3_m12_ref_linked_native_replay_plan.hpp"
 #include "internal/l3_m12_restored_native_render.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
-#include "internal/l3_manual_match_transfer_draft.hpp"
+#include "internal/l3_manual_match_transfer_identity.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
@@ -849,6 +849,23 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(linkedAfter[2]==linkedBefore[2]);
     QVERIFY(draft.value()->linked_bindings_after==exactTransferOwner->replay->reference_bindings);
     QVERIFY(!transferManual.instances().back().active());
+    const auto identity=transfer::identify_manual_match_transfer(*draft.value());
+    QVERIFY(identity);
+    QCOMPARE(identity.value()->sha256.size(),std::size_t{64});
+    QVERIFY(!identity.value()->is_solver_winner());
+    QVERIFY(!identity.value()->is_verified());
+    QVERIFY(!identity.value()->authorizes_project_commit());
+    const auto repeat=transfer::identify_manual_match_transfer(*draft.value());
+    QVERIFY(repeat);
+    QCOMPARE(repeat.value()->sha256,identity.value()->sha256);
+    const auto other=transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
+        transferBindings,*reg,nodes[0].allocated_instance_id);
+    QVERIFY(other);
+    const auto otherIdentity=transfer::identify_manual_match_transfer(*other.value());
+    QVERIFY(otherIdentity);
+    QVERIFY(otherIdentity.value()->sha256!=identity.value()->sha256);
+    QVERIFY(identity.value()->sha256!=exactTransferOwner->replay->exact_plan_checksum);
+
     QVERIFY(!transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
         transferBindings,*reg,nodes[2].allocated_instance_id));
     QVERIFY(transferManual.set_user_bypass(manualTransient,false));
