@@ -94,8 +94,9 @@ namespace rgsml::app::l3_automatch {
     const LinkedEditorSnapshot& snapshot,int band_index)
 {
     const auto* p=std::get_if<dsp::DynamicEqParameters>(&snapshot.parameters);
-    if(!p||!snapshot.exact_owner||!snapshot.exact_owner->exact_prepared_owner)return {};
-    const auto format=snapshot.exact_owner->exact_prepared_owner->view().format();
+    const auto prepared=snapshot.prepared_owner();
+    if(!p||!prepared)return {};
+    const auto format=prepared->view().format();
     return project_dynamic_response(*p,band_index,format.sample_rate().value(),
         static_cast<std::uint32_t>(format.channel_count()));
 }
@@ -121,8 +122,9 @@ namespace rgsml::app::l3_automatch {
         if(entry.isEmpty())return {};
         bands.append(entry);
     }
-    if(!snapshot.exact_owner||!snapshot.exact_owner->exact_prepared_owner)return {};
-    const auto fs=snapshot.exact_owner->exact_prepared_owner->view().format().sample_rate().value();
+    const auto prepared=snapshot.prepared_owner();
+    if(!prepared)return {};
+    const auto fs=prepared->view().format().sample_rate().value();
     out.insert("maximumFrequencyHz",std::min(20000.0,0.45*static_cast<double>(fs)));
     out.insert("bands",bands);
     return out;

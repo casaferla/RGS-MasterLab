@@ -3,6 +3,7 @@
 // Product replay, never a research demo, MANUAL placeholder or solver seed.
 // A returned snapshot is presentation only; no mutation or Activity grant.
 #include "l3_m12_product_preview_worker_ticket.hpp"
+#include "l3_manual_match_transfer_project.hpp"
 #include "mastering_chain_state.hpp"
 #include <QThread>
 #include <algorithm>
@@ -18,6 +19,13 @@ struct LinkedEditorSnapshot final {
     std::shared_ptr<const Ticket> exact_owner;
     dsp::ModuleInstance instance;
     dsp::ModuleParameterPayload parameters;
+    std::shared_ptr<const ManualMatchTransferPreviewTicket> provisional_owner{};
+    [[nodiscard]] std::shared_ptr<const render::RenderResult> prepared_owner() const noexcept
+    {
+        if(exact_owner)return exact_owner->exact_prepared_owner;
+        if(provisional_owner)return provisional_owner->capture().native.exact_prior_owner->exact_prepared_owner;
+        return {};
+    }
     [[nodiscard]] constexpr bool manual_editable() const noexcept{return false;}
     [[nodiscard]] constexpr bool activity_authorized() const noexcept{return false;}
 };
@@ -32,6 +40,11 @@ struct LinkedEditorSnapshot final {
 {
     if(QThread::currentThread()!=preview.thread())return {};
     const auto ticket=preview.private_m12_product_preview_ticket();
+    const auto provisional=preview.private_manual_transfer_preview_ticket();
+    if(provisional) {
+        if(ticket||!provisional->matches_prepared(current_prepared)||
+           !provisional->matches_manual(current_manual,current_manual_bindings))return {};
+    } else {
     if(!ticket||!ticket->replay||!ticket->replay->registry_owner||
        !current_prepared||ticket->exact_prepared_owner!=current_prepared||
        current_manual.context()!=dsp::ProcessingChainContext{
@@ -48,12 +61,16 @@ struct LinkedEditorSnapshot final {
         dsp::ProcessingStage::MASTER,dsp::ChainSegment::REF_LINKED}||
        replay.plan_id.is_nil()||replay.controller_id.is_nil()||
        replay.linked_chain_id.is_nil()||replay.exact_plan_checksum.empty())return {};
-    const auto nodes=replay.reference_linked.instances();
-    if(nodes.size()!=replay.reference_bindings.size())return {};
+    }
+    const auto& linked=provisional?provisional->capture().native.linked_after:ticket->replay->reference_linked;
+    const auto& linkedBindings=provisional?provisional->capture().native.linked_bindings_after:ticket->replay->reference_bindings;
+    const auto registry=provisional?provisional->capture().native.exact_prior_owner->replay->registry_owner:ticket->replay->registry_owner;
+    const auto nodes=linked.instances();
+    if(!registry||nodes.size()!=linkedBindings.size())return {};
     std::vector<LinkedEditorSnapshot> result;
     for(std::size_t i=0;i<nodes.size();++i) {
         const auto& node=nodes[i];
-        const auto& binding=replay.reference_bindings[i];
+        const auto& binding=linkedBindings[i];
         if(!binding_matches_instance(node,binding)||
            node.owner()!=dsp::ModuleOwner::REFERENCE_MATCH||
            node.provenance()!=dsp::ModuleProvenance::REFERENCE_MATCH||
@@ -71,8 +88,11 @@ struct LinkedEditorSnapshot final {
         if(!dynamic&&!transient)continue;
         if((dynamic&&!std::holds_alternative<dsp::DynamicEqParameters>(binding.parameters))||
            (transient&&!std::holds_alternative<dsp::TransientShaperParameters>(binding.parameters))||
-           !replay.registry_owner->has_factory(type))return {};
-        result.push_back(LinkedEditorSnapshot{ticket,node,binding.parameters});
+           !registry->has_factory(type))return {};
+        // The transferred node is now represented by the MANUAL slot.
+        // Do not present the retired linked duplicate as a second editor.
+        if(provisional&&node.instance_id()==provisional->capture().native.linked_instance)continue;
+        result.push_back(LinkedEditorSnapshot{ticket,node,binding.parameters,provisional});
     }
     return result;
 }
@@ -82,7 +102,8 @@ struct LinkedEditorSnapshot final {
     const MasteringPreviewController& preview,
     const MasteringChainState& manual)
 {
-    if(!preview.private_m12_linked_editor_owner_matches(manual)||
+    if((!preview.private_m12_linked_editor_owner_matches(manual)&&
+        !preview.private_manual_transfer_owner_matches(manual))||
        !preview.snapshot_provider())return {};
     const auto prepared=preview.snapshot_provider()();
     const auto bindings=manual.execution_bindings();
