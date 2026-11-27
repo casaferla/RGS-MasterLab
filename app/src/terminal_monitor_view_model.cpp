@@ -228,6 +228,12 @@ bool TerminalMonitorViewModel::can_prepare() const noexcept
 bool TerminalMonitorViewModel::can_prepare_offline() const noexcept
 {
     if(!can_prepare()||!offlineMasterAuthorizer_)return false;
+    // Readiness never performs the authorization or modifies transport.
+    // A throwing provider cannot make the render command available.
+    if(offlineMasterReadiness_) {
+        try {if(!offlineMasterReadiness_())return false;}
+        catch(...) {return false;}
+    }
     const auto source=transport_->playback_snapshot();
     if(!source)return false;
     // Do not create a second Prepare on normal MANUAL playback. The
@@ -329,6 +335,14 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
         // non-QML callers must present an explicit provenance authorizer.
         if(!offlineMasterAuthorizer_)
             return report(reject("MONITOR_OFFLINE_MASTER_AUTHORIZER_REQUIRED"));
+        if(offlineMasterReadiness_) {
+            try {
+                if(!offlineMasterReadiness_())
+                    return report(reject("OFFLINE_MASTER_REQUIRES_CURRENT_PROCESSED_SOURCE"));
+            } catch(...) {
+                return report(reject("OFFLINE_MASTER_READINESS_UNAVAILABLE"));
+            }
+        }
         const auto authorized=offlineMasterAuthorizer_();
         if(!authorized)return report(authorized);
     }
