@@ -924,7 +924,9 @@ Rectangle {
             Layout.fillHeight: true
             Layout.minimumHeight: 0
             active: !!root.activeModule && root.activeModule.editorContentKey === "TRANSIENT_SHAPER"
-                && !!root.activeModule.linkedParameters.instanceId
+                && (root.activeModule.linkedReadOnly
+                    ? !!root.activeModule.linkedParameters.instanceId
+                    : root.activeModule.manualEditable === true)
             visible: active
             sourceComponent: Component {
                 TransientShaperEditor {
@@ -939,7 +941,8 @@ Rectangle {
                         function setSustainAmountDb(value) {}
                         function resetToDefault() {}
                     }
-                    transientModule: linkedTransientModel
+                    transientModule: root.activeModule && !root.activeModule.linkedReadOnly
+                        ? root.activeModule : linkedTransientModel
                     activity: root.activeModule ? root.activeModule.linkedActivity : ({})
                 }
             }
