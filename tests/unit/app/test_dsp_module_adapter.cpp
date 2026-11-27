@@ -71,6 +71,25 @@ void DspModuleAdapterTest::testManualDynamicEqTypedEditsAndHistory()
         id("ad320000-0000-4000-8000-000000000014"),*de.value(),
         id("ad320000-0000-4000-8000-000000000015"),*ts.value());
     QVERIFY(state);
+    // The shared selector must enumerate both native processors in their
+    // actual MANUAL order; no artificial UI-only row is inserted.
+    GainViewModel gain(state.value());
+    EqViewModel eq(state.value());
+    CompressorViewModel comp(state.value());
+    DspChainAdapterModel model{&gain,&eq,&comp,state.value()};
+    const QStringList expected{QStringLiteral("INPUT_GAIN"),QStringLiteral("PARAMETRIC_EQ"),
+        QStringLiteral("DYNAMIC_EQ"),QStringLiteral("TRANSIENT_SHAPER"),QStringLiteral("COMPRESSOR")};
+    QCOMPARE(model.modules().size(),expected.size());
+    for(qsizetype i=0;i<expected.size();++i) {
+        auto* module=qobject_cast<DspModuleAdapter*>(model.modules().at(i).value<QObject*>());
+        QVERIFY(module);
+        QCOMPARE(module->editor_content_key(),expected.at(i));
+        QVERIFY(!module->linked_read_only());
+    }
+    model.setSelectedIndex(2);
+    QVERIFY(qobject_cast<ManualDynamicEqModuleAdapter*>(model.selected_module()));
+    model.setSelectedIndex(3);
+    QVERIFY(qobject_cast<ManualTransientShaperModuleAdapter*>(model.selected_module()));
     ManualDynamicEqModuleAdapter adapter(state.value(),nullptr,QStringLiteral("Mastering"));
     QVERIFY(adapter.manual_editable()&&adapter.bypass());
     const auto band=QString::fromStdString(bandId.to_string());
