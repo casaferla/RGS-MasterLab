@@ -2249,6 +2249,7 @@ ProjectSessionViewModel::capture_private_manual_match_transfer(const core::Uuid&
     if(!lease||!*lease.value())return fail("MANUAL_MATCH_TRANSFER_EPOCH_UNAVAILABLE");
     const auto held=*lease.value();
     Q_UNUSED(held);
+    const auto capturedEpoch=m12ProductOwnershipEpoch_;
     const auto ticket=previewController_->private_m12_product_preview_ticket();
     const auto& provider=previewController_->snapshot_provider();
     const auto registry=masteringChainState_->registry_snapshot();
@@ -2276,10 +2277,11 @@ ProjectSessionViewModel::capture_private_manual_match_transfer(const core::Uuid&
     if(previewController_->private_m12_product_preview_ticket()!=ticket||
        provider()!=ticket->exact_prepared_owner||
        masteringChainState_->execution_bindings()!=bindings||
-       masteringChainState_->chain().revision()!=ticket->exact_manual_chain_revision)
+       masteringChainState_->chain().revision()!=ticket->exact_manual_chain_revision||
+       m12ProductOwnershipEpoch_!=capturedEpoch)
         return fail("MANUAL_MATCH_TRANSFER_CAPTURE_RACED");
     return R::success(std::make_shared<const a::ManualMatchTransferCapture>(
-        a::ManualMatchTransferCapture{m12ProductOwnershipEpoch_,
+        a::ManualMatchTransferCapture{capturedEpoch,
             std::move(*draft.value()),std::move(*projectDraft.value())}));
 }
 
@@ -2291,7 +2293,8 @@ bool ProjectSessionViewModel::private_manual_match_transfer_still_current(
     const auto fresh=capture_private_manual_match_transfer(capture.native.linked_instance.uuid());
     if(!fresh)return false;
     const auto& now=**fresh.value();
-    return now.product_epoch==capture.product_epoch&&
+    return m12ProductOwnershipEpoch_==capture.product_epoch&&
+        now.product_epoch==capture.product_epoch&&
         now.native.exact_prior_owner==capture.native.exact_prior_owner&&
         now.project.identity.sha256==capture.project.identity.sha256&&
         now.project.identity.canonical_content==capture.project.identity.canonical_content&&
