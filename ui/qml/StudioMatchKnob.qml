@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 
 // One approved AutoMatch amount knob: vertical drag, precise numeric backup
 // in the native Product dialog, 270-degree LED arc and proportional glow.
@@ -11,6 +12,7 @@ Item {
     property color accentColor: "#4E86C6"
     property bool editable: true
     property bool prominent: false
+    property string interactionHint: ""
     property real stepSize: 0.1
     signal valueEdited(real nextValue)
 
@@ -117,7 +119,18 @@ Item {
     onWidthChanged: dial.requestPaint()
     onHeightChanged: dial.requestPaint()
 
+    StudioTooltipDwell {
+        id: knobDwell
+        anchors.fill: parent
+        canShow: root.interactionHint.length > 0 && root.editable
+        interacting: knobMouse.pressed
+    }
+    ToolTip.text: root.interactionHint
+    ToolTip.visible: knobDwell.ready
+    ToolTip.delay: 0
+
     MouseArea {
+        id: knobMouse
         anchors.fill: parent
         enabled: root.editable
         cursorShape: Qt.SizeVerCursor
