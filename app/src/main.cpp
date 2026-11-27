@@ -1934,10 +1934,21 @@ int main(int argc, char* argv[])
         // Open ACTUAL Main.qml at the PO logical geometry, not a QML mockup.
         mainWindow->setWidth(1184);
         mainWindow->setHeight(688);
-        dspChainAdapterModel.setSelectedIndex(5); // real M17 chain adapter
+        const auto findEditor=[&dspChainAdapterModel](const char* key) {
+            const auto modules=dspChainAdapterModel.modules();
+            for(qsizetype i=0;i<modules.size();++i) {
+                const auto* m=qobject_cast<rgsml::app::DspModuleAdapter*>(modules.at(i).value<QObject*>());
+                if(m&&m->editor_content_key()==QString::fromLatin1(key))
+                    return static_cast<int>(i);
+            }
+            return -1;
+        };
+        const int limiterIndex=findEditor("TRUE_PEAK_LIMITER");
+        if(limiterIndex<0)return EXIT_FAILURE;
+        dspChainAdapterModel.setSelectedIndex(limiterIndex);
         mainWindow->show();
         QTimer::singleShot(900, &application, [mainWindow,&application,
-                                                  &dspChainAdapterModel] {
+                                                  &dspChainAdapterModel,findEditor,limiterIndex] {
             // PO 2026-11-15: compare REAL undock/title/context scene
             // coordinates against Parametric EQ, for EVERY active DSP
             // editor including M16/M17/M19-M21, at two real window sizes.
@@ -2012,10 +2023,12 @@ int main(int argc, char* argv[])
                 const char* editorName;
                 const char* wellName;
             };
-            const std::array<TopLeftSpec,2> wellSpecs{{
-                {3,"stereoMsEditor","stereoMsActiveSurface"},
-                {4,"streamingTruePeakLimiterEditor","streamingP2MainPanel"}
-            }};
+            std::vector<TopLeftSpec> wellSpecs;
+            const auto stereoIndex=findEditor("STEREO_MS");
+            const auto p2Index=findEditor("STREAMING_TRUE_PEAK_LIMITER");
+            if(stereoIndex<0){application.exit(EXIT_FAILURE);return;}
+            wellSpecs.push_back({stereoIndex,"stereoMsEditor","stereoMsActiveSurface"});
+            if(p2Index>=0)wellSpecs.push_back({p2Index,"streamingTruePeakLimiterEditor","streamingP2MainPanel"});
             const auto wellPoint=[mainWindow,&dspChainAdapterModel](
                 const TopLeftSpec& spec) ->std::optional<QPointF> {
                 dspChainAdapterModel.setSelectedIndex(spec.moduleIndex);
@@ -2046,9 +2059,8 @@ int main(int argc, char* argv[])
             mainWindow->setWidth(1184);
             mainWindow->setHeight(688);
             QCoreApplication::processEvents();
-            const std::array<std::optional<QPointF>,2> baselineWell{{
-                wellPoint(wellSpecs[0]),wellPoint(wellSpecs[1])
-            }};
+            std::vector<std::optional<QPointF>> baselineWell;
+            for(const auto& spec:wellSpecs)baselineWell.push_back(wellPoint(spec));
             bool allTopLeftAnchors=true;
             // Windows CI's HyperVMonitor exposes just 1200 physical
             // screen pixels: a 1350-wide QWindow request is CLAMPED and
@@ -2087,7 +2099,7 @@ int main(int argc, char* argv[])
             }
             mainWindow->setWidth(1184);
             mainWindow->setHeight(688);
-            dspChainAdapterModel.setSelectedIndex(5); // M17
+            dspChainAdapterModel.setSelectedIndex(limiterIndex);
             QCoreApplication::processEvents();
             std::fprintf(stdout,
                 "RGS_GUI_ALL_PRIMARY_WELLS_KEEP_MIN_TOP_LEFT=%s\n",
