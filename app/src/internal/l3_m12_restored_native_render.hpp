@@ -35,8 +35,20 @@ struct M12NativeStageExecutionWitness final {
 // Independent of PCM and Project writes: inspect the signatures produced
 // by the REAL rendering engine and require each to match the frozen
 // persisted DSP identity. A signature list is not a verifier receipt.
+// A graph-only execution view is not evidence of a calculated plan.
+// Used by both accepted replay and nonpublishing transfer audition.
+struct M12NativeExecutionGraphView final {
+    const std::shared_ptr<const dsp::ModuleRegistry>& registry_owner;
+    const dsp::ProcessingChain& manual_prefix;
+    std::span<const dsp::ModuleExecutionBinding> manual_bindings;
+    const dsp::ProcessingChain& reference_linked;
+    std::span<const dsp::ModuleExecutionBinding> reference_bindings;
+    const std::optional<dsp::ProcessingChain>& terminal_p2;
+    std::span<const dsp::ModuleExecutionBinding> terminal_p2_bindings;
+};
+template<class Graph>
 [[nodiscard]] inline bool m12_native_stage_witness_matches_replay_plan(
-    const RestoredM12NativeReplayPlan& plan,
+    const Graph& plan,
     const M12NativeStageExecutionWitness& witness)
 {
     if(!plan.registry_owner)return false;
@@ -72,8 +84,8 @@ struct M12NativeStageExecutionWitness final {
                :witness.user_terminal_p2.empty());
 }
 [[nodiscard]] inline core::Result<render::RenderResult>
-render_restored_m12_full_native_pcm_once(
-    const RestoredM12NativeReplayPlan& plan,
+render_m12_native_graph_pcm_once(
+    const M12NativeExecutionGraphView& plan,
     const render::RenderResult& current_owned_prepared,
     core::FrameCount maximum_block_frames,
     M12NativeStageExecutionWitness* stage_witness = nullptr,
@@ -180,13 +192,7 @@ render_restored_m12_full_native_pcm_once(
             dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
             plan.terminal_p2_bindings,false)))
         return fail("L3_M12_REPLAY_OWNER_BINDING_OR_SEGMENT_INVALID");
-    if(!plan.registry_owner||plan.project_id.is_nil()||
-       plan.source_id.is_nil()||plan.reference_id.is_nil()||
-       plan.plan_id.is_nil()||plan.controller_id.is_nil()||plan.linked_chain_id.is_nil()||
-       plan.exact_plan_checksum.empty()||
-       plan.exact_m10_winner_checksum.empty()||
-       plan.exact_m11_protection_checksum.empty()||
-       plan.exact_source_reference_scope_revision.empty()||
+    if(!plan.registry_owner||
        plan.manual_prefix.instances().size()!=plan.manual_bindings.size()||
        plan.reference_linked.instances().size()!=
            plan.reference_bindings.size()||
@@ -265,5 +271,34 @@ render_restored_m12_full_native_pcm_once(
     if(stage_witness)*stage_witness=std::move(observed);
     seal();
     return final;
+}
+// Published replay remains fail-closed on accepted metadata. Provisional
+// candidates may call the graph executor only; they do not create a
+// synthetic RestoredM12NativeReplayPlan or borrow the winner checksums.
+[[nodiscard]] inline core::Result<render::RenderResult>
+render_restored_m12_full_native_pcm_once(
+    const RestoredM12NativeReplayPlan& plan,
+    const render::RenderResult& current_owned_prepared,
+    core::FrameCount maximum_block_frames,
+    M12NativeStageExecutionWitness* stage_witness=nullptr,
+    const std::atomic<bool>* cancellation=nullptr,
+    std::unique_ptr<render::linked_activity::LinkedActivityRenderCapture>* activity_capture=nullptr)
+{
+    if(stage_witness)*stage_witness={};
+    if(activity_capture)activity_capture->reset();
+    if(!plan.registry_owner||plan.project_id.is_nil()||
+       plan.source_id.is_nil()||plan.reference_id.is_nil()||
+       plan.plan_id.is_nil()||plan.controller_id.is_nil()||plan.linked_chain_id.is_nil()||
+       plan.exact_plan_checksum.empty()||plan.exact_m10_winner_checksum.empty()||
+       plan.exact_m11_protection_checksum.empty()||
+       plan.exact_source_reference_scope_revision.empty())
+        return core::Result<render::RenderResult>::failure(core::Error{
+            core::ErrorCode::InvalidState,"L3_M12_REPLAY_INVALID_PREPARED_OR_PLAN"});
+    const M12NativeExecutionGraphView graph{
+        plan.registry_owner,plan.manual_prefix,plan.manual_bindings,
+        plan.reference_linked,plan.reference_bindings,plan.terminal_p2,
+        plan.terminal_p2_bindings};
+    return render_m12_native_graph_pcm_once(graph,current_owned_prepared,
+        maximum_block_frames,stage_witness,cancellation,activity_capture);
 }
 } // namespace rgsml::app::l3_automatch::m12_frozen
