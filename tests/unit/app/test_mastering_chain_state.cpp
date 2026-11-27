@@ -68,6 +68,8 @@ class MasteringChainStateTest final : public QObject {
 private slots:
     void defaultTopologyAndCanonicalOrder();
     void manualMatchDspsRequireRealFactoriesAndRetainTypedBindings();
+    void manualMatchDspsNativeSixRates_data();
+    void manualMatchDspsNativeSixRates();
     void productStartupHasFourModulesWithStereoMsInitiallyBypassed();
     void stableInstanceIdsDuringEdits();
     void m18OptInChainEpochBlocksAllFiveEdits();
@@ -93,6 +95,99 @@ void m18TerminalStateAuthorityCannotSelfUninstallOrCrossThread();
     void terminalPrivateWorkerStagesOnlyCurrentOwnedOutput();
     void terminalPrivateEndToEndRenderInstallAndRollback();
 };
+
+void MasteringChainStateTest::manualMatchDspsNativeSixRates_data()
+{
+    QTest::addColumn<int>("rateHz");
+    for(const int rate:{44100,48000,88200,96000,176400,192000})
+        QTest::newRow(QByteArray::number(rate).constData())<<rate;
+}
+void MasteringChainStateTest::manualMatchDspsNativeSixRates()
+{
+    QFETCH(int,rateHz);
+    auto base=ModuleRegistry::create_dsp_package_v1();QVERIFY(base);
+    auto c01=ModuleRegistry::with_dynamic_eq_offline(std::move(*base.value()));QVERIFY(c01);
+    auto c00=ModuleRegistry::with_transient_shaper_offline(std::move(*c01.value()));QVERIFY(c00);
+    const auto gain=test_instance_id("be100000-0000-4000-8000-000000000011");
+    const auto eq=test_instance_id("be100000-0000-4000-8000-000000000012");
+    const auto comp=test_instance_id("be100000-0000-4000-8000-000000000013");
+    const auto dynamic=test_instance_id("be100000-0000-4000-8000-000000000014");
+    const auto transient=test_instance_id("be100000-0000-4000-8000-000000000015");
+    auto baseline=MasteringChainState::create_default(*c00.value(),
+        test_uuid("be100000-0000-4000-8000-000000000001"),gain,eq,comp);
+    QVERIFY(baseline);
+    DynamicEqBandSpec spec;
+    spec.band_id=test_uuid("be100000-0000-4000-8000-000000000021");
+    spec.shape=DynamicEqBellShape{1000.0,0.707};
+    spec.control.base_gain_db=3.0;
+    spec.control.range_db=-2.0;
+    spec.control.threshold_dbfs=-40.0;
+    auto band=DynamicEqBandParameters::create(spec);QVERIFY(band);
+    auto de=DynamicEqParameters::create({*band.value()});QVERIFY(de);
+    auto ts=TransientShaperParameters::create(4.0,-2.0);QVERIFY(ts);
+    auto extended=MasteringChainState::with_manual_match_dsps(*baseline.value(),
+        dynamic,*de.value(),transient,*ts.value());QVERIFY(extended);
+    auto& state=*extended.value();
+    const auto rate=core::SampleRate::create(rateHz);QVERIFY(rate);
+    const auto format=audio::AudioFormat::create(*rate.value(),audio::ChannelLayout::STEREO_LR);
+    const auto frames=core::FrameCount::create(8192);
+    const auto block=core::FrameCount::create(256);
+    QVERIFY(format&&frames&&block);
+    auto pcm=audio::AudioBuffer::create(*format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());QVERIFY(pcm);
+    for(std::size_t c=0;c<2;++c) {
+        auto channel=pcm.value()->mutable_view().channel(c);QVERIFY(channel);
+        for(std::size_t i=0;i<channel.value()->size();++i)
+            (*channel.value())[i]=(i%1024<256?0.2:0.04)*std::sin(
+                6.283185307179586*1000.0*static_cast<double>(i)/rateHz+0.3*c);
+    }
+    const auto execute=[&](const MasteringChainState& chain) {
+        auto request=render::RenderRequest::create(pcm.value()->view(),
+            pcm.value()->view().absolute_range(),chain.chain(),chain.execution_bindings(),*block.value());
+        if(!request)return core::Result<render::RenderResult>::failure(*request.error());
+        return render::render_preview(*request.value(),*chain.registry_snapshot());
+    };
+    const auto original=execute(*baseline.value());QVERIFY(original);
+    const auto bypassed=execute(state);QVERIFY(bypassed);
+    QCOMPARE(original.value()->view().format(),bypassed.value()->view().format());
+    QCOMPARE(bypassed.value()->view().absolute_range(),pcm.value()->view().absolute_range());
+    for(std::size_t c=0;c<2;++c) {
+        const auto a=original.value()->view().channel(c),b=bypassed.value()->view().channel(c);
+        QVERIFY(a&&b);QCOMPARE(a.value()->size(),b.value()->size());
+        for(std::size_t i=0;i<a.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*a.value())[i]),std::bit_cast<std::uint64_t>((*b.value())[i]));
+    }
+    QVERIFY(state.set_user_bypass(dynamic,false));
+    const auto eqOnly=execute(state);QVERIFY(eqOnly);
+    QVERIFY(state.set_user_bypass(transient,false));
+    const auto both=execute(state);QVERIFY(both);
+    QCOMPARE(both.value()->view().format(),*format.value());
+    QCOMPARE(both.value()->view().absolute_range(),pcm.value()->view().absolute_range());
+    QCOMPARE(both.value()->signatures().size(),std::size_t{5});
+    QVERIFY(both.value()->signatures()[2].disposition==render::ModuleExecutionDisposition::PROCESSED);
+    QVERIFY(both.value()->signatures()[3].disposition==render::ModuleExecutionDisposition::PROCESSED);
+    bool changedEq=false,changedTransient=false;
+    for(std::size_t c=0;c<2;++c) {
+        auto a=original.value()->view().channel(c),b=eqOnly.value()->view().channel(c),
+            d=both.value()->view().channel(c);
+        QVERIFY(a&&b&&d);
+        for(std::size_t i=0;i<d.value()->size();++i) {
+            QVERIFY(std::isfinite((*d.value())[i]));
+            changedEq|=std::abs((*a.value())[i]-(*b.value())[i])>1e-10;
+            changedTransient|=std::abs((*b.value())[i]-(*d.value())[i])>1e-10;
+        }
+    }
+    QVERIFY(changedEq&&changedTransient);
+    QVERIFY(state.set_user_bypass(dynamic,true));
+    QVERIFY(state.set_user_bypass(transient,true));
+    const auto returned=execute(state);QVERIFY(returned);
+    for(std::size_t c=0;c<2;++c) {
+        auto a=original.value()->view().channel(c),b=returned.value()->view().channel(c);
+        QVERIFY(a&&b);
+        for(std::size_t i=0;i<a.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*a.value())[i]),std::bit_cast<std::uint64_t>((*b.value())[i]));
+    }
+}
 
 void MasteringChainStateTest::manualMatchDspsRequireRealFactoriesAndRetainTypedBindings()
 {
