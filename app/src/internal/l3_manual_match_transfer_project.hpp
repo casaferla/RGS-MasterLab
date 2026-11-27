@@ -26,7 +26,7 @@ prepare_manual_match_transfer_project(const project::ProjectSnapshot& before,
     const auto fail=[](const char* why){
         return R::failure(core::Error{core::ErrorCode::InvalidState,why});
     };
-    auto identity=identify_manual_match_transfer(transfer);
+    auto identity=identify_manual_match_transfer_graph(transfer);
     if(!identity)return R::failure(*identity.error());
     const auto prior=transfer.exact_prior_owner;
     const auto& replay=*prior->replay;
@@ -252,7 +252,8 @@ struct ManualMatchTransferCapture final {
 render_captured_manual_match_transfer(const ManualMatchTransferCapture& capture,
     core::FrameCount maxBlock,const std::atomic<bool>* cancellation=nullptr)
 {
-    if(!capture.product_epoch)
+    if(!capture.product_epoch||!capture.native.exact_prior_owner||
+       !capture.native.exact_prior_owner->exact_prepared_owner)
         return core::Result<render::RenderResult>::failure(core::Error{
             core::ErrorCode::InvalidState,"MANUAL_MATCH_TRANSFER_CAPTURE_NO_EPOCH"});
     const auto checked=validate_manual_match_transfer_project_readback(
@@ -270,7 +271,8 @@ public:
         std::shared_ptr<const ManualMatchTransferCapture> capture)
     {
         using R=core::Result<ManualMatchTransferPreviewTicket>;
-        if(!capture||!capture->product_epoch)
+        if(!capture||!capture->product_epoch||!capture->native.exact_prior_owner||
+           !capture->native.exact_prior_owner->exact_prepared_owner)
             return R::failure(core::Error{core::ErrorCode::InvalidState,
                 "MANUAL_MATCH_PREVIEW_NO_CAPTURE"});
         const auto checked=validate_manual_match_transfer_project_readback(

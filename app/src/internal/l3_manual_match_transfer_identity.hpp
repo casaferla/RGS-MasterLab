@@ -17,14 +17,14 @@ struct ManualMatchTransferIdentity final {
 // separately from M10/M11 checksums. These prior checksums are provenance
 // ONLY. They cannot attest safety or convergence of the derived graph.
 [[nodiscard]] inline core::Result<ManualMatchTransferIdentity>
-identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
+identify_manual_match_transfer_graph(const ManualMatchTransferDraft& draft)
 {
     using R=core::Result<ManualMatchTransferIdentity>;
     const auto fail=[](const char* code){
         return R::failure(core::Error{core::ErrorCode::InvalidState,code});
     };
     const auto prior=draft.exact_prior_owner;
-    if(!prior||!prior->replay||!prior->replay->registry_owner||!prior->exact_prepared_owner)
+    if(!prior||!prior->replay||!prior->replay->registry_owner)
         return fail("MANUAL_MATCH_IDENTITY_NO_PRIOR_OWNER");
     const auto& replay=*prior->replay;
     const auto& manual=draft.manual_after.proposed_manual_chain;
@@ -37,7 +37,7 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
         {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
         prior->exact_manual_chain_revision,prior->exact_manual_nodes);
     if(!priorManual)return R::failure(*priorManual.error());
-    const auto expected=prepare_manual_match_transfer(prior,*priorManual.value(),
+    const auto expected=prepare_manual_match_transfer_graph(prior,*priorManual.value(),
         prior->exact_manual_bindings,*replay.registry_owner,draft.linked_instance);
     if(!expected)return R::failure(*expected.error());
     const auto same=[](const dsp::ProcessingChain& a,const dsp::ProcessingChain& b){
@@ -129,6 +129,14 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
         QByteArray::fromStdString(canonical.value()->canonical_utf8()),
         QCryptographicHash::Sha256).toHex().toStdString();
     return R::success(ManualMatchTransferIdentity{std::move(*canonical.value()),hash});
+}
+[[nodiscard]] inline core::Result<ManualMatchTransferIdentity>
+identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
+{
+    if(!draft.exact_prior_owner||!draft.exact_prior_owner->exact_prepared_owner)
+        return core::Result<ManualMatchTransferIdentity>::failure(core::Error{
+            core::ErrorCode::InvalidState,"MANUAL_MATCH_IDENTITY_NO_PREPARED_OWNER"});
+    return identify_manual_match_transfer_graph(draft);
 }
 // Render the exact derived graph once, using the same native engine and
 // the same PREPARED owner as the original. No ticket is installed and

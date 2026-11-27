@@ -23,7 +23,9 @@ struct ManualMatchTransferDraft final {
     [[nodiscard]] constexpr bool requires_fresh_verification() const noexcept {return true;}
     [[nodiscard]] constexpr bool authorizes_project_commit() const noexcept {return false;}
 };
-[[nodiscard]] inline core::Result<ManualMatchTransferDraft> prepare_manual_match_transfer(
+// Pure graph preparation for the pre-destructive Project Open gate.
+// Its result has no PCM/owner authority; live capture uses the wrapper below.
+[[nodiscard]] inline core::Result<ManualMatchTransferDraft> prepare_manual_match_transfer_graph(
     std::shared_ptr<const m12_frozen::M12ImmutableProductPreviewTicket> ticket,
     const dsp::ProcessingChain& manual,
     std::span<const dsp::ModuleExecutionBinding> bindings,
@@ -34,7 +36,7 @@ struct ManualMatchTransferDraft final {
     const auto fail=[](const char* reason){
         return R::failure(core::Error{core::ErrorCode::InvalidState,reason});
     };
-    if(!ticket||!ticket->replay||!ticket->exact_prepared_owner||
+    if(!ticket||!ticket->replay||
         manual.context()!=dsp::ProcessingChainContext{dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL}||
         manual.revision()!=ticket->exact_manual_chain_revision||
         !std::equal(manual.instances().begin(),manual.instances().end(),
@@ -102,5 +104,19 @@ struct ManualMatchTransferDraft final {
     auto copiedBindings=linkedBindings;
     return R::success(ManualMatchTransferDraft{std::move(ticket),requested,to->instance_id(),
         std::move(*after.value()),std::move(*linkedAfter.value()),std::move(copiedBindings)});
+}
+[[nodiscard]] inline core::Result<ManualMatchTransferDraft> prepare_manual_match_transfer(
+    std::shared_ptr<const m12_frozen::M12ImmutableProductPreviewTicket> ticket,
+    const dsp::ProcessingChain& manual,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const dsp::ModuleRegistry& registry,
+    const dsp::ModuleInstanceId& requested)
+{
+    using R=core::Result<ManualMatchTransferDraft>;
+    if(!ticket||!ticket->exact_prepared_owner)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "MANUAL_MATCH_TRANSFER_NO_PREPARED_OWNER"});
+    return prepare_manual_match_transfer_graph(
+        std::move(ticket),manual,bindings,registry,requested);
 }
 } // namespace rgsml::app::l3_automatch
