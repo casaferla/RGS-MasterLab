@@ -70,17 +70,18 @@ Item {
             ctx.strokeStyle = "#294153"
             ctx.stroke()
 
-            // Same hue, brighter core and longer phosphor halo as amount
-            // increases; zero never shows a fake active progress arc.
-            if (amount > 0.0001) {
+            // Arc sweep, core opacity and halo blur all scale linearly
+            // from zero. No minimum-light or minimum-glow offset.
+            // Read-only states retain a dim proportional arc without glow.
+            if (amount > 0) {
                 ctx.save()
                 ctx.beginPath()
                 ctx.arc(cx, cy, r, start, start + sweep * amount, false)
                 ctx.strokeStyle = root.accentColor
-                ctx.globalAlpha = root.editable ? 0.28 + 0.72 * amount : 0.23
+                ctx.globalAlpha = root.editable ? amount : 0.23 * amount
                 ctx.lineWidth = Math.max(2.0, size * 0.085)
                 ctx.shadowColor = root.accentColor
-                ctx.shadowBlur = root.editable ? 1.0 + 8.0 * amount : 0
+                ctx.shadowBlur = root.editable ? 9.0 * amount : 0
                 ctx.stroke()
                 ctx.restore()
             }
