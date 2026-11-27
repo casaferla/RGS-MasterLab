@@ -608,6 +608,9 @@ ApplicationWindow {
                 if (module.driveValidationMessage)
                     add(key + ":drive", "VALIDATION", name + ": " + module.driveValidationMessage)
             }
+            if (module.editorContentKey === "DYNAMIC_EQ" && !module.linkedReadOnly
+                    && module.validationMessage)
+                add(key + ":validation", "VALIDATION", name + ": " + module.validationMessage)
             if (module.editorContentKey === "TRANSIENT_SHAPER" && !module.linkedReadOnly) {
                 if (module.attackValidationMessage)
                     add(key + ":attack", "VALIDATION", name + ": " + module.attackValidationMessage)
