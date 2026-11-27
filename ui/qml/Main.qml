@@ -909,7 +909,7 @@ ApplicationWindow {
         property var amountDrafts: ["100", "100", "100", "100", "100"]
         readonly property bool amountsEditable: !!root.appAutoMatchModel
             && !root.appAutoMatchModel.busy && !root.appAutoMatchModel.canAdopt
-            && !root.monitorExclusive
+            && !root.appAutoMatchModel.transferReady && !root.monitorExclusive
 
         function amountValue(index) { return amountValues[index] }
         function amountText(index) { return String(amountValues[index]) + "%" }
@@ -1073,6 +1073,59 @@ ApplicationWindow {
                     wrapMode: TextEdit.Wrap
                     color: root.textPrimary
                     text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewText : ""
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: transferColumn.implicitHeight + 14
+                visible: !!root.appAutoMatchModel && (root.appAutoMatchModel.transferBusy
+                    || root.appAutoMatchModel.transferReady
+                    || (root.statusDspModule && root.statusDspModule.linkedReadOnly
+                        && root.appAutoMatchModel.canBeginTransfer))
+                color: root.surface
+                border.color: root.border
+                radius: 4
+                ColumnLayout {
+                    id: transferColumn
+                    anchors.fill: parent
+                    anchors.margins: 7
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Manual fine-tuning"
+                        color: root.textPrimary
+                        font.bold: true
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.appAutoMatchModel && root.appAutoMatchModel.transferText.length
+                            ? root.appAutoMatchModel.transferText
+                            : "Transfer the selected linked DSP into its manual slot. Processing order may change."
+                        color: root.textSecondary
+                        wrapMode: Text.WordWrap
+                    }
+                    RowLayout {
+                        Button {
+                            objectName: "autoMatchBeginTransfer"
+                            text: "Prepare transfer"
+                            visible: !root.appAutoMatchModel.transferBusy && !root.appAutoMatchModel.transferReady
+                            enabled: root.appAutoMatchModel.canBeginTransfer && !!root.statusDspModule
+                                && root.statusDspModule.linkedReadOnly && !root.monitorExclusive
+                            onClicked: root.appAutoMatchModel.beginTransfer(root.statusDspModule.instanceId)
+                        }
+                        Button {
+                            objectName: "autoMatchApplyTransfer"
+                            text: "Apply transfer"
+                            visible: root.appAutoMatchModel.transferReady
+                            enabled: visible && !root.appAutoMatchModel.busy && !root.monitorExclusive
+                            onClicked: root.appAutoMatchModel.applyTransfer()
+                        }
+                        Button {
+                            objectName: "autoMatchDiscardTransfer"
+                            text: "Discard"
+                            visible: root.appAutoMatchModel.transferBusy || root.appAutoMatchModel.transferReady
+                            onClicked: root.appAutoMatchModel.discardTransfer()
+                        }
+                    }
                 }
             }
             RowLayout {
