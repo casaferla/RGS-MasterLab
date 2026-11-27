@@ -8908,6 +8908,16 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QVERIFY(author.project.can_save_project());
     QVERIFY(!author.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
     QVERIFY(!author.project.private_manual_match_transfer_still_current(audition->capture()));
+    const auto provisionalBindings=author.masteringChainState->execution_bindings();
+    const auto provisionalRevision=author.masteringChainState->chain().revision();
+    const auto premature=dsp::TransientShaperParameters::create(5.0,-3.0);
+    QVERIFY(premature);
+    QVERIFY(!author.masteringChainState->set_transient_shaper_parameters(*premature.value()));
+    QVERIFY(!author.masteringChainState->set_user_bypass(dynamic,false));
+    QVERIFY(!author.masteringChainState->set_gain_parameters(*dsp::GainParameters::create(-3.0).value()));
+    QCOMPARE(author.masteringChainState->chain().revision(),provisionalRevision);
+    QVERIFY(author.masteringChainState->execution_bindings()==provisionalBindings);
+    QVERIFY(author.project.can_save_project());
     QVERIFY(author.project.can_undo_private_manual_match_transfer());
     QVERIFY(!author.project.can_redo_private_manual_match_transfer());
     QVERIFY(author.project.undo_private_manual_match_transfer());
