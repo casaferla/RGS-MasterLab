@@ -150,4 +150,36 @@ render_captured_manual_match_transfer(const ManualMatchTransferCapture& capture,
     return render_manual_match_transfer_candidate(capture.native,
         capture.project.identity,maxBlock,cancellation);
 }
+// Worker completion binds PCM to the exact immutable capture that
+// produced it. A caller cannot construct this envelope from unrelated
+// PCM. The GUI still has to revalidate the Product owner and request
+// explicit confirmation before any live transaction.
+class ManualMatchTransferAudition final {
+public:
+    [[nodiscard]] static core::Result<ManualMatchTransferAudition> create(
+        std::shared_ptr<const ManualMatchTransferCapture> capture,
+        core::FrameCount maxBlock,const std::atomic<bool>* cancellation=nullptr)
+    {
+        using R=core::Result<ManualMatchTransferAudition>;
+        if(!capture)return R::failure(core::Error{
+            core::ErrorCode::InvalidState,"MANUAL_MATCH_TRANSFER_AUDITION_NO_CAPTURE"});
+        auto rendered=render_captured_manual_match_transfer(*capture,maxBlock,cancellation);
+        if(!rendered)return R::failure(*rendered.error());
+        if(cancellation&&cancellation->load(std::memory_order_acquire))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "MANUAL_MATCH_TRANSFER_AUDITION_CANCELLED"});
+        return R::success(ManualMatchTransferAudition(
+            std::move(capture),std::move(*rendered.value())));
+    }
+    [[nodiscard]] const ManualMatchTransferCapture& capture() const noexcept {return *capture_;}
+    [[nodiscard]] const render::RenderResult& rendered() const noexcept {return rendered_;}
+    [[nodiscard]] constexpr bool authorizes_project_commit() const noexcept {return false;}
+    [[nodiscard]] constexpr bool is_verified() const noexcept {return false;}
+private:
+    ManualMatchTransferAudition(std::shared_ptr<const ManualMatchTransferCapture> capture,
+        render::RenderResult rendered)
+        :capture_(std::move(capture)),rendered_(std::move(rendered)) {}
+    std::shared_ptr<const ManualMatchTransferCapture> capture_;
+    render::RenderResult rendered_;
+};
 } // namespace rgsml::app::l3_automatch

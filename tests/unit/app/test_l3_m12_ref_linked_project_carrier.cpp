@@ -968,6 +968,19 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!transfer::render_captured_manual_match_transfer(
         capture,*maxBlock.value(),&cancelledTransfer));
 
+    const auto immutableCapture=std::make_shared<const transfer::ManualMatchTransferCapture>(capture);
+    const auto workerAudition=transfer::ManualMatchTransferAudition::create(
+        immutableCapture,*maxBlock.value());
+    QVERIFY(workerAudition);
+    QVERIFY(&workerAudition.value()->capture()==immutableCapture.get());
+    QCOMPARE(workerAudition.value()->rendered().view().absolute_range(),
+        audition.value()->view().absolute_range());
+    QVERIFY(!workerAudition.value()->is_verified());
+    QVERIFY(!workerAudition.value()->authorizes_project_commit());
+    QVERIFY(!transfer::ManualMatchTransferAudition::create({},*maxBlock.value()));
+    QVERIFY(!transfer::ManualMatchTransferAudition::create(
+        immutableCapture,*maxBlock.value(),&cancelledTransfer));
+
 
     QVERIFY(!transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
         transferBindings,*reg,nodes[2].allocated_instance_id));
