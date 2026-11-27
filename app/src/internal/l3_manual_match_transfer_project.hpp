@@ -293,4 +293,64 @@ private:
     std::shared_ptr<const ManualMatchTransferCapture> capture_;
     render::RenderResult rendered_;
 };
+// A confirmation is bound to the exact rendered candidate and epoch,
+// not to a generic "yes" or to a DSP row number. It is UI intent only;
+// the live Project writer must still acquire its own exclusive lease.
+struct ManualMatchTransferConfirmation final {
+    std::uint64_t product_epoch{};
+    std::string identity_sha256;
+};
+[[nodiscard]] inline bool manual_match_transfer_confirmation_matches(
+    const ManualMatchTransferAudition& audition,
+    const ManualMatchTransferConfirmation& confirmation)
+{
+    const auto& capture=audition.capture();
+    return confirmation.product_epoch!=0U&&
+        confirmation.product_epoch==capture.product_epoch&&
+        !confirmation.identity_sha256.empty()&&
+        confirmation.identity_sha256==capture.project.identity.sha256;
+}
+struct ManualMatchTransferAdoptionDraft final {
+    MasteringChainState manual_after;
+    std::shared_ptr<const ManualMatchTransferAudition> audition;
+    [[nodiscard]] constexpr bool authorizes_project_commit() const noexcept {return false;}
+};
+[[nodiscard]] inline core::Result<ManualMatchTransferAdoptionDraft>
+prepare_manual_match_transfer_adoption(
+    const project::ProjectSnapshot& live,
+    const MasteringChainState& manual,
+    std::shared_ptr<const ManualMatchTransferAudition> audition,
+    const ManualMatchTransferConfirmation& confirmation)
+{
+    using R=core::Result<ManualMatchTransferAdoptionDraft>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    if(!audition||!manual_match_transfer_confirmation_matches(*audition,confirmation))
+        return fail("MANUAL_MATCH_ADOPTION_CONFIRMATION_MISMATCH");
+    const auto& capture=audition->capture();
+    const auto& prior=capture.native.exact_prior_owner;
+    const auto nodes=manual.instances();
+    if(!prior||!prior->replay||!prior->exact_prepared_owner||
+       !live.document().pipeline.masteringChainId||
+       *live.document().pipeline.masteringChainId!=manual.chain_id()||
+       !capture.project.matches_before(live)||
+       manual.chain().revision()!=prior->exact_manual_chain_revision||
+       !std::equal(nodes.begin(),nodes.end(),prior->exact_manual_nodes.begin(),
+            prior->exact_manual_nodes.end())||
+       manual.execution_bindings()!=prior->exact_manual_bindings)
+        return fail("MANUAL_MATCH_ADOPTION_LIVE_OWNER_STALE");
+    const auto checked=validate_manual_match_transfer_project_readback(
+        capture.project.after,capture.project,capture.native);
+    if(!checked)return R::failure(*checked.error());
+    const auto& proposed=capture.native.manual_after;
+    auto after=manual.prepare_explicit_manual_preset_state(
+        proposed.proposed_manual_chain,proposed.proposed_bindings);
+    if(!after)return R::failure(*after.error());
+    if(after.value()->execution_bindings()!=proposed.proposed_bindings||
+       after.value()->chain().revision()!=proposed.proposed_manual_chain.revision()||
+       conflicting_active_match_dsps(after.value()->instances(),capture.native.linked_after.instances()))
+        return fail("MANUAL_MATCH_ADOPTION_MANUAL_DELTA_INVALID");
+    return R::success(ManualMatchTransferAdoptionDraft{
+        std::move(*after.value()),std::move(audition)});
+}
 } // namespace rgsml::app::l3_automatch
