@@ -214,6 +214,14 @@ QString AutoMatchViewModel::status_text()const {
     }
     return {};
 }
+bool AutoMatchViewModel::startProduct(double total,double tonal,double dynamics,double stereo,
+    double loudness)
+{
+    // Never read this from the M17 Export TP Limiter or the solver-owned
+    // streaming limiter. The final independent M16 check remains active.
+    constexpr double independentProductM16CeilingDbTp=0.0;
+    return start(total,tonal,dynamics,stereo,loudness,independentProductM16CeilingDbTp);
+}
 bool AutoMatchViewModel::start(double total,double tonal,double dynamics,double stereo,
     double loudness,double ceiling)
 {
