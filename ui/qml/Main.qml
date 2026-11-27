@@ -591,8 +591,8 @@ ApplicationWindow {
         // The shared chain preview is one operation, not N copies of it.
         const modules = typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel
             ? dspChainAdapterModel.modules : []
-        const ordered = modules.slice ? modules.slice() : Array.from(modules)
-        for (const module of ordered) {
+        for (let index = 0; index < modules.length; ++index) {
+            const module = modules[index]
             if (!module) continue
             const name = module.displayName || "DSP"
             const key = "dsp:" + module.instanceId
@@ -602,6 +602,8 @@ ApplicationWindow {
                 const message = module.editorContentKey === "INPUT_GAIN" ? vm.validationError : vm.validationMessage
                 if (message) add(key + ":validation", "VALIDATION", name + ": " + message)
             }
+            if (module.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER" && module.numericValidationMessage)
+                add(key + ":numeric", "VALIDATION", name + ": " + module.numericValidationMessage)
             if (module.previewStatus === "ERROR" && module.previewError)
                 add("chain:" + module.previewError, "ERROR", "DSP Chain: " + module.previewError)
             else if (module.hasError && module.previewError)
@@ -649,6 +651,14 @@ ApplicationWindow {
         const analysis = typeof m21ProductStatusViewModel !== "undefined" ? m21ProductStatusViewModel : null
         if (analysis && analysis.runningAnalysisRole)
             add("analysis", "BUSY", "Analyzing " + analysis.runningAnalysisRole)
+        // Stale evidence is a warning, not an invented analysis error.
+        if (analysis && sourceSelection.hasSource) {
+            const panels = [analysis.m19, analysis.m20, analysis.m21]
+            const names = ["Levels", "Spectrum / Stereo", "Metrics / Delta"]
+            for (let i = 0; i < panels.length; ++i)
+                if (panels[i] && panels[i].privateEvidenceStatus === "STALE")
+                    add("analysisStale:" + i, "WARNING", names[i] + ": Measurements stale")
+        }
         entries.sort(function(a, b) { return a.rank - b.rank || a.order - b.order })
         return entries
     }
@@ -2829,7 +2839,7 @@ ApplicationWindow {
         padding: 8
         modal: false
         focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: Popup.CloseOnEscape
         background: Rectangle { color: "#0F2030"; border.color: root.border; radius: 4 }
         contentItem: ColumnLayout {
             spacing: 4
