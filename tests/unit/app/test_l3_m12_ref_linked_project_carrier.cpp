@@ -6,6 +6,7 @@
 #include "internal/l3_m12_ref_linked_native_replay_plan.hpp"
 #include "internal/l3_m12_restored_native_render.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
+#include "internal/l3_manual_match_transfer_draft.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
@@ -805,6 +806,55 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!workerTicket.value()->authorizes_product_installation());
     QVERIFY(!workerTicket.value()->authorizes_m12_receipt());
     QVERIFY(!workerTicket.value()->authorizes_m13_verified());
+    // A real PREPARED owner and typed manual slots permit a provisional
+    // transfer without mutating the accepted ticket or unrelated DSPs.
+    namespace transfer=rgsml::app::l3_automatch;
+    auto transferManual=*manualGain.value();
+    const auto manualDynamic=id("b3000000-0000-4000-8000-000000000091");
+    const auto manualTransient=id("b3000000-0000-4000-8000-000000000092");
+    QVERIFY(transferManual.add(manualDynamic,"rgsml.dsp.dynamic-eq",transferManual.instances().size()));
+    QVERIFY(transferManual.set_user_bypass(manualDynamic,true));
+    QVERIFY(transferManual.add(manualTransient,"rgsml.dsp.transient-shaper",transferManual.instances().size()));
+    QVERIFY(transferManual.set_user_bypass(manualTransient,true));
+    auto transferBindings=gainBindings;
+    const auto neutralTransient=dsp::TransientShaperParameters::create_default();
+    QVERIFY(neutralTransient);
+    transferBindings.push_back({manualDynamic,*deq.value()});
+    transferBindings.push_back({manualTransient,*neutralTransient.value()});
+    auto transferReplay=*replayPlan.value();
+    transferReplay.manual_prefix=transferManual;
+    transferReplay.manual_bindings=transferBindings;
+    auto transferTicket=m::prepare_m12_immutable_product_preview_ticket(
+        std::make_shared<const m::RestoredM12NativeReplayPlan>(transferReplay),
+        ownedPrepared,transferManual,transferBindings);
+    QVERIFY(transferTicket);
+    auto exactTransferOwner=std::make_shared<const m::M12ImmutableProductPreviewTicket>(*transferTicket.value());
+    auto draft=transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
+        transferBindings,*reg,nodes[1].allocated_instance_id);
+    QVERIFY(draft);
+    QVERIFY(draft.value()->requires_explicit_confirmation());
+    QVERIFY(draft.value()->requires_fresh_verification());
+    QVERIFY(!draft.value()->authorizes_project_commit());
+    QVERIFY(draft.value()->manual_instance==manualTransient);
+    const auto manualAfter=draft.value()->manual_after.proposed_manual_chain.instances();
+    QVERIFY(manualAfter.back().active());
+    QVERIFY(std::get<dsp::TransientShaperParameters>(
+        draft.value()->manual_after.proposed_bindings.back().parameters)==*ts.value());
+    const auto linkedAfter=draft.value()->linked_after.instances();
+    const auto linkedBefore=exactTransferOwner->replay->reference_linked.instances();
+    QCOMPARE(linkedAfter.size(),linkedBefore.size());
+    QVERIFY(!linkedAfter[1].active());
+    QVERIFY(linkedBefore[1].active());
+    QVERIFY(linkedAfter[0]==linkedBefore[0]);
+    QVERIFY(linkedAfter[2]==linkedBefore[2]);
+    QVERIFY(draft.value()->linked_bindings_after==exactTransferOwner->replay->reference_bindings);
+    QVERIFY(!transferManual.instances().back().active());
+    QVERIFY(!transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
+        transferBindings,*reg,nodes[2].allocated_instance_id));
+    QVERIFY(transferManual.set_user_bypass(manualTransient,false));
+    QVERIFY(!transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
+        transferBindings,*reg,nodes[1].allocated_instance_id));
+
     // Exercise the combined nonpublishing Product precommit bridge:
     // exact M11 protected MANUAL, immutable M10/M12 winning plan,
     // canonical Project after-state, real PREPARED PCM and one registry.
