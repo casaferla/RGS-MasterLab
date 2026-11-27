@@ -1,4 +1,8 @@
 #include "dsp_module_adapter.hpp"
+#include "internal/manual_dynamic_eq_edit.hpp"
+#include "internal/l3_linked_editor_parameter_projection.hpp"
+#include <QRegularExpression>
+#include <QUuid>
 
 namespace rgsml::app {
 
@@ -648,5 +652,192 @@ void StereoMsModuleAdapter::setBypass(bool bypass) { if (vm_) vm_->setBypass(byp
 void StereoMsModuleAdapter::undo() {}
 void StereoMsModuleAdapter::redo() {}
 void StereoMsModuleAdapter::resetToDefault() { if (vm_) vm_->resetToDefault(); }
+
+namespace de=manual_dynamic_eq;
+ManualDynamicEqModuleAdapter::ManualDynamicEqModuleAdapter(
+    MasteringChainState* state,MasteringPreviewController* preview,QString context,QObject* parent)
+    :DspModuleAdapter(parent),state_(state),preview_(preview),context_(std::move(context)),
+     id_(state?state->dynamic_eq_instance_id():std::nullopt),
+     observed_(state?state->dynamic_eq_parameters():std::nullopt)
+{
+    if(preview_)connect(preview_,&MasteringPreviewController::changed,this,&ManualDynamicEqModuleAdapter::refresh);
+}
+const ManualDynamicEqModuleAdapter::Params* ManualDynamicEqModuleAdapter::params() const noexcept {
+    if(!state_||!id_||state_->dynamic_eq_instance_id()!=id_||!state_->dynamic_eq_parameters())return nullptr;
+    return &*state_->dynamic_eq_parameters();
+}
+bool ManualDynamicEqModuleAdapter::history_current() const noexcept {
+    return params()&&observed_&&*observed_==*params();
+}
+std::shared_ptr<const render::RenderResult> ManualDynamicEqModuleAdapter::prepared() const {
+    return preview_&&preview_->snapshot_provider()?preview_->snapshot_provider()():nullptr;
+}
+bool ManualDynamicEqModuleAdapter::route_available() const {
+    const auto audio=prepared();
+    return audio&&audio->view().format().channel_count()==2;
+}
+QString ManualDynamicEqModuleAdapter::configuration_state() const {
+    if(!params())return QStringLiteral("Unavailable");
+    for(const auto& b:params()->bands())
+        if(b.spec().control!=dsp::DynamicEqControl{})return QStringLiteral("Manual");
+    return QStringLiteral("Default");
+}
+bool ManualDynamicEqModuleAdapter::bypass() const noexcept {
+    if(!params())return true;
+    const auto value=state_->is_bypassed(*id_);
+    return !value||*value.value();
+}
+QString ManualDynamicEqModuleAdapter::state_text() const {
+    if(!params())return QStringLiteral("Unavailable");
+    if(has_error())return QStringLiteral("Error");
+    if(bypass())return QStringLiteral("Bypass");
+    return preview_status()==QStringLiteral("RENDERING")?QStringLiteral("Rendering"):QStringLiteral("Manual");
+}
+bool ManualDynamicEqModuleAdapter::has_error() const noexcept {
+    return !validationMessage_.isEmpty()||!operationError_.isEmpty()||
+        (preview_&&preview_->preview_status()==QStringLiteral("ERROR"));
+}
+QVariantMap ManualDynamicEqModuleAdapter::linked_parameters() const {
+    if(!params())return {};
+    QVariantList bands;
+    for(const auto& b:params()->bands())
+        bands.append(l3_automatch::project_linked_dynamic_band(b.spec()));
+    const auto audio=prepared();
+    const double maximum=audio?std::min(20000.0,0.45*audio->view().format().sample_rate().value()):20000.0;
+    return {{"instanceId",instance_id()},{"manualEditable",true},
+        {"activityAuthorized",false},{"bands",bands},{"maximumFrequencyHz",maximum}};
+}
+QVariantList ManualDynamicEqModuleAdapter::linkedBandResponse(int index) const {
+    const auto audio=prepared();
+    if(!params()||!audio)return {};
+    const auto format=audio->view().format();
+    return l3_automatch::project_dynamic_response(*params(),index,
+        format.sample_rate().value(),static_cast<std::uint32_t>(format.channel_count()));
+}
+bool ManualDynamicEqModuleAdapter::reject(const QString& field,const QString& message) {
+    validationField_=field;validationMessage_=message;emit changed();return false;
+}
+void ManualDynamicEqModuleAdapter::clearValidation() {
+    if(validationField_.isEmpty()&&validationMessage_.isEmpty())return;
+    validationField_.clear();validationMessage_.clear();emit changed();
+}
+void ManualDynamicEqModuleAdapter::refresh() {
+    if(!history_current()) {
+        undo_.clear();redo_.clear();
+        observed_=params()?std::optional<Params>(*params()):std::nullopt;
+        validationField_.clear();validationMessage_.clear();
+    }
+    emit changed();
+}
+void ManualDynamicEqModuleAdapter::publish() {
+    if(preview_)preview_->request_preview();
+    emit changed();
+}
+bool ManualDynamicEqModuleAdapter::write(const Params& p) {
+    const auto audio=prepared();
+    if(audio) {
+        const auto fmt=audio->view().format();
+        const auto valid=p.validate_for_audio(fmt.sample_rate().value(),
+            static_cast<std::uint32_t>(fmt.channel_count()));
+        if(!valid)return reject(QStringLiteral("audio"),QString::fromStdString(valid.error()->message()));
+    }
+    const auto result=state_->set_dynamic_eq_parameters(p);
+    if(!result){operationError_=QString::fromStdString(result.error()->message());emit changed();return false;}
+    operationError_.clear();observed_=p;
+    validationField_.clear();validationMessage_.clear();return true;
+}
+bool ManualDynamicEqModuleAdapter::accept(Result result,const QString& field) {
+    if(!params())return false;
+    if(!result)return reject(field,QString::fromStdString(result.error()->message()));
+    if(!history_current())refresh();
+    if(*params()==*result.value()){operationError_.clear();clearValidation();return true;}
+    const auto previous=*params();
+    if(!write(*result.value()))return false;
+    undo_.push_back(previous);redo_.clear();publish();return true;
+}
+bool ManualDynamicEqModuleAdapter::editBandNumber(const QString& id,const QString& field,double value) {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(id.toStdString());
+    if(!uuid)return reject(field,QStringLiteral("Band identity is invalid."));
+    return accept(de::numeric(*params(),*uuid.value(),field,value),field);
+}
+bool ManualDynamicEqModuleAdapter::editBandText(const QString& id,const QString& field,const QString& value) {
+    static const QRegularExpression decimal(QStringLiteral(R"(^[+-]?(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)$)"));
+    auto text=value.trimmed();
+    if(!decimal.match(text).hasMatch())return reject(field,QStringLiteral("Enter a valid decimal number."));
+    bool ok=false;
+    const double number=text.replace(',','.').toDouble(&ok);
+    return ok?editBandNumber(id,field,number):reject(field,QStringLiteral("Invalid number."));
+}
+bool ManualDynamicEqModuleAdapter::editBandFilter(const QString& id,const QString& filter) {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(id.toStdString());
+    if(!uuid)return reject("filter","Band identity is invalid.");
+    using F=dsp::DynamicEqFilterType;
+    if(filter=="BELL")return accept(de::filter(*params(),*uuid.value(),F::BELL),"filter");
+    if(filter=="LOW_SHELF")return accept(de::filter(*params(),*uuid.value(),F::LOW_SHELF),"filter");
+    if(filter=="HIGH_SHELF")return accept(de::filter(*params(),*uuid.value(),F::HIGH_SHELF),"filter");
+    return reject("filter","Unsupported filter.");
+}
+bool ManualDynamicEqModuleAdapter::editBandRouting(const QString& id,const QString& routing) {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(id.toStdString());
+    if(!uuid)return reject("routing","Band identity is invalid.");
+    using R=dsp::EqRouting;
+    if(routing=="STEREO")return accept(de::routing(*params(),*uuid.value(),R::STEREO),"routing");
+    if(!route_available())return reject("routing","Stereo source required.");
+    if(routing=="MID")return accept(de::routing(*params(),*uuid.value(),R::MID),"routing");
+    if(routing=="SIDE")return accept(de::routing(*params(),*uuid.value(),R::SIDE),"routing");
+    if(routing=="LEFT")return accept(de::routing(*params(),*uuid.value(),R::LEFT),"routing");
+    if(routing=="RIGHT")return accept(de::routing(*params(),*uuid.value(),R::RIGHT),"routing");
+    return reject("routing","Unsupported routing.");
+}
+bool ManualDynamicEqModuleAdapter::editBandEnabled(const QString& id,bool value) {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(id.toStdString());
+    return uuid?accept(de::enabled(*params(),*uuid.value(),value),"enabled"):
+        reject("enabled","Band identity is invalid.");
+}
+bool ManualDynamicEqModuleAdapter::editBandGraph(const QString& id,double hz,double gain) {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(id.toStdString());
+    return uuid?accept(de::graph(*params(),*uuid.value(),hz,gain),"graph"):
+        reject("graph","Band identity is invalid.");
+}
+bool ManualDynamicEqModuleAdapter::appendBand() {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString());
+    return uuid?accept(de::add(*params(),*uuid.value()),"bandCount"):false;
+}
+bool ManualDynamicEqModuleAdapter::deleteBand(const QString& id) {
+    if(!params())return false;
+    const auto uuid=core::Uuid::parse(id.toStdString());
+    return uuid?accept(de::remove(*params(),*uuid.value()),"bandCount"):
+        reject("bandCount","Band identity is invalid.");
+}
+void ManualDynamicEqModuleAdapter::setBypass(bool value) {
+    if(!params()||bypass()==value)return;
+    if(!value) {
+        const auto audio=prepared();
+        if(audio) {
+            const auto format=audio->view().format();
+            const auto checked=params()->validate_for_audio(format.sample_rate().value(),
+                static_cast<std::uint32_t>(format.channel_count()));
+            if(!checked){reject("audio",QString::fromStdString(checked.error()->message()));return;}
+        }
+    }
+    const auto status=state_->set_user_bypass(*id_,value);
+    if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return;}
+    operationError_.clear();publish();
+}
+void ManualDynamicEqModuleAdapter::resetToDefault() {
+    if(params())accept(de::reset_flat(*params()),"reset");
+}
+void ManualDynamicEqModuleAdapter::move_history(std::vector<Params>& from,std::vector<Params>& to) {
+    if(!history_current()||from.empty())return;
+    const auto previous=*params(),next=from.back();
+    if(!write(next))return;
+    from.pop_back();to.push_back(previous);publish();
+}
 
 }  // namespace rgsml::app
