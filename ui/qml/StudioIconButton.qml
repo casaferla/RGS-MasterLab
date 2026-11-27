@@ -19,18 +19,24 @@ Button {
     hoverEnabled: true
     padding: 0
 
-    contentItem: StudioIcon {
-        width: control.iconSize
-        height: control.iconSize
-        anchors.centerIn: parent
-        kind: control.iconKind
-        strokeColor: !control.enabled ? "#667380"
-                   : control.familyHeaderUtility
-                     ? (control.hovered ? Qt.lighter(control.accentColor, 1.35)
-                                        : control.accentColor)
-                   : control.down ? "#B8C7D9"
-                   : control.hovered ? "#FFFFFF" : "#DDE6F3"
-        fillColor: strokeColor
+    // Controls owns the contentItem geometry. Keep the actual header
+    // painter in a separate fixed square, just like the Dock glyph.
+    contentItem: Item {
+        implicitWidth: control.iconSize
+        implicitHeight: control.iconSize
+        StudioIcon {
+            width: control.familyHeaderUtility ? control.iconSize : parent.width
+            height: control.familyHeaderUtility ? control.iconSize : parent.height
+            anchors.centerIn: parent
+            kind: control.iconKind
+            strokeColor: !control.enabled ? "#667380"
+                       : control.familyHeaderUtility
+                         ? (control.hovered ? Qt.lighter(control.accentColor, 1.35)
+                                            : control.accentColor)
+                       : control.down ? "#B8C7D9"
+                       : control.hovered ? "#FFFFFF" : "#DDE6F3"
+            fillColor: strokeColor
+        }
     }
 
     background: Item {
