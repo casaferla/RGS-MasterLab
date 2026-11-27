@@ -102,9 +102,12 @@ public:
     // Optional app-owned preflight: creates an explicit offline SOURCE
     // provenance for the user-requested MASTER-only action, not playback.
     using OfflineMasterAuthorizer=std::function<core::Status()>;
-    void set_offline_master_authorizer(OfflineMasterAuthorizer authorizer)
+    using OfflineMasterReadiness=std::function<bool()>;
+    void set_offline_master_authorizer(OfflineMasterAuthorizer authorizer,
+        OfflineMasterReadiness readiness={})
     {
         offlineMasterAuthorizer_=std::move(authorizer);
+        offlineMasterReadiness_=std::move(readiness);
         lastCanPrepareOffline_=can_prepare_offline();
         emit changed();
     }
@@ -177,6 +180,7 @@ private:
     bool lastCanInstall_{false};
     bool lastCanPrepareOffline_{false};
     OfflineMasterAuthorizer offlineMasterAuthorizer_;
+    OfflineMasterReadiness offlineMasterReadiness_;
     InstalledHandoffEligible installedHandoffEligible_;
     InstalledHandoff installedHandoff_;
     ReturnedReady returnedReady_;
