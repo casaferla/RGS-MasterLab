@@ -152,6 +152,8 @@ render_restored_m12_full_native_pcm_once(
                 return fail("L3_M12_REPLAY_MANUAL_P2_ID_COLLISION");
     }
     const auto linked_nodes=plan.reference_linked.instances();
+    if(conflicting_active_match_dsps(plan.manual_prefix.instances(),linked_nodes))
+        return fail("L3_M12_REPLAY_PROTECTED_MANUAL_MATCH_DSP_CONFLICT");
     for(const auto& linked:linked_nodes) {
         if(linked.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
            (plan.terminal_p2 || &linked!=&linked_nodes.back()))
