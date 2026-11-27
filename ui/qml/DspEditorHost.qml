@@ -120,7 +120,7 @@ Rectangle {
         && root.terminalMonitorViewModel.canPrepareOffline
         && !!root.masterRateState && root.masterRateState.currentMasterRateAdmissible
     readonly property bool offlineMasterRendering: !!root.terminalMonitorViewModel
-        && root.terminalMonitorViewModel.statusText === "PREPARING FINAL MASTER · NOT DEVICE AUDIO"
+        && root.terminalMonitorViewModel.offlineMasterRendering === true
     // Presentation-only vocabulary. Native M17 state-machine strings,
     // preparation* API names, readiness guards and the PREPARED audition
     // identity remain unchanged. Prepare never means the M17 Master action.
