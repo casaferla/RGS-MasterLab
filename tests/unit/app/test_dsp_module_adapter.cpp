@@ -227,6 +227,21 @@ void DspModuleAdapterTest::testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMo
     model.refreshFromAuthority();
     QCOMPARE(model.selected_index(),8);
     QCOMPARE(model.selected_instance_id(),stableIds.at(8));
+    // Shipping Product hides the legacy diagnostic row, even after rebuild.
+    model.selectModuleByInstanceId(stableIds.at(9));
+    model.setLegacyMonitorRowVisible(false);
+    QCOMPARE(model.modules().size(),qsizetype{9});
+    QVERIFY(model.selected_module());
+    QVERIFY(model.selected_instance_id()!=stableIds.at(9));
+    model.refreshFromAuthority();
+    QCOMPARE(model.modules().size(),qsizetype{9});
+    for(qsizetype i=0;i<9;++i) {
+        auto* item=qobject_cast<DspModuleAdapter*>(model.modules().at(i).value<QObject*>());
+        QVERIFY(item);
+        QCOMPARE(item->instance_id(),stableIds.at(i));
+    }
+    model.setLegacyMonitorRowVisible(true);
+    QCOMPARE(model.modules().size(),qsizetype{10});
     QCOMPARE(manual.value()->instances().size(),std::size_t{4});
     QCOMPARE(terminal.value()->chain().instances().size(),std::size_t{1});
 }
