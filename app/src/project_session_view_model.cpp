@@ -1313,6 +1313,14 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
     // Admit C01/C00 only through their canonical typed factories. Keep
     // the registry for a saved P2 graph intact and never mutate it in place.
+    // Preserve explicit opt-in factory capability across a legacy open,
+    // without adding nodes to the historical persisted chain.
+    const auto manualOptInRegistry=masteringChainState_
+        ?masteringChainState_->registry_snapshot():nullptr;
+    if(manualOptInRegistry &&
+       manualOptInRegistry->has_factory("rgsml.dsp.dynamic-eq") &&
+       manualOptInRegistry->has_factory("rgsml.dsp.transient-shaper"))
+        restoreRegistry=manualOptInRegistry.get();
     std::optional<dsp::ModuleRegistry> extendedRegistry;
     const bool needsMatchFactories=std::any_of(doc.chains.begin(),doc.chains.end(),
         [](const project::Chain& chain) {
