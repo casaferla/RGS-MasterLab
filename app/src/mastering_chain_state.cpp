@@ -398,7 +398,11 @@ Result<MasteringChainState> MasteringChainState::restore(
     std::optional<ModuleInstanceId> stereo_ms_id,
     std::optional<StereoMsParameters> stereo_ms_params,
     std::optional<ModuleInstanceId> streaming_p2_id,
-    std::optional<StreamingTruePeakLimiterParameters> streaming_p2_params)
+    std::optional<StreamingTruePeakLimiterParameters> streaming_p2_params,
+    std::optional<ModuleInstanceId> dynamic_eq_id,
+    std::optional<DynamicEqParameters> dynamic_eq_params,
+    std::optional<ModuleInstanceId> transient_shaper_id,
+    std::optional<TransientShaperParameters> transient_shaper_params)
 {
     if (!registry) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -473,7 +477,18 @@ Result<MasteringChainState> MasteringChainState::restore(
             "INVALID_CHAIN_CONTEXT",
             "MasteringChainState requires a MASTER/MANUAL processing chain context."));
     }
-    if (chain.instances().size() != (streaming_p2_id ? 5U : stereo_ms_id ? 4U : 3U)) {
+    const bool extended=dynamic_eq_id.has_value();
+    if(extended!=dynamic_eq_params.has_value() ||
+       extended!=transient_shaper_id.has_value() ||
+       extended!=transient_shaper_params.has_value() ||
+       (extended && (!registry->has_factory(kDynamicEqTypeId) ||
+                     !registry->has_factory(kTransientTypeId)))) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,"MANUAL_MATCH_DSP_INCOMPLETE_RESTORE",
+            "Manual Dynamic EQ and Transient Shaper require both typed identities and factories."));
+    }
+    const std::size_t offset=extended?2U:0U;
+    if (chain.instances().size() != (streaming_p2_id ? 5U : stereo_ms_id ? 4U : 3U)+offset) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_MODULE_COUNT",
@@ -491,22 +506,31 @@ Result<MasteringChainState> MasteringChainState::restore(
             "INVALID_EQ_MODULE",
             "Module 1 must be Parametric EQ with matching instance_id."));
     }
-    if (chain.instances()[2].instance_id() != compressor_id || chain.instances()[2].module_type_id() != kCompressorTypeId) {
+    if(extended &&
+       (chain.instances()[2].instance_id()!=*dynamic_eq_id ||
+        chain.instances()[2].module_type_id()!=kDynamicEqTypeId ||
+        chain.instances()[3].instance_id()!=*transient_shaper_id ||
+        chain.instances()[3].module_type_id()!=kTransientTypeId)) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,"MANUAL_MATCH_DSP_INVALID_ORDER",
+            "Manual Dynamic EQ and Transient Shaper must precede Compressor."));
+    }
+    if (chain.instances()[2+offset].instance_id() != compressor_id || chain.instances()[2+offset].module_type_id() != kCompressorTypeId) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_COMPRESSOR_MODULE",
             "Module 2 must be Compressor with matching instance_id."));
     }
-    if (stereo_ms_id && (chain.instances()[3].instance_id() != *stereo_ms_id
-        || chain.instances()[3].module_type_id() != kStereoMsTypeId)) {
+    if (stereo_ms_id && (chain.instances()[3+offset].instance_id() != *stereo_ms_id
+        || chain.instances()[3+offset].module_type_id() != kStereoMsTypeId)) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument, "INVALID_STEREO_MS_MODULE",
             "Module 3 must be Stereo/M-S with matching instance_id."));
     }
 
     if (streaming_p2_id &&
-        (chain.instances()[4].instance_id() != *streaming_p2_id
-         || chain.instances()[4].module_type_id() != kStreamingP2TypeId)) {
+        (chain.instances()[4+offset].instance_id() != *streaming_p2_id
+         || chain.instances()[4+offset].module_type_id() != kStreamingP2TypeId)) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument, "P2_INVALID_FIFTH_MODULE",
             "Streaming P2 must be the fifth MANUAL node with exact typed identity."));
@@ -521,6 +545,10 @@ Result<MasteringChainState> MasteringChainState::restore(
         std::move(eq_params),
         compressor_id,
         std::move(compressor_params)};
+    restored.dynamic_eq_id_=std::move(dynamic_eq_id);
+    restored.dynamic_eq_params_=std::move(dynamic_eq_params);
+    restored.transient_shaper_id_=std::move(transient_shaper_id);
+    restored.transient_shaper_params_=std::move(transient_shaper_params);
     restored.stereo_ms_id_ = std::move(stereo_ms_id);
     restored.stereo_ms_params_ = std::move(stereo_ms_params);
     restored.streaming_p2_preview_id_ = std::move(streaming_p2_id);
