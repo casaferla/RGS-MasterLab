@@ -8909,6 +8909,58 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     auto saved=load_project(savedPath);
     QVERIFY(saved&&transferred->matches_project(*saved.value()));
     QVERIFY(!m::decode_exact_m12_ref_linked_product_state(saved.value()->document(),registry));
+    bool reopenBusy=false;
+    std::shared_ptr<const render::RenderResult> reopenProcessed;
+    Session imported;
+    QVERIFY(enable(imported));
+    imported.previewController->set_snapshot_provider([&imported]{
+        return imported.selector.prepared_realization_snapshot();});
+    imported.previewController->set_publisher([&reopenProcessed](render::RenderResult result){
+        reopenProcessed=std::make_shared<const render::RenderResult>(std::move(result));
+        return core::Status::success();});
+    imported.previewController->set_accepted_processed_provider([&reopenProcessed]{return reopenProcessed;});
+    imported.project.set_private_m18_project_open_batch_begin([&]{return acquire(reopenBusy);});
+    imported.project.set_private_m18_project_save_batch_begin([&]{return acquire(reopenBusy);});
+    imported.project.openProject(QUrl::fromLocalFile(savedPath));
+    QVERIFY2(imported.project.error_message().isEmpty(),imported.project.error_message().toUtf8().constData());
+    QVERIFY(!imported.project.degraded());
+    QVERIFY(imported.project.can_save_project());
+    QVERIFY(!reopenBusy);
+    QVERIFY(!imported.previewController->private_m12_product_preview_ticket());
+    const auto reopenTicket=imported.previewController->private_manual_transfer_preview_ticket();
+    QVERIFY(reopenTicket);
+    QVERIFY(reopenTicket->matches_project(*saved.value()));
+    QVERIFY(reopenTicket->matches_prepared(imported.selector.prepared_realization_snapshot()));
+    QVERIFY(imported.masteringChainState->execution_bindings()==author.masteringChainState->execution_bindings());
+    QVERIFY(!imported.project.can_undo_private_manual_match_transfer()); // session-local history
+    QVERIFY(!imported.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
+    QTRY_COMPARE_WITH_TIMEOUT(imported.previewController->preview_status(),QStringLiteral("READY"),10000);
+    QVERIFY(reopenProcessed);
+    QVERIFY(!reopenProcessed->linked_activity_sidecar());
+    const auto reopenedPath=dir.filePath(QStringLiteral("transfer-after-reopened.rgsml"));
+    imported.project.saveProjectAs(QUrl::fromLocalFile(reopenedPath));
+    QVERIFY2(QFileInfo::exists(reopenedPath),imported.project.error_message().toUtf8().constData());
+    auto reopened=load_project(reopenedPath);
+    QVERIFY(reopened&&reopenTicket->matches_project(*reopened.value()));
+    auto tampered=saved.value()->document();
+    auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(
+        tampered.referenceMatch.canonical_utf8())).object();
+    auto record=metadata.value(QStringLiteral("manualTransferCandidate")).toObject();
+    record.insert(QStringLiteral("identitySha256"),QString(64,QLatin1Char('0')));
+    metadata.insert(QStringLiteral("manualTransferCandidate"),record);
+    auto corrupt=project::OpaqueJsonValue::parse(
+        QJsonDocument(metadata).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(corrupt);
+    tampered.referenceMatch=*corrupt.value();
+    auto bad=project::ProjectSnapshot::create(tampered);
+    QVERIFY(bad);
+    const auto badPath=dir.filePath(QStringLiteral("transfer-invalid.rgsml"));
+    QVERIFY(write_project(badPath,*bad.value()));
+    imported.project.openProject(QUrl::fromLocalFile(badPath));
+    QVERIFY(!imported.project.error_message().isEmpty());
+    QVERIFY(imported.previewController->private_manual_transfer_preview_ticket()==reopenTicket);
+    QVERIFY(imported.masteringChainState->execution_bindings()==author.masteringChainState->execution_bindings());
+
 }
 
 void ProjectSessionTest::product_default_stereo_ms_project_save_open_save_identity()
