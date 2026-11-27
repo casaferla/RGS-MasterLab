@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_manual_match_dsp_conflict.hpp"
 // L3-M12 immutable bridge to the EXISTING Product PreviewJob contract.
 // This is a nonpublishing, read-only preflight: ProjectSession must
 // acquire a real owner transaction before future live installation.
@@ -60,6 +61,8 @@ prepare_m12_immutable_product_preview_ticket(
         return fail("L3_M12_WORKER_NO_EXACT_PRODUCT_OWNERS");
     const auto nodes=current_manual.instances();
     const auto prefix=replay->manual_prefix.instances();
+    if(conflicting_active_match_dsps(nodes,replay->reference_linked.instances()))
+        return fail("L3_M12_WORKER_PROTECTED_MANUAL_MATCH_DSP_CONFLICT");
     const auto has_terminal=replay->terminal_p2.has_value();
     if(nodes.size()!=prefix.size()+(has_terminal?1U:0U)||
        replay->manual_bindings.size()!=prefix.size()||
