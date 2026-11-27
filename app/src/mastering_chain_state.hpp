@@ -217,6 +217,13 @@ public:
     friend bool operator==(const MasteringChainState&, const MasteringChainState&) = default;
 
 private:
+    friend class MasteringPreviewController;
+    // Temporary fail-closed interlock while the provisional graph has
+    // no admitted follow-on edit transaction. Only the owning preview
+    // controller changes this runtime flag, not a GUI or preset caller.
+    void set_private_transfer_mutation_frozen(bool frozen) noexcept {
+        m18MutationAdmission_.transferFrozen=frozen;
+    }
     [[nodiscard]] core::Status admit_m18_chain_mutation(
         const char* operation) const;
     MasteringChainState(
@@ -252,6 +259,7 @@ private:
         std::shared_ptr<M18MutationAdmission> callback;
         std::thread::id ownerThread{};
         mutable bool admitting{false};
+        bool transferFrozen{false};
         // This guard is an ephemeral authorizer, NOT DSP/project content.
         // Preserve the original value equality semantics of the state.
         friend bool operator==(const M18RuntimeGuard&,

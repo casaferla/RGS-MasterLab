@@ -333,6 +333,7 @@ void MasteringPreviewController::set_private_m12_product_preview_ticket(
     if(QThread::currentThread()!=thread())return;
     invalidate_preview_for_ticket_change();
     transferTicket_.reset();
+    if(chainState_)chainState_->set_private_transfer_mutation_frozen(false);
     m12ReplayTicket_=std::move(ticket);
     m12ManualChainOwner_=m12ReplayTicket_?chainState_:nullptr;
     // Capture the actual Product MANUAL registry at the same Qt-owner
@@ -354,6 +355,7 @@ bool MasteringPreviewController::set_private_manual_transfer_preview_ticket(
     invalidate_preview_for_ticket_change();
     m12ReplayTicket_.reset();
     transferTicket_=std::move(ticket);
+    chainState_->set_private_transfer_mutation_frozen(true);
     m12ManualChainOwner_=chainState_;
     m12ManualRegistryOwner_=chainState_->registry_snapshot();
     emit changed();

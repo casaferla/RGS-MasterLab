@@ -658,6 +658,9 @@ void MasteringChainState::adopt_chain_after_authorized_project_open(
 Status MasteringChainState::admit_m18_chain_mutation(
     const char* operation) const
 {
+    if(m18MutationAdmission_.transferFrozen)
+        return Status::failure(Error{ErrorCode::InvalidState,
+            "MANUAL_MATCH_TRANSFER_REQUIRES_TRANSACTIONAL_EDIT"});
     if(!m18MutationAdmission_.callback
        ||!(*m18MutationAdmission_.callback))
         return Status::success();
