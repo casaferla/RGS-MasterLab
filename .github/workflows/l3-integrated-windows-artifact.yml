@@ -81,6 +81,23 @@ jobs:
               if (!(Test-Path -LiteralPath (Join-Path $shots $file))) { throw "L3_CONTEXT_CAPTURE_MISSING=$file" }
             }
           }
+      - name: Qualify staged native manual Dynamic EQ and Transient Shaper GUI
+        shell: pwsh
+        run: |
+          $stage=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/stage/L3-INTEGRATED-NONFQ'
+          $shots=Join-Path $env:RUNNER_TEMP 'l3-context-shots'
+          $env:RGSML_CONTEXT_SCREENSHOT_DIR=''
+          $env:RGSML_MANUAL_MATCH_SCREENSHOT_DIR=$shots
+          $env:QT_QUICK_BACKEND='software'
+          $out=Join-Path $env:RUNNER_TEMP 'manual-match-smoke-out.log'
+          $err=Join-Path $env:RUNNER_TEMP 'manual-match-smoke-err.log'
+          $p=Start-Process -FilePath (Join-Path $stage 'bin/RGSMasterLab.exe') -ArgumentList '--rgsml-manual-match-dsp-smoke' -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+          Get-Content -LiteralPath $out
+          Get-Content -LiteralPath $err -Tail 80
+          if ($p.ExitCode -ne 0) { throw "L3_MANUAL_MATCH_GUI_FAILURE=$($p.ExitCode)" }
+          foreach ($file in @('manual-dynamic-eq.png','manual-transient-shaper.png')) {
+            if (!(Test-Path -LiteralPath (Join-Path $shots $file))) { throw "L3_MANUAL_MATCH_SCREENSHOT_MISSING=$file" }
+          }
       - name: Upload actual Product screenshots
         uses: actions/upload-artifact@v4
         with:
