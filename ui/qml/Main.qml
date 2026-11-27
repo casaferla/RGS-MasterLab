@@ -679,17 +679,18 @@ ApplicationWindow {
             if (!live) return false
             const vm = numericItem.viewModel
             const field = numericItem.fieldName
-            vm.setDraftFieldText(field, "43,7")
-            if (!vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43.7)
-                return false
-            vm.setDraftFieldText(field, "100,1")
-            if (vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43.7
-                || vm.validationField !== field) return false
-            vm.setDraftFieldText(field, "")
-            if (vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43.7)
-                return false
+            for (const valid of ["0", "100", "43"]) {
+                vm.setDraftFieldText(field, valid)
+                if (!vm.commitDraft() || amountStore.amountValue(amountIndex) !== Number(valid))
+                    return false
+            }
+            for (const invalid of ["43,7", "43.7", "101", "-1", ""]) {
+                vm.setDraftFieldText(field, invalid)
+                if (vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43
+                    || vm.validationField !== field) return false
+            }
             vm.cancelDraft()
-            return numericItem.rawText === "43.7" && vm.validationField === ""
+            return numericItem.rawText === "43" && vm.validationField === ""
         }
 
         QtObject {
@@ -735,6 +736,7 @@ ApplicationWindow {
                 height: width
                 anchors.horizontalCenter: parent.horizontalCenter
                 prominent: amountControl.amountIndex === 0
+                stepSize: 1
                 accentColor: amountControl.hue
                 value: amountControl.matching && amountControl.amountStore
                     ? amountControl.amountStore.amountValue(amountControl.amountIndex) : 0
@@ -763,7 +765,7 @@ ApplicationWindow {
                 viewModel: draftAdapter
                 enabled: amountControl.live
                 opacity: amountControl.matching ? 1.0 : 0.45
-                interactionHint: "0–100% · Enter or click away to apply · Esc to cancel"
+                interactionHint: "0–100% in 1% steps · Enter or click away to apply · Esc to cancel"
             }
         }
     }
@@ -790,10 +792,10 @@ ApplicationWindow {
         function amountText(index) { return String(amountValues[index]) + "%" }
         function amountError(index) {
             const raw = String(amountDrafts[index]).trim()
-            if (!/^[+-]?(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)$/.test(raw))
-                return "Enter a numeric match amount."
-            const n = Number(raw.replace(",", "."))
-            if (!Number.isFinite(n) || n < 0 || n > 100)
+            if (!/^[+-]?[0-9]+$/.test(raw))
+                return "Enter a whole percentage (0–100)."
+            const n = Number(raw)
+            if (!Number.isInteger(n) || n < 0 || n > 100)
                 return "Match amount must be between 0 and 100%."
             return ""
         }
@@ -809,7 +811,7 @@ ApplicationWindow {
         }
         function commitAmount(index) {
             if (!amountsEditable || amountError(index).length > 0) return false
-            const n = Number(String(amountDrafts[index]).trim().replace(",", "."))
+            const n = Number(String(amountDrafts[index]).trim())
             const next = amountValues.slice()
             next[index] = n
             amountValues = next
@@ -819,7 +821,7 @@ ApplicationWindow {
         function setAmountValue(index, next) {
             if (!amountsEditable || index < 0 || index > 4
                 || !Number.isFinite(next) || next < 0 || next > 100) return
-            setAmountDraft(index, String(Math.round(next * 10) / 10))
+            setAmountDraft(index, String(Math.round(next)))
             commitAmount(index)
         }
         modal: false
@@ -2358,8 +2360,11 @@ ApplicationWindow {
                                         if (!control || !control.exerciseDraftContract()) return false
                                     }
                                     autoMatchDialog.setAmountValue(0, 70.4)
-                                    return autoMatchDialog.amountValue(0) === 70.4
-                                        && autoMatchDialog.amountDrafts[0] === "70.4"
+                                    if (autoMatchDialog.amountValue(0) !== 70
+                                        || autoMatchDialog.amountDrafts[0] !== "70") return false
+                                    autoMatchDialog.setAmountValue(0, 70.6)
+                                    return autoMatchDialog.amountValue(0) === 71
+                                        && autoMatchDialog.amountDrafts[0] === "71"
                                 } finally {
                                     autoMatchDialog.amountValues = beforeValues
                                     autoMatchDialog.amountDrafts = beforeDrafts
