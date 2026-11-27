@@ -129,6 +129,13 @@ Item {
                         // playable MANUAL RealizationId.
                         StudioButton {
                             objectName: "monitorPrepareMaster"
+                            ToolTip.text: "Prepare an offline Master when no manual playback device is available."
+                            ToolTip.visible: monitorPrepareMasterDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorPrepareMasterDwell
+                                anchors.fill: parent
+                            }
                             text: "Prepare offline · No device"
                             visible: !!root.monitorViewModel
                                 && root.monitorViewModel.canPrepareOffline
@@ -221,6 +228,13 @@ Item {
                         }
                         StudioButton {
                             objectName: "monitorAllocateAndInstall"
+                            ToolTip.text: "Allocate and install the authorized device audition PCM."
+                            ToolTip.visible: monitorAllocateAndInstallDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorAllocateAndInstallDwell
+                                anchors.fill: parent
+                            }
                             text: "Start Device Audition"
                             Layout.fillWidth: true
                             accentColor: root.slate
@@ -338,18 +352,39 @@ Item {
                         spacing: 5
                         StudioButton {
                             objectName: "monitorPlay"
+                            ToolTip.text: "Play Master audition."
+                            ToolTip.visible: monitorPlayDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorPlayDwell
+                                anchors.fill: parent
+                            }
                             text: "Play"
                             enabled: root.controlsAvailable
                             onClicked: root.monitorViewModel.play()
                         }
                         StudioButton {
                             objectName: "monitorPause"
+                            ToolTip.text: "Pause Master audition."
+                            ToolTip.visible: monitorPauseDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorPauseDwell
+                                anchors.fill: parent
+                            }
                             text: "Pause"
                             enabled: root.controlsAvailable
                             onClicked: root.monitorViewModel.pause()
                         }
                         StudioButton {
                             objectName: "monitorStop"
+                            ToolTip.text: "Stop Master audition."
+                            ToolTip.visible: monitorStopDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorStopDwell
+                                anchors.fill: parent
+                            }
                             text: "Stop"
                             enabled: root.controlsAvailable
                             onClicked: root.monitorViewModel.stop()
@@ -357,6 +392,13 @@ Item {
                         Item { Layout.fillWidth: true }
                         StudioButton {
                             objectName: "monitorReturnManual"
+                            ToolTip.text: "Close or cancel the Master audition and return to the previous source."
+                            ToolTip.visible: monitorReturnManualDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorReturnManualDwell
+                                anchors.fill: parent
+                            }
                             text: root.active ? root.monitorViewModel.returnTargetText : "Cancel"
                             accentColor: root.slate
                             enabled: !!root.monitorViewModel
@@ -375,6 +417,13 @@ Item {
                 Layout.preferredHeight: root.height < 420 ? 22 : 27
                 StudioButton {
                     objectName: "monitorAdvancedNavigationButton"
+                    ToolTip.text: "Show or hide navigation in Master-frame coordinates."
+                    ToolTip.visible: monitorAdvancedNavigationButtonDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: monitorAdvancedNavigationButtonDwell
+                        anchors.fill: parent
+                    }
                     text: root.advancedNavigationExpanded
                         ? "SEEK  ▾" : "SEEK  ▸"
                     accentColor: root.slate
@@ -399,6 +448,14 @@ Item {
                 TextField {
                     id: seekFrame
                     objectName: "monitorSeekMasterFrame"
+                    ToolTip.text: "Enter a non-negative Master frame number."
+                    ToolTip.visible: monitorSeekMasterFrameDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: monitorSeekMasterFrameDwell
+                        anchors.fill: parent
+                        interacting: parent.activeFocus
+                    }
                     Layout.fillWidth: true
                     placeholderText: "Seek · MASTER frame"
                     font.pixelSize: 10
@@ -406,6 +463,13 @@ Item {
                 }
                 StudioButton {
                     objectName: "monitorSeekCommit"
+                    ToolTip.text: "Seek to the specified Master frame."
+                    ToolTip.visible: monitorSeekCommitDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: monitorSeekCommitDwell
+                        anchors.fill: parent
+                    }
                     text: "Seek"
                     enabled: root.controlsAvailable
                     onClicked: {
