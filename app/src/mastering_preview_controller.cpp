@@ -410,10 +410,13 @@ bool MasteringPreviewController::published_preview_matches_current_bindings() co
         currentNodes.size()==acceptedPreviewNodes_.size() &&
         std::equal(currentNodes.begin(),currentNodes.end(),
                    acceptedPreviewNodes_.begin()) &&
-        (!m12ReplayTicket_ ||
+        ((!m12ReplayTicket_&&!transferTicket_) ||
             (chainState_==m12ManualChainOwner_ &&
              m12ManualRegistryOwner_ &&
              chainState_->registry_snapshot()==m12ManualRegistryOwner_))
+        && (!transferTicket_||
+            (transferTicket_->matches_prepared(prepared)&&
+             transferTicket_->matches_manual(chainState_->chain(),chainState_->execution_bindings())))
         && acceptedPreviewGeneration_!=0
         && acceptedPreviewGeneration_==previewGeneration_
         && previewStatus_==QStringLiteral("READY")
@@ -437,6 +440,23 @@ void MasteringPreviewController::request_preview()
     if (!preparedSnapshot) {
         previewStatus_ = QStringLiteral("IDLE");
         previewError_.clear();
+        emit changed();
+        return;
+    }
+
+    // A provisional transfer is not an accepted M12 replay. It must
+    // nevertheless fence every render by the same immutable owners.
+    if(transferTicket_&&
+       (!transferTicket_->matches_prepared(preparedSnapshot)||
+        !transferTicket_->matches_manual(chainState_->chain(),chainState_->execution_bindings())||
+        chainState_!=m12ManualChainOwner_||
+        chainState_->registry_snapshot()!=m12ManualRegistryOwner_)) {
+        acceptedPreviewGeneration_=0;
+        acceptedPreviewOwner_.reset();
+        acceptedPreviewBindings_.clear();
+        pendingPreviewBindings_.clear();
+        previewStatus_=QStringLiteral("ERROR");
+        previewError_=QStringLiteral("MANUAL_MATCH_TRANSFER_PREVIEW_STALE");
         emit changed();
         return;
     }
@@ -488,7 +508,7 @@ void MasteringPreviewController::request_preview()
         (m12ReplayTicket_&&m12ReplayTicket_->replay
             ?m12ReplayTicket_->replay->registry_owner
             :chainState_->registry_snapshot()),
-        m12ReplayTicket_
+        m12ReplayTicket_,transferTicket_
     };
 
     // The pending snapshot is the exact DSP input of the accepted
@@ -535,7 +555,15 @@ void MasteringPreviewController::worker_loop()
             core::Error{core::ErrorCode::InvalidState, "No renderer."});
 
         bool cacheHit=false;
-        if (job.m12ReplayTicket) {
+        if(job.transferTicket) {
+            const auto& ticket=*job.transferTicket;
+            if(!job.m12ReplayTicket&&ticket.matches_prepared(job.preparedSnapshot)&&
+               ticket.matches_manual(job.chain,job.bindings))
+                renderResult=ticket.render(*core::FrameCount::create(4096).value());
+            else
+                renderResult=core::Result<render::RenderResult>::failure(core::Error{
+                    core::ErrorCode::InvalidState,"MANUAL_MATCH_TRANSFER_WORKER_OWNER_STALE"});
+        } else if (job.m12ReplayTicket) {
             // Never permit an optional custom PreviewExecutor to bypass
             // immutable linked ownership checks. This uses the ordinary
             // native renderer, with real REF before optional terminal P2.
@@ -597,6 +625,7 @@ void MasteringPreviewController::worker_loop()
         // post-render guard: the queued job may finish AFTER a parameter
         // edit that did not itself request a new preview generation.
         const auto linkedTicket = job.m12ReplayTicket;
+        const auto transferTicket = job.transferTicket;
         const auto jobRegistry = job.registry;
         const auto jobRevision = job.chain.revision();
         const auto jobContext = job.chain.context();
@@ -607,13 +636,30 @@ void MasteringPreviewController::worker_loop()
         QMetaObject::invokeMethod(
             this,
             [this, gen, outcome, preparedForJob,
-             linkedTicket, jobRegistry, jobRevision, jobContext,
+             linkedTicket, transferTicket, jobRegistry, jobRevision, jobContext,
              jobNodes, jobBindings] {
                 // A source switch may not trigger a new DSP preview; check
                 // the ORIGINAL prepared owner before publishing stale audio.
                 if (!snapshotProvider_ || snapshotProvider_() != preparedForJob) {
                     ++staleResultsDiscarded_;
                     return;
+                }
+                if(transferTicket) {
+                    const auto* state=chainState_;
+                    if(!state||transferTicket_!=transferTicket||m12ReplayTicket_||
+                       state!=m12ManualChainOwner_||
+                       state->registry_snapshot()!=m12ManualRegistryOwner_||
+                       jobRegistry!=m12ManualRegistryOwner_||
+                       !transferTicket->matches_prepared(preparedForJob)||
+                       !transferTicket->matches_manual(state->chain(),state->execution_bindings())) {
+                        ++staleResultsDiscarded_;
+                        if(gen==previewGeneration_) {
+                            previewStatus_=QStringLiteral("IDLE");
+                            previewError_=QStringLiteral("MANUAL_MATCH_TRANSFER_PREVIEW_STALE");
+                            emit changed();
+                        }
+                        return;
+                    }
                 }
                 if(linkedTicket) {
                     const auto* state=chainState_;
