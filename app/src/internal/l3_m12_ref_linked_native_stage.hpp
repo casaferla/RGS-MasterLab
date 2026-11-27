@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_manual_match_dsp_conflict.hpp"
 // L3-M12 native Product REF_LINKED stage, real DSP ModuleInstance/Registry
 // and typed ModuleExecutionBinding, not a second/parallel DSP chain.
 // This stage is NOT project publication or M13 verification. Persistent
@@ -124,6 +125,9 @@ stage_exact_m12_native_ref_linked(
             dsp::ModuleLinkState::REF_LINKED,
             n.semantic_node_id,{}});
         if(!instance)return R::failure(*instance.error());
+        if(instance.value()->active() &&
+           protected_manual_match_type(protected_manual.instances(),n.exact_registered_type_id))
+            return fail("L3_M12_PROTECTED_MANUAL_MATCH_DSP_CONFLICT");
         const dsp::ModuleExecutionBinding binding{
             n.allocated_instance_id,n.exact_m10_winning_parameters};
         if(!binding_matches_instance(*instance.value(),binding))
