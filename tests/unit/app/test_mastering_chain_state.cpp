@@ -1,4 +1,5 @@
 #include "mastering_chain_state.hpp"
+#include "internal/l3_manual_match_dsp_conflict.hpp"
 #include "internal/dsp_manual_preset_bundle.hpp"
 #include "internal/m18_product_controller_binding.hpp"
 #include "internal/m18_product_terminal_candidate_binding.hpp"
@@ -135,6 +136,22 @@ void MasteringChainStateTest::manualMatchDspsRequireRealFactoriesAndRetainTypedB
     QVERIFY(nodes[4].instance_id()==comp);
     QVERIFY(std::holds_alternative<DynamicEqParameters>(bindings[2].parameters));
     QVERIFY(std::holds_alternative<TransientShaperParameters>(bindings[3].parameters));
+    // An empty/bypassed permanent manual slot is not an ownership conflict.
+    using namespace rgsml::app::l3_automatch;
+    auto linkedDynamic=ModuleInstance::create({
+        test_instance_id("be000000-0000-4000-8000-000000000031"),
+        "rgsml.dsp.dynamic-eq",true,false,false,false,
+        ModuleProvenance::REFERENCE_MATCH,ModuleOwner::REFERENCE_MATCH,
+        ModuleLinkState::REF_LINKED,test_uuid("be000000-0000-4000-8000-000000000032"),{}});
+    QVERIFY(linkedDynamic);
+    std::vector<ModuleInstance> linked{*linkedDynamic.value()};
+    QVERIFY(!conflicting_active_match_dsps(state.instances(),linked));
+    QVERIFY(state.set_user_bypass(dynamic,false));
+    QVERIFY(protected_manual_match_type(state.instances(),"rgsml.dsp.dynamic-eq"));
+    QVERIFY(!protected_manual_match_type(state.instances(),"rgsml.dsp.transient-shaper"));
+    QVERIFY(conflicting_active_match_dsps(state.instances(),linked));
+    QVERIFY(state.set_user_bypass(dynamic,true));
+    QVERIFY(!conflicting_active_match_dsps(state.instances(),linked));
     auto edit=TransientShaperParameters::create(2.0,-1.0);
     QVERIFY(edit);
     QVERIFY(state.set_transient_shaper_parameters(*edit.value()));
