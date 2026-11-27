@@ -19,3 +19,9 @@ Current Product MasteringChainState has no native MANUAL parameter storage or ex
 
 ## Remaining Product UI checks
 Active status register, simultaneous diagnostic persistence, hover behavior, true maximized screenshots, and removal of the user-facing independent AutoMatch M16 safety ceiling remain separate verification/implementation items. Keep the independent internal safety policy separate from solver-owned P2 and M17 Export TP Limiter.
+
+## Fine-tuning transfer preflight — implementation update
+
+The transfer draft stages the target MANUAL module with the exact C01/C00 typed payload and disables only the corresponding REF_LINKED instance. Other REF_LINKED nodes, their order and all typed payloads remain unchanged. The original immutable ticket is retained. The draft rejects stale ownership, ambiguous multiple active sources, a missing or active destination, invalid typed settings, and a remaining conflict. Both structural revisions advance. This is a candidate only; it cannot publish Project state, authorize M13 verification or issue an M12 receipt.
+
+The final Product transaction must produce a distinct derived-plan identity, keep the original exact accepted snapshot for Undo, and publish both sides under one exclusive epoch. Reusing M10/M11 evidence for the altered execution order is forbidden. A fresh native render and independent checks are required; a successful transfer does not promise PCM equivalence. No shipping button is enabled until this ownership/persistence/verification path is implemented and exercised.
