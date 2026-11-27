@@ -824,6 +824,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorThresholdSlider"
+                                    interactionHint: "Adjust the threshold that triggers compression. Drag and release to apply."
                                     from: -120.0
                                     to: 0.0
                                     stepSize: 0.1
@@ -858,6 +859,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorRatioSlider"
+                                    interactionHint: "Adjust the compression ratio above threshold. Drag and release to apply."
                                     from: 1.0
                                     to: 20.0
                                     stepSize: 0.05
@@ -892,6 +894,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorKneeSlider"
+                                    interactionHint: "Adjust the transition around the threshold. Drag and release to apply."
                                     from: 0.0
                                     to: 24.0
                                     stepSize: 0.1
@@ -926,6 +929,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorAttackSlider"
+                                    interactionHint: "Adjust how quickly compression engages. Drag and release to apply."
                                     from: 0.1
                                     to: 500.0
                                     stepSize: 0.1
@@ -958,6 +962,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorReleaseSlider"
+                                    interactionHint: "Adjust how quickly compression recovers. Drag and release to apply."
                                     from: 1.0
                                     to: 5000.0
                                     stepSize: 1.0
@@ -992,6 +997,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorRmsTimeSlider"
+                                    interactionHint: "Adjust the RMS detector averaging time. Drag and release to apply."
                                     from: 1.0
                                     to: 500.0
                                     stepSize: 0.1
@@ -1025,6 +1031,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorLookAheadSlider"
+                                    interactionHint: "Adjust compressor look-ahead time. Drag and release to apply."
                                     from: 0.0
                                     to: 20.0
                                     stepSize: 0.1
@@ -1056,6 +1063,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorMixSlider"
+                                    interactionHint: "Adjust the wet/dry compression balance. Drag and release to apply."
                                     from: 0.0
                                     to: 100.0
                                     stepSize: 0.5
@@ -1087,6 +1095,7 @@ Item {
 
                                 StudioParameterSlider {
                                     objectName: "compressorMakeupSlider"
+                                    interactionHint: "Adjust the output makeup gain. Drag and release to apply."
                                     from: -24.0
                                     to: 24.0
                                     stepSize: 0.1
