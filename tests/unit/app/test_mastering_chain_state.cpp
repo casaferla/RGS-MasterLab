@@ -140,6 +140,23 @@ void MasteringChainStateTest::manualMatchDspsRequireRealFactoriesAndRetainTypedB
     QVERIFY(state.set_transient_shaper_parameters(*edit.value()));
     QVERIFY(*state.transient_shaper_parameters()==*edit.value());
     QVERIFY(std::get<TransientShaperParameters>(state.execution_bindings()[3].parameters)==*edit.value());
+    // Verify the shared preset codec and one admitted restore preserve
+    // the actual new DSP payloads instead of dropping or reinterpreting them.
+    namespace presets=rgsml::app::dsp_presets;
+    const auto reg=state.registry_snapshot();
+    auto preset=presets::capture(state.chain(),state.execution_bindings(),*reg);
+    QVERIFY(preset);
+    auto encoded=presets::encode_json(*preset.value());
+    QVERIFY(encoded);
+    auto decoded=presets::decode_json(*encoded.value(),*reg);
+    QVERIFY(decoded);
+    QVERIFY(state.set_transient_shaper_parameters(*ts.value()));
+    auto proposed=presets::prepare_explicit_manual_preset_restore(
+        *decoded.value(),state.chain(),state.execution_bindings(),*reg);
+    QVERIFY(proposed);
+    QVERIFY(state.apply_explicit_manual_preset_draft(
+        proposed.value()->proposed_manual_chain,proposed.value()->proposed_bindings));
+    QVERIFY(*state.transient_shaper_parameters()==*edit.value());
     // Restore uses the exact persisted order, identities, flags and payloads.
     auto snapshotRegistry=state.registry_snapshot();
     std::vector<ModuleInstance> savedNodes(state.instances().begin(),state.instances().end());
