@@ -129,6 +129,98 @@ prepare_manual_match_transfer_project(const project::ProjectSnapshot& before,
         return fail("MANUAL_MATCH_PROJECT_READBACK_CONTENT_MISMATCH");
     return core::Status::success();
 }
+// Reconstruct only the before-state of the exact single-slot transfer.
+// This is untrusted recovery data until the original typed accepted
+// owner is decoded and the entire forward draft is independently rebuilt.
+[[nodiscard]] inline core::Result<project::ProjectSnapshot>
+recover_manual_match_transfer_before(const project::ProjectSnapshot& persisted)
+{
+    using R=core::Result<project::ProjectSnapshot>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    auto doc=persisted.document();
+    const auto parsed=QJsonDocument::fromJson(
+        QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    if(!parsed.isObject()||!doc.pipeline.masteringChainId)
+        return fail("MANUAL_MATCH_RECOVERY_NO_PROJECT_OWNER");
+    auto metadata=parsed.object();
+    if(metadata.contains(QStringLiteral("materialization")))
+        return fail("MANUAL_MATCH_RECOVERY_ACCEPTED_RECEIPT_CONTAMINATION");
+    const auto candidate=metadata.take(QStringLiteral("manualTransferCandidate")).toObject();
+    const auto content=candidate.value(QStringLiteral("content")).toObject();
+    const auto accepted=candidate.value(QStringLiteral("priorAcceptedMaterialization"));
+    if(candidate.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED")||
+       content.value(QStringLiteral("schemaId")).toString()!=QStringLiteral("rgsml.reference-match.manual-transfer-candidate/1.0.0")||
+       content.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED")||
+       content.value(QStringLiteral("candidateState")).toString()!=QStringLiteral("PROVISIONAL")||
+       !accepted.isObject())
+        return fail("MANUAL_MATCH_RECOVERY_INVALID_CANDIDATE");
+    const auto canonical=project::OpaqueJsonValue::parse(
+        QJsonDocument(content).toJson(QJsonDocument::Compact).toStdString());
+    if(!canonical)return R::failure(*canonical.error());
+    const auto hash=QCryptographicHash::hash(
+        QByteArray::fromStdString(canonical.value()->canonical_utf8()),
+        QCryptographicHash::Sha256).toHex();
+    if(QString::fromLatin1(hash)!=candidate.value(QStringLiteral("identitySha256")).toString())
+        return fail("MANUAL_MATCH_RECOVERY_DIGEST_MISMATCH");
+    const auto q=[](const auto& id){return QString::fromStdString(id.to_string());};
+    const auto provenance=content.value(QStringLiteral("priorAcceptedProvenance")).toObject();
+    if(q(doc.projectId)!=provenance.value(QStringLiteral("projectId")).toString()||
+       q(doc.sourceResourceId)!=provenance.value(QStringLiteral("sourceId")).toString()||
+       !doc.references.activeReferenceId||
+       q(*doc.references.activeReferenceId)!=provenance.value(QStringLiteral("referenceId")).toString())
+        return fail("MANUAL_MATCH_RECOVERY_OWNER_MISMATCH");
+    const auto manualId=content.value(QStringLiteral("manualInstance")).toString();
+    const auto linkedId=content.value(QStringLiteral("linkedInstance")).toString();
+    const auto linkedChainId=provenance.value(QStringLiteral("linkedChainId")).toString();
+    auto manual=std::find_if(doc.chains.begin(),doc.chains.end(),[&](const auto& c){
+        return c.chainId==*doc.pipeline.masteringChainId&&c.stage=="MASTER"&&c.segment=="MANUAL";});
+    auto linked=std::find_if(doc.chains.begin(),doc.chains.end(),[&](const auto& c){
+        return q(c.chainId)==linkedChainId&&c.stage=="MASTER"&&c.segment=="REF_LINKED";});
+    if(manual==doc.chains.end()||linked==doc.chains.end()||manualId.isEmpty()||linkedId.isEmpty())
+        return fail("MANUAL_MATCH_RECOVERY_MISSING_GRAPH");
+    const auto recover=[&](project::Chain& chain,const QJsonObject& graph,
+                           const QString& instance,bool priorBypass)->bool {
+        bool revisionOk=false;
+        const auto revision=graph.value(QStringLiteral("revision")).toString().toULongLong(&revisionOk);
+        if(!revisionOk||revision==std::numeric_limits<std::uint64_t>::max()||
+           chain.revision!=revision+1U)return false;
+        const auto nodes=graph.value(QStringLiteral("modules")).toArray();
+        if(static_cast<std::size_t>(nodes.size())!=chain.modules.size())return false;
+        std::size_t matches=0;
+        for(std::size_t i=0;i<chain.modules.size();++i) {
+            auto& module=chain.modules[i];
+            const auto node=nodes.at(static_cast<qsizetype>(i)).toObject();
+            if(q(module.instanceId)!=node.value(QStringLiteral("instanceId")).toString()||
+               QString::fromStdString(module.typeId)!=node.value(QStringLiteral("typeId")).toString())
+                return false;
+            if(q(module.instanceId)!=instance)continue;
+            ++matches;
+            const auto bypass=node.value(QStringLiteral("userBypass"));
+            const auto params=node.value(QStringLiteral("parameters"));
+            if(!bypass.isBool()||bypass.toBool()!=priorBypass||module.userBypass==priorBypass||
+               !params.isObject())return false;
+            auto payload=project::OpaqueJsonValue::parse(
+                QJsonDocument(params.toObject()).toJson(QJsonDocument::Compact).toStdString());
+            if(!payload)return false;
+            module.parameters=std::move(*payload.value());
+            module.userBypass=priorBypass;
+        }
+        if(matches!=1U)return false;
+        chain.revision=revision;
+        return true;
+    };
+    if(!recover(*manual,content.value(QStringLiteral("priorManual")).toObject(),manualId,true)||
+       !recover(*linked,content.value(QStringLiteral("priorReferenceLinked")).toObject(),linkedId,false))
+        return fail("MANUAL_MATCH_RECOVERY_INVALID_GRAPH_DELTA");
+    metadata.insert(QStringLiteral("materialization"),accepted);
+    auto beforeMetadata=project::OpaqueJsonValue::parse(
+        QJsonDocument(metadata).toJson(QJsonDocument::Compact).toStdString());
+    if(!beforeMetadata)return R::failure(*beforeMetadata.error());
+    doc.referenceMatch=std::move(*beforeMetadata.value());
+    return project::ProjectSnapshot::create(std::move(doc),
+        {persisted.optional_entries().begin(),persisted.optional_entries().end()});
+}
 // This immutable capture is issued by the Qt Project owner under its
 // physical mutation lease. The worker owns PCM and value snapshots only;
 // it cannot write the Product or manufacture an acceptance receipt.
