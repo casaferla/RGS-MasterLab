@@ -637,6 +637,99 @@ ApplicationWindow {
         onRejected: projectSession.cancelProjectSave()
     }
 
+    // A single shared editor adapter implements the DSP field's
+    // draft/commit/cancel interface for one authoritative amount.
+    component AmountControl: Item {
+        id: amountControl
+        required property int amountIndex
+        property string knobName: ""
+        property string amountLabel: ""
+        property color hue: "#00C8FF"
+        required property var amountStore
+        required property bool matching
+        property color primaryText: "#E6EEF0"
+        property color secondaryText: "#8A97A3"
+        property int dialSize: 46
+        property int boxWidth: 52
+        property bool labelAbove: true
+        readonly property bool live: amountControl.matching
+            && !!amountControl.amountStore && amountControl.amountStore.amountsEditable
+        implicitWidth: boxWidth
+        implicitHeight: (labelAbove ? 12 : 0) + dialSize + 24 + 4
+
+        QtObject {
+            id: draftAdapter
+            readonly property string validationField: amountControl.matching
+                && amountControl.amountStore.amountError(amountControl.amountIndex).length > 0
+                ? "matchAmount" + amountControl.amountIndex : ""
+            readonly property string validationMessage: amountControl.amountStore.amountError(amountControl.amountIndex)
+            function setDraftFieldText(field, raw) {
+                if (amountControl.live)
+                    amountControl.amountStore.setAmountDraft(amountControl.amountIndex, raw)
+            }
+            function commitDraft() {
+                if (amountControl.live)
+                    return amountControl.amountStore.commitAmount(amountControl.amountIndex)
+                return false
+            }
+            function cancelDraft() {
+                if (amountControl.live)
+                    amountControl.amountStore.cancelAmountDraft(amountControl.amountIndex)
+            }
+        }
+        Column {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+            Text {
+                visible: amountControl.labelAbove
+                width: amountControl.boxWidth
+                height: 12
+                horizontalAlignment: Text.AlignHCenter
+                text: amountControl.amountLabel
+                color: amountControl.matching ? amountControl.primaryText : amountControl.secondaryText
+                font.family: "Segoe UI"
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+            }
+            StudioMatchKnob {
+                objectName: amountControl.knobName
+                width: amountControl.dialSize
+                height: width
+                anchors.horizontalCenter: parent.horizontalCenter
+                prominent: amountControl.amountIndex === 0
+                accentColor: amountControl.hue
+                value: amountControl.matching
+                    ? amountControl.amountStore.amountValue(amountControl.amountIndex) : 0
+                editable: amountControl.live
+                opacity: amountControl.matching ? 1.0 : 0.50
+                onValueEdited: function(nextValue) {
+                    amountControl.amountStore.setAmountValue(amountControl.amountIndex, nextValue)
+                }
+                Accessible.name: amountControl.amountLabel + " match amount"
+            }
+            StudioNumericField {
+                objectName: "autoMatchPanelAmount_" + amountControl.amountIndex
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: implicitWidth
+                height: implicitHeight
+                compact: true
+                compactFieldWidth: amountControl.boxWidth
+                showLabel: false
+                inputHorizontalMargin: 4
+                inputPixelSize: 13
+                labelText: amountControl.amountLabel + " (%)"
+                fieldName: "matchAmount" + amountControl.amountIndex
+                rawText: amountControl.matching
+                    ? amountControl.amountStore.amountDrafts[amountControl.amountIndex] : "—"
+                viewModel: draftAdapter
+                enabled: amountControl.live
+                opacity: amountControl.matching ? 1.0 : 0.45
+                interactionHint: "0–100% · Enter or click away to apply · Esc to cancel"
+            }
+        }
+    }
+
     // M18 Product-authorized output choice. The File menu remains
     // disabled until the application owns the complete M18 gate bundle.
     // No QML surface can mint a Ticket or invoke a detached worker.
@@ -2207,98 +2300,9 @@ ApplicationWindow {
                             readonly property var domainNames: ["Tonal", "Dynamics", "Stereo", "Loudness"]
                             readonly property var domainColors: ["#4E86C6", "#C4774A", "#4A9A88", "#D3AE66"]
 
-                            // A single shared editor adapter implements the DSP field's
-                            // draft/commit/cancel interface for one authoritative amount.
-                            component AmountControl: Item {
-                                id: amountControl
-                                required property int amountIndex
-                                property string knobName: ""
-                                property string amountLabel: ""
-                                property color hue: root.accent
-                                property int dialSize: 44
-                                property int boxWidth: 52
-                                property bool labelAbove: true
-                                readonly property bool live: adaptiveContextWorkspace.matching
-                                    && autoMatchDialog.amountsEditable
-                                implicitWidth: boxWidth
-                                implicitHeight: (labelAbove ? 12 : 0) + dialSize + 24 + 4
-
-                                QtObject {
-                                    id: draftAdapter
-                                    readonly property string validationField: adaptiveContextWorkspace.matching
-                                        && autoMatchDialog.amountError(amountControl.amountIndex).length > 0
-                                        ? "matchAmount" + amountControl.amountIndex : ""
-                                    readonly property string validationMessage: autoMatchDialog.amountError(amountControl.amountIndex)
-                                    function setDraftFieldText(field, raw) {
-                                        if (amountControl.live)
-                                            autoMatchDialog.setAmountDraft(amountControl.amountIndex, raw)
-                                    }
-                                    function commitDraft() {
-                                        if (amountControl.live)
-                                            return autoMatchDialog.commitAmount(amountControl.amountIndex)
-                                        return false
-                                    }
-                                    function cancelDraft() {
-                                        if (amountControl.live)
-                                            autoMatchDialog.cancelAmountDraft(amountControl.amountIndex)
-                                    }
-                                }
-                                Column {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 2
-                                    Text {
-                                        visible: amountControl.labelAbove
-                                        width: amountControl.boxWidth
-                                        height: 12
-                                        horizontalAlignment: Text.AlignHCenter
-                                        text: amountControl.amountLabel
-                                        color: adaptiveContextWorkspace.matching ? root.textPrimary : root.textSecondary
-                                        font.family: "Segoe UI"
-                                        font.pixelSize: 10
-                                        font.weight: Font.DemiBold
-                                    }
-                                    StudioMatchKnob {
-                                        objectName: amountControl.knobName
-                                        width: amountControl.dialSize
-                                        height: width
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        prominent: amountControl.amountIndex === 0
-                                        accentColor: amountControl.hue
-                                        value: adaptiveContextWorkspace.matching
-                                            ? autoMatchDialog.amountValue(amountControl.amountIndex) : 0
-                                        editable: amountControl.live
-                                        opacity: adaptiveContextWorkspace.matching ? 1.0 : 0.50
-                                        onValueEdited: function(nextValue) {
-                                            autoMatchDialog.setAmountValue(amountControl.amountIndex, nextValue)
-                                        }
-                                        Accessible.name: amountControl.amountLabel + " match amount"
-                                    }
-                                    StudioNumericField {
-                                        objectName: "autoMatchPanelAmount_" + amountControl.amountIndex
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        width: implicitWidth
-                                        height: implicitHeight
-                                        compact: true
-                                        compactFieldWidth: amountControl.boxWidth
-                                        showLabel: false
-                                        inputHorizontalMargin: 4
-                                        inputPixelSize: 13
-                                        labelText: amountControl.amountLabel + " (%)"
-                                        fieldName: "matchAmount" + amountControl.amountIndex
-                                        rawText: adaptiveContextWorkspace.matching
-                                            ? autoMatchDialog.amountDrafts[amountControl.amountIndex] : "—"
-                                        viewModel: draftAdapter
-                                        enabled: amountControl.live
-                                        opacity: adaptiveContextWorkspace.matching ? 1.0 : 0.45
-                                        interactionHint: "0–100% · Enter or click away to apply · Esc to cancel"
-                                    }
-                                }
-                            }
-
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.margins: 8
+                                anchors.margins: 6
                                 spacing: 2
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -2313,7 +2317,10 @@ ApplicationWindow {
                                         minimumControlWidth: 0
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
-                                        onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
+                                        onClicked: {
+                                            autoMatchDialog.close()
+                                            adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
+                                        }
                                     }
                                     StudioSegmentButton {
                                         objectName: "adaptiveModeToggle_Gold"
@@ -2322,7 +2329,10 @@ ApplicationWindow {
                                         minimumControlWidth: 0
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
-                                        onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
+                                        onClicked: {
+                                            prepareAdviceDialog.close()
+                                            adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
+                                        }
                                     }
                                 }
 
@@ -2333,6 +2343,9 @@ ApplicationWindow {
                                     Layout.maximumHeight: 86
                                     spacing: 8
                                     AmountControl {
+                                        amountStore: autoMatchDialog
+                                        matching: adaptiveContextWorkspace.matching
+                                        hue: root.accent
                                         amountIndex: 0
                                         knobName: "totalMatchAmountKnob"
                                         amountLabel: "Total Match"
@@ -2364,7 +2377,7 @@ ApplicationWindow {
                                             elide: Text.ElideRight
                                         }
                                         StudioSegmentButton {
-                                            objectName: "openAutoMatchDialog"
+                                            objectName: adaptiveContextWorkspace.matching ? "openAutoMatchDialog" : "openPrepareAdviceDialog"
                                             text: adaptiveContextWorkspace.matching ? "AutoMatch…" : "Sample rate / RAM…"
                                             tone: "primary"
                                             Layout.fillWidth: true
@@ -2403,6 +2416,8 @@ ApplicationWindow {
                                     Repeater {
                                         model: adaptiveContextWorkspace.domainNames
                                         AmountControl {
+                                            amountStore: autoMatchDialog
+                                            matching: adaptiveContextWorkspace.matching
                                             required property int index
                                             required property string modelData
                                             amountIndex: index + 1
