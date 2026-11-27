@@ -972,6 +972,17 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                 "Stereo/M-S parameters exist without a module instance"});
         }
 
+        // Until the new typed project schema is admitted, refuse saving
+        // a staged MANUAL C01/C00 chain rather than silently dropping audio.
+        if (masteringChainState_->dynamic_eq_instance_id() ||
+            masteringChainState_->dynamic_eq_parameters() ||
+            masteringChainState_->transient_shaper_instance_id() ||
+            masteringChainState_->transient_shaper_parameters()) {
+            return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "Manual Dynamic EQ / Transient Shaper project persistence not yet admitted"});
+        }
+
         // Persist P2 only when the actual Product chain has the fifth
         // typed, executable MANUAL instance. Never serialize a decorative
         // editor or silently drop opt-in DSP audio from a saved Project.
