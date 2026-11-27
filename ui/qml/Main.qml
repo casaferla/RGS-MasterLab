@@ -898,7 +898,7 @@ ApplicationWindow {
     // No QML surface can mint a Ticket or invoke a detached worker.
     // The native Product action remains authoritative. Five compact,
     // editable Canvas knobs mirror the exact numeric fields; the popup
-    // retains manual precision, ceiling, review, and consent controls.
+    // retains manual precision, review, and consent controls.
     Dialog {
         id: autoMatchDialog
         objectName: "autoMatchDialog"
@@ -983,7 +983,7 @@ ApplicationWindow {
                 columns: 2
                 Layout.fillWidth: true
                 Repeater {
-                    model: ["Total Match", "Tonal", "Dynamics", "Stereo", "Loudness", "TP ceiling (dBTP)"]
+                    model: ["Total Match", "Tonal", "Dynamics", "Stereo", "Loudness"]
                     delegate: RowLayout {
                         required property string modelData
                         required property int index
@@ -994,7 +994,7 @@ ApplicationWindow {
                         TextField {
                             id: amountField
                             objectName: "autoMatchAmount_" + index
-                            ToolTip.text: index === 5 ? "Independent AutoMatch true-peak safety limit, not the streaming or export limiter ceiling." : "Match amount: whole percentage from 0 to 100. Enter to apply; Esc to cancel."
+                            ToolTip.text: "Match amount: whole percentage from 0 to 100. Enter to apply; Esc to cancel."
                             ToolTip.visible: autoMatchDialogAmountDwell.ready
                             ToolTip.delay: 0
                             StudioTooltipDwell {
@@ -1003,38 +1003,25 @@ ApplicationWindow {
                                 interacting: parent.activeFocus
                             }
                             Layout.preferredWidth: 110
-                            text: index === 5 ? "0" : autoMatchDialog.amountDrafts[index]
+                            text: autoMatchDialog.amountDrafts[index]
                             enabled: autoMatchDialog.amountsEditable
-                            color: index < 5 && autoMatchDialog.amountError(index).length
+                            color: autoMatchDialog.amountError(index).length
                                 ? root.error : root.textPrimary
-                            validator: index === 5 ? ceilingValidator : null
-                            DoubleValidator {
-                                id: ceilingValidator
-                                bottom: -12
-                                top: 0
-                                notation: DoubleValidator.StandardNotation
-                                locale: "C"
-                            }
-                            onTextEdited: if (index < 5)
-                                autoMatchDialog.setAmountDraft(index, text)
-                            onActiveFocusChanged: if (!activeFocus && index < 5)
+                            onTextEdited: autoMatchDialog.setAmountDraft(index, text)
+                            onActiveFocusChanged: if (!activeFocus)
                                 autoMatchDialog.commitAmount(index)
-                            Keys.onReturnPressed: if (index < 5) autoMatchDialog.commitAmount(index)
-                            Keys.onEnterPressed: if (index < 5) autoMatchDialog.commitAmount(index)
+                            Keys.onReturnPressed: autoMatchDialog.commitAmount(index)
+                            Keys.onEnterPressed: autoMatchDialog.commitAmount(index)
                             Keys.onEscapePressed: function(event) {
-                                if (index < 5) {
-                                    autoMatchDialog.cancelAmountDraft(index)
-                                    event.accepted = true
-                                } else event.accepted = false
+                                autoMatchDialog.cancelAmountDraft(index)
+                                event.accepted = true
                             }
                             function numericValue() {
-                                if (index < 5)
-                                    return autoMatchDialog.commitAmount(index)
-                                        ? autoMatchDialog.amountValue(index) : NaN
-                                return acceptableInput ? Number(text) : NaN
+                                return autoMatchDialog.commitAmount(index)
+                                    ? autoMatchDialog.amountValue(index) : NaN
                             }
                         }
-                        Text { text: index === 5 ? "dBTP" : "%"; color: root.textSecondary; Layout.preferredWidth: 36 }
+                        Text { text: "%"; color: root.textSecondary; Layout.preferredWidth: 36 }
                     }
                     id: autoMatchInputs
                 }
@@ -1147,14 +1134,14 @@ ApplicationWindow {
                         && !root.appAutoMatchModel.canAdopt && !root.monitorExclusive
                     onClicked: {
                         let values = []
-                        for (let i = 0; i < 6; ++i) {
+                        for (let i = 0; i < 5; ++i) {
                             let item = autoMatchInputs.itemAt(i)
                             if (!item) return
                             values.push(item.numericField.numericValue())
                         }
                         if (values.some(function(v) { return !Number.isFinite(v) })) return
-                        root.appAutoMatchModel.start(values[0]/100, values[1]/100,
-                            values[2]/100, values[3]/100, values[4]/100, values[5])
+                        root.appAutoMatchModel.startProduct(values[0]/100, values[1]/100,
+                            values[2]/100, values[3]/100, values[4]/100)
                     }
                 }
                 Button {
@@ -2518,7 +2505,7 @@ ApplicationWindow {
                                 return true
                             }
                             function verifyAmountEditorContract() {
-                                if (!matching || !autoMatchDialog.amountsEditable) return false
+                                if (!matching || !autoMatchDialog.amountsEditable || autoMatchInputs.count !== 5) return false
                                 const beforeValues = autoMatchDialog.amountValues.slice()
                                 const beforeDrafts = autoMatchDialog.amountDrafts.slice()
                                 try {
