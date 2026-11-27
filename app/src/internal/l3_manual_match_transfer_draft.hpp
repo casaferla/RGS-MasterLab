@@ -14,6 +14,11 @@ struct ManualMatchTransferDraft final {
     dsp::ModuleInstanceId linked_instance;
     dsp::ModuleInstanceId manual_instance;
     dsp_presets::ProposedManualPresetRestore manual_after;
+    // Provisional REF graph only: unchanged peers keep their exact payload
+    // and relative order. The transferred node is inactive. This is NOT
+    // the original accepted plan and must acquire new content identity.
+    dsp::ProcessingChain linked_after;
+    std::vector<dsp::ModuleExecutionBinding> linked_bindings_after;
     [[nodiscard]] constexpr bool requires_explicit_confirmation() const noexcept {return true;}
     [[nodiscard]] constexpr bool requires_fresh_verification() const noexcept {return true;}
     [[nodiscard]] constexpr bool authorizes_project_commit() const noexcept {return false;}
@@ -68,16 +73,34 @@ struct ManualMatchTransferDraft final {
         !desc.value()->get().parameter_schema_id())
         return fail("MANUAL_MATCH_TRANSFER_FACTORY_UNAVAILABLE");
     const auto& d=desc.value()->get();
-    // Reuse the canonical typed preset validator; never publish a shadow
-    // DSP. Keep the target BYPASSED in this draft, pending an explicit
-    // owner transition and review of the resulting audio.
+    // Stage both sides of the transfer together. The target is activated
+    // only in this provisional graph. No live setter is called.
+    if(!to->enabled()||!ticket->replay->registry_owner||
+        ticket->replay->reference_linked.revision()==std::numeric_limits<std::uint64_t>::max())
+        return fail("MANUAL_MATCH_TRANSFER_INVALID_DESTINATION_OR_REVISION");
     dsp_presets::ManualPreset preset{dsp_presets::Scope::module,{
         {std::string(type),std::string(*d.algorithm_version()),std::string(*d.parameter_schema_id()),
-         linkedBindings[index].parameters,to->enabled(),true}}};
+         linkedBindings[index].parameters,to->enabled(),false}}};
     auto after=dsp_presets::prepare_explicit_manual_preset_restore(preset,manual,bindings,
         registry,static_cast<std::size_t>(to-nodes.begin()));
     if(!after)return R::failure(*after.error());
+    std::vector<dsp::ModuleInstance> nextLinked(linked.begin(),linked.end());
+    auto inactive=dsp::ModuleInstance::create({
+        from->instance_id(),std::string(type),from->enabled(),true,
+        from->controller_suspended(),from->domain_suspended(),
+        from->provenance(),from->owner(),from->link_state(),
+        from->semantic_node_id(),from->parameter_state()});
+    if(!inactive)return R::failure(*inactive.error());
+    nextLinked[index]=std::move(*inactive.value());
+    auto linkedAfter=dsp::ProcessingChain::restore(*ticket->replay->registry_owner,
+        ticket->replay->reference_linked.context(),
+        ticket->replay->reference_linked.revision()+1U,std::move(nextLinked));
+    if(!linkedAfter)return R::failure(*linkedAfter.error());
+    if(conflicting_active_match_dsps(after.value()->proposed_manual_chain.instances(),
+            linkedAfter.value()->instances()))
+        return fail("MANUAL_MATCH_TRANSFER_CONFLICT_REMAINS");
+    auto copiedBindings=linkedBindings;
     return R::success(ManualMatchTransferDraft{std::move(ticket),requested,to->instance_id(),
-        std::move(*after.value())});
+        std::move(*after.value()),std::move(*linkedAfter.value()),std::move(copiedBindings)});
 }
 } // namespace rgsml::app::l3_automatch
