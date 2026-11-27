@@ -29,6 +29,7 @@ struct ManualMatchTransferCapture;
 class ManualMatchTransferAudition;
 struct ManualMatchTransferConfirmation;
 struct ManualMatchTransferAdoptionDraft;
+struct ManualMatchTransferHistory;
 }
 namespace l3_automatch::m10_frozen { struct P2NativeProductWorkerScope; }
 namespace l3_automatch::m12_frozen {
@@ -227,6 +228,9 @@ public:
     prepare_private_manual_match_transfer_adoption(
         std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
         const l3_automatch::ManualMatchTransferConfirmation& confirmation);
+    [[nodiscard]] core::Status apply_private_manual_match_transfer(
+        std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
+        const l3_automatch::ManualMatchTransferConfirmation& confirmation);
     // Non-mutating eligibility; actual operations recheck under M18.
     enum class M12CurrentMatchState {none,active,suspended,stale};
     [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
@@ -329,6 +333,9 @@ private:
     // revision or a DSP parameter counter. Invalidates M13 worker
     // results across Undo/Redo and identical-source Project reopen.
     std::uint64_t m12ProductOwnershipEpoch_{1U};
+    std::shared_ptr<const l3_automatch::ManualMatchTransferHistory> manualTransferHistory_;
+    std::uint64_t manualTransferHistoryEpoch_{};
+    bool manualTransferHistoryApplied_{false};
     std::optional<project::ProjectSnapshot> opened_;
     struct M12MaterializationHistoryEntry final {
         project::ProjectSnapshot before;

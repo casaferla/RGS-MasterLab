@@ -2402,6 +2402,86 @@ ProjectSessionViewModel::prepare_private_manual_match_transfer_adoption(
         std::move(*draft.value())));
 }
 
+core::Status ProjectSessionViewModel::apply_private_manual_match_transfer(
+    std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
+    const l3_automatch::ManualMatchTransferConfirmation& confirmation)
+{
+    namespace a=l3_automatch;
+    const auto fail=[](const char* why){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    auto staged=prepare_private_manual_match_transfer_adoption(audition,confirmation);
+    if(!staged)return core::Status::failure(*staged.error());
+    // A preflight is not a mutation capability. Reacquire and hold the
+    // real exclusive lease through both model replacements and readback.
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       !opened_||!masteringChainState_||!previewController_)
+        return fail("MANUAL_MATCH_COMMIT_NO_EXCLUSIVE_OWNER");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("MANUAL_MATCH_COMMIT_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto& capture=audition->capture();
+    const auto prior=capture.native.exact_prior_owner;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto current=[&](){
+        return prior&&provider&&provider()==prior->exact_prepared_owner&&
+            capture.product_epoch==m12ProductOwnershipEpoch_&&
+            previewController_->private_m12_product_preview_ticket()==prior&&
+            previewController_->private_m12_linked_editor_owner_matches(*masteringChainState_);
+    };
+    if(!current()||!capture.project.matches_before(*opened_))
+        return fail("MANUAL_MATCH_COMMIT_OWNER_STALE");
+    const auto stem=QString::fromStdString(opened_->document().displayName);
+    auto live=current_snapshot(stem);
+    if(!live)return core::Status::failure(*live.error());
+    auto draft=a::prepare_manual_match_transfer_adoption(
+        *live.value(),*masteringChainState_,audition,confirmation);
+    if(!draft)return core::Status::failure(*draft.error());
+    auto candidate=a::ManualMatchTransferPreviewTicket::create(
+        std::make_shared<const a::ManualMatchTransferCapture>(capture));
+    if(!candidate)return core::Status::failure(*candidate.error());
+    auto ticket=std::make_shared<const a::ManualMatchTransferPreviewTicket>(
+        std::move(*candidate.value()));
+    auto history=std::make_shared<const a::ManualMatchTransferHistory>(
+        a::ManualMatchTransferHistory{*masteringChainState_,
+            std::move(draft.value()->manual_after),ticket});
+    // Prepare all value copies before any live publication.
+    auto beforeManual=history->before_manual;
+    auto afterManual=history->after_manual;
+    auto beforeProject=capture.project.before;
+    auto afterProject=capture.project.after;
+    auto second=current_snapshot(stem);
+    if(!second||!capture.project.matches_before(*second.value())||!current()||
+       masteringChainState_->execution_bindings()!=prior->exact_manual_bindings)
+        return fail("MANUAL_MATCH_COMMIT_RACED");
+    masteringChainState_->adopt_chain_after_authorized_project_open(std::move(afterManual));
+    opened_.emplace(std::move(afterProject));
+    const bool installed=previewController_->set_private_manual_transfer_preview_ticket(ticket);
+    auto readback=current_snapshot(stem);
+    if(!installed||!readback||!ticket->matches_project(*readback.value())||
+       !previewController_->private_manual_transfer_owner_matches(*masteringChainState_)) {
+        masteringChainState_->adopt_chain_after_authorized_project_open(std::move(beforeManual));
+        opened_.emplace(std::move(beforeProject));
+        previewController_->set_private_m12_product_preview_ticket(prior);
+        previewController_->request_preview();
+        return fail("MANUAL_MATCH_COMMIT_READBACK_ROLLED_BACK");
+    }
+    ++m12ProductOwnershipEpoch_;
+    manualTransferHistory_=std::move(history);
+    manualTransferHistoryEpoch_=m12ProductOwnershipEpoch_;
+    manualTransferHistoryApplied_=true;
+    if(adapterModel_)adapterModel_->refreshFromAuthority();
+    else {
+        if(gainViewModel_)gainViewModel_->refreshFromAuthority();
+        if(eqViewModel_)eqViewModel_->refreshFromAuthority();
+    }
+    previewController_->request_preview();
+    statusText_=QStringLiteral("MANUAL TRANSFER / NOT_VERIFIED");
+    clear_error();
+    return core::Status::success();
+}
+
 ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m12_match_state() const
 {
     namespace m=l3_automatch::m12_frozen;

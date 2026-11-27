@@ -486,4 +486,11 @@ prepare_manual_match_transfer_adoption(
     return R::success(ManualMatchTransferAdoptionDraft{
         std::move(*after.value()),std::move(audition)});
 }
+// Session-local undo data keeps value states and immutable graph owners,
+// not another full rendered candidate PCM. It cannot issue M12 receipts.
+struct ManualMatchTransferHistory final {
+    MasteringChainState before_manual;
+    MasteringChainState after_manual;
+    std::shared_ptr<const ManualMatchTransferPreviewTicket> after_ticket;
+};
 } // namespace rgsml::app::l3_automatch
