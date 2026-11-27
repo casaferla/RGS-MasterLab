@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_manual_match_dsp_conflict.hpp"
 // L3-M12 read-only bridge from the exact persisted REF_LINKED Project
 // to the EXISTING native renderer. No Project mutation, owner receipt,
 // M13 verification, second engine, M17 WAV export or M10 proxy PCM.
@@ -171,6 +172,8 @@ prepare_restored_m12_native_replay_plan(
            nodes.back().instance_id())
         return fail("L3_M12_REPLAY_TERMINAL_MOVED");
     const auto linked_nodes=linked.exact_native_chain.instances();
+    if(conflicting_active_match_dsps(nodes,linked_nodes))
+        return fail("L3_M12_REPLAY_PROTECTED_MANUAL_MATCH_DSP_CONFLICT");
     for(const auto& node:linked_nodes)
         if(node.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter" &&
            (has_p2||&node!=&linked_nodes.back()))
