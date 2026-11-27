@@ -67,6 +67,8 @@ public:
     // Call after canonical Product owner is constructed, before Main QML.
     // Three independent non-processing GUI rows, never project DSP instances.
     void bindAnalysisStatusViewModel(QObject* statusVm);
+    // Legacy monitor editor is retained for isolated diagnostics only.
+    void setLegacyMonitorRowVisible(bool visible);
 
     // Explicit opt-in until the shared Product QML host supports both
     // linked editor keys. Never infer it from the optional P2 controller.
@@ -99,6 +101,7 @@ private:
     TerminalLimiterState* terminalLimiterState_{nullptr};
     TerminalLimiterViewModel* terminalLimiterViewModel_{nullptr};
     QObject* terminalMonitorViewModel_{nullptr};
+    bool legacyMonitorRowVisible_{true};
     QObject* analysisStatusViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
