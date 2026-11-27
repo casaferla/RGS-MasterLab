@@ -8885,6 +8885,23 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QVERIFY(!author.previewController->private_m12_product_preview_ticket());
     const auto transferred=author.previewController->private_manual_transfer_preview_ticket();
     QVERIFY(transferred);
+    const auto remaining=a::inspect_current_linked_editors(
+        *author.previewController,*author.masteringChainState);
+    QVERIFY(remaining);
+    QCOMPARE(remaining->size(),std::size_t{1});
+    QVERIFY(remaining->front().instance.instance_id()==linkedDynamic);
+    QVERIFY(remaining->front().instance.active());
+    QVERIFY(remaining->front().provisional_owner==transferred);
+    QVERIFY(!remaining->front().exact_owner);
+    QVERIFY(!remaining->front().activity_authorized());
+    const auto projected=a::project_linked_editor_parameters(remaining->front());
+    QVERIFY(!projected.isEmpty());
+    QVERIFY(!projected.value(QStringLiteral("manualEditable")).toBool());
+    a::LinkedDspModuleAdapter remainingAdapter(
+        remaining->front(),*author.previewController,*author.masteringChainState,
+        QStringLiteral("Mastering"));
+    QVERIFY(remainingAdapter.linked_read_only());
+    QVERIFY(remainingAdapter.configuration_state().contains(QStringLiteral("Not verified")));
     QVERIFY(!*author.masteringChainState->is_bypassed(transient).value());
     QVERIFY(*author.masteringChainState->transient_shaper_parameters()==*winner.value());
     QVERIFY(*author.masteringChainState->is_bypassed(dynamic).value());
@@ -8896,6 +8913,7 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QVERIFY(author.project.undo_private_manual_match_transfer());
     QVERIFY(author.previewController->private_m12_product_preview_ticket()==priorTicket);
     QVERIFY(author.masteringChainState->execution_bindings()==bindings);
+    QVERIFY(remainingAdapter.has_error());
     QVERIFY(author.project.can_redo_private_manual_match_transfer());
     QVERIFY(author.project.redo_private_manual_match_transfer());
     QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==transferred);
