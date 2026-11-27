@@ -865,6 +865,17 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(otherIdentity);
     QVERIFY(otherIdentity.value()->sha256!=identity.value()->sha256);
     QVERIFY(identity.value()->sha256!=exactTransferOwner->replay->exact_plan_checksum);
+    const auto audition=transfer::render_manual_match_transfer_candidate(
+        *draft.value(),*identity.value(),*maxBlock.value());
+    QVERIFY(audition);
+    QCOMPARE(audition.value()->view().absolute_range(),ownedPrepared->view().absolute_range());
+    QCOMPARE(audition.value()->view().format(),ownedPrepared->view().format());
+    QVERIFY(!transfer::render_manual_match_transfer_candidate(
+        *draft.value(),*otherIdentity.value(),*maxBlock.value()));
+    std::atomic<bool> cancelledTransfer{true};
+    QVERIFY(!transfer::render_manual_match_transfer_candidate(
+        *draft.value(),*identity.value(),*maxBlock.value(),&cancelledTransfer));
+
 
     QVERIFY(!transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
         transferBindings,*reg,nodes[2].allocated_instance_id));
