@@ -49,7 +49,9 @@ Rectangle {
                 accentColor: "#C4774A"
                 fillFromOrigin: modelData.key === "range"
                 positionFillOrigin: 0
-                interactionHint: "C01 typed validation, no manual fine tuning in L3"
+                interactionHint: root.editable
+                    ? "Adjust " + modelData.label + ". Enter or release to apply; Esc to cancel."
+                    : "Read-only accepted AutoMatch parameter."
             }
         }
     }
