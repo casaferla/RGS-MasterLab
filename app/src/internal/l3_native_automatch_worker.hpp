@@ -1,4 +1,5 @@
 #pragma once
+#include "l3_manual_match_dsp_conflict.hpp"
 #include "l3_m10_native_fixed_worker.hpp"
 #include "l3_m10_native_definition_builder.hpp"
 #include "l3_m09_native_fixed_seed_geometry.hpp"
@@ -344,6 +345,13 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
         [&](const auto& bank,const auto& fixed,auto,const auto& family){
             m09_frozen::NativeFamilyBindingAuthority unresolved;
             unresolved.exact_reason="fixed-m16-or-dependency-unavailable";
+            if((family.spectral_dynamic_eq_prefix && protected_manual_match_type(manual,"rgsml.dsp.dynamic-eq")) ||
+               (family.micro!=m09_frozen::MicroMode::none &&
+                protected_manual_match_type(manual,"rgsml.dsp.transient-shaper"))) {
+                unresolved.disposition=m09_frozen::NativeDomainDisposition::not_applicable;
+                unresolved.exact_reason="protected-active-manual-match-dsp";
+                return unresolved;
+            }
             if(!fixed.measured_m16_linear_peak||fixed.exact_definition_authority_content.empty()||
                fixed.exact_fixed_graph_content.empty())return unresolved;
             auto dependencies=exact_accepted_dependencies;
