@@ -44,7 +44,8 @@ assess_current_product_ref_linked_open_safety(
     const auto metadata=QJsonDocument::fromJson(
         QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
     const bool unsafe_metadata=!metadata.isObject()||
-        metadata.object().contains(QStringLiteral("materialization"));
+        metadata.object().contains(QStringLiteral("materialization"))||
+        metadata.object().contains(QStringLiteral("manualTransferCandidate"));
     return has_linked||unsafe_metadata
         ?ProjectOpenLinkedSafety::
             blocked_until_product_ref_linked_replay_is_installed
