@@ -129,6 +129,13 @@ Item {
                     Slider {
                         id: gainSlider
                         objectName: "gainSlider"
+                        ToolTip.text: "Adjust input gain in 0.1 dB steps. Release to apply."
+                        ToolTip.visible: gainSliderDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: gainSliderDwell
+                            anchors.fill: parent
+                        }
                         Layout.fillWidth: true
                         from: -24.0
                         to: 24.0
