@@ -261,6 +261,50 @@ render_captured_manual_match_transfer(const ManualMatchTransferCapture& capture,
     return render_manual_match_transfer_candidate(capture.native,
         capture.project.identity,maxBlock,cancellation);
 }
+// Provisional playback ownership is deliberately NOT an M12 replay
+// ticket. It retains the independently checked transfer identity and
+// exact PREPARED owner, without reusing accepted solver checksums.
+class ManualMatchTransferPreviewTicket final {
+public:
+    [[nodiscard]] static core::Result<ManualMatchTransferPreviewTicket> create(
+        std::shared_ptr<const ManualMatchTransferCapture> capture)
+    {
+        using R=core::Result<ManualMatchTransferPreviewTicket>;
+        if(!capture||!capture->product_epoch)
+            return R::failure(core::Error{core::ErrorCode::InvalidState,
+                "MANUAL_MATCH_PREVIEW_NO_CAPTURE"});
+        const auto checked=validate_manual_match_transfer_project_readback(
+            capture->project.after,capture->project,capture->native);
+        if(!checked)return R::failure(*checked.error());
+        return R::success(ManualMatchTransferPreviewTicket(std::move(capture)));
+    }
+    [[nodiscard]] const ManualMatchTransferCapture& capture() const noexcept {return *capture_;}
+    [[nodiscard]] bool matches_manual(
+        const dsp::ProcessingChain& chain,
+        std::span<const dsp::ModuleExecutionBinding> bindings) const
+    {
+        const auto& expected=capture_->native.manual_after;
+        const auto& proposed=expected.proposed_manual_chain;
+        return chain.context()==proposed.context()&&chain.revision()==proposed.revision()&&
+            std::equal(chain.instances().begin(),chain.instances().end(),
+                       proposed.instances().begin(),proposed.instances().end())&&
+            std::equal(bindings.begin(),bindings.end(),
+                expected.proposed_bindings.begin(),expected.proposed_bindings.end());
+    }
+    [[nodiscard]] bool matches_prepared(
+        const std::shared_ptr<const render::RenderResult>& owner) const noexcept
+    {return owner&&owner==capture_->native.exact_prior_owner->exact_prepared_owner;}
+    [[nodiscard]] bool matches_project(const project::ProjectSnapshot& snapshot) const
+    {return capture_->project.matches_after(snapshot);}
+    [[nodiscard]] core::Result<render::RenderResult> render(
+        core::FrameCount maxBlock,const std::atomic<bool>* cancellation=nullptr) const
+    {return render_captured_manual_match_transfer(*capture_,maxBlock,cancellation);}
+    [[nodiscard]] constexpr bool is_verified() const noexcept {return false;}
+private:
+    explicit ManualMatchTransferPreviewTicket(std::shared_ptr<const ManualMatchTransferCapture> capture)
+        :capture_(std::move(capture)) {}
+    std::shared_ptr<const ManualMatchTransferCapture> capture_;
+};
 // Worker completion binds PCM to the exact immutable capture that
 // produced it. A caller cannot construct this envelope from unrelated
 // PCM. The GUI still has to revalidate the Product owner and request
