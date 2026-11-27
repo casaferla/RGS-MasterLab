@@ -28,6 +28,7 @@ private slots:
     void testProductAnalysisRowsAppearOnlyAfterLimiterBeforeMonitor();
     void testP2DuplicateCommandsDoNotScheduleRendering();
     void testManualTransientShaperEditsAndHistory();
+    void testManualDynamicEqTypedEditsAndHistory();
     void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
@@ -45,6 +46,73 @@ private slots:
     void testIndependentModuleHistories();
     void testWorkflowContextLabel();
 };
+
+void DspModuleAdapterTest::testManualDynamicEqTypedEditsAndHistory()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto deRegistry=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*registry.value()));
+    QVERIFY(deRegistry);
+    auto full=dsp::ModuleRegistry::with_transient_shaper_offline(std::move(*deRegistry.value()));
+    QVERIFY(full);
+    const auto uuid=[](const char* s){return *core::Uuid::parse(s).value();};
+    const auto id=[&](const char* s){return *dsp::ModuleInstanceId::from_uuid(uuid(s)).value();};
+    auto baseline=MasteringChainState::create_default(*full.value(),
+        uuid("ad320000-0000-4000-8000-000000000001"),
+        id("ad320000-0000-4000-8000-000000000011"),
+        id("ad320000-0000-4000-8000-000000000012"),
+        id("ad320000-0000-4000-8000-000000000013"));
+    QVERIFY(baseline);
+    const auto bandId=uuid("ad320000-0000-4000-8000-000000000021");
+    auto de=dsp::DynamicEqParameters::create_default(bandId);
+    auto ts=dsp::TransientShaperParameters::create_default();
+    QVERIFY(de&&ts);
+    auto state=MasteringChainState::with_manual_match_dsps(std::move(*baseline.value()),
+        id("ad320000-0000-4000-8000-000000000014"),*de.value(),
+        id("ad320000-0000-4000-8000-000000000015"),*ts.value());
+    QVERIFY(state);
+    ManualDynamicEqModuleAdapter adapter(state.value(),nullptr,QStringLiteral("Mastering"));
+    QVERIFY(adapter.manual_editable()&&adapter.bypass());
+    const auto band=QString::fromStdString(bandId.to_string());
+    const auto spec=[&]{return state.value()->dynamic_eq_parameters()->bands().front().spec();};
+    QVERIFY(adapter.editBandText(band,"threshold","-47,5"));
+    QCOMPARE(spec().control.threshold_dbfs,-47.5);
+    QVERIFY(!adapter.editBandText(band,"threshold",""));
+    QVERIFY(!adapter.validation_message().isEmpty());
+    QCOMPARE(spec().control.threshold_dbfs,-47.5);
+    QVERIFY(adapter.editBandNumber(band,"gain",4.0));
+    QVERIFY(adapter.editBandNumber(band,"range",-3.0));
+    QVERIFY(!adapter.editBandNumber(band,"range",18.0));
+    QCOMPARE(spec().control.range_db,-3.0);
+    QVERIFY(adapter.editBandFilter(band,"HIGH_SHELF"));
+    QVERIFY(std::holds_alternative<dsp::DynamicEqShelfShape>(spec().shape));
+    QVERIFY(!adapter.editBandNumber(band,"q",1.0));
+    QVERIFY(adapter.editBandNumber(band,"shelfSlope",0.5));
+    QVERIFY(adapter.appendBand());
+    QCOMPARE(state.value()->dynamic_eq_parameters()->bands().size(),std::size_t{2});
+    adapter.undo();
+    QCOMPARE(state.value()->dynamic_eq_parameters()->bands().size(),std::size_t{1});
+    adapter.redo();
+    QCOMPARE(state.value()->dynamic_eq_parameters()->bands().size(),std::size_t{2});
+    QVERIFY(adapter.deleteBand(band));
+    QVERIFY(!adapter.editBandNumber(band,"gain",1.0));
+    adapter.undo();
+    QVERIFY(spec().band_id==bandId);
+    adapter.resetToDefault();
+    QCOMPARE(spec().control.base_gain_db,0.0);
+    QCOMPARE(spec().control.range_db,0.0);
+    adapter.undo();
+    QCOMPARE(spec().control.base_gain_db,4.0);
+    adapter.setBypass(false);
+    QVERIFY(!adapter.bypass());
+    // The actual shared epoch must refuse an edit without changing state.
+    state.value()->set_private_m18_chain_mutation_admission([](const char*){
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,"TEST_REFUSED"});
+    });
+    QVERIFY(!adapter.editBandNumber(band,"gain",5.0));
+    QCOMPARE(spec().control.base_gain_db,4.0);
+    QVERIFY(adapter.preview_error().contains(QStringLiteral("TEST_REFUSED")));
+}
 
 void DspModuleAdapterTest::testManualTransientShaperEditsAndHistory()
 {
