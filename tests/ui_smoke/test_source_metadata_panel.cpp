@@ -6379,9 +6379,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
         QCoreApplication::processEvents();
         QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
-        QVERIFY2(!statusBarMessage->property("text").toString().contains(
+        QVERIFY2(statusBarMessage->property("text").toString().contains(
             QStringLiteral("Compressor")),
-            "Inactive DSP errors must not replace the active module's status");
+            "An unresolved Compressor validation must survive selection changes");
+        const int countBefore = root->property("statusMessageCount").toInt();
+        QVERIFY(countBefore >= 1);
+        auto* details = root->findChild<QObject*>(QStringLiteral("activeStatusMessagesPopup"));
+        QVERIFY(details);
+        QVERIFY(QMetaObject::invokeMethod(root, "toggleStatusDetails"));
+        QTRY_VERIFY(details->property("opened").toBool());
+        QCOMPARE(root->property("statusMessageCount").toInt(), countBefore);
+        QVERIFY(compressorViewModel.validation_message().size() > 0);
+        QVERIFY(QMetaObject::invokeMethod(root, "toggleStatusDetails"));
+        QTRY_VERIFY(!details->property("opened").toBool());
+        QCOMPARE(root->property("statusMessageCount").toInt(), countBefore);
         QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
         QTest::qWait(80);
         QCoreApplication::processEvents();
@@ -7036,9 +7047,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // Compare the actual validation diagnostic, not the generic word
     // "Stereo": a stereo Source legitimately appears in the Ready footer.
-    // A retained M15 invalid draft MUST NOT contaminate another DSP's
-    // global footer; returning to Stereo/M-S must restore that exact
-    // unapplied error without mutating its audible parameters.
+    // A retained M15 invalid draft remains in the global active register
+    // even when another DSP is selected. Reading cannot clear the draft.
     const QString m15Diagnostic = root->property("statusDspErrorText").toString();
     QVERIFY(!m15Diagnostic.isEmpty());
     QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
@@ -7047,11 +7057,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
     const QString selectedGainFooter = statusBarMessage->property("text").toString();
     QCOMPARE(selectedGainFooter, root->property("statusText").toString());
-    QVERIFY2(!selectedGainFooter.contains(m15Diagnostic),
-        "Inactive Stereo/M-S validation diagnostic must not replace the selected Gain status");
-    QVERIFY2(!selectedGainFooter.contains(stereoMsViewModel.validation_message()),
-        "Inactive M15 validation message must not leak into the Source/Ready footer");
-    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("INFO"));
+    QVERIFY2(selectedGainFooter.contains(m15Diagnostic),
+        "Inactive Stereo/M-S validation must remain visible until corrected");
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("ERROR"));
+    QVERIFY(root->property("statusMessageCount").toInt() >= 1);
     QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
                      globalStatusBarItem->size()), footerBefore);
     QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 3));
