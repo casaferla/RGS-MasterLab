@@ -657,12 +657,48 @@ ApplicationWindow {
         implicitWidth: boxWidth
         implicitHeight: (labelAbove ? 12 : 0) + dialSize + 24 + 4
 
+        // Used only by the Product screenshot qualification, never by DSP.
+        function geometryValid(panel) {
+            const k = knobItem.mapToItem(panel, 0, 0)
+            const n = numericItem.mapToItem(panel, 0, 0)
+            const e = numericItem.mapToItem(panel, numericItem.width, numericItem.height)
+            return knobItem.visible && numericItem.visible
+                && Math.abs(knobItem.width - dialSize) < 0.5
+                && Math.abs(knobItem.height - dialSize) < 0.5
+                && Math.abs(numericItem.width - boxWidth) < 0.5
+                && Math.abs(numericItem.height - 24) < 0.5
+                && n.y >= k.y + knobItem.height - 0.5
+                && Math.abs(k.x + knobItem.width / 2 - n.x - numericItem.width / 2) < 0.5
+                && k.x >= -0.5 && k.y >= -0.5 && n.x >= -0.5
+                && e.x <= panel.width + 0.5 && e.y <= panel.height + 0.5
+                && knobItem.editable === amountControl.live
+                && numericItem.enabled === amountControl.live
+                && (amountControl.matching || (knobItem.value === 0 && numericItem.rawText === "—"))
+        }
+        function exerciseDraftContract() {
+            if (!live) return false
+            const vm = numericItem.viewModel
+            const field = numericItem.fieldName
+            vm.setDraftFieldText(field, "43,7")
+            if (!vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43.7)
+                return false
+            vm.setDraftFieldText(field, "100,1")
+            if (vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43.7
+                || vm.validationField !== field) return false
+            vm.setDraftFieldText(field, "")
+            if (vm.commitDraft() || amountStore.amountValue(amountIndex) !== 43.7)
+                return false
+            vm.cancelDraft()
+            return numericItem.rawText === "43.7" && vm.validationField === ""
+        }
+
         QtObject {
             id: draftAdapter
             readonly property string validationField: amountControl.matching
-                && amountControl.amountStore.amountError(amountControl.amountIndex).length > 0
+                && !!amountControl.amountStore && amountControl.amountStore.amountError(amountControl.amountIndex).length > 0
                 ? "matchAmount" + amountControl.amountIndex : ""
-            readonly property string validationMessage: amountControl.amountStore.amountError(amountControl.amountIndex)
+            readonly property string validationMessage: amountControl.amountStore
+                ? amountControl.amountStore.amountError(amountControl.amountIndex) : ""
             function setDraftFieldText(field, raw) {
                 if (amountControl.live)
                     amountControl.amountStore.setAmountDraft(amountControl.amountIndex, raw)
@@ -693,13 +729,14 @@ ApplicationWindow {
                 font.weight: Font.DemiBold
             }
             StudioMatchKnob {
+                id: knobItem
                 objectName: amountControl.knobName
                 width: amountControl.dialSize
                 height: width
                 anchors.horizontalCenter: parent.horizontalCenter
                 prominent: amountControl.amountIndex === 0
                 accentColor: amountControl.hue
-                value: amountControl.matching
+                value: amountControl.matching && amountControl.amountStore
                     ? amountControl.amountStore.amountValue(amountControl.amountIndex) : 0
                 editable: amountControl.live
                 opacity: amountControl.matching ? 1.0 : 0.50
@@ -709,6 +746,7 @@ ApplicationWindow {
                 Accessible.name: amountControl.amountLabel + " match amount"
             }
             StudioNumericField {
+                id: numericItem
                 objectName: "autoMatchPanelAmount_" + amountControl.amountIndex
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: implicitWidth
@@ -720,7 +758,7 @@ ApplicationWindow {
                 inputPixelSize: 13
                 labelText: amountControl.amountLabel + " (%)"
                 fieldName: "matchAmount" + amountControl.amountIndex
-                rawText: amountControl.matching
+                rawText: amountControl.matching && amountControl.amountStore
                     ? amountControl.amountStore.amountDrafts[amountControl.amountIndex] : "—"
                 viewModel: draftAdapter
                 enabled: amountControl.live
@@ -2300,6 +2338,34 @@ ApplicationWindow {
                             readonly property var domainNames: ["Tonal", "Dynamics", "Stereo", "Loudness"]
                             readonly property var domainColors: ["#4E86C6", "#C4774A", "#4A9A88", "#D3AE66"]
 
+                            function verifyAmountLayout() {
+                                if (!totalAmount.geometryValid(adaptiveContextWorkspace)
+                                    || amountDomains.count !== 4) return false
+                                for (let i = 0; i < amountDomains.count; ++i) {
+                                    const control = amountDomains.itemAt(i)
+                                    if (!control || !control.geometryValid(adaptiveContextWorkspace)) return false
+                                }
+                                return true
+                            }
+                            function verifyAmountEditorContract() {
+                                if (!matching || !autoMatchDialog.amountsEditable) return false
+                                const beforeValues = autoMatchDialog.amountValues.slice()
+                                const beforeDrafts = autoMatchDialog.amountDrafts.slice()
+                                try {
+                                    if (!totalAmount.exerciseDraftContract()) return false
+                                    for (let i = 0; i < amountDomains.count; ++i) {
+                                        const control = amountDomains.itemAt(i)
+                                        if (!control || !control.exerciseDraftContract()) return false
+                                    }
+                                    autoMatchDialog.setAmountValue(0, 70.4)
+                                    return autoMatchDialog.amountValue(0) === 70.4
+                                        && autoMatchDialog.amountDrafts[0] === "70.4"
+                                } finally {
+                                    autoMatchDialog.amountValues = beforeValues
+                                    autoMatchDialog.amountDrafts = beforeDrafts
+                                }
+                            }
+
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 6
@@ -2343,6 +2409,7 @@ ApplicationWindow {
                                     Layout.maximumHeight: 86
                                     spacing: 8
                                     AmountControl {
+                                        id: totalAmount
                                         amountStore: autoMatchDialog
                                         matching: adaptiveContextWorkspace.matching
                                         hue: root.accent
@@ -2414,6 +2481,7 @@ ApplicationWindow {
                                     Layout.fillHeight: true
                                     spacing: 0
                                     Repeater {
+                                        id: amountDomains
                                         model: adaptiveContextWorkspace.domainNames
                                         AmountControl {
                                             amountStore: autoMatchDialog
