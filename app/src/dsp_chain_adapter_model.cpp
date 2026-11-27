@@ -148,7 +148,7 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
 
     // The utility comes after M17 in the VISUAL chain only.
     // No ModuleRegistry/ProcessingChain insert and no audio transform.
-    if (terminalMonitorViewModel_) {
+    if (terminalMonitorViewModel_ && legacyMonitorRowVisible_) {
         auto monitor=std::make_unique<MonitorServiceModuleAdapter>(
             terminalMonitorViewModel_,workflowContext_);
         connect(monitor.get(),&DspModuleAdapter::changed,
@@ -252,6 +252,14 @@ void DspChainAdapterModel::selectModuleByInstanceId(const QString& instanceId)
             return;
         }
     }
+}
+
+void DspChainAdapterModel::setLegacyMonitorRowVisible(bool visible)
+{
+    if(legacyMonitorRowVisible_==visible)return;
+    legacyMonitorRowVisible_=visible;
+    rebuild_adapters_from_authority();
+    emit changed();
 }
 
 void DspChainAdapterModel::bindAnalysisStatusViewModel(QObject* statusVm)
