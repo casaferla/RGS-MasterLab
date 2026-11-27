@@ -820,6 +820,8 @@ Status MasteringChainState::apply_explicit_manual_preset_draft(
             (type==kGainTypeId&&std::holds_alternative<GainParameters>(payload))||
             (type==kEqTypeId&&std::holds_alternative<ParametricEqParameters>(payload))||
             (type==kCompressorTypeId&&std::holds_alternative<CompressorParameters>(payload))||
+            (type==kDynamicEqTypeId&&std::holds_alternative<DynamicEqParameters>(payload))||
+            (type==kTransientTypeId&&std::holds_alternative<TransientShaperParameters>(payload))||
             (type==kStereoMsTypeId&&std::holds_alternative<StereoMsParameters>(payload))||
             (type==kStreamingP2TypeId&&
                 std::holds_alternative<StreamingTruePeakLimiterParameters>(payload));
@@ -842,6 +844,10 @@ Status MasteringChainState::apply_explicit_manual_preset_draft(
             after.gain_params_=*gain;
         else if(const auto* eq=std::get_if<ParametricEqParameters>(&payload))
             after.eq_params_=*eq;
+        else if(const auto* dynamic=std::get_if<DynamicEqParameters>(&payload))
+            after.dynamic_eq_params_=*dynamic;
+        else if(const auto* transient=std::get_if<TransientShaperParameters>(&payload))
+            after.transient_shaper_params_=*transient;
         else if(const auto* comp=std::get_if<CompressorParameters>(&payload))
             after.compressor_params_=*comp;
         else if(const auto* ms=std::get_if<StereoMsParameters>(&payload))
