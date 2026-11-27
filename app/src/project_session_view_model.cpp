@@ -235,8 +235,11 @@ struct MasteringChainCandidate final {
             {{"stage", chain.stage}, {"segment", chain.segment}}});
     }
 
-    if (chain.modules.size() != 2U && chain.modules.size() != 3U
-        && chain.modules.size() != 4U && chain.modules.size() != 5U) {
+    const bool extended=chain.modules.size()>=5U &&
+        chain.modules[2].typeId=="rgsml.dsp.dynamic-eq";
+    const std::size_t offset=extended?2U:0U;
+    const std::size_t baseCount=chain.modules.size()-offset;
+    if (baseCount < 2U || baseCount > 5U || (extended && baseCount<3U)) {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
             "Supported mastering chain must contain 2/3/4 legacy modules or 5 with typed P2",
@@ -349,12 +352,12 @@ struct MasteringChainCandidate final {
     bool compCtrlSuspended = false;
     bool compDomainSuspended = false;
 
-    if (chain.modules.size() == 2U) {
+    if (baseCount == 2U) {
         // Legacy 2-module load: create one Compressor instance, exact defaults, user bypass = true
         compUuid = uuidFactory();
     } else {
         // 3-module load: validate and restore Module 2 (Compressor)
-        const auto& m2 = chain.modules[2];
+        const auto& m2 = chain.modules[2+offset];
         if (m2.typeId != "rgsml.dsp.compressor") {
             return core::Result<MasteringChainCandidate>::failure(core::Error{
                 core::ErrorCode::InvalidArgument,
@@ -394,13 +397,55 @@ struct MasteringChainCandidate final {
     if (!compInst) return core::Result<MasteringChainCandidate>::failure(*compInst.error());
 
     std::vector<dsp::ModuleInstance> restoredModules{
-        *gainInst.value(), *eqInst.value(), *compInst.value()};
+        *gainInst.value(), *eqInst.value()};
+    std::optional<dsp::ModuleInstanceId> dynamicId,transientId;
+    std::optional<dsp::DynamicEqParameters> decodedDynamic;
+    std::optional<dsp::TransientShaperParameters> decodedTransient;
+    if(extended) {
+        const auto& dynamic=chain.modules[2];
+        const auto& transient=chain.modules[3];
+        if(transient.typeId!="rgsml.dsp.transient-shaper" ||
+           !registry.has_factory(dynamic.typeId) ||
+           !registry.has_factory(transient.typeId))
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::InvalidArgument,"MANUAL_MATCH_DSP_RESTORE_REQUIRES_TYPED_PAIR"});
+        const auto vd=validate_module_metadata(dynamic,"rgsml.dsp.dynamic-eq");
+        if(!vd)return core::Result<MasteringChainCandidate>::failure(*vd.error());
+        const auto vt=validate_module_metadata(transient,"rgsml.dsp.transient-shaper");
+        if(!vt)return core::Result<MasteringChainCandidate>::failure(*vt.error());
+        auto de=dsp::decode_dynamic_eq_parameters_json(dynamic.parameters.canonical_utf8());
+        if(!de)return core::Result<MasteringChainCandidate>::failure(*de.error());
+        auto ts=dsp::decode_transient_shaper_parameters_json(transient.parameters.canonical_utf8());
+        if(!ts)return core::Result<MasteringChainCandidate>::failure(*ts.error());
+        const auto make=[](const project::Module& m) -> core::Result<dsp::ModuleInstance> {
+            auto id=dsp::ModuleInstanceId::from_uuid(m.instanceId);
+            if(!id)return core::Result<dsp::ModuleInstance>::failure(*id.error());
+            return dsp::ModuleInstance::create(dsp::ModuleInstanceSpec{
+                .instance_id=*id.value(),.module_type_id=m.typeId,
+                .enabled=m.enabled,.user_bypass=m.userBypass,
+                .controller_suspended=m.controllerSuspended,.domain_suspended=m.domainSuspended,
+                .provenance=dsp::ModuleProvenance::MANUAL,.owner=dsp::ModuleOwner::USER,
+                .link_state=dsp::ModuleLinkState::UNLINKED,.semantic_node_id=std::nullopt,
+                .parameter_state=dsp::ModuleParameterState{}});
+        };
+        auto di=make(dynamic);
+        if(!di)return core::Result<MasteringChainCandidate>::failure(*di.error());
+        auto ti=make(transient);
+        if(!ti)return core::Result<MasteringChainCandidate>::failure(*ti.error());
+        dynamicId=di.value()->instance_id();
+        transientId=ti.value()->instance_id();
+        decodedDynamic=std::move(*de.value());
+        decodedTransient=std::move(*ts.value());
+        restoredModules.push_back(std::move(*di.value()));
+        restoredModules.push_back(std::move(*ti.value()));
+    }
+    restoredModules.push_back(std::move(*compInst.value()));
     std::optional<dsp::ModuleInstanceId> stereoMsId;
     std::optional<dsp::StereoMsParameters> decodedStereoMs;
-    if (chain.modules.size() >= 4U) {
+    if (baseCount >= 4U) {
         // A four/five-node document requires an exact typed
         // fourth Stereo/M-S node. Never silently drop or default its fields.
-        const auto& ms = chain.modules[3];
+        const auto& ms = chain.modules[3+offset];
         if (ms.typeId != "rgsml.dsp.stereo-ms") {
             return core::Result<MasteringChainCandidate>::failure(core::Error{
                 core::ErrorCode::InvalidArgument,
@@ -439,8 +484,8 @@ struct MasteringChainCandidate final {
     // All fields must pass preflight before changing SOURCE, audio or chain.
     std::optional<dsp::ModuleInstanceId> p2Id;
     std::optional<dsp::StreamingTruePeakLimiterParameters> decodedP2;
-    if (chain.modules.size() == 5U) {
-        const auto& p2 = chain.modules[4];
+    if (baseCount == 5U) {
+        const auto& p2 = chain.modules[4+offset];
         constexpr std::string_view kP2Type{"rgsml.dsp.streaming-true-peak-limiter"};
         if (p2.typeId != kP2Type) {
             return core::Result<MasteringChainCandidate>::failure(core::Error{
@@ -499,7 +544,8 @@ struct MasteringChainCandidate final {
         std::move(stereoMsId),
         std::move(decodedStereoMs),
         std::move(p2Id),
-        std::move(decodedP2));
+        std::move(decodedP2),std::move(dynamicId),std::move(decodedDynamic),
+        std::move(transientId),std::move(decodedTransient));
     if (!stateRes) return core::Result<MasteringChainCandidate>::failure(*stateRes.error());
 
     return core::Result<MasteringChainCandidate>::success(
@@ -941,7 +987,32 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         if (!m1) return core::Result<project::ProjectSnapshot>::failure(*m1.error());
         masteringChain.modules.push_back(std::move(*m1.value()));
 
-        // Module 2: Compressor
+        // A complete typed pair is serialized in its actual MANUAL order.
+        const auto& dynamicId=masteringChainState_->dynamic_eq_instance_id();
+        const auto& dynamicParams=masteringChainState_->dynamic_eq_parameters();
+        const auto& transientId=masteringChainState_->transient_shaper_instance_id();
+        const auto& transientParams=masteringChainState_->transient_shaper_parameters();
+        const bool extended=dynamicId.has_value();
+        if(extended!=dynamicParams.has_value() || extended!=transientId.has_value()
+            || extended!=transientParams.has_value())
+            return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                core::ErrorCode::InvalidState,"MANUAL_MATCH_DSP_INCOMPLETE_SAVE"});
+        if(extended) {
+            auto dynamic=serialize_module("rgsml.dsp.dynamic-eq",
+                "rgsml.dsp.dynamic-eq.parameters/1.0.0",
+                masteringChainState_->chain().find_instance(*dynamicId),
+                dsp::encode_dynamic_eq_parameters_json(*dynamicParams));
+            if(!dynamic)return core::Result<project::ProjectSnapshot>::failure(*dynamic.error());
+            auto transient=serialize_module("rgsml.dsp.transient-shaper",
+                "rgsml.dsp.transient-shaper.parameters/1.0.0",
+                masteringChainState_->chain().find_instance(*transientId),
+                dsp::encode_transient_shaper_parameters_json(*transientParams));
+            if(!transient)return core::Result<project::ProjectSnapshot>::failure(*transient.error());
+            masteringChain.modules.push_back(std::move(*dynamic.value()));
+            masteringChain.modules.push_back(std::move(*transient.value()));
+        }
+
+        // Compressor
         auto m2 = serialize_module("rgsml.dsp.compressor",
             "rgsml.dsp.compressor.parameters/1.0.0",
             masteringChainState_->compressor_instance(),
@@ -972,17 +1043,6 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                 "Stereo/M-S parameters exist without a module instance"});
         }
 
-        // Until the new typed project schema is admitted, refuse saving
-        // a staged MANUAL C01/C00 chain rather than silently dropping audio.
-        if (masteringChainState_->dynamic_eq_instance_id() ||
-            masteringChainState_->dynamic_eq_parameters() ||
-            masteringChainState_->transient_shaper_instance_id() ||
-            masteringChainState_->transient_shaper_parameters()) {
-            return core::Result<project::ProjectSnapshot>::failure(core::Error{
-                core::ErrorCode::InvalidState,
-                "Manual Dynamic EQ / Transient Shaper project persistence not yet admitted"});
-        }
-
         // Persist P2 only when the actual Product chain has the fifth
         // typed, executable MANUAL instance. Never serialize a decorative
         // editor or silently drop opt-in DSP audio from a saved Project.
@@ -991,7 +1051,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         if (p2Id || p2Params) {
             if (!p2Id || !p2Params ||
                 !masteringChainState_->stereo_ms_instance_id() ||
-                masteringChainState_->module_count()!=5U) {
+                masteringChainState_->module_count()!=(extended?7U:5U)) {
                 return core::Result<project::ProjectSnapshot>::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "Streaming P2 project state requires complete fifth-module identity"});
@@ -1005,6 +1065,9 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
             masteringChain.modules.push_back(std::move(*p2.value()));
         }
 
+        if(masteringChain.modules.size()!=masteringChainState_->module_count())
+            return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                core::ErrorCode::InvalidState,"MANUAL_DSP_SAVE_TOPOLOGY_MISMATCH"});
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
             [chainId](const project::Chain& c) { return c.chainId == chainId; });
         if (chainIt == doc.chains.end()) {
@@ -1247,6 +1310,31 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             return;
         }
         restoreRegistry = optInRegistry.get();
+    }
+    // Admit C01/C00 only through their canonical typed factories. Keep
+    // the registry for a saved P2 graph intact and never mutate it in place.
+    std::optional<dsp::ModuleRegistry> extendedRegistry;
+    const bool needsMatchFactories=std::any_of(doc.chains.begin(),doc.chains.end(),
+        [](const project::Chain& chain) {
+            return chain.stage=="MASTER" && chain.segment=="MANUAL" &&
+                std::any_of(chain.modules.begin(),chain.modules.end(),
+                    [](const project::Module& m) {
+                        return m.typeId=="rgsml.dsp.dynamic-eq" || m.typeId=="rgsml.dsp.transient-shaper";
+                    });
+        });
+    if(needsMatchFactories) {
+        extendedRegistry=*restoreRegistry;
+        if(!extendedRegistry->has_factory("rgsml.dsp.dynamic-eq")) {
+            auto next=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*extendedRegistry));
+            if(!next){publish_error(*next.error());return;}
+            extendedRegistry=std::move(*next.value());
+        }
+        if(!extendedRegistry->has_factory("rgsml.dsp.transient-shaper")) {
+            auto next=dsp::ModuleRegistry::with_transient_shaper_offline(std::move(*extendedRegistry));
+            if(!next){publish_error(*next.error());return;}
+            extendedRegistry=std::move(*next.value());
+        }
+        restoreRegistry=&*extendedRegistry;
     }
     auto chainCandidate = validate_mastering_chain(doc, *restoreRegistry, uuidFactory_);
     if (!chainCandidate) { publish_error(*chainCandidate.error()); return; }
