@@ -1,5 +1,6 @@
 #include "project_session_view_model.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
+#include "internal/l3_manual_match_transfer_project.hpp"
 #include "internal/l3_linked_editor_snapshot.hpp"
 #include "internal/l3_linked_editor_parameter_projection.hpp"
 #include "internal/l3_linked_dsp_module_adapter.hpp"
@@ -376,6 +377,8 @@ private slots:
     void stereo_ms_four_module_project_roundtrip_and_atomic_rejection();
     void product_default_stereo_ms_project_save_open_save_identity();
     void product_manual_match_dsps_project_roundtrip();
+    void product_manual_match_transfer_transaction_data();
+    void product_manual_match_transfer_transaction();
     void p2_fifth_module_project_roundtrip_and_atomic_rejection();
 };
 
@@ -8754,6 +8757,158 @@ void ProjectSessionTest::product_manual_match_dsps_project_roundtrip()
     QVERIFY(!reopened.project.error_message().isEmpty());
     QCOMPARE(reopened.masteringChainState->chain().revision(),revision);
     QVERIFY(reopened.masteringChainState->execution_bindings()==expected);
+}
+
+void ProjectSessionTest::product_manual_match_transfer_transaction_data()
+{
+    QTest::addColumn<std::uint32_t>("sampleRateHz");
+    QTest::newRow("44k1")<<std::uint32_t{44100};
+    QTest::newRow("48k")<<std::uint32_t{48000};
+    QTest::newRow("88k2")<<std::uint32_t{88200};
+    QTest::newRow("96k")<<std::uint32_t{96000};
+    QTest::newRow("176k4")<<std::uint32_t{176400};
+    QTest::newRow("192k")<<std::uint32_t{192000};
+}
+
+void ProjectSessionTest::product_manual_match_transfer_transaction()
+{
+    QFETCH(std::uint32_t,sampleRateHz);
+    namespace a=app::l3_automatch;
+    namespace m=a::m12_frozen;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source=stereo_wav_for_m22(dir,QStringLiteral("transfer-source.wav"),sampleRateHz,2048U);
+    const auto reference=stereo_wav_for_m22(dir,QStringLiteral("transfer-reference.wav"),sampleRateHz,2048U);
+    QVERIFY(!source.isEmpty()&&!reference.isEmpty());
+    const auto uuid=[](const char* s){return *core::Uuid::parse(s).value();};
+    const auto id=[&](const char* s){return *dsp::ModuleInstanceId::from_uuid(uuid(s)).value();};
+    const auto stereo=id("73120000-0000-4000-8000-000000000015");
+    const auto dynamic=id("73120000-0000-4000-8000-000000000016");
+    const auto transient=id("73120000-0000-4000-8000-000000000017");
+    const auto linkedTransient=id("73120000-0000-4000-8000-000000000031");
+    const auto linkedDynamic=id("73120000-0000-4000-8000-000000000032");
+    const auto de=dsp::DynamicEqParameters::create_default(uuid("73120000-0000-4000-8000-000000000021"));
+    const auto ts=dsp::TransientShaperParameters::create_default();
+    const auto winner=dsp::TransientShaperParameters::create(3.0,-2.0);
+    QVERIFY(de&&ts&&winner);
+    const auto enable=[&](Session& session){
+        auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+        if(!base)return false;
+        auto c01=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*base.value()));
+        if(!c01)return false;
+        auto c00=dsp::ModuleRegistry::with_transient_shaper_offline(std::move(*c01.value()));
+        if(!c00)return false;
+        auto original=app::MasteringChainState::create_product_default(*c00.value(),
+            session.chainId,session.gainId,session.eqId,session.compId,stereo);
+        if(!original)return false;
+        auto extended=app::MasteringChainState::with_manual_match_dsps(
+            std::move(*original.value()),dynamic,*de.value(),transient,*ts.value());
+        if(!extended)return false;
+        session.masteringChainState->adopt_chain_after_authorized_project_open(std::move(*extended.value()));
+        session.adapterModel->refreshFromAuthority();
+        return session.masteringChainState->module_count()==6U;
+    };
+    const auto acquire=[](bool& busy)->core::Result<std::shared_ptr<const void>> {
+        using R=core::Result<std::shared_ptr<const void>>;
+        if(busy)return R::failure(core::Error{core::ErrorCode::InvalidState,"TRANSFER_TEST_BUSY"});
+        busy=true;
+        return R::success(std::shared_ptr<const void>{new int{1},[&busy](const void* p){
+            delete static_cast<const int*>(p);busy=false;}});
+    };
+    bool busy=false;
+    std::shared_ptr<const render::RenderResult> processed;
+    Session author;
+    QVERIFY(enable(author));
+    author.previewController->set_snapshot_provider([&author]{return author.selector.prepared_realization_snapshot();});
+    author.previewController->set_publisher([&processed](render::RenderResult result){
+        processed=std::make_shared<const render::RenderResult>(std::move(result));
+        return core::Status::success();});
+    author.previewController->set_accepted_processed_provider([&processed]{return processed;});
+    author.source.selectSource(QUrl::fromLocalFile(source));
+    author.gold.selectGold(QUrl::fromLocalFile(reference));
+    const auto beforePath=dir.filePath(QStringLiteral("transfer-before.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(beforePath));
+    QVERIFY2(QFileInfo::exists(beforePath),author.project.error_message().toUtf8().constData());
+    auto before=load_project(beforePath);
+    QVERIFY(before);
+    const auto registry=author.masteringChainState->registry_snapshot();
+    const auto prepared=author.selector.prepared_realization_snapshot();
+    QVERIFY(registry&&prepared);
+    const auto bindings=author.masteringChainState->execution_bindings();
+    QVERIFY(*author.masteringChainState->is_bypassed(transient).value());
+    QVERIFY(*author.masteringChainState->is_bypassed(dynamic).value());
+    const m::AcceptedPlanAndOwner plan{
+        uuid("73120000-0000-4000-8000-000000000041"),
+        uuid("73120000-0000-4000-8000-000000000042"),
+        "transfer-plan","transfer-winner","transfer-protected","transfer-scope",
+        1U,true,true,true,false};
+    const std::vector<m::ExactLinkedNode> nodes{
+        {linkedTransient,uuid("73120000-0000-4000-8000-000000000051"),
+            "rgsml.dsp.transient-shaper",*winner.value()},
+        {linkedDynamic,uuid("73120000-0000-4000-8000-000000000052"),
+            "rgsml.dsp.dynamic-eq",*de.value()}};
+    auto staged=m::stage_exact_m12_native_ref_linked(
+        plan,author.masteringChainState->chain(),bindings,registry,nodes);
+    QVERIFY(staged);
+    const auto chain=uuid("73120000-0000-4000-8000-000000000061");
+    auto carrier=m::encode_exact_ref_linked_project_carrier(*staged.value(),chain);
+    QVERIFY(carrier);
+    const auto& doc=before.value()->document();
+    const m::M12ProjectTransactionExpected expected{doc.sourceResourceId,
+        *doc.references.activeReferenceId,*doc.pipeline.masteringChainId,doc.chains.front(),
+        std::nullopt,true,true};
+    auto draft=m::prepare_exact_m12_project_transaction(*before.value(),*carrier.value(),*staged.value(),expected);
+    QVERIFY(draft);
+    author.project.set_private_m18_project_open_batch_begin([&]{return acquire(busy);});
+    author.project.set_private_m18_project_save_batch_begin([&]{return acquire(busy);});
+    auto accepted=author.project.apply_private_m12_materialization(*draft.value(),registry,prepared);
+    QVERIFY2(accepted,accepted.error()?accepted.error()->message().c_str():"");
+    const auto priorTicket=author.previewController->private_m12_product_preview_ticket();
+    const auto frozen=author.project.capture_private_manual_match_transfer(linkedTransient.uuid());
+    QVERIFY2(frozen,frozen.error()?frozen.error()->message().c_str():"");
+    auto rendered=a::ManualMatchTransferAudition::create(
+        *frozen.value(),*core::FrameCount::create(4096).value());
+    QVERIFY2(rendered,rendered.error()?rendered.error()->message().c_str():"");
+    auto audition=std::make_shared<const a::ManualMatchTransferAudition>(std::move(*rendered.value()));
+    const a::ManualMatchTransferConfirmation confirmation{
+        audition->capture().product_epoch,audition->capture().project.identity.sha256};
+    QVERIFY(author.project.private_manual_match_transfer_still_current(audition->capture()));
+    QVERIFY(!author.project.apply_private_manual_match_transfer(audition,{}));
+    busy=true;
+    QVERIFY(!author.project.apply_private_manual_match_transfer(audition,confirmation));
+    busy=false;
+    QVERIFY(author.previewController->private_m12_product_preview_ticket()==priorTicket);
+    QVERIFY(author.masteringChainState->execution_bindings()==bindings);
+    auto applied=author.project.apply_private_manual_match_transfer(audition,confirmation);
+    QVERIFY2(applied,applied.error()?applied.error()->message().c_str():"");
+    QVERIFY(!busy);
+    QVERIFY(!author.previewController->private_m12_product_preview_ticket());
+    const auto transferred=author.previewController->private_manual_transfer_preview_ticket();
+    QVERIFY(transferred);
+    QVERIFY(!*author.masteringChainState->is_bypassed(transient).value());
+    QVERIFY(*author.masteringChainState->transient_shaper_parameters()==*winner.value());
+    QVERIFY(*author.masteringChainState->is_bypassed(dynamic).value());
+    QVERIFY(author.project.can_save_project());
+    QVERIFY(!author.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
+    QVERIFY(!author.project.private_manual_match_transfer_still_current(audition->capture()));
+    QVERIFY(author.project.can_undo_private_manual_match_transfer());
+    QVERIFY(!author.project.can_redo_private_manual_match_transfer());
+    QVERIFY(author.project.undo_private_manual_match_transfer());
+    QVERIFY(author.previewController->private_m12_product_preview_ticket()==priorTicket);
+    QVERIFY(author.masteringChainState->execution_bindings()==bindings);
+    QVERIFY(author.project.can_redo_private_manual_match_transfer());
+    QVERIFY(author.project.redo_private_manual_match_transfer());
+    QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==transferred);
+    QVERIFY(!author.project.can_redo_private_manual_match_transfer());
+    QTRY_COMPARE_WITH_TIMEOUT(author.previewController->preview_status(),QStringLiteral("READY"),10000);
+    QVERIFY(processed);
+    QVERIFY(!processed->linked_activity_sidecar()); // no borrowed accepted-plan activity receipt
+    const auto savedPath=dir.filePath(QStringLiteral("transfer-after.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(savedPath));
+    QVERIFY2(QFileInfo::exists(savedPath),author.project.error_message().toUtf8().constData());
+    auto saved=load_project(savedPath);
+    QVERIFY(saved&&transferred->matches_project(*saved.value()));
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(saved.value()->document(),registry));
 }
 
 void ProjectSessionTest::product_default_stereo_ms_project_save_open_save_identity()
