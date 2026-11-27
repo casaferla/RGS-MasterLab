@@ -437,6 +437,10 @@ Rectangle {
                     if (!isSelected) {
                         root.viewModel.selectBand(index)
                     }
+                    if (root.viewModel.selectedIndex !== index) {
+                        wheel.accepted = true
+                        return
+                    }
                     const steps = wheel.angleDelta.y > 0 ? 1 : (wheel.angleDelta.y < 0 ? -1 : 0)
                     if (steps !== 0) {
                         const shiftPressed = (wheel.modifiers & Qt.ShiftModifier) !== 0
@@ -462,7 +466,7 @@ Rectangle {
                         if (!isDragging && Math.sqrt(dx * dx + dy * dy) > 3.0) {
                             isDragging = true
                         }
-                        if (isDragging) {
+                        if (isDragging && root.viewModel.selectedIndex === index) {
                             const clampX = Math.max(root.plotX, Math.min(root.plotX + root.plotW, currentPos.x))
                             const clampY = Math.max(root.plotY, Math.min(root.plotY + root.plotH, currentPos.y))
                             const newFreq = root.xToFreq(clampX)
@@ -475,8 +479,13 @@ Rectangle {
                 onReleased: function(mouse) {
                     if (isDragging) {
                         isDragging = false
-                        root.viewModel.graphRelease()
+                        if (root.viewModel.selectedIndex === index)
+                            root.viewModel.graphRelease()
                     }
+                }
+                onCanceled: {
+                    isDragging = false
+                    if (root.viewModel) root.viewModel.cancelDraft()
                 }
             }
         }
