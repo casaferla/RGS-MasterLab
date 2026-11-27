@@ -898,6 +898,25 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(projectDraft.value()->matches_before(*beforeTransfer.value()));
     QVERIFY(!projectDraft.value()->matches_after(*beforeTransfer.value()));
     QVERIFY(!projectDraft.value()->authorizes_project_commit());
+    QVERIFY(transfer::validate_manual_match_transfer_project_readback(
+        projectDraft.value()->after,*projectDraft.value(),*draft.value()));
+    QVERIFY(!transfer::validate_manual_match_transfer_project_readback(
+        *beforeTransfer.value(),*projectDraft.value(),*draft.value()));
+    auto tampered=projectDraft.value()->after.document();
+    tampered.chains.front().modules.front().userBypass=true;
+    const auto tamperedSnapshot=project::ProjectSnapshot::create(tampered);
+    QVERIFY(tamperedSnapshot);
+    QVERIFY(!transfer::validate_manual_match_transfer_project_readback(
+        *tamperedSnapshot.value(),*projectDraft.value(),*draft.value()));
+    auto forgedExpected=*projectDraft.value();
+    forgedExpected.after=*tamperedSnapshot.value();
+    QVERIFY(!transfer::validate_manual_match_transfer_project_readback(
+        *tamperedSnapshot.value(),forgedExpected,*draft.value()));
+    forgedExpected=*projectDraft.value();
+    forgedExpected.identity.sha256=std::string(64,'0');
+    QVERIFY(!transfer::validate_manual_match_transfer_project_readback(
+        projectDraft.value()->after,forgedExpected,*draft.value()));
+
     const auto& afterDocument=projectDraft.value()->after.document();
     QVERIFY(!afterDocument.chains.front().modules.back().userBypass);
     QVERIFY(afterDocument.chains.back().modules[1].userBypass);
