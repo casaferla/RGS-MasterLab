@@ -53,6 +53,9 @@ ColumnLayout {
         viewModel: control.viewModel
         fieldName: numericField.fieldName
         compact: control.sliderCompact
+        // Default only when the caller has not supplied its own slider hint.
+        interactionHint: numericField.labelText.length > 0
+            ? "Adjust " + numericField.labelText + ". Drag and release to apply." : ""
 
         Layout.fillWidth: false
         Layout.alignment: Qt.AlignLeft
