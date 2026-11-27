@@ -147,7 +147,11 @@ public:
         // Additive optional I2 research schema. Legacy callers and saved
         // 3/4-node project graphs are unchanged.
         std::optional<dsp::ModuleInstanceId> streaming_p2_id = std::nullopt,
-        std::optional<dsp::StreamingTruePeakLimiterParameters> streaming_p2_params = std::nullopt);
+        std::optional<dsp::StreamingTruePeakLimiterParameters> streaming_p2_params = std::nullopt,
+        std::optional<dsp::ModuleInstanceId> dynamic_eq_id = std::nullopt,
+        std::optional<dsp::DynamicEqParameters> dynamic_eq_params = std::nullopt,
+        std::optional<dsp::ModuleInstanceId> transient_shaper_id = std::nullopt,
+        std::optional<dsp::TransientShaperParameters> transient_shaper_params = std::nullopt);
 
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> restore(
         std::shared_ptr<const dsp::ModuleRegistry> registry,
