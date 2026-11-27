@@ -19,15 +19,29 @@ Item {
     // Numeric drafts never render on each keystroke. Same 120x32,
     // Consolas 16, GAIN-field visual grammar as InputGainEditor.
     function commitNumeric(control, low, high, current, setter) {
-        if(!root.limiterModule) return
-        const parsed=Number(control.text.trim().replace(",","."))
-        if(!Number.isFinite(parsed) || parsed<low || parsed>high) {
-            control.text=current.toFixed(1)
+        if (!root.limiterModule || !control.numericDirty) return
+        const raw = control.text.trim()
+        const parsed = Number(raw.replace(",", "."))
+        const field = control === ceilingEntry ? "Ceiling" : "Drive"
+        if (!/^[+-]?(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)$/.test(raw)
+                || !Number.isFinite(parsed) || parsed < low || parsed > high) {
+            if (root.limiterModule.reportNumericValidation)
+                root.limiterModule.reportNumericValidation(field,
+                    field + " must be a number between " + low + " and " + high + ".")
             return
         }
-        const canonical=Math.round(parsed*10)/10
-        if(canonical!==current) setter(canonical)
-        control.text=canonical.toFixed(1)
+        const canonical = Math.round(parsed * 10) / 10
+        if (root.limiterModule.reportNumericValidation)
+            root.limiterModule.reportNumericValidation(field, "")
+        control.numericDirty = false
+        if (canonical !== current) setter(canonical)
+        control.text = canonical.toFixed(1)
+    }
+    function cancelNumeric(control, field, value) {
+        control.numericDirty = false
+        if (root.limiterModule && root.limiterModule.reportNumericValidation)
+            root.limiterModule.reportNumericValidation(field, "")
+        control.text = value.toFixed(1)
     }
 
     ColumnLayout {
@@ -136,6 +150,8 @@ Item {
                                 ? root.copper : "#2C5A78"
                             TextInput {
                                 id: ceilingEntry
+                                property bool numericDirty: false
+                                onTextEdited: numericDirty = true
                                 objectName: "streamingP2CeilingNumericInput"
                                 ToolTip.text: "Set the streaming limiter ceiling in dBTP. Enter or click away to apply; Esc to cancel."
                                 ToolTip.visible: streamingP2CeilingNumericInputDwell.ready
@@ -164,7 +180,7 @@ Item {
                                 Connections {
                                     target: root
                                     function onCeilingChanged() {
-                                        if(!ceilingEntry.activeFocus)
+                                        if(!ceilingEntry.activeFocus && !ceilingEntry.numericDirty)
                                             ceilingEntry.text=root.ceiling.toFixed(1)
                                     }
                                 }
@@ -186,7 +202,7 @@ Item {
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
-                                    ceilingEntry.text=root.ceiling.toFixed(1)
+                                    root.cancelNumeric(ceilingEntry, "Ceiling", root.ceiling)
                                     ceilingEntry.focus=false
                                     event.accepted=true
                                 }
@@ -286,6 +302,8 @@ Item {
                                 ? root.copper : "#2C5A78"
                             TextInput {
                                 id: driveEntry
+                                property bool numericDirty: false
+                                onTextEdited: numericDirty = true
                                 objectName: "streamingP2DriveNumericInput"
                                 ToolTip.text: "Set the gain before the streaming limiter in dB. Enter or click away to apply; Esc to cancel."
                                 ToolTip.visible: streamingP2DriveNumericInputDwell.ready
@@ -314,7 +332,7 @@ Item {
                                 Connections {
                                     target: root
                                     function onDriveChanged() {
-                                        if(!driveEntry.activeFocus)
+                                        if(!driveEntry.activeFocus && !driveEntry.numericDirty)
                                             driveEntry.text=root.drive.toFixed(1)
                                     }
                                 }
@@ -336,7 +354,7 @@ Item {
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
-                                    driveEntry.text=root.drive.toFixed(1)
+                                    root.cancelNumeric(driveEntry, "Drive", root.drive)
                                     driveEntry.focus=false
                                     event.accepted=true
                                 }
