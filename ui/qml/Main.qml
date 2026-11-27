@@ -608,6 +608,12 @@ ApplicationWindow {
                 if (module.driveValidationMessage)
                     add(key + ":drive", "VALIDATION", name + ": " + module.driveValidationMessage)
             }
+            if (module.editorContentKey === "TRANSIENT_SHAPER" && !module.linkedReadOnly) {
+                if (module.attackValidationMessage)
+                    add(key + ":attack", "VALIDATION", name + ": " + module.attackValidationMessage)
+                if (module.sustainValidationMessage)
+                    add(key + ":sustain", "VALIDATION", name + ": " + module.sustainValidationMessage)
+            }
             if (module.editorContentKey === "MASTER_MONITOR") continue
             if (module.previewStatus === "ERROR" && module.previewError)
                 add("chain:" + module.previewError, "ERROR", "DSP Chain: " + module.previewError)
