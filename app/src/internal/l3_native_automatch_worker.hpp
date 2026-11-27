@@ -340,14 +340,16 @@ template<class AllocateBand,class ResolveAuthority,class ResolveBandIdentity>
     const bool existing_user_terminal=std::any_of(manual.begin(),manual.end(),[](const auto& n){
         return n.module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
     });
+    const bool protected_dynamic=protected_manual_match_type(manual,"rgsml.dsp.dynamic-eq");
+    const bool protected_transient=protected_manual_match_type(manual,"rgsml.dsp.transient-shaper");
     auto result=run_native_automatch_with_definitions(std::move(input),definitions,
         [&](auto role,const auto& atom){return allocations.band(role,atom);},
         [&](const auto& bank,const auto& fixed,auto,const auto& family){
             m09_frozen::NativeFamilyBindingAuthority unresolved;
             unresolved.exact_reason="fixed-m16-or-dependency-unavailable";
-            if((family.spectral_dynamic_eq_prefix && protected_manual_match_type(manual,"rgsml.dsp.dynamic-eq")) ||
+            if((family.spectral_dynamic_eq_prefix && protected_dynamic) ||
                (family.micro!=m09_frozen::MicroMode::none &&
-                protected_manual_match_type(manual,"rgsml.dsp.transient-shaper"))) {
+                protected_transient)) {
                 unresolved.disposition=m09_frozen::NativeDomainDisposition::not_applicable;
                 unresolved.exact_reason="protected-active-manual-match-dsp";
                 return unresolved;
