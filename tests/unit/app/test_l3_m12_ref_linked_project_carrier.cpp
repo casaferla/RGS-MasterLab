@@ -1003,6 +1003,27 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         capture,*maxBlock.value(),&cancelledTransfer));
 
     const auto immutableCapture=std::make_shared<const transfer::ManualMatchTransferCapture>(capture);
+    const auto provisional=transfer::ManualMatchTransferPreviewTicket::create(immutableCapture);
+    QVERIFY(provisional);
+    QVERIFY(!provisional.value()->is_verified());
+    QVERIFY(provisional.value()->matches_prepared(ownedPrepared));
+    QVERIFY(!provisional.value()->matches_prepared({}));
+    QVERIFY(provisional.value()->matches_project(projectDraft.value()->after));
+    QVERIFY(!provisional.value()->matches_project(projectDraft.value()->before));
+    QVERIFY(provisional.value()->matches_manual(
+        draft.value()->manual_after.proposed_manual_chain,
+        draft.value()->manual_after.proposed_bindings));
+    QVERIFY(!provisional.value()->matches_manual(transferManual,transferBindings));
+    auto staleBindings=draft.value()->manual_after.proposed_bindings;
+    staleBindings.front().parameters=*dsp::GainParameters::create(9.0).value();
+    QVERIFY(!provisional.value()->matches_manual(
+        draft.value()->manual_after.proposed_manual_chain,staleBindings));
+    const auto provisionalPcm=provisional.value()->render(*maxBlock.value());
+    QVERIFY(provisionalPcm);
+    QCOMPARE(provisionalPcm.value()->view().absolute_range(),
+        audition.value()->view().absolute_range());
+    QVERIFY(!provisional.value()->render(*maxBlock.value(),&cancelledTransfer));
+    QVERIFY(!transfer::ManualMatchTransferPreviewTicket::create({}));
     const auto workerAudition=transfer::ManualMatchTransferAudition::create(
         immutableCapture,*maxBlock.value());
     QVERIFY(workerAudition);
