@@ -4,6 +4,8 @@
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/dynamic_eq_parameters.hpp>
+#include <rgsml/dsp/transient_shaper_parameters.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -76,6 +78,23 @@ public:
         dsp::ModuleInstanceId p2_id,
         dsp::StreamingTruePeakLimiterParameters parameters,
         bool bypassed);
+
+    // Staged opt-in construction before the Product writer epoch. Requires
+    // real C01/C00 factories in the existing immutable registry. Not yet
+    // enabled at Product startup or admitted to project serialization.
+    [[nodiscard]] static core::Result<MasteringChainState> with_manual_match_dsps(
+        MasteringChainState baseline,
+        dsp::ModuleInstanceId dynamic_id,
+        dsp::DynamicEqParameters dynamic_parameters,
+        dsp::ModuleInstanceId transient_id,
+        dsp::TransientShaperParameters transient_parameters);
+
+    [[nodiscard]] const std::optional<dsp::ModuleInstanceId>& dynamic_eq_instance_id() const noexcept {return dynamic_eq_id_;}
+    [[nodiscard]] const std::optional<dsp::ModuleInstanceId>& transient_shaper_instance_id() const noexcept {return transient_shaper_id_;}
+    [[nodiscard]] const std::optional<dsp::DynamicEqParameters>& dynamic_eq_parameters() const noexcept {return dynamic_eq_params_;}
+    [[nodiscard]] const std::optional<dsp::TransientShaperParameters>& transient_shaper_parameters() const noexcept {return transient_shaper_params_;}
+    [[nodiscard]] core::Status set_dynamic_eq_parameters(const dsp::DynamicEqParameters& parameters);
+    [[nodiscard]] core::Status set_transient_shaper_parameters(const dsp::TransientShaperParameters& parameters);
 
     // Explicit typed construction, also used by the new product-default path.
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_with_stereo_ms(
@@ -211,6 +230,10 @@ private:
     dsp::ParametricEqParameters eq_params_;
     dsp::ModuleInstanceId compressor_id_;
     dsp::CompressorParameters compressor_params_;
+    std::optional<dsp::ModuleInstanceId> dynamic_eq_id_;
+    std::optional<dsp::DynamicEqParameters> dynamic_eq_params_;
+    std::optional<dsp::ModuleInstanceId> transient_shaper_id_;
+    std::optional<dsp::TransientShaperParameters> transient_shaper_params_;
     std::optional<dsp::ModuleInstanceId> stereo_ms_id_;
     std::optional<dsp::StereoMsParameters> stereo_ms_params_;
     // Ephemeral only; no project persistence/schema admission in I2 preview.
