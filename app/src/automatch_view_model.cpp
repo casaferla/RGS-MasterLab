@@ -122,15 +122,17 @@ bool AutoMatchViewModel::can_cancel()const {
         action_.can_adopt()||action_.phase()==Action::Phase::verifying);
 }
 bool AutoMatchViewModel::can_undo()const {
-    return owner()&&!busy()&&!action_.can_adopt()&&
-        product_.upstream.project.can_undo_private_m12_materialization();
+    return owner()&&!busy()&&!transfer_ready()&&!action_.can_adopt()&&
+        (product_.upstream.project.can_undo_private_manual_match_transfer()||
+         product_.upstream.project.can_undo_private_m12_materialization());
 }
 bool AutoMatchViewModel::can_redo()const {
-    return owner()&&!busy()&&!action_.can_adopt()&&
-        product_.upstream.project.can_redo_private_m12_materialization();
+    return owner()&&!busy()&&!transfer_ready()&&!action_.can_adopt()&&
+        (product_.upstream.project.can_redo_private_manual_match_transfer()||
+         product_.upstream.project.can_redo_private_m12_materialization());
 }
 bool AutoMatchViewModel::can_resume()const {
-    return owner()&&!busy()&&!action_.can_adopt()&&
+    return owner()&&!busy()&&!transfer_ready()&&!action_.can_adopt()&&
         product_.upstream.project.can_resume_private_m12_suspension();
 }
 QString AutoMatchViewModel::current_match_text()const {
@@ -141,6 +143,7 @@ QString AutoMatchViewModel::current_match_text()const {
     case S::active:return QStringLiteral("Linked match");
     case S::suspended:return QStringLiteral("Linked match suspended");
     case S::stale:return QStringLiteral("Linked match unavailable / stale");
+    case S::manual_transfer:return QStringLiteral("Manual transfer / not verified");
     }
     return {};
 }
@@ -357,7 +360,9 @@ bool AutoMatchViewModel::adopt() {
 bool AutoMatchViewModel::undo() {
     if(!can_undo())return false;
     publishing_=true;
-    const auto result=product_.upstream.project.undo_private_m12_materialization();
+    auto& project=product_.upstream.project;
+    const auto result=project.can_undo_private_manual_match_transfer()
+        ?project.undo_private_manual_match_transfer():project.undo_private_m12_materialization();
     publishing_=false;
     if(!result)error_=QString::fromStdString(result.error()->message());
     else {error_.clear();(void)action_.retire_after_history_transition();}
@@ -366,7 +371,9 @@ bool AutoMatchViewModel::undo() {
 bool AutoMatchViewModel::redo() {
     if(!can_redo())return false;
     publishing_=true;
-    const auto result=product_.upstream.project.redo_private_m12_materialization();
+    auto& project=product_.upstream.project;
+    const auto result=project.can_redo_private_manual_match_transfer()
+        ?project.redo_private_manual_match_transfer():project.redo_private_m12_materialization();
     publishing_=false;
     if(!result)error_=QString::fromStdString(result.error()->message());
     else {error_.clear();(void)action_.retire_after_history_transition();}

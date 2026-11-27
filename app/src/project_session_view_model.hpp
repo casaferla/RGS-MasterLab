@@ -236,7 +236,7 @@ public:
     [[nodiscard]] core::Status undo_private_manual_match_transfer();
     [[nodiscard]] core::Status redo_private_manual_match_transfer();
     // Non-mutating eligibility; actual operations recheck under M18.
-    enum class M12CurrentMatchState {none,active,suspended,stale};
+    enum class M12CurrentMatchState {none,active,suspended,stale,manual_transfer};
     [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
     [[nodiscard]] bool can_undo_private_m12_materialization() const;
     [[nodiscard]] bool can_redo_private_m12_materialization() const;

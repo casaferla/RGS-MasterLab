@@ -2621,6 +2621,8 @@ ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m
     const auto ticket=previewController_?previewController_->private_m12_product_preview_ticket():nullptr;
     const bool persisted=opened_&&m::assess_current_product_ref_linked_open_safety(opened_->document())!=
         m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
+    if(previewController_&&previewController_->private_manual_transfer_preview_ticket())
+        return can_save_project()?S::manual_transfer:S::stale;
     if(!persisted&&!ticket)return S::none;
     if(!ticket||!ticket->replay||!persisted||!can_save_project())return S::stale;
     const auto meta=QJsonDocument::fromJson(QByteArray::fromStdString(
