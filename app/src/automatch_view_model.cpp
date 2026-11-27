@@ -22,7 +22,10 @@ AutoMatchViewModel::AutoMatchViewModel(Action::Controllers product,const Action:
     timer_.setInterval(100);
     connect(&timer_,&QTimer::timeout,this,&AutoMatchViewModel::refresh);
     connect(&product_.upstream.source,&SourceSelectionViewModel::sourceChanged,
-        this,&AutoMatchViewModel::refresh,Qt::QueuedConnection);
+        this,[this] {
+            if(transfer_busy()||transfer_ready())discardTransfer();
+            refresh();
+        },Qt::QueuedConnection);
     connect(&gold_,&GoldSelectionViewModel::changed,this,&AutoMatchViewModel::refresh,Qt::QueuedConnection);
     connect(&selector_,&AuditionSourceSelector::changed,this,&AutoMatchViewModel::refresh,Qt::QueuedConnection);
     connect(&product_.upstream.project,&ProjectSessionViewModel::changed,
@@ -112,7 +115,8 @@ bool AutoMatchViewModel::owner()const{return QThread::currentThread()==thread();
 bool AutoMatchViewModel::busy()const{return owner()&&(publishing_||action_.busy()||transfer_busy());}
 bool AutoMatchViewModel::can_start()const {
     return owner()&&!busy()&&!transfer_ready()&&product_.upstream.source.has_source()&&gold_.has_gold()&&
-        selector_.prepared_available();
+        selector_.prepared_available()&&product_.upstream.project.private_m12_match_state()!=
+            ProjectSessionViewModel::M12CurrentMatchState::manual_transfer;
 }
 bool AutoMatchViewModel::can_adopt()const {
     return owner()&&!busy()&&action_.can_adopt();
@@ -265,7 +269,8 @@ QString AutoMatchViewModel::elapsed_time_text()const {
         .arg(minutes).arg(seconds,2,10,QLatin1Char('0')).arg(tenths);
 }
 QString AutoMatchViewModel::verification_note()const {
-    if(!owner()||!action_.verification_result())return {};
+    if(!owner()||product_.upstream.project.private_m12_match_state()==
+       ProjectSessionViewModel::M12CurrentMatchState::manual_transfer||!action_.verification_result())return {};
     const auto& assessment=action_.verification_result()->assessment();
     if(assessment.native_numerical_evidence_passed())
         return QStringLiteral("Numerical evidence passed; formal qualification not granted.");
@@ -274,6 +279,10 @@ QString AutoMatchViewModel::verification_note()const {
 }
 QString AutoMatchViewModel::status_text()const {
     if(!owner())return QStringLiteral("UNAVAILABLE");
+    if(transfer_busy())return QStringLiteral("RENDERING TRANSFER");
+    if(transfer_ready())return QStringLiteral("TRANSFER READY");
+    if(product_.upstream.project.private_m12_match_state()==ProjectSessionViewModel::M12CurrentMatchState::manual_transfer)
+        return QStringLiteral("MANUAL TRANSFER / NOT VERIFIED");
     using P=Action::Phase;
     switch(action_.phase()) {
     case P::idle:return QStringLiteral("READY");
