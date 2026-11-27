@@ -71,7 +71,7 @@ jobs:
           $env:QT_QUICK_BACKEND='software'
           $p=Start-Process -FilePath (Join-Path $stage 'bin/RGSMasterLab.exe') -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw 'L3_CONTEXT_CAPTURE_FAILED' }
-          foreach ($file in @('minimum-dsp-0.png','minimum-dsp-1.png','minimum-dsp-2.png','minimum-dsp-3.png','minimum-prepare.png','capture-geometry.txt')) {
+          foreach ($file in @('minimum-dsp-0.png','minimum-dsp-1.png','minimum-dsp-2.png','minimum-dsp-3.png','minimum-dsp-4.png','minimum-dsp-5.png','minimum-prepare.png','capture-geometry.txt')) {
             if (!(Test-Path -LiteralPath (Join-Path $shots $file))) { throw "L3_CONTEXT_CAPTURE_MISSING=$file" }
           }
           $geometry=Get-Content -LiteralPath (Join-Path $shots 'capture-geometry.txt')
