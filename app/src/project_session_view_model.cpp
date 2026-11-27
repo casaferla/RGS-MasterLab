@@ -5,6 +5,7 @@
 #include "internal/l3_m12_current_search_transaction.hpp"
 #include "internal/l3_m12_product_reopen_preflight.hpp"
 #include "internal/l3_m12_owned_controller_suspension.hpp"
+#include "internal/l3_manual_match_transfer_project.hpp"
 #include "internal/l3_m12_retained_controller.hpp"
 #include "internal/l3_m12_stale_rebind.hpp"
 #include "internal/l3_m13_actual_native_worker.hpp"
@@ -2228,6 +2229,74 @@ core::Status ProjectSessionViewModel::apply_private_m12_fixed_only_match(
         QStringLiteral("NO CORRECTION / MANUAL");
     clear_error();
     return core::Status::success();
+}
+
+core::Result<std::shared_ptr<const l3_automatch::ManualMatchTransferCapture>>
+ProjectSessionViewModel::capture_private_manual_match_transfer(const core::Uuid& linked_instance)
+{
+    namespace a=l3_automatch;
+    namespace m=a::m12_frozen;
+    using R=core::Result<std::shared_ptr<const a::ManualMatchTransferCapture>>;
+    const auto fail=[](const char* why){return R::failure(core::Error{core::ErrorCode::InvalidState,why});};
+    if(linked_instance.is_nil()||QThread::currentThread()!=thread()||
+       m18ProjectOperationActive_||isCommittingProjectOpen_||degraded_||
+       !opened_||!sessionChainMaterialized_||!m18ProjectOpenBatchBegin_||
+       !m18ProjectSaveBatchBegin_||!previewController_||!masteringChainState_||
+       private_m12_match_state()!=M12CurrentMatchState::active)
+        return fail("MANUAL_MATCH_TRANSFER_NO_CURRENT_PRODUCT_OWNER");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("MANUAL_MATCH_TRANSFER_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto ticket=previewController_->private_m12_product_preview_ticket();
+    const auto& provider=previewController_->snapshot_provider();
+    const auto registry=masteringChainState_->registry_snapshot();
+    if(!ticket||!ticket->replay||!registry||!provider||
+       provider()!=ticket->exact_prepared_owner||
+       !previewController_->private_m12_linked_editor_owner_matches(*masteringChainState_))
+        return fail("MANUAL_MATCH_TRANSFER_PRODUCT_OWNER_STALE");
+    const auto live=current_snapshot(QString::fromStdString(opened_->document().displayName));
+    const bool receipt=live&&!m12UndoHistory_.empty()&&m12UndoHistory_.back().receipt&&
+        m12UndoHistory_.back().afterTicket==ticket&&
+        m::m12_exact_project_snapshot_equal(m12UndoHistory_.back().after,*live.value());
+    const bool reopened=live&&m12ExactReplayReadback_&&
+        m::m12_exact_project_snapshot_equal(*m12ExactReplayReadback_,*live.value());
+    if(!live||(!receipt&&!reopened)||
+       !m::m12_exact_project_snapshot_equal(*opened_,*live.value()))
+        return fail("MANUAL_MATCH_TRANSFER_PROJECT_NOT_CURRENT");
+    const auto id=dsp::ModuleInstanceId::from_uuid(linked_instance);
+    if(!id)return R::failure(*id.error());
+    const auto bindings=masteringChainState_->execution_bindings();
+    auto draft=a::prepare_manual_match_transfer(ticket,masteringChainState_->chain(),
+        bindings,*registry,*id.value());
+    if(!draft)return R::failure(*draft.error());
+    auto projectDraft=a::prepare_manual_match_transfer_project(*live.value(),*draft.value());
+    if(!projectDraft)return R::failure(*projectDraft.error());
+    if(previewController_->private_m12_product_preview_ticket()!=ticket||
+       provider()!=ticket->exact_prepared_owner||
+       masteringChainState_->execution_bindings()!=bindings||
+       masteringChainState_->chain().revision()!=ticket->exact_manual_chain_revision)
+        return fail("MANUAL_MATCH_TRANSFER_CAPTURE_RACED");
+    return R::success(std::make_shared<const a::ManualMatchTransferCapture>(
+        a::ManualMatchTransferCapture{m12ProductOwnershipEpoch_,
+            std::move(*draft.value()),std::move(*projectDraft.value())}));
+}
+
+bool ProjectSessionViewModel::private_manual_match_transfer_still_current(
+    const l3_automatch::ManualMatchTransferCapture& capture)
+{
+    if(QThread::currentThread()!=thread()||capture.product_epoch!=m12ProductOwnershipEpoch_)
+        return false;
+    const auto fresh=capture_private_manual_match_transfer(capture.native.linked_instance.uuid());
+    if(!fresh)return false;
+    const auto& now=**fresh.value();
+    return now.product_epoch==capture.product_epoch&&
+        now.native.exact_prior_owner==capture.native.exact_prior_owner&&
+        now.project.identity.sha256==capture.project.identity.sha256&&
+        now.project.identity.canonical_content==capture.project.identity.canonical_content&&
+        now.project.matches_before(capture.project.before)&&
+        now.project.matches_after(capture.project.after);
 }
 
 ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m12_match_state() const
