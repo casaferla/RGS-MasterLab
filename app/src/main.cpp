@@ -2265,8 +2265,16 @@ int main(int argc, char* argv[])
                 return logged && layoutLogged && minimumOk && panelOk && amountLayoutOk && !image.isNull()
                     && image.save(contextShotDir+"/"+name+".png","PNG");
             };
-            for(int i=0;i<4;++i) {
+            const QStringList ordinaryKeys{QStringLiteral("INPUT_GAIN"),
+                QStringLiteral("PARAMETRIC_EQ"),QStringLiteral("DYNAMIC_EQ"),
+                QStringLiteral("TRANSIENT_SHAPER"),QStringLiteral("COMPRESSOR"),
+                QStringLiteral("STEREO_MS")};
+            for(int i=0;i<ordinaryKeys.size();++i) {
                 dspChainAdapterModel.setSelectedIndex(i);
+                const auto* module=dspChainAdapterModel.selected_module();
+                if(!module||module->editor_content_key()!=ordinaryKeys.at(i)) {
+                    ok=false;continue;
+                }
                 ok=capture(QStringLiteral("minimum-dsp-%1").arg(i))&&ok;
             }
             panel->setProperty("activeContextMode",QStringLiteral("PREPARE_RESTORATION"));
