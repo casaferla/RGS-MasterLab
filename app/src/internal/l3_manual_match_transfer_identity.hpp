@@ -30,6 +30,27 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
     const auto& manual=draft.manual_after.proposed_manual_chain;
     const auto& mb=draft.manual_after.proposed_bindings;
     const auto& lb=draft.linked_bindings_after;
+    // The aggregate draft is not itself an authority. Reconstruct its
+    // allowed delta from the immutable before-owner before hashing or
+    // rendering, so an arbitrary peer edit cannot borrow this operation.
+    auto priorManual=dsp::ProcessingChain::restore(*replay.registry_owner,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
+        prior->exact_manual_chain_revision,prior->exact_manual_nodes);
+    if(!priorManual)return R::failure(*priorManual.error());
+    const auto expected=prepare_manual_match_transfer(prior,*priorManual.value(),
+        prior->exact_manual_bindings,*replay.registry_owner,draft.linked_instance);
+    if(!expected)return R::failure(*expected.error());
+    const auto same=[](const dsp::ProcessingChain& a,const dsp::ProcessingChain& b){
+        return a.context()==b.context()&&a.revision()==b.revision()&&
+            std::equal(a.instances().begin(),a.instances().end(),
+                       b.instances().begin(),b.instances().end());
+    };
+    if(expected.value()->manual_instance!=draft.manual_instance||
+       !same(expected.value()->manual_after.proposed_manual_chain,manual)||
+       expected.value()->manual_after.proposed_bindings!=mb||
+       !same(expected.value()->linked_after,draft.linked_after)||
+       expected.value()->linked_bindings_after!=lb)
+        return fail("MANUAL_MATCH_IDENTITY_UNAUTHORIZED_GRAPH_DELTA");
     if(conflicting_active_match_dsps(manual.instances(),draft.linked_after.instances()))
         return fail("MANUAL_MATCH_IDENTITY_ACTIVE_CONFLICT");
     const auto encode=[&](const dsp::ProcessingChain& chain,
