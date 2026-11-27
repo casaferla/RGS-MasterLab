@@ -86,6 +86,7 @@ private:
     std::future<TransferResult> transfer_worker_;
     std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> transfer_candidate_;
     QString transfer_text_;
+    std::uint64_t transfer_reference_revision_{};
     void poll_transfer();
     QTimer timer_;
     // Monotonic wall clock for this actual Product search, distinct from

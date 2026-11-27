@@ -61,6 +61,7 @@ bool AutoMatchViewModel::beginTransfer(const QString& instanceId)
         });
         transfer_cancel_=std::move(cancel);
         transfer_worker_=std::move(task);
+        transfer_reference_revision_=gold_.selection_revision();
         transfer_text_=QStringLiteral("Rendering transfer candidate…");
         timer_.start();emit changed();return true;
     }catch(...) {
@@ -78,6 +79,7 @@ void AutoMatchViewModel::discardTransfer()
 bool AutoMatchViewModel::applyTransfer()
 {
     if(!transfer_ready()||busy()||action_.can_adopt())return false;
+    if(gold_.selection_revision()!=transfer_reference_revision_){discardTransfer();return false;}
     publishing_=true;
     const auto candidate=transfer_candidate_;
     const auto& capture=candidate->capture();
@@ -95,6 +97,12 @@ bool AutoMatchViewModel::applyTransfer()
 void AutoMatchViewModel::poll_transfer()
 {
     using namespace std::chrono_literals;
+    if((transfer_busy()||transfer_ready())&&
+       gold_.selection_revision()!=transfer_reference_revision_) {
+        if(transfer_cancel_)transfer_cancel_->store(true,std::memory_order_release);
+        transfer_candidate_.reset();
+        transfer_text_=QStringLiteral("Transfer expired: reference changed.");
+    }
     if(transfer_worker_.valid()&&transfer_worker_.wait_for(0ms)==std::future_status::ready) {
         try {
             auto done=transfer_worker_.get();
@@ -105,7 +113,11 @@ void AutoMatchViewModel::poll_transfer()
                 transfer_text_=QStringLiteral("Transfer expired: project changed.");
             else {
                 transfer_candidate_=std::make_shared<const a::ManualMatchTransferAudition>(std::move(*done.value()));
-                transfer_text_=QStringLiteral("Candidate rendered. Apply to move the DSP into MANUAL; a fresh verification is required.");
+                const auto& graph=transfer_candidate_->capture().native;
+                const auto node=graph.manual_after.proposed_manual_chain.find_instance(graph.manual_instance);
+                const auto type=node&&node.value()->get().module_type_id()=="rgsml.dsp.dynamic-eq"
+                    ?QStringLiteral("Dynamic EQ"):QStringLiteral("Transient Shaper");
+                transfer_text_=QStringLiteral("%1 candidate rendered. Apply to move it into MANUAL; processing order changes and fresh verification is required.").arg(type);
             }
         }catch(...) {transfer_text_=QStringLiteral("Transfer render failed.");}
         transfer_cancel_.reset();
