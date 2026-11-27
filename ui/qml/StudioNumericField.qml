@@ -10,6 +10,10 @@ Item {
     property string rawText: ""
     property var viewModel: null
     property bool compact: false
+    // Opt-in dense knob companion; defaults preserve all existing DSP fields.
+    property bool showLabel: true
+    property int inputHorizontalMargin: 8
+    property int inputPixelSize: compact ? 14 : 16
     // Per-instance compact width seam. Default preserves the shared EQ contract;
     // dense editors may opt into a narrower field without module-name branching.
     property int compactFieldWidth: 120
@@ -26,7 +30,7 @@ Item {
 
     readonly property int fieldWidth: compact ? compactFieldWidth : 164
     implicitWidth: fieldWidth + (unitText.length > 0 ? unitTextLabel.implicitWidth + (compact ? 6 : 8) : 0)
-    implicitHeight: compact ? 40 : 50
+    implicitHeight: showLabel ? (compact ? 40 : 50) : (compact ? 24 : 28)
 
     Column {
         anchors.fill: parent
@@ -34,6 +38,7 @@ Item {
 
         Text {
             id: label
+            visible: control.showLabel
             text: control.labelText
             color: "#A1B5C9"
             font.family: "Segoe UI"
@@ -88,14 +93,14 @@ Item {
                     id: input
                     objectName: control.fieldName + "Input"
                     anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
+                    anchors.leftMargin: control.inputHorizontalMargin
+                    anchors.rightMargin: control.inputHorizontalMargin
                     verticalAlignment: TextInput.AlignVCenter
                     horizontalAlignment: TextInput.AlignRight
 
                     text: control.rawText
                     font.family: "Consolas"
-                    font.pixelSize: control.compact ? 14 : 16
+                    font.pixelSize: control.inputPixelSize
                     color: control.isInvalid ? "#F27683" : "#F5F8FC"
                     selectByMouse: true
                     selectionColor: "#4000C8FF"
