@@ -35,14 +35,26 @@ Item {
         return Math.round(parsed*10)/10
     }
     function commitNumeric(control, low, high, current, setter) {
-        if(!root.editorEnabled) return
-        const canonical=root.parseNumeric(control.text,low,high)
-        if(!Number.isFinite(canonical)) {
-            control.text=current.toFixed(1)
+        if (!root.editorEnabled || !control.numericDirty) return
+        const field = control === attackEntry ? "Attack" : "Sustain"
+        const canonical = root.parseNumeric(control.text, low, high)
+        if (!Number.isFinite(canonical)) {
+            if (root.transientModule.reportNumericValidation)
+                root.transientModule.reportNumericValidation(field,
+                    field + " must be a number between " + low + " and " + high + ".")
             return
         }
-        if(canonical!==current) setter(canonical)
-        control.text=canonical.toFixed(1)
+        if (setter(canonical) === false) return
+        control.numericDirty = false
+        if (root.transientModule.reportNumericValidation)
+            root.transientModule.reportNumericValidation(field, "")
+        control.text = canonical.toFixed(1)
+    }
+    function cancelNumeric(control, field, value) {
+        control.numericDirty = false
+        if (root.editorEnabled && root.transientModule.reportNumericValidation)
+            root.transientModule.reportNumericValidation(field, "")
+        control.text = value.toFixed(1)
     }
 
     ColumnLayout {
@@ -146,10 +158,12 @@ Item {
                             width: 120; height: 32; radius: 4
                             color: "#0E1F2E"
                             border.width: attackEntry.activeFocus ? 2 : 1
-                            border.color: attackEntry.activeFocus
-                                ? root.copper : "#2C5A78"
+                            border.color: root.transientModule && root.transientModule.attackValidationMessage
+                                ? "#F27683" : attackEntry.activeFocus ? root.copper : "#2C5A78"
                             TextInput {
                                 id: attackEntry
+                                property bool numericDirty: false
+                                onTextEdited: numericDirty = true
                                 enabled: root.editorEnabled
                                 objectName: "transientShaperAttackNumericInput"
                                 ToolTip.text: "Set the attack amount in dB. Enter or click away to apply; Esc to cancel."
@@ -179,21 +193,23 @@ Item {
                                 Connections {
                                     target: root
                                     function onAttackDbChanged() {
-                                        if(!attackEntry.activeFocus)
+                                        if(!attackEntry.activeFocus && !attackEntry.numericDirty)
                                             attackEntry.text=root.attackDb.toFixed(1)
                                     }
                                     function onEditorEnabledChanged() {
                                         // A revoked edit gate invalidates an unfinished draft,
                                         // even if the text field still has keyboard focus.
-                                        if(!root.editorEnabled)
+                                        if(!root.editorEnabled) {
+                                            attackEntry.numericDirty=false
                                             attackEntry.text=root.attackDb.toFixed(1)
+                                        }
                                     }
                                 }
                                 Component.onCompleted: text=root.attackDb.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
                                     root.commitNumeric(attackEntry,-12,12,
                                         root.attackDb,function(v) {
-                                            root.transientModule.setAttackAmountDb(v)
+                                            return root.transientModule.setAttackAmountDb(v)
                                         })
                                     attackEntry.focus=false
                                     event.accepted=true
@@ -201,20 +217,20 @@ Item {
                                 Keys.onEnterPressed: function(event) {
                                     root.commitNumeric(attackEntry,-12,12,
                                         root.attackDb,function(v) {
-                                            root.transientModule.setAttackAmountDb(v)
+                                            return root.transientModule.setAttackAmountDb(v)
                                         })
                                     attackEntry.focus=false
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
-                                    attackEntry.text=root.attackDb.toFixed(1)
+                                    root.cancelNumeric(attackEntry, "Attack", root.attackDb)
                                     attackEntry.focus=false
                                     event.accepted=true
                                 }
                                 onActiveFocusChanged: if(!activeFocus)
                                     root.commitNumeric(attackEntry,-12,12,
                                         root.attackDb,function(v) {
-                                            root.transientModule.setAttackAmountDb(v)
+                                            return root.transientModule.setAttackAmountDb(v)
                                         })
                                 Accessible.name: "Transient Shaper Attack numeric dB"
                             }
@@ -303,10 +319,12 @@ Item {
                             width: 120; height: 32; radius: 4
                             color: "#0E1F2E"
                             border.width: sustainEntry.activeFocus ? 2 : 1
-                            border.color: sustainEntry.activeFocus
-                                ? root.copper : "#2C5A78"
+                            border.color: root.transientModule && root.transientModule.sustainValidationMessage
+                                ? "#F27683" : sustainEntry.activeFocus ? root.copper : "#2C5A78"
                             TextInput {
                                 id: sustainEntry
+                                property bool numericDirty: false
+                                onTextEdited: numericDirty = true
                                 enabled: root.editorEnabled
                                 objectName: "transientShaperSustainNumericInput"
                                 ToolTip.text: "Set the sustain amount in dB. Enter or click away to apply; Esc to cancel."
@@ -336,19 +354,21 @@ Item {
                                 Connections {
                                     target: root
                                     function onSustainDbChanged() {
-                                        if(!sustainEntry.activeFocus)
+                                        if(!sustainEntry.activeFocus && !sustainEntry.numericDirty)
                                             sustainEntry.text=root.sustainDb.toFixed(1)
                                     }
                                     function onEditorEnabledChanged() {
-                                        if(!root.editorEnabled)
+                                        if(!root.editorEnabled) {
+                                            sustainEntry.numericDirty=false
                                             sustainEntry.text=root.sustainDb.toFixed(1)
+                                        }
                                     }
                                 }
                                 Component.onCompleted: text=root.sustainDb.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
                                     root.commitNumeric(sustainEntry,-12,12,
                                         root.sustainDb,function(v) {
-                                            root.transientModule.setSustainAmountDb(v)
+                                            return root.transientModule.setSustainAmountDb(v)
                                         })
                                     sustainEntry.focus=false
                                     event.accepted=true
@@ -356,20 +376,20 @@ Item {
                                 Keys.onEnterPressed: function(event) {
                                     root.commitNumeric(sustainEntry,-12,12,
                                         root.sustainDb,function(v) {
-                                            root.transientModule.setSustainAmountDb(v)
+                                            return root.transientModule.setSustainAmountDb(v)
                                         })
                                     sustainEntry.focus=false
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
-                                    sustainEntry.text=root.sustainDb.toFixed(1)
+                                    root.cancelNumeric(sustainEntry, "Sustain", root.sustainDb)
                                     sustainEntry.focus=false
                                     event.accepted=true
                                 }
                                 onActiveFocusChanged: if(!activeFocus)
                                     root.commitNumeric(sustainEntry,-12,12,
                                         root.sustainDb,function(v) {
-                                            root.transientModule.setSustainAmountDb(v)
+                                            return root.transientModule.setSustainAmountDb(v)
                                         })
                                 Accessible.name: "Transient Shaper Sustain numeric dB"
                             }
