@@ -2302,6 +2302,48 @@ bool ProjectSessionViewModel::private_manual_match_transfer_still_current(
         now.project.matches_after(capture.project.after);
 }
 
+core::Result<std::shared_ptr<const l3_automatch::ManualMatchTransferAdoptionDraft>>
+ProjectSessionViewModel::prepare_private_manual_match_transfer_adoption(
+    std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
+    const l3_automatch::ManualMatchTransferConfirmation& confirmation)
+{
+    namespace a=l3_automatch;
+    using R=core::Result<std::shared_ptr<const a::ManualMatchTransferAdoptionDraft>>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    if(!audition||QThread::currentThread()!=thread()||
+       !a::manual_match_transfer_confirmation_matches(*audition,confirmation)||
+       !private_manual_match_transfer_still_current(audition->capture()))
+        return fail("MANUAL_MATCH_ADOPTION_CONFIRMATION_OR_OWNER_STALE");
+    if(!opened_||!masteringChainState_||!previewController_)
+        return fail("MANUAL_MATCH_ADOPTION_OWNER_ABSENT");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("MANUAL_MATCH_ADOPTION_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto& capture=audition->capture();
+    const auto& provider=previewController_->snapshot_provider();
+    const auto ticket=capture.native.exact_prior_owner;
+    const auto current=[&](){
+        return ticket&&provider&&provider()==ticket->exact_prepared_owner&&
+            capture.product_epoch==m12ProductOwnershipEpoch_&&
+            previewController_->private_m12_product_preview_ticket()==ticket&&
+            previewController_->private_m12_linked_editor_owner_matches(*masteringChainState_);
+    };
+    if(!current())return fail("MANUAL_MATCH_ADOPTION_OWNER_CHANGED");
+    auto live=current_snapshot(QString::fromStdString(opened_->document().displayName));
+    if(!live||!capture.project.matches_before(*opened_))
+        return fail("MANUAL_MATCH_ADOPTION_PROJECT_CHANGED");
+    auto draft=a::prepare_manual_match_transfer_adoption(
+        *live.value(),*masteringChainState_,audition,confirmation);
+    if(!draft)return R::failure(*draft.error());
+    if(!current()||masteringChainState_->execution_bindings()!=ticket->exact_manual_bindings)
+        return fail("MANUAL_MATCH_ADOPTION_STAGING_RACED");
+    return R::success(std::make_shared<const a::ManualMatchTransferAdoptionDraft>(
+        std::move(*draft.value())));
+}
+
 ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m12_match_state() const
 {
     namespace m=l3_automatch::m12_frozen;

@@ -23,7 +23,13 @@
 namespace rgsml::dsp { class ModuleRegistry; }
 namespace rgsml::render { class RenderResult; }
 namespace rgsml::app {
-namespace l3_automatch { struct NativeAutoMatchWorkerResult; struct ManualMatchTransferCapture; }
+namespace l3_automatch {
+struct NativeAutoMatchWorkerResult;
+struct ManualMatchTransferCapture;
+class ManualMatchTransferAudition;
+struct ManualMatchTransferConfirmation;
+struct ManualMatchTransferAdoptionDraft;
+}
 namespace l3_automatch::m10_frozen { struct P2NativeProductWorkerScope; }
 namespace l3_automatch::m12_frozen {
 struct AcceptedPlanAndOwner;
@@ -215,6 +221,12 @@ public:
     capture_private_manual_match_transfer(const core::Uuid& linked_instance);
     [[nodiscard]] bool private_manual_match_transfer_still_current(
         const l3_automatch::ManualMatchTransferCapture& capture);
+    // Nonpublishing GUI confirmation preflight. Any later adoption
+    // must recapture and revalidate under the physical Product lease.
+    [[nodiscard]] core::Result<std::shared_ptr<const l3_automatch::ManualMatchTransferAdoptionDraft>>
+    prepare_private_manual_match_transfer_adoption(
+        std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
+        const l3_automatch::ManualMatchTransferConfirmation& confirmation);
     // Non-mutating eligibility; actual operations recheck under M18.
     enum class M12CurrentMatchState {none,active,suspended,stale};
     [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
