@@ -64,6 +64,13 @@ Rectangle {
 
             StudioToggle {
                 objectName: "bandEnabledToggle"
+                ToolTip.text: "Enable or disable the selected Dynamic EQ band without deleting its settings."
+                ToolTip.visible: bandEnabledToggleDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: bandEnabledToggleDwell
+                    anchors.fill: parent
+                }
                 enabled: root.manualEditable
                 text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
                 checked: root.viewModel ? root.viewModel.enabled : true
@@ -84,6 +91,9 @@ Rectangle {
                     root.viewModel.undo()
                 Accessible.name: "Undo the last Dynamic EQ edit"
                 ToolTip.text: "Undo the last accepted manual C01 edit"
+                ToolTip.visible: dynamicEqUndoDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell { id: dynamicEqUndoDwell; anchors.fill: parent }
             }
 
             StudioButton {
@@ -97,6 +107,9 @@ Rectangle {
                     root.viewModel.redo()
                 Accessible.name: "Redo the last Dynamic EQ edit"
                 ToolTip.text: "Redo the last undone manual C01 edit"
+                ToolTip.visible: dynamicEqRedoDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell { id: dynamicEqRedoDwell; anchors.fill: parent }
             }
 
             Item { Layout.fillWidth: true }
@@ -275,6 +288,9 @@ Rectangle {
                     onClicked: root.showDynamics = !root.showDynamics
                     Accessible.name: "Show or hide Dynamic EQ controls window"
                     ToolTip.text: "Open the separate six-parameter Dynamic EQ panel"
+                    ToolTip.visible: dynamicEqDynamicsDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell { id: dynamicEqDynamicsDwell; anchors.fill: parent }
                 }
             }
         }
