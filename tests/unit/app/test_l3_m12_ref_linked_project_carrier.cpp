@@ -6,7 +6,7 @@
 #include "internal/l3_m12_ref_linked_native_replay_plan.hpp"
 #include "internal/l3_m12_restored_native_render.hpp"
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
-#include "internal/l3_manual_match_transfer_identity.hpp"
+#include "internal/l3_manual_match_transfer_project.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
@@ -865,6 +865,53 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(otherIdentity);
     QVERIFY(otherIdentity.value()->sha256!=identity.value()->sha256);
     QVERIFY(identity.value()->sha256!=exactTransferOwner->replay->exact_plan_checksum);
+    auto forgedTransfer=*draft.value();
+    forgedTransfer.manual_after.proposed_bindings.front().parameters=
+        *dsp::GainParameters::create(7.0).value();
+    QVERIFY(!transfer::identify_manual_match_transfer(forgedTransfer));
+    // Construct the exact persisted before-owner with the two manual slots.
+    auto transferDocument=replayDocument;
+    auto& manualCarrier=transferDocument.chains.front();
+    manualCarrier.revision=transferManual.revision();
+    for(std::size_t i=1;i<transferManual.instances().size();++i) {
+        const auto& n=transferManual.instances()[i];
+        project::Module module;
+        module.instanceId=n.instance_id().uuid();
+        module.typeId=std::string(n.module_type_id());
+        module.enabled=n.enabled();module.userBypass=n.user_bypass();
+        const auto descriptor=reg->find_descriptor(module.typeId);
+        QVERIFY(descriptor);
+        module.algorithmVersion=descriptor.value()->get().algorithm_version();
+        module.parameterSchemaId=descriptor.value()->get().parameter_schema_id();
+        const auto json=dsp::encode_module_parameters_json(transferBindings[i].parameters);
+        QVERIFY(json);
+        const auto opaque=project::OpaqueJsonValue::parse(*json.value());
+        QVERIFY(opaque);
+        module.parameters=*opaque.value();
+        manualCarrier.modules.push_back(std::move(module));
+    }
+    const auto beforeTransfer=project::ProjectSnapshot::create(transferDocument);
+    QVERIFY(beforeTransfer);
+    const auto projectDraft=transfer::prepare_manual_match_transfer_project(
+        *beforeTransfer.value(),*draft.value());
+    QVERIFY(projectDraft);
+    QVERIFY(projectDraft.value()->matches_before(*beforeTransfer.value()));
+    QVERIFY(!projectDraft.value()->matches_after(*beforeTransfer.value()));
+    QVERIFY(!projectDraft.value()->authorizes_project_commit());
+    const auto& afterDocument=projectDraft.value()->after.document();
+    QVERIFY(!afterDocument.chains.front().modules.back().userBypass);
+    QVERIFY(afterDocument.chains.back().modules[1].userBypass);
+    QVERIFY(afterDocument.chains.front().modules.back().parameters==
+        afterDocument.chains.back().modules[1].parameters);
+    QVERIFY(m::exact_project_module_equal(
+        afterDocument.chains.back().modules[0],transferDocument.chains.back().modules[0]));
+    QVERIFY(!m::decode_exact_m12_ref_linked_product_state(afterDocument,reg));
+    auto staleDocument=transferDocument;
+    staleDocument.chains.front().modules.front().userBypass=true;
+    const auto staleSnapshot=project::ProjectSnapshot::create(staleDocument);
+    QVERIFY(staleSnapshot);
+    QVERIFY(!transfer::prepare_manual_match_transfer_project(*staleSnapshot.value(),*draft.value()));
+
     const auto audition=transfer::render_manual_match_transfer_candidate(
         *draft.value(),*identity.value(),*maxBlock.value());
     QVERIFY(audition);
