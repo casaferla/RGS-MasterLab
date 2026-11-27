@@ -375,6 +375,7 @@ private slots:
     void source_reset_vs_project_open();
     void stereo_ms_four_module_project_roundtrip_and_atomic_rejection();
     void product_default_stereo_ms_project_save_open_save_identity();
+    void product_manual_match_dsps_project_roundtrip();
     void p2_fifth_module_project_roundtrip_and_atomic_rejection();
 };
 
@@ -8661,6 +8662,99 @@ void ProjectSessionTest::source_reset_vs_project_open()
              QString::fromStdString(bandId.value()->to_string()));
 }
 
+
+void ProjectSessionTest::product_manual_match_dsps_project_roundtrip()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source=wav(dir,QStringLiteral("manual-match-source.wav"),31);
+    QVERIFY(!source.isEmpty());
+    const auto uuid=[](const char* s){return *core::Uuid::parse(s).value();};
+    const auto id=[&](const char* s){return *dsp::ModuleInstanceId::from_uuid(uuid(s)).value();};
+    const auto stereo=id("73110000-0000-4000-8000-000000000015");
+    const auto dynamic=id("73110000-0000-4000-8000-000000000016");
+    const auto transient=id("73110000-0000-4000-8000-000000000017");
+    dsp::DynamicEqBandSpec spec;
+    spec.band_id=uuid("73110000-0000-4000-8000-000000000021");
+    spec.control.threshold_dbfs=-47.5;
+    spec.control.range_db=-3.0;
+    auto band=dsp::DynamicEqBandParameters::create(spec);QVERIFY(band);
+    auto de=dsp::DynamicEqParameters::create({*band.value()});QVERIFY(de);
+    auto ts=dsp::TransientShaperParameters::create(3.5,-2.0);QVERIFY(ts);
+    const auto enable=[&](Session& session){
+        auto base=dsp::ModuleRegistry::create_dsp_package_v1();
+        if(!base)return false;
+        auto c01=dsp::ModuleRegistry::with_dynamic_eq_offline(std::move(*base.value()));
+        if(!c01)return false;
+        auto c00=dsp::ModuleRegistry::with_transient_shaper_offline(std::move(*c01.value()));
+        if(!c00)return false;
+        auto original=app::MasteringChainState::create_product_default(*c00.value(),
+            session.chainId,session.gainId,session.eqId,session.compId,stereo);
+        if(!original)return false;
+        auto extended=app::MasteringChainState::with_manual_match_dsps(
+            std::move(*original.value()),dynamic,*de.value(),transient,*ts.value());
+        if(!extended)return false;
+        session.masteringChainState->adopt_chain_after_authorized_project_open(std::move(*extended.value()));
+        session.adapterModel->refreshFromAuthority();
+        return session.masteringChainState->module_count()==6U;
+    };
+    Session legacy;
+    legacy.source.selectSource(QUrl::fromLocalFile(source));
+    const auto legacyPath=dir.filePath(QStringLiteral("legacy.rgsml"));
+    legacy.project.saveProjectAs(QUrl::fromLocalFile(legacyPath));
+    QVERIFY2(QFileInfo::exists(legacyPath),legacy.project.error_message().toUtf8().constData());
+    Session author;QVERIFY(enable(author));
+    author.source.selectSource(QUrl::fromLocalFile(source));
+    QVERIFY(author.masteringChainState->set_user_bypass(dynamic,false));
+    const auto expected=author.masteringChainState->execution_bindings();
+    const auto revision=author.masteringChainState->chain().revision();
+    const auto path=dir.filePath(QStringLiteral("manual-match.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(path));
+    QVERIFY2(QFileInfo::exists(path),author.project.error_message().toUtf8().constData());
+    auto saved=load_project(path);QVERIFY(saved);
+    QCOMPARE(saved.value()->document().chains.front().modules.size(),std::size_t{6});
+    legacy.project.openProject(QUrl::fromLocalFile(path));
+    QVERIFY(!legacy.project.error_message().isEmpty());
+    QCOMPARE(legacy.masteringChainState->module_count(),std::size_t{3});
+    Session reopened;QVERIFY(enable(reopened));
+    // Opening an older project retains factory capability but does not
+    // insert new DSPs or change the persisted chain's sound.
+    reopened.project.openProject(QUrl::fromLocalFile(legacyPath));
+    QVERIFY2(reopened.project.error_message().isEmpty(),reopened.project.error_message().toUtf8().constData());
+    QCOMPARE(reopened.masteringChainState->module_count(),std::size_t{3});
+    QVERIFY(reopened.masteringChainState->registry_snapshot()->has_factory("rgsml.dsp.dynamic-eq"));
+    reopened.project.openProject(QUrl::fromLocalFile(path));
+    QVERIFY2(reopened.project.error_message().isEmpty(),reopened.project.error_message().toUtf8().constData());
+    QVERIFY(!reopened.project.degraded());
+    QCOMPARE(reopened.masteringChainState->chain().revision(),revision);
+    QVERIFY(reopened.masteringChainState->execution_bindings()==expected);
+    QVERIFY(!*reopened.masteringChainState->is_bypassed(dynamic).value());
+    QVERIFY(*reopened.masteringChainState->is_bypassed(transient).value());
+    const auto againPath=dir.filePath(QStringLiteral("manual-match-again.rgsml"));
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(againPath));
+    QVERIFY2(QFileInfo::exists(againPath),reopened.project.error_message().toUtf8().constData());
+    auto again=load_project(againPath);QVERIFY(again);
+    const auto& a=saved.value()->document().chains.front();
+    const auto& b=again.value()->document().chains.front();
+    QCOMPARE(a.chainId,b.chainId);
+    QCOMPARE(a.revision,b.revision);
+    QCOMPARE(a.modules.size(),b.modules.size());
+    for(std::size_t i=0;i<a.modules.size();++i){
+        QCOMPARE(a.modules[i].instanceId,b.modules[i].instanceId);
+        QCOMPARE(a.modules[i].typeId,b.modules[i].typeId);
+        QCOMPARE(a.modules[i].userBypass,b.modules[i].userBypass);
+        QCOMPARE(a.modules[i].parameters.canonical_utf8(),b.modules[i].parameters.canonical_utf8());
+    }
+    auto corrupt=saved.value()->document();
+    corrupt.chains.front().modules[2].parameters=*project::OpaqueJsonValue::parse("{}").value();
+    auto bad=project::ProjectSnapshot::create(corrupt);QVERIFY(bad);
+    const auto badPath=dir.filePath(QStringLiteral("invalid-match.rgsml"));
+    QVERIFY(write_project(badPath,*bad.value()));
+    reopened.project.openProject(QUrl::fromLocalFile(badPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QCOMPARE(reopened.masteringChainState->chain().revision(),revision);
+    QVERIFY(reopened.masteringChainState->execution_bindings()==expected);
+}
 
 void ProjectSessionTest::product_default_stereo_ms_project_save_open_save_identity()
 {
