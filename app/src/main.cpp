@@ -61,6 +61,7 @@
 #include <QQuickWindow>
 #include <QScreen>
 #include <QQuickItem>
+#include <QVariant>
 #include <QImage>
 #include <QFont>
 #include <QPainter>
@@ -2129,7 +2130,16 @@ int main(int argc, char* argv[])
             }
             win->setWidth(1184);
             win->setHeight(688);
-            bool ok=true;
+            const auto invokeCheck=[&](const char* method) {
+                QVariant result;
+                return QMetaObject::invokeMethod(panel,method,Q_RETURN_ARG(QVariant,result))
+                    && result.toBool();
+            };
+            const bool editorOk=invokeCheck("verifyAmountEditorContract");
+            const QByteArray editorRecord=editorOk
+                ? QByteArrayLiteral("amount-editor-contract=PASS\n")
+                : QByteArrayLiteral("amount-editor-contract=FAIL\n");
+            bool ok=manifest.write(editorRecord)==editorRecord.size() && editorOk;
             const auto capture=[&](const QString& name) {
                 QEventLoop settle;
                 QTimer::singleShot(350,&settle,&QEventLoop::quit);
@@ -2145,7 +2155,11 @@ int main(int argc, char* argv[])
                 const bool minimumOk=!name.startsWith(QStringLiteral("minimum-"))
                     || (win->width()==1184 && win->height()==688);
                 const bool panelOk=std::abs(panel->height()-212.0)<=1.0;
-                return logged && minimumOk && panelOk && !image.isNull()
+                const bool amountLayoutOk=invokeCheck("verifyAmountLayout");
+                const auto layoutRecord=QStringLiteral("%1 amount-layout=%2\n")
+                    .arg(name).arg(amountLayoutOk ? QStringLiteral("PASS") : QStringLiteral("FAIL")).toUtf8();
+                const bool layoutLogged=manifest.write(layoutRecord)==layoutRecord.size();
+                return logged && layoutLogged && minimumOk && panelOk && amountLayoutOk && !image.isNull()
                     && image.save(contextShotDir+"/"+name+".png","PNG");
             };
             for(int i=0;i<4;++i) {
