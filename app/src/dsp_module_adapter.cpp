@@ -11,6 +11,18 @@ DspModuleAdapter::DspModuleAdapter(QObject* parent)
 {
 }
 
+bool DspModuleAdapter::linked_match_type_active(
+    const MasteringPreviewController* preview,std::string_view type)
+{
+    if(!preview)return false;
+    const auto ticket=preview->private_m12_product_preview_ticket();
+    if(!ticket||!ticket->replay)return false;
+    const auto nodes=ticket->replay->reference_linked.instances();
+    return std::any_of(nodes.begin(),nodes.end(),[&](const auto& node){
+        return node.active()&&node.module_type_id()==type;
+    });
+}
+
 // -----------------------------------------------------------------------------
 // Input Gain Module Adapter
 // -----------------------------------------------------------------------------
@@ -817,6 +829,10 @@ bool ManualDynamicEqModuleAdapter::deleteBand(const QString& id) {
 }
 void ManualDynamicEqModuleAdapter::setBypass(bool value) {
     if(!params()||bypass()==value)return;
+    if(!value&&linked_match_type_active(preview_,"rgsml.dsp.dynamic-eq")) {
+        operationError_=QStringLiteral("AutoMatch owns the active Dynamic EQ. Transfer or suspend the match first.");
+        emit changed();return;
+    }
     if(!value) {
         const auto audio=prepared();
         if(audio) {
