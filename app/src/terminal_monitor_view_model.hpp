@@ -22,6 +22,7 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
     Q_PROPERTY(bool monitorPreparing READ monitor_preparing NOTIFY changed)
+    Q_PROPERTY(bool offlineMasterRendering READ offline_master_rendering NOTIFY changed)
     Q_PROPERTY(bool devicePreparationDeterminate READ device_preparation_determinate NOTIFY changed)
     Q_PROPERTY(double devicePreparationFraction READ device_preparation_fraction NOTIFY changed)
     Q_PROPERTY(QString devicePreparationEta READ device_preparation_eta NOTIFY changed)
@@ -69,6 +70,8 @@ public:
     [[nodiscard]] bool monitor_exclusive() const noexcept;
     [[nodiscard]] bool monitor_installed() const noexcept;
     [[nodiscard]] bool monitor_preparing() const noexcept {return monitorPreparing_;}
+    [[nodiscard]] bool offline_master_rendering() const
+    { return monitorRequested_ && session_->status()==QStringLiteral("RENDERING"); }
     [[nodiscard]] bool device_preparation_determinate() const noexcept;
     [[nodiscard]] double device_preparation_fraction() const noexcept;
     [[nodiscard]] QString device_preparation_eta() const;
