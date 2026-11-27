@@ -146,8 +146,8 @@ Item {
                             width: 120; height: 32; radius: 4
                             color: "#0E1F2E"
                             border.width: ceilingEntry.activeFocus ? 2 : 1
-                            border.color: ceilingEntry.activeFocus
-                                ? root.copper : "#2C5A78"
+                            border.color: root.limiterModule && root.limiterModule.ceilingValidationMessage
+                                ? "#F27683" : ceilingEntry.activeFocus ? root.copper : "#2C5A78"
                             TextInput {
                                 id: ceilingEntry
                                 property bool numericDirty: false
@@ -298,8 +298,8 @@ Item {
                             width: 120; height: 32; radius: 4
                             color: "#0E1F2E"
                             border.width: driveEntry.activeFocus ? 2 : 1
-                            border.color: driveEntry.activeFocus
-                                ? root.copper : "#2C5A78"
+                            border.color: root.limiterModule && root.limiterModule.driveValidationMessage
+                                ? "#F27683" : driveEntry.activeFocus ? root.copper : "#2C5A78"
                             TextInput {
                                 id: driveEntry
                                 property bool numericDirty: false
