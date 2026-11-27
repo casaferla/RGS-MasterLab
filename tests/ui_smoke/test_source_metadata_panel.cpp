@@ -6382,17 +6382,26 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(statusBarMessage->property("text").toString().contains(
             QStringLiteral("Compressor")),
             "An unresolved Compressor validation must survive selection changes");
+        QVERIFY(!gainViewModel.setGainDbText(QStringLiteral("invalid")));
+        QCoreApplication::processEvents();
         const int countBefore = root->property("statusMessageCount").toInt();
-        QVERIFY(countBefore >= 1);
+        QVERIFY(countBefore >= 2);
         auto* details = root->findChild<QObject*>(QStringLiteral("activeStatusMessagesPopup"));
         QVERIFY(details);
         QVERIFY(QMetaObject::invokeMethod(root, "toggleStatusDetails"));
         QTRY_VERIFY(details->property("opened").toBool());
         QCOMPARE(root->property("statusMessageCount").toInt(), countBefore);
         QVERIFY(compressorViewModel.validation_message().size() > 0);
+        QVERIFY(!gainViewModel.validation_error().isEmpty());
+        QVERIFY(capture_visual_evidence(window,
+            QStringLiteral("active_status_messages_expanded_1184x688.png"),
+            QSize{1184, 688}));
         QVERIFY(QMetaObject::invokeMethod(root, "toggleStatusDetails"));
         QTRY_VERIFY(!details->property("opened").toBool());
         QCOMPARE(root->property("statusMessageCount").toInt(), countBefore);
+        QVERIFY(gainViewModel.setGainDbText(QString::number(gainViewModel.gain_db())));
+        QCoreApplication::processEvents();
+        QVERIFY(gainViewModel.validation_error().isEmpty());
         QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
         QTest::qWait(80);
         QCoreApplication::processEvents();
