@@ -3,6 +3,7 @@
 // M21 owner admission remains compile-checked at the actual app boundary
 // and by its dedicated isolated dual-platform tests.
 #include "internal/l3_m12_product_preview_worker_ticket.hpp"
+#include "internal/l3_manual_match_transfer_project.hpp"
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/error.hpp>
@@ -304,11 +305,8 @@ bool MasteringPreviewController::private_m12_linked_editor_owner_matches(
         candidate.registry_snapshot()==m12ManualRegistryOwner_;
 }
 
-void MasteringPreviewController::set_private_m12_product_preview_ticket(
-    std::shared_ptr<const l3_automatch::m12_frozen::
-        M12ImmutableProductPreviewTicket> ticket)
+void MasteringPreviewController::invalidate_preview_for_ticket_change()
 {
-    if(QThread::currentThread()!=thread())return;
     // A formerly accepted MANUAL-only PCM is not evidence for the
     // newly selected REF_LINKED realization. Fence older queued jobs.
     ++previewGeneration_;
@@ -324,6 +322,17 @@ void MasteringPreviewController::set_private_m12_product_preview_ticket(
         const std::lock_guard<std::mutex> lock(workerMutex_);
         pendingJob_.reset();
     }
+    previewStatus_=QStringLiteral("IDLE");
+    previewError_.clear();
+}
+
+void MasteringPreviewController::set_private_m12_product_preview_ticket(
+    std::shared_ptr<const l3_automatch::m12_frozen::
+        M12ImmutableProductPreviewTicket> ticket)
+{
+    if(QThread::currentThread()!=thread())return;
+    invalidate_preview_for_ticket_change();
+    transferTicket_.reset();
     m12ReplayTicket_=std::move(ticket);
     m12ManualChainOwner_=m12ReplayTicket_?chainState_:nullptr;
     // Capture the actual Product MANUAL registry at the same Qt-owner
@@ -332,9 +341,23 @@ void MasteringPreviewController::set_private_m12_product_preview_ticket(
     m12ManualRegistryOwner_=m12ReplayTicket_&&chainState_
         ?chainState_->registry_snapshot()
         :std::shared_ptr<const dsp::ModuleRegistry>{};
-    previewStatus_=QStringLiteral("IDLE");
-    previewError_.clear();
     emit changed();
+}
+
+bool MasteringPreviewController::set_private_manual_transfer_preview_ticket(
+    std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> ticket)
+{
+    if(QThread::currentThread()!=thread()||!ticket||!chainState_||
+       !snapshotProvider_||!ticket->matches_prepared(snapshotProvider_())||
+       !ticket->matches_manual(chainState_->chain(),chainState_->execution_bindings())||
+       !chainState_->registry_snapshot())return false;
+    invalidate_preview_for_ticket_change();
+    m12ReplayTicket_.reset();
+    transferTicket_=std::move(ticket);
+    m12ManualChainOwner_=chainState_;
+    m12ManualRegistryOwner_=chainState_->registry_snapshot();
+    emit changed();
+    return true;
 }
 
 void MasteringPreviewController::set_research_p2_timing_log_path(QString path)

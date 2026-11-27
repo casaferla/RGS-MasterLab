@@ -21,6 +21,7 @@
 #include <vector>
 
 namespace rgsml::app {
+namespace l3_automatch { class ManualMatchTransferPreviewTicket; }
 namespace l3_automatch::m12_frozen {
 struct M12ImmutableProductPreviewTicket;
 }
@@ -49,6 +50,7 @@ public:
         // A copied immutable ticket cannot be retargeted mid-render.
         std::shared_ptr<const l3_automatch::m12_frozen::
             M12ImmutableProductPreviewTicket> m12ReplayTicket;
+        std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> transferTicket{};
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob& job)>;
@@ -76,6 +78,12 @@ public:
     void set_private_m12_product_preview_ticket(
         std::shared_ptr<const l3_automatch::m12_frozen::
             M12ImmutableProductPreviewTicket> ticket);
+    // Distinct provisional graph; installing it revokes accepted M12 identity.
+    // The owner must already have staged the exact MANUAL after-state.
+    [[nodiscard]] bool set_private_manual_transfer_preview_ticket(
+        std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> ticket);
+    [[nodiscard]] std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket>
+    private_manual_transfer_preview_ticket() const noexcept {return transferTicket_;}
     // Owner-thread inspection only. Source/Reference transitions must
     // revoke a linked realization before an unrelated Project loads.
     [[nodiscard]] bool has_private_m12_product_preview_ticket()
@@ -111,6 +119,7 @@ signals:
     void changed();
 
 private:
+    void invalidate_preview_for_ticket_change();
     void worker_loop();
     void publish_preview_result(
         std::uint64_t generation,
@@ -123,6 +132,7 @@ private:
     PreviewExecutor previewExecutor_;
     std::shared_ptr<const l3_automatch::m12_frozen::
         M12ImmutableProductPreviewTicket> m12ReplayTicket_;
+    std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> transferTicket_;
     // The immutable MANUAL Product registry is not necessarily the
     // extended REF_LINKED execution registry. Fence the former when
     // accepting worker results; execute the full replay with the latter.
