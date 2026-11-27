@@ -333,6 +333,16 @@ explicitUserPresetIsOneAtomicM18GatedDspTransaction() {
                 core::ErrorCode::InvalidState,
                 "TEST_BUSY_EPOCH"});
         });
+    const auto staged=state.value()->prepare_explicit_manual_preset_state(
+        draft.value()->proposed_manual_chain,draft.value()->proposed_bindings);
+    QVERIFY(staged);
+    QCOMPARE(admissionCalls,std::size_t{0});
+    QCOMPARE(staged.value()->gain_parameters(),*changed.value());
+    QCOMPARE(staged.value()->chain().revision(),originalRevision+1U);
+    QVERIFY(*staged.value()->is_bypassed(gain).value());
+    QCOMPARE(state.value()->gain_parameters(),originalGain);
+    QCOMPARE(state.value()->chain().revision(),originalRevision);
+    QVERIFY(!*state.value()->is_bypassed(gain).value());
     QVERIFY(!state.value()->apply_explicit_manual_preset_draft(
         draft.value()->proposed_manual_chain,
         draft.value()->proposed_bindings));
