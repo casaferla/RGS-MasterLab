@@ -108,6 +108,10 @@ Window {
                 Item { Layout.fillWidth: true }
                 Button {
                     objectName: "dynamicEqDynamicsCloseButton"
+                    ToolTip.text: "Close the Dynamic EQ dynamics controls."
+                    ToolTip.visible: dynamicsCloseDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell { id: dynamicsCloseDwell; anchors.fill: parent }
                     text: "×"
                     implicitWidth: 25
                     implicitHeight: 22
