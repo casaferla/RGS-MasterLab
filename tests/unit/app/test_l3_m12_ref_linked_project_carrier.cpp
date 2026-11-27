@@ -942,6 +942,32 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!transfer::render_manual_match_transfer_candidate(
         *draft.value(),*identity.value(),*maxBlock.value(),&cancelledTransfer));
 
+    // The worker entry point must retain the same exact native and
+    // persisted owner. A cancelled or forged capture cannot publish PCM.
+    const transfer::ManualMatchTransferCapture capture{
+        1U,*draft.value(),*projectDraft.value()};
+    const auto capturedAudition=transfer::render_captured_manual_match_transfer(
+        capture,*maxBlock.value());
+    QVERIFY(capturedAudition);
+    QCOMPARE(capturedAudition.value()->view().absolute_range(),
+        audition.value()->view().absolute_range());
+    QCOMPARE(capturedAudition.value()->view().format(),
+        audition.value()->view().format());
+    auto invalidCapture=capture;
+    invalidCapture.product_epoch=0U;
+    QVERIFY(!transfer::render_captured_manual_match_transfer(
+        invalidCapture,*maxBlock.value()));
+    invalidCapture=capture;
+    invalidCapture.project.identity.sha256=std::string(64,'0');
+    QVERIFY(!transfer::render_captured_manual_match_transfer(
+        invalidCapture,*maxBlock.value()));
+    invalidCapture=capture;
+    invalidCapture.project.after=*tamperedSnapshot.value();
+    QVERIFY(!transfer::render_captured_manual_match_transfer(
+        invalidCapture,*maxBlock.value()));
+    QVERIFY(!transfer::render_captured_manual_match_transfer(
+        capture,*maxBlock.value(),&cancelledTransfer));
+
 
     QVERIFY(!transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
         transferBindings,*reg,nodes[2].allocated_instance_id));
