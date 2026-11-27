@@ -743,6 +743,9 @@ void ProjectSessionViewModel::on_source_changed()
         ++m12ProductOwnershipEpoch_;
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
+        manualTransferHistory_.reset();
+        manualTransferHistoryEpoch_=0U;
+        manualTransferHistoryApplied_=false;
         // Persisted REF replay is tied to the exact original owners,
         // not merely to the same displayed Source/Reference names.
         m12ExactReplayReadback_.reset();
@@ -775,6 +778,9 @@ void ProjectSessionViewModel::on_gold_changed()
         ++m12ProductOwnershipEpoch_;
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
+        manualTransferHistory_.reset();
+        manualTransferHistoryEpoch_=0U;
+        manualTransferHistoryApplied_=false;
         // Persisted REF replay is tied to the exact original owners,
         // not merely to the same displayed Source/Reference names.
         m12ExactReplayReadback_.reset();
@@ -1635,6 +1641,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // across a different Project Open, even with identical SOURCE WAV.
     m12UndoHistory_.clear();
     m12RedoHistory_.clear();
+    manualTransferHistory_.reset();
+    manualTransferHistoryEpoch_=0U;
+    manualTransferHistoryApplied_=false;
     m12ExactReplayReadback_.reset();
     m12RetiredReplayIdentity_.reset();
     sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
