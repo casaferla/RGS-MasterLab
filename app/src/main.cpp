@@ -121,7 +121,7 @@ int main(int argc, char* argv[])
     // research-only ZIP carries this explicit opt-in marker BESIDE its EXE,
     // so Windows double-click of bin/RGSMasterLab.exe exposes P2 without
     // asking a nontechnical tester to provide CLI arguments. Ordinary builds
-    // do not install this marker; they retain the four-module chain.
+    // do not install this marker; their ordinary Product chain is separate.
     // The exact contents avoid accidental enablement from a stray filename.
     QFile researchMarker(QCoreApplication::applicationDirPath()
         + QStringLiteral("/P2_I2_RESEARCH_ONLY.enabled"));
@@ -137,12 +137,15 @@ int main(int argc, char* argv[])
         std::fprintf(stderr, "P2_I2_GUI_SMOKE_REQUIRES_OPT_IN\n");
         return EXIT_FAILURE;
     }
-    // Staged manual C01/C00 qualification, never the ordinary startup.
+    // New ordinary Product sessions include the two bypassed manual DSPs.
+    // The historical P2 research bundle keeps its independently qualified
+    // topology; its combined graph is still a separate qualification.
     const bool manualMatchSmoke=application.arguments().contains(
         QStringLiteral("--rgsml-manual-match-dsp-smoke"));
-    const bool manualMatchOptIn=manualMatchSmoke || application.arguments().contains(
+    const bool manualMatchRequested=manualMatchSmoke || application.arguments().contains(
         QStringLiteral("--rgsml-manual-match-dsps"));
-    if(manualMatchOptIn&&p2PreviewOptIn) {
+    const bool manualMatchOptIn=!p2PreviewOptIn;
+    if(manualMatchRequested&&p2PreviewOptIn) {
         std::fprintf(stderr,"MANUAL_MATCH_DSP_RESEARCH_P2_COMBINATION_NOT_QUALIFIED\n");
         return EXIT_FAILURE;
     }
@@ -404,8 +407,8 @@ int main(int argc, char* argv[])
         terminalLimiterUuid).value();
     const auto p2InstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
         p2Uuid).value();
-    // Product startup: four real DSP nodes, milestone order, M15 safely
-    // bypassed. Historic saved three-node projects restore unchanged.
+    // Create the canonical base first, then extend new ordinary sessions.
+    // Historic saved graphs retain their exact persisted order and sound.
     auto masteringChainStateRes = rgsml::app::MasteringChainState::create_product_default(
         *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId,
         compInstanceId, stereoMsInstanceId);
