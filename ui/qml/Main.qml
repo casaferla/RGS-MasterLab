@@ -2180,6 +2180,17 @@ ApplicationWindow {
                             enabled: !!root.appAutoMatchModel && !root.monitorExclusive
                             onTriggered: autoMatchDialog.open()
                         }
+                        StudioMenuItem {
+                            objectName: "menuTransferLinkedDsp"
+                            text: "Transfer linked DSP…"
+                            enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canBeginTransfer
+                                && !!root.statusDspModule && root.statusDspModule.linkedReadOnly
+                                && !root.monitorExclusive
+                            onTriggered: {
+                                autoMatchDialog.open()
+                                root.appAutoMatchModel.beginTransfer(root.statusDspModule.instanceId)
+                            }
+                        }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: root.displayedWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: root.displayedWaveform.canNavigate && !root.displayedWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
