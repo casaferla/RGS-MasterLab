@@ -273,6 +273,142 @@ private:
 
 
 
+// Native MANUAL C00 adapter. Shipping enumeration remains disabled until
+// the C01 editor and REF_LINKED ownership transition are qualified.
+class ManualTransientShaperModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+    Q_PROPERTY(bool manualEditable READ manual_editable NOTIFY changed)
+    Q_PROPERTY(double attackAmountDb READ attack_amount_db NOTIFY changed)
+    Q_PROPERTY(double sustainAmountDb READ sustain_amount_db NOTIFY changed)
+    Q_PROPERTY(QString attackValidationMessage READ attack_validation_message NOTIFY changed)
+    Q_PROPERTY(QString sustainValidationMessage READ sustain_validation_message NOTIFY changed)
+public:
+    ManualTransientShaperModuleAdapter(MasteringChainState* state,
+        MasteringPreviewController* preview, QString context, QObject* parent=nullptr)
+        :DspModuleAdapter(parent),state_(state),preview_(preview),context_(std::move(context)),
+         id_(state?state->transient_shaper_instance_id():std::nullopt),
+         observed_(state?state->transient_shaper_parameters():std::nullopt) {
+        if(preview_)connect(preview_,&MasteringPreviewController::changed,
+            this,&ManualTransientShaperModuleAdapter::refresh);
+    }
+    [[nodiscard]] bool manual_editable() const noexcept {return params()!=nullptr;}
+    [[nodiscard]] double attack_amount_db() const noexcept {return params()?params()->attack_amount_db():0.0;}
+    [[nodiscard]] double sustain_amount_db() const noexcept {return params()?params()->sustain_amount_db():0.0;}
+    [[nodiscard]] QString attack_validation_message() const {return attackError_;}
+    [[nodiscard]] QString sustain_validation_message() const {return sustainError_;}
+    [[nodiscard]] QString instance_id() const override {return id_?QString::fromStdString(id_->to_string()):QString{};}
+    [[nodiscard]] QString type_id() const override {return QStringLiteral("rgsml.dsp.transient-shaper");}
+    [[nodiscard]] QString display_name() const override {return QStringLiteral("Transient Shaper");}
+    [[nodiscard]] QString workspace_context_label() const override {return context_;}
+    [[nodiscard]] QString configuration_state() const override {
+        return params() && params()->neutral()?QStringLiteral("Default"):QStringLiteral("Manual");
+    }
+    [[nodiscard]] bool bypass_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] bool bypass() const noexcept override {
+        if(!params()||!id_)return true;
+        const auto value=state_->is_bypassed(*id_);
+        return !value||*value.value();
+    }
+    [[nodiscard]] bool preview_supported() const noexcept override {return preview_!=nullptr;}
+    [[nodiscard]] QString preview_status() const override {return preview_?preview_->preview_status():QStringLiteral("IDLE");}
+    [[nodiscard]] QString preview_error() const override {
+        return !operationError_.isEmpty()?operationError_:(preview_?preview_->preview_error():QString{});
+    }
+    [[nodiscard]] bool history_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] bool can_undo() const noexcept override {return history_current()&&!undo_.empty();}
+    [[nodiscard]] bool can_redo() const noexcept override {return history_current()&&!redo_.empty();}
+    [[nodiscard]] bool reset_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] QString editor_content_key() const override {return QStringLiteral("TRANSIENT_SHAPER");}
+    [[nodiscard]] QString live_change_policy() const override {return QStringLiteral("MANUAL_COMMIT_REBUILDS_PREVIEW");}
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] QString family_accent() const override {return QStringLiteral("#C4774A");}
+    [[nodiscard]] QString state_text() const override {
+        if(!params())return QStringLiteral("Unavailable");
+        if(has_error())return QStringLiteral("Error");
+        if(bypass())return QStringLiteral("Bypass");
+        return preview_status()==QStringLiteral("RENDERING")?QStringLiteral("Rendering"):QStringLiteral("Manual");
+    }
+    [[nodiscard]] bool has_error() const noexcept override {
+        return !attackError_.isEmpty()||!sustainError_.isEmpty()||!operationError_.isEmpty()
+            ||(preview_&&preview_->preview_status()==QStringLiteral("ERROR"));
+    }
+    Q_INVOKABLE bool setAttackAmountDb(double value) {return edit(value,sustain_amount_db(),true);}
+    Q_INVOKABLE bool setSustainAmountDb(double value) {return edit(attack_amount_db(),value,false);}
+    Q_INVOKABLE void reportNumericValidation(const QString& field,const QString& message) {
+        if(!params())return;
+        QString* target=field==QStringLiteral("Attack")?&attackError_:
+            field==QStringLiteral("Sustain")?&sustainError_:nullptr;
+        if(!target||*target==message)return;
+        *target=message;emit changed();
+    }
+    void setBypass(bool value) override {
+        if(!params()||bypass()==value)return;
+        auto status=state_->set_user_bypass(*id_,value);
+        if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return;}
+        operationError_.clear();publish();
+    }
+    void undo() override {move_history(undo_,redo_);}
+    void redo() override {move_history(redo_,undo_);}
+    void resetToDefault() override {
+        auto p=dsp::TransientShaperParameters::create_default();
+        if(p&&accept(*p.value())){attackError_.clear();sustainError_.clear();emit changed();}
+    }
+private:
+    using Params=dsp::TransientShaperParameters;
+    [[nodiscard]] const Params* params() const noexcept {
+        if(!state_||!id_||state_->transient_shaper_instance_id()!=id_||
+            !state_->transient_shaper_parameters())return nullptr;
+        return &*state_->transient_shaper_parameters();
+    }
+    [[nodiscard]] bool history_current() const noexcept {
+        return params()&&observed_&&*observed_==*params();
+    }
+    void refresh() {
+        if(!history_current()){
+            undo_.clear();redo_.clear();
+            observed_=params()?std::optional<Params>(*params()):std::nullopt;
+        }
+        emit changed();
+    }
+    void publish() {if(preview_)preview_->request_preview();emit changed();}
+    bool write(const Params& p) {
+        auto status=state_->set_transient_shaper_parameters(p);
+        if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return false;}
+        operationError_.clear();observed_=p;return true;
+    }
+    bool accept(const Params& p) {
+        if(!params())return false;
+        if(!history_current())refresh();
+        if(*params()==p){operationError_.clear();emit changed();return true;}
+        const auto previous=*params();
+        if(!write(p))return false;
+        undo_.push_back(previous);redo_.clear();publish();return true;
+    }
+    bool edit(double attack,double sustain,bool attackField) {
+        if(!params())return false;
+        auto p=Params::create(attack,sustain);
+        auto& error=attackField?attackError_:sustainError_;
+        if(!p){error=QString::fromStdString(p.error()->message());emit changed();return false;}
+        if(!accept(*p.value()))return false;
+        error.clear();emit changed();return true;
+    }
+    void move_history(std::vector<Params>& from,std::vector<Params>& to) {
+        if(!history_current()||from.empty())return;
+        const auto previous=*params(),next=from.back();
+        if(!write(next))return;
+        from.pop_back();to.push_back(previous);attackError_.clear();sustainError_.clear();publish();
+    }
+    MasteringChainState* state_{};
+    MasteringPreviewController* preview_{};
+    QString context_;
+    std::optional<dsp::ModuleInstanceId> id_;
+    std::optional<Params> observed_;
+    std::vector<Params> undo_,redo_;
+    QString attackError_,sustainError_,operationError_;
+};
+
 class StreamingTruePeakPreviewModuleAdapter final : public DspModuleAdapter {
     Q_OBJECT
     Q_PROPERTY(double ceilingDbTp READ ceiling_db_tp WRITE setCeilingDbTp NOTIFY changed)
