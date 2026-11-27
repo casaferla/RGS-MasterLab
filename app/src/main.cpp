@@ -1569,6 +1569,60 @@ int main(int argc, char* argv[])
         && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
     }
+    // Exercise real native adapters and the two actual QML editor trees
+    // before admitting the normal Product topology. No physical device or
+    // Source PCM is needed for this initial bootstrap/interaction check.
+    if(manualMatchSmoke) {
+        if(engine.rootObjects().isEmpty()||masteringChainState.module_count()!=6U)
+            return EXIT_FAILURE;
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if(!window)return EXIT_FAILURE;
+        window->setWidth(1184);
+        window->setHeight(688);
+        window->show();
+        dspChainAdapterModel.setSelectedIndex(2);
+        QTimer::singleShot(400,&application,[window,&application,&dspChainAdapterModel,&masteringChainState] {
+            auto* dynamic=qobject_cast<rgsml::app::ManualDynamicEqModuleAdapter*>(
+                dspChainAdapterModel.selected_module());
+            auto* editor=window->findChild<QQuickItem*>(QStringLiteral("dynamicEqEditor"));
+            bool ok=dynamic&&editor&&editor->isVisible()&&editor->property("manualEditable").toBool()
+                &&dynamic->bypass()&&window->width()==1184&&window->height()==688;
+            if(ok) {
+                const auto id=QString::fromStdString(
+                    masteringChainState.dynamic_eq_parameters()->bands().front().spec().band_id.to_string());
+                ok=dynamic->editBandText(id,QStringLiteral("threshold"),QStringLiteral("-47,5"))
+                    &&masteringChainState.dynamic_eq_parameters()->bands().front().spec().control.threshold_dbfs==-47.5;
+                dynamic->undo();
+            }
+            const auto output=qEnvironmentVariable("RGSML_MANUAL_MATCH_SCREENSHOT_DIR");
+            if(ok&&!output.isEmpty()) {
+                const auto image=window->grabWindow();
+                ok=!image.isNull()&&image.save(output+QStringLiteral("/manual-dynamic-eq.png"),"PNG");
+            }
+            std::fprintf(stdout,"MANUAL_DYNAMIC_EQ_NATIVE_GUI=%s\n",ok?"PASS":"FAIL");
+            if(!ok){application.exit(EXIT_FAILURE);return;}
+            dspChainAdapterModel.setSelectedIndex(3);
+            QTimer::singleShot(400,&application,[window,&application,&dspChainAdapterModel,&masteringChainState,output] {
+                auto* transient=qobject_cast<rgsml::app::ManualTransientShaperModuleAdapter*>(
+                    dspChainAdapterModel.selected_module());
+                auto* panel=window->findChild<QQuickItem*>(QStringLiteral("transientShaperEditor"));
+                bool valid=transient&&panel&&panel->isVisible()&&panel->property("editorEnabled").toBool()
+                    &&transient->bypass();
+                if(valid) {
+                    valid=transient->setAttackAmountDb(3.0)
+                        &&masteringChainState.transient_shaper_parameters()->attack_amount_db()==3.0;
+                    transient->undo();
+                }
+                if(valid&&!output.isEmpty()) {
+                    const auto image=window->grabWindow();
+                    valid=!image.isNull()&&image.save(output+QStringLiteral("/manual-transient-shaper.png"),"PNG");
+                }
+                std::fprintf(stdout,"MANUAL_TRANSIENT_SHAPER_NATIVE_GUI=%s\n",valid?"PASS":"FAIL");
+                std::fflush(stdout);
+                application.exit(valid?EXIT_SUCCESS:EXIT_FAILURE);
+            });
+        });
+    }
     // Product Qt smoke of the actual research-only fifth DSP and its QML
     // editor at 1184x688. This is NOT a physical Windows playback test.
     if (p2GuiSmoke) {
