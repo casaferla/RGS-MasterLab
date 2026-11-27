@@ -8891,6 +8891,10 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QCOMPARE(remaining->size(),std::size_t{1});
     QVERIFY(remaining->front().instance.instance_id()==linkedDynamic);
     QVERIFY(remaining->front().instance.active());
+    QVERIFY(app::DspModuleAdapter::linked_match_type_active(
+        author.previewController.get(),"rgsml.dsp.dynamic-eq"));
+    QVERIFY(!app::DspModuleAdapter::linked_match_type_active(
+        author.previewController.get(),"rgsml.dsp.transient-shaper"));
     QVERIFY(remaining->front().provisional_owner==transferred);
     QVERIFY(!remaining->front().exact_owner);
     QVERIFY(!remaining->front().activity_authorized());

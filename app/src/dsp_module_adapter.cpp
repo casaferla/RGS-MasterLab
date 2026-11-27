@@ -15,6 +15,12 @@ bool DspModuleAdapter::linked_match_type_active(
     const MasteringPreviewController* preview,std::string_view type)
 {
     if(!preview)return false;
+    if(const auto transfer=preview->private_manual_transfer_preview_ticket()) {
+        const auto nodes=transfer->capture().native.linked_after.instances();
+        return std::any_of(nodes.begin(),nodes.end(),[&](const auto& node){
+            return node.active()&&node.module_type_id()==type;
+        });
+    }
     const auto ticket=preview->private_m12_product_preview_ticket();
     if(!ticket||!ticket->replay)return false;
     const auto nodes=ticket->replay->reference_linked.instances();
