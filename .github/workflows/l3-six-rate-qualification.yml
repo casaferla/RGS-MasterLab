@@ -70,6 +70,11 @@ jobs:
           if ($activityExit -ne 0) { throw 'L3_RATE_ACTIVITY_FAILURE' }
           $activityPattern='PASS\s+:.*::m12RealProductAtomicMaterializationUndoRedoAndSaveAs\(' + [regex]::Escape($tag) + '\)'
           if (!(Select-String -Path $activityReport -Pattern $activityPattern -Quiet)) { throw 'L3_RATE_ACTIVITY_ROW_NOT_PASSED' }
+          $transferReport=Join-Path $env:RUNNER_TEMP "l3-rate-$env:RGSML_L3_E2E_RATE-transfer.txt"
+          & $exe.FullName "product_manual_match_transfer_transaction:$tag" -o -,txt -o "$transferReport,txt"
+          if ($LASTEXITCODE -ne 0) { throw 'L3_RATE_TRANSFER_FAILURE' }
+          $transferPattern='PASS\s+:.*::product_manual_match_transfer_transaction\(' + [regex]::Escape($tag) + '\)'
+          if (!(Select-String -Path $transferReport -Pattern $transferPattern -Quiet)) { throw 'L3_RATE_TRANSFER_ROW_NOT_PASSED' }
       - name: Retain native qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,6 +83,7 @@ jobs:
           path: |
             ${{ runner.temp }}/l3-rate-${{ matrix.rate }}.txt
             ${{ runner.temp }}/l3-rate-${{ matrix.rate }}-activity.txt
+            ${{ runner.temp }}/l3-rate-${{ matrix.rate }}-transfer.txt
             ${{ runner.temp }}/l3-rate-${{ matrix.rate }}-provenance.txt
             ${{ runner.temp }}/l3-six-rate-build.log
           if-no-files-found: warn

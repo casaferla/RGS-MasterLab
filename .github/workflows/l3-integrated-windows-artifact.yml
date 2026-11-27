@@ -135,6 +135,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Get-Content $report -Tail 80; throw 'L3_BENCH_BUNDLE_SMOKE_FAILED' }
           if (!(Select-String -Path $report -Pattern 'PASS\s+:.*::nativeMeasuredWinnerUsesRealQtM12AndM13\(48k\)' -Quiet)) { throw 'L3_BENCH_BUNDLE_ROW_MISSING' }
           Copy-Item -LiteralPath $report -Destination $bench.FullName
+          $transferReport=Join-Path $env:RUNNER_TEMP 'l3-transfer-six-rates.txt'
+          & (Join-Path $bench.FullName 'rgsml_project_session_tests.exe') product_manual_match_transfer_transaction -o "$transferReport,txt"
+          if ($LASTEXITCODE -ne 0) { Get-Content $transferReport -Tail 100; throw 'L3_TRANSFER_PRODUCT_FAILURE' }
+          foreach ($tag in @('44k1','48k','88k2','96k','176k4','192k')) {
+            $pattern='PASS\s+:.*::product_manual_match_transfer_transaction\(' + [regex]::Escape($tag) + '\)'
+            if (!(Select-String -Path $transferReport -Pattern $pattern -Quiet)) { throw "L3_TRANSFER_RATE_MISSING=$tag" }
+          }
+          Copy-Item -LiteralPath $transferReport -Destination $bench.FullName
       - name: Publish exact standalone artifact
         uses: actions/upload-artifact@v4
         with:
@@ -151,5 +159,6 @@ jobs:
             ${{ runner.temp }}/l3-artifact-build.log
             ${{ runner.temp }}/l3-artifact-cold-out.log
             ${{ runner.temp }}/l3-artifact-cold-err.log
+            ${{ runner.temp }}/l3-transfer-six-rates.txt
           if-no-files-found: warn
           retention-days: 14
