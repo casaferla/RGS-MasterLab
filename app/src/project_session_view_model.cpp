@@ -2482,6 +2482,128 @@ core::Status ProjectSessionViewModel::apply_private_manual_match_transfer(
     return core::Status::success();
 }
 
+bool ProjectSessionViewModel::private_manual_match_transfer_history_current(bool applied) const
+{
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||!opened_||!sessionChainMaterialized_||
+       !m18ProjectSaveBatchBegin_||!m18ProjectOpenBatchBegin_||
+       !previewController_||!masteringChainState_||!manualTransferHistory_||
+       manualTransferHistoryEpoch_!=m12ProductOwnershipEpoch_||
+       manualTransferHistoryApplied_!=applied)return false;
+    const auto& history=*manualTransferHistory_;
+    const auto& after=history.after_ticket;
+    if(!after)return false;
+    const auto& capture=after->capture();
+    if(applied)
+        return previewController_->private_manual_transfer_preview_ticket()==after&&
+            previewController_->private_manual_transfer_owner_matches(*masteringChainState_)&&
+            after->matches_project(*opened_);
+    const auto prior=capture.native.exact_prior_owner;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto nodes=masteringChainState_->instances();
+    return prior&&provider&&provider()==prior->exact_prepared_owner&&
+        previewController_->private_m12_product_preview_ticket()==prior&&
+        previewController_->private_m12_linked_editor_owner_matches(*masteringChainState_)&&
+        capture.project.matches_before(*opened_)&&
+        masteringChainState_->chain().revision()==prior->exact_manual_chain_revision&&
+        std::equal(nodes.begin(),nodes.end(),prior->exact_manual_nodes.begin(),prior->exact_manual_nodes.end())&&
+        masteringChainState_->execution_bindings()==prior->exact_manual_bindings;
+}
+
+bool ProjectSessionViewModel::can_undo_private_manual_match_transfer() const
+{return private_manual_match_transfer_history_current(true);}
+
+bool ProjectSessionViewModel::can_redo_private_manual_match_transfer() const
+{return private_manual_match_transfer_history_current(false);}
+
+core::Status ProjectSessionViewModel::undo_private_manual_match_transfer()
+{return change_private_manual_match_transfer_history(false);}
+
+core::Status ProjectSessionViewModel::redo_private_manual_match_transfer()
+{return change_private_manual_match_transfer_history(true);}
+
+core::Status ProjectSessionViewModel::change_private_manual_match_transfer_history(bool apply)
+{
+    namespace a=l3_automatch;
+    namespace m=a::m12_frozen;
+    const auto fail=[](const char* why){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    if(!private_manual_match_transfer_history_current(!apply))
+        return fail("MANUAL_MATCH_HISTORY_NOT_CURRENT");
+    const auto history=manualTransferHistory_;
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("MANUAL_MATCH_HISTORY_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto after=history->after_ticket;
+    const auto& capture=after->capture();
+    const auto prior=capture.native.exact_prior_owner;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto& beforeSnapshot=apply?capture.project.before:capture.project.after;
+    const auto& afterSnapshot=apply?capture.project.after:capture.project.before;
+    const auto& beforeState=apply?history->before_manual:history->after_manual;
+    const auto& afterState=apply?history->after_manual:history->before_manual;
+    const auto matchesState=[&](const MasteringChainState& expected){
+        const auto actual=masteringChainState_->instances();
+        const auto nodes=expected.instances();
+        return masteringChainState_->registry_snapshot()==expected.registry_snapshot()&&
+            masteringChainState_->chain_id()==expected.chain_id()&&
+            masteringChainState_->chain().revision()==expected.chain().revision()&&
+            std::equal(actual.begin(),actual.end(),nodes.begin(),nodes.end())&&
+            masteringChainState_->execution_bindings()==expected.execution_bindings();
+    };
+    const auto ownerMatches=[&](bool transferred){
+        return prior&&provider&&provider()==prior->exact_prepared_owner&&
+            (transferred
+                ?previewController_->private_manual_transfer_preview_ticket()==after&&
+                 previewController_->private_manual_transfer_owner_matches(*masteringChainState_)
+                :previewController_->private_m12_product_preview_ticket()==prior&&
+                 previewController_->private_m12_linked_editor_owner_matches(*masteringChainState_));
+    };
+    const auto stem=QString::fromStdString(beforeSnapshot.document().displayName);
+    auto live=current_snapshot(stem);
+    if(!live||!opened_||!m::m12_exact_project_snapshot_equal(*live.value(),beforeSnapshot)||
+       !m::m12_exact_project_snapshot_equal(*opened_,beforeSnapshot)||
+       !ownerMatches(!apply)||!matchesState(beforeState)||
+       manualTransferHistory_!=history||manualTransferHistoryEpoch_!=m12ProductOwnershipEpoch_)
+        return fail("MANUAL_MATCH_HISTORY_OWNER_STALE");
+    auto rollbackManual=beforeState;
+    auto nextManual=afterState;
+    auto rollbackProject=beforeSnapshot;
+    auto nextProject=afterSnapshot;
+    masteringChainState_->adopt_chain_after_authorized_project_open(std::move(nextManual));
+    opened_.emplace(std::move(nextProject));
+    const auto install=[&](bool transferred){
+        if(transferred)return previewController_->set_private_manual_transfer_preview_ticket(after);
+        previewController_->set_private_m12_product_preview_ticket(prior);
+        return previewController_->private_m12_product_preview_ticket()==prior;
+    };
+    const bool installed=install(apply);
+    auto readback=current_snapshot(stem);
+    if(!installed||!readback||!m::m12_exact_project_snapshot_equal(*readback.value(),afterSnapshot)||
+       !ownerMatches(apply)||!matchesState(afterState)) {
+        masteringChainState_->adopt_chain_after_authorized_project_open(std::move(rollbackManual));
+        opened_.emplace(std::move(rollbackProject));
+        static_cast<void>(install(!apply));
+        previewController_->request_preview();
+        return fail("MANUAL_MATCH_HISTORY_READBACK_ROLLED_BACK");
+    }
+    ++m12ProductOwnershipEpoch_;
+    manualTransferHistoryEpoch_=m12ProductOwnershipEpoch_;
+    manualTransferHistoryApplied_=apply;
+    if(adapterModel_)adapterModel_->refreshFromAuthority();
+    else {
+        if(gainViewModel_)gainViewModel_->refreshFromAuthority();
+        if(eqViewModel_)eqViewModel_->refreshFromAuthority();
+    }
+    previewController_->request_preview();
+    statusText_=apply?QStringLiteral("MANUAL TRANSFER / NOT_VERIFIED"):
+        QStringLiteral("MATERIALIZED / NOT_VERIFIED");
+    clear_error();
+    return core::Status::success();
+}
+
 ProjectSessionViewModel::M12CurrentMatchState ProjectSessionViewModel::private_m12_match_state() const
 {
     namespace m=l3_automatch::m12_frozen;

@@ -231,6 +231,10 @@ public:
     [[nodiscard]] core::Status apply_private_manual_match_transfer(
         std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
         const l3_automatch::ManualMatchTransferConfirmation& confirmation);
+    [[nodiscard]] bool can_undo_private_manual_match_transfer() const;
+    [[nodiscard]] bool can_redo_private_manual_match_transfer() const;
+    [[nodiscard]] core::Status undo_private_manual_match_transfer();
+    [[nodiscard]] core::Status redo_private_manual_match_transfer();
     // Non-mutating eligibility; actual operations recheck under M18.
     enum class M12CurrentMatchState {none,active,suspended,stale};
     [[nodiscard]] M12CurrentMatchState private_m12_match_state() const;
@@ -333,6 +337,8 @@ private:
     // revision or a DSP parameter counter. Invalidates M13 worker
     // results across Undo/Redo and identical-source Project reopen.
     std::uint64_t m12ProductOwnershipEpoch_{1U};
+    [[nodiscard]] bool private_manual_match_transfer_history_current(bool applied) const;
+    [[nodiscard]] core::Status change_private_manual_match_transfer_history(bool apply);
     std::shared_ptr<const l3_automatch::ManualMatchTransferHistory> manualTransferHistory_;
     std::uint64_t manualTransferHistoryEpoch_{};
     bool manualTransferHistoryApplied_{false};
