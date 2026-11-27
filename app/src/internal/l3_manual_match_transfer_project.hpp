@@ -129,4 +129,25 @@ prepare_manual_match_transfer_project(const project::ProjectSnapshot& before,
         return fail("MANUAL_MATCH_PROJECT_READBACK_CONTENT_MISMATCH");
     return core::Status::success();
 }
+// This immutable capture is issued by the Qt Project owner under its
+// physical mutation lease. The worker owns PCM and value snapshots only;
+// it cannot write the Product or manufacture an acceptance receipt.
+struct ManualMatchTransferCapture final {
+    std::uint64_t product_epoch{};
+    ManualMatchTransferDraft native;
+    ManualMatchTransferProjectDraft project;
+};
+[[nodiscard]] inline core::Result<render::RenderResult>
+render_captured_manual_match_transfer(const ManualMatchTransferCapture& capture,
+    core::FrameCount maxBlock,const std::atomic<bool>* cancellation=nullptr)
+{
+    if(!capture.product_epoch)
+        return core::Result<render::RenderResult>::failure(core::Error{
+            core::ErrorCode::InvalidState,"MANUAL_MATCH_TRANSFER_CAPTURE_NO_EPOCH"});
+    const auto checked=validate_manual_match_transfer_project_readback(
+        capture.project.after,capture.project,capture.native);
+    if(!checked)return core::Result<render::RenderResult>::failure(*checked.error());
+    return render_manual_match_transfer_candidate(capture.native,
+        capture.project.identity,maxBlock,cancellation);
+}
 } // namespace rgsml::app::l3_automatch
