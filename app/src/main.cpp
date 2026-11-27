@@ -1257,8 +1257,10 @@ int main(int argc, char* argv[])
             m21AnalysisCoordinator.tick();
         });
     m21AnalysisPollTimer.start();
-    // PO: the three analysis panels precede Master Audition in the VISUAL
-    // selector; real numeric publication still requires Phase-6 Product gates.
+    // Master listening is a service behind M17 and Main transport, not a
+    // separate Product selector row. Keep native monitor ownership intact.
+    dspChainAdapterModel.setLegacyMonitorRowVisible(false);
+    // Real numeric publication still requires Phase-6 Product gates.
     dspChainAdapterModel.bindAnalysisStatusViewModel(
         &m21ProductStatusViewModel);
     dspChainAdapterModel.bindLinkedEditorPreviewController(&previewController);
