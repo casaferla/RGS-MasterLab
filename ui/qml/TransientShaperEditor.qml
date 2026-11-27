@@ -152,6 +152,14 @@ Item {
                                 id: attackEntry
                                 enabled: root.editorEnabled
                                 objectName: "transientShaperAttackNumericInput"
+                                ToolTip.text: "Set the attack amount in dB. Enter or click away to apply; Esc to cancel."
+                                ToolTip.visible: transientShaperAttackNumericInputDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: transientShaperAttackNumericInputDwell
+                                    anchors.fill: parent
+                                    interacting: parent.activeFocus
+                                }
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
@@ -301,6 +309,14 @@ Item {
                                 id: sustainEntry
                                 enabled: root.editorEnabled
                                 objectName: "transientShaperSustainNumericInput"
+                                ToolTip.text: "Set the sustain amount in dB. Enter or click away to apply; Esc to cancel."
+                                ToolTip.visible: transientShaperSustainNumericInputDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: transientShaperSustainNumericInputDwell
+                                    anchors.fill: parent
+                                    interacting: parent.activeFocus
+                                }
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
