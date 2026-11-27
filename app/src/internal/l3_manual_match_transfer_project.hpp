@@ -307,6 +307,93 @@ private:
         :capture_(std::move(capture)) {}
     std::shared_ptr<const ManualMatchTransferCapture> capture_;
 };
+// Project Open must check the original accepted graph and the complete
+// forward delta BEFORE replacing the current Source or any live DSP.
+// The preflight has no PREPARED PCM and can never be played or installed.
+struct ManualMatchTransferReopenPreflight final {
+    ManualMatchTransferDraft graph;
+    ManualMatchTransferProjectDraft project;
+};
+[[nodiscard]] inline core::Result<ManualMatchTransferReopenPreflight>
+prepare_manual_match_transfer_reopen(
+    const project::ProjectSnapshot& persisted,
+    const MasteringChainState& before,
+    const MasteringChainState& after)
+{
+    using R=core::Result<ManualMatchTransferReopenPreflight>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    auto recovered=recover_manual_match_transfer_before(persisted);
+    if(!recovered)return R::failure(*recovered.error());
+    const auto& doc=recovered.value()->document();
+    auto prior=m12_frozen::prepare_m12_product_reopen_preflight(doc,before,true);
+    if(!prior)return R::failure(*prior.error());
+    const auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(
+        persisted.document().referenceMatch.canonical_utf8())).object();
+    const auto instance=core::Uuid::parse(metadata.value(QStringLiteral("manualTransferCandidate"))
+        .toObject().value(QStringLiteral("content")).toObject()
+        .value(QStringLiteral("linkedInstance")).toString().toStdString());
+    if(!instance)return R::failure(*instance.error());
+    const auto id=dsp::ModuleInstanceId::from_uuid(*instance.value());
+    if(!id)return R::failure(*id.error());
+    const auto registry=before.registry_snapshot();
+    const auto bindings=before.execution_bindings();
+    const auto nodes=before.instances();
+    if(!registry)return fail("MANUAL_MATCH_REOPEN_NO_MANUAL_REGISTRY");
+    const auto graphOnly=std::make_shared<const m12_frozen::M12ImmutableProductPreviewTicket>(
+        m12_frozen::M12ImmutableProductPreviewTicket{prior.value()->replay,{},
+            before.chain().revision(),{nodes.begin(),nodes.end()},bindings});
+    auto native=prepare_manual_match_transfer_graph(graphOnly,before.chain(),bindings,*registry,*id.value());
+    if(!native)return R::failure(*native.error());
+    auto checked=validate_recovered_manual_match_transfer(persisted,*native.value());
+    if(!checked)return R::failure(*checked.error());
+    const auto& expected=native.value()->manual_after;
+    const auto actual=after.instances();
+    const auto proposed=expected.proposed_manual_chain.instances();
+    if(before.chain_id()!=after.chain_id()||
+       after.chain().context()!=expected.proposed_manual_chain.context()||
+       after.chain().revision()!=expected.proposed_manual_chain.revision()||
+       !std::equal(actual.begin(),actual.end(),proposed.begin(),proposed.end())||
+       after.execution_bindings()!=expected.proposed_bindings)
+        return fail("MANUAL_MATCH_REOPEN_AFTER_MANUAL_MISMATCH");
+    return R::success(ManualMatchTransferReopenPreflight{
+        std::move(*native.value()),std::move(*checked.value())});
+}
+// After successful Source handoff bind the actual newly published
+// PREPARED owner. Repeat the full project proof before issuing a ticket.
+[[nodiscard]] inline core::Result<ManualMatchTransferPreviewTicket>
+bind_manual_match_transfer_reopen(
+    const ManualMatchTransferReopenPreflight& preflight,
+    std::shared_ptr<const render::RenderResult> prepared,
+    std::uint64_t epoch)
+{
+    using R=core::Result<ManualMatchTransferPreviewTicket>;
+    const auto old=preflight.graph.exact_prior_owner;
+    if(!old||!old->replay||!old->replay->registry_owner||!prepared||!epoch)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "MANUAL_MATCH_REOPEN_NO_PREPARED_OWNER"});
+    auto manual=dsp::ProcessingChain::restore(*old->replay->registry_owner,
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL},
+        old->exact_manual_chain_revision,old->exact_manual_nodes);
+    if(!manual)return R::failure(*manual.error());
+    auto bound=m12_frozen::prepare_m12_immutable_product_preview_ticket(
+        old->replay,std::move(prepared),*manual.value(),old->exact_manual_bindings);
+    if(!bound)return R::failure(*bound.error());
+    auto native=prepare_manual_match_transfer(
+        std::make_shared<const m12_frozen::M12ImmutableProductPreviewTicket>(std::move(*bound.value())),
+        *manual.value(),old->exact_manual_bindings,*old->replay->registry_owner,preflight.graph.linked_instance);
+    if(!native)return R::failure(*native.error());
+    auto project=validate_recovered_manual_match_transfer(preflight.project.after,*native.value());
+    if(!project)return R::failure(*project.error());
+    if(!project.value()->matches_before(preflight.project.before)||
+       project.value()->identity.sha256!=preflight.project.identity.sha256||
+       project.value()->identity.canonical_content!=preflight.project.identity.canonical_content)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,
+            "MANUAL_MATCH_REOPEN_PREFLIGHT_CHANGED"});
+    return ManualMatchTransferPreviewTicket::create(
+        std::make_shared<const ManualMatchTransferCapture>(ManualMatchTransferCapture{
+            epoch,std::move(*native.value()),std::move(*project.value())}));
+}
 // Worker completion binds PCM to the exact immutable capture that
 // produced it. A caller cannot construct this envelope from unrelated
 // PCM. The GUI still has to revalidate the Product owner and request
