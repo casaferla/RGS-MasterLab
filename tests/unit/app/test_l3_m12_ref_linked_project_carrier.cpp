@@ -1011,6 +1011,21 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         audition.value()->view().absolute_range());
     QVERIFY(!workerAudition.value()->is_verified());
     QVERIFY(!workerAudition.value()->authorizes_project_commit());
+    const transfer::ManualMatchTransferConfirmation confirmation{
+        capture.product_epoch,capture.project.identity.sha256};
+    QVERIFY(transfer::manual_match_transfer_confirmation_matches(
+        *workerAudition.value(),confirmation));
+    auto expiredConfirmation=confirmation;
+    ++expiredConfirmation.product_epoch;
+    QVERIFY(!transfer::manual_match_transfer_confirmation_matches(
+        *workerAudition.value(),expiredConfirmation));
+    auto differentConfirmation=confirmation;
+    differentConfirmation.identity_sha256=otherIdentity.value()->sha256;
+    QVERIFY(!transfer::manual_match_transfer_confirmation_matches(
+        *workerAudition.value(),differentConfirmation));
+    QVERIFY(!transfer::manual_match_transfer_confirmation_matches(
+        *workerAudition.value(),{}));
+
     QVERIFY(!transfer::ManualMatchTransferAudition::create({},*maxBlock.value()));
     QVERIFY(!transfer::ManualMatchTransferAudition::create(
         immutableCapture,*maxBlock.value(),&cancelledTransfer));
