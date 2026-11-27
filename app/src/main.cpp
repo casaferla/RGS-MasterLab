@@ -762,7 +762,15 @@ int main(int argc, char* argv[])
                     rgsml::core::ErrorCode::InvalidState,
                     "OFFLINE_MASTER_REQUIRES_CURRENT_MANUAL_CHAIN_REVISION"});
             return auditionSelector.authorize_offline_processed_for_final_master();
+        },
+        [&auditionSelector,&previewController,&masteringChainState] {
+            const auto processed=auditionSelector.processed_realization_snapshot();
+            return processed && previewController.preview_status()==QStringLiteral("READY")
+                && processed->chain_revision()==masteringChainState.chain().revision();
         });
+    QObject::connect(&previewController,&rgsml::app::MasteringPreviewController::changed,
+        &terminalMonitorViewModel,
+        &rgsml::app::TerminalMonitorViewModel::refresh_install_availability);
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
     // A PRIVATE read-only GR presenter. It observes actual Windows-worker
