@@ -95,4 +95,38 @@ prepare_manual_match_transfer_project(const project::ProjectSnapshot& before,
     return R::success(ManualMatchTransferProjectDraft{
         before,std::move(*after.value()),std::move(*identity.value())});
 }
+// Read back the persisted candidate against its exact immutable draft.
+// The candidate checksum covers BOTH ordered graphs. The old accepted
+// materialization is archival provenance, not a new receipt.
+[[nodiscard]] inline core::Status validate_manual_match_transfer_project_readback(
+    const project::ProjectSnapshot& readback,
+    const ManualMatchTransferProjectDraft& expected,
+    const ManualMatchTransferDraft& native)
+{
+    const auto fail=[](const char* why){
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    // Independently reconstruct from the original owner. Neither an
+    // edited after-snapshot nor an altered expected identity is trusted.
+    auto reconstructed=prepare_manual_match_transfer_project(expected.before,native);
+    if(!reconstructed)return core::Status::failure(*reconstructed.error());
+    if(reconstructed.value()->identity.sha256!=expected.identity.sha256||
+       reconstructed.value()->identity.canonical_content!=expected.identity.canonical_content||
+       !reconstructed.value()->matches_after(expected.after)||
+       !reconstructed.value()->matches_after(readback))
+        return fail("MANUAL_MATCH_PROJECT_READBACK_MISMATCH");
+    const auto metadata=QJsonDocument::fromJson(
+        QByteArray::fromStdString(readback.document().referenceMatch.canonical_utf8()));
+    if(!metadata.isObject()||metadata.object().contains(QStringLiteral("materialization")))
+        return fail("MANUAL_MATCH_PROJECT_READBACK_ACCEPTED_RECEIPT_CONTAMINATION");
+    const auto candidate=metadata.object().value(QStringLiteral("manualTransferCandidate")).toObject();
+    if(candidate.value(QStringLiteral("identitySha256")).toString().toStdString()!=expected.identity.sha256||
+       candidate.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED"))
+        return fail("MANUAL_MATCH_PROJECT_READBACK_IDENTITY_MISMATCH");
+    const auto content=project::OpaqueJsonValue::parse(
+        QJsonDocument(candidate.value(QStringLiteral("content")).toObject()).toJson(QJsonDocument::Compact).toStdString());
+    if(!content||*content.value()!=expected.identity.canonical_content)
+        return fail("MANUAL_MATCH_PROJECT_READBACK_CONTENT_MISMATCH");
+    return core::Status::success();
+}
 } // namespace rgsml::app::l3_automatch
