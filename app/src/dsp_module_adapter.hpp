@@ -295,7 +295,9 @@ public:
         if(preview_)connect(preview_,&MasteringPreviewController::changed,
             this,&ManualTransientShaperModuleAdapter::refresh);
     }
-    [[nodiscard]] bool manual_editable() const noexcept {return params()!=nullptr;}
+    [[nodiscard]] bool manual_editable() const noexcept {
+        return params()!=nullptr&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
+    }
     [[nodiscard]] double attack_amount_db() const noexcept {return params()?params()->attack_amount_db():0.0;}
     [[nodiscard]] double sustain_amount_db() const noexcept {return params()?params()->sustain_amount_db():0.0;}
     [[nodiscard]] QString attack_validation_message() const {return attackError_;}
@@ -319,8 +321,8 @@ public:
         return !operationError_.isEmpty()?operationError_:(preview_?preview_->preview_error():QString{});
     }
     [[nodiscard]] bool history_supported() const noexcept override {return manual_editable();}
-    [[nodiscard]] bool can_undo() const noexcept override {return history_current()&&!undo_.empty();}
-    [[nodiscard]] bool can_redo() const noexcept override {return history_current()&&!redo_.empty();}
+    [[nodiscard]] bool can_undo() const noexcept override {return manual_editable()&&history_current()&&!undo_.empty();}
+    [[nodiscard]] bool can_redo() const noexcept override {return manual_editable()&&history_current()&&!redo_.empty();}
     [[nodiscard]] bool reset_supported() const noexcept override {return manual_editable();}
     [[nodiscard]] QString editor_content_key() const override {return QStringLiteral("TRANSIENT_SHAPER");}
     [[nodiscard]] QString live_change_policy() const override {return QStringLiteral("MANUAL_COMMIT_REBUILDS_PREVIEW");}
@@ -428,7 +430,9 @@ class ManualDynamicEqModuleAdapter final : public DspModuleAdapter {
 public:
     ManualDynamicEqModuleAdapter(MasteringChainState* state,
         MasteringPreviewController* preview,QString context,QObject* parent=nullptr);
-    [[nodiscard]] bool manual_editable() const noexcept {return params()!=nullptr;}
+    [[nodiscard]] bool manual_editable() const noexcept {
+        return params()!=nullptr&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
+    }
     [[nodiscard]] QString validation_field() const {return validationField_;}
     [[nodiscard]] QString validation_message() const {return validationMessage_;}
     [[nodiscard]] bool route_available() const;
@@ -443,8 +447,8 @@ public:
     [[nodiscard]] QString preview_status() const override {return preview_?preview_->preview_status():QStringLiteral("IDLE");}
     [[nodiscard]] QString preview_error() const override {return !operationError_.isEmpty()?operationError_:(preview_?preview_->preview_error():QString{});}
     [[nodiscard]] bool history_supported() const noexcept override {return manual_editable();}
-    [[nodiscard]] bool can_undo() const noexcept override {return history_current()&&!undo_.empty();}
-    [[nodiscard]] bool can_redo() const noexcept override {return history_current()&&!redo_.empty();}
+    [[nodiscard]] bool can_undo() const noexcept override {return manual_editable()&&history_current()&&!undo_.empty();}
+    [[nodiscard]] bool can_redo() const noexcept override {return manual_editable()&&history_current()&&!redo_.empty();}
     [[nodiscard]] bool reset_supported() const noexcept override {return manual_editable();}
     [[nodiscard]] QString editor_content_key() const override {return QStringLiteral("DYNAMIC_EQ");}
     [[nodiscard]] QString live_change_policy() const override {return QStringLiteral("MANUAL_COMMIT_REBUILDS_PREVIEW");}
