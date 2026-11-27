@@ -647,24 +647,49 @@ ApplicationWindow {
         id: autoMatchDialog
         objectName: "autoMatchDialog"
         title: "AutoMatch"
-        function amountText(index) {
-            let item = autoMatchInputs.itemAt(index)
-            return item && item.numericField.acceptableInput
-                ? item.numericField.text + "%" : "—"
+        // Persistent session-local search settings, independent of Popup delegates.
+        // Drafts and committed amounts are shared by the panel and the dialog.
+        property var amountValues: [100, 100, 100, 100, 100]
+        property var amountDrafts: ["100", "100", "100", "100", "100"]
+        readonly property bool amountsEditable: !!root.appAutoMatchModel
+            && !root.appAutoMatchModel.busy && !root.appAutoMatchModel.canAdopt
+            && !root.monitorExclusive
+
+        function amountValue(index) { return amountValues[index] }
+        function amountText(index) { return String(amountValues[index]) + "%" }
+        function amountError(index) {
+            const raw = String(amountDrafts[index]).trim()
+            if (!/^[+-]?(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)$/.test(raw))
+                return "Enter a numeric match amount."
+            const n = Number(raw.replace(",", "."))
+            if (!Number.isFinite(n) || n < 0 || n > 100)
+                return "Match amount must be between 0 and 100%."
+            return ""
         }
-        function amountValue(index) {
-            const item = autoMatchInputs.itemAt(index)
-            return item && item.numericField.acceptableInput
-                ? Number(item.numericField.text) : 0
+        function setAmountDraft(index, raw) {
+            if (!amountsEditable || index < 0 || index > 4) return
+            const next = amountDrafts.slice()
+            next[index] = String(raw)
+            amountDrafts = next
+        }
+        function cancelAmountDraft(index) {
+            if (!amountsEditable) return
+            setAmountDraft(index, String(amountValue(index)))
+        }
+        function commitAmount(index) {
+            if (!amountsEditable || amountError(index).length > 0) return false
+            const n = Number(String(amountDrafts[index]).trim().replace(",", "."))
+            const next = amountValues.slice()
+            next[index] = n
+            amountValues = next
+            setAmountDraft(index, String(n))
+            return true
         }
         function setAmountValue(index, next) {
-            if (index < 0 || index > 4 || !Number.isFinite(next)
-                || !root.appAutoMatchModel || root.appAutoMatchModel.busy
-                || root.appAutoMatchModel.canAdopt)
-                return
-            const item = autoMatchInputs.itemAt(index)
-            if (item)
-                item.numericField.text = String(Math.round(next * 10) / 10)
+            if (!amountsEditable || index < 0 || index > 4
+                || !Number.isFinite(next) || next < 0 || next > 100) return
+            setAmountDraft(index, String(Math.round(next * 10) / 10))
+            commitAmount(index)
         }
         modal: false
         anchors.centerIn: parent
@@ -714,16 +739,36 @@ ApplicationWindow {
                             id: amountField
                             objectName: "autoMatchAmount_" + index
                             Layout.preferredWidth: 110
-                            text: index === 5 ? "0" : "100"
-                            enabled: !!root.appAutoMatchModel && !root.appAutoMatchModel.busy
-                                && !root.appAutoMatchModel.canAdopt
-                            validator: DoubleValidator {
-                                bottom: index === 5 ? -12 : 0
-                                top: index === 5 ? 0 : 100
+                            text: index === 5 ? "0" : autoMatchDialog.amountDrafts[index]
+                            enabled: autoMatchDialog.amountsEditable
+                            color: index < 5 && autoMatchDialog.amountError(index).length
+                                ? root.error : root.textPrimary
+                            validator: index === 5 ? ceilingValidator : null
+                            DoubleValidator {
+                                id: ceilingValidator
+                                bottom: -12
+                                top: 0
                                 notation: DoubleValidator.StandardNotation
                                 locale: "C"
                             }
-                            function numericValue() { return acceptableInput ? Number(text) : NaN }
+                            onTextEdited: if (index < 5)
+                                autoMatchDialog.setAmountDraft(index, text)
+                            onActiveFocusChanged: if (!activeFocus && index < 5)
+                                autoMatchDialog.commitAmount(index)
+                            Keys.onReturnPressed: if (index < 5) autoMatchDialog.commitAmount(index)
+                            Keys.onEnterPressed: if (index < 5) autoMatchDialog.commitAmount(index)
+                            Keys.onEscapePressed: function(event) {
+                                if (index < 5) {
+                                    autoMatchDialog.cancelAmountDraft(index)
+                                    event.accepted = true
+                                } else event.accepted = false
+                            }
+                            function numericValue() {
+                                if (index < 5)
+                                    return autoMatchDialog.commitAmount(index)
+                                        ? autoMatchDialog.amountValue(index) : NaN
+                                return acceptableInput ? Number(text) : NaN
+                            }
                         }
                         Text { text: index === 5 ? "dBTP" : "%"; color: root.textSecondary; Layout.preferredWidth: 36 }
                     }
@@ -820,6 +865,7 @@ ApplicationWindow {
                             if (!item) return
                             values.push(item.numericField.numericValue())
                         }
+                        if (values.some(function(v) { return !Number.isFinite(v) })) return
                         root.appAutoMatchModel.start(values[0]/100, values[1]/100,
                             values[2]/100, values[3]/100, values[4]/100, values[5])
                     }
@@ -847,6 +893,201 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // The real, read-only RAM advisor remains available without taking
+    // the permanent AutoMatch/Prepare control surface.
+    Dialog {
+        id: prepareAdviceDialog
+        objectName: "prepareAdviceDialog"
+        title: "Prepare · Sample rate / RAM"
+        modal: false
+        anchors.centerIn: parent
+        width: 400
+        height: 245
+        standardButtons: Dialog.Close
+        onOpened: if (root.appMemoryAdvisor) root.appMemoryAdvisor.refresh()
+        background: Rectangle { color: root.surface; border.color: root.border; radius: 5 }
+        contentItem: Rectangle {
+                                    id: prepareRestorationView
+                                    objectName: "prepareRestorationView"
+                                    color: "#0F2030"
+                                    border.color: "#1E354A"
+                                    radius: 4
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        spacing: 4
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Rectangle {
+                                                objectName: "sourceHealthCard"
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 28
+                                                color: "#142838"; border.color: "#233A4E"; radius: 4
+                                                Text { anchors.centerIn: parent; text: "RAW SOURCE"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
+                                            }
+
+                                            Rectangle {
+                                                objectName: "restorationPlanCard"
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 28
+                                                color: "#142838"; border.color: "#233A4E"; radius: 4
+                                                Text { anchors.centerIn: parent; text: "RESTORE · MOCKUP"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
+                                            }
+                                        }
+
+                                        // Read-only, actual Windows headroom guidance. This panel
+                                        // never changes MASTER OUTPUT_RATE or starts SRC/Render.
+                                        Rectangle {
+                                            id: restorationControlsGroup
+                                            objectName: "restorationControlsGroup"
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            color: "#142838"
+                                            border.color: "#233A4E"
+                                            radius: 4
+
+                                            onVisibleChanged: {
+                                                if (visible && root.appMemoryAdvisor)
+                                                    root.appMemoryAdvisor.refresh()
+                                            }
+                                            Connections {
+                                                target: sourceSelection
+                                                function onSourceChanged() {
+                                                    if (restorationControlsGroup.visible
+                                                            && prepareRestorationView.visible
+                                                            && root.appMemoryAdvisor)
+                                                        root.appMemoryAdvisor.refresh()
+                                                }
+                                            }
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 4
+                                                spacing: 2
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 18
+                                                    spacing: 4
+                                                    Text {
+                                                        text: "SAMPLE RATE / RAM"
+                                                        color: "#A9C7D8"
+                                                        font.family: "Segoe UI"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                    Item { Layout.fillWidth: true }
+                                                    Text {
+                                                        objectName: "prepareMemoryDeviceStatus"
+                                                        text: root.appMemoryAdvisor ? root.appMemoryAdvisor.statusText
+                                                            : "UNAVAILABLE"
+                                                        color: "#8FAAB9"
+                                                        font.pixelSize: 9
+                                                        elide: Text.ElideRight
+                                                        Layout.maximumWidth: 120
+                                                    }
+                                                    Button {
+                                                        objectName: "prepareMemoryRefresh"
+                                                        text: "↻"
+                                                        flat: true
+                                                        font.pixelSize: 12
+                                                        implicitWidth: 24
+                                                        implicitHeight: 18
+                                                        enabled: !!root.appMemoryAdvisor
+                                                        onClicked: if (root.appMemoryAdvisor)
+                                                            root.appMemoryAdvisor.refresh()
+                                                        StudioTooltipDwell {
+                                                            id: prepareRefreshDwell
+                                                            anchors.fill: parent
+                                                        }
+                                                        ToolTip.text: "Refresh available RAM and audio device information"
+                                                        ToolTip.visible: prepareRefreshDwell.ready
+                                                        ToolTip.delay: 0
+                                                        Accessible.name: "Refresh Prepare memory guidance"
+                                                    }
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    Layout.fillHeight: true
+                                                    columns: 2
+                                                    columnSpacing: 4
+                                                    rowSpacing: 2
+                                                    Repeater {
+                                                        model: root.appMemoryAdvisor
+                                                            ? root.appMemoryAdvisor.recommendations : []
+                                                        Rectangle {
+                                                            required property var modelData
+                                                            Layout.fillWidth: true
+                                                            Layout.fillHeight: true
+                                                            Layout.minimumHeight: 19
+                                                            radius: 3
+                                                            color: "#0D2130"
+                                                            border.color: modelData.kind === "recommended" ? "#3C786C"
+                                                                : modelData.kind === "caution" ? "#806A3B"
+                                                                : modelData.kind === "discouraged" ? "#82525A"
+                                                                : modelData.kind === "blocked" ? "#B35A64"
+                                                                : "#365064"
+                                                            RowLayout {
+                                                                anchors.fill: parent
+                                                                anchors.leftMargin: 4
+                                                                anchors.rightMargin: 3
+                                                                spacing: 3
+                                                                Text {
+                                                                    text: modelData.rateLabel
+                                                                    color: "#E0EBF2"
+                                                                    font.pixelSize: 9
+                                                                    font.weight: Font.DemiBold
+                                                                    Layout.preferredWidth: 56
+                                                                }
+                                                                Text {
+                                                                    id: adviceText
+                                                                    text: modelData.label
+                                                                    color: modelData.kind === "recommended" ? "#9DD8C2"
+                                                                        : modelData.kind === "caution" ? "#F2CE82"
+                                                                        : modelData.kind === "discouraged" ? "#F4A5AA"
+                                                                        : modelData.kind === "blocked" ? "#FFB5BC"
+                                                                        : "#91AABA"
+                                                                    font.pixelSize: 9
+                                                                    elide: Text.ElideRight
+                                                                    Layout.fillWidth: true
+                                                                    StudioTooltipDwell {
+                                                                        id: prepareAdviceDwell
+                                                                        anchors.fill: parent
+                                                                    }
+                                                                    ToolTip.text: modelData.details
+                                                                    ToolTip.visible: prepareAdviceDwell.ready
+                                                                    ToolTip.delay: 0
+                                                                }
+                                                            }
+                                                            Accessible.name: modelData.rateLabel + ": " + modelData.label
+                                                            Accessible.description: modelData.details
+                                                        }
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 12
+                                                    text: "PCM estimate · CPU not qualified"
+                                                    font.pixelSize: 8
+                                                    color: "#8FAAB9"
+                                                    elide: Text.ElideRight
+                                                    Accessible.description: "Minimum PCM estimate; CPU not qualified; refresh before allocation"
+                                                    StudioTooltipDwell {
+                                                        id: prepareEstimateDwell
+                                                        anchors.fill: parent
+                                                    }
+                                                    ToolTip.text: "Minimum PCM estimate · CPU not qualified · refresh before allocation"
+                                                    ToolTip.visible: prepareEstimateDwell.ready
+                                                    ToolTip.delay: 0
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
     }
 
     FileDialog {
@@ -1949,7 +2190,8 @@ ApplicationWindow {
                             Layout.minimumHeight: 135
                         }
 
-                        // Lower Left: Adaptive Context Workspace (Prepare / Restoration <-> Gold / Automatch)
+                        // Permanent 4+1 control surface. Prepare shares its geometry
+                        // but cannot act on AutoMatch or fabricate L4 parameters.
                         Rectangle {
                             id: adaptiveContextWorkspace
                             objectName: "adaptiveContextWorkspace"
@@ -1960,588 +2202,217 @@ ApplicationWindow {
                             color: root.panel
                             border.color: root.border
                             radius: 5
-
                             property string activeContextMode: "GOLD_AUTOMATCH"
+                            readonly property bool matching: activeContextMode === "GOLD_AUTOMATCH"
+                            readonly property var domainNames: ["Tonal", "Dynamics", "Stereo", "Loudness"]
+                            readonly property var domainColors: ["#4E86C6", "#C4774A", "#4A9A88", "#D3AE66"]
+
+                            // A single shared editor adapter implements the DSP field's
+                            // draft/commit/cancel interface for one authoritative amount.
+                            component AmountControl: Item {
+                                id: amountControl
+                                required property int amountIndex
+                                property string knobName: ""
+                                property string amountLabel: ""
+                                property color hue: root.accent
+                                property int dialSize: 44
+                                property int boxWidth: 52
+                                property bool labelAbove: true
+                                readonly property bool live: adaptiveContextWorkspace.matching
+                                    && autoMatchDialog.amountsEditable
+                                implicitWidth: boxWidth
+                                implicitHeight: (labelAbove ? 12 : 0) + dialSize + 24 + 4
+
+                                QtObject {
+                                    id: draftAdapter
+                                    readonly property string validationField: adaptiveContextWorkspace.matching
+                                        && autoMatchDialog.amountError(amountControl.amountIndex).length > 0
+                                        ? "matchAmount" + amountControl.amountIndex : ""
+                                    readonly property string validationMessage: autoMatchDialog.amountError(amountControl.amountIndex)
+                                    function setDraftFieldText(field, raw) {
+                                        if (amountControl.live)
+                                            autoMatchDialog.setAmountDraft(amountControl.amountIndex, raw)
+                                    }
+                                    function commitDraft() {
+                                        if (amountControl.live)
+                                            return autoMatchDialog.commitAmount(amountControl.amountIndex)
+                                        return false
+                                    }
+                                    function cancelDraft() {
+                                        if (amountControl.live)
+                                            autoMatchDialog.cancelAmountDraft(amountControl.amountIndex)
+                                    }
+                                }
+                                Column {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 2
+                                    Text {
+                                        visible: amountControl.labelAbove
+                                        width: amountControl.boxWidth
+                                        height: 12
+                                        horizontalAlignment: Text.AlignHCenter
+                                        text: amountControl.amountLabel
+                                        color: adaptiveContextWorkspace.matching ? root.textPrimary : root.textSecondary
+                                        font.family: "Segoe UI"
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                    }
+                                    StudioMatchKnob {
+                                        objectName: amountControl.knobName
+                                        width: amountControl.dialSize
+                                        height: width
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        prominent: amountControl.amountIndex === 0
+                                        accentColor: amountControl.hue
+                                        value: adaptiveContextWorkspace.matching
+                                            ? autoMatchDialog.amountValue(amountControl.amountIndex) : 0
+                                        editable: amountControl.live
+                                        opacity: adaptiveContextWorkspace.matching ? 1.0 : 0.50
+                                        onValueEdited: function(nextValue) {
+                                            autoMatchDialog.setAmountValue(amountControl.amountIndex, nextValue)
+                                        }
+                                        Accessible.name: amountControl.amountLabel + " match amount"
+                                    }
+                                    StudioNumericField {
+                                        objectName: "autoMatchPanelAmount_" + amountControl.amountIndex
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: implicitWidth
+                                        height: implicitHeight
+                                        compact: true
+                                        compactFieldWidth: amountControl.boxWidth
+                                        showLabel: false
+                                        inputHorizontalMargin: 4
+                                        inputPixelSize: 13
+                                        labelText: amountControl.amountLabel + " (%)"
+                                        fieldName: "matchAmount" + amountControl.amountIndex
+                                        rawText: adaptiveContextWorkspace.matching
+                                            ? autoMatchDialog.amountDrafts[amountControl.amountIndex] : "—"
+                                        viewModel: draftAdapter
+                                        enabled: amountControl.live
+                                        opacity: adaptiveContextWorkspace.matching ? 1.0 : 0.45
+                                        interactionHint: "0–100% · Enter or click away to apply · Esc to cancel"
+                                    }
+                                }
+                            }
 
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 4
-
-                                // Compact header: title and mode tabs use separate rows so neither clips.
-                                ColumnLayout {
+                                spacing: 2
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.minimumHeight: 42
-                                    Layout.preferredHeight: 42
-                                    Layout.maximumHeight: 42
-                                    spacing: 3
-
-                                    Text {
-                                        text: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            ? "PREPARED + REFERENCE → PROCESSED" : "RAW → PREPARED"
-                                        color: root.textSecondary
-                                        font.family: "Segoe UI"
-                                        font.pixelSize: 10
-                                        font.weight: Font.Bold
+                                    Layout.minimumHeight: 24
+                                    Layout.preferredHeight: 24
+                                    Layout.maximumHeight: 24
+                                    spacing: 4
+                                    StudioSegmentButton {
+                                        objectName: "adaptiveModeToggle_Restoration"
+                                        text: "Prepare"
+                                        selected: !adaptiveContextWorkspace.matching
+                                        minimumControlWidth: 0
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
                                     }
-
-                                    RowLayout {
-                                        spacing: 4
-
-                                        StudioSegmentButton {
-                                            objectName: "adaptiveModeToggle_Gold"
-                                            text: "AutoMatch"
-                                            selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            minimumControlWidth: 0
-                                            Layout.fillWidth: true
-                                            contentPadding: 3
-                                            onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
-                                        }
-
-                                        StudioSegmentButton {
-                                            objectName: "adaptiveModeToggle_Restoration"
-                                            text: "Prepare"
-                                            selected: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
-                                            minimumControlWidth: 0
-                                            Layout.fillWidth: true
-                                            contentPadding: 3
-                                            onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
-                                        }
-
+                                    StudioSegmentButton {
+                                        objectName: "adaptiveModeToggle_Gold"
+                                        text: "AutoMatch"
+                                        selected: adaptiveContextWorkspace.matching
+                                        minimumControlWidth: 0
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
                                     }
                                 }
 
-                                // View 1: Gold / Automatch (Default View)
-                                Rectangle {
-                                    id: goldAutomatchView
-                                    objectName: "goldAutomatchView"
-                                    visible: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    color: "#0B1824"
-                                    border.color: "#1E354A"
-                                    radius: 4
-
+                                    Layout.minimumHeight: 86
+                                    Layout.preferredHeight: 86
+                                    Layout.maximumHeight: 86
+                                    spacing: 8
+                                    AmountControl {
+                                        amountIndex: 0
+                                        knobName: "totalMatchAmountKnob"
+                                        amountLabel: "Total Match"
+                                        labelAbove: false
+                                        dialSize: 58
+                                        boxWidth: 62
+                                        Layout.preferredWidth: 68
+                                        Layout.fillHeight: true
+                                    }
                                     ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 5
-                                        spacing: 4
-
-                                        // Global Row: Reference card + real Total Match Amount knob
-                                        RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.alignment: Qt.AlignVCenter
+                                        spacing: 3
+                                        Text {
                                             Layout.fillWidth: true
-                                            Layout.minimumHeight: 46
-                                            Layout.preferredHeight: 46
-                                            Layout.maximumHeight: 46
-                                            spacing: 8
-
-                                            // Gold Reference Identity Card
-                                            Rectangle {
-                                                id: goldReferenceCard
-                                                objectName: "goldReferenceCard"
-                                                Layout.fillWidth: true
-                                                Layout.fillHeight: true
-                                                color: "#122434"
-                                                border.color: goldSelection.hasGold ? root.accent : "#233A4E"
-                                                radius: 4
-
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 3
-                                                    anchors.rightMargin: 3
-                                                    spacing: 2
-                                                    StudioIcon {
-                                                        width: 16
-                                                        height: 18
-                                                        kind: "gold"
-                                                        strokeColor: goldSelection.hasGold ? root.accent : "#586773"
-                                                    }
-                                                    Text {
-                                                        id: goldReferenceStatus
-                                                        objectName: "goldReferenceStatus"
-                                                        text: goldSelection.hasGold ? ("REFERENCE\n" + goldSelection.displayName) : "NO REFERENCE\nLOADED"
-                                                        color: goldSelection.hasGold ? root.textPrimary : "#586D7C"
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
-                                                        maximumLineCount: 2
-                                                        wrapMode: Text.NoWrap
-                                                        verticalAlignment: Text.AlignVCenter
-                                                        Layout.fillHeight: true
-                                                        Layout.fillWidth: true
-                                                    }
-                                                }
-                                            }
-
-                                            // Global Control Container: Total Match Amount Rotary Knob
-                                            Rectangle {
-                                                objectName: "totalMatchAmountContainer"
-                                                Layout.preferredWidth: 88
-                                                Layout.fillHeight: true
-                                                color: "#122434"
-                                                border.color: "#2C4356"
-                                                radius: 4
-
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 8
-                                                    anchors.rightMargin: 8
-                                                    spacing: 6
-
-                                                    // Primary Global Knob
-                                                    StudioMatchKnob {
-                                                        id: totalMatchAmountKnob
-                                                        objectName: "totalMatchAmountKnob"
-                                                        Layout.preferredWidth: 38
-                                                        Layout.preferredHeight: 38
-                                                        Layout.alignment: Qt.AlignVCenter
-                                                        prominent: true
-                                                        accentColor: root.accent
-                                                        value: autoMatchDialog.amountValue(0)
-                                                        editable: !!root.appAutoMatchModel
-                                                            && !root.appAutoMatchModel.busy
-                                                            && !root.appAutoMatchModel.canAdopt
-                                                        onValueEdited: function(nextValue) {
-                                                            autoMatchDialog.setAmountValue(0, nextValue)
-                                                        }
-                                                        Accessible.name: "Total Match Amount"
-                                                        ToolTip.text: "Total Match Amount " + autoMatchDialog.amountText(0)
-                                                        ToolTip.visible: totalMatchMouseDwell.ready
-                                                        StudioTooltipDwell {
-                                                            id: totalMatchMouseDwell
-                                                            anchors.fill: parent
-                                                        }
-                                                    }
-
-                                                    ColumnLayout {
-                                                        Layout.fillWidth: true
-                                                        Layout.alignment: Qt.AlignVCenter
-                                                        spacing: 1
-
-                                                        Text {
-                                                            text: "TOTAL"
-                                                            color: root.textPrimary
-                                                            font.family: "Segoe UI"
-                                                            font.pixelSize: 9
-                                                            font.weight: Font.Bold
-                                                        }
-                                                        Text {
-                                                            text: autoMatchDialog.amountText(0)
-                                                            color: root.textPrimary
-                                                            font.family: "Segoe UI"
-                                                            font.pixelSize: 10
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            text: adaptiveContextWorkspace.matching ? "TOTAL MATCH (%)" : "RESTORATION"
+                                            color: root.textPrimary
+                                            font.family: "Segoe UI"
+                                            font.pixelSize: 12
+                                            font.weight: Font.Bold
+                                            elide: Text.ElideRight
                                         }
-
-                                        RowLayout {
+                                        Text {
                                             Layout.fillWidth: true
-                                            Layout.minimumHeight: 24
+                                            text: adaptiveContextWorkspace.matching
+                                                ? "PREPARED + REF → PROCESSED" : "RAW → PREPARED · L4 MOCKUP"
+                                            color: root.textSecondary
+                                            font.pixelSize: 9
+                                            elide: Text.ElideRight
+                                        }
+                                        StudioSegmentButton {
+                                            objectName: "openAutoMatchDialog"
+                                            text: adaptiveContextWorkspace.matching ? "AutoMatch…" : "Sample rate / RAM…"
+                                            tone: "primary"
+                                            Layout.fillWidth: true
                                             Layout.preferredHeight: 24
-                                            Layout.maximumHeight: 24
-                                            StudioSegmentButton {
-                                                minimumControlWidth: 76
-                                                tone: "primary"
-                                                Layout.preferredHeight: 24
-                                                objectName: "openAutoMatchDialog"
-                                                text: "AutoMatch…"
-                                                enabled: !!root.appAutoMatchModel && !root.monitorExclusive
-                                                onClicked: autoMatchDialog.open()
-                                            }
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: root.appAutoMatchModel ? root.appAutoMatchModel.statusText : ""
-                                                color: root.textSecondary
-                                                font.pixelSize: 10
-                                                elide: Text.ElideRight
-                                            }
-                                            Text {
-                                                objectName: "autoMatchElapsedContext"
-                                                visible: !!root.appAutoMatchModel
-                                                    && root.appAutoMatchModel.elapsedTimeText.length > 0
-                                                text: root.appAutoMatchModel
-                                                    ? root.appAutoMatchModel.elapsedTimeText : ""
-                                                color: root.accent
-                                                font.family: "Consolas"
-                                                font.pixelSize: 10
-                                                font.weight: Font.DemiBold
+                                            minimumControlWidth: 0
+                                            enabled: adaptiveContextWorkspace.matching
+                                                ? !!root.appAutoMatchModel && !root.monitorExclusive
+                                                : !!root.appMemoryAdvisor
+                                            onClicked: {
+                                                if (adaptiveContextWorkspace.matching) autoMatchDialog.open()
+                                                else prepareAdviceDialog.open()
                                             }
                                         }
-                                        // Domain Controls Row: Four Equal Domain Knobs
-                                        Rectangle {
+                                        Text {
+                                            objectName: "autoMatchElapsedContext"
                                             Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            Layout.minimumHeight: 56
-                                            color: "#0F2030"
-                                            border.color: "#192D3E"
-                                            radius: 4
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 2
-                                                anchors.rightMargin: 2
-                                                spacing: 2
-
-                                                // Domain 1: Tonal
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 2
-
-                                                    StudioMatchKnob {
-                                                        objectName: "automatchKnob_Tonal"
-                                                        Layout.minimumWidth: 30
-                                                        Layout.preferredWidth: 30
-                                                        Layout.maximumWidth: 30
-                                                        Layout.minimumHeight: 30
-                                                        Layout.preferredHeight: 30
-                                                        Layout.maximumHeight: 30
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                        accentColor: "#4E86C6"
-                                                        value: autoMatchDialog.amountValue(1)
-                                                        editable: !!root.appAutoMatchModel
-                                                            && !root.appAutoMatchModel.busy
-                                                            && !root.appAutoMatchModel.canAdopt
-                                                        onValueEdited: function(nextValue) {
-                                                            autoMatchDialog.setAmountValue(1, nextValue)
-                                                        }
-                                                        Accessible.name: "Tonal Match Amount"
-                                                    }
-
-                                                    Text {
-                                                        text: "Tonal"
-                                                        color: root.textSecondary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                    Text {
-                                                        text: autoMatchDialog.amountText(1)
-                                                        color: root.textPrimary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.DemiBold
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                }
-
-                                                // Domain 2: Dynamics
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 2
-
-                                                    StudioMatchKnob {
-                                                        objectName: "automatchKnob_Dynamics"
-                                                        Layout.minimumWidth: 30
-                                                        Layout.preferredWidth: 30
-                                                        Layout.maximumWidth: 30
-                                                        Layout.minimumHeight: 30
-                                                        Layout.preferredHeight: 30
-                                                        Layout.maximumHeight: 30
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                        accentColor: "#C4774A"
-                                                        value: autoMatchDialog.amountValue(2)
-                                                        editable: !!root.appAutoMatchModel
-                                                            && !root.appAutoMatchModel.busy
-                                                            && !root.appAutoMatchModel.canAdopt
-                                                        onValueEdited: function(nextValue) {
-                                                            autoMatchDialog.setAmountValue(2, nextValue)
-                                                        }
-                                                        Accessible.name: "Dynamics Match Amount"
-                                                    }
-
-                                                    Text {
-                                                        text: "Dynamics"
-                                                        color: root.textSecondary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                    Text {
-                                                        text: autoMatchDialog.amountText(2)
-                                                        color: root.textPrimary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.DemiBold
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                }
-
-                                                // Domain 3: Stereo
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 2
-
-                                                    StudioMatchKnob {
-                                                        objectName: "automatchKnob_Stereo"
-                                                        Layout.minimumWidth: 30
-                                                        Layout.preferredWidth: 30
-                                                        Layout.maximumWidth: 30
-                                                        Layout.minimumHeight: 30
-                                                        Layout.preferredHeight: 30
-                                                        Layout.maximumHeight: 30
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                        accentColor: "#4A9A88"
-                                                        value: autoMatchDialog.amountValue(3)
-                                                        editable: !!root.appAutoMatchModel
-                                                            && !root.appAutoMatchModel.busy
-                                                            && !root.appAutoMatchModel.canAdopt
-                                                        onValueEdited: function(nextValue) {
-                                                            autoMatchDialog.setAmountValue(3, nextValue)
-                                                        }
-                                                        Accessible.name: "Stereo Match Amount"
-                                                    }
-
-                                                    Text {
-                                                        text: "Stereo"
-                                                        color: root.textSecondary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                    Text {
-                                                        text: autoMatchDialog.amountText(3)
-                                                        color: root.textPrimary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.DemiBold
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                }
-
-                                                // Domain 4: Loudness
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 2
-
-                                                    StudioMatchKnob {
-                                                        objectName: "automatchKnob_Loudness"
-                                                        Layout.minimumWidth: 30
-                                                        Layout.preferredWidth: 30
-                                                        Layout.maximumWidth: 30
-                                                        Layout.minimumHeight: 30
-                                                        Layout.preferredHeight: 30
-                                                        Layout.maximumHeight: 30
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                        accentColor: "#D3AE66"
-                                                        value: autoMatchDialog.amountValue(4)
-                                                        editable: !!root.appAutoMatchModel
-                                                            && !root.appAutoMatchModel.busy
-                                                            && !root.appAutoMatchModel.canAdopt
-                                                        onValueEdited: function(nextValue) {
-                                                            autoMatchDialog.setAmountValue(4, nextValue)
-                                                        }
-                                                        Accessible.name: "Loudness Match Amount"
-                                                    }
-
-                                                    Text {
-                                                        text: "Loudness"
-                                                        color: root.textSecondary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                    Text {
-                                                        text: autoMatchDialog.amountText(4)
-                                                        color: root.textPrimary
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.DemiBold
-                                                        Layout.alignment: Qt.AlignHCenter
-                                                    }
-                                                }
-                                            }
+                                            text: adaptiveContextWorkspace.matching
+                                                ? (root.appAutoMatchModel
+                                                    ? root.appAutoMatchModel.statusText
+                                                        + (root.appAutoMatchModel.elapsedTimeText.length > 0
+                                                            ? " · " + root.appAutoMatchModel.elapsedTimeText : "")
+                                                    : "UNAVAILABLE")
+                                                : "RESTORE CONTROLS NOT YET ACTIVE"
+                                            color: root.textSecondary
+                                            font.pixelSize: 9
+                                            elide: Text.ElideRight
                                         }
                                     }
                                 }
 
-                                // View 2: Prepare / Restoration (Alternate View)
-                                Rectangle {
-                                    id: prepareRestorationView
-                                    objectName: "prepareRestorationView"
-                                    visible: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
+                                RowLayout {
+                                    objectName: "goldAutomatchView"
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    color: "#0F2030"
-                                    border.color: "#1E354A"
-                                    radius: 4
-
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 6
-                                        spacing: 4
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
-
-                                            Rectangle {
-                                                objectName: "sourceHealthCard"
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 28
-                                                color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "RAW SOURCE"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
-                                            }
-
-                                            Rectangle {
-                                                objectName: "restorationPlanCard"
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 28
-                                                color: "#142838"; border.color: "#233A4E"; radius: 4
-                                                Text { anchors.centerIn: parent; text: "RESTORE · MOCKUP"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.Bold }
-                                            }
-                                        }
-
-                                        // Read-only, actual Windows headroom guidance. This panel
-                                        // never changes MASTER OUTPUT_RATE or starts SRC/Render.
-                                        Rectangle {
-                                            id: restorationControlsGroup
-                                            objectName: "restorationControlsGroup"
+                                    spacing: 0
+                                    Repeater {
+                                        model: adaptiveContextWorkspace.domainNames
+                                        AmountControl {
+                                            required property int index
+                                            required property string modelData
+                                            amountIndex: index + 1
+                                            knobName: "automatchKnob_" + modelData
+                                            amountLabel: modelData
+                                            hue: adaptiveContextWorkspace.domainColors[index]
                                             Layout.fillWidth: true
                                             Layout.fillHeight: true
-                                            color: "#142838"
-                                            border.color: "#233A4E"
-                                            radius: 4
-
-                                            onVisibleChanged: {
-                                                if (visible && root.appMemoryAdvisor)
-                                                    root.appMemoryAdvisor.refresh()
-                                            }
-                                            Connections {
-                                                target: sourceSelection
-                                                function onSourceChanged() {
-                                                    if (restorationControlsGroup.visible
-                                                            && prepareRestorationView.visible
-                                                            && root.appMemoryAdvisor)
-                                                        root.appMemoryAdvisor.refresh()
-                                                }
-                                            }
-                                            ColumnLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 4
-                                                spacing: 2
-                                                RowLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.preferredHeight: 18
-                                                    spacing: 4
-                                                    Text {
-                                                        text: "SAMPLE RATE / RAM"
-                                                        color: "#A9C7D8"
-                                                        font.family: "Segoe UI"
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.DemiBold
-                                                    }
-                                                    Item { Layout.fillWidth: true }
-                                                    Text {
-                                                        objectName: "prepareMemoryDeviceStatus"
-                                                        text: root.appMemoryAdvisor ? root.appMemoryAdvisor.statusText
-                                                            : "UNAVAILABLE"
-                                                        color: "#8FAAB9"
-                                                        font.pixelSize: 9
-                                                        elide: Text.ElideRight
-                                                        Layout.maximumWidth: 120
-                                                    }
-                                                    Button {
-                                                        objectName: "prepareMemoryRefresh"
-                                                        text: "↻"
-                                                        flat: true
-                                                        font.pixelSize: 12
-                                                        implicitWidth: 24
-                                                        implicitHeight: 18
-                                                        enabled: !!root.appMemoryAdvisor
-                                                        onClicked: if (root.appMemoryAdvisor)
-                                                            root.appMemoryAdvisor.refresh()
-                                                        StudioTooltipDwell {
-                                                            id: prepareRefreshDwell
-                                                            anchors.fill: parent
-                                                        }
-                                                        ToolTip.text: "Refresh available RAM and audio device information"
-                                                        ToolTip.visible: prepareRefreshDwell.ready
-                                                        ToolTip.delay: 0
-                                                        Accessible.name: "Refresh Prepare memory guidance"
-                                                    }
-                                                }
-                                                GridLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.fillHeight: true
-                                                    columns: 2
-                                                    columnSpacing: 4
-                                                    rowSpacing: 2
-                                                    Repeater {
-                                                        model: root.appMemoryAdvisor
-                                                            ? root.appMemoryAdvisor.recommendations : []
-                                                        Rectangle {
-                                                            required property var modelData
-                                                            Layout.fillWidth: true
-                                                            Layout.fillHeight: true
-                                                            Layout.minimumHeight: 19
-                                                            radius: 3
-                                                            color: "#0D2130"
-                                                            border.color: modelData.kind === "recommended" ? "#3C786C"
-                                                                : modelData.kind === "caution" ? "#806A3B"
-                                                                : modelData.kind === "discouraged" ? "#82525A"
-                                                                : modelData.kind === "blocked" ? "#B35A64"
-                                                                : "#365064"
-                                                            RowLayout {
-                                                                anchors.fill: parent
-                                                                anchors.leftMargin: 4
-                                                                anchors.rightMargin: 3
-                                                                spacing: 3
-                                                                Text {
-                                                                    text: modelData.rateLabel
-                                                                    color: "#E0EBF2"
-                                                                    font.pixelSize: 9
-                                                                    font.weight: Font.DemiBold
-                                                                    Layout.preferredWidth: 56
-                                                                }
-                                                                Text {
-                                                                    id: adviceText
-                                                                    text: modelData.label
-                                                                    color: modelData.kind === "recommended" ? "#9DD8C2"
-                                                                        : modelData.kind === "caution" ? "#F2CE82"
-                                                                        : modelData.kind === "discouraged" ? "#F4A5AA"
-                                                                        : modelData.kind === "blocked" ? "#FFB5BC"
-                                                                        : "#91AABA"
-                                                                    font.pixelSize: 9
-                                                                    elide: Text.ElideRight
-                                                                    Layout.fillWidth: true
-                                                                    StudioTooltipDwell {
-                                                                        id: prepareAdviceDwell
-                                                                        anchors.fill: parent
-                                                                    }
-                                                                    ToolTip.text: modelData.details
-                                                                    ToolTip.visible: prepareAdviceDwell.ready
-                                                                    ToolTip.delay: 0
-                                                                }
-                                                            }
-                                                            Accessible.name: modelData.rateLabel + ": " + modelData.label
-                                                            Accessible.description: modelData.details
-                                                        }
-                                                    }
-                                                }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    Layout.preferredHeight: 12
-                                                    text: "PCM estimate · CPU not qualified"
-                                                    font.pixelSize: 8
-                                                    color: "#8FAAB9"
-                                                    elide: Text.ElideRight
-                                                    Accessible.description: "Minimum PCM estimate; CPU not qualified; refresh before allocation"
-                                                    StudioTooltipDwell {
-                                                        id: prepareEstimateDwell
-                                                        anchors.fill: parent
-                                                    }
-                                                    ToolTip.text: "Minimum PCM estimate · CPU not qualified · refresh before allocation"
-                                                    ToolTip.visible: prepareEstimateDwell.ready
-                                                    ToolTip.delay: 0
-                                                }
-                                            }
+                                            Layout.minimumWidth: 52
+                                            Layout.preferredWidth: 52
                                         }
                                     }
                                 }
