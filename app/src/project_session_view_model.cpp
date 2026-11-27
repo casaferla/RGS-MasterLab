@@ -635,6 +635,14 @@ bool ProjectSessionViewModel::can_save_project() const
     const auto ticket=previewController_
         ?previewController_->private_m12_product_preview_ticket()
         :nullptr;
+    const auto transfer=previewController_
+        ?previewController_->private_manual_transfer_preview_ticket():nullptr;
+    if(transfer) {
+        return !ticket&&persistedLinked&&source_&&source_->source_resource()&&
+            opened_&&masteringChainState_&&
+            previewController_->private_manual_transfer_owner_matches(*masteringChainState_)&&
+            transfer->matches_project(*opened_);
+    }
     if(persistedLinked||ticket) {
         // A native draft / orphaned read-only Project never grants SaveAs.
         // The actual Product M12 model publication and receipt are required.
@@ -2637,6 +2645,13 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
         m::assess_current_product_ref_linked_open_safety(
             opened_->document())!=
             m::ProjectOpenLinkedSafety::ordinary_project_without_ref_linked;
+    const auto transfer=previewController_
+        ?previewController_->private_manual_transfer_preview_ticket():nullptr;
+    if(transfer&&(!can_save_project()||linkedTicket)) {
+        publish_error(core::Error{core::ErrorCode::InvalidState,
+            "MANUAL_MATCH_TRANSFER_SAVE_OWNER_STALE"});
+        return;
+    }
     const auto* materialized=(!m12UndoHistory_.empty()&&
         m12UndoHistory_.back().receipt.has_value()&&
         m12UndoHistory_.back().afterTicket==linkedTicket&&
@@ -2649,7 +2664,7 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
         linkedTicket->replay&&
         m::m12_exact_project_snapshot_equal(
             *opened_,*m12ExactReplayReadback_));
-    if((linkedTicket||persistedLinked)&&
+    if(!transfer&&(linkedTicket||persistedLinked)&&
        (!opened_||(!materialized&&!imported)||
         (materialized&&
          !m::m12_exact_project_snapshot_equal(
@@ -2674,7 +2689,16 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     const QFileInfo file{selectedFile.toLocalFile()};
     auto snapshot = current_snapshot(file.completeBaseName());
     if (!snapshot) { publish_error(*snapshot.error()); return; }
-    if(materialized||imported) {
+    if(transfer) {
+        if(!masteringChainState_||
+           previewController_->private_manual_transfer_preview_ticket()!=transfer||
+           !previewController_->private_manual_transfer_owner_matches(*masteringChainState_)||
+           !transfer->matches_project(*snapshot.value())) {
+            publish_error(core::Error{core::ErrorCode::InvalidState,
+                "MANUAL_MATCH_TRANSFER_SAVE_PROJECT_STALE"});
+            return;
+        }
+    } else if(materialized||imported) {
         // The native carrier is already in the Project model. Serialize
         // precisely that graph, never a MANUAL-only stand-in and never a
         // stale REF snapshot after a Source / DSP / parameter edit.
@@ -2735,7 +2759,8 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
     projectDisplayName_ = QString::fromUtf8(opened_->document().displayName.data(),
         static_cast<qsizetype>(opened_->document().displayName.size()));
     statusText_ = degraded_ ? QStringLiteral("Project saved; unsupported processing remains inactive.") :
-                             QStringLiteral("Project saved and verified.");
+        transfer?QStringLiteral("Project saved: MANUAL TRANSFER / NOT_VERIFIED."):
+                 QStringLiteral("Project saved and verified.");
     clear_error();
 }
 

@@ -84,6 +84,8 @@ public:
         std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> ticket);
     [[nodiscard]] std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket>
     private_manual_transfer_preview_ticket() const noexcept {return transferTicket_;}
+    [[nodiscard]] bool private_manual_transfer_owner_matches(
+        const MasteringChainState& candidate) const;
     // Owner-thread inspection only. Source/Reference transitions must
     // revoke a linked realization before an unrelated Project loads.
     [[nodiscard]] bool has_private_m12_product_preview_ticket()

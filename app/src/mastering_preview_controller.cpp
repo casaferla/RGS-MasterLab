@@ -360,6 +360,16 @@ bool MasteringPreviewController::set_private_manual_transfer_preview_ticket(
     return true;
 }
 
+bool MasteringPreviewController::private_manual_transfer_owner_matches(
+    const MasteringChainState& candidate) const
+{
+    return QThread::currentThread()==thread()&&transferTicket_&&!m12ReplayTicket_&&
+        chainState_==&candidate&&m12ManualChainOwner_==&candidate&&
+        m12ManualRegistryOwner_&&candidate.registry_snapshot()==m12ManualRegistryOwner_&&
+        snapshotProvider_&&transferTicket_->matches_prepared(snapshotProvider_())&&
+        transferTicket_->matches_manual(candidate.chain(),candidate.execution_bindings());
+}
+
 void MasteringPreviewController::set_research_p2_timing_log_path(QString path)
 {
     // Only research startup calls this, before the first worker job.
