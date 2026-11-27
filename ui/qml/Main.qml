@@ -602,8 +602,13 @@ ApplicationWindow {
                 const message = module.editorContentKey === "INPUT_GAIN" ? vm.validationError : vm.validationMessage
                 if (message) add(key + ":validation", "VALIDATION", name + ": " + message)
             }
-            if (module.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER" && module.numericValidationMessage)
-                add(key + ":numeric", "VALIDATION", name + ": " + module.numericValidationMessage)
+            if (module.editorContentKey === "STREAMING_TRUE_PEAK_LIMITER") {
+                if (module.ceilingValidationMessage)
+                    add(key + ":ceiling", "VALIDATION", name + ": " + module.ceilingValidationMessage)
+                if (module.driveValidationMessage)
+                    add(key + ":drive", "VALIDATION", name + ": " + module.driveValidationMessage)
+            }
+            if (module.editorContentKey === "MASTER_MONITOR") continue
             if (module.previewStatus === "ERROR" && module.previewError)
                 add("chain:" + module.previewError, "ERROR", "DSP Chain: " + module.previewError)
             else if (module.hasError && module.previewError)
