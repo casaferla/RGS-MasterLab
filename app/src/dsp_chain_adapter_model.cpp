@@ -72,6 +72,18 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                 auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_, workflowContext_);
                 connect(eqAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(eqAdapter));
+            } else if (typeId == "rgsml.dsp.dynamic-eq") {
+                auto adapter=std::make_unique<ManualDynamicEqModuleAdapter>(
+                    chainState_,p2PreviewController_,workflowContext_);
+                connect(adapter.get(),&DspModuleAdapter::changed,
+                        this,&DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(adapter));
+            } else if (typeId == "rgsml.dsp.transient-shaper") {
+                auto adapter=std::make_unique<ManualTransientShaperModuleAdapter>(
+                    chainState_,p2PreviewController_,workflowContext_);
+                connect(adapter.get(),&DspModuleAdapter::changed,
+                        this,&DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(adapter));
             } else if (typeId == "rgsml.dsp.compressor") {
                 auto compAdapter = std::make_unique<CompressorModuleAdapter>(compressorViewModel_, chainState_, workflowContext_);
                 connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
