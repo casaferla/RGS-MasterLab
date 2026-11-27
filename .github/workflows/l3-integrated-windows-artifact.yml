@@ -32,8 +32,16 @@ jobs:
           $log=Join-Path $env:RUNNER_TEMP 'l3-artifact-build.log'
           cmake -S . -B build-l3-package -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON -DRGSML_PROVENANCE_TYPE=CI "-DRGSML_PROVENANCE_RUN_NUMBER=$env:GITHUB_RUN_NUMBER" "-DRGSML_PROVENANCE_GIT_SHA=$actual" "-DRGSML_QT_ROOT=$qt" *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw 'L3_ARTIFACT_CONFIGURE_FAILURE' }
-          cmake --build build-l3-package --config Release --parallel 4 --target rgsml_app rgsml_project_session_tests *> $log
+          cmake --build build-l3-package --config Release --parallel 4 --target rgsml_app rgsml_project_session_tests rgsml_l3_m12_project_carrier_tests rgsml_mastering_chain_state_tests rgsml_mastering_preview_controller_tests *> $log
           if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 100; throw 'L3_ARTIFACT_PRODUCT_BUILD_FAILURE' }
+      - name: Run transfer carrier and native preview unit regressions
+        shell: pwsh
+        run: |
+          $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
+          $report=Join-Path $env:RUNNER_TEMP 'l3-transfer-unit-tests.txt'
+          ctest --test-dir build-l3-package -C Release --output-on-failure -R '^(rgsml_l3_m12_project_carrier_tests|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests)$' --output-log "$report"
+          if ($LASTEXITCODE -ne 0) { throw 'L3_TRANSFER_UNIT_FAILURE' }
+          if (!(Select-String -Path $report -Pattern '100% tests passed, 0 tests failed out of 3' -Quiet)) { throw 'L3_TRANSFER_UNIT_COVERAGE_MISSING' }
       - name: Install complete standalone Windows Product
         shell: pwsh
         run: |
@@ -160,5 +168,6 @@ jobs:
             ${{ runner.temp }}/l3-artifact-cold-out.log
             ${{ runner.temp }}/l3-artifact-cold-err.log
             ${{ runner.temp }}/l3-transfer-six-rates.txt
+            ${{ runner.temp }}/l3-transfer-unit-tests.txt
           if-no-files-found: warn
           retention-days: 14
