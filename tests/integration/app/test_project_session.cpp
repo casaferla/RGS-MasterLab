@@ -8918,12 +8918,19 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QCOMPARE(author.masteringChainState->chain().revision(),provisionalRevision);
     QVERIFY(author.masteringChainState->execution_bindings()==provisionalBindings);
     QVERIFY(author.project.can_save_project());
+    app::ManualTransientShaperModuleAdapter provisionalEditor(
+        author.masteringChainState.get(),author.previewController.get(),QStringLiteral("Mastering"));
+    QVERIFY(!provisionalEditor.manual_editable());
+    QVERIFY(!provisionalEditor.reset_supported());
+    QVERIFY(!provisionalEditor.setAttackAmountDb(7.0));
+    QVERIFY(author.masteringChainState->execution_bindings()==provisionalBindings);
     QVERIFY(author.project.can_undo_private_manual_match_transfer());
     QVERIFY(!author.project.can_redo_private_manual_match_transfer());
     QVERIFY(author.project.undo_private_manual_match_transfer());
     QVERIFY(author.previewController->private_m12_product_preview_ticket()==priorTicket);
     QVERIFY(author.masteringChainState->execution_bindings()==bindings);
     QVERIFY(remainingAdapter.has_error());
+    QVERIFY(provisionalEditor.manual_editable());
     QVERIFY(author.project.can_redo_private_manual_match_transfer());
     QVERIFY(author.project.redo_private_manual_match_transfer());
     QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==transferred);
