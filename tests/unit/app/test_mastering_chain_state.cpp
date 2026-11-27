@@ -140,6 +140,24 @@ void MasteringChainStateTest::manualMatchDspsRequireRealFactoriesAndRetainTypedB
     QVERIFY(state.set_transient_shaper_parameters(*edit.value()));
     QVERIFY(*state.transient_shaper_parameters()==*edit.value());
     QVERIFY(std::get<TransientShaperParameters>(state.execution_bindings()[3].parameters)==*edit.value());
+    // Restore uses the exact persisted order, identities, flags and payloads.
+    auto snapshotRegistry=state.registry_snapshot();
+    std::vector<ModuleInstance> savedNodes(state.instances().begin(),state.instances().end());
+    auto savedChain=ProcessingChain::restore(*snapshotRegistry,state.chain().context(),
+        state.chain().revision(),savedNodes);
+    QVERIFY(savedChain);
+    auto restored=MasteringChainState::restore(snapshotRegistry,chain,*savedChain.value(),
+        gain,state.gain_parameters(),eq,state.parametric_eq_parameters(),comp,state.compressor_parameters(),
+        std::nullopt,std::nullopt,std::nullopt,std::nullopt,
+        dynamic,*state.dynamic_eq_parameters(),transient,*state.transient_shaper_parameters());
+    QVERIFY(restored);
+    QVERIFY(restored.value()->execution_bindings()==state.execution_bindings());
+    QCOMPARE(restored.value()->chain().revision(),state.chain().revision());
+    QVERIFY(restored.value()->is_bypassed(dynamic) && *restored.value()->is_bypassed(dynamic).value());
+    QVERIFY(!MasteringChainState::restore(snapshotRegistry,chain,*savedChain.value(),
+        gain,state.gain_parameters(),eq,state.parametric_eq_parameters(),comp,state.compressor_parameters(),
+        std::nullopt,std::nullopt,std::nullopt,std::nullopt,
+        dynamic,*state.dynamic_eq_parameters(),std::nullopt,std::nullopt));
     state.set_private_m18_chain_mutation_admission([](const char*) {
         return core::Status::failure(core::Error{core::ErrorCode::InvalidState,"TEST_EPOCH_BLOCKED"});
     });
