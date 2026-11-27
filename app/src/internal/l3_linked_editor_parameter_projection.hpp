@@ -60,17 +60,13 @@ namespace rgsml::app::l3_automatch {
     return out;
 }
 // Exact C01 base-gain coefficients, not detector/activity or an Overall curve.
-[[nodiscard]] inline QVariantList project_linked_dynamic_response(
-    const LinkedEditorSnapshot& snapshot,int band_index)
+[[nodiscard]] inline QVariantList project_dynamic_response(
+    const dsp::DynamicEqParameters& parameters,int band_index,
+    std::uint32_t fs,std::uint32_t channels)
 {
-    const auto* p=std::get_if<dsp::DynamicEqParameters>(&snapshot.parameters);
-    if(!p||band_index<0||static_cast<std::size_t>(band_index)>=p->bands().size()||
-       !snapshot.exact_owner||!snapshot.exact_owner->exact_prepared_owner)return {};
-    const auto& band=p->bands()[static_cast<std::size_t>(band_index)];
+    if(!fs||band_index<0||static_cast<std::size_t>(band_index)>=parameters.bands().size())return {};
+    const auto& band=parameters.bands()[static_cast<std::size_t>(band_index)];
     if(!band.spec().enabled)return {};
-    const auto format=snapshot.exact_owner->exact_prepared_owner->view().format();
-    const auto fs=format.sample_rate().value();
-    const auto channels=static_cast<std::uint32_t>(format.channel_count());
     auto generator=dsp::internal::C01CoefficientGenerator::create(band,fs,channels);
     if(!generator)return {};
     const auto coeff=generator.value()->audio_coefficients(band.spec().control.base_gain_db);
@@ -93,6 +89,15 @@ namespace rgsml::app::l3_automatch {
         out.append(QVariantMap{{"frequency",hz},{"magnitudeDb",db},{"phaseRad",std::arg(h)}});
     }
     return out;
+}
+[[nodiscard]] inline QVariantList project_linked_dynamic_response(
+    const LinkedEditorSnapshot& snapshot,int band_index)
+{
+    const auto* p=std::get_if<dsp::DynamicEqParameters>(&snapshot.parameters);
+    if(!p||!snapshot.exact_owner||!snapshot.exact_owner->exact_prepared_owner)return {};
+    const auto format=snapshot.exact_owner->exact_prepared_owner->view().format();
+    return project_dynamic_response(*p,band_index,format.sample_rate().value(),
+        static_cast<std::uint32_t>(format.channel_count()));
 }
 [[nodiscard]] inline QVariantMap project_linked_editor_parameters(
     const LinkedEditorSnapshot& snapshot)
