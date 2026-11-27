@@ -21,6 +21,8 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 constexpr auto kStreamingP2TypeId = "rgsml.dsp.streaming-true-peak-limiter";
+constexpr auto kDynamicEqTypeId = "rgsml.dsp.dynamic-eq";
+constexpr auto kTransientTypeId = "rgsml.dsp.transient-shaper";
 
 [[nodiscard]] Error chain_state_error(ErrorCode code, std::string category, std::string message)
 {
@@ -89,6 +91,51 @@ Result<MasteringChainState> MasteringChainState::create_product_default(
     return create_with_stereo_ms(
         registry, chain_id, gain_id, eq_id, compressor_id,
         stereo_ms_id, *default_ms.value(), true);
+}
+
+Result<MasteringChainState> MasteringChainState::with_manual_match_dsps(
+    MasteringChainState baseline,
+    ModuleInstanceId dynamic_id, DynamicEqParameters dynamic_parameters,
+    ModuleInstanceId transient_id, TransientShaperParameters transient_parameters)
+{
+    const auto fail=[](const char* message) {
+        return Result<MasteringChainState>::failure(Error{ErrorCode::InvalidState,message});
+    };
+    if(baseline.m18_chain_admission_installed() || !baseline.registry_)
+        return fail("MANUAL_MATCH_DSP_REQUIRES_PRE_WRITER_REGISTRY");
+    if(baseline.dynamic_eq_id_ || baseline.dynamic_eq_params_ ||
+       baseline.transient_shaper_id_ || baseline.transient_shaper_params_)
+        return fail("MANUAL_MATCH_DSP_ALREADY_PRESENT");
+    if(!baseline.registry_->has_factory(kDynamicEqTypeId) ||
+       !baseline.registry_->has_factory(kTransientTypeId))
+        return fail("MANUAL_MATCH_DSP_FACTORY_MISSING");
+    if(dynamic_id.uuid().is_nil() || transient_id.uuid().is_nil() ||
+       dynamic_id==transient_id)
+        return fail("MANUAL_MATCH_DSP_INVALID_IDS");
+    for(const auto& node:baseline.chain_.instances()) {
+        if(node.instance_id()==dynamic_id || node.instance_id()==transient_id)
+            return fail("MANUAL_MATCH_DSP_DUPLICATE_ID");
+    }
+    // Existing canonical MANUAL topology has Gain, EQ, Compressor.
+    // Reject unknown order; never silently move an existing user node.
+    const auto nodes=baseline.chain_.instances();
+    if(nodes.size()<3 || nodes[0].instance_id()!=baseline.gain_id_ ||
+       nodes[1].instance_id()!=baseline.eq_id_ ||
+       nodes[2].instance_id()!=baseline.compressor_id_)
+        return fail("MANUAL_MATCH_DSP_UNEXPECTED_ORDER");
+    auto status=baseline.chain_.add(dynamic_id,kDynamicEqTypeId,2U);
+    if(!status)return Result<MasteringChainState>::failure(*status.error());
+    status=baseline.chain_.set_user_bypass(dynamic_id,true);
+    if(!status)return Result<MasteringChainState>::failure(*status.error());
+    status=baseline.chain_.add(transient_id,kTransientTypeId,3U);
+    if(!status)return Result<MasteringChainState>::failure(*status.error());
+    status=baseline.chain_.set_user_bypass(transient_id,true);
+    if(!status)return Result<MasteringChainState>::failure(*status.error());
+    baseline.dynamic_eq_id_=dynamic_id;
+    baseline.dynamic_eq_params_=std::move(dynamic_parameters);
+    baseline.transient_shaper_id_=transient_id;
+    baseline.transient_shaper_params_=std::move(transient_parameters);
+    return Result<MasteringChainState>::success(std::move(baseline));
 }
 
 Result<MasteringChainState> MasteringChainState::with_streaming_true_peak_preview(
@@ -654,6 +701,26 @@ Status MasteringChainState::set_stereo_ms_parameters(const StereoMsParameters& p
     return Status::success();
 }
 
+Status MasteringChainState::set_dynamic_eq_parameters(const DynamicEqParameters& parameters)
+{
+    if(!dynamic_eq_id_ || !dynamic_eq_params_)
+        return Status::failure(Error{ErrorCode::InvalidState,"MANUAL_DYNAMIC_EQ_NOT_PRESENT"});
+    if(*dynamic_eq_params_==parameters)return Status::success();
+    if(const auto allowed=admit_m18_chain_mutation("dynamic_eq_parameters");!allowed)return allowed;
+    dynamic_eq_params_=parameters;
+    return Status::success();
+}
+
+Status MasteringChainState::set_transient_shaper_parameters(const TransientShaperParameters& parameters)
+{
+    if(!transient_shaper_id_ || !transient_shaper_params_)
+        return Status::failure(Error{ErrorCode::InvalidState,"MANUAL_TRANSIENT_SHAPER_NOT_PRESENT"});
+    if(*transient_shaper_params_==parameters)return Status::success();
+    if(const auto allowed=admit_m18_chain_mutation("transient_shaper_parameters");!allowed)return allowed;
+    transient_shaper_params_=parameters;
+    return Status::success();
+}
+
 Status MasteringChainState::set_streaming_p2_preview_parameters(
     const StreamingTruePeakLimiterParameters& parameters)
 {
@@ -766,8 +833,12 @@ std::vector<ModuleExecutionBinding> MasteringChainState::execution_bindings() co
 {
     std::vector<ModuleExecutionBinding> bindings{
         ModuleExecutionBinding{gain_id_, gain_params_},
-        ModuleExecutionBinding{eq_id_, eq_params_},
-        ModuleExecutionBinding{compressor_id_, compressor_params_}};
+        ModuleExecutionBinding{eq_id_, eq_params_}};
+    if(dynamic_eq_id_ && dynamic_eq_params_)
+        bindings.emplace_back(*dynamic_eq_id_,*dynamic_eq_params_);
+    if(transient_shaper_id_ && transient_shaper_params_)
+        bindings.emplace_back(*transient_shaper_id_,*transient_shaper_params_);
+    bindings.emplace_back(compressor_id_,compressor_params_);
     if (stereo_ms_id_ && stereo_ms_params_) {
         bindings.emplace_back(*stereo_ms_id_, *stereo_ms_params_);
     }
