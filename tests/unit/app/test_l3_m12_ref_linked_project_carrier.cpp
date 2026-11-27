@@ -928,6 +928,16 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     const auto recovered=transfer::recover_manual_match_transfer_before(projectDraft.value()->after);
     QVERIFY(recovered);
     QVERIFY(projectDraft.value()->matches_before(*recovered.value()));
+    const auto recoveredForward=transfer::validate_recovered_manual_match_transfer(
+        projectDraft.value()->after,*draft.value());
+    QVERIFY(recoveredForward);
+    QVERIFY(recoveredForward.value()->matches_before(*beforeTransfer.value()));
+    QVERIFY(recoveredForward.value()->matches_after(projectDraft.value()->after));
+    QVERIFY(!transfer::validate_recovered_manual_match_transfer(
+        *tamperedSnapshot.value(),*draft.value()));
+    QVERIFY(!transfer::validate_recovered_manual_match_transfer(
+        projectDraft.value()->after,*other.value()));
+
     QVERIFY(m::decode_exact_m12_ref_linked_product_state(recovered.value()->document(),reg));
     QVERIFY(!transfer::recover_manual_match_transfer_before(*beforeTransfer.value()));
     auto corruptedCandidate=afterDocument;
