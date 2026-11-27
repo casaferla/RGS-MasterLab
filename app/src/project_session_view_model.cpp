@@ -721,7 +721,8 @@ void ProjectSessionViewModel::on_source_changed()
           !lastSource_->same_resource_identity(source->reference()))
         :lastSource_.has_value();
     if(resourceChanged&&previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket()) {
+       (previewController_->has_private_m12_product_preview_ticket()||
+        previewController_->private_manual_transfer_preview_ticket())) {
         if(!isCommittingProjectOpen_&&opened_) {
             const auto prior=previewController_->private_m12_product_preview_ticket();
             if(prior&&prior->replay&&l3_automatch::m12_frozen::
@@ -752,7 +753,8 @@ void ProjectSessionViewModel::on_gold_changed()
           !lastGold_->same_resource_identity(gold->reference()))
         :lastGold_.has_value();
     if(resourceChanged&&previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket()) {
+       (previewController_->has_private_m12_product_preview_ticket()||
+        previewController_->private_manual_transfer_preview_ticket())) {
         if(!isCommittingProjectOpen_&&opened_) {
             const auto prior=previewController_->private_m12_product_preview_ticket();
             if(prior&&prior->replay&&l3_automatch::m12_frozen::
@@ -1216,6 +1218,10 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         assess_current_product_ref_linked_open_safety(doc)!=
         l3_automatch::m12_frozen::ProjectOpenLinkedSafety::
             ordinary_project_without_ref_linked;
+    const auto matchMetadata=QJsonDocument::fromJson(
+        QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    const bool transferRequested=matchMetadata.isObject()&&
+        matchMetadata.object().contains(QStringLiteral("manualTransferCandidate"));
     if(linkedRequested&&(!m18ProjectOpenBatchBegin_||
         !m18ProjectSaveBatchBegin_||!previewController_||
         !masteringChainState_)) {
@@ -1398,17 +1404,32 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     std::shared_ptr<const
         l3_automatch::m12_frozen::RestoredM12NativeReplayPlan>
         reopeningReplay;
+    std::optional<l3_automatch::ManualMatchTransferReopenPreflight> reopeningTransfer;
     if(linkedRequested) {
         if(!projectMutationBatch||!chainCandidate.value()->chainState) {
             publish_error(core::Error{core::ErrorCode::InvalidState,
                 "L3_M12_PROJECT_OPEN_NO_REAL_OWNER_OR_MANUAL_CHAIN"});
             return;
         }
-        auto preflight=l3_automatch::m12_frozen::
-            prepare_m12_product_reopen_preflight(
-                doc,*chainCandidate.value()->chainState,true);
-        if(!preflight) {publish_error(*preflight.error());return;}
-        reopeningReplay=std::move(preflight.value()->replay);
+        if(transferRequested) {
+            auto recovered=l3_automatch::recover_manual_match_transfer_before(*opened.value());
+            if(!recovered){publish_error(*recovered.error());return;}
+            auto prior=validate_mastering_chain(recovered.value()->document(),*restoreRegistry,uuidFactory_);
+            if(!prior){publish_error(*prior.error());return;}
+            if(!prior.value()->chainState){
+                publish_error(core::Error{core::ErrorCode::InvalidState,"MANUAL_MATCH_REOPEN_PRIOR_CHAIN_ABSENT"});return;
+            }
+            auto preflight=l3_automatch::prepare_manual_match_transfer_reopen(
+                *opened.value(),*prior.value()->chainState,*chainCandidate.value()->chainState);
+            if(!preflight){publish_error(*preflight.error());return;}
+            reopeningTransfer.emplace(std::move(*preflight.value()));
+        } else {
+            auto preflight=l3_automatch::m12_frozen::
+                prepare_m12_product_reopen_preflight(
+                    doc,*chainCandidate.value()->chainState,true);
+            if(!preflight) {publish_error(*preflight.error());return;}
+            reopeningReplay=std::move(preflight.value()->replay);
+        }
     }
     isCommittingProjectOpen_ = true;
     auto stopped = playback_->stop_and_clear();
@@ -1423,7 +1444,8 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Revoke only AFTER transport-stop success and the M18 Project lease;
     // rejected preflights and failed stop requests preserve the prior owner.
     if(previewController_ &&
-       previewController_->has_private_m12_product_preview_ticket())
+       (previewController_->has_private_m12_product_preview_ticket()||
+        previewController_->private_manual_transfer_preview_ticket()))
         previewController_->set_private_m12_product_preview_ticket({});
 
     const auto adoptedSource=
@@ -1538,6 +1560,20 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         const auto& provider=previewController_->snapshot_provider();
         const auto currentPrepared=provider?provider():
             std::shared_ptr<const render::RenderResult>{};
+        if(reopeningTransfer) {
+            auto ticket=l3_automatch::bind_manual_match_transfer_reopen(
+                *reopeningTransfer,currentPrepared,m12ProductOwnershipEpoch_+1U);
+            if(!ticket||!previewController_->set_private_manual_transfer_preview_ticket(
+                ticket?std::make_shared<const l3_automatch::ManualMatchTransferPreviewTicket>(
+                    std::move(*ticket.value())):nullptr)) {
+                previewController_->set_private_m12_product_preview_ticket(
+                    std::make_shared<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>());
+                isCommittingProjectOpen_=false;
+                publish_error(core::Error{core::ErrorCode::InvalidState,
+                    "MANUAL_MATCH_REOPEN_PREPARED_BIND_FAILED"});
+                return;
+            }
+        } else {
         auto ticket=currentPrepared
             ?l3_automatch::m12_frozen::
                 prepare_m12_immutable_product_preview_ticket(
@@ -1565,6 +1601,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             std::make_shared<const l3_automatch::m12_frozen::
                 M12ImmutableProductPreviewTicket>(
                     std::move(*ticket.value())));
+        }
     }
     if (previewController_) {
         previewController_->request_preview();
@@ -1578,8 +1615,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     // Exact IDs are captured by frame domain, not vector order.
     const auto persistedRegionId=persistedSourceRegionId;
     const auto persistedName = doc.displayName;
-    const bool isDegraded = linkedRequested
-        ?has_unsupported_semantics_after_native_m12_reopen(doc)
+    const bool isDegraded = reopeningTransfer
+        ?has_unsupported_semantics_after_native_m12_reopen(reopeningTransfer->project.before.document())
+        :linkedRequested?has_unsupported_semantics_after_native_m12_reopen(doc)
         :has_future_semantics(doc);
     // Publish the validated WAV preference only after the entire
     // Project/source/chain commit succeeded under the M18 physical lease.
@@ -1605,7 +1643,19 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     degraded_ = isDegraded;
     projectDisplayName_ = QString::fromUtf8(persistedName.data(),
         static_cast<qsizetype>(persistedName.size()));
-    if(linkedRequested) {
+    if(reopeningTransfer) {
+        const auto readback=current_snapshot(QString::fromStdString(persistedName));
+        const auto ticket=previewController_->private_manual_transfer_preview_ticket();
+        if(!readback||!ticket||!ticket->matches_project(*readback.value())||
+           !ticket->matches_project(*opened_)) {
+            previewController_->set_private_m12_product_preview_ticket(
+                std::make_shared<const l3_automatch::m12_frozen::M12ImmutableProductPreviewTicket>());
+            publish_error(core::Error{core::ErrorCode::InvalidState,
+                "MANUAL_MATCH_REOPEN_READBACK_MISMATCH"});
+            return;
+        }
+        statusText_=QStringLiteral("Project reopened: MANUAL TRANSFER / NOT_VERIFIED.");
+    } else if(linkedRequested) {
         // This is a REAL owner projection after Source, Gold, MANUAL and
         // the immutable REF replay ticket were installed. Reopening a
         // persisted MATERIALIZED plan creates NO NEW receipt.
