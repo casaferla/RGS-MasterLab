@@ -409,6 +409,79 @@ private:
     QString attackError_,sustainError_,operationError_;
 };
 
+// Real MANUAL C01 editor. Stable band IDs, typed validation and history
+// are independent of the selected GUI band and of immutable linked tickets.
+class ManualDynamicEqModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+    Q_PROPERTY(bool manualEditable READ manual_editable NOTIFY changed)
+    Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
+    Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
+    Q_PROPERTY(bool routeAvailable READ route_available NOTIFY changed)
+public:
+    ManualDynamicEqModuleAdapter(MasteringChainState* state,
+        MasteringPreviewController* preview,QString context,QObject* parent=nullptr);
+    [[nodiscard]] bool manual_editable() const noexcept {return params()!=nullptr;}
+    [[nodiscard]] QString validation_field() const {return validationField_;}
+    [[nodiscard]] QString validation_message() const {return validationMessage_;}
+    [[nodiscard]] bool route_available() const;
+    [[nodiscard]] QString instance_id() const override {return id_?QString::fromStdString(id_->to_string()):QString{};}
+    [[nodiscard]] QString type_id() const override {return QStringLiteral("rgsml.dsp.dynamic-eq");}
+    [[nodiscard]] QString display_name() const override {return QStringLiteral("Dynamic EQ");}
+    [[nodiscard]] QString workspace_context_label() const override {return context_;}
+    [[nodiscard]] QString configuration_state() const override;
+    [[nodiscard]] bool bypass_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] bool bypass() const noexcept override;
+    [[nodiscard]] bool preview_supported() const noexcept override {return preview_!=nullptr;}
+    [[nodiscard]] QString preview_status() const override {return preview_?preview_->preview_status():QStringLiteral("IDLE");}
+    [[nodiscard]] QString preview_error() const override {return !operationError_.isEmpty()?operationError_:(preview_?preview_->preview_error():QString{});}
+    [[nodiscard]] bool history_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] bool can_undo() const noexcept override {return history_current()&&!undo_.empty();}
+    [[nodiscard]] bool can_redo() const noexcept override {return history_current()&&!redo_.empty();}
+    [[nodiscard]] bool reset_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] QString editor_content_key() const override {return QStringLiteral("DYNAMIC_EQ");}
+    [[nodiscard]] QString live_change_policy() const override {return QStringLiteral("MANUAL_COMMIT_REBUILDS_PREVIEW");}
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override {return nullptr;}
+    [[nodiscard]] QString family_accent() const override {return QStringLiteral("#4E86C6");}
+    [[nodiscard]] QString state_text() const override;
+    [[nodiscard]] bool has_error() const noexcept override;
+    [[nodiscard]] QVariantMap linked_parameters() const override;
+    [[nodiscard]] QVariantList linkedBandResponse(int index) const override;
+    Q_INVOKABLE bool editBandNumber(const QString& id,const QString& field,double value);
+    Q_INVOKABLE bool editBandText(const QString& id,const QString& field,const QString& value);
+    Q_INVOKABLE bool editBandFilter(const QString& id,const QString& filter);
+    Q_INVOKABLE bool editBandRouting(const QString& id,const QString& routing);
+    Q_INVOKABLE bool editBandEnabled(const QString& id,bool value);
+    Q_INVOKABLE bool editBandGraph(const QString& id,double hz,double gain);
+    Q_INVOKABLE bool appendBand();
+    Q_INVOKABLE bool deleteBand(const QString& id);
+    Q_INVOKABLE void clearValidation();
+    void setBypass(bool value) override;
+    void undo() override {move_history(undo_,redo_);}
+    void redo() override {move_history(redo_,undo_);}
+    void resetToDefault() override;
+private:
+    using Params=dsp::DynamicEqParameters;
+    using Result=core::Result<Params>;
+    [[nodiscard]] const Params* params() const noexcept;
+    [[nodiscard]] bool history_current() const noexcept;
+    [[nodiscard]] std::shared_ptr<const render::RenderResult> prepared() const;
+    bool reject(const QString& field,const QString& message);
+    bool accept(Result result,const QString& field);
+    bool write(const Params& p);
+    void refresh();
+    void publish();
+    void move_history(std::vector<Params>& from,std::vector<Params>& to);
+    MasteringChainState* state_{};
+    MasteringPreviewController* preview_{};
+    QString context_;
+    std::optional<dsp::ModuleInstanceId> id_;
+    std::optional<Params> observed_;
+    std::vector<Params> undo_,redo_;
+    QString validationField_,validationMessage_,operationError_;
+};
+
 class StreamingTruePeakPreviewModuleAdapter final : public DspModuleAdapter {
     Q_OBJECT
     Q_PROPERTY(double ceilingDbTp READ ceiling_db_tp WRITE setCeilingDbTp NOTIFY changed)
