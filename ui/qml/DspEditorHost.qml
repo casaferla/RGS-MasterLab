@@ -100,8 +100,17 @@ Rectangle {
         && root.terminalMonitorViewModel.canInstall
         && !root.terminalMonitorViewModel.monitorPreparing
         && !root.terminalMonitorViewModel.monitorCancelling
+    readonly property bool monitorResetRequired: !!root.terminalMonitorViewModel
+        && root.terminalMonitorViewModel.canDismiss
+        && !root.terminalMonitorViewModel.monitorExclusive
+        && !root.terminalMonitorViewModel.monitorPreparing
+        && !root.terminalMonitorViewModel.monitorCancelling
+        && !root.terminalMonitorViewModel.offlineMasterRendering
+        && !root.terminalMonitorViewModel.canInstall
+        && !!root.terminalMonitorViewModel.errorText
+        && !root.directReturnAvailable
     readonly property bool monitorReturnVisible: root.isLimiterEditor
-        && ((!!root.terminalMonitorViewModel
+        && (root.monitorResetRequired || (!!root.terminalMonitorViewModel
             && (root.terminalMonitorViewModel.monitorExclusive
                 || root.terminalMonitorViewModel.monitorPreparing
                 || root.terminalMonitorViewModel.monitorCancelling))
@@ -786,7 +795,8 @@ Rectangle {
                     id: m17ReturnSourceButtonDwell
                     anchors.fill: parent
                 }
-                text: root.terminalMonitorViewModel
+                text: root.monitorResetRequired ? "Reset Master Listening"
+                    : root.terminalMonitorViewModel
                         && root.terminalMonitorViewModel.monitorPreparing
                     ? "Cancel Playback Conversion"
                     : root.terminalMonitorViewModel
@@ -805,7 +815,8 @@ Rectangle {
                     && !root.terminalMonitorViewModel.monitorCancelling
                 onClicked: {
                     if (root.terminalMonitorViewModel
-                        && (root.terminalMonitorViewModel.monitorExclusive
+                        && (root.monitorResetRequired
+                            || root.terminalMonitorViewModel.monitorExclusive
                             || root.terminalMonitorViewModel.monitorPreparing
                             || root.terminalMonitorViewModel.monitorCancelling))
                         root.terminalMonitorViewModel.cancel()
