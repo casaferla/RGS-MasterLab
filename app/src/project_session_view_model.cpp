@@ -2378,6 +2378,23 @@ ProjectSessionViewModel::capture_private_manual_match_transfer(const core::Uuid&
             std::move(*draft.value()),std::move(*projectDraft.value())}));
 }
 
+bool ProjectSessionViewModel::private_manual_match_transfer_owner_current(
+    const l3_automatch::ManualMatchTransferCapture& capture) const
+{
+    if(QThread::currentThread()!=thread()||!opened_||!previewController_||
+       !masteringChainState_||capture.product_epoch!=m12ProductOwnershipEpoch_||
+       !capture.project.matches_before(*opened_))return false;
+    const auto& prior=capture.native.exact_prior_owner;
+    const auto& provider=previewController_->snapshot_provider();
+    const auto nodes=masteringChainState_->instances();
+    return prior&&provider&&provider()==prior->exact_prepared_owner&&
+       previewController_->private_m12_product_preview_ticket()==prior&&
+       previewController_->private_m12_linked_editor_owner_matches(*masteringChainState_)&&
+       masteringChainState_->chain().revision()==prior->exact_manual_chain_revision&&
+       std::equal(nodes.begin(),nodes.end(),prior->exact_manual_nodes.begin(),prior->exact_manual_nodes.end())&&
+       masteringChainState_->execution_bindings()==prior->exact_manual_bindings;
+}
+
 bool ProjectSessionViewModel::private_manual_match_transfer_still_current(
     const l3_automatch::ManualMatchTransferCapture& capture)
 {

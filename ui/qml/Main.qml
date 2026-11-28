@@ -903,6 +903,10 @@ ApplicationWindow {
         id: autoMatchDialog
         objectName: "autoMatchDialog"
         title: "AutoMatch"
+        onClosed: {
+            if (root.appAutoMatchModel && root.appAutoMatchModel.transferListening)
+                root.appAutoMatchModel.stopTransferListening()
+        }
         // Persistent session-local search settings, independent of Popup delegates.
         // Drafts and committed amounts are shared by the panel and the dialog.
         property var amountValues: [100, 100, 100, 100, 100]
@@ -949,7 +953,7 @@ ApplicationWindow {
         }
         modal: false
         anchors.centerIn: parent
-        width: 340
+        width: root.appAutoMatchModel && root.appAutoMatchModel.transferReady ? 440 : 340
         standardButtons: Dialog.Close
         background: Rectangle { color: root.surface; border.color: root.border; radius: 5 }
         ColumnLayout {

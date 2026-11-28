@@ -139,6 +139,12 @@ void AutoMatchViewModel::poll_transfer()
         transfer_candidate_.reset();
         transfer_text_=QStringLiteral("Transfer expired: reference changed.");
     }
+    if(transfer_candidate_&&!product_.upstream.project.private_manual_match_transfer_owner_current(
+        transfer_candidate_->capture())) {
+        if(transfer_listening()&&!stopTransferListening())return;
+        transfer_candidate_.reset();
+        transfer_text_=QStringLiteral("Transfer expired: project changed.");
+    }
     if(transfer_worker_.valid()&&transfer_worker_.wait_for(0ms)==std::future_status::ready) {
         try {
             auto done=transfer_worker_.get();

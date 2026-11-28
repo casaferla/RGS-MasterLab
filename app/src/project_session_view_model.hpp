@@ -221,6 +221,8 @@ public:
     // no live mutation or accepted solver receipt is issued by capture.
     [[nodiscard]] core::Result<std::shared_ptr<const l3_automatch::ManualMatchTransferCapture>>
     capture_private_manual_match_transfer(const core::Uuid& linked_instance);
+    [[nodiscard]] bool private_manual_match_transfer_owner_current(
+        const l3_automatch::ManualMatchTransferCapture& capture) const;
     [[nodiscard]] bool private_manual_match_transfer_still_current(
         const l3_automatch::ManualMatchTransferCapture& capture);
     // Nonpublishing GUI confirmation preflight. Any later adoption
