@@ -606,6 +606,16 @@ ProjectSessionViewModel::ProjectSessionViewModel(
                     "MANUAL_FINE_TUNE_PROJECT_OWNER_DESTROYED"});
                 return owner->apply_private_transferred_manual_parameter_edit(id,payload);
             });
+        previewController_->set_private_transferred_edit_history(
+            [owner](bool redo){
+                return owner&&(redo?owner->can_redo_private_transferred_manual_edit():
+                    owner->can_undo_private_transferred_manual_edit());
+            },[owner](bool redo){
+                if(!owner)return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
+                    "MANUAL_FINE_TUNE_PROJECT_OWNER_DESTROYED"});
+                return redo?owner->redo_private_transferred_manual_edit():
+                    owner->undo_private_transferred_manual_edit();
+            });
         // A newly installed/revoked M12 ticket changes whether SaveAs
         // can persist the actual audible graph. Qt/QML must re-evaluate
         // canSaveProject immediately, even with unchanged SOURCE.

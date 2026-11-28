@@ -92,6 +92,14 @@ public:
     [[nodiscard]] bool can_edit_private_transferred_parameter(const dsp::ModuleInstanceId& id) const noexcept;
     [[nodiscard]] core::Status edit_private_transferred_parameter(
         const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload);
+    using TransferredEditHistoryQuery=std::function<bool(bool)>;
+    using TransferredEditHistoryAction=std::function<core::Status(bool)>;
+    void set_private_transferred_edit_history(TransferredEditHistoryQuery query,
+        TransferredEditHistoryAction action);
+    [[nodiscard]] bool can_change_private_transferred_edit_history(
+        const dsp::ModuleInstanceId& id,bool redo) const noexcept;
+    [[nodiscard]] core::Status change_private_transferred_edit_history(
+        const dsp::ModuleInstanceId& id,bool redo);
     // Owner-thread inspection only. Source/Reference transitions must
     // revoke a linked realization before an unrelated Project loads.
     [[nodiscard]] bool has_private_m12_product_preview_ticket()
@@ -139,6 +147,8 @@ private:
     AcceptedProcessedProvider acceptedProcessedProvider_;
     PreviewExecutor previewExecutor_;
     TransferredParameterEditor transferredParameterEditor_;
+    TransferredEditHistoryQuery transferredEditHistoryQuery_;
+    TransferredEditHistoryAction transferredEditHistoryAction_;
     std::shared_ptr<const l3_automatch::m12_frozen::
         M12ImmutableProductPreviewTicket> m12ReplayTicket_;
     std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> transferTicket_;

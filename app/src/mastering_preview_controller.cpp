@@ -391,6 +391,30 @@ core::Status MasteringPreviewController::edit_private_transferred_parameter(
     return transferredParameterEditor_(id,payload);
 }
 
+void MasteringPreviewController::set_private_transferred_edit_history(
+    TransferredEditHistoryQuery query,TransferredEditHistoryAction action)
+{
+    if(QThread::currentThread()!=thread())return;
+    transferredEditHistoryQuery_=std::move(query);
+    transferredEditHistoryAction_=std::move(action);
+}
+bool MasteringPreviewController::can_change_private_transferred_edit_history(
+    const dsp::ModuleInstanceId& id,bool redo) const noexcept
+{
+    if(!can_edit_private_transferred_parameter(id)||!transferredEditHistoryQuery_||
+       !transferredEditHistoryAction_)return false;
+    try {return transferredEditHistoryQuery_(redo);}
+    catch(...){return false;}
+}
+core::Status MasteringPreviewController::change_private_transferred_edit_history(
+    const dsp::ModuleInstanceId& id,bool redo)
+{
+    if(!can_change_private_transferred_edit_history(id,redo))
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
+            "MANUAL_FINE_TUNE_HISTORY_NOT_AVAILABLE"});
+    return transferredEditHistoryAction_(redo);
+}
+
 void MasteringPreviewController::set_research_p2_timing_log_path(QString path)
 {
     // Only research startup calls this, before the first worker job.
