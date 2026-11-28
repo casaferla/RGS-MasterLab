@@ -8924,9 +8924,12 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QVERIFY(author.project.can_save_project());
     app::ManualTransientShaperModuleAdapter provisionalEditor(
         author.masteringChainState.get(),author.previewController.get(),QStringLiteral("Mastering"));
-    QVERIFY(!provisionalEditor.manual_editable());
-    QVERIFY(!provisionalEditor.reset_supported());
+    QVERIFY(provisionalEditor.manual_editable());
+    QVERIFY(provisionalEditor.reset_supported());
+    QVERIFY(!provisionalEditor.bypass_supported());
+    busy=true;
     QVERIFY(!provisionalEditor.setAttackAmountDb(7.0));
+    busy=false;
     QVERIFY(author.masteringChainState->execution_bindings()==provisionalBindings);
     QVERIFY(author.project.can_undo_private_manual_match_transfer());
     QVERIFY(!author.project.can_redo_private_manual_match_transfer());
@@ -8939,6 +8942,16 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QVERIFY(author.project.redo_private_manual_match_transfer());
     QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==transferred);
     QVERIFY(!author.project.can_redo_private_manual_match_transfer());
+    QVERIFY(provisionalEditor.setAttackAmountDb(5.0));
+    QVERIFY(provisionalEditor.setSustainAmountDb(-3.0));
+    const auto fineTuned=author.previewController->private_manual_transfer_preview_ticket();
+    QVERIFY(fineTuned&&fineTuned!=transferred);
+    QCOMPARE(author.masteringChainState->transient_shaper_parameters()->attack_amount_db(),5.0);
+    QCOMPARE(author.masteringChainState->transient_shaper_parameters()->sustain_amount_db(),-3.0);
+    QCOMPARE(author.masteringChainState->chain().revision(),provisionalRevision+2U);
+    QVERIFY(author.project.can_save_project());
+    QVERIFY(!author.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
+    QVERIFY(!author.project.apply_private_transferred_manual_parameter_edit(dynamic,*de.value()));
     QTRY_COMPARE_WITH_TIMEOUT(author.previewController->preview_status(),QStringLiteral("READY"),10000);
     QVERIFY(processed);
     QVERIFY(!processed->linked_activity_sidecar()); // no borrowed accepted-plan activity receipt
@@ -8946,7 +8959,8 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     author.project.saveProjectAs(QUrl::fromLocalFile(savedPath));
     QVERIFY2(QFileInfo::exists(savedPath),author.project.error_message().toUtf8().constData());
     auto saved=load_project(savedPath);
-    QVERIFY(saved&&transferred->matches_project(*saved.value()));
+    QVERIFY(saved&&fineTuned->matches_project(*saved.value()));
+    QVERIFY(!transferred->matches_project(*saved.value()));
     QVERIFY(!m::decode_exact_m12_ref_linked_product_state(saved.value()->document(),registry));
     bool reopenBusy=false;
     std::shared_ptr<const render::RenderResult> reopenProcessed;
