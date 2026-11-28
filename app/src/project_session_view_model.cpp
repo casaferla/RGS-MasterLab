@@ -2493,6 +2493,71 @@ core::Status ProjectSessionViewModel::apply_private_manual_match_transfer(
     return core::Status::success();
 }
 
+core::Status ProjectSessionViewModel::apply_private_transferred_manual_parameter_edit(
+    const dsp::ModuleInstanceId& instance,const dsp::ModuleParameterPayload& replacement)
+{
+    namespace a=l3_automatch;
+    const auto fail=[](const char* why){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||!opened_||!sessionChainMaterialized_||
+       !m18ProjectSaveBatchBegin_||!m18ProjectOpenBatchBegin_||
+       !previewController_||!masteringChainState_)
+        return fail("MANUAL_FINE_TUNE_NO_CURRENT_PRODUCT");
+    const auto old=previewController_->private_manual_transfer_preview_ticket();
+    if(!old||!previewController_->private_manual_transfer_owner_matches(*masteringChainState_)||
+       !old->matches_project(*opened_))return fail("MANUAL_FINE_TUNE_OWNER_STALE");
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("MANUAL_FINE_TUNE_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto stem=QString::fromStdString(opened_->document().displayName);
+    const auto live=current_snapshot(stem);
+    if(!live)return core::Status::failure(*live.error());
+    const auto& provider=previewController_->snapshot_provider();
+    const auto epoch=m12ProductOwnershipEpoch_;
+    const auto bindings=masteringChainState_->execution_bindings();
+    auto draft=a::prepare_transferred_manual_edit_project(
+        *old,*live.value(),masteringChainState_->chain(),bindings,
+        provider?provider():nullptr,instance,replacement);
+    if(!draft)return core::Status::failure(*draft.error());
+    auto next=a::ManualMatchTransferPreviewTicket::create_edited(
+        old->capture_owner(),draft.value()->after);
+    if(!next)return core::Status::failure(*next.error());
+    auto staged=masteringChainState_->prepare_explicit_manual_preset_state(
+        draft.value()->staged.proposed_manual_chain,draft.value()->staged.proposed_bindings);
+    if(!staged)return core::Status::failure(*staged.error());
+    if(!next.value()->matches_manual(staged.value()->chain(),staged.value()->execution_bindings()))
+        return fail("MANUAL_FINE_TUNE_STAGED_GRAPH_MISMATCH");
+    auto ticket=std::make_shared<const a::ManualMatchTransferPreviewTicket>(std::move(*next.value()));
+    auto beforeManual=*masteringChainState_;
+    auto beforeProject=*opened_;
+    auto afterProject=draft.value()->after;
+    if(epoch!=m12ProductOwnershipEpoch_||
+       previewController_->private_manual_transfer_preview_ticket()!=old||
+       !previewController_->private_manual_transfer_owner_matches(*masteringChainState_)||
+       !old->matches_project(*opened_))
+        return fail("MANUAL_FINE_TUNE_OWNER_RACED");
+    masteringChainState_->adopt_chain_after_authorized_project_open(std::move(*staged.value()));
+    opened_.emplace(std::move(afterProject));
+    const bool installed=previewController_->set_private_manual_transfer_preview_ticket(ticket);
+    const auto readback=current_snapshot(stem);
+    if(!installed||!readback||!ticket->matches_project(*readback.value())||
+       !previewController_->private_manual_transfer_owner_matches(*masteringChainState_)) {
+        masteringChainState_->adopt_chain_after_authorized_project_open(std::move(beforeManual));
+        opened_.emplace(std::move(beforeProject));
+        static_cast<void>(previewController_->set_private_manual_transfer_preview_ticket(old));
+        previewController_->request_preview();
+        return fail("MANUAL_FINE_TUNE_READBACK_ROLLED_BACK");
+    }
+    ++m12ProductOwnershipEpoch_;
+    previewController_->request_preview();
+    statusText_=QStringLiteral("MANUAL FINE-TUNE / NOT_VERIFIED");
+    clear_error();
+    return core::Status::success();
+}
+
 bool ProjectSessionViewModel::private_manual_match_transfer_history_current(bool applied) const
 {
     if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||

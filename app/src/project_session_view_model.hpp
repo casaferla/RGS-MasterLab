@@ -231,6 +231,9 @@ public:
     [[nodiscard]] core::Status apply_private_manual_match_transfer(
         std::shared_ptr<const l3_automatch::ManualMatchTransferAudition> audition,
         const l3_automatch::ManualMatchTransferConfirmation& confirmation);
+    [[nodiscard]] core::Status apply_private_transferred_manual_parameter_edit(
+        const dsp::ModuleInstanceId& instance,
+        const dsp::ModuleParameterPayload& replacement);
     [[nodiscard]] bool can_undo_private_manual_match_transfer() const;
     [[nodiscard]] bool can_redo_private_manual_match_transfer() const;
     [[nodiscard]] core::Status undo_private_manual_match_transfer();
