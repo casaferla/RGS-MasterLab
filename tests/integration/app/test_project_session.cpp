@@ -8949,7 +8949,7 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
         author.masteringChainState.get(),author.previewController.get(),QStringLiteral("Mastering"));
     QVERIFY(provisionalEditor.manual_editable());
     QVERIFY(provisionalEditor.reset_supported());
-    QVERIFY(!provisionalEditor.bypass_supported());
+    QVERIFY(provisionalEditor.bypass_supported());
     busy=true;
     QVERIFY(!provisionalEditor.setAttackAmountDb(7.0));
     busy=false;
@@ -8989,7 +8989,18 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QVERIFY(author.project.redo_private_transferred_manual_edit());
     QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==fineTuned);
     QVERIFY(!author.project.can_redo_private_transferred_manual_edit());
-
+    provisionalEditor.setBypass(true);
+    QVERIFY(provisionalEditor.bypass());
+    QVERIFY(!author.previewController->private_m12_product_preview_ticket());
+    QVERIFY(author.project.can_undo_private_transferred_manual_edit());
+    QVERIFY(author.project.undo_private_transferred_manual_edit());
+    QVERIFY(!provisionalEditor.bypass());
+    QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==fineTuned);
+    QVERIFY(author.project.redo_private_transferred_manual_edit());
+    QVERIFY(provisionalEditor.bypass());
+    QVERIFY(author.project.undo_private_transferred_manual_edit());
+    QVERIFY(!provisionalEditor.bypass());
+    QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==fineTuned);
     QVERIFY(author.project.can_save_project());
     QVERIFY(!author.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
     QVERIFY(!author.project.apply_private_transferred_manual_parameter_edit(dynamic,*de.value()));
