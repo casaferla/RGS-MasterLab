@@ -303,6 +303,13 @@ QString AutoMatchViewModel::failure_diagnostics_text()const {
         .arg(perf.completed).arg(perf.failed).arg(perf.cache_hits);
     text+=QStringLiteral("\nPreflight rejected: %1 | budget refusals: %2")
         .arg(perf.evaluator_preflight_rejections).arg(perf.budget_refusals);
+    static constexpr const char* reasons[]={"measured","stale/unattested","render/analysis","triple authority","M07 incomplete","M08/M11 rejected"};
+    for(std::size_t i=0;i<perf.native_cost_reasons.size();++i) {
+        if(!perf.native_cost_reasons[i])continue;
+        text+=QStringLiteral("\n%1: %2").arg(QString::fromLatin1(reasons[i])).arg(perf.native_cost_reasons[i]);
+        if(!perf.first_native_failure_details[i].empty())
+            text+=QStringLiteral(" (%1)").arg(QString::fromStdString(perf.first_native_failure_details[i]));
+    }
     const auto elapsed=completed.original_pair_ms+worker.timing.fixed_ms+
         worker.timing.seed_ms+worker.timing.search_ms;
     text+=QStringLiteral("\nMeasured phases: %1 s (original %2 / fixed %3 / seed %4 / search %5)")
