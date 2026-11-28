@@ -383,12 +383,13 @@ bool MasteringPreviewController::can_edit_private_transferred_parameter(
         transferTicket_->capture().native.manual_instance==id;
 }
 core::Status MasteringPreviewController::edit_private_transferred_parameter(
-    const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload)
+    const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload,
+    std::optional<bool> userBypass)
 {
     if(!can_edit_private_transferred_parameter(id))
         return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
             "MANUAL_FINE_TUNE_EDITOR_NOT_AVAILABLE"});
-    return transferredParameterEditor_(id,payload);
+    return transferredParameterEditor_(id,payload,userBypass);
 }
 
 void MasteringPreviewController::set_private_transferred_edit_history(

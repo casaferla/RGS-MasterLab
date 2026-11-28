@@ -87,11 +87,12 @@ public:
     [[nodiscard]] bool private_manual_transfer_owner_matches(
         const MasteringChainState& candidate) const;
     using TransferredParameterEditor=std::function<core::Status(
-        const dsp::ModuleInstanceId&,const dsp::ModuleParameterPayload&)>;
+        const dsp::ModuleInstanceId&,const dsp::ModuleParameterPayload&,std::optional<bool>)>;
     void set_private_transferred_parameter_editor(TransferredParameterEditor editor);
     [[nodiscard]] bool can_edit_private_transferred_parameter(const dsp::ModuleInstanceId& id) const noexcept;
     [[nodiscard]] core::Status edit_private_transferred_parameter(
-        const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload);
+        const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload,
+        std::optional<bool> userBypass=std::nullopt);
     using TransferredEditHistoryQuery=std::function<bool(bool)>;
     using TransferredEditHistoryAction=std::function<core::Status(bool)>;
     void set_private_transferred_edit_history(TransferredEditHistoryQuery query,

@@ -236,7 +236,8 @@ public:
         const l3_automatch::ManualMatchTransferConfirmation& confirmation);
     [[nodiscard]] core::Status apply_private_transferred_manual_parameter_edit(
         const dsp::ModuleInstanceId& instance,
-        const dsp::ModuleParameterPayload& replacement);
+        const dsp::ModuleParameterPayload& replacement,
+        std::optional<bool> userBypass=std::nullopt);
     [[nodiscard]] bool can_undo_private_transferred_manual_edit() const;
     [[nodiscard]] bool can_redo_private_transferred_manual_edit() const;
     [[nodiscard]] core::Status undo_private_transferred_manual_edit();

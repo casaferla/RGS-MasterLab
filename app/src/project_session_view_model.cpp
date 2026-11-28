@@ -601,10 +601,10 @@ ProjectSessionViewModel::ProjectSessionViewModel(
     if(previewController_) {
         const QPointer<ProjectSessionViewModel> owner(this);
         previewController_->set_private_transferred_parameter_editor(
-            [owner](const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload){
+            [owner](const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload,std::optional<bool> bypass){
                 if(!owner)return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
                     "MANUAL_FINE_TUNE_PROJECT_OWNER_DESTROYED"});
-                return owner->apply_private_transferred_manual_parameter_edit(id,payload);
+                return owner->apply_private_transferred_manual_parameter_edit(id,payload,bypass);
             });
         previewController_->set_private_transferred_edit_history(
             [owner](bool redo){
@@ -2537,7 +2537,8 @@ core::Status ProjectSessionViewModel::apply_private_manual_match_transfer(
 }
 
 core::Status ProjectSessionViewModel::apply_private_transferred_manual_parameter_edit(
-    const dsp::ModuleInstanceId& instance,const dsp::ModuleParameterPayload& replacement)
+    const dsp::ModuleInstanceId& instance,const dsp::ModuleParameterPayload& replacement,
+    std::optional<bool> userBypass)
 {
     namespace a=l3_automatch;
     const auto fail=[](const char* why){return core::Status::failure(core::Error{
@@ -2563,7 +2564,7 @@ core::Status ProjectSessionViewModel::apply_private_transferred_manual_parameter
     const auto bindings=masteringChainState_->execution_bindings();
     auto draft=a::prepare_transferred_manual_edit_project(
         *old,*live.value(),masteringChainState_->chain(),bindings,
-        provider?provider():nullptr,instance,replacement);
+        provider?provider():nullptr,instance,replacement,userBypass);
     if(!draft)return core::Status::failure(*draft.error());
     auto next=a::ManualMatchTransferPreviewTicket::create_edited(
         old->capture_owner(),draft.value()->after);
