@@ -141,7 +141,7 @@ native_gain_coverage(const m11_frozen::NativeFixedPopulation& fixed,
     if(!direction)return false;
     const bool terminal_available=bank.owned_p2&&valid_native_owned_p2_seed(*bank.owned_p2);
     if(mode==LoudnessMode::gain_with_terminal_limiter)
-        return terminal_available;
+        return terminal_available&&gain>0.0&&bank.gain->terminal_branch_requested;
     return mode==LoudnessMode::gain&&
         !(terminal_available&&bank.gain->terminal_branch_requested);
 }
