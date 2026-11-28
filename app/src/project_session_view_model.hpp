@@ -30,6 +30,7 @@ class ManualMatchTransferAudition;
 struct ManualMatchTransferConfirmation;
 struct ManualMatchTransferAdoptionDraft;
 struct ManualMatchTransferHistory;
+struct TransferredManualEditHistory;
 }
 namespace l3_automatch::m10_frozen { struct P2NativeProductWorkerScope; }
 namespace l3_automatch::m12_frozen {
@@ -234,6 +235,10 @@ public:
     [[nodiscard]] core::Status apply_private_transferred_manual_parameter_edit(
         const dsp::ModuleInstanceId& instance,
         const dsp::ModuleParameterPayload& replacement);
+    [[nodiscard]] bool can_undo_private_transferred_manual_edit() const;
+    [[nodiscard]] bool can_redo_private_transferred_manual_edit() const;
+    [[nodiscard]] core::Status undo_private_transferred_manual_edit();
+    [[nodiscard]] core::Status redo_private_transferred_manual_edit();
     [[nodiscard]] bool can_undo_private_manual_match_transfer() const;
     [[nodiscard]] bool can_redo_private_manual_match_transfer() const;
     [[nodiscard]] core::Status undo_private_manual_match_transfer();
@@ -345,6 +350,10 @@ private:
     std::shared_ptr<const l3_automatch::ManualMatchTransferHistory> manualTransferHistory_;
     std::uint64_t manualTransferHistoryEpoch_{};
     bool manualTransferHistoryApplied_{false};
+    [[nodiscard]] bool private_transferred_manual_edit_history_current(bool redo) const;
+    [[nodiscard]] core::Status change_private_transferred_manual_edit_history(bool redo);
+    std::vector<std::shared_ptr<const l3_automatch::TransferredManualEditHistory>> manualEditUndo_;
+    std::vector<std::shared_ptr<const l3_automatch::TransferredManualEditHistory>> manualEditRedo_;
     std::optional<project::ProjectSnapshot> opened_;
     struct M12MaterializationHistoryEntry final {
         project::ProjectSnapshot before;

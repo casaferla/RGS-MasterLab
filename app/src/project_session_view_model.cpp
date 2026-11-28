@@ -752,6 +752,8 @@ void ProjectSessionViewModel::on_source_changed()
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
         manualTransferHistory_.reset();
+        manualEditUndo_.clear();
+        manualEditRedo_.clear();
         manualTransferHistoryEpoch_=0U;
         manualTransferHistoryApplied_=false;
         // Persisted REF replay is tied to the exact original owners,
@@ -787,6 +789,8 @@ void ProjectSessionViewModel::on_gold_changed()
         m12UndoHistory_.clear();
         m12RedoHistory_.clear();
         manualTransferHistory_.reset();
+        manualEditUndo_.clear();
+        manualEditRedo_.clear();
         manualTransferHistoryEpoch_=0U;
         manualTransferHistoryApplied_=false;
         // Persisted REF replay is tied to the exact original owners,
@@ -1652,6 +1656,8 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     m12UndoHistory_.clear();
     m12RedoHistory_.clear();
     manualTransferHistory_.reset();
+        manualEditUndo_.clear();
+        manualEditRedo_.clear();
     manualTransferHistoryEpoch_=0U;
     manualTransferHistoryApplied_=false;
     m12ExactReplayReadback_.reset();
@@ -2487,6 +2493,8 @@ core::Status ProjectSessionViewModel::apply_private_manual_match_transfer(
         return fail("MANUAL_MATCH_COMMIT_READBACK_ROLLED_BACK");
     }
     ++m12ProductOwnershipEpoch_;
+    manualEditUndo_.clear();
+    manualEditRedo_.clear();
     manualTransferHistory_=std::move(history);
     manualTransferHistoryEpoch_=m12ProductOwnershipEpoch_;
     manualTransferHistoryApplied_=true;
@@ -2542,6 +2550,9 @@ core::Status ProjectSessionViewModel::apply_private_transferred_manual_parameter
     auto beforeManual=*masteringChainState_;
     auto beforeProject=*opened_;
     auto afterProject=draft.value()->after;
+    auto history=std::make_shared<const a::TransferredManualEditHistory>(
+        a::TransferredManualEditHistory{beforeManual,*staged.value(),old,ticket});
+    manualEditUndo_.reserve(manualEditUndo_.size()+1U);
     if(epoch!=m12ProductOwnershipEpoch_||
        previewController_->private_manual_transfer_preview_ticket()!=old||
        !previewController_->private_manual_transfer_owner_matches(*masteringChainState_)||
@@ -2560,8 +2571,84 @@ core::Status ProjectSessionViewModel::apply_private_transferred_manual_parameter
         return fail("MANUAL_FINE_TUNE_READBACK_ROLLED_BACK");
     }
     ++m12ProductOwnershipEpoch_;
+    manualEditUndo_.push_back(std::move(history));
+    manualEditRedo_.clear();
     previewController_->request_preview();
     statusText_=QStringLiteral("MANUAL FINE-TUNE / NOT_VERIFIED");
+    clear_error();
+    return core::Status::success();
+}
+
+bool ProjectSessionViewModel::private_transferred_manual_edit_history_current(bool redo) const
+{
+    if(QThread::currentThread()!=thread()||m18ProjectOperationActive_||
+       isCommittingProjectOpen_||degraded_||!opened_||!sessionChainMaterialized_||
+       !m18ProjectSaveBatchBegin_||!m18ProjectOpenBatchBegin_||
+       !previewController_||!masteringChainState_)return false;
+    const auto& entries=redo?manualEditRedo_:manualEditUndo_;
+    if(entries.empty())return false;
+    const auto& entry=*entries.back();
+    const auto& expected=redo?entry.before_ticket:entry.after_ticket;
+    return expected&&previewController_->private_manual_transfer_preview_ticket()==expected&&
+        previewController_->private_manual_transfer_owner_matches(*masteringChainState_)&&
+        expected->matches_project(*opened_);
+}
+bool ProjectSessionViewModel::can_undo_private_transferred_manual_edit() const
+{return private_transferred_manual_edit_history_current(false);}
+bool ProjectSessionViewModel::can_redo_private_transferred_manual_edit() const
+{return private_transferred_manual_edit_history_current(true);}
+core::Status ProjectSessionViewModel::undo_private_transferred_manual_edit()
+{return change_private_transferred_manual_edit_history(false);}
+core::Status ProjectSessionViewModel::redo_private_transferred_manual_edit()
+{return change_private_transferred_manual_edit_history(true);}
+core::Status ProjectSessionViewModel::change_private_transferred_manual_edit_history(bool redo)
+{
+    const auto fail=[](const char* why){return core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    if(!private_transferred_manual_edit_history_current(redo))
+        return fail("MANUAL_FINE_TUNE_HISTORY_NOT_CURRENT");
+    auto& from=redo?manualEditRedo_:manualEditUndo_;
+    auto& to=redo?manualEditUndo_:manualEditRedo_;
+    const auto entry=from.back();
+    const auto& old=redo?entry->before_ticket:entry->after_ticket;
+    const auto& next=redo?entry->after_ticket:entry->before_ticket;
+    M18ScopedProjectOperation operation{&m18ProjectOperationActive_};
+    const auto lease=begin_m18_project_save();
+    if(!lease||!*lease.value())return fail("MANUAL_FINE_TUNE_HISTORY_EPOCH_UNAVAILABLE");
+    const auto held=*lease.value();
+    Q_UNUSED(held);
+    const auto stem=QString::fromStdString(opened_->document().displayName);
+    auto live=current_snapshot(stem);
+    if(!live||!old->matches_project(*live.value())||!old->matches_project(*opened_)||
+       previewController_->private_manual_transfer_preview_ticket()!=old||
+       !previewController_->private_manual_transfer_owner_matches(*masteringChainState_))
+        return fail("MANUAL_FINE_TUNE_HISTORY_OWNER_STALE");
+    auto beforeManual=*masteringChainState_;
+    auto beforeProject=*opened_;
+    auto afterManual=redo?entry->after_manual:entry->before_manual;
+    auto afterProject=next->project_state();
+    to.reserve(to.size()+1U);
+    if(!next->matches_manual(afterManual.chain(),afterManual.execution_bindings()))
+        return fail("MANUAL_FINE_TUNE_HISTORY_GRAPH_MISMATCH");
+    masteringChainState_->adopt_chain_after_authorized_project_open(std::move(afterManual));
+    opened_.emplace(std::move(afterProject));
+    const bool installed=previewController_->set_private_manual_transfer_preview_ticket(next);
+    const auto readback=current_snapshot(stem);
+    if(!installed||!readback||!next->matches_project(*readback.value())||
+       !previewController_->private_manual_transfer_owner_matches(*masteringChainState_)) {
+        masteringChainState_->adopt_chain_after_authorized_project_open(std::move(beforeManual));
+        opened_.emplace(std::move(beforeProject));
+        static_cast<void>(previewController_->set_private_manual_transfer_preview_ticket(old));
+        previewController_->request_preview();
+        return fail("MANUAL_FINE_TUNE_HISTORY_READBACK_ROLLED_BACK");
+    }
+    ++m12ProductOwnershipEpoch_;
+    if(manualTransferHistory_&&next==manualTransferHistory_->after_ticket)
+        manualTransferHistoryEpoch_=m12ProductOwnershipEpoch_;
+    from.pop_back();
+    to.push_back(entry);
+    previewController_->request_preview();
+    statusText_=QStringLiteral("MANUAL TRANSFER / NOT_VERIFIED");
     clear_error();
     return core::Status::success();
 }

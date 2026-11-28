@@ -810,4 +810,10 @@ struct ManualMatchTransferHistory final {
     MasteringChainState after_manual;
     std::shared_ptr<const ManualMatchTransferPreviewTicket> after_ticket;
 };
+struct TransferredManualEditHistory final {
+    MasteringChainState before_manual;
+    MasteringChainState after_manual;
+    std::shared_ptr<const ManualMatchTransferPreviewTicket> before_ticket;
+    std::shared_ptr<const ManualMatchTransferPreviewTicket> after_ticket;
+};
 } // namespace rgsml::app::l3_automatch
