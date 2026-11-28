@@ -146,6 +146,21 @@ Popup {
             TextField {
                 id: seekFrame
                 objectName: "monitorSeekMasterFrame"
+                function commitSeek() {
+                    const raw = text.trim()
+                    const n = Number(raw)
+                    return !!root.monitorViewModel && root.monitorViewModel.monitorInstalled
+                        && /^[0-9]+$/.test(raw) && Number.isSafeInteger(n)
+                        && root.monitorViewModel.seekMaster(n)
+                }
+                Keys.onReturnPressed: function(event) {
+                    if (commitSeek()) root.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+                    event.accepted = true
+                }
+                Keys.onEnterPressed: function(event) {
+                    if (commitSeek()) root.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+                    event.accepted = true
+                }
                 placeholderText: "MASTER frame"
                 inputMethodHints: Qt.ImhDigitsOnly
                 Layout.fillWidth: true
@@ -155,9 +170,7 @@ Popup {
                 text: "Seek"
                 enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
                 onClicked: {
-                    const pos = Number(seekFrame.text)
-                    if (Number.isSafeInteger(pos) && pos >= 0)
-                        root.monitorViewModel.seekMaster(pos)
+                    seekFrame.commitSeek()
                 }
             }
         }
@@ -167,6 +180,14 @@ Popup {
             TextField {
                 id: loopStart
                 objectName: "monitorLoopStartFrame"
+                Keys.onReturnPressed: function(event) {
+                    if (loopEnd.commitLoop()) root.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+                    event.accepted = true
+                }
+                Keys.onEnterPressed: function(event) {
+                    if (loopEnd.commitLoop()) root.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+                    event.accepted = true
+                }
                 placeholderText: "Loop start (MASTER)"
                 inputMethodHints: Qt.ImhDigitsOnly
                 Layout.fillWidth: true
@@ -174,6 +195,22 @@ Popup {
             TextField {
                 id: loopEnd
                 objectName: "monitorLoopEndFrame"
+                function commitLoop() {
+                    const a = Number(loopStart.text.trim())
+                    const b = Number(text.trim())
+                    return !!root.monitorViewModel && root.monitorViewModel.monitorInstalled
+                        && /^[0-9]+$/.test(loopStart.text.trim()) && /^[0-9]+$/.test(text.trim())
+                        && Number.isSafeInteger(a) && Number.isSafeInteger(b) && b > a
+                        && root.monitorViewModel.setMasterLoop(a,b,true)
+                }
+                Keys.onReturnPressed: function(event) {
+                    if (loopEnd.commitLoop()) root.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+                    event.accepted = true
+                }
+                Keys.onEnterPressed: function(event) {
+                    if (loopEnd.commitLoop()) root.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+                    event.accepted = true
+                }
                 placeholderText: "Loop end exclusive"
                 inputMethodHints: Qt.ImhDigitsOnly
                 Layout.fillWidth: true
@@ -183,11 +220,7 @@ Popup {
                 text: "Loop"
                 enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
                 onClicked: {
-                    const a = Number(loopStart.text)
-                    const b = Number(loopEnd.text)
-                    if (Number.isSafeInteger(a) && Number.isSafeInteger(b)
-                            && a >= 0 && b > a)
-                        root.monitorViewModel.setMasterLoop(a,b,true)
+                    loopEnd.commitLoop()
                 }
             }
             StudioButton {
