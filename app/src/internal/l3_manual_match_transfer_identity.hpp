@@ -138,26 +138,21 @@ identify_manual_match_transfer(const ManualMatchTransferDraft& draft)
             core::ErrorCode::InvalidState,"MANUAL_MATCH_IDENTITY_NO_PREPARED_OWNER"});
     return identify_manual_match_transfer_graph(draft);
 }
-// Render the exact derived graph once, using the same native engine and
-// the same PREPARED owner as the original. No ticket is installed and
-// no verification receipt can arise from this audition.
+namespace manual_transfer_detail {
+// Internal executor only. Callers must independently prove the graph
+// against the immutable transfer and any explicit edit overlay.
 [[nodiscard]] inline core::Result<render::RenderResult>
-render_manual_match_transfer_candidate(const ManualMatchTransferDraft& draft,
-    const ManualMatchTransferIdentity& identity,core::FrameCount maxBlock,
-    const std::atomic<bool>* cancellation=nullptr)
+render_native_graph(const ManualMatchTransferDraft& draft,
+    const dsp_presets::ProposedManualPresetRestore& manualState,
+    core::FrameCount maxBlock,const std::atomic<bool>* cancellation)
 {
     using R=core::Result<render::RenderResult>;
-    const auto fail=[](const char* why){
-        return R::failure(core::Error{core::ErrorCode::InvalidState,why});
-    };
-    const auto current=identify_manual_match_transfer(draft);
-    if(!current||current.value()->sha256!=identity.sha256||
-       current.value()->canonical_content!=identity.canonical_content)
-        return fail("MANUAL_MATCH_TRANSFER_CANDIDATE_IDENTITY_MISMATCH");
     const auto prior=draft.exact_prior_owner;
+    if(!prior||!prior->replay||!prior->replay->registry_owner||!prior->exact_prepared_owner)
+        return R::failure(core::Error{core::ErrorCode::InvalidState,"MANUAL_MATCH_RENDER_NO_OWNER"});
     const auto& registry=prior->replay->registry_owner;
-    const auto& manual=draft.manual_after.proposed_manual_chain;
-    const auto& bindings=draft.manual_after.proposed_bindings;
+    const auto& manual=manualState.proposed_manual_chain;
+    const auto& bindings=manualState.proposed_bindings;
     const auto nodes=manual.instances();
     const bool p2=!nodes.empty()&&nodes.back().module_type_id()=="rgsml.dsp.streaming-true-peak-limiter";
     const auto prefixCount=nodes.size()-(p2?1U:0U);
@@ -179,5 +174,19 @@ render_manual_match_transfer_candidate(const ManualMatchTransferDraft& draft,
         draft.linked_after,draft.linked_bindings_after,terminal,terminalBindings};
     return m12_frozen::render_m12_native_graph_pcm_once(graph,*prior->exact_prepared_owner,
         maxBlock,nullptr,cancellation);
+}
+} // namespace manual_transfer_detail
+// Render the independently reconstructed original transfer.
+[[nodiscard]] inline core::Result<render::RenderResult>
+render_manual_match_transfer_candidate(const ManualMatchTransferDraft& draft,
+    const ManualMatchTransferIdentity& identity,core::FrameCount maxBlock,
+    const std::atomic<bool>* cancellation=nullptr)
+{
+    const auto current=identify_manual_match_transfer(draft);
+    if(!current||current.value()->sha256!=identity.sha256||
+       current.value()->canonical_content!=identity.canonical_content)
+        return core::Result<render::RenderResult>::failure(core::Error{
+            core::ErrorCode::InvalidState,"MANUAL_MATCH_TRANSFER_CANDIDATE_IDENTITY_MISMATCH"});
+    return manual_transfer_detail::render_native_graph(draft,draft.manual_after,maxBlock,cancellation);
 }
 } // namespace rgsml::app::l3_automatch
