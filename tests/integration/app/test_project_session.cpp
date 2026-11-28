@@ -8949,6 +8949,24 @@ void ProjectSessionTest::product_manual_match_transfer_transaction()
     QCOMPARE(author.masteringChainState->transient_shaper_parameters()->attack_amount_db(),5.0);
     QCOMPARE(author.masteringChainState->transient_shaper_parameters()->sustain_amount_db(),-3.0);
     QCOMPARE(author.masteringChainState->chain().revision(),provisionalRevision+2U);
+    QVERIFY(author.project.can_undo_private_transferred_manual_edit());
+    QVERIFY(!author.project.can_redo_private_transferred_manual_edit());
+    QVERIFY(author.project.undo_private_transferred_manual_edit());
+    QCOMPARE(author.masteringChainState->transient_shaper_parameters()->attack_amount_db(),5.0);
+    QCOMPARE(author.masteringChainState->transient_shaper_parameters()->sustain_amount_db(),-2.0);
+    QVERIFY(author.project.undo_private_transferred_manual_edit());
+    QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==transferred);
+    QVERIFY(author.masteringChainState->execution_bindings()==provisionalBindings);
+    QVERIFY(author.project.can_undo_private_manual_match_transfer());
+    QVERIFY(author.project.undo_private_manual_match_transfer());
+    QVERIFY(author.previewController->private_m12_product_preview_ticket()==priorTicket);
+    QVERIFY(!author.project.can_redo_private_transferred_manual_edit());
+    QVERIFY(author.project.redo_private_manual_match_transfer());
+    QVERIFY(author.project.redo_private_transferred_manual_edit());
+    QVERIFY(author.project.redo_private_transferred_manual_edit());
+    QVERIFY(author.previewController->private_manual_transfer_preview_ticket()==fineTuned);
+    QVERIFY(!author.project.can_redo_private_transferred_manual_edit());
+
     QVERIFY(author.project.can_save_project());
     QVERIFY(!author.project.capture_private_m13_fresh_postmaterialization_probe(0.0));
     QVERIFY(!author.project.apply_private_transferred_manual_parameter_edit(dynamic,*de.value()));
