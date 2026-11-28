@@ -460,6 +460,20 @@ Item {
                     placeholderText: "Seek · MASTER frame"
                     font.pixelSize: 10
                     inputMethodHints: Qt.ImhDigitsOnly
+                    function commitSeek() {
+                        const raw = text.trim()
+                        const n = Number(raw)
+                        if (!root.controlsAvailable || !/^[0-9]+$/.test(raw) || !Number.isSafeInteger(n)) return false
+                        return root.monitorViewModel.seekMaster(n)
+                    }
+                    Keys.onReturnPressed: function(event) {
+                        if (commitSeek()) root.forceActiveFocus(Qt.OtherFocusReason)
+                        event.accepted = true
+                    }
+                    Keys.onEnterPressed: function(event) {
+                        if (commitSeek()) root.forceActiveFocus(Qt.OtherFocusReason)
+                        event.accepted = true
+                    }
                 }
                 StudioButton {
                     objectName: "monitorSeekCommit"
@@ -473,8 +487,7 @@ Item {
                     text: "Seek"
                     enabled: root.controlsAvailable
                     onClicked: {
-                        const n=Number(seekFrame.text)
-                        if(Number.isSafeInteger(n) && n>=0)root.monitorViewModel.seekMaster(n)
+                        seekFrame.commitSeek()
                     }
                 }
             }
