@@ -93,6 +93,18 @@ void check_rate(std::int64_t rate)
     require(plane[1] == -1.0);
     require(bits(plane[2]) == bits(samples[2]));
     require(bits(plane[3]) == bits(samples[3]));
+    // The derived buffer cannot alias RAW, including identity processing.
+    auto owned = take(dsp::correct_dc_offset(mono.view(), range(0, 0), mono_offset));
+    owned.mutable_view().channel(0).value()->front() = 42.0;
+    require(samples.front() == 1.0);
+    // Explicit zero subtraction remains the frozen law for in-scope samples.
+    const std::array zero_offset{0.0};
+    auto zero_out = take(dsp::correct_dc_offset(mono.view(), range(0, 5), zero_offset));
+    for (std::size_t n = 0; n < samples.size(); ++n) {
+        require(bits((*zero_out.view().channel(0).value())[n]) == bits(samples[n]));
+    }
+    require(!dsp::correct_dc_offset(mono.view(), range(-1, 3), mono_offset));
+    require(!dsp::correct_dc_offset(mono.view(), range(6, 6), mono_offset));
     auto empty = make(rate, ChannelLayout::MONO_C, 0, 0);
     require(dsp::correct_dc_offset(empty.view(), range(0, 0), mono_offset).has_value());
 
