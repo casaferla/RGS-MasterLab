@@ -307,6 +307,59 @@ private:
         :capture_(std::move(capture)) {}
     std::shared_ptr<const ManualMatchTransferCapture> capture_;
 };
+// Stage an explicit edit of the transferred MANUAL slot only. This is
+// not another transfer or a new accepted solver graph. No live mutation,
+// persisted identity replacement, or PCM publication is authorized here.
+[[nodiscard]] inline core::Result<dsp_presets::ProposedManualPresetRestore>
+prepare_transferred_manual_parameter_edit(
+    const ManualMatchTransferPreviewTicket& owner,
+    const dsp::ProcessingChain& current,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const std::shared_ptr<const render::RenderResult>& prepared,
+    const dsp::ModuleInstanceId& requested,
+    const dsp::ModuleParameterPayload& replacement)
+{
+    using R=core::Result<dsp_presets::ProposedManualPresetRestore>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    const auto& native=owner.capture().native;
+    if(!owner.matches_prepared(prepared)||!owner.matches_manual(current,bindings)||
+       native.manual_instance!=requested)
+        return fail("MANUAL_MATCH_EDIT_STALE_OR_WRONG_SLOT");
+    const auto nodes=current.instances();
+    const auto it=std::find_if(nodes.begin(),nodes.end(),[&](const auto& node){
+        return node.instance_id()==requested;});
+    if(it==nodes.end()||!it->enabled())return fail("MANUAL_MATCH_EDIT_SLOT_UNAVAILABLE");
+    const auto type=it->module_type_id();
+    if(type=="rgsml.dsp.dynamic-eq") {
+        const auto* value=std::get_if<dsp::DynamicEqParameters>(&replacement);
+        if(!value)return fail("MANUAL_MATCH_EDIT_WRONG_PARAMETER_TYPE");
+        const auto fmt=prepared->view().format();
+        const auto valid=value->validate_for_audio(fmt.sample_rate().value(),
+            static_cast<std::uint32_t>(fmt.channel_count()));
+        if(!valid)return R::failure(*valid.error());
+    } else if(type=="rgsml.dsp.transient-shaper") {
+        if(!std::holds_alternative<dsp::TransientShaperParameters>(replacement))
+            return fail("MANUAL_MATCH_EDIT_WRONG_PARAMETER_TYPE");
+    } else return fail("MANUAL_MATCH_EDIT_UNSUPPORTED_TYPE");
+    const auto index=static_cast<std::size_t>(it-nodes.begin());
+    if(bindings[index].parameters==replacement)return fail("MANUAL_MATCH_EDIT_NO_CHANGE");
+    const auto& registry=*native.exact_prior_owner->replay->registry_owner;
+    const auto descriptor=registry.find_descriptor(type);
+    if(!descriptor)return R::failure(*descriptor.error());
+    const auto& d=descriptor.value()->get();
+    if(!d.algorithm_version()||!d.parameter_schema_id())return fail("MANUAL_MATCH_EDIT_SCHEMA_MISSING");
+    const dsp_presets::ManualPreset preset{dsp_presets::Scope::module,{
+        {std::string(type),std::string(*d.algorithm_version()),std::string(*d.parameter_schema_id()),
+         replacement,it->enabled(),it->user_bypass()}}};
+    auto staged=dsp_presets::prepare_explicit_manual_preset_restore(
+        preset,current,bindings,registry,index);
+    if(!staged)return staged;
+    if(conflicting_active_match_dsps(staged.value()->proposed_manual_chain.instances(),
+        native.linked_after.instances()))return fail("MANUAL_MATCH_EDIT_ACTIVE_CONFLICT");
+    return staged;
+}
+
 // Project Open must check the original accepted graph and the complete
 // forward delta BEFORE replacing the current Source or any live DSP.
 // The preflight has no PREPARED PCM and can never be played or installed.
