@@ -139,12 +139,14 @@ bool AutoMatchViewModel::can_cancel()const {
 }
 bool AutoMatchViewModel::can_undo()const {
     return owner()&&!busy()&&!transfer_ready()&&!action_.can_adopt()&&
-        (product_.upstream.project.can_undo_private_manual_match_transfer()||
+        (product_.upstream.project.can_undo_private_transferred_manual_edit()||
+         product_.upstream.project.can_undo_private_manual_match_transfer()||
          product_.upstream.project.can_undo_private_m12_materialization());
 }
 bool AutoMatchViewModel::can_redo()const {
     return owner()&&!busy()&&!transfer_ready()&&!action_.can_adopt()&&
-        (product_.upstream.project.can_redo_private_manual_match_transfer()||
+        (product_.upstream.project.can_redo_private_transferred_manual_edit()||
+         product_.upstream.project.can_redo_private_manual_match_transfer()||
          product_.upstream.project.can_redo_private_m12_materialization());
 }
 bool AutoMatchViewModel::can_resume()const {
@@ -382,8 +384,10 @@ bool AutoMatchViewModel::undo() {
     if(!can_undo())return false;
     publishing_=true;
     auto& project=product_.upstream.project;
-    const auto result=project.can_undo_private_manual_match_transfer()
-        ?project.undo_private_manual_match_transfer():project.undo_private_m12_materialization();
+    const auto result=project.can_undo_private_transferred_manual_edit()
+        ?project.undo_private_transferred_manual_edit()
+        :project.can_undo_private_manual_match_transfer()
+            ?project.undo_private_manual_match_transfer():project.undo_private_m12_materialization();
     publishing_=false;
     if(!result)error_=QString::fromStdString(result.error()->message());
     else {error_.clear();(void)action_.retire_after_history_transition();}
@@ -393,8 +397,10 @@ bool AutoMatchViewModel::redo() {
     if(!can_redo())return false;
     publishing_=true;
     auto& project=product_.upstream.project;
-    const auto result=project.can_redo_private_manual_match_transfer()
-        ?project.redo_private_manual_match_transfer():project.redo_private_m12_materialization();
+    const auto result=project.can_redo_private_transferred_manual_edit()
+        ?project.redo_private_transferred_manual_edit()
+        :project.can_redo_private_manual_match_transfer()
+            ?project.redo_private_manual_match_transfer():project.redo_private_m12_materialization();
     publishing_=false;
     if(!result)error_=QString::fromStdString(result.error()->message());
     else {error_.clear();(void)action_.retire_after_history_transition();}
