@@ -20,9 +20,9 @@ Item {
     // Desktop interaction guidance. Android/touch presentation may replace or
     // suppress mouse-specific wording without changing parameter semantics.
     property string interactionHint: ""
-    // Opt-in: accepted Enter commits leave the numeric editor, without
+    // Accepted Enter commits leave every numeric editor, without
     // moving focus to a potentially activating button.
-    property Item commitFocusTarget: null
+    property Item commitFocusTarget: control
     property bool transferringCommitFocus: false
     function commitFromKeyboard() {
         if (!viewModel) return false
