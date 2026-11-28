@@ -907,9 +907,9 @@ ApplicationWindow {
     // M18 Product-authorized output choice. The File menu remains
     // disabled until the application owns the complete M18 gate bundle.
     // No QML surface can mint a Ticket or invoke a detached worker.
-    // The native Product action remains authoritative. Five compact,
-    // editable Canvas knobs mirror the exact numeric fields; the popup
-    // retains manual precision, review, and consent controls.
+    // The native Product action remains authoritative. Five compact
+    // Canvas knobs and fields share session amounts; direct search and the
+    // docked review preserve explicit consent without a second dialog.
     QtObject {
         id: autoMatchAmounts
         property var amountValues: [100, 100, 100, 100, 100]
@@ -969,10 +969,11 @@ ApplicationWindow {
                 if (amountError(i).length > 0) return false
             for (let i = 0; i < 5; ++i)
                 if (!commitAmount(i)) return false
-            resultsRequested = true
-            match.startProduct(amountValues[0]/100, amountValues[1]/100,
+            const started = match.startProduct(amountValues[0]/100, amountValues[1]/100,
                 amountValues[2]/100, amountValues[3]/100, amountValues[4]/100)
-            return true
+            // Show diagnostics even if a native start request is refused.
+            resultsRequested = true
+            return started === true
         }
     }
 
@@ -2322,6 +2323,12 @@ ApplicationWindow {
                                         const control = amountDomains.itemAt(i)
                                         if (!control || !control.exerciseDraftContract()) return false
                                     }
+                                    autoMatchAmounts.setAmountDraft(2, "101")
+                                    if (autoMatchAmounts.startSearch()
+                                        || autoMatchAmounts.amountError(2).length === 0
+                                        || autoMatchAmounts.resultsRequested) return false
+                                    autoMatchAmounts.cancelAmountDraft(2)
+                                    if (autoMatchResultsPanel.visible) return false
                                     autoMatchAmounts.setAmountValue(0, 70.4)
                                     if (autoMatchAmounts.amountValue(0) !== 70
                                         || autoMatchAmounts.amountDrafts[0] !== "70") return false
