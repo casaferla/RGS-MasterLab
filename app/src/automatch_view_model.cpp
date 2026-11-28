@@ -303,6 +303,9 @@ QString AutoMatchViewModel::failure_diagnostics_text()const {
         .arg(perf.completed).arg(perf.failed).arg(perf.cache_hits);
     text+=QStringLiteral("\nPreflight rejected: %1 | budget refusals: %2")
         .arg(perf.evaluator_preflight_rejections).arg(perf.budget_refusals);
+    text+=QStringLiteral("\nOwned P2: %1 attempted, %2 complete, %3 cached")
+        .arg(worker.owned_p2_counts.attempted).arg(worker.owned_p2_counts.complete)
+        .arg(worker.owned_p2_counts.cache_hits);
     static constexpr const char* reasons[]={"measured","stale/unattested","render/analysis","triple authority","M07 incomplete","M08/M11 rejected"};
     for(std::size_t i=0;i<perf.native_cost_reasons.size();++i) {
         if(!perf.native_cost_reasons[i])continue;
