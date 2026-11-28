@@ -118,12 +118,45 @@ void check_rate(std::int64_t rate)
     require(!dsp::correct_dc_offset(output_domain.view(), range(0, 5), mono_offset));
     std::cout << "PASS DC native rate " << rate << '\n';
 }
+
+// Independent integer-lattice oracle: exact representable inputs and offsets,
+// expected difference formed in integer arithmetic before conversion to PCM.
+void check_dyadic_oracle(std::int64_t rate)
+{
+    constexpr std::int64_t count = 257;
+    constexpr double scale = 1024.0;
+    auto raw = make(rate, ChannelLayout::STEREO_LR, 0, count);
+    auto raw_view = raw.mutable_view();
+    auto left = *raw_view.channel(0).value();
+    auto right = *raw_view.channel(1).value();
+    for (std::int64_t n = 0; n < count; ++n) {
+        const auto i = static_cast<std::size_t>(n);
+        left[i] = static_cast<double>(n * 13 - 1664) / scale;
+        right[i] = static_cast<double>(1024 - n * 9) / scale;
+    }
+    for (const std::int64_t offset : {-256, -127, -1, 0, 1, 127, 256}) {
+        const std::array offsets{static_cast<double>(offset) / scale,
+            static_cast<double>(-offset) / scale};
+        auto out = take(dsp::correct_dc_offset(raw.view(), range(31, 223), offsets));
+        const auto l = *out.view().channel(0).value();
+        const auto r = *out.view().channel(1).value();
+        for (std::int64_t n = 0; n < count; ++n) {
+            const auto i = static_cast<std::size_t>(n);
+            const auto active = (31 <= n && n < 223) ? offset : 0;
+            require(l[i] == static_cast<double>(n * 13 - 1664 - active) / scale);
+            require(r[i] == static_cast<double>(1024 - n * 9 + active) / scale);
+            require(left[i] == static_cast<double>(n * 13 - 1664) / scale);
+            require(right[i] == static_cast<double>(1024 - n * 9) / scale);
+        }
+    }
+}
 }  // namespace
 
 int main()
 {
     for (const std::int64_t rate : {44100, 48000, 88200, 96000, 176400, 192000}) {
         check_rate(rate);
+        check_dyadic_oracle(rate);
     }
     return EXIT_SUCCESS;
 }
