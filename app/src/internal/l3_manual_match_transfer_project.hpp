@@ -360,6 +360,85 @@ prepare_transferred_manual_parameter_edit(
     return staged;
 }
 
+// Keep the accepted transfer record immutable. A fine-tuning edit has
+// its own canonical identity and updates exactly one MANUAL payload.
+// This draft is deliberately not installable until the preview and
+// Project Open paths can reproduce the same overlay.
+struct TransferredManualEditProjectDraft final {
+    project::ProjectSnapshot before;
+    project::ProjectSnapshot after;
+    dsp_presets::ProposedManualPresetRestore staged;
+    std::string identity_sha256;
+};
+[[nodiscard]] inline core::Result<TransferredManualEditProjectDraft>
+prepare_transferred_manual_edit_project(
+    const ManualMatchTransferPreviewTicket& owner,
+    const project::ProjectSnapshot& live,
+    const dsp::ProcessingChain& chain,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const std::shared_ptr<const render::RenderResult>& prepared,
+    const dsp::ModuleInstanceId& requested,
+    const dsp::ModuleParameterPayload& replacement)
+{
+    using R=core::Result<TransferredManualEditProjectDraft>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    if(!owner.matches_project(live))return fail("MANUAL_MATCH_EDIT_PROJECT_STALE");
+    auto staged=prepare_transferred_manual_parameter_edit(
+        owner,chain,bindings,prepared,requested,replacement);
+    if(!staged)return R::failure(*staged.error());
+    auto doc=live.document();
+    if(!doc.pipeline.masteringChainId)return fail("MANUAL_MATCH_EDIT_PROJECT_NO_MANUAL");
+    auto manual=std::find_if(doc.chains.begin(),doc.chains.end(),[&](const auto& c){
+        return c.chainId==*doc.pipeline.masteringChainId&&c.stage=="MASTER"&&c.segment=="MANUAL";});
+    if(manual==doc.chains.end()||manual->revision!=chain.revision())
+        return fail("MANUAL_MATCH_EDIT_PROJECT_REVISION_STALE");
+    auto slot=std::find_if(manual->modules.begin(),manual->modules.end(),[&](const auto& m){
+        return m.instanceId==requested.uuid();});
+    if(slot==manual->modules.end())return fail("MANUAL_MATCH_EDIT_PROJECT_SLOT_MISSING");
+    auto encoded=dsp::encode_module_parameters_json(replacement);
+    if(!encoded)return R::failure(*encoded.error());
+    auto payload=project::OpaqueJsonValue::parse(*encoded.value());
+    if(!payload)return R::failure(*payload.error());
+    const auto decoded=dsp::decode_module_parameters_json(slot->parameterSchemaId,
+        payload.value()->canonical_utf8());
+    if(!decoded||*decoded.value()!=replacement)
+        return fail("MANUAL_MATCH_EDIT_PROJECT_SCHEMA_MISMATCH");
+    const auto params=QJsonDocument::fromJson(QByteArray::fromStdString(payload.value()->canonical_utf8()));
+    auto metadata=QJsonDocument::fromJson(QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    if(!metadata.isObject()||!params.isObject())
+        return fail("MANUAL_MATCH_EDIT_PROJECT_METADATA_INVALID");
+    auto record=metadata.object();
+    if(record.contains(QStringLiteral("manualFineTune"))||record.contains(QStringLiteral("materialization")))
+        return fail("MANUAL_MATCH_EDIT_PROJECT_UNEXPECTED_RECORD");
+    const QJsonObject edit{
+        {"schemaId",QStringLiteral("rgsml.reference-match.manual-fine-tune/1.0.0")},
+        {"transferIdentity",QString::fromStdString(owner.capture().project.identity.sha256)},
+        {"instanceId",QString::fromStdString(requested.to_string())},
+        {"priorRevision",QString::number(static_cast<qulonglong>(manual->revision))},
+        {"revision",QString::number(static_cast<qulonglong>(staged.value()->proposed_manual_chain.revision()))},
+        {"parameters",params.object()},
+        {"verificationState",QStringLiteral("NOT_VERIFIED")}};
+    auto canonical=project::OpaqueJsonValue::parse(
+        QJsonDocument(edit).toJson(QJsonDocument::Compact).toStdString());
+    if(!canonical)return R::failure(*canonical.error());
+    const auto digest=QCryptographicHash::hash(
+        QByteArray::fromStdString(canonical.value()->canonical_utf8()),QCryptographicHash::Sha256).toHex();
+    record.insert(QStringLiteral("manualFineTune"),QJsonObject{
+        {"content",edit},{"identitySha256",QString::fromLatin1(digest)}});
+    auto nextMetadata=project::OpaqueJsonValue::parse(
+        QJsonDocument(record).toJson(QJsonDocument::Compact).toStdString());
+    if(!nextMetadata)return R::failure(*nextMetadata.error());
+    slot->parameters=std::move(*payload.value());
+    manual->revision=staged.value()->proposed_manual_chain.revision();
+    doc.referenceMatch=std::move(*nextMetadata.value());
+    auto after=project::ProjectSnapshot::create(std::move(doc),
+        {live.optional_entries().begin(),live.optional_entries().end()});
+    if(!after)return R::failure(*after.error());
+    return R::success(TransferredManualEditProjectDraft{
+        live,std::move(*after.value()),std::move(*staged.value()),digest.toStdString()});
+}
+
 // Project Open must check the original accepted graph and the complete
 // forward delta BEFORE replacing the current Source or any live DSP.
 // The preflight has no PREPARED PCM and can never be played or installed.
