@@ -449,7 +449,8 @@ prepare_transferred_manual_edit_project(
     if(!encoded)return R::failure(*encoded.error());
     auto payload=project::OpaqueJsonValue::parse(*encoded.value());
     if(!payload)return R::failure(*payload.error());
-    const auto decoded=dsp::decode_module_parameters_json(slot->parameterSchemaId,
+    if(!slot->parameterSchemaId)return fail("MANUAL_MATCH_EDIT_PROJECT_SCHEMA_MISSING");
+    const auto decoded=dsp::decode_module_parameters_json(*slot->parameterSchemaId,
         payload.value()->canonical_utf8());
     if(!decoded||*decoded.value()!=replacement)
         return fail("MANUAL_MATCH_EDIT_PROJECT_SCHEMA_MISMATCH");
@@ -460,8 +461,18 @@ prepare_transferred_manual_edit_project(
     auto record=metadata.object();
     if(record.contains(QStringLiteral("materialization")))
         return fail("MANUAL_MATCH_EDIT_PROJECT_UNEXPECTED_RECORD");
+    const auto& base=owner.capture().project.after.document();
+    const auto baseChain=std::find_if(base.chains.begin(),base.chains.end(),[&](const auto& c){
+        return c.chainId==manual->chainId;});
+    if(baseChain==base.chains.end())return fail("MANUAL_FINE_TUNE_BASE_CHAIN_MISSING");
+    const auto baseSlot=std::find_if(baseChain->modules.begin(),baseChain->modules.end(),[&](const auto& m){
+        return m.instanceId==requested.uuid();});
+    if(baseSlot==baseChain->modules.end())return fail("MANUAL_FINE_TUNE_BASE_SLOT_MISSING");
     const QJsonObject edit{
         {"schemaId",QStringLiteral("rgsml.reference-match.manual-fine-tune/1.0.0")},
+        {"baseMetadataCanonical",QString::fromStdString(base.referenceMatch.canonical_utf8())},
+        {"baseParametersCanonical",QString::fromStdString(baseSlot->parameters.canonical_utf8())},
+        {"editedParametersCanonical",QString::fromStdString(payload.value()->canonical_utf8())},
         {"transferIdentity",QString::fromStdString(owner.capture().project.identity.sha256)},
         {"instanceId",QString::fromStdString(requested.to_string())},
         {"priorRevision",QString::number(static_cast<qulonglong>(manual->revision))},
@@ -510,6 +521,12 @@ recover_transferred_manual_edit_base(const project::ProjectSnapshot& persisted)
     const auto edit=overlay.value(QStringLiteral("content")).toObject();
     const auto transfer=metadata.value(QStringLiteral("manualTransferCandidate")).toObject();
     const auto content=transfer.value(QStringLiteral("content")).toObject();
+    const auto baseMeta=project::OpaqueJsonValue::parse(edit.value(QStringLiteral("baseMetadataCanonical")).toString().toStdString());
+    const auto baseParams=project::OpaqueJsonValue::parse(edit.value(QStringLiteral("baseParametersCanonical")).toString().toStdString());
+    const auto editedParams=project::OpaqueJsonValue::parse(edit.value(QStringLiteral("editedParametersCanonical")).toString().toStdString());
+    if(!baseMeta||!baseParams||!editedParams)return fail("MANUAL_FINE_TUNE_RECOVERY_CANONICAL_BYTES_MISSING");
+    const auto baseObject=QJsonDocument::fromJson(QByteArray::fromStdString(baseMeta.value()->canonical_utf8()));
+    if(!baseObject.isObject()||baseObject.object()!=metadata)return fail("MANUAL_FINE_TUNE_RECOVERY_METADATA_MISMATCH");
     if(edit.value(QStringLiteral("schemaId")).toString()!=QStringLiteral("rgsml.reference-match.manual-fine-tune/1.0.0")||
        edit.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED")||
        edit.value(QStringLiteral("transferIdentity")).toString()!=transfer.value(QStringLiteral("identitySha256")).toString()||
@@ -550,20 +567,18 @@ recover_transferred_manual_edit_base(const project::ProjectSnapshot& persisted)
         if(!edit.value(QStringLiteral("parameters")).isObject()||
            !node.value(QStringLiteral("parameters")).isObject())
             return fail("MANUAL_FINE_TUNE_RECOVERY_PAYLOAD_MISSING");
-        const auto current=project::OpaqueJsonValue::parse(QJsonDocument(
-            edit.value(QStringLiteral("parameters")).toObject()).toJson(QJsonDocument::Compact).toStdString());
-        const auto original=project::OpaqueJsonValue::parse(QJsonDocument(
-            node.value(QStringLiteral("parameters")).toObject()).toJson(QJsonDocument::Compact).toStdString());
-        if(!current||!original||slot.parameters!=*current.value())
+        const auto current=QJsonDocument::fromJson(QByteArray::fromStdString(editedParams.value()->canonical_utf8()));
+        const auto original=QJsonDocument::fromJson(QByteArray::fromStdString(baseParams.value()->canonical_utf8()));
+        if(!current.isObject()||!original.isObject()||
+           current.object()!=edit.value(QStringLiteral("parameters")).toObject()||
+           original.object()!=node.value(QStringLiteral("parameters")).toObject()||
+           slot.parameters!=*editedParams.value())
             return fail("MANUAL_FINE_TUNE_RECOVERY_PAYLOAD_MISMATCH");
-        slot.parameters=*original.value();
+        slot.parameters=*baseParams.value();
     }
     if(found!=1U)return fail("MANUAL_FINE_TUNE_RECOVERY_SLOT_MISSING");
     manual->revision=baseRevision;
-    const auto restored=project::OpaqueJsonValue::parse(
-        QJsonDocument(metadata).toJson(QJsonDocument::Compact).toStdString());
-    if(!restored)return R::failure(*restored.error());
-    doc.referenceMatch=*restored.value();
+    doc.referenceMatch=*baseMeta.value();
     return project::ProjectSnapshot::create(std::move(doc),
         {persisted.optional_entries().begin(),persisted.optional_entries().end()});
 }
@@ -590,7 +605,7 @@ validate_transferred_manual_edit_overlay(
         persisted.document().referenceMatch.canonical_utf8())).object();
     const auto overlay=meta.value(QStringLiteral("manualFineTune")).toObject();
     const auto edit=overlay.value(QStringLiteral("content")).toObject();
-    if(overlay.size()!=2||edit.size()!=7)return fail("MANUAL_FINE_TUNE_UNKNOWN_FIELDS");
+    if(overlay.size()!=2||edit.size()!=10)return fail("MANUAL_FINE_TUNE_UNKNOWN_FIELDS");
     const auto& original=native.manual_after;
     const auto nodes=original.proposed_manual_chain.instances();
     const auto it=std::find_if(nodes.begin(),nodes.end(),[&](const auto& node){
@@ -601,8 +616,8 @@ validate_transferred_manual_edit_overlay(
     const auto descriptor=registry.find_descriptor(it->module_type_id());
     if(!descriptor||!descriptor.value()->get().parameter_schema_id())
         return fail("MANUAL_FINE_TUNE_SCHEMA_MISSING");
-    const auto canonical=project::OpaqueJsonValue::parse(QJsonDocument(
-        edit.value(QStringLiteral("parameters")).toObject()).toJson(QJsonDocument::Compact).toStdString());
+    const auto canonical=project::OpaqueJsonValue::parse(
+        edit.value(QStringLiteral("editedParametersCanonical")).toString().toStdString());
     if(!canonical)return R::failure(*canonical.error());
     const auto decoded=dsp::decode_module_parameters_json(
         *descriptor.value()->get().parameter_schema_id(),canonical.value()->canonical_utf8());
