@@ -34,6 +34,8 @@ struct P2NativeCostResult final {
     m07_frozen::PartialFeatureInventory m07;
     std::optional<MeasuredOrderKey> measured;
     std::optional<TargetCost> target;
+    // Diagnostic only: never affects measured evidence or safety gates.
+    std::string failure_detail{};
     [[nodiscard]] bool complete_measured() const noexcept {
         return reason==P2NativeCostReason::measured&&measured&&
                valid_key(*measured);
@@ -81,7 +83,7 @@ score_complete_p2_native_fragment_set(
     if(cost.reason!=AuthoritativeCostReason::measured||
        !cost.measured||!valid_key(*cost.measured))
         return {P2NativeCostReason::m08_or_m11_safety_rejected,
-                admitted.inventory,{},{} };
+                admitted.inventory,{},{},"authoritative_cost="+std::to_string(static_cast<unsigned>(cost.reason)) };
     return {P2NativeCostReason::measured,admitted.inventory,
             cost.measured,cost.target_evidence};
 }
@@ -139,7 +141,7 @@ measure_and_score_m10_p2_full_native_candidate(
         candidate,std::move(native_spec),exact_pre_p2_prefix,cancellation,exact_fixed_prefix);
     if(!measured)
         return {P2NativeCostReason::real_render_or_analysis_failed,
-                {},{},{} };
+                {},{},{},measured.error()->message() };
     if(cancellation&&cancellation->load(std::memory_order_acquire))
         return {P2NativeCostReason::stale_or_unattested_product,
                 {},{},{} };
@@ -152,7 +154,7 @@ measure_and_score_m10_p2_full_native_candidate(
            *measured.value(),
            exact_current_m11_final_tp_safety_ceiling_db_tp).passes())
         return {P2NativeCostReason::m08_or_m11_safety_rejected,
-                {},{},{} };
+                {},{},{},"M16 full-output true peak exceeds limit or invalid" };
     independently_attested_m08_m11.native_independent_full_m16_linear_peak=
         measured.value()->m16_actual_p2_output.global_linear_peak();
     independently_attested_m08_m11.native_independent_m11_ceiling_db_tp=
@@ -167,7 +169,7 @@ measure_and_score_m10_p2_full_native_candidate(
             resolve_original_m05m06),*measured.value());
     if(!original_triple)
         return {P2NativeCostReason::missing_triple_native_authority,
-                {},{},{} };
+                {},{},{},"original definition resolver rejected" };
     auto definitions=std::make_shared<const P2OriginalRealNativeTriple>(
         retain_original_native_definitions(*original_triple));
     independently_attested_m08_m11.native_definition_authority_content=
@@ -180,7 +182,7 @@ measure_and_score_m10_p2_full_native_candidate(
         exact_active_frames,phase6_file_based_lra_trailing_attested);
     if(!bound.fragments)
         return {P2NativeCostReason::missing_triple_native_authority,
-                {},{},{} };
+                {},{},{},"candidate triple binding rejected" };
     const auto& original_prepared=authentic_prepared_and_independent_reference->prepared;
     if(original_prepared.original_m19_m20.channels==2U) {
         const auto actual=m05m06_real::import_actual_full_source(
@@ -188,7 +190,7 @@ measure_and_score_m10_p2_full_native_candidate(
             verified_candidate_product_owner,
             measured.value()->native.selected_original_m20_ordinals);
         if(!actual.source||!independently_attested_m08_m11.native_stereo_raw_safety)
-            return {P2NativeCostReason::m08_or_m11_safety_rejected,{},{},{}};
+            return {P2NativeCostReason::m08_or_m11_safety_rejected,{},{},{},"stereo safety evidence unavailable"};
         const auto& policy=*independently_attested_m08_m11.native_stereo_raw_safety;
         independently_attested_m08_m11.native_stereo_raw_safety_required_by_current_owner=true;
         independently_attested_m08_m11.native_stereo_raw_safety=
