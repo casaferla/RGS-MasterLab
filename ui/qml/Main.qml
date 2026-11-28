@@ -886,6 +886,7 @@ ApplicationWindow {
                 rawText: amountControl.matching && amountControl.amountStore
                     ? amountControl.amountStore.amountDrafts[amountControl.amountIndex] : "—"
                 viewModel: draftAdapter
+                commitFocusTarget: knobItem
                 enabled: amountControl.live
                 opacity: amountControl.matching ? 1.0 : 0.45
                 interactionHint: "0–100% in 1% steps · Enter or click away to apply · Esc to cancel"
@@ -957,6 +958,7 @@ ApplicationWindow {
         standardButtons: Dialog.Close
         background: Rectangle { color: root.surface; border.color: root.border; radius: 5 }
         ColumnLayout {
+            id: autoMatchDialogBody
             anchors.fill: parent
             spacing: 8
             Text {
@@ -1014,8 +1016,19 @@ ApplicationWindow {
                             onTextEdited: autoMatchDialog.setAmountDraft(index, text)
                             onActiveFocusChanged: if (!activeFocus)
                                 autoMatchDialog.commitAmount(index)
-                            Keys.onReturnPressed: autoMatchDialog.commitAmount(index)
-                            Keys.onEnterPressed: autoMatchDialog.commitAmount(index)
+                            function commitAndExit() {
+                                if (!autoMatchDialog.commitAmount(index)) return false
+                                autoMatchDialogBody.forceActiveFocus(Qt.OtherFocusReason)
+                                return true
+                            }
+                            Keys.onReturnPressed: function(event) {
+                                amountField.commitAndExit()
+                                event.accepted = true
+                            }
+                            Keys.onEnterPressed: function(event) {
+                                amountField.commitAndExit()
+                                event.accepted = true
+                            }
                             Keys.onEscapePressed: function(event) {
                                 autoMatchDialog.cancelAmountDraft(index)
                                 event.accepted = true
