@@ -93,7 +93,7 @@ Item {
                     ctx.lineWidth = widths[pass]
                     for (let i = 0; i < segments; ++i) {
                         const progress = (i + 0.5) / segments
-                        const strength = amount * (0.45 + 0.55 * progress)
+                        const strength = amount * progress
                         ctx.globalAlpha = weights[pass] * strength
                         ctx.beginPath()
                         ctx.arc(cx, cy, r,
