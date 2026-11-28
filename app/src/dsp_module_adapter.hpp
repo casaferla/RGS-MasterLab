@@ -310,9 +310,7 @@ public:
     [[nodiscard]] QString configuration_state() const override {
         return params() && params()->neutral()?QStringLiteral("Default"):QStringLiteral("Manual");
     }
-    [[nodiscard]] bool bypass_supported() const noexcept override {
-        return manual_editable()&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
-    }
+    [[nodiscard]] bool bypass_supported() const noexcept override {return manual_editable();}
     [[nodiscard]] bool bypass() const noexcept override {
         if(!params()||!id_)return true;
         const auto value=state_->is_bypassed(*id_);
@@ -366,7 +364,9 @@ public:
             operationError_=QStringLiteral("AutoMatch owns the active Transient Shaper. Transfer or suspend the match first.");
             emit changed();return;
         }
-        auto status=state_->set_user_bypass(*id_,value);
+        const auto status=preview_&&preview_->private_manual_transfer_preview_ticket()
+            ?preview_->edit_private_transferred_parameter(*id_,*params(),value)
+            :state_->set_user_bypass(*id_,value);
         if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return;}
         operationError_.clear();publish();
     }
@@ -474,9 +474,7 @@ public:
     [[nodiscard]] QString display_name() const override {return QStringLiteral("Dynamic EQ");}
     [[nodiscard]] QString workspace_context_label() const override {return context_;}
     [[nodiscard]] QString configuration_state() const override;
-    [[nodiscard]] bool bypass_supported() const noexcept override {
-        return manual_editable()&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
-    }
+    [[nodiscard]] bool bypass_supported() const noexcept override {return manual_editable();}
     [[nodiscard]] bool bypass() const noexcept override;
     [[nodiscard]] bool preview_supported() const noexcept override {return preview_!=nullptr;}
     [[nodiscard]] QString preview_status() const override {return preview_?preview_->preview_status():QStringLiteral("IDLE");}

@@ -722,7 +722,7 @@ QVariantMap ManualDynamicEqModuleAdapter::linked_parameters() const {
         bands.append(l3_automatch::project_linked_dynamic_band(b.spec()));
     const auto audio=prepared();
     const double maximum=audio?std::min(20000.0,0.45*audio->view().format().sample_rate().value()):20000.0;
-    return {{"instanceId",instance_id()},{"manualEditable",true},
+    return {{"instanceId",instance_id()},{"manualEditable",manual_editable()},
         {"activityAuthorized",false},{"bands",bands},{"maximumFrequencyHz",maximum}};
 }
 QVariantList ManualDynamicEqModuleAdapter::linkedBandResponse(int index) const {
@@ -850,7 +850,9 @@ void ManualDynamicEqModuleAdapter::setBypass(bool value) {
             if(!checked){reject("audio",QString::fromStdString(checked.error()->message()));return;}
         }
     }
-    const auto status=state_->set_user_bypass(*id_,value);
+    const auto status=preview_&&preview_->private_manual_transfer_preview_ticket()
+        ?preview_->edit_private_transferred_parameter(*id_,*params(),value)
+        :state_->set_user_bypass(*id_,value);
     if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return;}
     operationError_.clear();publish();
 }
