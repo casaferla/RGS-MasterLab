@@ -439,6 +439,86 @@ prepare_transferred_manual_edit_project(
         live,std::move(*after.value()),std::move(*staged.value()),digest.toStdString()});
 }
 
+// Reverse only the fine-tuning overlay. The returned transfer snapshot
+// remains untrusted until the original accepted graph and its transfer
+// are independently reconstructed by the existing reopen gate.
+[[nodiscard]] inline core::Result<project::ProjectSnapshot>
+recover_transferred_manual_edit_base(const project::ProjectSnapshot& persisted)
+{
+    using R=core::Result<project::ProjectSnapshot>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    auto doc=persisted.document();
+    const auto parsed=QJsonDocument::fromJson(
+        QByteArray::fromStdString(doc.referenceMatch.canonical_utf8()));
+    if(!parsed.isObject()||!doc.pipeline.masteringChainId)
+        return fail("MANUAL_FINE_TUNE_RECOVERY_NO_OWNER");
+    auto metadata=parsed.object();
+    if(!metadata.contains(QStringLiteral("manualFineTune")))return R::success(persisted);
+    if(metadata.contains(QStringLiteral("materialization")))
+        return fail("MANUAL_FINE_TUNE_RECOVERY_ACCEPTED_RECORD");
+    const auto overlay=metadata.take(QStringLiteral("manualFineTune")).toObject();
+    const auto edit=overlay.value(QStringLiteral("content")).toObject();
+    const auto transfer=metadata.value(QStringLiteral("manualTransferCandidate")).toObject();
+    const auto content=transfer.value(QStringLiteral("content")).toObject();
+    if(edit.value(QStringLiteral("schemaId")).toString()!=QStringLiteral("rgsml.reference-match.manual-fine-tune/1.0.0")||
+       edit.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED")||
+       edit.value(QStringLiteral("transferIdentity")).toString()!=transfer.value(QStringLiteral("identitySha256")).toString()||
+       edit.value(QStringLiteral("instanceId")).toString()!=content.value(QStringLiteral("manualInstance")).toString())
+        return fail("MANUAL_FINE_TUNE_RECOVERY_IDENTITY_MISMATCH");
+    const auto canonical=project::OpaqueJsonValue::parse(
+        QJsonDocument(edit).toJson(QJsonDocument::Compact).toStdString());
+    if(!canonical)return R::failure(*canonical.error());
+    const auto hash=QCryptographicHash::hash(
+        QByteArray::fromStdString(canonical.value()->canonical_utf8()),QCryptographicHash::Sha256).toHex();
+    if(QString::fromLatin1(hash)!=overlay.value(QStringLiteral("identitySha256")).toString())
+        return fail("MANUAL_FINE_TUNE_RECOVERY_DIGEST_MISMATCH");
+    const auto graph=content.value(QStringLiteral("manual")).toObject();
+    bool baseOk=false,priorOk=false,revisionOk=false;
+    const auto baseRevision=graph.value(QStringLiteral("revision")).toString().toULongLong(&baseOk);
+    const auto priorRevision=edit.value(QStringLiteral("priorRevision")).toString().toULongLong(&priorOk);
+    const auto revision=edit.value(QStringLiteral("revision")).toString().toULongLong(&revisionOk);
+    if(!baseOk||!priorOk||!revisionOk||priorRevision<baseRevision||
+       priorRevision==std::numeric_limits<std::uint64_t>::max()||revision!=priorRevision+1U)
+        return fail("MANUAL_FINE_TUNE_RECOVERY_REVISION_MISMATCH");
+    auto manual=std::find_if(doc.chains.begin(),doc.chains.end(),[&](const auto& c){
+        return c.chainId==*doc.pipeline.masteringChainId&&c.stage=="MASTER"&&c.segment=="MANUAL";});
+    if(manual==doc.chains.end()||manual->revision!=revision)
+        return fail("MANUAL_FINE_TUNE_RECOVERY_MANUAL_MISMATCH");
+    const auto nodes=graph.value(QStringLiteral("modules")).toArray();
+    if(static_cast<std::size_t>(nodes.size())!=manual->modules.size())
+        return fail("MANUAL_FINE_TUNE_RECOVERY_TOPOLOGY_MISMATCH");
+    const auto id=edit.value(QStringLiteral("instanceId")).toString();
+    std::size_t found=0;
+    for(std::size_t i=0;i<manual->modules.size();++i) {
+        auto& slot=manual->modules[i];
+        const auto node=nodes.at(static_cast<qsizetype>(i)).toObject();
+        if(QString::fromStdString(slot.instanceId.to_string())!=node.value(QStringLiteral("instanceId")).toString()||
+           QString::fromStdString(slot.typeId)!=node.value(QStringLiteral("typeId")).toString())
+            return fail("MANUAL_FINE_TUNE_RECOVERY_TOPOLOGY_MISMATCH");
+        if(node.value(QStringLiteral("instanceId")).toString()!=id)continue;
+        ++found;
+        if(!edit.value(QStringLiteral("parameters")).isObject()||
+           !node.value(QStringLiteral("parameters")).isObject())
+            return fail("MANUAL_FINE_TUNE_RECOVERY_PAYLOAD_MISSING");
+        const auto current=project::OpaqueJsonValue::parse(QJsonDocument(
+            edit.value(QStringLiteral("parameters")).toObject()).toJson(QJsonDocument::Compact).toStdString());
+        const auto original=project::OpaqueJsonValue::parse(QJsonDocument(
+            node.value(QStringLiteral("parameters")).toObject()).toJson(QJsonDocument::Compact).toStdString());
+        if(!current||!original||slot.parameters!=*current.value())
+            return fail("MANUAL_FINE_TUNE_RECOVERY_PAYLOAD_MISMATCH");
+        slot.parameters=*original.value();
+    }
+    if(found!=1U)return fail("MANUAL_FINE_TUNE_RECOVERY_SLOT_MISSING");
+    manual->revision=baseRevision;
+    const auto restored=project::OpaqueJsonValue::parse(
+        QJsonDocument(metadata).toJson(QJsonDocument::Compact).toStdString());
+    if(!restored)return R::failure(*restored.error());
+    doc.referenceMatch=*restored.value();
+    return project::ProjectSnapshot::create(std::move(doc),
+        {persisted.optional_entries().begin(),persisted.optional_entries().end()});
+}
+
 // Project Open must check the original accepted graph and the complete
 // forward delta BEFORE replacing the current Source or any live DSP.
 // The preflight has no PREPARED PCM and can never be played or installed.
