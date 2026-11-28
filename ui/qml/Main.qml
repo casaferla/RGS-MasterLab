@@ -854,6 +854,8 @@ ApplicationWindow {
                 color: amountControl.matching ? amountControl.primaryText : amountControl.secondaryText
                 font.family: "Segoe UI"
                 font.pixelSize: 10
+                fontSizeMode: Text.HorizontalFit
+                minimumPixelSize: 8
                 font.weight: Font.DemiBold
             }
             StudioMatchKnob {
