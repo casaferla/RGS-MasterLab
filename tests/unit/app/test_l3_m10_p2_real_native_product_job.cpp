@@ -142,7 +142,10 @@ void P2RealNativeProductTest::nativePerformanceSeparatesAttemptsAndCacheHits() {
     QVERIFY(!perf.last_attempt_ms);
     QVERIFY(!perf.first_admissible_ms);
     QVERIFY(perf.counts_reconciled());
+    perf.observe_native_cost({m::P2NativeCostReason::real_render_or_analysis_failed,{},{},{},"diagnostic fixture"});
     perf.observe({K::attempted_failure,{}},at(9));
+    QCOMPARE(perf.native_cost_reasons[2],1U);
+    QVERIFY(perf.first_native_failure_details[2]=="diagnostic fixture");
     QCOMPARE(perf.attempted,1U);
     QCOMPARE(perf.failed,1U);
     QCOMPARE(perf.completed,0U);
@@ -672,6 +675,9 @@ void P2RealNativeProductTest::nativeAutomaticGainSearchMeasuresRealOwnedPcm() {
     QVERIFY(*result.performance.last_attempt_ms>=*result.performance.first_admissible_ms);
     QVERIFY(result.performance.counts_reconciled());
     QCOMPARE(result.performance.attempted,result.search.refinement->total_attempted);
+    std::uint32_t scored=0U;
+    for(auto count:result.performance.native_cost_reasons)scored+=count;
+    QCOMPARE(scored,result.performance.attempted);
 
     // The ordinary Product execution registry must now admit P2 in
     // the same real 27-slot search (no special direct-render test path).
