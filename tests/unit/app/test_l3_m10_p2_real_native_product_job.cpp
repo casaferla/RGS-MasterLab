@@ -1255,6 +1255,21 @@ void P2RealNativeProductTest::nativeLoudnessSeedUsesFixedIntegratedAndIndependen
     QVERIFY(!full->terminal_branch_requested);
     const auto limited=m09::derive_native_loudness_gain_seed(fixed,amount,requested,-2.0);
     QVERIFY(limited&&limited->terminal_branch_requested);
+    // Loudness capability must not systematically rank the predicted
+    // over-ceiling unprotected Gain ahead of Gain + eligible P2.
+    m09::NativeFamilySeedBank peak_risk;
+    peak_risk.gain=*limited;
+    using Mode=m09::LoudnessMode;
+    QVERIFY(m09::native_loudness_l01_proxy_capability(peak_risk,Mode::gain,10.0));
+    QVERIFY(!m09::native_loudness_l01_proxy_capability(peak_risk,Mode::gain_with_terminal_limiter,10.0));
+    peak_risk.owned_p2=m09::default_native_owned_p2_seed(-2.0);
+    QVERIFY(peak_risk.owned_p2);
+    QVERIFY(!m09::native_loudness_l01_proxy_capability(peak_risk,Mode::gain,10.0));
+    QVERIFY(m09::native_loudness_l01_proxy_capability(peak_risk,Mode::gain_with_terminal_limiter,10.0));
+    QVERIFY(!m09::native_loudness_l01_proxy_capability(peak_risk,Mode::gain_with_terminal_limiter,-10.0));
+    QVERIFY(!m09::native_loudness_l01_proxy_capability(peak_risk,Mode::terminal_limiter_only,10.0));
+    peak_risk.gain=*full;
+    QVERIFY(m09::native_loudness_l01_proxy_capability(peak_risk,Mode::gain,10.0));
     amount.global=0.5;
     const auto half=m09::derive_native_loudness_gain_seed(fixed,amount,requested,0.0);
     QVERIFY(half);
