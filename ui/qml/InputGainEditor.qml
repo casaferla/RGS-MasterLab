@@ -26,7 +26,7 @@ Item {
     readonly property bool editingNumeric: gainInput.activeFocus
 
     function commitNumericDraft() {
-        if (root.viewModel) root.viewModel.setGainDbText(gainInput.text)
+        return !!root.viewModel && root.viewModel.setGainDbText(gainInput.text)
     }
     function cancelNumericDraft() {
         if (!root.viewModel) return
@@ -332,11 +332,11 @@ Item {
                             // preview before the user has finished entering a value.
                             // Enter/Return commits the complete text exactly once.
                             Keys.onReturnPressed: function(event) {
-                                root.commitNumericDraft()
+                                if (root.commitNumericDraft()) root.forceActiveFocus(Qt.OtherFocusReason)
                                 event.accepted = true
                             }
                             Keys.onEnterPressed: function(event) {
-                                root.commitNumericDraft()
+                                if (root.commitNumericDraft()) root.forceActiveFocus(Qt.OtherFocusReason)
                                 event.accepted = true
                             }
                             Keys.onEscapePressed: function(event) {
