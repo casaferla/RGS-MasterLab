@@ -2,6 +2,7 @@ add_library(rgsml_dsp STATIC
     src/imodule.cpp
     src/gain_parameters.cpp
     src/gain_module.cpp
+    src/dc_offset_correction.cpp
     src/parametric_eq_parameters.cpp
     src/dynamic_eq_parameters.cpp
     src/internal/dynamic_eq_c01_coefficients.cpp
@@ -69,6 +70,7 @@ rgsml_assert_target_dependencies(
 # numerical compilation policies or the protected M16 analysis implementation.
 if(MSVC)
     set_source_files_properties(src/true_peak_limiter_module.cpp
+        src/dc_offset_correction.cpp
         src/internal/dynamic_eq_c01_coefficients.cpp
         src/internal/dynamic_eq_c01_engine.cpp
         src/dynamic_eq_module.cpp
@@ -78,6 +80,7 @@ if(MSVC)
         PROPERTIES COMPILE_OPTIONS "/fp:strict")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     set_source_files_properties(src/true_peak_limiter_module.cpp
+        src/dc_offset_correction.cpp
         src/internal/dynamic_eq_c01_coefficients.cpp
         src/internal/dynamic_eq_c01_engine.cpp
         src/dynamic_eq_module.cpp
