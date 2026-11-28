@@ -262,6 +262,11 @@ render_captured_manual_match_transfer(const ManualMatchTransferCapture& capture,
     return render_manual_match_transfer_candidate(capture.native,
         capture.project.identity,maxBlock,cancellation);
 }
+[[nodiscard]] inline core::Result<dsp_presets::ProposedManualPresetRestore>
+validate_transferred_manual_edit_overlay(
+    const ManualMatchTransferDraft& native,
+    const ManualMatchTransferProjectDraft& base,
+    const project::ProjectSnapshot& persisted);
 // Provisional playback ownership is deliberately NOT an M12 replay
 // ticket. It retains the independently checked transfer identity and
 // exact PREPARED owner, without reusing accepted solver checksums.
@@ -280,12 +285,35 @@ public:
         if(!checked)return R::failure(*checked.error());
         return R::success(ManualMatchTransferPreviewTicket(std::move(capture)));
     }
+    [[nodiscard]] static core::Result<ManualMatchTransferPreviewTicket> create_edited(
+        std::shared_ptr<const ManualMatchTransferCapture> capture,
+        const project::ProjectSnapshot& persisted)
+    {
+        using R=core::Result<ManualMatchTransferPreviewTicket>;
+        auto ticket=create(std::move(capture));
+        if(!ticket)return ticket;
+        const auto& origin=ticket.value()->capture();
+        auto state=validate_transferred_manual_edit_overlay(origin.native,origin.project,persisted);
+        if(!state)return R::failure(*state.error());
+        if(origin.project.matches_after(persisted))
+            return R::failure(core::Error{core::ErrorCode::InvalidState,"MANUAL_FINE_TUNE_NO_OVERLAY"});
+        ticket.value()->edited_state_.emplace(std::move(*state.value()));
+        ticket.value()->edited_project_.emplace(persisted);
+        return ticket;
+    }
     [[nodiscard]] const ManualMatchTransferCapture& capture() const noexcept {return *capture_;}
+    [[nodiscard]] std::shared_ptr<const ManualMatchTransferCapture> capture_owner() const noexcept {return capture_;}
+    [[nodiscard]] const dsp_presets::ProposedManualPresetRestore& manual_state() const noexcept {
+        return edited_state_?*edited_state_:capture_->native.manual_after;
+    }
+    [[nodiscard]] const project::ProjectSnapshot& project_state() const noexcept {
+        return edited_project_?*edited_project_:capture_->project.after;
+    }
     [[nodiscard]] bool matches_manual(
         const dsp::ProcessingChain& chain,
         std::span<const dsp::ModuleExecutionBinding> bindings) const
     {
-        const auto& expected=capture_->native.manual_after;
+        const auto& expected=manual_state();
         const auto& proposed=expected.proposed_manual_chain;
         return chain.context()==proposed.context()&&chain.revision()==proposed.revision()&&
             std::equal(chain.instances().begin(),chain.instances().end(),
@@ -297,15 +325,21 @@ public:
         const std::shared_ptr<const render::RenderResult>& owner) const noexcept
     {return owner&&owner==capture_->native.exact_prior_owner->exact_prepared_owner;}
     [[nodiscard]] bool matches_project(const project::ProjectSnapshot& snapshot) const
-    {return capture_->project.matches_after(snapshot);}
+    {return m12_frozen::m12_exact_project_snapshot_equal(project_state(),snapshot);}
     [[nodiscard]] core::Result<render::RenderResult> render(
         core::FrameCount maxBlock,const std::atomic<bool>* cancellation=nullptr) const
-    {return render_captured_manual_match_transfer(*capture_,maxBlock,cancellation);}
+    {
+        if(edited_state_)return manual_transfer_detail::render_native_graph(
+            capture_->native,*edited_state_,maxBlock,cancellation);
+        return render_captured_manual_match_transfer(*capture_,maxBlock,cancellation);
+    }
     [[nodiscard]] constexpr bool is_verified() const noexcept {return false;}
 private:
     explicit ManualMatchTransferPreviewTicket(std::shared_ptr<const ManualMatchTransferCapture> capture)
         :capture_(std::move(capture)) {}
     std::shared_ptr<const ManualMatchTransferCapture> capture_;
+    std::optional<dsp_presets::ProposedManualPresetRestore> edited_state_;
+    std::optional<project::ProjectSnapshot> edited_project_;
 };
 // Stage an explicit edit of the transferred MANUAL slot only. This is
 // not another transfer or a new accepted solver graph. No live mutation,
@@ -409,7 +443,7 @@ prepare_transferred_manual_edit_project(
     if(!metadata.isObject()||!params.isObject())
         return fail("MANUAL_MATCH_EDIT_PROJECT_METADATA_INVALID");
     auto record=metadata.object();
-    if(record.contains(QStringLiteral("manualFineTune"))||record.contains(QStringLiteral("materialization")))
+    if(record.contains(QStringLiteral("materialization")))
         return fail("MANUAL_MATCH_EDIT_PROJECT_UNEXPECTED_RECORD");
     const QJsonObject edit{
         {"schemaId",QStringLiteral("rgsml.reference-match.manual-fine-tune/1.0.0")},
@@ -517,6 +551,68 @@ recover_transferred_manual_edit_base(const project::ProjectSnapshot& persisted)
     doc.referenceMatch=*restored.value();
     return project::ProjectSnapshot::create(std::move(doc),
         {persisted.optional_entries().begin(),persisted.optional_entries().end()});
+}
+
+// Reconstruct the complete typed after-graph from the checked original
+// transfer and the one allowed overlay. No persisted node can supply its
+// own registry, ownership, bypass or execution order.
+[[nodiscard]] inline core::Result<dsp_presets::ProposedManualPresetRestore>
+validate_transferred_manual_edit_overlay(
+    const ManualMatchTransferDraft& native,
+    const ManualMatchTransferProjectDraft& base,
+    const project::ProjectSnapshot& persisted)
+{
+    using R=core::Result<dsp_presets::ProposedManualPresetRestore>;
+    const auto fail=[](const char* why){return R::failure(core::Error{
+        core::ErrorCode::InvalidState,why});};
+    const auto verifiedBase=validate_manual_match_transfer_project_readback(base.after,base,native);
+    if(!verifiedBase)return R::failure(*verifiedBase.error());
+    auto recovered=recover_transferred_manual_edit_base(persisted);
+    if(!recovered)return R::failure(*recovered.error());
+    if(!base.matches_after(*recovered.value()))return fail("MANUAL_FINE_TUNE_BASE_MISMATCH");
+    if(base.matches_after(persisted))return R::success(native.manual_after);
+    const auto meta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        persisted.document().referenceMatch.canonical_utf8())).object();
+    const auto overlay=meta.value(QStringLiteral("manualFineTune")).toObject();
+    const auto edit=overlay.value(QStringLiteral("content")).toObject();
+    if(overlay.size()!=2||edit.size()!=7)return fail("MANUAL_FINE_TUNE_UNKNOWN_FIELDS");
+    const auto& original=native.manual_after;
+    const auto nodes=original.proposed_manual_chain.instances();
+    const auto it=std::find_if(nodes.begin(),nodes.end(),[&](const auto& node){
+        return node.instance_id()==native.manual_instance;});
+    if(it==nodes.end())return fail("MANUAL_FINE_TUNE_SLOT_MISSING");
+    const auto index=static_cast<std::size_t>(it-nodes.begin());
+    const auto& registry=*native.exact_prior_owner->replay->registry_owner;
+    const auto descriptor=registry.find_descriptor(it->module_type_id());
+    if(!descriptor||!descriptor.value()->get().parameter_schema_id())
+        return fail("MANUAL_FINE_TUNE_SCHEMA_MISSING");
+    const auto canonical=project::OpaqueJsonValue::parse(QJsonDocument(
+        edit.value(QStringLiteral("parameters")).toObject()).toJson(QJsonDocument::Compact).toStdString());
+    if(!canonical)return R::failure(*canonical.error());
+    const auto decoded=dsp::decode_module_parameters_json(
+        *descriptor.value()->get().parameter_schema_id(),canonical.value()->canonical_utf8());
+    if(!decoded)return R::failure(*decoded.error());
+    if(it->module_type_id()=="rgsml.dsp.dynamic-eq") {
+        const auto* p=std::get_if<dsp::DynamicEqParameters>(decoded.value());
+        if(!p)return fail("MANUAL_FINE_TUNE_WRONG_TYPE");
+        if(native.exact_prior_owner->exact_prepared_owner) {
+            const auto fmt=native.exact_prior_owner->exact_prepared_owner->view().format();
+            const auto valid=p->validate_for_audio(fmt.sample_rate().value(),static_cast<std::uint32_t>(fmt.channel_count()));
+            if(!valid)return R::failure(*valid.error());
+        }
+    } else if(it->module_type_id()!="rgsml.dsp.transient-shaper"||
+       !std::holds_alternative<dsp::TransientShaperParameters>(*decoded.value()))
+        return fail("MANUAL_FINE_TUNE_WRONG_TYPE");
+    bool ok=false;
+    const auto revision=edit.value(QStringLiteral("revision")).toString().toULongLong(&ok);
+    if(!ok||revision<=original.proposed_manual_chain.revision())return fail("MANUAL_FINE_TUNE_REVISION_INVALID");
+    auto chain=dsp::ProcessingChain::restore(registry,original.proposed_manual_chain.context(),
+        revision,{nodes.begin(),nodes.end()});
+    if(!chain)return R::failure(*chain.error());
+    auto bindings=original.proposed_bindings;
+    bindings[index].parameters=*decoded.value();
+    return R::success(dsp_presets::ProposedManualPresetRestore{
+        std::move(*chain.value()),std::move(bindings)});
 }
 
 // Project Open must check the original accepted graph and the complete
