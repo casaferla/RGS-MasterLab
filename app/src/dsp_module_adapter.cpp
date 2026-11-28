@@ -748,7 +748,7 @@ void ManualDynamicEqModuleAdapter::refresh() {
     emit changed();
 }
 void ManualDynamicEqModuleAdapter::publish() {
-    if(preview_)preview_->request_preview();
+    if(preview_&&!preview_->private_manual_transfer_preview_ticket())preview_->request_preview();
     emit changed();
 }
 bool ManualDynamicEqModuleAdapter::write(const Params& p) {
@@ -759,7 +759,9 @@ bool ManualDynamicEqModuleAdapter::write(const Params& p) {
             static_cast<std::uint32_t>(fmt.channel_count()));
         if(!valid)return reject(QStringLiteral("audio"),QString::fromStdString(valid.error()->message()));
     }
-    const auto result=state_->set_dynamic_eq_parameters(p);
+    const auto result=preview_&&preview_->private_manual_transfer_preview_ticket()
+        ?preview_->edit_private_transferred_parameter(*id_,p)
+        :state_->set_dynamic_eq_parameters(p);
     if(!result){operationError_=QString::fromStdString(result.error()->message());emit changed();return false;}
     operationError_.clear();observed_=p;
     validationField_.clear();validationMessage_.clear();return true;

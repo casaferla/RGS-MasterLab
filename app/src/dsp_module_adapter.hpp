@@ -296,7 +296,8 @@ public:
             this,&ManualTransientShaperModuleAdapter::refresh);
     }
     [[nodiscard]] bool manual_editable() const noexcept {
-        return params()!=nullptr&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
+        return params()!=nullptr&&(!preview_||!preview_->private_manual_transfer_preview_ticket()||
+            (id_&&preview_->can_edit_private_transferred_parameter(*id_)));
     }
     [[nodiscard]] double attack_amount_db() const noexcept {return params()?params()->attack_amount_db():0.0;}
     [[nodiscard]] double sustain_amount_db() const noexcept {return params()?params()->sustain_amount_db():0.0;}
@@ -309,7 +310,9 @@ public:
     [[nodiscard]] QString configuration_state() const override {
         return params() && params()->neutral()?QStringLiteral("Default"):QStringLiteral("Manual");
     }
-    [[nodiscard]] bool bypass_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] bool bypass_supported() const noexcept override {
+        return manual_editable()&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
+    }
     [[nodiscard]] bool bypass() const noexcept override {
         if(!params()||!id_)return true;
         const auto value=state_->is_bypassed(*id_);
@@ -382,9 +385,12 @@ private:
         }
         emit changed();
     }
-    void publish() {if(preview_)preview_->request_preview();emit changed();}
+    void publish() {if(preview_&&!preview_->private_manual_transfer_preview_ticket())preview_->request_preview();emit changed();}
     bool write(const Params& p) {
-        auto status=state_->set_transient_shaper_parameters(p);
+        const bool transferred=preview_&&preview_->private_manual_transfer_preview_ticket();
+        auto status=transferred
+            ?preview_->edit_private_transferred_parameter(*id_,p)
+            :state_->set_transient_shaper_parameters(p);
         if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return false;}
         operationError_.clear();observed_=p;return true;
     }
@@ -431,7 +437,8 @@ public:
     ManualDynamicEqModuleAdapter(MasteringChainState* state,
         MasteringPreviewController* preview,QString context,QObject* parent=nullptr);
     [[nodiscard]] bool manual_editable() const noexcept {
-        return params()!=nullptr&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
+        return params()!=nullptr&&(!preview_||!preview_->private_manual_transfer_preview_ticket()||
+            (id_&&preview_->can_edit_private_transferred_parameter(*id_)));
     }
     [[nodiscard]] QString validation_field() const {return validationField_;}
     [[nodiscard]] QString validation_message() const {return validationMessage_;}
@@ -441,7 +448,9 @@ public:
     [[nodiscard]] QString display_name() const override {return QStringLiteral("Dynamic EQ");}
     [[nodiscard]] QString workspace_context_label() const override {return context_;}
     [[nodiscard]] QString configuration_state() const override;
-    [[nodiscard]] bool bypass_supported() const noexcept override {return manual_editable();}
+    [[nodiscard]] bool bypass_supported() const noexcept override {
+        return manual_editable()&&(!preview_||!preview_->private_manual_transfer_preview_ticket());
+    }
     [[nodiscard]] bool bypass() const noexcept override;
     [[nodiscard]] bool preview_supported() const noexcept override {return preview_!=nullptr;}
     [[nodiscard]] QString preview_status() const override {return preview_?preview_->preview_status():QStringLiteral("IDLE");}
