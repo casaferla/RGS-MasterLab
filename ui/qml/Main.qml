@@ -809,7 +809,15 @@ ApplicationWindow {
                     || vm.validationField !== field) return false
             }
             vm.cancelDraft()
-            return numericItem.rawText === "43" && vm.validationField === ""
+            if (numericItem.rawText !== "43" || vm.validationField !== "") return false
+            vm.setDraftFieldText(field, "57")
+            if (!numericItem.commitFromKeyboard() || amountStore.amountValue(amountIndex) !== 57
+                    || !knobItem.activeFocus) return false
+            vm.setDraftFieldText(field, "101")
+            if (numericItem.commitFromKeyboard() || amountStore.amountValue(amountIndex) !== 57)
+                return false
+            vm.cancelDraft()
+            return numericItem.rawText === "57" && vm.validationField === ""
         }
 
         QtObject {
