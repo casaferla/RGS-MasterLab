@@ -849,22 +849,22 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(linkedAfter[2]==linkedBefore[2]);
     QVERIFY(draft.value()->linked_bindings_after==exactTransferOwner->replay->reference_bindings);
     QVERIFY(!transferManual.instances().back().active());
-    const auto identity=transfer::identify_manual_match_transfer(*draft.value());
-    QVERIFY(identity);
-    QCOMPARE(identity.value()->sha256.size(),std::size_t{64});
-    QVERIFY(!identity.value()->is_solver_winner());
-    QVERIFY(!identity.value()->is_verified());
-    QVERIFY(!identity.value()->authorizes_project_commit());
+    const auto transferIdentity=transfer::identify_manual_match_transfer(*draft.value());
+    QVERIFY(transferIdentity);
+    QCOMPARE(transferIdentity.value()->sha256.size(),std::size_t{64});
+    QVERIFY(!transferIdentity.value()->is_solver_winner());
+    QVERIFY(!transferIdentity.value()->is_verified());
+    QVERIFY(!transferIdentity.value()->authorizes_project_commit());
     const auto repeat=transfer::identify_manual_match_transfer(*draft.value());
     QVERIFY(repeat);
-    QCOMPARE(repeat.value()->sha256,identity.value()->sha256);
+    QCOMPARE(repeat.value()->sha256,transferIdentity.value()->sha256);
     const auto other=transfer::prepare_manual_match_transfer(exactTransferOwner,transferManual,
         transferBindings,*reg,nodes[0].allocated_instance_id);
     QVERIFY(other);
     const auto otherIdentity=transfer::identify_manual_match_transfer(*other.value());
     QVERIFY(otherIdentity);
-    QVERIFY(otherIdentity.value()->sha256!=identity.value()->sha256);
-    QVERIFY(identity.value()->sha256!=exactTransferOwner->replay->exact_plan_checksum);
+    QVERIFY(otherIdentity.value()->sha256!=transferIdentity.value()->sha256);
+    QVERIFY(transferIdentity.value()->sha256!=exactTransferOwner->replay->exact_plan_checksum);
     auto forgedTransfer=*draft.value();
     forgedTransfer.manual_after.proposed_bindings.front().parameters=
         *dsp::GainParameters::create(7.0).value();
@@ -966,7 +966,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!transfer::prepare_manual_match_transfer_project(*staleSnapshot.value(),*draft.value()));
 
     const auto audition=transfer::render_manual_match_transfer_candidate(
-        *draft.value(),*identity.value(),*maxBlock.value());
+        *draft.value(),*transferIdentity.value(),*maxBlock.value());
     QVERIFY(audition);
     QCOMPARE(audition.value()->view().absolute_range(),ownedPrepared->view().absolute_range());
     QCOMPARE(audition.value()->view().format(),ownedPrepared->view().format());
@@ -974,7 +974,7 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *draft.value(),*otherIdentity.value(),*maxBlock.value()));
     std::atomic<bool> cancelledTransfer{true};
     QVERIFY(!transfer::render_manual_match_transfer_candidate(
-        *draft.value(),*identity.value(),*maxBlock.value(),&cancelledTransfer));
+        *draft.value(),*transferIdentity.value(),*maxBlock.value(),&cancelledTransfer));
 
     // The worker entry point must retain the same exact native and
     // persisted owner. A cancelled or forged capture cannot publish PCM.
