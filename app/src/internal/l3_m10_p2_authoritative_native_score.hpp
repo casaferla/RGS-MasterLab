@@ -150,11 +150,18 @@ measure_and_score_m10_p2_full_native_candidate(
     // Independent post-P2 M16 is a mandatory M11 hard constraint,
     // checked before the expensive 27-slot projection. A claimed
     // prior/comparison metric or the M17 export ceiling cannot pass.
-    if(!check_m10_p2_native_actual_m16(
-           *measured.value(),
-           exact_current_m11_final_tp_safety_ceiling_db_tp).passes())
+    const auto m16_guard=check_m10_p2_native_actual_m16(
+        *measured.value(),exact_current_m11_final_tp_safety_ceiling_db_tp);
+    if(!m16_guard.passes()) {
+        const auto peak=measured.value()->m16_actual_p2_output.global_linear_peak();
+        const char* reason=m16_guard.reason==P2ActualM16SafetyReason::exceeded
+            ?"exceeded":m16_guard.reason==P2ActualM16SafetyReason::invalid_independent_ceiling
+            ?"invalid ceiling":"invalid scope/source";
         return {P2NativeCostReason::m08_or_m11_safety_rejected,
-                {},{},{},"M16 full-output true peak exceeds limit or invalid" };
+            {},{},{},std::string("M16 ")+reason+
+            "; linear peak="+std::to_string(peak)+
+            "; ceiling dBTP="+std::to_string(exact_current_m11_final_tp_safety_ceiling_db_tp)};
+    }
     independently_attested_m08_m11.native_independent_full_m16_linear_peak=
         measured.value()->m16_actual_p2_output.global_linear_peak();
     independently_attested_m08_m11.native_independent_m11_ceiling_db_tp=
