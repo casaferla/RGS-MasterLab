@@ -1113,6 +1113,15 @@ ApplicationWindow {
                             onClicked: root.appAutoMatchModel.beginTransfer(root.statusDspModule.instanceId)
                         }
                         Button {
+                            objectName: "autoMatchListenTransfer"
+                            text: root.appAutoMatchModel.transferListening ? "Stop listening" : "Listen to candidate"
+                            visible: root.appAutoMatchModel.transferReady
+                            enabled: visible && !root.appAutoMatchModel.busy && !root.monitorExclusive
+                            onClicked: root.appAutoMatchModel.transferListening
+                                ? root.appAutoMatchModel.stopTransferListening()
+                                : root.appAutoMatchModel.listenTransfer()
+                        }
+                        Button {
                             objectName: "autoMatchApplyTransfer"
                             text: "Apply transfer"
                             visible: root.appAutoMatchModel.transferReady

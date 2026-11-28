@@ -15,7 +15,7 @@ core::Uuid new_uuid() {
 }
 }
 AutoMatchViewModel::AutoMatchViewModel(Action::Controllers product,const Action::Fanout& fanout,
-    const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,QObject* parent)
+    AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,QObject* parent)
     :QObject(parent),product_(product),fanout_(fanout),selector_(selector),gold_(gold),
      action_(product,fanout,selector,gold)
 {
@@ -34,6 +34,7 @@ AutoMatchViewModel::AutoMatchViewModel(Action::Controllers product,const Action:
 AutoMatchViewModel::~AutoMatchViewModel()
 {
     if(transfer_cancel_)transfer_cancel_->store(true,std::memory_order_release);
+    if(selector_.private_transfer_audition_active())(void)selector_.end_private_transfer_audition();
 }
 bool AutoMatchViewModel::transfer_busy()const{return owner()&&transfer_worker_.valid();}
 bool AutoMatchViewModel::transfer_ready()const{return owner()&&static_cast<bool>(transfer_candidate_);}
@@ -68,9 +69,42 @@ bool AutoMatchViewModel::beginTransfer(const QString& instanceId)
         transfer_text_=QStringLiteral("Transfer render could not start.");emit changed();return false;
     }
 }
+bool AutoMatchViewModel::transfer_listening()const
+{return owner()&&selector_.private_transfer_audition_active();}
+bool AutoMatchViewModel::listenTransfer()
+{
+    if(!transfer_ready()||busy()||transfer_listening())return false;
+    const auto candidate=transfer_candidate_;
+    const auto& capture=candidate->capture();
+    if(gold_.selection_revision()!=transfer_reference_revision_||
+       !product_.upstream.project.private_manual_match_transfer_still_current(capture)){
+        discardTransfer();return false;
+    }
+    if(selector_.active_target()!=AuditionTarget::PREPARED) {
+        const auto selected=selector_.switch_to(AuditionTarget::PREPARED);
+        if(!selected){transfer_text_=QString::fromStdString(selected.error()->message());emit changed();return false;}
+    }
+    if(!product_.upstream.project.private_manual_match_transfer_still_current(capture)){
+        discardTransfer();return false;
+    }
+    const auto pcm=std::shared_ptr<const render::RenderResult>(candidate,&candidate->rendered());
+    const auto result=selector_.begin_private_transfer_audition(pcm,capture.native.exact_prior_owner->exact_prepared_owner);
+    transfer_text_=result?QStringLiteral("Listening to transfer candidate / NOT VERIFIED"):
+        QString::fromStdString(result.error()->message());
+    emit changed();return static_cast<bool>(result);
+}
+bool AutoMatchViewModel::stopTransferListening()
+{
+    if(!owner())return false;
+    const auto result=selector_.end_private_transfer_audition();
+    transfer_text_=result?QStringLiteral("Candidate ready. PREPARED restored."):
+        QString::fromStdString(result.error()->message());
+    emit changed();return static_cast<bool>(result);
+}
 void AutoMatchViewModel::discardTransfer()
 {
     if(!owner()||publishing_)return;
+    if(transfer_listening()&&!stopTransferListening())return;
     if(transfer_cancel_)transfer_cancel_->store(true,std::memory_order_release);
     transfer_candidate_.reset();
     transfer_text_=QStringLiteral("Transfer discarded.");
@@ -79,6 +113,7 @@ void AutoMatchViewModel::discardTransfer()
 bool AutoMatchViewModel::applyTransfer()
 {
     if(!transfer_ready()||busy()||action_.can_adopt())return false;
+    if(transfer_listening()&&!stopTransferListening())return false;
     if(gold_.selection_revision()!=transfer_reference_revision_){discardTransfer();return false;}
     publishing_=true;
     const auto candidate=transfer_candidate_;
@@ -100,6 +135,7 @@ void AutoMatchViewModel::poll_transfer()
     if((transfer_busy()||transfer_ready())&&
        gold_.selection_revision()!=transfer_reference_revision_) {
         if(transfer_cancel_)transfer_cancel_->store(true,std::memory_order_release);
+        if(transfer_listening()&&!stopTransferListening())return;
         transfer_candidate_.reset();
         transfer_text_=QStringLiteral("Transfer expired: reference changed.");
     }

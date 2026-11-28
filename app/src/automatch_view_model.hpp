@@ -13,6 +13,7 @@ class AutoMatchViewModel final : public QObject {
     Q_PROPERTY(bool canStart READ can_start NOTIFY changed)
     Q_PROPERTY(bool transferBusy READ transfer_busy NOTIFY changed)
     Q_PROPERTY(bool transferReady READ transfer_ready NOTIFY changed)
+    Q_PROPERTY(bool transferListening READ transfer_listening NOTIFY changed)
     Q_PROPERTY(bool canBeginTransfer READ can_begin_transfer NOTIFY changed)
     Q_PROPERTY(QString transferText READ transfer_text NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
@@ -32,7 +33,7 @@ class AutoMatchViewModel final : public QObject {
 public:
     using Action=l3_automatch::NativeQtProductAction;
     AutoMatchViewModel(Action::Controllers product,const Action::Fanout& fanout,
-        const AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
+        AuditionSourceSelector& selector,const GoldSelectionViewModel& gold,
         QObject* parent=nullptr);
     ~AutoMatchViewModel() override;
     [[nodiscard]] bool transfer_busy()const;
@@ -40,6 +41,9 @@ public:
     [[nodiscard]] bool can_begin_transfer()const;
     [[nodiscard]] QString transfer_text()const;
     Q_INVOKABLE bool beginTransfer(const QString& instanceId);
+    [[nodiscard]] bool transfer_listening()const;
+    Q_INVOKABLE bool listenTransfer();
+    Q_INVOKABLE bool stopTransferListening();
     Q_INVOKABLE void discardTransfer();
     Q_INVOKABLE bool applyTransfer();
     [[nodiscard]] bool can_start()const;
@@ -78,7 +82,7 @@ private:
     [[nodiscard]] bool owner()const;
     Action::Controllers product_;
     const Action::Fanout& fanout_;
-    const AuditionSourceSelector& selector_;
+    AuditionSourceSelector& selector_;
     const GoldSelectionViewModel& gold_;
     Action action_;
     using TransferResult=core::Result<l3_automatch::ManualMatchTransferAudition>;
