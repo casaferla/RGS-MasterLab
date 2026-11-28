@@ -72,19 +72,36 @@ Item {
             ctx.strokeStyle = "#294153"
             ctx.stroke()
 
-            // Arc sweep, core opacity and halo blur all scale linearly
-            // from zero. No minimum-light or minimum-glow offset.
-            // Read-only states retain a dim proportional arc without glow.
+            // Paint only the reached fraction of the 270-degree track.
+            // Three concentric strokes provide a deterministic Canvas halo:
+            // unlike a uniform shadow, each angular segment has its own
+            // intensity, increasing towards the current pointer.
             if (amount > 0) {
                 ctx.save()
-                ctx.beginPath()
-                ctx.arc(cx, cy, r, start, start + sweep * amount, false)
+                ctx.lineCap = "butt"
                 ctx.strokeStyle = root.accentColor
-                ctx.globalAlpha = root.editable ? amount : 0.23 * amount
-                ctx.lineWidth = Math.max(2.0, size * 0.085)
-                ctx.shadowColor = root.accentColor
-                ctx.shadowBlur = root.editable ? 9.0 * amount : 0
-                ctx.stroke()
+                const segments = Math.max(1, Math.ceil(48 * amount))
+                const activeSweep = sweep * amount
+                const segmentSweep = activeSweep / segments
+                const coreWidth = Math.max(2.0, size * 0.085)
+                const widths = root.editable
+                    ? [Math.max(coreWidth, size * 0.18),
+                       Math.max(coreWidth, size * 0.13), coreWidth]
+                    : [coreWidth]
+                const weights = root.editable ? [0.13, 0.24, 1.0] : [0.23]
+                for (let pass = 0; pass < widths.length; ++pass) {
+                    ctx.lineWidth = widths[pass]
+                    for (let i = 0; i < segments; ++i) {
+                        const progress = (i + 0.5) / segments
+                        const strength = amount * (0.45 + 0.55 * progress)
+                        ctx.globalAlpha = weights[pass] * strength
+                        ctx.beginPath()
+                        ctx.arc(cx, cy, r,
+                                start + i * segmentSweep,
+                                start + (i + 1) * segmentSweep, false)
+                        ctx.stroke()
+                    }
+                }
                 ctx.restore()
             }
 
