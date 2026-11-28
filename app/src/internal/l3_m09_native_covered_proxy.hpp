@@ -127,6 +127,24 @@ native_gain_coverage(const m11_frozen::NativeFixedPopulation& fixed,
     if(!std::isfinite(response))return {};
     return response;
 }
+// L01 capability is a topology selection proxy, not a measured score.
+// When the Fixed + Gain estimate exceeds the independent ceiling and an
+// owned terminal is available, do not reward the unprotected Gain seed
+// over the corresponding Gain + P2 seed. Other roles may change the true
+// peak: keep both families legal and let actual M16 decide admission.
+[[nodiscard]] inline bool native_loudness_l01_proxy_capability(
+    const NativeFamilySeedBank& bank,LoudnessMode mode,double delta)
+{
+    if(!bank.gain||!std::isfinite(delta))return false;
+    const double gain=bank.gain->payload.gain_db();
+    const bool direction=(delta>0.0&&gain>0.0)||(delta<0.0&&gain<0.0);
+    if(!direction)return false;
+    const bool terminal_available=bank.owned_p2&&valid_native_owned_p2_seed(*bank.owned_p2);
+    if(mode==LoudnessMode::gain_with_terminal_limiter)
+        return terminal_available;
+    return mode==LoudnessMode::gain&&
+        !(terminal_available&&bank.gain->terminal_branch_requested);
+}
 // Bind explicit component capability only from an authenticated seed
 // bank and the direction selected by M09. In particular D09/D12,
 // correlation and unrelated loudness features are never side-effect coverage.
@@ -176,8 +194,8 @@ native_family_coverage(const m11_frozen::NativeFixedPopulation& fixed,
                     bank.exact_side_grid,k,p.candidate_native.selector);
                 if(response)c.covered[k]=matches(*response);
             }
-            if(name.ends_with(".l01")&&family.loudness==LoudnessMode::gain&&bank.gain)
-                c.covered[k]=matches(bank.gain->payload.gain_db());
+            if(name.ends_with(".l01"))
+                c.covered[k]=native_loudness_l01_proxy_capability(bank,family.loudness,delta);
             if((name.ends_with(".d07")||name.ends_with(".d08"))&&family.micro!=MicroMode::none) {
                 const auto& micro=bank.micro[static_cast<std::size_t>(family.micro)-1U];
                 if(micro)c.covered[k]=matches(micro->attack_amount_db()-micro->sustain_amount_db());
