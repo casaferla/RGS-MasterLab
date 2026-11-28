@@ -1315,6 +1315,7 @@ target_include_directories(rgsml_mastering_chain_state_tests
 )
 target_link_libraries(rgsml_mastering_chain_state_tests
     PRIVATE
+        rgsml_project
         rgsml_dsp
         rgsml_core
         rgsml_render
@@ -1372,6 +1373,7 @@ target_include_directories(rgsml_eq_view_model_tests
 )
 target_link_libraries(rgsml_eq_view_model_tests
     PRIVATE
+        rgsml_project
         rgsml_render
         rgsml_dsp
         rgsml_audio
@@ -1401,6 +1403,7 @@ target_include_directories(rgsml_gain_view_model_tests
 )
 target_link_libraries(rgsml_gain_view_model_tests
     PRIVATE
+        rgsml_project
         rgsml_render
         rgsml_dsp
         rgsml_audio
@@ -1458,6 +1461,7 @@ target_include_directories(rgsml_stereo_ms_view_model_tests
 )
 target_link_libraries(rgsml_stereo_ms_view_model_tests
     PRIVATE
+        rgsml_project
         rgsml_render
         rgsml_dsp
         rgsml_audio
@@ -2288,6 +2292,7 @@ target_include_directories(rgsml_compressor_view_model_tests
 )
 target_link_libraries(rgsml_compressor_view_model_tests
     PRIVATE
+        rgsml_project
         rgsml_render
         rgsml_dsp
         rgsml_audio
@@ -2307,6 +2312,7 @@ target_include_directories(rgsml_dsp_module_adapter_tests
 )
 target_link_libraries(rgsml_dsp_module_adapter_tests
     PRIVATE
+        rgsml_project
         rgsml_render
         rgsml_dsp
         rgsml_audio
