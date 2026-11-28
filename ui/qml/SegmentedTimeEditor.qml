@@ -23,6 +23,13 @@ Item {
     implicitWidth: fields.implicitWidth
     implicitHeight: 36
 
+    property bool committingByEnter: false
+    function commitAndExit() {
+        committingByEnter = true
+        commitCandidate()
+        root.forceActiveFocus(Qt.OtherFocusReason)
+        committingByEnter = false
+    }
     function commitCandidate() {
         commitRequested(hoursField.text, minutesField.text, secondsField.text, fractionField.text)
         Qt.callLater(root.restoreCommitted)
@@ -83,7 +90,15 @@ Item {
         Accessible.name: root.endpointName + " " + segmentName
         Accessible.description: segmentName === "fraction" ? "Decimal fraction, one through nine digits" : segmentName === "hours" ? "Hours, decimal digits with no clock limit" : segmentName + ", decimal value zero through fifty-nine"
         onActiveFocusChanged: if (activeFocus) Qt.callLater(selectAll)
-        onEditingFinished: root.commitCandidate()
+        onEditingFinished: if (!root.committingByEnter) root.commitCandidate()
+        Keys.onReturnPressed: function(event) {
+            root.commitAndExit()
+            event.accepted = true
+        }
+        Keys.onEnterPressed: function(event) {
+            root.commitAndExit()
+            event.accepted = true
+        }
         Keys.onEscapePressed: { root.restoreCommitted(); root.escapeRequested() }
         Keys.onUpPressed: { root.nudgeForwardRequested(); Qt.callLater(root.restoreCommitted) }
         Keys.onDownPressed: { root.nudgeBackwardRequested(); Qt.callLater(root.restoreCommitted) }
