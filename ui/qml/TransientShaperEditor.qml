@@ -35,20 +35,22 @@ Item {
         return Math.round(parsed*10)/10
     }
     function commitNumeric(control, low, high, current, setter) {
-        if (!root.editorEnabled || !control.numericDirty) return
+        if (!root.editorEnabled) return false
+        if (!control.numericDirty) return true
         const field = control === attackEntry ? "Attack" : "Sustain"
         const canonical = root.parseNumeric(control.text, low, high)
         if (!Number.isFinite(canonical)) {
             if (root.transientModule.reportNumericValidation)
                 root.transientModule.reportNumericValidation(field,
                     field + " must be a number between " + low + " and " + high + ".")
-            return
+            return false
         }
-        if (setter(canonical) === false) return
+        if (setter(canonical) === false) return false
         control.numericDirty = false
         if (root.transientModule.reportNumericValidation)
             root.transientModule.reportNumericValidation(field, "")
         control.text = canonical.toFixed(1)
+        return true
     }
     function cancelNumeric(control, field, value) {
         control.numericDirty = false
@@ -207,19 +209,17 @@ Item {
                                 }
                                 Component.onCompleted: text=root.attackDb.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
-                                    root.commitNumeric(attackEntry,-12,12,
+                                    if (root.commitNumeric(attackEntry,-12,12,
                                         root.attackDb,function(v) {
                                             return root.transientModule.setAttackAmountDb(v)
-                                        })
-                                    attackEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEnterPressed: function(event) {
-                                    root.commitNumeric(attackEntry,-12,12,
+                                    if (root.commitNumeric(attackEntry,-12,12,
                                         root.attackDb,function(v) {
                                             return root.transientModule.setAttackAmountDb(v)
-                                        })
-                                    attackEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
@@ -366,19 +366,17 @@ Item {
                                 }
                                 Component.onCompleted: text=root.sustainDb.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
-                                    root.commitNumeric(sustainEntry,-12,12,
+                                    if (root.commitNumeric(sustainEntry,-12,12,
                                         root.sustainDb,function(v) {
                                             return root.transientModule.setSustainAmountDb(v)
-                                        })
-                                    sustainEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEnterPressed: function(event) {
-                                    root.commitNumeric(sustainEntry,-12,12,
+                                    if (root.commitNumeric(sustainEntry,-12,12,
                                         root.sustainDb,function(v) {
                                             return root.transientModule.setSustainAmountDb(v)
-                                        })
-                                    sustainEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
