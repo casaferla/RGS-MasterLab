@@ -20,6 +20,20 @@ Item {
     // Desktop interaction guidance. Android/touch presentation may replace or
     // suppress mouse-specific wording without changing parameter semantics.
     property string interactionHint: ""
+    // Opt-in: accepted Enter commits leave the numeric editor, without
+    // moving focus to a potentially activating button.
+    property Item commitFocusTarget: null
+    property bool transferringCommitFocus: false
+    function commitFromKeyboard() {
+        if (!viewModel) return false
+        const accepted = viewModel.commitDraft()
+        if (accepted === true && commitFocusTarget) {
+            transferringCommitFocus = true
+            commitFocusTarget.forceActiveFocus(Qt.OtherFocusReason)
+            transferringCommitFocus = false
+        }
+        return accepted === true
+    }
 
     readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
     // The same error message used by the fixed global status bar is readable
@@ -123,18 +137,20 @@ Item {
                         }
                     }
 
-                    Keys.onReturnPressed: {
-                        if (control.viewModel) control.viewModel.commitDraft()
+                    Keys.onReturnPressed: function(event) {
+                        control.commitFromKeyboard()
+                        event.accepted = true
                     }
-                    Keys.onEnterPressed: {
-                        if (control.viewModel) control.viewModel.commitDraft()
+                    Keys.onEnterPressed: function(event) {
+                        control.commitFromKeyboard()
+                        event.accepted = true
                     }
                     Keys.onEscapePressed: {
                         if (control.viewModel) control.viewModel.cancelDraft()
                     }
 
                     onActiveFocusChanged: {
-                        if (!activeFocus && control.viewModel) {
+                        if (!activeFocus && control.viewModel && !control.transferringCommitFocus) {
                             control.viewModel.commitDraft()
                         }
                     }
