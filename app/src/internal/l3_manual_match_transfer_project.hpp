@@ -621,6 +621,7 @@ validate_transferred_manual_edit_overlay(
 struct ManualMatchTransferReopenPreflight final {
     ManualMatchTransferDraft graph;
     ManualMatchTransferProjectDraft project;
+    std::optional<project::ProjectSnapshot> edited_project;
 };
 [[nodiscard]] inline core::Result<ManualMatchTransferReopenPreflight>
 prepare_manual_match_transfer_reopen(
@@ -631,7 +632,9 @@ prepare_manual_match_transfer_reopen(
     using R=core::Result<ManualMatchTransferReopenPreflight>;
     const auto fail=[](const char* why){return R::failure(core::Error{
         core::ErrorCode::InvalidState,why});};
-    auto recovered=recover_manual_match_transfer_before(persisted);
+    auto base=recover_transferred_manual_edit_base(persisted);
+    if(!base)return R::failure(*base.error());
+    auto recovered=recover_manual_match_transfer_before(*base.value());
     if(!recovered)return R::failure(*recovered.error());
     const auto& doc=recovered.value()->document();
     auto prior=m12_frozen::prepare_m12_product_reopen_preflight(doc,before,true);
@@ -653,9 +656,11 @@ prepare_manual_match_transfer_reopen(
             before.chain().revision(),{nodes.begin(),nodes.end()},bindings});
     auto native=prepare_manual_match_transfer_graph(graphOnly,before.chain(),bindings,*registry,*id.value());
     if(!native)return R::failure(*native.error());
-    auto checked=validate_recovered_manual_match_transfer(persisted,*native.value());
+    auto checked=validate_recovered_manual_match_transfer(*base.value(),*native.value());
     if(!checked)return R::failure(*checked.error());
-    const auto& expected=native.value()->manual_after;
+    auto edited=validate_transferred_manual_edit_overlay(*native.value(),*checked.value(),persisted);
+    if(!edited)return R::failure(*edited.error());
+    const auto& expected=*edited.value();
     const auto actual=after.instances();
     const auto proposed=expected.proposed_manual_chain.instances();
     if(before.chain_id()!=after.chain_id()||
@@ -665,7 +670,9 @@ prepare_manual_match_transfer_reopen(
        after.execution_bindings()!=expected.proposed_bindings)
         return fail("MANUAL_MATCH_REOPEN_AFTER_MANUAL_MISMATCH");
     return R::success(ManualMatchTransferReopenPreflight{
-        std::move(*native.value()),std::move(*checked.value())});
+        std::move(*native.value()),std::move(*checked.value()),
+        m12_frozen::m12_exact_project_snapshot_equal(*base.value(),persisted)
+            ?std::nullopt:std::optional<project::ProjectSnapshot>{persisted}});
 }
 // After successful Source handoff bind the actual newly published
 // PREPARED owner. Repeat the full project proof before issuing a ticket.
@@ -698,9 +705,11 @@ bind_manual_match_transfer_reopen(
        project.value()->identity.canonical_content!=preflight.project.identity.canonical_content)
         return R::failure(core::Error{core::ErrorCode::InvalidState,
             "MANUAL_MATCH_REOPEN_PREFLIGHT_CHANGED"});
-    return ManualMatchTransferPreviewTicket::create(
-        std::make_shared<const ManualMatchTransferCapture>(ManualMatchTransferCapture{
-            epoch,std::move(*native.value()),std::move(*project.value())}));
+    auto capture=std::make_shared<const ManualMatchTransferCapture>(ManualMatchTransferCapture{
+        epoch,std::move(*native.value()),std::move(*project.value())});
+    if(preflight.edited_project)return ManualMatchTransferPreviewTicket::create_edited(
+        std::move(capture),*preflight.edited_project);
+    return ManualMatchTransferPreviewTicket::create(std::move(capture));
 }
 // Worker completion binds PCM to the exact immutable capture that
 // produced it. A caller cannot construct this envelope from unrelated

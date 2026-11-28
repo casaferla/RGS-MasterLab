@@ -1426,7 +1426,9 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
             return;
         }
         if(transferRequested) {
-            auto recovered=l3_automatch::recover_manual_match_transfer_before(*opened.value());
+            auto base=l3_automatch::recover_transferred_manual_edit_base(*opened.value());
+            if(!base){publish_error(*base.error());return;}
+            auto recovered=l3_automatch::recover_manual_match_transfer_before(*base.value());
             if(!recovered){publish_error(*recovered.error());return;}
             auto prior=validate_mastering_chain(recovered.value()->document(),*restoreRegistry,uuidFactory_);
             if(!prior){publish_error(*prior.error());return;}
