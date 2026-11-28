@@ -164,6 +164,15 @@ public:
         core::RealizationId expectedManualId,
         core::FrameIndex sourceCue);
 
+    // Provisional audition has no published PROCESSED or accepted M12 ID.
+    // Enter from PREPARED only, after any private terminal owner is parked.
+    [[nodiscard]] core::Status begin_private_transfer_audition(
+        std::shared_ptr<const render::RenderResult> candidate,
+        std::shared_ptr<const render::RenderResult> expectedPrepared);
+    [[nodiscard]] core::Status end_private_transfer_audition();
+    [[nodiscard]] bool private_transfer_audition_active() const noexcept {
+        return static_cast<bool>(privateTransferAudition_);
+    }
     Q_INVOKABLE void selectPrepared();
     Q_INVOKABLE void selectProcessed();
     Q_INVOKABLE void selectGold();
@@ -185,6 +194,7 @@ private:
         std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status materialize_prepared(
         const core::ResourceReference& source);
+    [[nodiscard]] core::Status retire_private_transfer_audition();
     void fail_closed(const core::Error& error);
     void publish_error(QString message);
 
@@ -212,6 +222,7 @@ private:
     std::optional<core::SampleRate> goldRate_;
     std::optional<core::FrameCount> goldFrames_;
     std::optional<AuditionTarget> activeTarget_;
+    std::shared_ptr<const render::RenderResult> privateTransferAudition_;
     struct OfflineProcessedAuthority {
         std::uint64_t sourceEpoch;
         std::shared_ptr<const render::RenderResult> prepared;

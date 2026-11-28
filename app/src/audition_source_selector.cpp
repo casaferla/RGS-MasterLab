@@ -109,6 +109,7 @@ bool AuditionSourceSelector::gold_available() const noexcept
 
 QString AuditionSourceSelector::active_target_label() const
 {
+    if(privateTransferAudition_)return QStringLiteral("TRANSFER CANDIDATE");
     return activeTarget_ ? target_label(*activeTarget_) : QStringLiteral("NONE");
 }
 
@@ -119,7 +120,7 @@ bool AuditionSourceSelector::gold_active() const noexcept
 
 bool AuditionSourceSelector::source_playhead_visible() const noexcept
 {
-    return !gold_active();
+    return !gold_active()&&!privateTransferAudition_;
 }
 
 QString AuditionSourceSelector::status_text() const
@@ -163,7 +164,7 @@ AuditionSourceSelector::processed_realization_id() const noexcept
 bool AuditionSourceSelector::offline_processed_provenance_current() const
 {
     return offlineProcessedAuthority_ && source_
-        &&!activeTarget_ &&sourceDerivedCue_==core::FrameIndex{0}
+        &&!activeTarget_&&!privateTransferAudition_ &&sourceDerivedCue_==core::FrameIndex{0}
         &&sourceEpoch_==offlineProcessedAuthority_->sourceEpoch
         &&prepared_==offlineProcessedAuthority_->prepared
         &&processed_==offlineProcessedAuthority_->processed
@@ -194,7 +195,7 @@ core::Status AuditionSourceSelector::authorize_offline_processed_for_final_maste
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
     offlineProcessedAuthority_.reset();
-    if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||!playback_
+    if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||privateTransferAudition_||!playback_
        ||!prepared_ ||!processed_ ||!processedRealizationId_
        ||processedRealizationId_->value==0
        ||sourceDerivedCue_!=core::FrameIndex{0})
@@ -363,6 +364,7 @@ core::Status AuditionSourceSelector::source_committed(
     M18ScopedAuditionMutation lifetime{
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
+    if(const auto retired=retire_private_transfer_audition();!retired)return retired;
     offlineProcessedAuthority_.reset();
     if(sourceEpoch_==std::numeric_limits<std::uint64_t>::max())
         return unavailable("OFFLINE_MASTER_SOURCE_EPOCH_EXHAUSTED");
@@ -412,6 +414,7 @@ core::Status AuditionSourceSelector::set_prepared_realization(
     M18ScopedAuditionMutation lifetime{
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
+    if(const auto retired=retire_private_transfer_audition();!retired)return retired;
     offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PREPARED) {
         auto cleared = playback_->stop_and_clear();
@@ -486,6 +489,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
     M18ScopedAuditionMutation lifetime{
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
+    if(const auto retired=retire_private_transfer_audition();!retired)return retired;
     offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PROCESSED) {
         const auto range = candidate->render_window();
@@ -570,6 +574,7 @@ core::Status AuditionSourceSelector::set_gold(
     M18ScopedAuditionMutation lifetime{
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
+    if(const auto retired=retire_private_transfer_audition();!retired)return retired;
     offlineProcessedAuthority_.reset();
     // The file picker may already have probed a valid WAV while the
     // Windows playback endpoint refuses to install it. On that failure,
@@ -634,6 +639,7 @@ core::Status AuditionSourceSelector::clear_gold()
     M18ScopedAuditionMutation lifetime{
         m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
     (void)lifetime;
+    if(const auto retired=retire_private_transfer_audition();!retired)return retired;
     offlineProcessedAuthority_.reset();
     const bool wasGold = activeTarget_ == AuditionTarget::GOLD;
     if (wasGold) {
@@ -715,6 +721,7 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
 core::Status AuditionSourceSelector::switch_to_after_authorized_mutation(
     AuditionTarget target)
 {
+    if(const auto retired=retire_private_transfer_audition();!retired)return retired;
     offlineProcessedAuthority_.reset();
     if ((target == AuditionTarget::PREPARED && !prepared_)
         || (target == AuditionTarget::PROCESSED && !processed_)
@@ -1047,10 +1054,70 @@ core::Status AuditionSourceSelector::materialize_prepared(
     return core::Status::success();
 }
 
+core::Status AuditionSourceSelector::retire_private_transfer_audition()
+{
+    if(!privateTransferAudition_)return core::Status::success();
+    const auto cleared=playback_->stop_and_clear();
+    if(!cleared)return cleared;
+    privateTransferAudition_.reset();
+    statusText_.clear();
+    return core::Status::success();
+}
+
+core::Status AuditionSourceSelector::begin_private_transfer_audition(
+    std::shared_ptr<const render::RenderResult> candidate,
+    std::shared_ptr<const render::RenderResult> expectedPrepared)
+{
+    if(QThread::currentThread()!=thread()||!playback_||!candidate||!expectedPrepared||
+       prepared_!=expectedPrepared||privateTransferAudition_||
+       activeTarget_!=AuditionTarget::PREPARED||
+       candidate->view().format()!=prepared_->view().format()||
+       candidate->render_window()!=prepared_->render_window()||
+       candidate->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE)
+        return unavailable("MANUAL_TRANSFER_AUDITION_INVALID_OWNER_OR_TARGET");
+    if(const auto admission=admit_m18_source_mutation("switch_target");!admission)return admission;
+    M18ScopedAuditionMutation lifetime{m18MutationAdmission_?&m18SourcePublicationActive_:nullptr};
+    (void)lifetime;
+    const auto stored=store_active_cue();
+    if(!stored)return stored;
+    const auto cleared=playback_->stop_and_clear();
+    if(!cleared)return cleared;
+    activeTarget_.reset();
+    offlineProcessedAuthority_.reset();
+    playback_->set_source_derived_active(false);
+    // No public or accepted realization ID is assigned to this PCM.
+    const auto prepared=playback_->prepare_pcm(candidate->view(),candidate,std::nullopt);
+    if(!prepared){fail_closed(*prepared.error());return prepared;}
+    privateTransferAudition_=std::move(candidate);
+    const auto range=privateTransferAudition_->render_window();
+    const auto cue=sourceDerivedCue_>=range.begin()&&sourceDerivedCue_<range.end()
+        ?sourceDerivedCue_:range.begin();
+    const auto sought=playback_->seek_target_frame(cue);
+    if(!sought){fail_closed(*sought.error());return sought;}
+    playback_->playOrResume();
+    const auto snapshot=playback_->playback_snapshot();
+    if(!snapshot||snapshot.value()->state!=core::PlaybackState::PLAYING) {
+        const core::Error error{core::ErrorCode::InvalidState,"MANUAL_TRANSFER_AUDITION_PLAY_FAILED"};
+        fail_closed(error);return core::Status::failure(error);
+    }
+    statusText_=QStringLiteral("TRANSFER CANDIDATE / NOT VERIFIED");
+    emit changed();
+    return core::Status::success();
+}
+core::Status AuditionSourceSelector::end_private_transfer_audition()
+{
+    if(QThread::currentThread()!=thread())return unavailable("MANUAL_TRANSFER_AUDITION_WRONG_THREAD");
+    if(!privateTransferAudition_)return core::Status::success();
+    // Use ordinary authorized switching to restore the existing PREPARED
+    // owner at its saved SOURCE cue, not the candidate playback cursor.
+    return switch_to(AuditionTarget::PREPARED);
+}
+
 void AuditionSourceSelector::fail_closed(const core::Error& error)
 {
     static_cast<void>(playback_->stop_and_clear());
     activeTarget_.reset();
+    privateTransferAudition_.reset();
     publish_error(QString::fromStdString(error.message()));
 }
 
