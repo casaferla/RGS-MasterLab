@@ -92,7 +92,11 @@ Item {
                 for (let pass = 0; pass < widths.length; ++pass) {
                     ctx.lineWidth = widths[pass]
                     for (let i = 0; i < segments; ++i) {
-                        const progress = (i + 0.5) / segments
+                        // Fixed global angular scale: 0% angle is dark,
+                        // 100% angle is full intensity. Increasing the
+                        // amount extends this scale; it never relights the
+                        // preceding arc uniformly.
+                        const progress = segments === 1 ? 1 : i / (segments - 1)
                         const strength = amount * progress
                         ctx.globalAlpha = weights[pass] * strength
                         ctx.beginPath()
