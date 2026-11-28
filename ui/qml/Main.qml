@@ -1918,7 +1918,10 @@ ApplicationWindow {
                             objectName: "menuAutoMatch"
                             text: "AutoMatch"
                             enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canStart && autoMatchAmounts.amountsEditable
-                            onTriggered: autoMatchAmounts.startSearch()
+                            onTriggered: {
+                                adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
+                                autoMatchAmounts.startSearch()
+                            }
                         }
                         StudioMenuItem {
                             objectName: "menuTransferLinkedDsp"
@@ -2444,24 +2447,12 @@ ApplicationWindow {
                                                 else prepareAdviceDialog.open()
                                             }
                                         }
-                                        StudioSegmentButton {
-                                            objectName: "autoMatchShowResults"
-                                            visible: adaptiveContextWorkspace.matching
-                                            text: autoMatchAmounts.resultsRequested ? "DSP editor" : "Match details"
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 21
-                                            minimumControlWidth: 0
-                                            onClicked: {
-                                                if (autoMatchAmounts.resultsRequested) autoMatchAmounts.closeResults()
-                                                else autoMatchAmounts.resultsRequested = true
-                                            }
-                                        }
                                         Text {
                                             objectName: "autoMatchElapsedContext"
                                             Layout.fillWidth: true
                                             text: adaptiveContextWorkspace.matching
                                                 ? (root.appAutoMatchModel
-                                                    ? root.appAutoMatchModel.statusText
+                                                    ? "Details · " + root.appAutoMatchModel.statusText
                                                         + (root.appAutoMatchModel.elapsedTimeText.length > 0
                                                             ? " · " + root.appAutoMatchModel.elapsedTimeText : "")
                                                     : "UNAVAILABLE")
@@ -2469,6 +2460,15 @@ ApplicationWindow {
                                             color: root.textSecondary
                                             font.pixelSize: 9
                                             elide: Text.ElideRight
+                                            Accessible.name: "AutoMatch details and elapsed time"
+                                            TapHandler {
+                                                enabled: adaptiveContextWorkspace.matching
+                                                onTapped: {
+                                                    if (autoMatchAmounts.resultsRequested) autoMatchAmounts.closeResults()
+                                                    else autoMatchAmounts.resultsRequested = true
+                                                }
+                                            }
+                                            HoverHandler { cursorShape: adaptiveContextWorkspace.matching ? Qt.PointingHandCursor : Qt.ArrowCursor }
                                         }
                                     }
                                 }
@@ -2526,8 +2526,9 @@ ApplicationWindow {
                     Rectangle {
                         id: autoMatchResultsPanel
                         objectName: "autoMatchResultsPanel"
+                        parent: root.activeDockSlot()
                         anchors.fill: parent
-                        visible: adaptiveContextWorkspace.matching && autoMatchAmounts.resultsRequested
+                        visible: autoMatchAmounts.resultsRequested && (!root.useAdaptiveDspComposition || adaptiveContextWorkspace.matching)
                         z: 2
                         radius: 6
                         color: root.surface
@@ -2782,7 +2783,7 @@ ApplicationWindow {
                         id: compactDspEditorHostProxy
                         objectName: "compactBottomRight"
                         anchors.fill: parent
-                        visible: !root.editorDetached
+                        visible: !root.editorDetached && !autoMatchResultsPanel.visible
                         target: root.dockedEditorHost
                     }
                     // Placeholder occupies exactly the same geometry with
@@ -2790,7 +2791,7 @@ ApplicationWindow {
                     Rectangle {
                         objectName: "compactEditorDockDropZone"
                         anchors.fill: parent
-                        visible: root.editorDetached
+                        visible: root.editorDetached && !autoMatchResultsPanel.visible
                         radius: 6
                         color: "#0B1622"
                         border.width: 1
