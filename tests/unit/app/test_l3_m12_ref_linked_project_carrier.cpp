@@ -1089,6 +1089,55 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(!transfer::prepare_transferred_manual_edit_project(
         *provisional.value(),*tamperedSnapshot.value(),stagedManual,stagedBindings,
         ownedPrepared,manualTransient,*neutralTransient.value()));
+    const auto editedTicket=transfer::ManualMatchTransferPreviewTicket::create_edited(
+        immutableCapture,fineTune.value()->after);
+    QVERIFY(editedTicket);
+    QVERIFY(editedTicket.value()->matches_manual(tuned.value()->proposed_manual_chain,
+        tuned.value()->proposed_bindings));
+    QVERIFY(!editedTicket.value()->matches_manual(stagedManual,stagedBindings));
+    QVERIFY(!editedTicket.value()->is_verified());
+    QVERIFY(editedTicket.value()->matches_project(fineTune.value()->after));
+    QVERIFY(!editedTicket.value()->matches_project(projectDraft.value()->after));
+    QVERIFY(!transfer::ManualMatchTransferPreviewTicket::create_edited(
+        immutableCapture,*corruptedFineSnapshot.value()));
+    const auto finePcm=editedTicket.value()->render(*maxBlock.value());
+    QVERIFY(finePcm);
+    QVERIFY(!finePcm.value()->linked_activity_sidecar());
+    QVERIFY(!editedTicket.value()->render(*maxBlock.value(),&cancelledTransfer));
+    // C01 also uses the same immutable overlay, including exact decimals.
+    const auto dynamicProject=transfer::prepare_manual_match_transfer_project(
+        *beforeTransfer.value(),*other.value());
+    QVERIFY(dynamicProject);
+    const auto dynamicCapture=std::make_shared<const transfer::ManualMatchTransferCapture>(
+        transfer::ManualMatchTransferCapture{1U,*other.value(),*dynamicProject.value()});
+    const auto dynamicTicket=transfer::ManualMatchTransferPreviewTicket::create(dynamicCapture);
+    QVERIFY(dynamicTicket);
+    auto bandSpec=deq.value()->bands().front().spec();
+    bandSpec.control.base_gain_db=-1.23456789;
+    auto band=dsp::DynamicEqBandParameters::create(bandSpec);
+    QVERIFY(band);
+    auto editedEq=dsp::DynamicEqParameters::create({*band.value()});
+    QVERIFY(editedEq);
+    const auto& dynamicState=dynamicTicket.value()->manual_state();
+    const auto dynamicEdit=transfer::prepare_transferred_manual_edit_project(
+        *dynamicTicket.value(),dynamicProject.value()->after,dynamicState.proposed_manual_chain,
+        dynamicState.proposed_bindings,ownedPrepared,manualDynamic,*editedEq.value());
+    QVERIFY(dynamicEdit);
+    const auto dynamicEditedTicket=transfer::ManualMatchTransferPreviewTicket::create_edited(
+        dynamicCapture,dynamicEdit.value()->after);
+    QVERIFY(dynamicEditedTicket);
+    QVERIFY(dynamicEditedTicket.value()->matches_manual(dynamicEdit.value()->staged.proposed_manual_chain,
+        dynamicEdit.value()->staged.proposed_bindings));
+    const auto dynamicPcm=dynamicEditedTicket.value()->render(*maxBlock.value());
+    QVERIFY(dynamicPcm);
+    QVERIFY(!dynamicPcm.value()->linked_activity_sidecar());
+    const auto dynamicRecovered=transfer::recover_transferred_manual_edit_base(dynamicEdit.value()->after);
+    QVERIFY(dynamicRecovered&&dynamicProject.value()->matches_after(*dynamicRecovered.value()));
+    auto forgedFinePeer=dynamicEdit.value()->after.document();
+    forgedFinePeer.chains.front().modules.front().userBypass=true;
+    const auto forgedFinePeerSnapshot=project::ProjectSnapshot::create(forgedFinePeer);
+    QVERIFY(forgedFinePeerSnapshot);
+    QVERIFY(!transfer::ManualMatchTransferPreviewTicket::create_edited(dynamicCapture,*forgedFinePeerSnapshot.value()));
     const auto provisionalPcm=provisional.value()->render(*maxBlock.value());
     QVERIFY(provisionalPcm);
     QCOMPARE(provisionalPcm.value()->view().absolute_range(),
