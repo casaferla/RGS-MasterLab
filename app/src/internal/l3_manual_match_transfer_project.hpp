@@ -366,7 +366,8 @@ prepare_transferred_manual_parameter_edit(
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const std::shared_ptr<const render::RenderResult>& prepared,
     const dsp::ModuleInstanceId& requested,
-    const dsp::ModuleParameterPayload& replacement)
+    const dsp::ModuleParameterPayload& replacement,
+    std::optional<bool> userBypass=std::nullopt)
 {
     using R=core::Result<dsp_presets::ProposedManualPresetRestore>;
     const auto fail=[](const char* why){return R::failure(core::Error{
@@ -392,7 +393,8 @@ prepare_transferred_manual_parameter_edit(
             return fail("MANUAL_MATCH_EDIT_WRONG_PARAMETER_TYPE");
     } else return fail("MANUAL_MATCH_EDIT_UNSUPPORTED_TYPE");
     const auto index=static_cast<std::size_t>(it-nodes.begin());
-    if(bindings[index].parameters==replacement)return fail("MANUAL_MATCH_EDIT_NO_CHANGE");
+    const bool nextBypass=userBypass.value_or(it->user_bypass());
+    if(bindings[index].parameters==replacement&&nextBypass==it->user_bypass())return fail("MANUAL_MATCH_EDIT_NO_CHANGE");
     const auto& registry=*native.exact_prior_owner->replay->registry_owner;
     const auto descriptor=registry.find_descriptor(type);
     if(!descriptor)return R::failure(*descriptor.error());
@@ -400,7 +402,7 @@ prepare_transferred_manual_parameter_edit(
     if(!d.algorithm_version()||!d.parameter_schema_id())return fail("MANUAL_MATCH_EDIT_SCHEMA_MISSING");
     const dsp_presets::ManualPreset preset{dsp_presets::Scope::module,{
         {std::string(type),std::string(*d.algorithm_version()),std::string(*d.parameter_schema_id()),
-         replacement,it->enabled(),it->user_bypass()}}};
+         replacement,it->enabled(),nextBypass}}};
     auto staged=dsp_presets::prepare_explicit_manual_preset_restore(
         preset,current,bindings,registry,index);
     if(!staged)return staged;
@@ -427,14 +429,15 @@ prepare_transferred_manual_edit_project(
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const std::shared_ptr<const render::RenderResult>& prepared,
     const dsp::ModuleInstanceId& requested,
-    const dsp::ModuleParameterPayload& replacement)
+    const dsp::ModuleParameterPayload& replacement,
+    std::optional<bool> userBypass=std::nullopt)
 {
     using R=core::Result<TransferredManualEditProjectDraft>;
     const auto fail=[](const char* why){return R::failure(core::Error{
         core::ErrorCode::InvalidState,why});};
     if(!owner.matches_project(live))return fail("MANUAL_MATCH_EDIT_PROJECT_STALE");
     auto staged=prepare_transferred_manual_parameter_edit(
-        owner,chain,bindings,prepared,requested,replacement);
+        owner,chain,bindings,prepared,requested,replacement,userBypass);
     if(!staged)return R::failure(*staged.error());
     auto doc=live.document();
     if(!doc.pipeline.masteringChainId)return fail("MANUAL_MATCH_EDIT_PROJECT_NO_MANUAL");
@@ -473,6 +476,7 @@ prepare_transferred_manual_edit_project(
         {"baseMetadataCanonical",QString::fromStdString(base.referenceMatch.canonical_utf8())},
         {"baseParametersCanonical",QString::fromStdString(baseSlot->parameters.canonical_utf8())},
         {"editedParametersCanonical",QString::fromStdString(payload.value()->canonical_utf8())},
+        {"userBypass",userBypass.value_or(slot->userBypass)},
         {"transferIdentity",QString::fromStdString(owner.capture().project.identity.sha256)},
         {"instanceId",QString::fromStdString(requested.to_string())},
         {"priorRevision",QString::number(static_cast<qulonglong>(manual->revision))},
@@ -490,6 +494,7 @@ prepare_transferred_manual_edit_project(
         QJsonDocument(record).toJson(QJsonDocument::Compact).toStdString());
     if(!nextMetadata)return R::failure(*nextMetadata.error());
     slot->parameters=std::move(*payload.value());
+    slot->userBypass=userBypass.value_or(slot->userBypass);
     manual->revision=staged.value()->proposed_manual_chain.revision();
     doc.referenceMatch=std::move(*nextMetadata.value());
     auto after=project::ProjectSnapshot::create(std::move(doc),
@@ -572,9 +577,13 @@ recover_transferred_manual_edit_base(const project::ProjectSnapshot& persisted)
         if(!current.isObject()||!original.isObject()||
            current.object()!=edit.value(QStringLiteral("parameters")).toObject()||
            original.object()!=node.value(QStringLiteral("parameters")).toObject()||
-           slot.parameters!=*editedParams.value())
+           slot.parameters!=*editedParams.value()||
+           !edit.value(QStringLiteral("userBypass")).isBool()||
+           !node.value(QStringLiteral("userBypass")).isBool()||
+           slot.userBypass!=edit.value(QStringLiteral("userBypass")).toBool())
             return fail("MANUAL_FINE_TUNE_RECOVERY_PAYLOAD_MISMATCH");
         slot.parameters=*baseParams.value();
+        slot.userBypass=node.value(QStringLiteral("userBypass")).toBool();
     }
     if(found!=1U)return fail("MANUAL_FINE_TUNE_RECOVERY_SLOT_MISSING");
     manual->revision=baseRevision;
@@ -605,7 +614,7 @@ validate_transferred_manual_edit_overlay(
         persisted.document().referenceMatch.canonical_utf8())).object();
     const auto overlay=meta.value(QStringLiteral("manualFineTune")).toObject();
     const auto edit=overlay.value(QStringLiteral("content")).toObject();
-    if(overlay.size()!=2||edit.size()!=10)return fail("MANUAL_FINE_TUNE_UNKNOWN_FIELDS");
+    if(overlay.size()!=2||edit.size()!=11)return fail("MANUAL_FINE_TUNE_UNKNOWN_FIELDS");
     const auto& original=native.manual_after;
     const auto nodes=original.proposed_manual_chain.instances();
     const auto it=std::find_if(nodes.begin(),nodes.end(),[&](const auto& node){
@@ -636,9 +645,19 @@ validate_transferred_manual_edit_overlay(
     bool ok=false;
     const auto revision=edit.value(QStringLiteral("revision")).toString().toULongLong(&ok);
     if(!ok||revision<=original.proposed_manual_chain.revision())return fail("MANUAL_FINE_TUNE_REVISION_INVALID");
+    std::vector<dsp::ModuleInstance> updated(nodes.begin(),nodes.end());
+    const auto node=dsp::ModuleInstance::create({
+        it->instance_id(),std::string(it->module_type_id()),it->enabled(),
+        edit.value(QStringLiteral("userBypass")).toBool(),it->controller_suspended(),
+        it->domain_suspended(),it->provenance(),it->owner(),it->link_state(),
+        it->semantic_node_id(),it->parameter_state()});
+    if(!node)return R::failure(*node.error());
+    updated[index]=*node.value();
     auto chain=dsp::ProcessingChain::restore(registry,original.proposed_manual_chain.context(),
-        revision,{nodes.begin(),nodes.end()});
+        revision,std::move(updated));
     if(!chain)return R::failure(*chain.error());
+    if(conflicting_active_match_dsps(chain.value()->instances(),native.linked_after.instances()))
+        return fail("MANUAL_FINE_TUNE_ACTIVE_CONFLICT");
     auto bindings=original.proposed_bindings;
     bindings[index].parameters=*decoded.value();
     return R::success(dsp_presets::ProposedManualPresetRestore{
