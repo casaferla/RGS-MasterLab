@@ -39,9 +39,23 @@ jobs:
         run: |
           $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
           $report=Join-Path $env:RUNNER_TEMP 'l3-transfer-unit-tests.txt'
-          ctest --test-dir build-l3-package -C Release --output-on-failure -R '^(rgsml_l3_m12_project_carrier_tests|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests)$' --output-log "$report"
-          if ($LASTEXITCODE -ne 0) { throw 'L3_TRANSFER_UNIT_FAILURE' }
-          if (!(Select-String -Path $report -Pattern '100% tests passed, 0 tests failed out of 3' -Quiet)) { throw 'L3_TRANSFER_UNIT_COVERAGE_MISSING' }
+          $failures=@()
+          foreach ($name in @('rgsml_l3_m12_project_carrier_tests','rgsml_mastering_chain_state_tests','rgsml_mastering_preview_controller_tests')) {
+            $exe=@(Get-ChildItem build-l3-package -Filter "$name.exe" -Recurse)
+            if ($exe.Count -ne 1) { $failures+="${name}: executable missing or ambiguous"; continue }
+            $detail=Join-Path $env:RUNNER_TEMP "l3-unit-$name.txt"
+            $out=Join-Path $env:RUNNER_TEMP "l3-unit-$name-stdout.log"
+            $err=Join-Path $env:RUNNER_TEMP "l3-unit-$name-stderr.log"
+            $p=Start-Process -FilePath $exe[0].FullName -ArgumentList @('-o',"`"$detail,txt`"") -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+            "${name}: exit=$($p.ExitCode)" | Tee-Object -FilePath $report -Append
+            foreach ($file in @($detail,$out,$err)) {
+              if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file | Write-Host }
+            }
+            if ($p.ExitCode -ne 0 -or !(Test-Path -LiteralPath $detail) -or !(Select-String -LiteralPath $detail -Pattern 'Totals:.* 0 failed,' -Quiet)) {
+              $failures+="${name}: exit=$($p.ExitCode)"
+            }
+          }
+          if ($failures.Count -ne 0) { throw "L3_TRANSFER_UNIT_FAILURE: $($failures -join '; ')" }
       - name: Install complete standalone Windows Product
         shell: pwsh
         run: |
@@ -169,5 +183,7 @@ jobs:
             ${{ runner.temp }}/l3-artifact-cold-err.log
             ${{ runner.temp }}/l3-transfer-six-rates.txt
             ${{ runner.temp }}/l3-transfer-unit-tests.txt
+            ${{ runner.temp }}/l3-unit-*.txt
+            ${{ runner.temp }}/l3-unit-*.log
           if-no-files-found: warn
           retention-days: 14
