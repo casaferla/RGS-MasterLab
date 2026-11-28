@@ -3266,3 +3266,9 @@ add_test(NAME rgsml_l3_m10_p2_real_native_product_tests
 set_tests_properties(rgsml_l3_m10_p2_real_native_product_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "l3;m10;p2;real_product;native_analysis;nonrelease")
+
+# L4 M01 native nonrelease contract, no Qt event loop needed.
+add_executable(rgsml_l4_dc_offset_correction_tests unit/dsp/test_dc_offset_correction.cpp)
+target_link_libraries(rgsml_l4_dc_offset_correction_tests PRIVATE rgsml_dsp)
+rgsml_apply_project_warnings(rgsml_l4_dc_offset_correction_tests)
+add_test(NAME rgsml_l4_dc_offset_correction_tests COMMAND rgsml_l4_dc_offset_correction_tests)
