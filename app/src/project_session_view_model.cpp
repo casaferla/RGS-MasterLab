@@ -30,6 +30,7 @@
 #include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
+#include <QPointer>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QThread>
@@ -598,6 +599,13 @@ ProjectSessionViewModel::ProjectSessionViewModel(
     connect(region_, &AuditionRegionViewModel::changed,
             this, &ProjectSessionViewModel::on_region_changed);
     if(previewController_) {
+        const QPointer<ProjectSessionViewModel> owner(this);
+        previewController_->set_private_transferred_parameter_editor(
+            [owner](const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload){
+                if(!owner)return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
+                    "MANUAL_FINE_TUNE_PROJECT_OWNER_DESTROYED"});
+                return owner->apply_private_transferred_manual_parameter_edit(id,payload);
+            });
         // A newly installed/revoked M12 ticket changes whether SaveAs
         // can persist the actual audible graph. Qt/QML must re-evaluate
         // canSaveProject immediately, even with unchanged SOURCE.

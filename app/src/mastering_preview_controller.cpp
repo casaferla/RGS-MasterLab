@@ -372,6 +372,25 @@ bool MasteringPreviewController::private_manual_transfer_owner_matches(
         transferTicket_->matches_manual(candidate.chain(),candidate.execution_bindings());
 }
 
+void MasteringPreviewController::set_private_transferred_parameter_editor(TransferredParameterEditor editor)
+{
+    if(QThread::currentThread()==thread())transferredParameterEditor_=std::move(editor);
+}
+bool MasteringPreviewController::can_edit_private_transferred_parameter(
+    const dsp::ModuleInstanceId& id) const noexcept
+{
+    return QThread::currentThread()==thread()&&transferTicket_&&transferredParameterEditor_&&
+        transferTicket_->capture().native.manual_instance==id;
+}
+core::Status MasteringPreviewController::edit_private_transferred_parameter(
+    const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload)
+{
+    if(!can_edit_private_transferred_parameter(id))
+        return core::Status::failure(core::Error{core::ErrorCode::InvalidState,
+            "MANUAL_FINE_TUNE_EDITOR_NOT_AVAILABLE"});
+    return transferredParameterEditor_(id,payload);
+}
+
 void MasteringPreviewController::set_research_p2_timing_log_path(QString path)
 {
     // Only research startup calls this, before the first worker job.

@@ -86,6 +86,12 @@ public:
     private_manual_transfer_preview_ticket() const noexcept {return transferTicket_;}
     [[nodiscard]] bool private_manual_transfer_owner_matches(
         const MasteringChainState& candidate) const;
+    using TransferredParameterEditor=std::function<core::Status(
+        const dsp::ModuleInstanceId&,const dsp::ModuleParameterPayload&)>;
+    void set_private_transferred_parameter_editor(TransferredParameterEditor editor);
+    [[nodiscard]] bool can_edit_private_transferred_parameter(const dsp::ModuleInstanceId& id) const noexcept;
+    [[nodiscard]] core::Status edit_private_transferred_parameter(
+        const dsp::ModuleInstanceId& id,const dsp::ModuleParameterPayload& payload);
     // Owner-thread inspection only. Source/Reference transitions must
     // revoke a linked realization before an unrelated Project loads.
     [[nodiscard]] bool has_private_m12_product_preview_ticket()
@@ -132,6 +138,7 @@ private:
     ProcessedRealizationPublisher publisher_;
     AcceptedProcessedProvider acceptedProcessedProvider_;
     PreviewExecutor previewExecutor_;
+    TransferredParameterEditor transferredParameterEditor_;
     std::shared_ptr<const l3_automatch::m12_frozen::
         M12ImmutableProductPreviewTicket> m12ReplayTicket_;
     std::shared_ptr<const l3_automatch::ManualMatchTransferPreviewTicket> transferTicket_;
