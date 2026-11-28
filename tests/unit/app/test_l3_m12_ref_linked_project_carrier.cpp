@@ -1061,6 +1061,30 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     QVERIFY(fineMeta.value(QStringLiteral("manualTransferCandidate"))==
         oldMeta.value(QStringLiteral("manualTransferCandidate")));
     QVERIFY(fineMeta.contains(QStringLiteral("manualFineTune")));
+    const auto recoveredFineBase=transfer::recover_transferred_manual_edit_base(fineTune.value()->after);
+    QVERIFY(recoveredFineBase);
+    QVERIFY(projectDraft.value()->matches_after(*recoveredFineBase.value()));
+    const auto noFineBase=transfer::recover_transferred_manual_edit_base(projectDraft.value()->after);
+    QVERIFY(noFineBase&&projectDraft.value()->matches_after(*noFineBase.value()));
+    auto corruptedFine=tunedDoc;
+    auto corruptedFineMeta=fineMeta;
+    auto corruptedFineRecord=corruptedFineMeta.value(QStringLiteral("manualFineTune")).toObject();
+    corruptedFineRecord.insert(QStringLiteral("identitySha256"),QString(64,QLatin1Char('0')));
+    corruptedFineMeta.insert(QStringLiteral("manualFineTune"),corruptedFineRecord);
+    auto corruptedFineOpaque=project::OpaqueJsonValue::parse(
+        QJsonDocument(corruptedFineMeta).toJson(QJsonDocument::Compact).toStdString());
+    QVERIFY(corruptedFineOpaque);
+    corruptedFine.referenceMatch=*corruptedFineOpaque.value();
+    const auto corruptedFineSnapshot=project::ProjectSnapshot::create(corruptedFine);
+    QVERIFY(corruptedFineSnapshot);
+    QVERIFY(!transfer::recover_transferred_manual_edit_base(*corruptedFineSnapshot.value()));
+    auto mismatchedFine=tunedDoc;
+    mismatchedFine.chains.front().modules.back().parameters=
+        projectDraft.value()->after.document().chains.front().modules.back().parameters;
+    const auto mismatchedFineSnapshot=project::ProjectSnapshot::create(mismatchedFine);
+    QVERIFY(mismatchedFineSnapshot);
+    QVERIFY(!transfer::recover_transferred_manual_edit_base(*mismatchedFineSnapshot.value()));
+
     QVERIFY(!fineMeta.contains(QStringLiteral("materialization")));
     QVERIFY(!transfer::prepare_transferred_manual_edit_project(
         *provisional.value(),*tamperedSnapshot.value(),stagedManual,stagedBindings,
