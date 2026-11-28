@@ -637,7 +637,7 @@ ApplicationWindow {
         }
         if (match) {
             for (let i = 0; i < 5; ++i) {
-                const problem = autoMatchDialog.amountError(i)
+                const problem = autoMatchAmounts.amountError(i)
                 if (problem) add("matchAmount:" + i, "VALIDATION",
                     "AutoMatch · " + ["Total", "Tonal", "Dynamics", "Stereo", "Loudness"][i] + ": " + problem)
             }
@@ -910,16 +910,8 @@ ApplicationWindow {
     // The native Product action remains authoritative. Five compact,
     // editable Canvas knobs mirror the exact numeric fields; the popup
     // retains manual precision, review, and consent controls.
-    Dialog {
-        id: autoMatchDialog
-        objectName: "autoMatchDialog"
-        title: "AutoMatch"
-        onClosed: {
-            if (root.appAutoMatchModel && root.appAutoMatchModel.transferListening)
-                root.appAutoMatchModel.stopTransferListening()
-        }
-        // Persistent session-local search settings, independent of Popup delegates.
-        // Drafts and committed amounts are shared by the panel and the dialog.
+    QtObject {
+        id: autoMatchAmounts
         property var amountValues: [100, 100, 100, 100, 100]
         property var amountDrafts: ["100", "100", "100", "100", "100"]
         readonly property bool amountsEditable: !!root.appAutoMatchModel
@@ -962,313 +954,25 @@ ApplicationWindow {
             setAmountDraft(index, String(Math.round(next)))
             commitAmount(index)
         }
-        modal: false
-        anchors.centerIn: parent
-        width: root.appAutoMatchModel && root.appAutoMatchModel.transferReady ? 440 : 340
-        standardButtons: Dialog.Close
-        background: Rectangle { color: root.surface; border.color: root.border; radius: 5 }
-        ColumnLayout {
-            id: autoMatchDialogBody
-            anchors.fill: parent
-            spacing: 8
-            Text {
-                Layout.fillWidth: true
-                text: root.appAutoMatchModel ? root.appAutoMatchModel.statusText : "UNAVAILABLE"
-                color: root.accent
-                font.bold: true
-            }
-            Text {
-                objectName: "autoMatchElapsedTimeText"
-                Layout.fillWidth: true
-                visible: !!root.appAutoMatchModel
-                    && root.appAutoMatchModel.elapsedTimeText.length > 0
-                text: root.appAutoMatchModel
-                    ? "Elapsed search: " + root.appAutoMatchModel.elapsedTimeText : ""
-                color: root.textPrimary
-                font.family: "Segoe UI"
-                font.pixelSize: 12
-            }
-            Text {
-                objectName: "autoMatchCurrentStateText"
-                Layout.fillWidth: true
-                text: root.appAutoMatchModel ? root.appAutoMatchModel.currentMatchText : ""
-                color: root.textSecondary
-                elide: Text.ElideRight
-            }
-            GridLayout {
-                columns: 2
-                Layout.fillWidth: true
-                Repeater {
-                    model: ["Total Match", "Tonal", "Dynamics", "Stereo", "Loudness"]
-                    delegate: RowLayout {
-                        required property string modelData
-                        required property int index
-                        property alias numericField: amountField
-                        Layout.columnSpan: 2
-                        Layout.fillWidth: true
-                        Text { text: modelData; color: root.textPrimary; Layout.fillWidth: true }
-                        TextField {
-                            id: amountField
-                            objectName: "autoMatchAmount_" + index
-                            ToolTip.text: "Match amount: whole percentage from 0 to 100. Enter to apply; Esc to cancel."
-                            ToolTip.visible: autoMatchDialogAmountDwell.ready
-                            ToolTip.delay: 0
-                            StudioTooltipDwell {
-                                id: autoMatchDialogAmountDwell
-                                anchors.fill: parent
-                                interacting: parent.activeFocus
-                            }
-                            Layout.preferredWidth: 110
-                            text: autoMatchDialog.amountDrafts[index]
-                            enabled: autoMatchDialog.amountsEditable
-                            color: autoMatchDialog.amountError(index).length
-                                ? root.error : root.textPrimary
-                            onTextEdited: autoMatchDialog.setAmountDraft(index, text)
-                            onActiveFocusChanged: if (!activeFocus)
-                                autoMatchDialog.commitAmount(index)
-                            function commitAndExit() {
-                                if (!autoMatchDialog.commitAmount(index)) return false
-                                autoMatchDialogBody.forceActiveFocus(Qt.OtherFocusReason)
-                                return true
-                            }
-                            Keys.onReturnPressed: function(event) {
-                                amountField.commitAndExit()
-                                event.accepted = true
-                            }
-                            Keys.onEnterPressed: function(event) {
-                                amountField.commitAndExit()
-                                event.accepted = true
-                            }
-                            Keys.onEscapePressed: function(event) {
-                                autoMatchDialog.cancelAmountDraft(index)
-                                event.accepted = true
-                            }
-                            function numericValue() {
-                                return autoMatchDialog.commitAmount(index)
-                                    ? autoMatchDialog.amountValue(index) : NaN
-                            }
-                        }
-                        Text { text: "%"; color: root.textSecondary; Layout.preferredWidth: 36 }
-                    }
-                    id: autoMatchInputs
-                }
-            }
-            Text {
-                Layout.fillWidth: true
-                visible: text.length > 0
-                text: root.appAutoMatchModel ? root.appAutoMatchModel.errorText : ""
-                color: root.error
-                wrapMode: Text.WrapAnywhere
-            }
-            Text {
-                objectName: "autoMatchFailureDiagnostics"
-                Layout.fillWidth: true
-                visible: text.length > 0
-                text: root.appAutoMatchModel
-                    ? root.appAutoMatchModel.failureDiagnosticsText : ""
-                color: root.textSecondary
-                font.family: "Consolas"
-                font.pixelSize: 10
-                wrapMode: Text.WordWrap
-            }
-            Text {
-                objectName: "autoMatchReviewMetrics"
-                Layout.fillWidth: true
-                visible: text.length > 0
-                text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewMetricsText : ""
-                color: root.textSecondary
-                wrapMode: Text.WordWrap
-            }
-            Text {
-                objectName: "autoMatchVerificationNote"
-                Layout.fillWidth: true
-                visible: text.length > 0
-                text: root.appAutoMatchModel ? root.appAutoMatchModel.verificationNote : ""
-                color: root.textSecondary
-                wrapMode: Text.WrapAnywhere
-            }
-            ScrollView {
-                objectName: "autoMatchReviewScroll"
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 88 : 0
-                visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
-                clip: true
-                TextArea {
-                    objectName: "autoMatchReviewText"
-                    readOnly: true
-                    selectByMouse: true
-                    wrapMode: TextEdit.Wrap
-                    color: root.textPrimary
-                    text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewText : ""
-                }
-            }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: transferColumn.implicitHeight + 14
-                visible: !!root.appAutoMatchModel && (root.appAutoMatchModel.transferBusy
-                    || root.appAutoMatchModel.transferReady
-                    || (root.statusDspModule && root.statusDspModule.linkedReadOnly
-                        && root.appAutoMatchModel.canBeginTransfer))
-                color: root.surface
-                border.color: root.border
-                radius: 4
-                ColumnLayout {
-                    id: transferColumn
-                    anchors.fill: parent
-                    anchors.margins: 7
-                    Text {
-                        Layout.fillWidth: true
-                        text: "Manual fine-tuning"
-                        color: root.textPrimary
-                        font.bold: true
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: root.appAutoMatchModel && root.appAutoMatchModel.transferText.length
-                            ? root.appAutoMatchModel.transferText
-                            : "Transfer the selected linked DSP into its manual slot. Processing order may change."
-                        color: root.textSecondary
-                        wrapMode: Text.WordWrap
-                    }
-                    RowLayout {
-                        Button {
-                            objectName: "autoMatchBeginTransfer"
-                            text: "Prepare transfer"
-                            visible: !root.appAutoMatchModel.transferBusy && !root.appAutoMatchModel.transferReady
-                            enabled: root.appAutoMatchModel.canBeginTransfer && !!root.statusDspModule
-                                && root.statusDspModule.linkedReadOnly && !root.monitorExclusive
-                            onClicked: root.appAutoMatchModel.beginTransfer(root.statusDspModule.instanceId)
-                        }
-                        Button {
-                            objectName: "autoMatchListenTransfer"
-                            text: root.appAutoMatchModel.transferListening ? "Stop listening" : "Listen to candidate"
-                            visible: root.appAutoMatchModel.transferReady
-                            enabled: visible && !root.appAutoMatchModel.busy && !root.monitorExclusive
-                            onClicked: root.appAutoMatchModel.transferListening
-                                ? root.appAutoMatchModel.stopTransferListening()
-                                : root.appAutoMatchModel.listenTransfer()
-                        }
-                        Button {
-                            objectName: "autoMatchApplyTransfer"
-                            text: "Apply transfer"
-                            visible: root.appAutoMatchModel.transferReady
-                            enabled: visible && !root.appAutoMatchModel.busy && !root.monitorExclusive
-                            onClicked: root.appAutoMatchModel.applyTransfer()
-                        }
-                        Button {
-                            objectName: "autoMatchDiscardTransfer"
-                            text: "Discard"
-                            visible: root.appAutoMatchModel.transferBusy || root.appAutoMatchModel.transferReady
-                            onClicked: root.appAutoMatchModel.discardTransfer()
-                        }
-                    }
-                }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Button {
-                    objectName: "autoMatchUndoButton"
-                    ToolTip.text: "Undo the last adopted match."
-                    ToolTip.visible: autoMatchUndoButtonDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: autoMatchUndoButtonDwell
-                        anchors.fill: parent
-                    }
-                    text: "Undo match"
-                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canUndo
-                        && !root.monitorExclusive
-                    onClicked: root.appAutoMatchModel.undo()
-                }
-                Button {
-                    objectName: "autoMatchRedoButton"
-                    ToolTip.text: "Restore the last undone match."
-                    ToolTip.visible: autoMatchRedoButtonDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: autoMatchRedoButtonDwell
-                        anchors.fill: parent
-                    }
-                    text: "Redo match"
-                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canRedo
-                        && !root.monitorExclusive
-                    onClicked: root.appAutoMatchModel.redo()
-                }
-                Button {
-                    objectName: "autoMatchResumeButton"
-                    text: "Resume prior"
-                    visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canResume
-                    ToolTip.visible: autoMatchResumeDwell.ready
-                    ToolTip.delay: 0
-                    ToolTip.text: "Restore the exact previous match; numeric fields are for the next search."
-                    StudioTooltipDwell { id: autoMatchResumeDwell; anchors.fill: parent }
-                    enabled: visible && !root.monitorExclusive
-                    onClicked: root.appAutoMatchModel.resume()
-                }
-                Item { Layout.fillWidth: true }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Button {
-                    objectName: "autoMatchStartButton"
-                    ToolTip.text: "Start the offline reference-match search with the selected amounts."
-                    ToolTip.visible: autoMatchStartButtonDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: autoMatchStartButtonDwell
-                        anchors.fill: parent
-                    }
-                    text: "Search"
-                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canStart
-                        && !root.appAutoMatchModel.canAdopt && !root.monitorExclusive
-                    onClicked: {
-                        let values = []
-                        for (let i = 0; i < 5; ++i) {
-                            let item = autoMatchInputs.itemAt(i)
-                            if (!item) return
-                            values.push(item.numericField.numericValue())
-                        }
-                        if (values.some(function(v) { return !Number.isFinite(v) })) return
-                        root.appAutoMatchModel.startProduct(values[0]/100, values[1]/100,
-                            values[2]/100, values[3]/100, values[4]/100)
-                    }
-                }
-                Button {
-                    objectName: "autoMatchAdoptButton"
-                    ToolTip.text: "Accept the reviewed match or the indicated removal / suspension."
-                    ToolTip.visible: autoMatchAdoptButtonDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: autoMatchAdoptButtonDwell
-                        anchors.fill: parent
-                    }
-                    text: root.appAutoMatchModel
-                        && root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
-                        ? "Remove match" : (root.appAutoMatchModel
-                        && root.appAutoMatchModel.statusText === "AMOUNT ZERO / REVIEW SUSPENSION"
-                        ? "Suspend match" : "Apply")
-                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
-                        && !root.monitorExclusive
-                    onClicked: root.appAutoMatchModel.adopt()
-                }
-                Button {
-                    objectName: "autoMatchCancelButton"
-                    ToolTip.text: "Cancel the search or discard the pending change and keep the current match."
-                    ToolTip.visible: autoMatchCancelButtonDwell.ready
-                    ToolTip.delay: 0
-                    StudioTooltipDwell {
-                        id: autoMatchCancelButtonDwell
-                        anchors.fill: parent
-                    }
-                    text: root.appAutoMatchModel
-                        && (root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
-                            || root.appAutoMatchModel.statusText === "REPLACEMENT READY"
-                            || root.appAutoMatchModel.statusText === "AMOUNT ZERO / REVIEW SUSPENSION")
-                        ? "Keep current" : "Cancel"
-                    enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canCancel
-                    onClicked: root.appAutoMatchModel.cancel()
-                }
-            }
+
+        property bool resultsRequested: false
+        function closeResults() {
+            resultsRequested = false
+            if (root.appAutoMatchModel && root.appAutoMatchModel.transferListening)
+                root.appAutoMatchModel.stopTransferListening()
+        }
+        function startSearch() {
+            const match = root.appAutoMatchModel
+            if (!match || !match.canStart || match.canAdopt || !amountsEditable) return false
+            // Validate every draft before committing any or starting a worker.
+            for (let i = 0; i < 5; ++i)
+                if (amountError(i).length > 0) return false
+            for (let i = 0; i < 5; ++i)
+                if (!commitAmount(i)) return false
+            resultsRequested = true
+            match.startProduct(amountValues[0]/100, amountValues[1]/100,
+                amountValues[2]/100, amountValues[3]/100, amountValues[4]/100)
+            return true
         }
     }
 
@@ -2212,9 +1916,9 @@ ApplicationWindow {
                         MenuSeparator { }
                         StudioMenuItem {
                             objectName: "menuAutoMatch"
-                            text: "AutoMatch…"
-                            enabled: !!root.appAutoMatchModel && !root.monitorExclusive
-                            onTriggered: autoMatchDialog.open()
+                            text: "AutoMatch"
+                            enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canStart && autoMatchAmounts.amountsEditable
+                            onTriggered: autoMatchAmounts.startSearch()
                         }
                         StudioMenuItem {
                             objectName: "menuTransferLinkedDsp"
@@ -2223,7 +1927,8 @@ ApplicationWindow {
                                 && !!root.statusDspModule && root.statusDspModule.linkedReadOnly
                                 && !root.monitorExclusive
                             onTriggered: {
-                                autoMatchDialog.open()
+                                adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
+                                autoMatchAmounts.resultsRequested = true
                                 root.appAutoMatchModel.beginTransfer(root.statusDspModule.instanceId)
                             }
                         }
@@ -2388,7 +2093,7 @@ ApplicationWindow {
                     LayoutItemProxy {
                         id: standardDspEditorHostProxy
                         anchors.fill: parent
-                        visible: !root.editorDetached
+                        visible: !root.editorDetached && !autoMatchResultsPanel.visible
                         target: root.dockedEditorHost
                     }
                     // Placeholder occupies exactly the same geometry with
@@ -2396,7 +2101,7 @@ ApplicationWindow {
                     Rectangle {
                         objectName: "standardEditorDockDropZone"
                         anchors.fill: parent
-                        visible: root.editorDetached
+                        visible: root.editorDetached && !autoMatchResultsPanel.visible
                         radius: 6
                         color: "#0B1622"
                         border.width: 1
@@ -2605,24 +2310,24 @@ ApplicationWindow {
                                 return true
                             }
                             function verifyAmountEditorContract() {
-                                if (!matching || !autoMatchDialog.amountsEditable || autoMatchInputs.count !== 5) return false
-                                const beforeValues = autoMatchDialog.amountValues.slice()
-                                const beforeDrafts = autoMatchDialog.amountDrafts.slice()
+                                if (!matching || !autoMatchAmounts.amountsEditable) return false
+                                const beforeValues = autoMatchAmounts.amountValues.slice()
+                                const beforeDrafts = autoMatchAmounts.amountDrafts.slice()
                                 try {
                                     if (!totalAmount.exerciseDraftContract()) return false
                                     for (let i = 0; i < amountDomains.count; ++i) {
                                         const control = amountDomains.itemAt(i)
                                         if (!control || !control.exerciseDraftContract()) return false
                                     }
-                                    autoMatchDialog.setAmountValue(0, 70.4)
-                                    if (autoMatchDialog.amountValue(0) !== 70
-                                        || autoMatchDialog.amountDrafts[0] !== "70") return false
-                                    autoMatchDialog.setAmountValue(0, 70.6)
-                                    return autoMatchDialog.amountValue(0) === 71
-                                        && autoMatchDialog.amountDrafts[0] === "71"
+                                    autoMatchAmounts.setAmountValue(0, 70.4)
+                                    if (autoMatchAmounts.amountValue(0) !== 70
+                                        || autoMatchAmounts.amountDrafts[0] !== "70") return false
+                                    autoMatchAmounts.setAmountValue(0, 70.6)
+                                    return autoMatchAmounts.amountValue(0) === 71
+                                        && autoMatchAmounts.amountDrafts[0] === "71"
                                 } finally {
-                                    autoMatchDialog.amountValues = beforeValues
-                                    autoMatchDialog.amountDrafts = beforeDrafts
+                                    autoMatchAmounts.amountValues = beforeValues
+                                    autoMatchAmounts.amountDrafts = beforeDrafts
                                 }
                             }
 
@@ -2651,7 +2356,7 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         onClicked: {
-                                            autoMatchDialog.close()
+                                            autoMatchAmounts.closeResults()
                                             adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
                                         }
                                     }
@@ -2684,7 +2389,7 @@ ApplicationWindow {
                                     spacing: 8
                                     AmountControl {
                                         id: totalAmount
-                                        amountStore: autoMatchDialog
+                                        amountStore: autoMatchAmounts
                                         matching: adaptiveContextWorkspace.matching
                                         hue: root.accent
                                         amountIndex: 0
@@ -2718,25 +2423,37 @@ ApplicationWindow {
                                             elide: Text.ElideRight
                                         }
                                         StudioSegmentButton {
-                                            objectName: adaptiveContextWorkspace.matching ? "openAutoMatchDialog" : "openPrepareAdviceDialog"
-                                            ToolTip.text: adaptiveContextWorkspace.matching ? "Open search, review and match history controls." : "View sample-rate and available RAM guidance."
+                                            objectName: adaptiveContextWorkspace.matching ? "autoMatchStartButton" : "openPrepareAdviceDialog"
+                                            ToolTip.text: adaptiveContextWorkspace.matching ? "Start AutoMatch directly using the five amounts." : "View sample-rate and available RAM guidance."
                                             ToolTip.visible: adaptiveActionDwell.ready
                                             ToolTip.delay: 0
                                             StudioTooltipDwell {
                                                 id: adaptiveActionDwell
                                                 anchors.fill: parent
                                             }
-                                            text: adaptiveContextWorkspace.matching ? "AutoMatch…" : "Sample rate / RAM…"
+                                            text: adaptiveContextWorkspace.matching ? "AutoMatch" : "Sample rate / RAM…"
                                             tone: "primary"
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 24
                                             minimumControlWidth: 0
                                             enabled: adaptiveContextWorkspace.matching
-                                                ? !!root.appAutoMatchModel && !root.monitorExclusive
+                                                ? !!root.appAutoMatchModel && root.appAutoMatchModel.canStart && autoMatchAmounts.amountsEditable
                                                 : !!root.appMemoryAdvisor
                                             onClicked: {
-                                                if (adaptiveContextWorkspace.matching) autoMatchDialog.open()
+                                                if (adaptiveContextWorkspace.matching) autoMatchAmounts.startSearch()
                                                 else prepareAdviceDialog.open()
+                                            }
+                                        }
+                                        StudioSegmentButton {
+                                            objectName: "autoMatchShowResults"
+                                            visible: adaptiveContextWorkspace.matching
+                                            text: autoMatchAmounts.resultsRequested ? "DSP editor" : "Match details"
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 21
+                                            minimumControlWidth: 0
+                                            onClicked: {
+                                                if (autoMatchAmounts.resultsRequested) autoMatchAmounts.closeResults()
+                                                else autoMatchAmounts.resultsRequested = true
                                             }
                                         }
                                         Text {
@@ -2765,7 +2482,7 @@ ApplicationWindow {
                                         id: amountDomains
                                         model: adaptiveContextWorkspace.domainNames
                                         AmountControl {
-                                            amountStore: autoMatchDialog
+                                            amountStore: autoMatchAmounts
                                             matching: adaptiveContextWorkspace.matching
                                             required property int index
                                             required property string modelData
@@ -2806,6 +2523,261 @@ ApplicationWindow {
                     Layout.preferredWidth: 0
                     Layout.minimumHeight: 300
                     Layout.preferredHeight: 300
+                    Rectangle {
+                        id: autoMatchResultsPanel
+                        objectName: "autoMatchResultsPanel"
+                        anchors.fill: parent
+                        visible: adaptiveContextWorkspace.matching && autoMatchAmounts.resultsRequested
+                        z: 2
+                        radius: 6
+                        color: root.surface
+                        border.color: root.border
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 4
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    text: "AUTOMATCH"
+                                    color: root.textPrimary
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+                                StudioButton {
+                                    text: "DSP editor"
+                                    onClicked: autoMatchAmounts.closeResults()
+                                }
+                            }
+                            ScrollView {
+                                id: matchResultsScroll
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                clip: true
+                                contentWidth: availableWidth
+                                ColumnLayout {
+                                    width: matchResultsScroll.availableWidth
+                                    spacing: 6
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.appAutoMatchModel ? root.appAutoMatchModel.statusText : "UNAVAILABLE"
+                                        color: root.accent
+                                        font.bold: true
+                                    }
+                                    Text {
+                                        objectName: "autoMatchElapsedTimeText"
+                                        Layout.fillWidth: true
+                                        visible: !!root.appAutoMatchModel
+                                            && root.appAutoMatchModel.elapsedTimeText.length > 0
+                                        text: root.appAutoMatchModel
+                                            ? "Elapsed search: " + root.appAutoMatchModel.elapsedTimeText : ""
+                                        color: root.textPrimary
+                                        font.family: "Segoe UI"
+                                        font.pixelSize: 12
+                                    }
+                                    Text {
+                                        objectName: "autoMatchCurrentStateText"
+                                        Layout.fillWidth: true
+                                        text: root.appAutoMatchModel ? root.appAutoMatchModel.currentMatchText : ""
+                                        color: root.textSecondary
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        visible: text.length > 0
+                                        text: root.appAutoMatchModel ? root.appAutoMatchModel.errorText : ""
+                                        color: root.error
+                                        wrapMode: Text.WrapAnywhere
+                                    }
+                                    Text {
+                                        objectName: "autoMatchFailureDiagnostics"
+                                        Layout.fillWidth: true
+                                        visible: text.length > 0
+                                        text: root.appAutoMatchModel
+                                            ? root.appAutoMatchModel.failureDiagnosticsText : ""
+                                        color: root.textSecondary
+                                        font.family: "Consolas"
+                                        font.pixelSize: 10
+                                        wrapMode: Text.WordWrap
+                                    }
+                                    Text {
+                                        objectName: "autoMatchReviewMetrics"
+                                        Layout.fillWidth: true
+                                        visible: text.length > 0
+                                        text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewMetricsText : ""
+                                        color: root.textSecondary
+                                        wrapMode: Text.WordWrap
+                                    }
+                                    Text {
+                                        objectName: "autoMatchVerificationNote"
+                                        Layout.fillWidth: true
+                                        visible: text.length > 0
+                                        text: root.appAutoMatchModel ? root.appAutoMatchModel.verificationNote : ""
+                                        color: root.textSecondary
+                                        wrapMode: Text.WrapAnywhere
+                                    }
+                                    ScrollView {
+                                        objectName: "autoMatchReviewScroll"
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: visible ? 88 : 0
+                                        visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
+                                        clip: true
+                                        TextArea {
+                                            objectName: "autoMatchReviewText"
+                                            readOnly: true
+                                            selectByMouse: true
+                                            wrapMode: TextEdit.Wrap
+                                            color: root.textPrimary
+                                            text: root.appAutoMatchModel ? root.appAutoMatchModel.reviewText : ""
+                                        }
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: transferColumn.implicitHeight + 14
+                                        visible: !!root.appAutoMatchModel && (root.appAutoMatchModel.transferBusy
+                                            || root.appAutoMatchModel.transferReady
+                                            || (root.statusDspModule && root.statusDspModule.linkedReadOnly
+                                                && root.appAutoMatchModel.canBeginTransfer))
+                                        color: root.surface
+                                        border.color: root.border
+                                        radius: 4
+                                        ColumnLayout {
+                                            id: transferColumn
+                                            anchors.fill: parent
+                                            anchors.margins: 7
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: "Manual fine-tuning"
+                                                color: root.textPrimary
+                                                font.bold: true
+                                            }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: root.appAutoMatchModel && root.appAutoMatchModel.transferText.length
+                                                    ? root.appAutoMatchModel.transferText
+                                                    : "Transfer the selected linked DSP into its manual slot. Processing order may change."
+                                                color: root.textSecondary
+                                                wrapMode: Text.WordWrap
+                                            }
+                                            RowLayout {
+                                                Button {
+                                                    objectName: "autoMatchBeginTransfer"
+                                                    text: "Prepare transfer"
+                                                    visible: !root.appAutoMatchModel.transferBusy && !root.appAutoMatchModel.transferReady
+                                                    enabled: root.appAutoMatchModel.canBeginTransfer && !!root.statusDspModule
+                                                        && root.statusDspModule.linkedReadOnly && !root.monitorExclusive
+                                                    onClicked: root.appAutoMatchModel.beginTransfer(root.statusDspModule.instanceId)
+                                                }
+                                                Button {
+                                                    objectName: "autoMatchListenTransfer"
+                                                    text: root.appAutoMatchModel.transferListening ? "Stop listening" : "Listen to candidate"
+                                                    visible: root.appAutoMatchModel.transferReady
+                                                    enabled: visible && !root.appAutoMatchModel.busy && !root.monitorExclusive
+                                                    onClicked: root.appAutoMatchModel.transferListening
+                                                        ? root.appAutoMatchModel.stopTransferListening()
+                                                        : root.appAutoMatchModel.listenTransfer()
+                                                }
+                                                Button {
+                                                    objectName: "autoMatchApplyTransfer"
+                                                    text: "Apply transfer"
+                                                    visible: root.appAutoMatchModel.transferReady
+                                                    enabled: visible && !root.appAutoMatchModel.busy && !root.monitorExclusive
+                                                    onClicked: root.appAutoMatchModel.applyTransfer()
+                                                }
+                                                Button {
+                                                    objectName: "autoMatchDiscardTransfer"
+                                                    text: "Discard"
+                                                    visible: root.appAutoMatchModel.transferBusy || root.appAutoMatchModel.transferReady
+                                                    onClicked: root.appAutoMatchModel.discardTransfer()
+                                                }
+                                            }
+                                        }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Button {
+                                            objectName: "autoMatchUndoButton"
+                                            ToolTip.text: "Undo the last adopted match."
+                                            ToolTip.visible: autoMatchUndoButtonDwell.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: autoMatchUndoButtonDwell
+                                                anchors.fill: parent
+                                            }
+                                            text: "Undo match"
+                                            enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canUndo
+                                                && !root.monitorExclusive
+                                            onClicked: root.appAutoMatchModel.undo()
+                                        }
+                                        Button {
+                                            objectName: "autoMatchRedoButton"
+                                            ToolTip.text: "Restore the last undone match."
+                                            ToolTip.visible: autoMatchRedoButtonDwell.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: autoMatchRedoButtonDwell
+                                                anchors.fill: parent
+                                            }
+                                            text: "Redo match"
+                                            enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canRedo
+                                                && !root.monitorExclusive
+                                            onClicked: root.appAutoMatchModel.redo()
+                                        }
+                                        Button {
+                                            objectName: "autoMatchResumeButton"
+                                            text: "Resume prior"
+                                            visible: !!root.appAutoMatchModel && root.appAutoMatchModel.canResume
+                                            ToolTip.visible: autoMatchResumeDwell.ready
+                                            ToolTip.delay: 0
+                                            ToolTip.text: "Restore the exact previous match; numeric fields are for the next search."
+                                            StudioTooltipDwell { id: autoMatchResumeDwell; anchors.fill: parent }
+                                            enabled: visible && !root.monitorExclusive
+                                            onClicked: root.appAutoMatchModel.resume()
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Button {
+                                            objectName: "autoMatchAdoptButton"
+                                            ToolTip.text: "Accept the reviewed match or the indicated removal / suspension."
+                                            ToolTip.visible: autoMatchAdoptButtonDwell.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: autoMatchAdoptButtonDwell
+                                                anchors.fill: parent
+                                            }
+                                            text: root.appAutoMatchModel
+                                                && root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
+                                                ? "Remove match" : (root.appAutoMatchModel
+                                                && root.appAutoMatchModel.statusText === "AMOUNT ZERO / REVIEW SUSPENSION"
+                                                ? "Suspend match" : "Apply")
+                                            enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canAdopt
+                                                && !root.monitorExclusive
+                                            onClicked: root.appAutoMatchModel.adopt()
+                                        }
+                                        Button {
+                                            objectName: "autoMatchCancelButton"
+                                            ToolTip.text: "Cancel the search or discard the pending change and keep the current match."
+                                            ToolTip.visible: autoMatchCancelButtonDwell.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: autoMatchCancelButtonDwell
+                                                anchors.fill: parent
+                                            }
+                                            text: root.appAutoMatchModel
+                                                && (root.appAutoMatchModel.statusText === "NO CORRECTION / REVIEW REMOVAL"
+                                                    || root.appAutoMatchModel.statusText === "REPLACEMENT READY"
+                                                    || root.appAutoMatchModel.statusText === "AMOUNT ZERO / REVIEW SUSPENSION")
+                                                ? "Keep current" : "Cancel"
+                                            enabled: !!root.appAutoMatchModel && root.appAutoMatchModel.canCancel
+                                            onClicked: root.appAutoMatchModel.cancel()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     LayoutItemProxy {
                         id: compactDspEditorHostProxy
                         objectName: "compactBottomRight"
