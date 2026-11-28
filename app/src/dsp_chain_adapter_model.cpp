@@ -324,8 +324,21 @@ void DspChainAdapterModel::reconcile_linked_editor_rows()
                 ids.append(QString::fromStdString(snapshot.instance.instance_id().to_string()));
         }
     }
-    if(ids==lastLinkedEditorIds_&&owner==lastLinkedEditorOwner_.lock()&&
-       provisional==lastProvisionalEditorOwner_.lock())return;
+    const auto prior=lastProvisionalEditorOwner_.lock();
+    if(ids==lastLinkedEditorIds_&&owner==lastLinkedEditorOwner_.lock()&&provisional==prior)return;
+    if(ids==lastLinkedEditorIds_&&!owner&&!lastLinkedEditorOwner_.lock()&&prior&&provisional&&
+       prior->capture_owner()==provisional->capture_owner()) {
+        std::size_t rebound=0;
+        for(const auto& item:moduleAdapters_) {
+            auto* adapter=dynamic_cast<l3_automatch::LinkedDspModuleAdapter*>(item.get());
+            if(adapter&&adapter->rebind_fine_tuned_owner(prior,provisional))++rebound;
+        }
+        if(rebound==static_cast<std::size_t>(ids.size())) {
+            lastProvisionalEditorOwner_=provisional;
+            emit changed();
+            return;
+        }
+    }
     rebuild_adapters_from_authority();
     emit changed();
 }

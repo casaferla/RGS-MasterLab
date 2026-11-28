@@ -23,6 +23,24 @@ public:
             this,&DspModuleAdapter::changed);
     }
 
+    // A fine-tune only replaces the MANUAL payload; the same immutable
+    // transfer capture keeps all remaining linked nodes unchanged.
+    // Rebind that narrow transition without destroying the editor host.
+    [[nodiscard]] bool rebind_fine_tuned_owner(
+        const std::shared_ptr<const ManualMatchTransferPreviewTicket>& expected,
+        const std::shared_ptr<const ManualMatchTransferPreviewTicket>& next)
+    {
+        if(!expected||!next||exact_owner_.lock()||provisional_owner_.lock()!=expected||
+           expected->capture_owner()!=next->capture_owner()||!preview_||!manual_||
+           preview_->private_manual_transfer_preview_ticket()!=next||
+           !preview_->private_manual_transfer_owner_matches(*manual_))return false;
+        const auto snapshots=inspect_current_linked_editors(*preview_,*manual_);
+        if(!snapshots||std::none_of(snapshots->begin(),snapshots->end(),[&](const auto& s){
+            return s.provisional_owner==next&&s.instance.instance_id()==id_&&
+                   s.instance.module_type_id()==type_;}))return false;
+        provisional_owner_=next;
+        emit changed();emit activityChanged();return true;
+    }
     void bind_activity(AuditionSourceSelector* selector,PlaybackTransportViewModel* transport)
     {
         selector_=selector;
