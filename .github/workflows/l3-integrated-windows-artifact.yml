@@ -38,6 +38,8 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
+          $env:RGSML_PLAYBACK_FIR_ROOT=Join-Path $env:GITHUB_WORKSPACE 'build-l3-package/generated/rgsml/fir'
+          if (!(Test-Path -LiteralPath (Join-Path $env:RGSML_PLAYBACK_FIR_ROOT 'fir_manifest.json'))) { throw 'L3_UNIT_FIR_MANIFEST_MISSING' }
           $report=Join-Path $env:RUNNER_TEMP 'l3-transfer-unit-tests.txt'
           $failures=@()
           foreach ($name in @('rgsml_l3_m12_project_carrier_tests','rgsml_mastering_chain_state_tests','rgsml_mastering_preview_controller_tests')) {

@@ -62,6 +62,7 @@ prepare_manual_match_transfer_project(const project::ProjectSnapshot& before,
         target->typeId!=source->typeId||target->algorithmVersion!=source->algorithmVersion||
         target->parameterSchemaId!=source->parameterSchemaId)
         return fail("MANUAL_MATCH_PROJECT_PARAMETER_SCHEMA_MISMATCH");
+    const auto priorManualParameters=target->parameters.canonical_utf8();
     target->parameters=source->parameters;
     target->userBypass=false;
     source->userBypass=true;
@@ -84,6 +85,8 @@ prepare_manual_match_transfer_project(const project::ProjectSnapshot& before,
         {"identitySha256",QString::fromStdString(identity.value()->sha256)},
         {"content",canonical.object()},
         {"priorAcceptedMaterialization",old.toObject()},
+        {"priorReferenceMatchCanonical",QString::fromStdString(doc.referenceMatch.canonical_utf8())},
+        {"priorManualParametersCanonical",QString::fromStdString(priorManualParameters)},
         {"verificationState",QStringLiteral("NOT_VERIFIED")}});
     auto opaque=project::OpaqueJsonValue::parse(
         QJsonDocument(record).toJson(QJsonDocument::Compact).toStdString());
@@ -149,6 +152,16 @@ recover_manual_match_transfer_before(const project::ProjectSnapshot& persisted)
     const auto candidate=metadata.take(QStringLiteral("manualTransferCandidate")).toObject();
     const auto content=candidate.value(QStringLiteral("content")).toObject();
     const auto accepted=candidate.value(QStringLiteral("priorAcceptedMaterialization"));
+    const auto priorMeta=project::OpaqueJsonValue::parse(
+        candidate.value(QStringLiteral("priorReferenceMatchCanonical")).toString().toStdString());
+    const auto priorParams=project::OpaqueJsonValue::parse(
+        candidate.value(QStringLiteral("priorManualParametersCanonical")).toString().toStdString());
+    if(!priorMeta||!priorParams)return fail("MANUAL_MATCH_RECOVERY_MISSING_CANONICAL_PRIOR");
+    const auto exactPriorMeta=QJsonDocument::fromJson(
+        QByteArray::fromStdString(priorMeta.value()->canonical_utf8()));
+    if(!exactPriorMeta.isObject()||
+       exactPriorMeta.object().value(QStringLiteral("materialization"))!=accepted)
+        return fail("MANUAL_MATCH_RECOVERY_PRIOR_METADATA_MISMATCH");
     if(candidate.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED")||
        content.value(QStringLiteral("schemaId")).toString()!=QStringLiteral("rgsml.reference-match.manual-transfer-candidate/1.0.0")||
        content.value(QStringLiteral("verificationState")).toString()!=QStringLiteral("NOT_VERIFIED")||
@@ -200,10 +213,13 @@ recover_manual_match_transfer_before(const project::ProjectSnapshot& persisted)
             const auto params=node.value(QStringLiteral("parameters"));
             if(!bypass.isBool()||bypass.toBool()!=priorBypass||module.userBypass==priorBypass||
                !params.isObject())return false;
-            auto payload=project::OpaqueJsonValue::parse(
-                QJsonDocument(params.toObject()).toJson(QJsonDocument::Compact).toStdString());
-            if(!payload)return false;
-            module.parameters=std::move(*payload.value());
+            // The linked payload never changed. For MANUAL use the exact
+            // canonical prior bytes, not Qt's numeric reserialization.
+            const auto& payload=priorBypass?*priorParams.value():module.parameters;
+            const auto parsedPayload=QJsonDocument::fromJson(
+                QByteArray::fromStdString(payload.canonical_utf8()));
+            if(!parsedPayload.isObject()||parsedPayload.object()!=params.toObject())return false;
+            if(priorBypass)module.parameters=payload;
             module.userBypass=priorBypass;
         }
         if(matches!=1U)return false;
@@ -214,10 +230,9 @@ recover_manual_match_transfer_before(const project::ProjectSnapshot& persisted)
        !recover(*linked,content.value(QStringLiteral("priorReferenceLinked")).toObject(),linkedId,false))
         return fail("MANUAL_MATCH_RECOVERY_INVALID_GRAPH_DELTA");
     metadata.insert(QStringLiteral("materialization"),accepted);
-    auto beforeMetadata=project::OpaqueJsonValue::parse(
-        QJsonDocument(metadata).toJson(QJsonDocument::Compact).toStdString());
-    if(!beforeMetadata)return R::failure(*beforeMetadata.error());
-    doc.referenceMatch=std::move(*beforeMetadata.value());
+    if(metadata!=exactPriorMeta.object())
+        return fail("MANUAL_MATCH_RECOVERY_UNRELATED_METADATA_CHANGED");
+    doc.referenceMatch=std::move(*priorMeta.value());
     return project::ProjectSnapshot::create(std::move(doc),
         {persisted.optional_entries().begin(),persisted.optional_entries().end()});
 }
