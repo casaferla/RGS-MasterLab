@@ -1056,10 +1056,10 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         projectDraft.value()->after.document().chains.back().modules[1]));
     const auto fineMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
         tunedDoc.referenceMatch.canonical_utf8())).object();
-    const auto oldMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+    const auto transferBaseMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
         projectDraft.value()->after.document().referenceMatch.canonical_utf8())).object();
     QVERIFY(fineMeta.value(QStringLiteral("manualTransferCandidate"))==
-        oldMeta.value(QStringLiteral("manualTransferCandidate")));
+        transferBaseMeta.value(QStringLiteral("manualTransferCandidate")));
     QVERIFY(fineMeta.contains(QStringLiteral("manualFineTune")));
     const auto recoveredFineBase=transfer::recover_transferred_manual_edit_base(fineTune.value()->after);
     QVERIFY(recoveredFineBase);
