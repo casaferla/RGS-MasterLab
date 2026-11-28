@@ -324,8 +324,16 @@ public:
         return !operationError_.isEmpty()?operationError_:(preview_?preview_->preview_error():QString{});
     }
     [[nodiscard]] bool history_supported() const noexcept override {return manual_editable();}
-    [[nodiscard]] bool can_undo() const noexcept override {return manual_editable()&&history_current()&&!undo_.empty();}
-    [[nodiscard]] bool can_redo() const noexcept override {return manual_editable()&&history_current()&&!redo_.empty();}
+    [[nodiscard]] bool can_undo() const noexcept override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket())
+            return id_&&preview_->can_change_private_transferred_edit_history(*id_,false);
+        return manual_editable()&&history_current()&&!undo_.empty();
+    }
+    [[nodiscard]] bool can_redo() const noexcept override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket())
+            return id_&&preview_->can_change_private_transferred_edit_history(*id_,true);
+        return manual_editable()&&history_current()&&!redo_.empty();
+    }
     [[nodiscard]] bool reset_supported() const noexcept override {return manual_editable();}
     [[nodiscard]] QString editor_content_key() const override {return QStringLiteral("TRANSIENT_SHAPER");}
     [[nodiscard]] QString live_change_policy() const override {return QStringLiteral("MANUAL_COMMIT_REBUILDS_PREVIEW");}
@@ -362,8 +370,26 @@ public:
         if(!status){operationError_=QString::fromStdString(status.error()->message());emit changed();return;}
         operationError_.clear();publish();
     }
-    void undo() override {move_history(undo_,redo_);}
-    void redo() override {move_history(redo_,undo_);}
+    void undo() override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket()) {
+            if(!id_)return;
+            const auto result=preview_->change_private_transferred_edit_history(*id_,false);
+            if(!result)operationError_=QString::fromStdString(result.error()->message());
+            else operationError_.clear();
+            emit changed();return;
+        }
+        move_history(undo_,redo_);
+    }
+    void redo() override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket()) {
+            if(!id_)return;
+            const auto result=preview_->change_private_transferred_edit_history(*id_,true);
+            if(!result)operationError_=QString::fromStdString(result.error()->message());
+            else operationError_.clear();
+            emit changed();return;
+        }
+        move_history(redo_,undo_);
+    }
     void resetToDefault() override {
         auto p=dsp::TransientShaperParameters::create_default();
         if(p&&accept(*p.value())){attackError_.clear();sustainError_.clear();emit changed();}
@@ -456,8 +482,16 @@ public:
     [[nodiscard]] QString preview_status() const override {return preview_?preview_->preview_status():QStringLiteral("IDLE");}
     [[nodiscard]] QString preview_error() const override {return !operationError_.isEmpty()?operationError_:(preview_?preview_->preview_error():QString{});}
     [[nodiscard]] bool history_supported() const noexcept override {return manual_editable();}
-    [[nodiscard]] bool can_undo() const noexcept override {return manual_editable()&&history_current()&&!undo_.empty();}
-    [[nodiscard]] bool can_redo() const noexcept override {return manual_editable()&&history_current()&&!redo_.empty();}
+    [[nodiscard]] bool can_undo() const noexcept override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket())
+            return id_&&preview_->can_change_private_transferred_edit_history(*id_,false);
+        return manual_editable()&&history_current()&&!undo_.empty();
+    }
+    [[nodiscard]] bool can_redo() const noexcept override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket())
+            return id_&&preview_->can_change_private_transferred_edit_history(*id_,true);
+        return manual_editable()&&history_current()&&!redo_.empty();
+    }
     [[nodiscard]] bool reset_supported() const noexcept override {return manual_editable();}
     [[nodiscard]] QString editor_content_key() const override {return QStringLiteral("DYNAMIC_EQ");}
     [[nodiscard]] QString live_change_policy() const override {return QStringLiteral("MANUAL_COMMIT_REBUILDS_PREVIEW");}
@@ -479,8 +513,26 @@ public:
     Q_INVOKABLE bool deleteBand(const QString& id);
     Q_INVOKABLE void clearValidation();
     void setBypass(bool value) override;
-    void undo() override {move_history(undo_,redo_);}
-    void redo() override {move_history(redo_,undo_);}
+    void undo() override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket()) {
+            if(!id_)return;
+            const auto result=preview_->change_private_transferred_edit_history(*id_,false);
+            if(!result)operationError_=QString::fromStdString(result.error()->message());
+            else operationError_.clear();
+            emit changed();return;
+        }
+        move_history(undo_,redo_);
+    }
+    void redo() override {
+        if(preview_&&preview_->private_manual_transfer_preview_ticket()) {
+            if(!id_)return;
+            const auto result=preview_->change_private_transferred_edit_history(*id_,true);
+            if(!result)operationError_=QString::fromStdString(result.error()->message());
+            else operationError_.clear();
+            emit changed();return;
+        }
+        move_history(redo_,undo_);
+    }
     void resetToDefault() override;
 private:
     using Params=dsp::DynamicEqParameters;
