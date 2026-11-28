@@ -842,7 +842,7 @@ ApplicationWindow {
                 width: amountControl.boxWidth
                 height: 12
                 horizontalAlignment: Text.AlignHCenter
-                text: amountControl.amountLabel
+                text: amountControl.amountLabel + " %"
                 color: amountControl.matching ? amountControl.primaryText : amountControl.secondaryText
                 font.family: "Segoe UI"
                 font.pixelSize: 10
@@ -881,7 +881,7 @@ ApplicationWindow {
                 showLabel: false
                 inputHorizontalMargin: 4
                 inputPixelSize: 13
-                labelText: amountControl.amountLabel + " (%)"
+                labelText: amountControl.amountLabel + " %"
                 fieldName: "matchAmount" + amountControl.amountIndex
                 rawText: amountControl.matching && amountControl.amountStore
                     ? amountControl.amountStore.amountDrafts[amountControl.amountIndex] : "—"
@@ -2692,7 +2692,7 @@ ApplicationWindow {
                                         spacing: 3
                                         Text {
                                             Layout.fillWidth: true
-                                            text: adaptiveContextWorkspace.matching ? "TOTAL MATCH (%)" : "RESTORATION"
+                                            text: adaptiveContextWorkspace.matching ? "TOTAL MATCH %" : "RESTORATION"
                                             color: root.textPrimary
                                             font.family: "Segoe UI"
                                             font.pixelSize: 12
