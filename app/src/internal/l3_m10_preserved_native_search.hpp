@@ -8,6 +8,7 @@
 #include "l3_m11_native_fixed_assessment.hpp"
 #include "l3_m10_native_scope_key.hpp"
 #include <chrono>
+#include <array>
 
 namespace rgsml::app::l3_automatch::m10_frozen {
 struct PreservedNativeGraph final {
@@ -65,6 +66,15 @@ struct NativeSearchPerformance final {
     std::optional<std::int64_t> last_attempt_ms;
     std::uint32_t attempted{},completed{},failed{},cache_hits{};
     std::uint32_t evaluator_preflight_rejections{},budget_refusals{};
+    std::array<std::uint32_t,6> native_cost_reasons{};
+    std::array<std::string,6> first_native_failure_details{};
+    void observe_native_cost(const P2NativeCostResult& score) {
+        const auto i=static_cast<std::size_t>(score.reason);
+        if(i>=native_cost_reasons.size())return;
+        ++native_cost_reasons[i];
+        if(first_native_failure_details[i].empty()&&!score.failure_detail.empty())
+            first_native_failure_details[i]=score.failure_detail.substr(0,200);
+    }
     void observe(const Evaluation& event,Clock::time_point now) noexcept {
         if((event.kind==EvaluationKind::attempted_complete||
             event.kind==EvaluationKind::attempted_failure)&&start&&now>=*start) {
@@ -260,6 +270,7 @@ template<class ResolveOriginalTriple>
                 if(original_definitions)return std::move(original_definitions);
                 return std::invoke(resolve,measured);
             },cancellation,prefix.fixed);
+        if(env.performance)env.performance->observe_native_cost(score);
         return score.as_exact_cache_evidence();
     });
     if(env.performance)env.performance->observe(evaluated,NativeSearchPerformance::Clock::now());
