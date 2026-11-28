@@ -1018,6 +1018,28 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
     staleBindings.front().parameters=*dsp::GainParameters::create(9.0).value();
     QVERIFY(!provisional.value()->matches_manual(
         draft.value()->manual_after.proposed_manual_chain,staleBindings));
+    const auto& stagedManual=draft.value()->manual_after.proposed_manual_chain;
+    const auto& stagedBindings=draft.value()->manual_after.proposed_bindings;
+    const auto tuned=transfer::prepare_transferred_manual_parameter_edit(
+        *provisional.value(),stagedManual,stagedBindings,ownedPrepared,manualTransient,
+        *neutralTransient.value());
+    QVERIFY(tuned);
+    QCOMPARE(tuned.value()->proposed_manual_chain.revision(),stagedManual.revision()+1U);
+    QVERIFY(tuned.value()->proposed_bindings.back().parameters==
+        dsp::ModuleParameterPayload{*neutralTransient.value()});
+    QVERIFY(tuned.value()->proposed_bindings.front()==stagedBindings.front());
+    QVERIFY(tuned.value()->proposed_bindings[1]==stagedBindings[1]);
+    QVERIFY(std::equal(tuned.value()->proposed_manual_chain.instances().begin(),
+        tuned.value()->proposed_manual_chain.instances().end(),stagedManual.instances().begin()));
+    QVERIFY(!tuned.value()->authorizes_project_commit());
+    QVERIFY(!transfer::prepare_transferred_manual_parameter_edit(
+        *provisional.value(),stagedManual,stagedBindings,ownedPrepared,manualDynamic,*deq.value()));
+    QVERIFY(!transfer::prepare_transferred_manual_parameter_edit(
+        *provisional.value(),stagedManual,stagedBindings,ownedPrepared,manualTransient,*deq.value()));
+    QVERIFY(!transfer::prepare_transferred_manual_parameter_edit(
+        *provisional.value(),stagedManual,stagedBindings,{},manualTransient,*neutralTransient.value()));
+    QVERIFY(!transfer::prepare_transferred_manual_parameter_edit(
+        *provisional.value(),stagedManual,staleBindings,ownedPrepared,manualTransient,*neutralTransient.value()));
     const auto provisionalPcm=provisional.value()->render(*maxBlock.value());
     QVERIFY(provisionalPcm);
     QCOMPARE(provisionalPcm.value()->view().absolute_range(),
