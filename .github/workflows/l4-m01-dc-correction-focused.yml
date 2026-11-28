@@ -1,0 +1,57 @@
+name: L4 M01 DC correction native focused (nonrelease)
+on:
+  push:
+    branches:
+      - staging/l4-m01-dc-correction-focused-20261128
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Install Qt Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          if ($LASTEXITCODE -ne 0) { throw 'L4_QT_DEP_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'L4_QT_FAILED' }
+      - name: Install Qt Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0"
+          python3 -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
+      - name: Compile and run native Windows DC and regression suite
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build-l4 -G 'Visual Studio 17 2022' -A x64 -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON "-DRGSML_QT_ROOT=$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64"
+          if ($LASTEXITCODE -ne 0) { throw 'L4_CONFIGURE_FAILED' }
+          cmake --build build-l4 --config Release --parallel 4 --target rgsml_l4_dc_offset_correction_tests rgsml_gain_tests rgsml_dsp_processing_chain_tests
+          if ($LASTEXITCODE -ne 0) { throw 'L4_BUILD_FAILED' }
+          $env:PATH="$env:GITHUB_WORKSPACE/6.8.3/msvc2022_64/bin;$env:PATH"
+          ctest --test-dir build-l4 -C Release --output-on-failure -V -R '^(rgsml_l4_dc_offset_correction_tests|rgsml_gain_tests|rgsml_dsp_processing_chain_tests)$' --no-tests=error
+          if ($LASTEXITCODE -ne 0) { throw 'L4_TEST_FAILED' }
+      - name: Compile and run native Linux DC and regression suite
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cmake -S . -B build-l4 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/6.8.3/gcc_64" -DRGSML_BUILD_TESTS=ON -DRGSML_WARNINGS_AS_ERRORS=ON
+          cmake --build build-l4 --parallel 4 --target rgsml_l4_dc_offset_correction_tests rgsml_gain_tests rgsml_dsp_processing_chain_tests
+          ctest --test-dir build-l4 --output-on-failure -V -R '^(rgsml_l4_dc_offset_correction_tests|rgsml_gain_tests|rgsml_dsp_processing_chain_tests)$' --no-tests=error
