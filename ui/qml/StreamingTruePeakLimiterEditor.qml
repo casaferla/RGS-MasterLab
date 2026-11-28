@@ -19,7 +19,8 @@ Item {
     // Numeric drafts never render on each keystroke. Same 120x32,
     // Consolas 16, GAIN-field visual grammar as InputGainEditor.
     function commitNumeric(control, low, high, current, setter) {
-        if (!root.limiterModule || !control.numericDirty) return
+        if (!root.limiterModule) return false
+        if (!control.numericDirty) return true
         const raw = control.text.trim()
         const parsed = Number(raw.replace(",", "."))
         const field = control === ceilingEntry ? "Ceiling" : "Drive"
@@ -28,7 +29,7 @@ Item {
             if (root.limiterModule.reportNumericValidation)
                 root.limiterModule.reportNumericValidation(field,
                     field + " must be a number between " + low + " and " + high + ".")
-            return
+            return false
         }
         const canonical = Math.round(parsed * 10) / 10
         if (root.limiterModule.reportNumericValidation)
@@ -36,6 +37,7 @@ Item {
         control.numericDirty = false
         if (canonical !== current) setter(canonical)
         control.text = canonical.toFixed(1)
+        return true
     }
     function cancelNumeric(control, field, value) {
         control.numericDirty = false
@@ -186,19 +188,17 @@ Item {
                                 }
                                 Component.onCompleted: text=root.ceiling.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
-                                    root.commitNumeric(ceilingEntry,-12,0,
+                                    if (root.commitNumeric(ceilingEntry,-12,0,
                                         root.ceiling,function(v) {
                                             root.limiterModule.setCeilingDbTp(v)
-                                        })
-                                    ceilingEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEnterPressed: function(event) {
-                                    root.commitNumeric(ceilingEntry,-12,0,
+                                    if (root.commitNumeric(ceilingEntry,-12,0,
                                         root.ceiling,function(v) {
                                             root.limiterModule.setCeilingDbTp(v)
-                                        })
-                                    ceilingEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
@@ -338,19 +338,17 @@ Item {
                                 }
                                 Component.onCompleted: text=root.drive.toFixed(1)
                                 Keys.onReturnPressed: function(event) {
-                                    root.commitNumeric(driveEntry,-24,24,
+                                    if (root.commitNumeric(driveEntry,-24,24,
                                         root.drive,function(v) {
                                             root.limiterModule.setDriveDb(v)
-                                        })
-                                    driveEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEnterPressed: function(event) {
-                                    root.commitNumeric(driveEntry,-24,24,
+                                    if (root.commitNumeric(driveEntry,-24,24,
                                         root.drive,function(v) {
                                             root.limiterModule.setDriveDb(v)
-                                        })
-                                    driveEntry.focus=false
+                                        })) root.forceActiveFocus(Qt.OtherFocusReason)
                                     event.accepted=true
                                 }
                                 Keys.onEscapePressed: function(event) {
