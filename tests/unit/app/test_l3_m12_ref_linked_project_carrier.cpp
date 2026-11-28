@@ -1040,6 +1040,31 @@ realDynamicEqTransientAndEqRoundtripAsOrdinaryProjectModules() {
         *provisional.value(),stagedManual,stagedBindings,{},manualTransient,*neutralTransient.value()));
     QVERIFY(!transfer::prepare_transferred_manual_parameter_edit(
         *provisional.value(),stagedManual,staleBindings,ownedPrepared,manualTransient,*neutralTransient.value()));
+    const auto fineTune=transfer::prepare_transferred_manual_edit_project(
+        *provisional.value(),projectDraft.value()->after,stagedManual,stagedBindings,
+        ownedPrepared,manualTransient,*neutralTransient.value());
+    QVERIFY(fineTune);
+    QCOMPARE(fineTune.value()->identity_sha256.size(),std::size_t{64});
+    QVERIFY(fineTune.value()->identity_sha256!=transferIdentity.value()->sha256);
+    QVERIFY(projectDraft.value()->matches_after(fineTune.value()->before));
+    QVERIFY(!projectDraft.value()->matches_after(fineTune.value()->after));
+    const auto& tunedDoc=fineTune.value()->after.document();
+    QCOMPARE(tunedDoc.chains.front().revision,stagedManual.revision()+1U);
+    QVERIFY(m::exact_project_module_equal(tunedDoc.chains.front().modules.front(),
+        projectDraft.value()->after.document().chains.front().modules.front()));
+    QVERIFY(m::exact_project_module_equal(tunedDoc.chains.back().modules[1],
+        projectDraft.value()->after.document().chains.back().modules[1]));
+    const auto fineMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        tunedDoc.referenceMatch.canonical_utf8())).object();
+    const auto oldMeta=QJsonDocument::fromJson(QByteArray::fromStdString(
+        projectDraft.value()->after.document().referenceMatch.canonical_utf8())).object();
+    QVERIFY(fineMeta.value(QStringLiteral("manualTransferCandidate"))==
+        oldMeta.value(QStringLiteral("manualTransferCandidate")));
+    QVERIFY(fineMeta.contains(QStringLiteral("manualFineTune")));
+    QVERIFY(!fineMeta.contains(QStringLiteral("materialization")));
+    QVERIFY(!transfer::prepare_transferred_manual_edit_project(
+        *provisional.value(),*tamperedSnapshot.value(),stagedManual,stagedBindings,
+        ownedPrepared,manualTransient,*neutralTransient.value()));
     const auto provisionalPcm=provisional.value()->render(*maxBlock.value());
     QVERIFY(provisionalPcm);
     QCOMPARE(provisionalPcm.value()->view().absolute_range(),
